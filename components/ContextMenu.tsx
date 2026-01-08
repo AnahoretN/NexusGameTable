@@ -13,9 +13,10 @@ interface ContextMenuProps {
   onAction: (action: string) => void;
   onClose: () => void;
   allObjects: Record<string, TableObject>; // Added to access deck for card inheritance
+  hideCardActions?: boolean; // Hide layer, lock, and rotate for cards
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions }) => {
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const submenuRef = React.useRef<HTMLDivElement>(null);
 
@@ -61,12 +62,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
 
     if (isGM) {
       // GM: check allowedActionsForGM
-      // undefined = all allowed, [] = none allowed, specific array = only those allowed
-      return allowedActionsForGM === undefined || (allowedActionsForGM.length > 0 && allowedActionsForGM.includes(action));
+      // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
+      return allowedActionsForGM == null || (allowedActionsForGM.length > 0 && allowedActionsForGM.includes(action));
     }
     // Player: check allowedActions
-    // undefined = all allowed, [] = none allowed, specific array = only those allowed
-    return allowedActions === undefined || (allowedActions.length > 0 && allowedActions.includes(action));
+    // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
+    return allowedActions == null || (allowedActions.length > 0 && allowedActions.includes(action));
   };
 
   // Close layer submenu when clicking outside
@@ -92,7 +93,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Change Layer',
       action: 'layer',
       icon: <Layers size={14} />,
-      visible: can('layer'),
+      visible: !hideCardActions && object.type !== ItemType.CARD && can('layer'),
       hasSubmenu: true,
       separator: true
     },
@@ -131,7 +132,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: object.locked ? 'Unlock Position' : 'Lock Position',
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
-      visible: can('lock')
+      visible: !hideCardActions && object.type !== ItemType.CARD && can('lock')
     },
     {
       label: 'Flip Card',
@@ -143,7 +144,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Rotate 90°',
       action: 'rotate',
       icon: <RefreshCw size={14} />,
-      visible: can('rotate')
+      visible: !hideCardActions && object.type !== ItemType.CARD && can('rotate')
     },
     {
       label: 'To Hand',
@@ -155,13 +156,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Clone',
       action: 'clone',
       icon: <Copy size={14} />,
-      visible: can('clone')
+      visible: !hideCardActions && object.type !== ItemType.CARD && can('clone')
     },
     {
       label: 'Delete',
       action: 'delete',
       icon: <Trash2 size={14} />,
-      visible: can('delete')
+      visible: !hideCardActions && object.type !== ItemType.CARD && can('delete')
     },
   ];
 
@@ -195,7 +196,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="px-3 py-2 border-b border-slate-700 mb-1">
-            <span className="text-xs text-gray-400 font-bold uppercase truncate block max-w-[150px]">{object.name}</span>
+            <span className="text-xs text-gray-400 font-bold uppercase truncate block max-w-[150px]">
+              {object.type === ItemType.CARD && !(object as Card).faceUp ? '*****' : object.name}
+            </span>
         </div>
 
         {finalItems.map((item, idx) => {

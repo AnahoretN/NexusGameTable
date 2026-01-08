@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition } from '../types';
+import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility } from '../types';
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
@@ -98,6 +98,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     cardNamePosition?: CardNamePosition;
     searchFaceUp?: boolean;
     playTopFaceUp?: boolean;
+    searchWindowVisibility?: SearchWindowVisibility;
   }
 
   const [cardSettings, setCardSettings] = useState<CardSettings>(() => {
@@ -115,6 +116,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         cardNamePosition: deck.cardNamePosition,
         searchFaceUp: deck.searchFaceUp ?? true,
         playTopFaceUp: deck.playTopFaceUp ?? true,
+        searchWindowVisibility: deck.searchWindowVisibility,
       };
     }
     return {};
@@ -271,6 +273,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       (toSave as Deck).cardNamePosition = cardSettings.cardNamePosition;
       (toSave as Deck).searchFaceUp = cardSettings.searchFaceUp;
       (toSave as Deck).playTopFaceUp = cardSettings.playTopFaceUp;
+      (toSave as Deck).searchWindowVisibility = cardSettings.searchWindowVisibility;
     }
     onSave(toSave);
     onClose();
@@ -778,7 +781,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <Square size={14} /> Basic Settings
                 </h4>
 
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="grid grid-cols-2 gap-3 mb-2">
                   {/* Card Shape */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Card Shape</label>
@@ -807,7 +810,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="grid grid-cols-2 gap-3 mb-2">
                   {/* Card Width */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Card Width (px)</label>
@@ -834,23 +837,26 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
 
                 {/* Search Window and Play Top Card Settings */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 mb-2">
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">In Search Window</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">In Search Window (Players)</label>
                     <select
-                      value={cardSettings.searchFaceUp ?? true ? 'faceUp' : 'faceDown'}
-                      onChange={(e) => updateCardSettings('searchFaceUp', e.target.value === 'faceUp')}
+                      value={cardSettings.searchWindowVisibility ?? SearchWindowVisibility.FACE_UP}
+                      onChange={(e) => updateCardSettings('searchWindowVisibility', e.target.value as SearchWindowVisibility)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      <option value="faceUp">Face Up</option>
-                      <option value="faceDown">Face Down</option>
+                      <option value={SearchWindowVisibility.FACE_UP}>Face Up</option>
+                      <option value={SearchWindowVisibility.FACE_DOWN}>Face Down</option>
+                      <option value={SearchWindowVisibility.AS_GM}>As GM Sees</option>
+                      <option value={SearchWindowVisibility.LAST_STATE}>Last State (per player)</option>
+                      <option value={SearchWindowVisibility.SHARED_DECK}>Shared Deck (all players)</option>
                     </select>
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Play Top Card</label>
                     <select
-                      value={cardSettings.playTopFaceUp ?? true ? 'faceUp' : 'faceDown'}
+                      value={(cardSettings.playTopFaceUp ?? true) ? 'faceUp' : 'faceDown'}
                       onChange={(e) => updateCardSettings('playTopFaceUp', e.target.value === 'faceUp')}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >

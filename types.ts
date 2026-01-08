@@ -32,6 +32,14 @@ export enum CardOrientation {
   HORIZONTAL = 'HORIZONTAL' // Rotated 90 degrees clockwise (landscape)
 }
 
+export enum SearchWindowVisibility {
+  FACE_UP = 'FACE_UP',           // Always show face up
+  FACE_DOWN = 'FACE_DOWN',       // Always show face down
+  AS_GM = 'AS_GM',               // Same as GM sees (for players)
+  LAST_STATE = 'LAST_STATE',     // Remember per-player last state
+  SHARED_DECK = 'SHARED_DECK'    // Shared state across all players
+}
+
 export enum GridType {
   NONE = 'NONE',
   SQUARE = 'SQUARE',
@@ -126,8 +134,10 @@ export interface Deck extends GameItem {
   cardWidth?: number; // Default width for cards from this deck (undefined = use deck width)
   cardHeight?: number; // Default height for cards from this deck (undefined = use deck height)
   cardNamePosition?: CardNamePosition; // Where to show card name: 'top', 'bottom', or 'none' (default 'bottom')
-  searchFaceUp?: boolean; // Whether cards are shown face up in search window (default true)
+  searchFaceUp?: boolean; // DEPRECATED: Use searchWindowVisibility instead
   playTopFaceUp?: boolean; // Whether played top card is face up (default true)
+  searchWindowVisibility?: SearchWindowVisibility; // How cards are displayed in search window for players
+  perPlayerSearchFaceUp?: Record<string, boolean>; // Player ID -> their preferred face up setting (for 'lastState' mode)
 }
 
 export interface Token extends GameItem {
