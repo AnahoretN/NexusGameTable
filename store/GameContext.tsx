@@ -13,6 +13,69 @@ const generateUUID = () => {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 };
 
+// Helper function to create a Standard Deck with 54 cards
+const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
+  const deckId = generateUUID();
+  const cardIds: string[] = [];
+  const cards: Card[] = [];
+  const defaultShape = CardShape.POKER;
+  const defaultDims = CARD_SHAPE_DIMS[defaultShape];
+
+  for (let i = 0; i < 54; i++) {
+    const cid = generateUUID();
+    cardIds.push(cid);
+    const card: Card = {
+      id: cid,
+      type: ItemType.CARD,
+      x: 0, y: 0,
+      width: defaultDims.width,
+      height: defaultDims.height,
+      rotation: 0,
+      name: `Card ${i + 1}`,
+      content: `https://picsum.photos/seed/${cid}/${defaultDims.width}/${defaultDims.height}`,
+      location: CardLocation.DECK,
+      faceUp: false,
+      deckId: deckId,
+      locked: false,
+      isOnTable: true,
+      shape: defaultShape
+    };
+    cards.push(card);
+  }
+
+  const deck: Deck = {
+    id: deckId,
+    type: ItemType.DECK,
+    x: 0, y: 0, // Will be set by caller
+    width: defaultDims.width,
+    height: defaultDims.height,
+    rotation: 0,
+    name: 'Standard Deck',
+    content: '',
+    cardIds,
+    locked: false,
+    isOnTable: true,
+    allowedActions: ['draw', 'shuffleDeck', 'playTopCard', 'searchDeck', 'returnAll'],
+    actionButtons: ['draw', 'playTopCard', 'shuffleDeck', 'searchDeck'],
+    cardShape: defaultShape,
+    initialCardCount: cardIds.length,
+    piles: [
+      {
+        id: `${deckId}-discard`,
+        name: 'Discard',
+        deckId: deckId,
+        position: 'right',
+        cardIds: [],
+        faceUp: false,
+        visible: false,
+        size: 1
+      }
+    ]
+  };
+
+  return { deck, cards };
+};
+
 export interface ViewTransform {
   offset: { x: number; y: number };
   zoom: number;
@@ -635,14 +698,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Ref to track latest state for event listeners
   const stateRef = useRef(state);
-  
+  const initializedRef = useRef(false);
+
   useEffect(() => {
       stateRef.current = state;
   }, [state]);
 
-  // Initialize Default Board
+  // Initialize Default Board and Standard Deck
   useEffect(() => {
-    if (Object.keys(state.objects).length === 0 && isHost) {
+    if (!initializedRef.current && isHost && Object.keys(state.objects).length === 0) {
+        initializedRef.current = true;
+
+        // Create game board
         const boardId = 'demo-board';
         const board: Token = {
              id: boardId,
@@ -662,6 +729,30 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
              zIndex: -100
         };
         localDispatch({ type: 'ADD_OBJECT', payload: board });
+
+        // Create Standard Deck positioned in top-right corner
+        // Position: 10px from top, 60px from right sidebar
+        const SIDEBAR_WIDTH = 286;
+        const MARGIN_X = 80;
+        const MARGIN_Y = -80;
+        const { deck, cards } = createStandardDeck();
+
+        // Calculate world coordinates for top-right position
+        // screenX = worldX * zoom + offset.x
+        // We want screenX to be near right edge (windowWidth - SIDEBAR_WIDTH - MARGIN_X - deckWidth/2)
+        // With default offset.x = 0, zoom = 0.8:
+        // worldX = (screenX - offset.x) / zoom
+        const windowWidth = window.innerWidth;
+        const deckScreenWidth = windowWidth - SIDEBAR_WIDTH - MARGIN_X - (deck.width / 2);
+        const deckScreenY = MARGIN_Y + (deck.height / 2);
+
+        deck.x = deckScreenWidth / state.viewTransform.zoom - state.viewTransform.offset.x;
+        deck.y = deckScreenY / state.viewTransform.zoom - state.viewTransform.offset.y;
+
+        // Add all cards first
+        cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
+        // Then add the deck
+        localDispatch({ type: 'ADD_OBJECT', payload: deck });
     }
   }, [isHost]);
 
