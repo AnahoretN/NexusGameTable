@@ -404,7 +404,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Add card to TOP of deck (beginning of array) without shuffling
         const newCardIds = [card.id, ...deck.cardIds];
         const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
-        const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: false, x: deck.x, y: deck.y, isOnTable: true };
+        // Card is face up by default (GM sees actual state, players see based on deck settings)
+        const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true };
         return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard } };
     }
     case 'ADD_CARD_TO_TOP_OF_DECK': {
@@ -417,11 +418,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
 
         // Update card to be in deck
+        // Card is face up by default (GM sees actual state, players see based on deck settings)
         const updatedCard: Card = {
             ...card,
             location: CardLocation.DECK,
             deckId: deck.id,
-            faceUp: false,
+            faceUp: true,
             x: deck.x,
             y: deck.y,
             isOnTable: true
@@ -586,13 +588,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       updatedDeck.cardIds = [...allCardIds];
 
       // Update all cards to be back in deck
+      // Cards are face up by default (GM sees actual state, players see based on deck settings)
       allCardIds.forEach(cardId => {
         const card = state.objects[cardId] as Card;
         if (card) {
           newObjects[cardId] = {
             ...card,
             location: CardLocation.DECK,
-            faceUp: false,
+            faceUp: true,
             x: deck.x,
             y: deck.y,
             isOnTable: true,
