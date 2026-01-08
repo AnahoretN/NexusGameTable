@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr node)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe //c \"taskkill /PID 27732 /F\")",
+      "Bash(npm run dev)",
+      "Bash(cd:*)",
+      "Bash(cat:*)",
+      "Bash(tr:*)",
+      "Bash(node:*)",
+      "Bash(fold:*)",
+      "Bash(cmd.exe //c \"netstat -ano | findstr :5178\")",
+      "Bash(cmd.exe:*)",
+      "Bash(for:*)",
+      "Bash(do cmd.exe //c \"netstat -ano | findstr :$port | findstr LISTENING | awk ''{print $5}'' | xargs taskkill /F /PID 2>nul\")",
+      "Bash(done:*)"
+    ]
+  }
+}

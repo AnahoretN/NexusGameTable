@@ -1,0 +1,1030 @@
+import React, { useState, useEffect } from 'react';
+import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition } from '../types';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw } from 'lucide-react';
+
+interface ObjectSettingsModalProps {
+  object: TableObject;
+  onSave: (obj: TableObject) => void;
+  onClose: () => void;
+}
+
+// All available actions for Context Menu (sorted alphabetically)
+const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
+  { id: 'clone', label: 'Clone Object' },
+  { id: 'delete', label: 'Delete Object' },
+  { id: 'draw', label: 'Draw Card' },
+  { id: 'flip', label: 'Flip Card' },
+  { id: 'layer', label: 'Change Layer' },
+  { id: 'lock', label: 'Lock/Unlock Position' },
+  { id: 'playTopCard', label: 'Play Top Card' },
+  { id: 'returnAll', label: 'Return All Cards' },
+  { id: 'rotate', label: 'Rotate' },
+  { id: 'searchDeck', label: 'Search' },
+  { id: 'shuffleDeck', label: 'Shuffle Deck' },
+  { id: 'toHand', label: 'To Hand' },
+];
+
+// Actions that should NOT appear as quick action buttons (only in context menu)
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'returnAll'];
+
+// Check if an action can be shown as an action button
+function isActionButtonAllowed(action: ContextAction): boolean {
+  return !EXCLUDED_FROM_BUTTONS.includes(action);
+}
+
+// Helper to determine which actions are available as buttons for which object types
+function getButtonApplicableTypes(action: ContextAction): ItemType[] {
+  // Exclude actions that should only be in context menu
+  if (!isActionButtonAllowed(action)) return [];
+
+  switch (action) {
+    case 'draw':
+    case 'playTopCard':
+    case 'shuffleDeck':
+    case 'searchDeck':
+      return [ItemType.DECK];
+    case 'toHand':
+      return [ItemType.CARD];
+    case 'flip':
+      return [ItemType.CARD, ItemType.TOKEN];
+    case 'rotate':
+      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT];
+    default:
+      return [];
+  }
+}
+
+// Available click actions (all actions from AVAILABLE_ACTIONS + none)
+const CLICK_ACTIONS = [
+  { id: 'none' as const, label: 'None' },
+  ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+];
+
+type Tab = 'general' | 'actions' | 'piles' | 'cards';
+
+export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose }) => {
+  const [activeTab, setActiveTab] = useState<Tab>('general');
+  const [data, setData] = useState<TableObject>({ ...object });
+
+  // Initialize piles for decks
+  const deck = data as Deck;
+  const [piles, setPiles] = useState<CardPile[]>(
+    deck.type === ItemType.DECK ? (deck.piles || [
+      {
+        id: `${deck.id}-discard`,
+        name: 'Discard',
+        deckId: deck.id,
+        position: 'right',
+        cardIds: [],
+        faceUp: false,
+        visible: false,  // Hidden by default
+        size: 1
+      }
+    ]) : []
+  );
+
+  // Card settings for decks (settings that apply to cards belonging to this deck)
+  // These are stored on the deck object and inherited by its cards
+  interface CardSettings {
+    cardShape?: CardShape;
+    cardOrientation?: CardOrientation;
+    allowedActions?: ContextAction[];
+    allowedActionsForGM?: ContextAction[];
+    actionButtons?: ContextAction[];
+    singleClickAction?: ClickAction;
+    doubleClickAction?: ClickAction;
+    cardWidth?: number;
+    cardHeight?: number;
+    cardNamePosition?: CardNamePosition;
+    searchFaceUp?: boolean;
+    playTopFaceUp?: boolean;
+  }
+
+  const [cardSettings, setCardSettings] = useState<CardSettings>(() => {
+    if (deck.type === ItemType.DECK) {
+      return {
+        cardShape: deck.cardShape,
+        cardOrientation: deck.cardOrientation,
+        allowedActions: deck.cardAllowedActions,
+        allowedActionsForGM: deck.cardAllowedActionsForGM,
+        actionButtons: deck.cardActionButtons,
+        singleClickAction: deck.cardSingleClickAction,
+        doubleClickAction: deck.cardDoubleClickAction,
+        cardWidth: deck.cardWidth,
+        cardHeight: deck.cardHeight,
+        cardNamePosition: deck.cardNamePosition,
+        searchFaceUp: deck.searchFaceUp ?? true,
+        playTopFaceUp: deck.playTopFaceUp ?? true,
+      };
+    }
+    return {};
+  });
+
+  // Reset data when object changes
+  useEffect(() => {
+    setData({ ...object });
+    // Initialize piles for decks
+    if (object.type === ItemType.DECK) {
+      const deckObj = object as Deck;
+      setPiles(deckObj.piles || [
+        {
+          id: `${object.id}-discard`,
+          name: 'Discard',
+          deckId: object.id,
+          position: 'right',
+          cardIds: [],
+          faceUp: false,
+          visible: false,  // Hidden by default
+          size: 1
+        }
+      ]);
+      // Initialize card settings
+      setCardSettings({
+        cardShape: deckObj.cardShape,
+        cardOrientation: deckObj.cardOrientation,
+        allowedActions: deckObj.cardAllowedActions,
+        allowedActionsForGM: deckObj.cardAllowedActionsForGM,
+        actionButtons: deckObj.cardActionButtons,
+        singleClickAction: deckObj.cardSingleClickAction,
+        doubleClickAction: deckObj.cardDoubleClickAction,
+        cardWidth: deckObj.cardWidth,
+        cardHeight: deckObj.cardHeight,
+        cardNamePosition: deckObj.cardNamePosition,
+        searchFaceUp: deckObj.searchFaceUp ?? true,
+        playTopFaceUp: deckObj.playTopFaceUp ?? true,
+      });
+    }
+  }, [object]);
+
+  const update = (field: string, value: any) => {
+    setData(prev => ({ ...prev, [field]: value } as TableObject));
+  };
+
+  const toggleActionButton = (action: ContextAction) => {
+    // Cards don't have actionButtons - only decks do
+    if (isCard) return;
+    const current = (data as any).actionButtons || [];
+    if (current.includes(action)) {
+      update('actionButtons', current.filter((a: ContextAction) => a !== action));
+    } else {
+      update('actionButtons', [...current, action]);
+    }
+  };
+
+  // Card settings functions
+  const updateCardSettings = (field: keyof CardSettings, value: any) => {
+    setCardSettings(prev => ({ ...prev, [field]: value }));
+  };
+
+  const toggleCardActionButton = (action: ContextAction) => {
+    const current = cardSettings.actionButtons || [];
+    if (current.includes(action)) {
+      setCardSettings(prev => ({ ...prev, actionButtons: current.filter(a => a !== action) }));
+    } else {
+      setCardSettings(prev => ({ ...prev, actionButtons: [...current, action] }));
+    }
+  };
+
+  const toggleCardAllowedAction = (action: ContextAction, forGM: boolean) => {
+    const field = forGM ? 'allowedActionsForGM' : 'allowedActions';
+    const current = cardSettings[field];
+
+    if (current === undefined) {
+      // Currently all allowed, switch to "all except this one"
+      const allExcept = AVAILABLE_ACTIONS.filter(a => a.id !== action).map(a => a.id);
+      setCardSettings(prev => ({ ...prev, [field]: allExcept }));
+    } else if (current.includes(action)) {
+      // Remove this action
+      const updated = current.filter(a => a !== action);
+      // Keep empty array as empty array (none allowed)
+      setCardSettings(prev => ({ ...prev, [field]: updated }));
+    } else {
+      // Add this action
+      const updated = [...current, action];
+      setCardSettings(prev => ({ ...prev, [field]: updated }));
+    }
+  };
+
+  const isCardActionAllowed = (action: ContextAction, forGM: boolean) => {
+    const field = forGM ? 'allowedActionsForGM' : 'allowedActions';
+    const current = cardSettings[field];
+    // undefined = all allowed, [] = none allowed, specific array = only those allowed
+    return current === undefined || (current.length > 0 && current.includes(action));
+  };
+
+  const handleSave = () => {
+    // Helper to normalize permissions:
+    // undefined = all allowed (default for new objects)
+    // [] = none allowed (user explicitly disabled all)
+    // specific array = only those allowed
+    const allActionIds = AVAILABLE_ACTIONS.map(a => a.id);
+
+    // For players: only convert to undefined if contains ALL actions
+    let normalizedAllowedActions: ContextAction[] | undefined = (data as any).allowedActions;
+    if (normalizedAllowedActions && normalizedAllowedActions.length === allActionIds.length) {
+      // Check if it contains exactly all actions
+      const hasAll = allActionIds.every(id => normalizedAllowedActions?.includes(id));
+      if (hasAll) normalizedAllowedActions = undefined;
+    }
+    // Empty array stays as empty array (none allowed)
+
+    // For GM: only convert to undefined if contains ALL actions
+    let normalizedAllowedActionsForGM: ContextAction[] | undefined = (data as any).allowedActionsForGM;
+    if (normalizedAllowedActionsForGM && normalizedAllowedActionsForGM.length === allActionIds.length) {
+      const hasAll = allActionIds.every(id => normalizedAllowedActionsForGM?.includes(id));
+      if (hasAll) normalizedAllowedActionsForGM = undefined;
+    }
+    // Empty array stays as empty array (none allowed)
+
+    // Cards don't have action buttons or permissions - they inherit from deck
+    const toSave: TableObject = isCard ? data : {
+      ...data,
+      allowedActions: normalizedAllowedActions,
+      allowedActionsForGM: normalizedAllowedActionsForGM,
+      actionButtons: (data as any).actionButtons || []
+    };
+    // Add piles for decks
+    if (toSave.type === ItemType.DECK) {
+      (toSave as Deck).piles = piles;
+      // Normalize card settings
+      let normalizedCardAllowedActions: ContextAction[] | undefined = cardSettings.allowedActions;
+      if (normalizedCardAllowedActions && normalizedCardAllowedActions.length === allActionIds.length) {
+        const hasAll = allActionIds.every(id => normalizedCardAllowedActions?.includes(id));
+        if (hasAll) normalizedCardAllowedActions = undefined;
+      }
+
+      let normalizedCardAllowedActionsForGM: ContextAction[] | undefined = cardSettings.allowedActionsForGM;
+      if (normalizedCardAllowedActionsForGM && normalizedCardAllowedActionsForGM.length === allActionIds.length) {
+        const hasAll = allActionIds.every(id => normalizedCardAllowedActionsForGM?.includes(id));
+        if (hasAll) normalizedCardAllowedActionsForGM = undefined;
+      }
+
+      (toSave as Deck).cardShape = cardSettings.cardShape;
+      (toSave as Deck).cardOrientation = cardSettings.cardOrientation;
+      (toSave as Deck).cardAllowedActions = normalizedCardAllowedActions;
+      (toSave as Deck).cardAllowedActionsForGM = normalizedCardAllowedActionsForGM;
+      (toSave as Deck).cardActionButtons = cardSettings.actionButtons;
+      (toSave as Deck).cardSingleClickAction = cardSettings.singleClickAction;
+      (toSave as Deck).cardDoubleClickAction = cardSettings.doubleClickAction;
+      (toSave as Deck).cardWidth = cardSettings.cardWidth;
+      (toSave as Deck).cardHeight = cardSettings.cardHeight;
+      (toSave as Deck).cardNamePosition = cardSettings.cardNamePosition;
+      (toSave as Deck).searchFaceUp = cardSettings.searchFaceUp;
+      (toSave as Deck).playTopFaceUp = cardSettings.playTopFaceUp;
+    }
+    onSave(toSave);
+    onClose();
+  };
+
+  const isToken = data.type === ItemType.TOKEN;
+  const isBoard = isToken && (data as Token).shape === TokenShape.RECTANGLE;
+  const isDeck = data.type === ItemType.DECK;
+  const isCard = data.type === ItemType.CARD; // Cards don't have their own settings
+
+  // Pile management functions
+  const addPile = () => {
+    const newPile: CardPile = {
+      id: `${data.id}-pile-${Date.now()}`,
+      name: `Pile ${piles.length + 1}`,
+      deckId: data.id,
+      position: 'right',
+      cardIds: [],
+      faceUp: false,
+      visible: true,
+      size: 1
+    };
+    setPiles([...piles, newPile]);
+  };
+
+  const updatePile = (index: number, field: keyof CardPile, value: any) => {
+    const updated = [...piles];
+    updated[index] = { ...updated[index], [field]: value };
+    setPiles(updated);
+  };
+
+  const removePile = (index: number) => {
+    setPiles(piles.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
+      <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-700">
+          <h3 className="text-lg font-bold text-white">Settings: {object.name}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={20} /></button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-700">
+          <button
+            onClick={() => setActiveTab('general')}
+            className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+              activeTab === 'general'
+                ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            <Settings size={16} /> General
+          </button>
+          {!isCard && (
+            <button
+              onClick={() => setActiveTab('actions')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'actions'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Shield size={16} /> Actions
+            </button>
+          )}
+          {isDeck && (
+            <button
+              onClick={() => setActiveTab('piles')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'piles'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Layers size={16} /> Piles
+            </button>
+          )}
+          {isDeck && (
+            <button
+              onClick={() => setActiveTab('cards')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'cards'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Square size={16} /> Cards
+            </button>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+          {activeTab === 'general' && (
+            <div className="space-y-4">
+              {/* Name */}
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
+                <input
+                  value={data.name}
+                  onChange={e => update('name', e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                />
+              </div>
+
+              {/* Size */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Width</label>
+                  <input
+                    type="number"
+                    value={data.width}
+                    onChange={e => update('width', Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Height</label>
+                  <input
+                    type="number"
+                    value={data.height}
+                    onChange={e => update('height', Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Color (for tokens) */}
+              {isToken && !isBoard && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
+                  <input
+                    type="color"
+                    value={data.color || '#ffffff'}
+                    onChange={e => update('color', e.target.value)}
+                    className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                  />
+                </div>
+              )}
+
+              {/* Image URL (for standees) */}
+              {isToken && !isBoard && (data as Token).shape === TokenShape.STANDEE && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Image URL</label>
+                  <input
+                    value={data.content || ''}
+                    onChange={e => update('content', e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    placeholder="https://..."
+                  />
+                </div>
+              )}
+
+              {/* Grid Settings (for boards) */}
+              {isBoard && (
+                <div className="space-y-4 border-t border-slate-700 pt-4">
+                  <h4 className="text-sm font-bold text-purple-400">Grid Settings</h4>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Grid Type</label>
+                    <select
+                      value={(data as Token).gridType || GridType.NONE}
+                      onChange={e => update('gridType', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      {Object.values(GridType).map(v => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Grid Size (px)</label>
+                    <input
+                      type="number"
+                      value={(data as Token).gridSize || 50}
+                      onChange={e => update('gridSize', Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={(data as Token).snapToGrid || false}
+                      onChange={e => update('snapToGrid', e.target.checked)}
+                    />
+                    <span className="text-sm text-gray-300">Snap Objects to Grid</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'actions' && (
+            <div className="space-y-4">
+              {/* Context Menu Actions - with PL and GM toggle buttons */}
+              <div>
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+                  <Shield size={14} /> Context Menu Actions
+                </h4>
+
+                <div className="grid grid-cols-2 gap-1">
+                  {AVAILABLE_ACTIONS
+                    .filter(action => {
+                      // 'toHand' only applies to cards, not decks
+                      if (action.id === 'toHand' && isDeck) return false;
+                      // 'flip' only applies to cards and tokens, not decks
+                      if (action.id === 'flip' && isDeck) return false;
+                      return true;
+                    })
+                    .map((action) => {
+                    const isPlayerAllowed = (data as any).allowedActions === undefined || (data as any).allowedActions.includes(action.id);
+                    const isGMAllowed = (data as any).allowedActionsForGM === undefined || (data as any).allowedActionsForGM.includes(action.id);
+
+                    const togglePlayer = () => {
+                      const current = (data as any).allowedActions;
+                      if (isPlayerAllowed) {
+                        // Remove from player's allowed actions
+                        if (current && current.includes(action.id)) {
+                          const newActions = current.filter((a: ContextAction) => a !== action.id);
+                          // Keep empty array as empty array (none allowed)
+                          update('allowedActions', newActions);
+                        } else if (current === undefined) {
+                          update('allowedActions', AVAILABLE_ACTIONS.filter((a: typeof action) => a.id !== action.id).map((a: typeof action) => a.id));
+                        }
+                      } else {
+                        // Add to player's allowed actions
+                        const updated = current ? [...current, action.id] : [action.id];
+                        update('allowedActions', updated);
+                      }
+                    };
+
+                    const toggleGM = () => {
+                      const current = (data as any).allowedActionsForGM;
+                      if (isGMAllowed) {
+                        // Remove from GM's allowed actions
+                        if (current && current.includes(action.id)) {
+                          const newActions = current.filter((a: ContextAction) => a !== action.id);
+                          // Keep empty array as empty array (none allowed)
+                          update('allowedActionsForGM', newActions);
+                        } else if (current === undefined) {
+                          update('allowedActionsForGM', AVAILABLE_ACTIONS.filter((a: typeof action) => a.id !== action.id).map((a: typeof action) => a.id));
+                        }
+                      } else {
+                        // Add to GM's allowed actions
+                        const updated = current ? [...current, action.id] : [action.id];
+                        update('allowedActionsForGM', updated);
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={action.id}
+                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-700 transition-colors bg-slate-800 border border-slate-700"
+                      >
+                        <span className="text-gray-200 text-xs font-medium leading-tight flex-1 truncate">{action.label}</span>
+                        <button
+                          onClick={togglePlayer}
+                          className={`w-8 h-8 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
+                            isPlayerAllowed
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-900 text-gray-400 hover:text-gray-200'
+                          }`}
+                          title="Player"
+                        >
+                          PL
+                        </button>
+                        <button
+                          onClick={toggleGM}
+                          className={`w-8 h-8 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
+                            isGMAllowed
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-slate-900 text-gray-400 hover:text-gray-200'
+                          }`}
+                          title="Game Master"
+                        >
+                          GM
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action Buttons - 2 columns, max 4 selected */}
+              <div className="border-t border-slate-700 pt-4">
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+                  <Settings size={14} /> Action Buttons
+                  <span className="text-xs text-gray-500 font-normal">(max 4)</span>
+                </h4>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {AVAILABLE_ACTIONS.map((action) => {
+                    const applicableTypes = getButtonApplicableTypes(action.id);
+                    const isApplicable = applicableTypes.includes(data.type);
+                    if (!isApplicable) return null;
+
+                    const isSelected = ((data as any).actionButtons || []).includes(action.id);
+                    const selectedCount = ((data as any).actionButtons || []).length;
+                    const isMaxReached = selectedCount >= 4 && !isSelected;
+
+                    return (
+                      <label
+                        key={action.id}
+                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors border ${
+                          isSelected
+                            ? 'bg-purple-600/20 border-purple-500'
+                            : 'bg-slate-800 border-slate-700 hover:bg-slate-700'
+                        } ${isMaxReached ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isMaxReached}
+                          onChange={() => toggleActionButton(action.id)}
+                          className="w-4 h-4 rounded border-gray-500 bg-slate-900 text-purple-600 focus:ring-purple-500 flex-shrink-0"
+                        />
+                        <span className="text-gray-200 text-xs font-medium leading-tight">{action.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Click Actions */}
+              <div className="border-t border-slate-700 pt-4">
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+                  <MousePointer size={14} /> Mouse Click Actions
+                </h4>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Single Click */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Single Click</label>
+                    <select
+                      value={(data as any).singleClickAction || 'none'}
+                      onChange={e => update('singleClickAction', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      {CLICK_ACTIONS.map(action => (
+                        <option key={action.id} value={action.id}>{action.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Double Click */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Double Click</label>
+                    <select
+                      value={(data as any).doubleClickAction || 'none'}
+                      onChange={e => update('doubleClickAction', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      {CLICK_ACTIONS.map(action => (
+                        <option key={action.id} value={action.id}>{action.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'piles' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <Layers size={14} /> Card Piles
+                </h4>
+                <button
+                  onClick={addPile}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-medium rounded-lg transition-colors"
+                >
+                  <Plus size={14} /> Add Pile
+                </button>
+              </div>
+
+              {piles.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  No piles configured. Click "Add Pile" to create one.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {piles.map((pile, index) => (
+                    <div key={pile.id} className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <input
+                          type="text"
+                          value={pile.name}
+                          onChange={(e) => updatePile(index, 'name', e.target.value)}
+                          className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-white text-sm font-medium flex-1 mr-2"
+                          placeholder="Pile name"
+                        />
+                        <button
+                          onClick={() => removePile(index)}
+                          className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors"
+                          title="Remove pile"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Visible toggle */}
+                        <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                          <label className="text-xs text-gray-400">Visible</label>
+                          <button
+                            onClick={() => updatePile(index, 'visible', !pile.visible)}
+                            className={`w-10 h-5 rounded-full transition-colors ${
+                              pile.visible ? 'bg-green-600' : 'bg-slate-700'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                              pile.visible ? 'translate-x-5' : 'translate-x-0.5'
+                            }`} />
+                          </button>
+                        </div>
+
+                        {/* Face Up toggle */}
+                        <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                          <label className="text-xs text-gray-400">Face Up</label>
+                          <button
+                            onClick={() => updatePile(index, 'faceUp', !pile.faceUp)}
+                            className={`w-10 h-5 rounded-full transition-colors ${
+                              pile.faceUp ? 'bg-green-600' : 'bg-slate-700'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                              pile.faceUp ? 'translate-x-5' : 'translate-x-0.5'
+                            }`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Size dropdown */}
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">Size</label>
+                        <select
+                          value={pile.size ?? 1}
+                          onChange={(e) => updatePile(index, 'size', Number(e.target.value) as PileSize)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
+                        >
+                          <option value={1}>Full size</option>
+                          <option value={0.5}>Half size</option>
+                        </select>
+                      </div>
+
+                      {/* Position dropdown */}
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">Position</label>
+                        <select
+                          value={pile.position}
+                          onChange={(e) => updatePile(index, 'position', e.target.value as PilePosition)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
+                        >
+                          <option value="left">Left of deck</option>
+                          <option value="right">Right of deck</option>
+                          <option value="top">Above deck</option>
+                          <option value="bottom">Below deck</option>
+                          <option value="free">Free position</option>
+                        </select>
+                      </div>
+
+                      {/* Free position coordinates */}
+                      {pile.position === 'free' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">X Position</label>
+                            <input
+                              type="number"
+                              value={pile.x ?? 0}
+                              onChange={(e) => updatePile(index, 'x', Number(e.target.value))}
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">Y Position</label>
+                            <input
+                              type="number"
+                              value={pile.y ?? 0}
+                              onChange={(e) => updatePile(index, 'y', Number(e.target.value))}
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Cards count indicator */}
+                      <div className="text-xs text-gray-500 text-center">
+                        {pile.cardIds.length} card{pile.cardIds.length !== 1 ? 's' : ''} in this pile
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'cards' && (
+            <div className="space-y-4">
+              {/* Basic Settings - Card dimensions and name position */}
+              <div>
+                <h4 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
+                  <Square size={14} /> Basic Settings
+                </h4>
+
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  {/* Card Shape */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Card Shape</label>
+                    <select
+                      value={cardSettings.cardShape ?? CardShape.POKER}
+                      onChange={(e) => updateCardSettings('cardShape', e.target.value as CardShape)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      {Object.keys(CardShape).map(key => (
+                        <option key={key} value={key}>{key}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Card Orientation */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Card Orientation</label>
+                    <select
+                      value={cardSettings.cardOrientation ?? CardOrientation.VERTICAL}
+                      onChange={(e) => updateCardSettings('cardOrientation', e.target.value as CardOrientation)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      <option value={CardOrientation.VERTICAL}>Vertical</option>
+                      <option value={CardOrientation.HORIZONTAL}>Horizontal</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  {/* Card Width */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Card Width (px)</label>
+                    <input
+                      type="number"
+                      value={cardSettings.cardWidth ?? deck.width}
+                      onChange={(e) => updateCardSettings('cardWidth', e.target.value ? parseInt(e.target.value) : undefined)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      placeholder="Default"
+                    />
+                  </div>
+
+                  {/* Card Height */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Card Height (px)</label>
+                    <input
+                      type="number"
+                      value={cardSettings.cardHeight ?? deck.height}
+                      onChange={(e) => updateCardSettings('cardHeight', e.target.value ? parseInt(e.target.value) : undefined)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      placeholder="Default"
+                    />
+                  </div>
+                </div>
+
+                {/* Search Window and Play Top Card Settings */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">In Search Window</label>
+                    <select
+                      value={cardSettings.searchFaceUp ?? true ? 'faceUp' : 'faceDown'}
+                      onChange={(e) => updateCardSettings('searchFaceUp', e.target.value === 'faceUp')}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      <option value="faceUp">Face Up</option>
+                      <option value="faceDown">Face Down</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Play Top Card</label>
+                    <select
+                      value={cardSettings.playTopFaceUp ?? true ? 'faceUp' : 'faceDown'}
+                      onChange={(e) => updateCardSettings('playTopFaceUp', e.target.value === 'faceUp')}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      <option value="faceUp">Face Up</option>
+                      <option value="faceDown">Face Down</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Card Name Position */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Show Card Name</label>
+                  <select
+                    value={cardSettings.cardNamePosition ?? 'bottom'}
+                    onChange={(e) => updateCardSettings('cardNamePosition', e.target.value as CardNamePosition)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  >
+                    <option value="bottom">Bottom</option>
+                    <option value="top">Top</option>
+                    <option value="none">None</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-700 pt-4">
+              {/* Context Menu Actions - with PL and GM toggle buttons */}
+              <div>
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+                  <Shield size={14} /> Context Menu Actions for Cards
+                </h4>
+
+                <div className="grid grid-cols-2 gap-1">
+                  {AVAILABLE_ACTIONS
+                    .filter(action => {
+                      // Only show card-applicable actions
+                      if (action.id === 'draw' || action.id === 'playTopCard' ||
+                          action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
+                          action.id === 'returnAll') return false;
+                      return true;
+                    })
+                    .map((action) => {
+                    const isPlayerAllowed = isCardActionAllowed(action.id, false);
+                    const isGMAllowed = isCardActionAllowed(action.id, true);
+
+                    return (
+                      <div
+                        key={`card-${action.id}`}
+                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-700 transition-colors bg-slate-800 border border-slate-700"
+                      >
+                        <span className="text-gray-200 text-xs font-medium leading-tight flex-1 truncate">{action.label}</span>
+                        <button
+                          onClick={() => toggleCardAllowedAction(action.id, false)}
+                          className={`w-8 h-8 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
+                            isPlayerAllowed
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-900 text-gray-400 hover:text-gray-200'
+                          }`}
+                          title="Player"
+                        >
+                          PL
+                        </button>
+                        <button
+                          onClick={() => toggleCardAllowedAction(action.id, true)}
+                          className={`w-8 h-8 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
+                            isGMAllowed
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-slate-900 text-gray-400 hover:text-gray-200'
+                          }`}
+                          title="Game Master"
+                        >
+                          GM
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action Buttons - 2 columns, max 4 selected */}
+              <div className="border-t border-slate-700 pt-4">
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+                  <Settings size={14} /> Action Buttons for Cards
+                  <span className="text-xs text-gray-500 font-normal">(max 4)</span>
+                </h4>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {AVAILABLE_ACTIONS
+                    .filter(action => {
+                      // Only card-applicable actions
+                      if (action.id === 'draw' || action.id === 'playTopCard' ||
+                          action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
+                          action.id === 'returnAll' || action.id === 'delete') return false;
+                      return true;
+                    })
+                    .map((action) => {
+                    const isSelected = (cardSettings.actionButtons || []).includes(action.id);
+                    const selectedCount = (cardSettings.actionButtons || []).length;
+                    const isMaxReached = selectedCount >= 4 && !isSelected;
+
+                    return (
+                      <label
+                        key={`card-btn-${action.id}`}
+                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors border ${
+                          isSelected
+                            ? 'bg-purple-600/20 border-purple-500'
+                            : 'bg-slate-800 border-slate-700 hover:bg-slate-700'
+                        } ${isMaxReached ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isMaxReached}
+                          onChange={() => toggleCardActionButton(action.id)}
+                          className="w-4 h-4 rounded border-gray-500 bg-slate-900 text-purple-600 focus:ring-purple-500 flex-shrink-0"
+                        />
+                        <span className="text-gray-200 text-xs font-medium leading-tight">{action.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Click Actions */}
+              <div className="border-t border-slate-700 pt-4">
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+                  <MousePointer size={14} /> Mouse Click Actions for Cards
+                </h4>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Single Click */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Single Click</label>
+                    <select
+                      value={cardSettings.singleClickAction || 'none'}
+                      onChange={(e) => updateCardSettings('singleClickAction', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      {CLICK_ACTIONS.map(action => (
+                        <option key={action.id} value={action.id}>{action.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Double Click */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Double Click</label>
+                    <select
+                      value={cardSettings.doubleClickAction || 'none'}
+                      onChange={(e) => updateCardSettings('doubleClickAction', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      {CLICK_ACTIONS.map(action => (
+                        <option key={action.id} value={action.id}>{action.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 p-4 border-t border-slate-700">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded">Cancel</button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
+          >
+            <Check size={16} /> Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

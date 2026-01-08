@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Always visible scrollbar with full width */
+::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+::-webkit-scrollbar-track {
+  background: #1a202c;
+  border-left: 1px solid #2d3748;
+}
+::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+  border: 3px solid #1a202c;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+body {
+  background-color: #1a202c;
+  color: white;
+  margin: 0;
+  overflow: hidden;
+}

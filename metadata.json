@@ -1,0 +1,5 @@
+{
+  "name": "Nexus Game Table v0.0.5",
+  "description": "A universal virtual tabletop (VTT) for board games focusing on card mechanics, decks, and customization. Features GM/Player modes and a comfortable card hand interface.",
+  "requestFramePermissions": []
+}
