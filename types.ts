@@ -138,6 +138,7 @@ export interface Deck extends GameItem {
   playTopFaceUp?: boolean; // Whether played top card is face up (default true)
   searchWindowVisibility?: SearchWindowVisibility; // How cards are displayed in search window for players
   perPlayerSearchFaceUp?: Record<string, boolean>; // Player ID -> their preferred face up setting (for 'lastState' mode)
+  gmSearchFaceUp?: Record<string, boolean>; // Card ID -> GM's preferred face up setting in search window
 }
 
 export interface Token extends GameItem {

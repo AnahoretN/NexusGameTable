@@ -23,9 +23,11 @@ interface CardProps {
   cardHeight?: number;
   cardNamePosition?: CardNamePosition;
   cardOrientation?: CardOrientation;
+  // When true, orientation affects dimensions but does NOT rotate the card content
+  disableRotationTransform?: boolean;
 }
 
-export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation }) => {
+export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform }) => {
   const shape = card.shape || CardShape.POKER;
   const orientation = cardOrientation ?? CardOrientation.VERTICAL;
 
@@ -184,8 +186,9 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           height: displayHeight,
           boxSizing: 'border-box',
           // Apply rotation for horizontal orientation (90 degrees clockwise = -90deg CSS)
+          // Unless disableRotationTransform is true (for search window, hand, etc.)
           // But the content stays oriented the same way - only the shape rotates
-          transform: orientation === CardOrientation.HORIZONTAL ? 'rotate(-90deg)' : undefined,
+          transform: !disableRotationTransform && orientation === CardOrientation.HORIZONTAL ? 'rotate(-90deg)' : undefined,
           // For geometric shapes that get clipped, we use a drop-shadow filter to simulate a border/shadow
           // since the actual CSS border is clipped away.
           filter: isGeometric

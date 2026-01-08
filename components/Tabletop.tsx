@@ -2067,6 +2067,13 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.CARD) {
                     const card = obj as CardType;
                     const cardSettings = getCardSettings(card);
+                    // For horizontal orientation, swap width and height for display
+                    const isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
+                    const actualCardWidth = card.width ?? cardSettings.cardWidth ?? 100;
+                    const actualCardHeight = card.height ?? cardSettings.cardHeight ?? 140;
+                    const displayWidth = isHorizontal ? actualCardHeight : actualCardWidth;
+                    const displayHeight = isHorizontal ? actualCardWidth : actualCardHeight;
+
                     return (
                         <div
                             key={obj.id}
@@ -2081,10 +2088,11 @@ export const Tabletop: React.FC = () => {
                                 onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
                                 showActionButtons={true}
                                 actionButtons={cardSettings.actionButtons}
-                                cardWidth={cardSettings.cardWidth}
-                                cardHeight={cardSettings.cardHeight}
+                                overrideWidth={displayWidth}
+                                overrideHeight={displayHeight}
                                 cardNamePosition={cardSettings.cardNamePosition}
                                 cardOrientation={cardSettings.cardOrientation}
+                                disableRotationTransform={true}
                                 onActionButtonClick={(action) => {
                                     switch (action) {
                                         case 'flip':

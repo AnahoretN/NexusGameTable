@@ -63,6 +63,7 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = []) =
 export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, onClose }) => {
   const { state, dispatch } = useGame();
   const lastDropIndexRef = useRef<number | null>(null);
+  const gmInitializedRef = useRef(false);
 
   const [cardOrder, setCardOrder] = useState<string[]>(
     pile ? pile.cardIds : deck.cardIds
@@ -95,12 +96,45 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const isGM = currentPlayer?.isGM ?? false;
   const visibility = deck.searchWindowVisibility ?? SearchWindowVisibility.FACE_UP;
 
+  // Track GM flip states locally for immediate updates (synced with deck.gmSearchFaceUp)
+  const [gmFlipStates, setGmFlipStates] = useState<Record<string, boolean>>({});
+
+  // Reset initialization flag when deck changes
+  useEffect(() => {
+    gmInitializedRef.current = false;
+  }, [deck.id]);
+
+  // Initialize GM state on first open - set all cards to face up if not set
+  // Use a ref to ensure we only initialize once, not on every deck.gmSearchFaceUp change
+  useEffect(() => {
+    if (isGM && !gmInitializedRef.current) {
+      if (!deck.gmSearchFaceUp) {
+        // First time - initialize all cards as face up
+        const initialStates: Record<string, boolean> = {};
+        cardOrder.forEach(cardId => {
+          const card = state.objects[cardId] as Card;
+          if (card) {
+            initialStates[cardId] = true; // All cards start face up for GM
+          }
+        });
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: deck.id, gmSearchFaceUp: initialStates }
+        });
+        setGmFlipStates(initialStates);
+      } else {
+        // Sync with deck state
+        setGmFlipStates(deck.gmSearchFaceUp);
+      }
+      gmInitializedRef.current = true;
+    }
+  }, [isGM]);
+
   // Determine if a card should be shown face up based on visibility mode
   const getCardFaceUp = useCallback((card: Card): boolean => {
-    // For GM: always show actual card state (cards in deck remember their state)
+    // For GM: use stored flip state (defaults to true)
     if (isGM) {
-      // First time opening - show face up, then remember actual state
-      return card.faceUp;
+      return gmFlipStates[card.id] ?? true;
     }
 
     // For Players: depends on visibility setting
@@ -130,16 +164,16 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       default:
         return card.faceUp;
     }
-  }, [isGM, visibility, playerFlipStates, deck.perPlayerSearchFaceUp, currentPlayerId]);
+  }, [isGM, gmFlipStates, visibility, playerFlipStates, deck.perPlayerSearchFaceUp, currentPlayerId]);
 
   const isPile = !!pile;
   const title = isPile ? `${pile.name} - ${deck.name}` : deck.name;
 
   const cards = useMemo(() =>
     cardOrder.map(id => state.objects[id] as Card).filter(Boolean),
-    // Include cardOrder, playerFlipStates, and trigger updates when card data changes
+    // Include cardOrder, playerFlipStates, gmFlipStates, and trigger updates when card data changes
     // Using JSON string as a simple way to detect any change in card objects
-    [cardOrder, playerFlipStates, JSON.stringify(cardOrder.map(id => state.objects[id]))]
+    [cardOrder, playerFlipStates, gmFlipStates, JSON.stringify(cardOrder.map(id => state.objects[id]))]
   );
 
   const cardActionButtons = deck.cardActionButtons || [];
@@ -158,15 +192,32 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   }, [deck.cardOrientation, baseCardWidth]);
 
   const handleFlip = useCallback((cardId: string) => {
-    // For LAST_STATE mode, track player's flip state
-    if (visibility === SearchWindowVisibility.LAST_STATE && !isGM) {
+    // For GM: track flip state to remember GM's preferences
+    if (isGM) {
+      const currentState = gmFlipStates[cardId] ?? true;
+      const newState = !currentState;
+      // Update local state immediately for UI responsiveness
+      setGmFlipStates(prev => {
+        const updated = { ...prev, [cardId]: newState };
+        // Also save to deck for persistence across sessions
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: deck.id, gmSearchFaceUp: updated }
+        });
+        return updated;
+      });
+      dispatch({ type: 'FLIP_CARD', payload: { cardId } });
+    } else if (visibility === SearchWindowVisibility.LAST_STATE) {
+      // For LAST_STATE mode, track player's flip state
       setPlayerFlipStates(prev => {
         const currentState = prev[cardId] ?? true; // Default to true (face up)
         return { ...prev, [cardId]: !currentState };
       });
+      dispatch({ type: 'FLIP_CARD', payload: { cardId } });
+    } else {
+      dispatch({ type: 'FLIP_CARD', payload: { cardId } });
     }
-    dispatch({ type: 'FLIP_CARD', payload: { cardId } });
-  }, [dispatch, visibility, isGM]);
+  }, [dispatch, visibility, isGM, gmFlipStates, deck.id]);
 
   const handleToHand = useCallback((cardId: string) => {
     dispatch({
@@ -230,8 +281,20 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
     switch(action) {
       case 'flip':
-        // For LAST_STATE mode, track player's flip state
-        if (visibility === SearchWindowVisibility.LAST_STATE && !isGM) {
+        // For GM: track flip state to remember GM's preferences
+        if (isGM) {
+          const currentState = gmFlipStates[object.id] ?? true;
+          const newState = !currentState;
+          setGmFlipStates(prev => {
+            const updated = { ...prev, [object.id]: newState };
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: deck.id, gmSearchFaceUp: updated }
+            });
+            return updated;
+          });
+        } else if (visibility === SearchWindowVisibility.LAST_STATE) {
+          // For LAST_STATE mode, track player's flip state
           setPlayerFlipStates(prev => {
             const currentState = prev[object.id] ?? true;
             return { ...prev, [object.id]: !currentState };
@@ -284,7 +347,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, dispatch, state.activePlayerId, cardOrder, isPile, pile, deck, visibility, isGM]);
+  }, [contextMenu, dispatch, state.activePlayerId, cardOrder, isPile, pile, deck, visibility, isGM, gmFlipStates, deck.id]);
 
   const resetDragState = useCallback(() => {
     lastDropIndexRef.current = null;
@@ -609,6 +672,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                       overrideHeight={cardHeight}
                       cardNamePosition={deck.cardNamePosition}
                       cardOrientation={deck.cardOrientation}
+                      disableRotationTransform={true}
                     />
 
                     {buttons.length > 0 && (
@@ -668,9 +732,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             </button>
             <button
               onClick={() => {
-                // Flip all cards
+                // Flip all cards using handleFlip to properly track GM states
                 cards.forEach(card => {
-                  dispatch({ type: 'FLIP_CARD', payload: { cardId: card.id } });
+                  handleFlip(card.id);
                 });
               }}
               className="px-3 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors flex items-center gap-1"

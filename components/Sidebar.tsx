@@ -163,7 +163,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
                       name: `Card ${i+1}`,
                       content: `https://picsum.photos/seed/${cid}/${defaultDims.width}/${defaultDims.height}`,
                       location: CardLocation.DECK,
-                      faceUp: false,
+                      faceUp: true,  // Face up by default (GM sees actual state, players see based on deck settings)
                       deckId: id,
                       locked: false,
                       isOnTable: true,
@@ -962,6 +962,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
                                             cardHeight={cardSettings.cardHeight}
                                             cardNamePosition={cardSettings.cardNamePosition}
                                             cardOrientation={cardSettings.cardOrientation}
+                                            disableRotationTransform={true}
                                         />
 
                                         {/* Action buttons overlay - use deck settings if available */}
