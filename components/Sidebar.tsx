@@ -682,7 +682,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
         onMouseUp={handleMouseUp}
     >
         <div className="p-4 border-b border-slate-700 bg-slate-800">
-            <h2 className="text-xl font-bold text-wood-400 mb-2 flex items-center gap-2">
+            <h2 className="text-base font-bold text-wood-400 mb-2 flex items-center gap-2">
                 <Dices className="text-purple-400" /> Nexus Game Table v0.0.5
             </h2>
             
