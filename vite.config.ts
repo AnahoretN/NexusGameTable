@@ -19,9 +19,14 @@ export default defineConfig({
   define: {
     'process.env': {}
   },
+  base: '/NexusGameTable/', // GitHub Pages repository name
   server: {
     port: 5177,
     host: true,
     strictPort: true,
+  },
+  build: {
+    outDir: 'docs',
+    emptyOutDir: true,
   },
 });

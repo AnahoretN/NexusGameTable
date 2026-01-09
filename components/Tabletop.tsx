@@ -593,7 +593,6 @@ export const Tabletop: React.FC = () => {
 
   // Execute a click action on an object
   const executeClickAction = useCallback((obj: TableObject, action: string) => {
-    console.log('executeClickAction called:', action, 'object type:', obj.type);
     if (!action || action === 'none') return;
 
     switch (action) {
@@ -655,67 +654,108 @@ export const Tabletop: React.FC = () => {
         break;
       case 'returnAll':
         // Return cards that belong to other decks back to their original decks
-        // AND return all cards of THIS deck from hands, table, and all piles
+        // AND return all cards of THIS deck from hands, table, and ALL piles (own and other decks')
         if (obj.type === ItemType.DECK) {
           const currentDeck = obj as DeckType;
 
-          console.log('=== RETURN ALL (ClickAction) ===');
-          console.log('Current deck:', currentDeck.id, currentDeck.name);
-          console.log('Cards in current deck:', currentDeck.cardIds.length);
 
-          // Collect all card IDs in this deck (main deck + piles)
-          const cardIdsInDeck = new Set(currentDeck.cardIds);
-          currentDeck.piles?.forEach(pile => {
-            pile.cardIds.forEach(id => cardIdsInDeck.add(id));
-          });
+          // Collect all card IDs in this deck's MAIN deck only (not piles)
+          const cardIdsInMainDeck = new Set(currentDeck.cardIds);
 
-          console.log('Total cards in deck + piles:', cardIdsInDeck.size);
-
-          // Group 1: Cards in current deck that belong to OTHER decks -> return them to their original decks
+          // Group 1: Cards in current deck (main + piles) that belong to OTHER decks -> return them
           const cardsByOriginalDeck: Record<string, string[]> = {};
           const cardsToDelete: string[] = [];
 
-          Object.values(state.objects).forEach(o => {
-            if (o.type === ItemType.CARD && cardIdsInDeck.has(o.id)) {
-              const card = o as CardType;
-              // If card belongs to a different deck
-              if (card.deckId && card.deckId !== currentDeck.id) {
+          // Check main deck for foreign cards
+          currentDeck.cardIds.forEach(cardId => {
+            const card = state.objects[cardId] as CardType;
+            if (card && card.deckId && card.deckId !== currentDeck.id) {
+              const originalDeck = state.objects[card.deckId] as DeckType | undefined;
+              if (originalDeck && originalDeck.type === ItemType.DECK) {
+                if (!cardsByOriginalDeck[card.deckId]) {
+                  cardsByOriginalDeck[card.deckId] = [];
+                }
+                cardsByOriginalDeck[card.deckId].push(card.id);
+              } else {
+                cardsToDelete.push(card.id);
+              }
+            }
+          });
+
+          // Check this deck's piles for foreign cards
+          currentDeck.piles?.forEach(pile => {
+            pile.cardIds.forEach(cardId => {
+              const card = state.objects[cardId] as CardType;
+              if (card && card.deckId && card.deckId !== currentDeck.id) {
                 const originalDeck = state.objects[card.deckId] as DeckType | undefined;
                 if (originalDeck && originalDeck.type === ItemType.DECK) {
                   if (!cardsByOriginalDeck[card.deckId]) {
                     cardsByOriginalDeck[card.deckId] = [];
                   }
-                  cardsByOriginalDeck[card.deckId].push(card.id);
+                  if (!cardsByOriginalDeck[card.deckId].includes(card.id)) {
+                    cardsByOriginalDeck[card.deckId].push(card.id);
+                  }
                 } else {
-                  cardsToDelete.push(card.id);
+                  if (!cardsToDelete.includes(card.id)) {
+                    cardsToDelete.push(card.id);
+                  }
                 }
+              }
+            });
+          });
+
+          // Group 2: ALL cards of THIS deck from everywhere (hands, table, ALL piles including own and other decks')
+          const cardsOfThisDeck: string[] = [];
+
+          // First, find cards from this deck's OWN piles that belong to this deck
+          const cardsFromOwnPiles: string[] = [];
+
+          currentDeck.piles?.forEach(pile => {
+            pile.cardIds.forEach(cardId => {
+              const card = state.objects[cardId] as CardType;
+              if (card && card.deckId === currentDeck.id) {
+                if (!cardsFromOwnPiles.includes(cardId)) {
+                  cardsFromOwnPiles.push(cardId);
+                }
+              }
+            });
+          });
+
+          // Add cards from own piles to cardsOfThisDeck
+          cardsFromOwnPiles.forEach(cardId => {
+            if (!cardsOfThisDeck.includes(cardId)) {
+              cardsOfThisDeck.push(cardId);
+            }
+          });
+
+          // Find cards from hands, table, and OTHER decks' piles
+          let allCardsWithThisDeckId = 0;
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.CARD && o.deckId === currentDeck.id) {
+              allCardsWithThisDeckId++;
+              const card = o as CardType;
+              // Skip cards already in this deck's MAIN deck
+              if (cardIdsInMainDeck.has(card.id)) return;
+              // Skip cards from own piles (already added)
+              if (cardsFromOwnPiles.includes(card.id)) return;
+              // Card is in hand, on table, or in another deck's pile
+              if (!cardsOfThisDeck.includes(card.id)) {
+                cardsOfThisDeck.push(card.id);
               }
             }
           });
 
-          // Group 2: Cards of THIS deck from hands, table, and ALL piles (including other decks' piles)
-          const cardsOfThisDeck: string[] = [];
-
-          Object.values(state.objects).forEach(o => {
-            if (o.type === ItemType.CARD && o.deckId === currentDeck.id) {
-              const card = o as CardType;
-              // Skip cards already in this deck
-              if (cardIdsInDeck.has(card.id)) return;
-              // Card is in hand, on table, or in a pile
-              cardsOfThisDeck.push(card.id);
-            }
-          });
-
-          // Also check ALL piles from ALL decks for cards of this deck
+          // Also check ALL other decks for cards of this deck
           Object.values(state.objects).forEach(o => {
             if (o.type === ItemType.DECK) {
               const deck = o as DeckType;
-              // Skip current deck (already processed)
+              // Skip current deck
               if (deck.id === currentDeck.id) return;
 
               // Check main deck
               deck.cardIds.forEach(cardId => {
-                if (cardId !== currentDeck.id && state.objects[cardId]?.deckId === currentDeck.id) {
+                const card = state.objects[cardId] as CardType;
+                if (card?.deckId === currentDeck.id) {
                   if (!cardsOfThisDeck.includes(cardId)) {
                     cardsOfThisDeck.push(cardId);
                   }
@@ -725,7 +765,8 @@ export const Tabletop: React.FC = () => {
               // Check piles
               deck.piles?.forEach(pile => {
                 pile.cardIds.forEach(cardId => {
-                  if (state.objects[cardId]?.deckId === currentDeck.id) {
+                  const card = state.objects[cardId] as CardType;
+                  if (card?.deckId === currentDeck.id) {
                     if (!cardsOfThisDeck.includes(cardId)) {
                       cardsOfThisDeck.push(cardId);
                     }
@@ -735,11 +776,8 @@ export const Tabletop: React.FC = () => {
             }
           });
 
-          console.log('Foreign cards in this deck to return:', Object.values(cardsByOriginalDeck).flat().length);
-          console.log('Cards of this deck to return from hands/table/piles:', cardsOfThisDeck.length);
-          console.log('Cards to delete (no original deck):', cardsToDelete.length);
 
-          // First, remove foreign cards from current deck and piles
+          // Step 1: Remove foreign cards from current deck and piles
           const allForeignCardsToReturn = [...Object.values(cardsByOriginalDeck).flat(), ...cardsToDelete];
 
           if (allForeignCardsToReturn.length > 0) {
@@ -763,46 +801,57 @@ export const Tabletop: React.FC = () => {
             }
           }
 
-          // Remove cards of this deck from other decks and piles
+          // Step 2: Move cards from this deck's OWN piles to the main deck
+          if (cardsFromOwnPiles.length > 0) {
+            // Remove from piles AND add to main deck in a single update
+            const updatedPiles = currentDeck.piles?.map(pile => ({
+              ...pile,
+              cardIds: pile.cardIds.filter(id => !cardsFromOwnPiles.includes(id))
+            })) || [];
+
+            // Add cards from own piles to the beginning of main deck
+            const newCardIds = [...cardsFromOwnPiles, ...currentDeck.cardIds];
+
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: currentDeck.id, cardIds: newCardIds, piles: updatedPiles }
+            });
+          }
+
+          // Step 3: Remove cards of this deck from other decks and piles
           Object.values(state.objects).forEach(o => {
             if (o.type === ItemType.DECK) {
               const deck = o as DeckType;
               if (deck.id === currentDeck.id) return;
 
               const cardsInThisDeck = deck.cardIds.filter(id => cardsOfThisDeck.includes(id));
-              const cardsInThisDeckPiles: Record<string, string[]> = {};
 
               deck.piles?.forEach(pile => {
                 const cardsInPile = pile.cardIds.filter(id => cardsOfThisDeck.includes(id));
-                if (cardsInPile.length > 0) {
-                  cardsInThisDeckPiles[pile.id] = cardsInPile;
-                }
-              });
+                if (cardsInPile.length > 0 || cardsInThisDeck.length > 0) {
+                  // Remove from main deck
+                  const newMainCardIds = deck.cardIds.filter(id => !cardsOfThisDeck.includes(id));
+                  dispatch({
+                    type: 'UPDATE_OBJECT',
+                    payload: { id: deck.id, cardIds: newMainCardIds }
+                  });
 
-              if (cardsInThisDeck.length > 0 || Object.keys(cardsInThisDeckPiles).length > 0) {
-                // Remove from main deck
-                const newCardIds = deck.cardIds.filter(id => !cardsOfThisDeck.includes(id));
-                dispatch({
-                  type: 'UPDATE_OBJECT',
-                  payload: { id: deck.id, cardIds: newCardIds }
-                });
+                  // Remove from this pile
+                  const updatedPiles = deck.piles?.map(p => ({
+                    ...p,
+                    cardIds: p.id === pile.id ? p.cardIds.filter(id => !cardsOfThisDeck.includes(id)) : p.cardIds
+                  })) || [];
 
-                // Remove from piles
-                if (deck.piles) {
-                  const updatedPiles = deck.piles.map(pile => ({
-                    ...pile,
-                    cardIds: pile.cardIds.filter(id => !cardsOfThisDeck.includes(id))
-                  }));
                   dispatch({
                     type: 'UPDATE_OBJECT',
                     payload: { id: deck.id, piles: updatedPiles }
                   });
                 }
-              }
+              });
             }
           });
 
-          // Now return cards to their original decks
+          // Step 4: Return foreign cards to their original decks
           Object.keys(cardsByOriginalDeck).forEach(originalDeckId => {
             const cardIds = cardsByOriginalDeck[originalDeckId];
             cardIds.forEach(cardId => {
@@ -810,27 +859,17 @@ export const Tabletop: React.FC = () => {
             });
           });
 
-          // Delete cards whose original deck doesn't exist
+          // Step 5: Delete cards whose original deck doesn't exist
           cardsToDelete.forEach(cardId => {
             dispatch({ type: 'DELETE_OBJECT', payload: { id: cardId } });
           });
 
-          // Return cards of this deck back to this deck
-          cardsOfThisDeck.forEach(cardId => {
+          // Step 6: Return remaining cards of this deck back to this deck (from hands, table, other decks' piles)
+          // Filter out cards from own piles (already moved)
+          const cardsToReturn = cardsOfThisDeck.filter(id => !cardsFromOwnPiles.includes(id));
+          cardsToReturn.forEach(cardId => {
             dispatch({ type: 'RETURN_TO_DECK', payload: { cardId: cardId } });
           });
-
-          // Count final cards
-          setTimeout(() => {
-            console.log('=== AFTER RETURN (ClickAction) ===');
-            Object.keys(cardsByOriginalDeck).forEach(originalDeckId => {
-              const deck = state.objects[originalDeckId] as DeckType;
-              if (deck) {
-                console.log(`Deck ${originalDeckId} (${deck.name}): ${deck.cardIds.length} cards`);
-              }
-            });
-            console.log('Current deck after:', currentDeck.id, '-', (state.objects[currentDeck.id] as DeckType)?.cardIds.length, 'cards');
-          }, 100);
         }
         break;
       case 'toHand':
@@ -854,6 +893,12 @@ export const Tabletop: React.FC = () => {
         break;
       case 'lock':
         dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } });
+        break;
+      case 'layerUp':
+        dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } });
+        break;
+      case 'layerDown':
+        dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } });
         break;
     }
   }, [dispatch, state.activePlayerId, state.objects]);
@@ -1367,268 +1412,21 @@ export const Tabletop: React.FC = () => {
   };
 
   const executeMenuAction = (action: string) => {
-      console.log('executeMenuAction called:', action);
       if (!contextMenu) return;
       const { object } = contextMenu;
 
+      // Actions specific to context menu
       switch(action) {
           case 'configure':
               setSettingsModalObj(object);
-              break;
-          case 'lock':
-              dispatch({ type: 'TOGGLE_LOCK', payload: { id: object.id }});
-              break;
-          case 'flip':
-              dispatch({ type: 'FLIP_CARD', payload: { cardId: object.id }});
-              break;
-          case 'rotate':
-              dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: 90 }});
-              break;
-          case 'toHand':
-              dispatch({
-                  type: 'UPDATE_OBJECT',
-                  payload: {
-                      id: object.id,
-                      location: CardLocation.HAND,
-                      ownerId: state.activePlayerId,
-                      isOnTable: false
-                  }
-              });
-              break;
-          case 'clone':
-              dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id }});
-              break;
+              return;
           case 'delete':
               setDeleteCandidateId(object.id);
-              break;
-          case 'layerUp':
-              dispatch({ type: 'MOVE_LAYER_UP', payload: { id: object.id }});
-              break;
-          case 'layerDown':
-              dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: object.id }});
-              break;
-          case 'draw':
-              dispatch({ type: 'DRAW_CARD', payload: { deckId: object.id, playerId: state.activePlayerId }});
-              break;
-          case 'playTopCard':
-              // Take the top card from deck and place it on the table at deck position with offset
-              const deck = object as any;
-              if (deck.cardIds && deck.cardIds.length > 0) {
-                  const topCardId = deck.cardIds[0]; // Top card is first element (index 0)
-                  // Remove from deck
-                  const newCardIds = deck.cardIds.slice(1);
-                  // Update deck
-                  dispatch({
-                      type: 'UPDATE_OBJECT',
-                      payload: {
-                          id: deck.id,
-                          cardIds: newCardIds
-                      }
-                  });
-                  // Update card - place it at deck position with slight offset down-left, use playTopFaceUp setting
-                  const faceUp = deck.playTopFaceUp ?? true;
-                  dispatch({
-                      type: 'UPDATE_OBJECT',
-                      payload: {
-                          id: topCardId,
-                          location: CardLocation.TABLE,
-                          x: deck.x + 10,
-                          y: deck.y + 10,
-                          faceUp: faceUp,
-                          zIndex: (deck.zIndex || 0) + 1
-                      }
-                  });
-              }
-              break;
-          case 'shuffleDeck':
-              dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: object.id }});
-              break;
-          case 'searchDeck':
-              setSearchModalDeck(object as DeckType);
-              setSearchModalPile(undefined);
-              break;
-          case 'returnAll':
-              // Return cards that belong to other decks back to their original decks
-              // AND return all cards of THIS deck from hands, table, and all piles
-              if (object.type === ItemType.DECK) {
-                  const currentDeck = object as DeckType;
-
-                  console.log('=== RETURN ALL ===');
-                  console.log('Current deck:', currentDeck.id, currentDeck.name);
-                  console.log('Cards in current deck:', currentDeck.cardIds.length);
-
-                  // Collect all card IDs in this deck (main deck + piles)
-                  const cardIdsInDeck = new Set(currentDeck.cardIds);
-                  currentDeck.piles?.forEach(pile => {
-                      pile.cardIds.forEach(id => cardIdsInDeck.add(id));
-                  });
-
-                  console.log('Total cards in deck + piles:', cardIdsInDeck.size);
-
-                  // Group 1: Cards in current deck that belong to OTHER decks -> return them to their original decks
-                  const cardsByOriginalDeck: Record<string, string[]> = {};
-                  const cardsToDelete: string[] = [];
-
-                  Object.values(state.objects).forEach(o => {
-                      if (o.type === ItemType.CARD && cardIdsInDeck.has(o.id)) {
-                          const card = o as CardType;
-                          // If card belongs to a different deck
-                          if (card.deckId && card.deckId !== currentDeck.id) {
-                              const originalDeck = state.objects[card.deckId] as DeckType | undefined;
-                              if (originalDeck && originalDeck.type === ItemType.DECK) {
-                                  if (!cardsByOriginalDeck[card.deckId]) {
-                                      cardsByOriginalDeck[card.deckId] = [];
-                                  }
-                                  cardsByOriginalDeck[card.deckId].push(card.id);
-                              } else {
-                                  cardsToDelete.push(card.id);
-                              }
-                          }
-                      }
-                  });
-
-                  // Group 2: Cards of THIS deck from hands, table, and ALL piles (including other decks' piles)
-                  const cardsOfThisDeck: string[] = [];
-
-                  Object.values(state.objects).forEach(o => {
-                      if (o.type === ItemType.CARD && o.deckId === currentDeck.id) {
-                          const card = o as CardType;
-                          // Skip cards already in this deck
-                          if (cardIdsInDeck.has(card.id)) return;
-
-                          // Card is in hand, on table, or in a pile
-                          cardsOfThisDeck.push(card.id);
-                      }
-                  });
-
-                  // Also check ALL piles from ALL decks for cards of this deck
-                  Object.values(state.objects).forEach(o => {
-                      if (o.type === ItemType.DECK) {
-                          const deck = o as DeckType;
-                          // Skip current deck (already processed)
-                          if (deck.id === currentDeck.id) return;
-
-                          // Check main deck
-                          deck.cardIds.forEach(cardId => {
-                              if (cardId !== currentDeck.id && state.objects[cardId]?.deckId === currentDeck.id) {
-                                  if (!cardsOfThisDeck.includes(cardId)) {
-                                      cardsOfThisDeck.push(cardId);
-                                  }
-                              }
-                          });
-
-                          // Check piles
-                          deck.piles?.forEach(pile => {
-                              pile.cardIds.forEach(cardId => {
-                                  if (state.objects[cardId]?.deckId === currentDeck.id) {
-                                      if (!cardsOfThisDeck.includes(cardId)) {
-                                          cardsOfThisDeck.push(cardId);
-                                      }
-                              }
-                              });
-                          });
-                      }
-                  });
-
-                  console.log('Foreign cards in this deck to return:', Object.values(cardsByOriginalDeck).flat().length);
-                  console.log('Cards of this deck to return from hands/table/piles:', cardsOfThisDeck.length);
-                  console.log('Cards to delete (no original deck):', cardsToDelete.length);
-
-                  // First, remove foreign cards from current deck and piles
-                  const allForeignCardsToReturn = [...Object.values(cardsByOriginalDeck).flat(), ...cardsToDelete];
-
-                  if (allForeignCardsToReturn.length > 0) {
-                      // Remove from main deck
-                      const newCardIds = currentDeck.cardIds.filter(id => !allForeignCardsToReturn.includes(id));
-                      dispatch({
-                          type: 'UPDATE_OBJECT',
-                          payload: { id: currentDeck.id, cardIds: newCardIds }
-                      });
-
-                      // Remove from piles
-                      if (currentDeck.piles) {
-                          const updatedPiles = currentDeck.piles.map(pile => ({
-                              ...pile,
-                              cardIds: pile.cardIds.filter(id => !allForeignCardsToReturn.includes(id))
-                          }));
-                          dispatch({
-                              type: 'UPDATE_OBJECT',
-                              payload: { id: currentDeck.id, piles: updatedPiles }
-                          });
-                      }
-                  }
-
-                  // Remove cards of this deck from other decks and piles
-                  Object.values(state.objects).forEach(o => {
-                      if (o.type === ItemType.DECK) {
-                          const deck = o as DeckType;
-                          if (deck.id === currentDeck.id) return;
-
-                          const cardsInThisDeck = deck.cardIds.filter(id => cardsOfThisDeck.includes(id));
-                          const cardsInThisDeckPiles: Record<string, string[]> = {};
-
-                          deck.piles?.forEach(pile => {
-                              const cardsInPile = pile.cardIds.filter(id => cardsOfThisDeck.includes(id));
-                              if (cardsInPile.length > 0) {
-                                  cardsInThisDeckPiles[pile.id] = cardsInPile;
-                              }
-                          });
-
-                          if (cardsInThisDeck.length > 0 || Object.keys(cardsInThisDeckPiles).length > 0) {
-                              // Remove from main deck
-                              const newCardIds = deck.cardIds.filter(id => !cardsOfThisDeck.includes(id));
-                              dispatch({
-                                  type: 'UPDATE_OBJECT',
-                                  payload: { id: deck.id, cardIds: newCardIds }
-                              });
-
-                              // Remove from piles
-                              if (deck.piles) {
-                                  const updatedPiles = deck.piles.map(pile => ({
-                                      ...pile,
-                                      cardIds: pile.cardIds.filter(id => !cardsOfThisDeck.includes(id))
-                                  }));
-                                  dispatch({
-                                      type: 'UPDATE_OBJECT',
-                                      payload: { id: deck.id, piles: updatedPiles }
-                                  });
-                              }
-                          }
-                      }
-                  });
-
-                  // Now return cards to their original decks
-                  Object.keys(cardsByOriginalDeck).forEach(originalDeckId => {
-                      const cardIds = cardsByOriginalDeck[originalDeckId];
-                      cardIds.forEach(cardId => {
-                          dispatch({ type: 'RETURN_TO_DECK', payload: { cardId: cardId } });
-                      });
-                  });
-
-                  // Delete cards whose original deck doesn't exist
-                  cardsToDelete.forEach(cardId => {
-                      dispatch({ type: 'DELETE_OBJECT', payload: { id: cardId } });
-                  });
-
-                  // Return cards of this deck back to this deck
-                  cardsOfThisDeck.forEach(cardId => {
-                      dispatch({ type: 'RETURN_TO_DECK', payload: { cardId: cardId } });
-                  });
-
-                  // Count final cards
-                  setTimeout(() => {
-                      console.log('=== AFTER RETURN ===');
-                      Object.keys(cardsByOriginalDeck).forEach(originalDeckId => {
-                          const deck = state.objects[originalDeckId] as DeckType;
-                          if (deck) {
-                              console.log(`Deck ${originalDeckId} (${deck.name}): ${deck.cardIds.length} cards`);
-                          }
-                      });
-                      console.log('Current deck after:', currentDeck.id, '-', (state.objects[currentDeck.id] as DeckType)?.cardIds.length, 'cards');
-                  }, 100);
-              }
-              break;
+              return;
       }
+
+      // All other actions use the unified executeClickAction
+      executeClickAction(object, action);
   };
 
   const handlePileContextMenu = (e: React.MouseEvent, pile: CardPile, deck: DeckType) => {
@@ -1668,169 +1466,7 @@ export const Tabletop: React.FC = () => {
               });
               break;
           case 'returnAll':
-              // Return cards that belong to other decks back to their original decks
-              // AND return all cards of THIS deck from hands, table, and all piles
-              console.log('=== RETURN ALL (PileAction) ===');
-              console.log('Current deck:', deck.id, deck.name);
-              console.log('Cards in deck:', deck.cardIds.length);
-
-              // Collect all card IDs in this deck (main deck + piles)
-              const cardIdsInDeck = new Set(deck.cardIds);
-              deck.piles?.forEach(pile => {
-                  pile.cardIds.forEach(id => cardIdsInDeck.add(id));
-              });
-
-              // Group 1: Cards in current deck that belong to OTHER decks -> return them to their original decks
-              const cardsByOriginalDeck: Record<string, string[]> = {};
-              const cardsToDelete: string[] = [];
-
-              Object.values(state.objects).forEach(o => {
-                  if (o.type === ItemType.CARD && cardIdsInDeck.has(o.id)) {
-                      const card = o as CardType;
-                      // If card belongs to a different deck
-                      if (card.deckId && card.deckId !== deck.id) {
-                          const originalDeck = state.objects[card.deckId] as DeckType | undefined;
-                          if (originalDeck && originalDeck.type === ItemType.DECK) {
-                              if (!cardsByOriginalDeck[card.deckId]) {
-                                  cardsByOriginalDeck[card.deckId] = [];
-                              }
-                              cardsByOriginalDeck[card.deckId].push(card.id);
-                          } else {
-                              cardsToDelete.push(card.id);
-                          }
-                      }
-                  }
-              });
-
-              // Group 2: Cards of THIS deck from hands, table, and ALL piles (including other decks' piles)
-              const cardsOfThisDeck: string[] = [];
-
-              Object.values(state.objects).forEach(o => {
-                  if (o.type === ItemType.CARD && o.deckId === deck.id) {
-                      const card = o as CardType;
-                      // Skip cards already in this deck
-                      if (cardIdsInDeck.has(card.id)) return;
-                      // Card is in hand, on table, or in a pile
-                      cardsOfThisDeck.push(card.id);
-                  }
-              });
-
-              // Also check ALL piles from ALL decks for cards of this deck
-              Object.values(state.objects).forEach(o => {
-                  if (o.type === ItemType.DECK) {
-                      const otherDeck = o as DeckType;
-                      // Skip current deck (already processed)
-                      if (otherDeck.id === deck.id) return;
-
-                      // Check main deck
-                      otherDeck.cardIds.forEach(cardId => {
-                          if (cardId !== deck.id && state.objects[cardId]?.deckId === deck.id) {
-                              if (!cardsOfThisDeck.includes(cardId)) {
-                                  cardsOfThisDeck.push(cardId);
-                              }
-                          }
-                      });
-
-                      // Check piles
-                      otherDeck.piles?.forEach(pile => {
-                          pile.cardIds.forEach(cardId => {
-                              if (state.objects[cardId]?.deckId === deck.id) {
-                                  if (!cardsOfThisDeck.includes(cardId)) {
-                                      cardsOfThisDeck.push(cardId);
-                                  }
-                              }
-                          });
-                      });
-                  }
-              });
-
-              console.log('Foreign cards in this deck to return:', Object.values(cardsByOriginalDeck).flat().length);
-              console.log('Cards of this deck to return from hands/table/piles:', cardsOfThisDeck.length);
-
-              // First, remove foreign cards from current deck and piles
-              const allForeignCardsToReturn = [...Object.values(cardsByOriginalDeck).flat(), ...cardsToDelete];
-
-              if (allForeignCardsToReturn.length > 0) {
-                  // Remove from main deck
-                  const newCardIds = deck.cardIds.filter(id => !allForeignCardsToReturn.includes(id));
-                  dispatch({
-                      type: 'UPDATE_OBJECT',
-                      payload: { id: deck.id, cardIds: newCardIds }
-                  });
-
-                  // Remove from piles
-                  if (deck.piles) {
-                      const updatedPiles = deck.piles.map(pile => ({
-                          ...pile,
-                          cardIds: pile.cardIds.filter(id => !allForeignCardsToReturn.includes(id))
-                      }));
-                      dispatch({
-                          type: 'UPDATE_OBJECT',
-                          payload: { id: deck.id, piles: updatedPiles }
-                      });
-                  }
-              }
-
-              // Remove cards of this deck from other decks and piles
-              Object.values(state.objects).forEach(o => {
-                  if (o.type === ItemType.DECK) {
-                      const otherDeck = o as DeckType;
-                      if (otherDeck.id === deck.id) return;
-
-                      const cardsInThisDeck = otherDeck.cardIds.filter(id => cardsOfThisDeck.includes(id));
-
-                      if (cardsInThisDeck.length > 0) {
-                          // Remove from main deck
-                          const newCardIds = otherDeck.cardIds.filter(id => !cardsOfThisDeck.includes(id));
-                          dispatch({
-                              type: 'UPDATE_OBJECT',
-                              payload: { id: otherDeck.id, cardIds: newCardIds }
-                          });
-
-                          // Remove from piles
-                          if (otherDeck.piles) {
-                              const updatedPiles = otherDeck.piles.map(pile => ({
-                                  ...pile,
-                                  cardIds: pile.cardIds.filter(id => !cardsOfThisDeck.includes(id))
-                              }));
-                              dispatch({
-                                  type: 'UPDATE_OBJECT',
-                                  payload: { id: otherDeck.id, piles: updatedPiles }
-                              });
-                          }
-                      }
-                  }
-              });
-
-              // Now return cards to their original decks
-              Object.keys(cardsByOriginalDeck).forEach(originalDeckId => {
-                  const cardIds = cardsByOriginalDeck[originalDeckId];
-                  cardIds.forEach(cardId => {
-                      dispatch({ type: 'RETURN_TO_DECK', payload: { cardId: cardId } });
-                  });
-              });
-
-              // Delete cards whose original deck doesn't exist
-              cardsToDelete.forEach(cardId => {
-                  dispatch({ type: 'DELETE_OBJECT', payload: { id: cardId } });
-              });
-
-              // Return cards of this deck back to this deck
-              cardsOfThisDeck.forEach(cardId => {
-                  dispatch({ type: 'RETURN_TO_DECK', payload: { cardId: cardId } });
-              });
-
-              // Count final cards
-              setTimeout(() => {
-                  console.log('=== AFTER RETURN (PileAction) ===');
-                  Object.keys(cardsByOriginalDeck).forEach(originalDeckId => {
-                      const deckObj = state.objects[originalDeckId] as DeckType;
-                      if (deckObj) {
-                          console.log(`Deck ${originalDeckId} (${deckObj.name}): ${deckObj.cardIds.length} cards`);
-                      }
-                  });
-                  console.log('Current deck after:', deck.id, '-', (state.objects[deck.id] as DeckType)?.cardIds.length, 'cards');
-              }, 100);
+              executeClickAction(deck, 'returnAll');
               break;
       }
   };
@@ -2468,7 +2104,7 @@ export const Tabletop: React.FC = () => {
                                                 key: 'draw',
                                                 action: () => dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: state.activePlayerId }}),
                                                 className: 'bg-blue-600 hover:bg-blue-500',
-                                                title: 'Draw Card',
+                                                title: 'Draw',
                                                 icon: <Hand size={14} />
                                             },
                                             playTopCard: {
@@ -2495,14 +2131,14 @@ export const Tabletop: React.FC = () => {
                                                     }
                                                 },
                                                 className: 'bg-green-600 hover:bg-green-500',
-                                                title: 'Play Top Card',
+                                                title: 'Play Top',
                                                 icon: <Eye size={14} />
                                             },
                                             shuffleDeck: {
                                                 key: 'shuffleDeck',
                                                 action: () => dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id }}),
                                                 className: 'bg-purple-600 hover:bg-purple-500',
-                                                title: 'Shuffle Deck',
+                                                title: 'Shuffle',
                                                 icon: <Shuffle size={14} />
                                             },
                                             searchDeck: {
@@ -2512,21 +2148,8 @@ export const Tabletop: React.FC = () => {
                                                     setSearchModalPile(undefined);
                                                 },
                                                 className: 'bg-cyan-600 hover:bg-cyan-500',
-                                                title: 'Search Deck',
+                                                title: 'Search',
                                                 icon: <Search size={14} />
-                                            },
-                                            returnAll: {
-                                                key: 'returnAll',
-                                                action: () => {
-                                                    const deck = obj as any;
-                                                    const allCards = Object.values(state.objects).filter((o: any) => o.deckId === deck.id && o.location === CardLocation.TABLE);
-                                                    allCards.forEach((card: any) => {
-                                                        dispatch({ type: 'ADD_CARD_TO_TOP_OF_DECK', payload: { cardId: card.id, deckId: deck.id }});
-                                                    });
-                                                },
-                                                className: 'bg-red-600 hover:bg-red-500',
-                                                title: 'Return All',
-                                                icon: <Undo size={14} />
                                             },
                                             clone: {
                                                 key: 'clone',

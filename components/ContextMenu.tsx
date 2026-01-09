@@ -99,19 +99,19 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     },
     // Deck-specific actions
     {
-      label: 'Draw Card',
+      label: 'Draw',
       action: 'draw',
       icon: <Hand size={14} />,
       visible: object.type === ItemType.DECK && can('draw')
     },
     {
-      label: 'Play Top Card',
+      label: 'Play Top',
       action: 'playTopCard',
       icon: <Eye size={14} />,
       visible: object.type === ItemType.DECK && can('playTopCard')
     },
     {
-      label: 'Shuffle Deck',
+      label: 'Shuffle',
       action: 'shuffleDeck',
       icon: <Shuffle size={14} />,
       visible: object.type === ItemType.DECK && can('shuffleDeck')
@@ -129,13 +129,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       visible: object.type === ItemType.DECK && can('returnAll')
     },
     {
-      label: object.locked ? 'Unlock Position' : 'Lock Position',
+      label: object.locked ? 'Unlock' : 'Lock',
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
       visible: !hideCardActions && object.type !== ItemType.CARD && can('lock')
     },
     {
-      label: 'Flip Card',
+      label: 'Flip',
       action: 'flip',
       icon: <Eye size={14} />,
       visible: object.type === ItemType.CARD && can('flip')
