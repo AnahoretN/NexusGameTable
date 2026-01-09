@@ -6,7 +6,7 @@ import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical } from 'luc
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
 
-const DEFAULT_MODAL_WIDTH = 75.525; // vw
+const DEFAULT_MODAL_WIDTH = 75.75; // vw
 const MIN_MODAL_WIDTH = 50; // vw
 const MAX_MODAL_WIDTH = 95; // vw
 
@@ -187,7 +187,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   );
 
   const cardActionButtons = deck.cardActionButtons || [];
-  const baseCardWidth = 139;
+  const baseCardWidth = 140;
+  const isHorizontal = deck.cardOrientation === 'HORIZONTAL';
+  // Increase card size by 11% if horizontal orientation is enabled
+  const scaledBaseCardWidth = isHorizontal ? baseCardWidth * 1.254 : baseCardWidth;
 
   // Memoize card dimensions calculation
   const getCardDimensions = useCallback((card: Card) => {
@@ -197,9 +200,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     const layoutWidth = isHorizontal ? actualCardHeight : actualCardWidth;
     const layoutHeight = isHorizontal ? actualCardWidth : actualCardHeight;
     const aspectRatio = layoutWidth / layoutHeight;
-    const cardHeight = baseCardWidth / aspectRatio;
-    return { width: baseCardWidth, height: cardHeight };
-  }, [deck.cardOrientation, baseCardWidth]);
+    const cardHeight = scaledBaseCardWidth / aspectRatio;
+    return { width: scaledBaseCardWidth, height: cardHeight };
+  }, [deck.cardOrientation, scaledBaseCardWidth]);
 
   const handleFlip = useCallback((cardId: string) => {
     // For GM: track flip state to remember GM's preferences
@@ -689,15 +692,18 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     }
   }, [draggingToTable, dragStartPos, cards, cardOrder, deck, pile, isPile, state.viewTransform, state.objects, dispatch, onClose]);
 
-  // Handler for starting card drag to table
+  // Handler for starting card drag to table (Shift+drag only)
   const handleCardMouseDown = useCallback((e: React.MouseEvent, card: Card) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDraggingToTable({ cardId: card.id, x: e.clientX, y: e.clientY });
-    setDragStartPos({ x: e.clientX, y: e.clientY });
+    // Only start drag-to-table with Shift+drag (normal drag is for reorder)
+    if (e.button === 0 && e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setDraggingToTable({ cardId: card.id, x: e.clientX, y: e.clientY });
+      setDragStartPos({ x: e.clientX, y: e.clientY });
 
-    // Dispatch event for Tabletop to track drag
-    window.dispatchEvent(new CustomEvent('sidebar-drag-start', { detail: { cardId: card.id, fromSearchWindow: true } }));
+      // Dispatch event for Tabletop to track drag
+      window.dispatchEvent(new CustomEvent('sidebar-drag-start', { detail: { cardId: card.id, fromSearchWindow: true } }));
+    }
   }, []);
 
   // Purple slot component - extracted to avoid duplication
@@ -769,7 +775,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         </div>
 
         {/* Cards Grid */}
-        <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+        <div className="flex-1 overflow-y-scroll p-3 custom-scrollbar">
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500">
               <Search size={48} className="mb-4 opacity-50" />
@@ -1051,14 +1057,15 @@ export const SearchDeckDragPreview: React.FC = () => {
   if (!deck) return null;
 
   // Calculate card dimensions (same logic as in SearchDeckModal)
-  const baseCardWidth = 139;
+  const baseCardWidth = 140;
+  const isHorizontal = deck.cardOrientation === 'HORIZONTAL';
+  const scaledBaseCardWidth = isHorizontal ? baseCardWidth * 1.254 : baseCardWidth;
   const actualCardWidth = card.width ?? 100;
   const actualCardHeight = card.height ?? 140;
-  const isHorizontal = deck.cardOrientation === 'HORIZONTAL';
   const layoutWidth = isHorizontal ? actualCardHeight : actualCardWidth;
   const layoutHeight = isHorizontal ? actualCardWidth : actualCardHeight;
   const aspectRatio = layoutWidth / layoutHeight;
-  const cardHeight = baseCardWidth / aspectRatio;
+  const cardHeight = scaledBaseCardWidth / aspectRatio;
 
   return createPortal(
     <div
@@ -1072,7 +1079,7 @@ export const SearchDeckDragPreview: React.FC = () => {
     >
       <CardComponent
         card={{ ...card, faceUp: globalSearchDragData.playTopFaceUp }}
-        overrideWidth={baseCardWidth}
+        overrideWidth={scaledBaseCardWidth}
         overrideHeight={cardHeight}
         cardNamePosition={deck.cardNamePosition}
         cardOrientation={deck.cardOrientation}
