@@ -215,24 +215,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const updatedObj = { ...obj, ...action.payload } as TableObject;
       const newObjects = { ...state.objects, [action.payload.id]: updatedObj };
 
-      // Debug log for card location changes
-      if (obj.type === ItemType.CARD && updatedObj.type === ItemType.CARD) {
-        const oldCard = obj as Card;
-        const newCard = updatedObj as Card;
-        if (oldCard.location !== newCard.location || oldCard.isOnTable !== newCard.isOnTable) {
-          console.log('=== CARD LOCATION CHANGED ===');
-          console.log('Card ID:', action.payload.id);
-          console.log('Old location:', oldCard.location, 'isOnTable:', oldCard.isOnTable);
-          console.log('New location:', newCard.location, 'isOnTable:', newCard.isOnTable);
-        }
-      }
-      // Debug log for deck cardIds changes
-      if (obj.type === ItemType.DECK && action.payload.cardIds !== undefined) {
-        console.log('=== DECK CARD IDS UPDATED ===');
-        console.log('Deck ID:', action.payload.id);
-        console.log('Old cardIds:', (obj as Deck).cardIds.length);
-        console.log('New cardIds:', (action.payload.cardIds as string[])?.length);
-      }
 
       if (updatedObj.type === ItemType.DECK) {
           const deck = updatedObj as Deck;
@@ -420,7 +402,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const card = state.objects[action.payload.cardId] as Card;
         if (!card || !card.deckId || !state.objects[card.deckId]) return state;
         const deck = state.objects[card.deckId] as Deck;
-        // Add card to TOP of deck (beginning of array) without shuffling
+
+        // Always return card to the TOP of its main deck (beginning of array)
+        // Cards from piles (discard, etc.) return to the main deck, not to piles
         const newCardIds = [card.id, ...deck.cardIds];
         const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
         // Card is face up by default (GM sees actual state, players see based on deck settings)
@@ -461,6 +445,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const pile = deck.piles?.find(p => p.id === action.payload.pileId);
         if (!pile) return state;
 
+
         // Create updated pile with new card added to TOP (beginning of array)
         const updatedPile: CardPile = {
             ...pile,
@@ -484,6 +469,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             faceUp: pile.faceUp ?? false,
             isOnTable: true
         };
+
 
         return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard } };
     }
@@ -794,7 +780,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     peerRef.current = peer;
 
     peer.on('open', (id) => {
-        console.log('My Peer ID is: ' + id);
         setPeerId(id);
         
         // If we have a hostId in URL, we are a Guest joining a game
@@ -811,7 +796,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Handle incoming connections (If we are Host)
     peer.on('connection', (conn) => {
         conn.on('open', () => {
-            console.log('Incoming connection from', conn.peer);
             connectionsRef.current.push(conn);
             
             // Send current state to new player, using REF to get latest state
@@ -824,7 +808,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // Handle Disconnection
             conn.on('close', () => {
-                console.log('Guest disconnected:', conn.peer);
                 connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
                 localDispatch({ type: 'REMOVE_PLAYER', payload: { id: conn.peer } });
             });

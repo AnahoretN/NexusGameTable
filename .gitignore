@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+# Don't ignore docs - it's the build output for GitHub Pages
 
 # Editor
 .vscode/

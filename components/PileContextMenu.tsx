@@ -15,7 +15,7 @@ interface PileContextMenuProps {
 export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, deck, onAction, onClose }) => {
   const menuItems = [
     {
-      label: pile.locked ? 'Unlock Position' : 'Lock Position',
+      label: pile.locked ? 'Unlock' : 'Lock',
       action: 'lock',
       icon: pile.locked ? <Unlock size={14} /> : <Lock size={14} />,
       visible: pile.position === 'free'
@@ -27,13 +27,13 @@ export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, de
       visible: true
     },
     {
-      label: 'Draw Card',
+      label: 'Draw',
       action: 'draw',
       icon: <Hand size={14} />,
       visible: pile.cardIds.length > 0
     },
     {
-      label: 'Return All to Deck',
+      label: 'Return All',
       action: 'returnAll',
       icon: <Undo size={14} />,
       visible: true
