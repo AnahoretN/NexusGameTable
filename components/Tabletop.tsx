@@ -301,7 +301,10 @@ export const Tabletop: React.FC = () => {
   // Listen for drag events from sidebar (cards from hand)
   useEffect(() => {
     const handleDragStart = (e: Event) => {
-      const customEvent = e as CustomEvent<{ cardId: string }>;
+      const customEvent = e as CustomEvent<{ cardId: string; fromSearchWindow?: boolean }>;
+      // Ignore drags from search window - they handle their own drop logic
+      if (customEvent.detail.fromSearchWindow) return;
+
       const card = stateRef.current.objects[customEvent.detail.cardId] as CardType;
       if (card && card.type === ItemType.CARD) {
         setDraggingCardFromHand(card);
@@ -309,7 +312,10 @@ export const Tabletop: React.FC = () => {
     };
 
     const handleDragEnd = (e: Event) => {
-      const customEvent = e as CustomEvent<{ cardId: string; clientX: number; clientY: number }>;
+      const customEvent = e as CustomEvent<{ cardId: string; clientX: number; clientY: number; fromSearchWindow?: boolean }>;
+      // Ignore drags from search window - they handle their own drop logic
+      if (customEvent.detail.fromSearchWindow) return;
+
       const { cardId, clientX, clientY } = customEvent.detail;
 
       // Get current card from state (it may have been updated by UPDATE_OBJECT)
@@ -642,8 +648,10 @@ export const Tabletop: React.FC = () => {
         }
         break;
       case 'searchDeck':
-        // TODO: Implement search deck modal
-        console.log('Search deck:', obj.id);
+        if (obj.type === ItemType.DECK) {
+          setSearchModalDeck(obj as DeckType);
+          setSearchModalPile(undefined);
+        }
         break;
       case 'returnAll':
         // Return cards that belong to other decks back to their original decks
@@ -2499,7 +2507,10 @@ export const Tabletop: React.FC = () => {
                                             },
                                             searchDeck: {
                                                 key: 'searchDeck',
-                                                action: () => console.log('Search deck:', obj.id),
+                                                action: () => {
+                                                    setSearchModalDeck(obj as DeckType);
+                                                    setSearchModalPile(undefined);
+                                                },
                                                 className: 'bg-cyan-600 hover:bg-cyan-500',
                                                 title: 'Search Deck',
                                                 icon: <Search size={14} />
