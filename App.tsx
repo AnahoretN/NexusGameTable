@@ -3,6 +3,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GameProvider } from './store/GameContext';
 import { Tabletop } from './components/Tabletop';
 import { Sidebar } from './components/Sidebar';
+import { SearchDeckDragPreview } from './components/SearchDeckModal';
 import { GripVertical } from 'lucide-react';
 
 const SIDEBAR_DEFAULT_WIDTH = 286;
@@ -48,6 +49,9 @@ const GameLayout = () => {
             <div className="flex-1 relative">
                 <Tabletop />
             </div>
+
+            {/* Global drag preview for search deck modal */}
+            <SearchDeckDragPreview />
 
             {/* Resize Handle */}
             <div

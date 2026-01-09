@@ -418,11 +418,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
 
         // Update card to be in deck
-        // Card is face up by default (GM sees actual state, players see based on deck settings)
+        // Keep the card's original deckId to track which deck it belongs to
         const updatedCard: Card = {
             ...card,
             location: CardLocation.DECK,
-            deckId: deck.id,
+            // Only update deckId if the card doesn't already have one (e.g., newly created card)
+            // This preserves the original deckId when moving cards between decks
+            deckId: card.deckId || deck.id,
             faceUp: true,
             x: deck.x,
             y: deck.y,
@@ -454,10 +456,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updatedDeck: Deck = { ...deck, piles: updatedPiles };
 
         // Update card to be in pile
+        // Keep the card's original deckId to track which deck it belongs to
         const updatedCard: Card = {
             ...card,
             location: CardLocation.PILE,
-            deckId: deck.id,
+            // Only update deckId if the card doesn't already have one
+            deckId: card.deckId || deck.id,
             faceUp: pile.faceUp ?? false,
             isOnTable: true
         };
