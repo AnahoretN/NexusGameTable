@@ -215,6 +215,25 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const updatedObj = { ...obj, ...action.payload } as TableObject;
       const newObjects = { ...state.objects, [action.payload.id]: updatedObj };
 
+      // Debug log for card location changes
+      if (obj.type === ItemType.CARD && updatedObj.type === ItemType.CARD) {
+        const oldCard = obj as Card;
+        const newCard = updatedObj as Card;
+        if (oldCard.location !== newCard.location || oldCard.isOnTable !== newCard.isOnTable) {
+          console.log('=== CARD LOCATION CHANGED ===');
+          console.log('Card ID:', action.payload.id);
+          console.log('Old location:', oldCard.location, 'isOnTable:', oldCard.isOnTable);
+          console.log('New location:', newCard.location, 'isOnTable:', newCard.isOnTable);
+        }
+      }
+      // Debug log for deck cardIds changes
+      if (obj.type === ItemType.DECK && action.payload.cardIds !== undefined) {
+        console.log('=== DECK CARD IDS UPDATED ===');
+        console.log('Deck ID:', action.payload.id);
+        console.log('Old cardIds:', (obj as Deck).cardIds.length);
+        console.log('New cardIds:', (action.payload.cardIds as string[])?.length);
+      }
+
       if (updatedObj.type === ItemType.DECK) {
           const deck = updatedObj as Deck;
           const oldDeck = obj as Deck;

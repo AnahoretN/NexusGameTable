@@ -497,13 +497,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
   const finishDrag = useCallback((clientX: number, clientY: number) => {
       if (!draggingCardId) return;
 
-      const card = handCards.find(c => c.id === draggingCardId);
-      if (!card) {
+      console.log('=== SIDEBAR FINISH DRAG ===');
+      console.log('Dragging card ID:', draggingCardId);
+
+      // Check if card is actually in hand (location === HAND)
+      // This prevents processing cards from search window or other sources
+      const cardObj = state.objects[draggingCardId];
+      console.log('Card obj location:', cardObj?.location, 'Type:', cardObj?.type);
+
+      if (!cardObj || cardObj.type !== ItemType.CARD || cardObj.location !== CardLocation.HAND) {
+          console.log('Card NOT in hand, ignoring');
           setDraggingCardId(null);
           setDragPosition(null);
           setDragStartPos(null);
           return;
       }
+
+      const card = handCards.find(c => c.id === draggingCardId);
+      if (!card) {
+          console.log('Card NOT in handCards, ignoring');
+          setDraggingCardId(null);
+          setDragPosition(null);
+          setDragStartPos(null);
+          return;
+      }
+
+      console.log('Card IS in hand, processing drag');
 
       // Check if drag distance is significant (not just a click)
       if (dragStartPos) {
@@ -511,6 +530,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
               Math.pow(clientX - dragStartPos.x, 2) +
               Math.pow(clientY - dragStartPos.y, 2)
           );
+
+          console.log('Sidebar drag distance:', dragDistance);
 
           if (dragDistance > 10) {
               // Get sidebar element to check bounds

@@ -547,18 +547,47 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     const handleGlobalMouseUp = (e: MouseEvent) => {
       if (!globalSearchDragData) return;
 
-      const { cardId, startX, startY, deckId, pileId, isPile, playTopFaceUp, viewTransform } = globalSearchDragData;
+      const { cardId, startX, startY, deckId, pileId, isPile, playTopFaceUp, viewTransform, cardIdsSnapshot } = globalSearchDragData;
+
+      console.log('=== SEARCH WINDOW DRAG END ===');
+      console.log('Card ID:', cardId);
+      console.log('Deck ID:', deckId);
+      console.log('Is Pile:', isPile, 'Pile ID:', pileId);
+      console.log('CardIds snapshot at drag start:', cardIdsSnapshot?.length);
 
       // Check if drag distance is significant (not just a click)
       const dragDistance = Math.sqrt(
         Math.pow(e.clientX - startX, 2) +
         Math.pow(e.clientY - startY, 2)
       );
+      console.log('Drag distance:', dragDistance);
 
       if (dragDistance > 10) {
         // Get card from state
         const card = state.objects[cardId] as Card;
-        if (card) {
+        console.log('Card found:', !!card, 'Card location:', card?.location);
+
+        // Check if dropped over the sidebar (hand area)
+        // Sidebar is on the right side, check if cursor is in the right portion of screen
+        const sidebarWidth = 286; // Default sidebar width
+        const isOverHand = e.clientX > window.innerWidth - sidebarWidth;
+        console.log('Is over hand:', isOverHand, 'ClientX:', e.clientX, 'Window width:', window.innerWidth);
+
+        if (isOverHand) {
+          // Add card to player's hand
+          console.log('Card placed in HAND');
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: card.id,
+              location: 'HAND' as any,
+              ownerId: state.activePlayerId,
+              isOnTable: false,
+              faceUp: playTopFaceUp
+            }
+          });
+        } else {
+          // Place on table at mouse position
           const { offset, zoom } = viewTransform;
           const actualCardWidth = card.width ?? 100;
           const actualCardHeight = card.height ?? 140;
@@ -571,6 +600,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           );
           const allZ = tableObjects.map(o => o.zIndex || 0);
           const maxZ = allZ.length ? Math.max(...allZ) : 0;
+
+          console.log('Card placed on TABLE at:', worldX, worldY);
 
           // Update card to be on table
           dispatch({
@@ -586,32 +617,38 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
               zIndex: maxZ + 1
             }
           });
+        }
 
-          // Remove from card order
-          const deckObj = state.objects[deckId] as Deck;
-          if (deckObj) {
-            if (isPile && pileId) {
-              const updatedPiles = deckObj.piles?.map(p =>
-                p.id === pileId ? { ...p, cardIds: p.cardIds.filter(id => id !== card.id) } : p
+        // Remove from card order (card is taken out of deck/pile)
+        // Use cardIdsSnapshot which was captured at drag start time
+        if (cardIdsSnapshot) {
+          const newCardIds = cardIdsSnapshot.filter(id => id !== card.id);
+          if (isPile && pileId) {
+            // For piles, we need to update the specific pile's cardIds
+            // Get the current deck to access its piles
+            const deckObj = state.objects[deckId] as Deck;
+            if (deckObj?.piles) {
+              const updatedPiles = deckObj.piles.map(p =>
+                p.id === pileId ? { ...p, cardIds: newCardIds } : p
               );
+              console.log('Updating pile, cardIds after:', newCardIds.length);
               dispatch({ type: 'UPDATE_OBJECT', payload: { id: deckId, piles: updatedPiles } });
-            } else {
-              dispatch({ type: 'UPDATE_OBJECT', payload: { id: deckId, cardIds: deckObj.cardIds.filter(id => id !== card.id) } });
             }
-          }
-
-          // Update local state if modal is still open
-          if (globalSearchDragData.modalOpen) {
-            const newCardOrder = cardOrder.filter(id => id !== card.id);
-            setCardOrder(newCardOrder);
+          } else {
+            console.log('Updating deck, cardIds after:', newCardIds.length);
+            dispatch({ type: 'UPDATE_OBJECT', payload: { id: deckId, cardIds: newCardIds } });
           }
         }
-      }
 
-      // Dispatch event for Tabletop to handle drop on decks and piles
-      window.dispatchEvent(new CustomEvent('sidebar-drag-end', {
-        detail: { cardId, clientX: e.clientX, clientY: e.clientY }
-      }));
+        // Update local state if modal is still open
+        if (globalSearchDragData.modalOpen) {
+          const newCardOrder = cardOrder.filter(id => id !== card.id);
+          console.log('Updating local cardOrder:', newCardOrder.length);
+          setCardOrder(newCardOrder);
+        }
+      } else {
+        console.log('Drag distance too small, ignoring');
+      }
 
       // Clear global state
       globalSearchDragData = null;
@@ -628,6 +665,12 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     };
 
     if (draggingToTable && dragStartPos) {
+      // Get current deck/pile state at drag start time to avoid stale state issues
+      const currentDeckObj = state.objects[deck.id] as Deck;
+      const currentCardIds = isPile && pile?.id
+        ? currentDeckObj?.piles?.find(p => p.id === pile.id)?.cardIds ?? deck.cardIds
+        : currentDeckObj?.cardIds ?? deck.cardIds;
+
       // Store drag data globally
       globalSearchDragData = {
         cardId: draggingToTable.cardId,
@@ -640,7 +683,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         isPile,
         playTopFaceUp: deck.playTopFaceUp ?? true,
         viewTransform: state.viewTransform,
-        modalOpen: true
+        modalOpen: true,
+        fromSearchWindow: true, // Mark that this drag is from search window
+        // Snapshot cardIds at drag start to avoid stale state issues
+        cardIdsSnapshot: currentCardIds
       };
 
       // Store handlers globally
@@ -668,7 +714,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     setDragStartPos({ x: e.clientX, y: e.clientY });
 
     // Dispatch event for Tabletop to track drag
-    window.dispatchEvent(new CustomEvent('sidebar-drag-start', { detail: { cardId: card.id } }));
+    window.dispatchEvent(new CustomEvent('sidebar-drag-start', { detail: { cardId: card.id, fromSearchWindow: true } }));
   }, []);
 
   // Purple slot component - extracted to avoid duplication
