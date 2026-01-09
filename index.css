@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Always visible scrollbar with full width */
+/* Always visible scrollbar styling for webkit browsers */
 ::-webkit-scrollbar {
   width: 16px;
   height: 16px;
@@ -19,6 +19,17 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #718096;
 }
+::-webkit-scrollbar-thumb:inactive {
+  background: #4a5568;
+}
+
+/* Always visible scrollbar for Firefox */
+.custom-scrollbar,
+.custom-scrollbar * {
+  scrollbar-width: thin;
+  scrollbar-color: #4a5568 #1a202c;
+}
+
 body {
   background-color: #1a202c;
   color: white;
