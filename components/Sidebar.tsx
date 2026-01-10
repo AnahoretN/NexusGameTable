@@ -30,13 +30,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 350 }) => {
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<{sender: string, text: string}[]>([]);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
   const [openCategory, setOpenCategory] = useState<string | null>(null);
+
   const [editingObject, setEditingObject] = useState<TableObject | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const sidebarRef = useRef<HTMLDivElement>(null);
 
   const handleChat = async () => {
       if (!chatInput.trim()) return;
@@ -366,16 +367,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 350 }) => {
         </div>
 
         <div className="flex border-b border-slate-700">
-            <button onClick={() => setActiveTab('create')} className={`flex-1 p-3 flex justify-center ${activeTab === 'create' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+            <button onClick={() => { setActiveTab('create'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'create' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
                 <Library size={20} />
             </button>
-            <button onClick={() => setActiveTab('hand')} className={`flex-1 p-3 flex justify-center ${activeTab === 'hand' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+            <button onClick={() => { setActiveTab('hand'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'hand' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
                 <Hand size={20} />
             </button>
-            <button onClick={() => setActiveTab('chat')} className={`flex-1 p-3 flex justify-center ${activeTab === 'chat' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+            <button onClick={() => { setActiveTab('chat'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'chat' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
                 <MessageSquare size={20} />
             </button>
-            <button onClick={() => setActiveTab('players')} className={`flex-1 p-3 flex justify-center ${activeTab === 'players' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+            <button onClick={() => { setActiveTab('players'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'players' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
                 <User size={20} />
             </button>
         </div>

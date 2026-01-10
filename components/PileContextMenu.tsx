@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { CardPile, Deck } from '../types';
-import { Search, Hand, Undo, Lock, Unlock } from 'lucide-react';
+import { Search, Hand, Undo, Lock, Unlock, Eye } from 'lucide-react';
 
 interface PileContextMenuProps {
   x: number;
@@ -19,6 +19,12 @@ export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, de
       action: 'lock',
       icon: pile.locked ? <Unlock size={14} /> : <Lock size={14} />,
       visible: pile.position === 'free'
+    },
+    {
+      label: pile.showTopCard ? 'Hide top' : 'Show top',
+      action: 'showTop',
+      icon: <Eye size={14} />,
+      visible: true
     },
     {
       label: 'Search',

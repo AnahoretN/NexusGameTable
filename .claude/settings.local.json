@@ -18,7 +18,8 @@
       "Bash(cmd.exe:*)",
       "Bash(for:*)",
       "Bash(do cmd.exe //c \"netstat -ano | findstr :$port | findstr LISTENING | awk ''{print $5}'' | xargs taskkill /F /PID 2>nul\")",
-      "Bash(done:*)"
+      "Bash(done:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }
