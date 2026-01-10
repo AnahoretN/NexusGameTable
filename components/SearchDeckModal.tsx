@@ -1,7 +1,7 @@
-import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility } from '../types';
+import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
@@ -9,25 +9,6 @@ import { ContextMenu } from './ContextMenu';
 const DEFAULT_MODAL_WIDTH = 75.75; // vw
 const MIN_MODAL_WIDTH = 50; // vw
 const MAX_MODAL_WIDTH = 95; // vw
-
-// Global handlers for drag-from-search that survive component unmount
-let globalSearchDragMouseMove: ((e: MouseEvent) => void) | null = null;
-let globalSearchDragMouseUp: ((e: MouseEvent) => void) | null = null;
-let globalSearchDragData: any = null;
-
-interface DragState {
-  cardId: string | null;
-  dragIndex: number | null;
-  isDragging: boolean;
-  // 'showBlueSlot' - true when blue slot is shown at dragged card's original position
-  showBlueSlot: boolean;
-  // 'cardInInvisibleSlot' - true when dragged card is in invisible preservation slot
-  cardInInvisibleSlot: boolean;
-  // 'determiningCardIndex' is the index of the card currently under the cursor
-  determiningCardIndex: number | null;
-  // 'purpleSlotIndex' is the index where purple slot appears (replaces the card at that index)
-  purpleSlotIndex: number | null;
-}
 
 interface SearchDeckModalProps {
   deck: Deck;
@@ -67,23 +48,12 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = []) =
 
 export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, onClose }) => {
   const { state, dispatch } = useGame();
-  const lastDropIndexRef = useRef<number | null>(null);
   const gmInitializedRef = useRef(false);
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
   const [cardOrder, setCardOrder] = useState<string[]>(
     pile ? pile.cardIds : deck.cardIds
   );
-
-  const [dragState, setDragState] = useState<DragState>({
-    cardId: null,
-    dragIndex: null,
-    isDragging: false,
-    showBlueSlot: false,
-    cardInInvisibleSlot: false,
-    determiningCardIndex: null,
-    purpleSlotIndex: null
-  });
 
   // Modal width state
   const [modalWidth, setModalWidth] = useState(DEFAULT_MODAL_WIDTH);
@@ -94,7 +64,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
 
   // Track modified faceUp states for this player (for LAST_STATE mode)
-  // This stores the player's flips during this session
   const [playerFlipStates, setPlayerFlipStates] = useState<Record<string, boolean>>({});
 
   const currentPlayerId = state.activePlayerId;
@@ -105,26 +74,20 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   // Track GM flip states locally for immediate updates (synced with deck.gmSearchFaceUp)
   const [gmFlipStates, setGmFlipStates] = useState<Record<string, boolean>>({});
 
-  // State for dragging cards from search window to table
-  const [draggingToTable, setDraggingToTable] = useState<{ cardId: string; x: number; y: number } | null>(null);
-  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
-
   // Reset initialization flag when deck changes
   useEffect(() => {
     gmInitializedRef.current = false;
   }, [deck.id]);
 
   // Initialize GM state on first open - set all cards to face up if not set
-  // Use a ref to ensure we only initialize once, not on every deck.gmSearchFaceUp change
   useEffect(() => {
     if (isGM && !gmInitializedRef.current) {
       if (!deck.gmSearchFaceUp) {
-        // First time - initialize all cards as face up
         const initialStates: Record<string, boolean> = {};
         cardOrder.forEach(cardId => {
           const card = state.objects[cardId] as Card;
           if (card) {
-            initialStates[cardId] = true; // All cards start face up for GM
+            initialStates[cardId] = true;
           }
         });
         dispatch({
@@ -133,7 +96,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         });
         setGmFlipStates(initialStates);
       } else {
-        // Sync with deck state
         setGmFlipStates(deck.gmSearchFaceUp);
       }
       gmInitializedRef.current = true;
@@ -142,34 +104,27 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
   // Determine if a card should be shown face up based on visibility mode
   const getCardFaceUp = useCallback((card: Card): boolean => {
-    // For GM: use stored flip state (defaults to true)
     if (isGM) {
       return gmFlipStates[card.id] ?? true;
     }
 
-    // For Players: depends on visibility setting
     switch (visibility) {
       case SearchWindowVisibility.FACE_UP:
         return true;
       case SearchWindowVisibility.FACE_DOWN:
         return false;
       case SearchWindowVisibility.AS_GM:
-        // Same as GM sees - actual card state
         return card.faceUp;
       case SearchWindowVisibility.LAST_STATE:
-        // Check if player has flipped this card in the search window
         if (playerFlipStates[card.id] !== undefined) {
           return playerFlipStates[card.id];
         }
-        // Check deck's per-player preference
         const deckPref = deck.perPlayerSearchFaceUp?.[currentPlayerId];
         if (deckPref !== undefined) {
           return deckPref;
         }
-        // Default to true for first open
         return true;
       case SearchWindowVisibility.SHARED_DECK:
-        // All players see the same state (actual card state)
         return card.faceUp;
       default:
         return card.faceUp;
@@ -181,22 +136,18 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
   const cards = useMemo(() =>
     cardOrder.map(id => state.objects[id] as Card).filter(Boolean),
-    // Include cardOrder, playerFlipStates, gmFlipStates, and trigger updates when card data changes
-    // Using JSON string as a simple way to detect any change in card objects
-    [cardOrder, playerFlipStates, gmFlipStates, JSON.stringify(cardOrder.map(id => state.objects[id]))]
+    [cardOrder, state.objects]
   );
 
   const cardActionButtons = deck.cardActionButtons || [];
   const baseCardWidth = 140;
-  const isHorizontal = deck.cardOrientation === 'HORIZONTAL';
-  // Increase card size by 11% if horizontal orientation is enabled
+  const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
   const scaledBaseCardWidth = isHorizontal ? baseCardWidth * 1.254 : baseCardWidth;
 
-  // Memoize card dimensions calculation
   const getCardDimensions = useCallback((card: Card) => {
     const actualCardWidth = card.width ?? 100;
     const actualCardHeight = card.height ?? 140;
-    const isHorizontal = deck.cardOrientation === 'HORIZONTAL';
+    const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
     const layoutWidth = isHorizontal ? actualCardHeight : actualCardWidth;
     const layoutHeight = isHorizontal ? actualCardWidth : actualCardHeight;
     const aspectRatio = layoutWidth / layoutHeight;
@@ -205,14 +156,11 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   }, [deck.cardOrientation, scaledBaseCardWidth]);
 
   const handleFlip = useCallback((cardId: string) => {
-    // For GM: track flip state to remember GM's preferences
     if (isGM) {
       const currentState = gmFlipStates[cardId] ?? true;
       const newState = !currentState;
-      // Update local state immediately for UI responsiveness
       setGmFlipStates(prev => {
         const updated = { ...prev, [cardId]: newState };
-        // Also save to deck for persistence across sessions
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: { id: deck.id, gmSearchFaceUp: updated }
@@ -221,9 +169,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       });
       dispatch({ type: 'FLIP_CARD', payload: { cardId } });
     } else if (visibility === SearchWindowVisibility.LAST_STATE) {
-      // For LAST_STATE mode, track player's flip state
       setPlayerFlipStates(prev => {
-        const currentState = prev[cardId] ?? true; // Default to true (face up)
+        const currentState = prev[cardId] ?? true;
         return { ...prev, [cardId]: !currentState };
       });
       dispatch({ type: 'FLIP_CARD', payload: { cardId } });
@@ -294,7 +241,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
     switch(action) {
       case 'flip':
-        // For GM: track flip state to remember GM's preferences
         if (isGM) {
           const currentState = gmFlipStates[object.id] ?? true;
           const newState = !currentState;
@@ -307,7 +253,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             return updated;
           });
         } else if (visibility === SearchWindowVisibility.LAST_STATE) {
-          // For LAST_STATE mode, track player's flip state
           setPlayerFlipStates(prev => {
             const currentState = prev[object.id] ?? true;
             return { ...prev, [object.id]: !currentState };
@@ -329,7 +274,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             faceUp: true
           } as any
         });
-        // Remove from card order
         const newCardOrder = cardOrder.filter(id => id !== object.id);
         if (isPile && pile) {
           const updatedPiles = deck.piles?.map(p =>
@@ -345,7 +289,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id }});
         break;
       case 'delete':
-        // Remove from card order and delete object
         const filteredOrder = cardOrder.filter(id => id !== object.id);
         if (isPile && pile) {
           const updatedPiles = deck.piles?.map(p =>
@@ -361,124 +304,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     }
     setContextMenu(null);
   }, [contextMenu, dispatch, state.activePlayerId, cardOrder, isPile, pile, deck, visibility, isGM, gmFlipStates, deck.id]);
-
-  const resetDragState = useCallback(() => {
-    lastDropIndexRef.current = null;
-    setDragState({
-      cardId: null,
-      dragIndex: null,
-      isDragging: false,
-      showBlueSlot: false,
-      cardInInvisibleSlot: false,
-      determiningCardIndex: null,
-      purpleSlotIndex: null
-    });
-  }, []);
-
-  const handleDragStart = useCallback((e: React.DragEvent, cardId: string, index: number) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', cardId);
-
-    const target = e.currentTarget.cloneNode(true) as HTMLElement;
-    target.style.position = 'absolute';
-    target.style.top = '-9999px';
-    target.style.left = '-9999px';
-    document.body.appendChild(target);
-
-    // Calculate offset from cursor to element's top-left corner
-    const rect = e.currentTarget.getBoundingClientRect();
-    const offsetX = e.clientX - rect.left;
-    const offsetY = e.clientY - rect.top;
-
-    e.dataTransfer.setDragImage(target, offsetX, offsetY);
-
-    setTimeout(() => {
-      document.body.removeChild(target);
-    }, 100);
-
-    setDragState({
-      cardId,
-      dragIndex: index,
-      isDragging: true,
-      showBlueSlot: false,
-      cardInInvisibleSlot: false,
-      determiningCardIndex: null,
-      purpleSlotIndex: null
-    });
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setDragState(prev => ({
-          ...prev,
-          showBlueSlot: true,
-          cardInInvisibleSlot: true
-        }));
-      });
-    });
-  }, []);
-
-  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-
-    if (index === dragState.dragIndex) {
-      return;
-    }
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const cursorX = e.clientX;
-    const cardCenterX = rect.left + rect.width / 2;
-    const cursorOnLeft = cursorX < cardCenterX;
-
-    const newPurpleSlotIndex = cursorOnLeft ? index : index + 1;
-
-    if (newPurpleSlotIndex !== dragState.purpleSlotIndex) {
-      lastDropIndexRef.current = newPurpleSlotIndex;
-      setDragState(prev => ({
-        ...prev,
-        determiningCardIndex: index,
-        purpleSlotIndex: newPurpleSlotIndex
-      }));
-    }
-  }, [dragState.dragIndex, dragState.purpleSlotIndex]);
-
-  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
-    e.preventDefault();
-
-    const actualDropIndex = dragState.purpleSlotIndex ?? lastDropIndexRef.current ?? dropIndex;
-
-    const { dragIndex, cardId } = dragState;
-    if (dragIndex === null || cardId === null) {
-      resetDragState();
-      return;
-    }
-
-    if (dragIndex === actualDropIndex) {
-      resetDragState();
-      return;
-    }
-
-    const newCardOrder = [...cardOrder];
-    newCardOrder.splice(dragIndex, 1);
-    const adjustedDropIndex = dragIndex < actualDropIndex ? actualDropIndex - 1 : actualDropIndex;
-    newCardOrder.splice(adjustedDropIndex, 0, cardId);
-
-    if (isPile && pile) {
-      const updatedPiles = deck.piles?.map(p =>
-        p.id === pile.id ? { ...p, cardIds: newCardOrder } : p
-      );
-      dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
-    } else {
-      dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: newCardOrder } });
-    }
-
-    setCardOrder(newCardOrder);
-    resetDragState();
-  }, [cardOrder, dragState, resetDragState, isPile, pile, deck, dispatch]);
-
-  const handleDragEnd = useCallback(() => {
-    resetDragState();
-  }, [resetDragState]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -517,217 +342,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       };
     }
   }, [isResizing]);
-
-  // Handle dragging cards from search window to table
-  useEffect(() => {
-    // Update state based on mouse position for drag preview
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (globalSearchDragData) {
-        globalSearchDragData.currentX = e.clientX;
-        globalSearchDragData.currentY = e.clientY;
-        // Update local state for preview
-        if (draggingToTable) {
-          setDraggingToTable(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
-        }
-
-        // Check if mouse is outside modal container - if so, close the modal
-        if (modalContainerRef.current && globalSearchDragData.modalOpen) {
-          const rect = modalContainerRef.current.getBoundingClientRect();
-          const isOutside = (
-            e.clientX < rect.left ||
-            e.clientX > rect.right ||
-            e.clientY < rect.top ||
-            e.clientY > rect.bottom
-          );
-          if (isOutside) {
-            globalSearchDragData.modalOpen = false;
-            onClose();
-          }
-        }
-      }
-    };
-
-    const handleGlobalMouseUp = (e: MouseEvent) => {
-      if (!globalSearchDragData) return;
-
-      const { cardId, startX, startY, deckId, pileId, isPile, playTopFaceUp, viewTransform, cardIdsSnapshot } = globalSearchDragData;
-
-      // Check if drag distance is significant (not just a click)
-      const dragDistance = Math.sqrt(
-        Math.pow(e.clientX - startX, 2) +
-        Math.pow(e.clientY - startY, 2)
-      );
-
-      if (dragDistance > 10) {
-        // Get card from state
-        const card = state.objects[cardId] as Card;
-
-        // Check if dropped over the sidebar (hand area)
-        // Sidebar is on the right side, check if cursor is in the right portion of screen
-        const sidebarWidth = 286; // Default sidebar width
-        const isOverHand = e.clientX > window.innerWidth - sidebarWidth;
-
-        if (isOverHand) {
-          // Add card to player's hand
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: card.id,
-              location: 'HAND' as any,
-              ownerId: state.activePlayerId,
-              isOnTable: false,
-              faceUp: playTopFaceUp
-            }
-          });
-        } else {
-          // Place on table at mouse position
-          const { offset, zoom } = viewTransform;
-          const actualCardWidth = card.width ?? 100;
-          const actualCardHeight = card.height ?? 140;
-          const worldX = (e.clientX - offset.x) / zoom - actualCardWidth / 2;
-          const worldY = (e.clientY - offset.y) / zoom - actualCardHeight / 2;
-
-          // Get the highest zIndex from table objects
-          const tableObjects = Object.values(state.objects).filter(obj =>
-            obj.isOnTable && obj.id !== card.id
-          );
-          const allZ = tableObjects.map(o => o.zIndex || 0);
-          const maxZ = allZ.length ? Math.max(...allZ) : 0;
-
-          // Update card to be on table
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: card.id,
-              x: worldX,
-              y: worldY,
-              location: 'TABLE' as any,
-              ownerId: undefined,
-              isOnTable: true,
-              faceUp: playTopFaceUp,
-              zIndex: maxZ + 1
-            }
-          });
-        }
-
-        // Remove from card order (card is taken out of deck/pile)
-        // Use cardIdsSnapshot which was captured at drag start time
-        if (cardIdsSnapshot) {
-          const newCardIds = cardIdsSnapshot.filter(id => id !== card.id);
-          if (isPile && pileId) {
-            // For piles, we need to update the specific pile's cardIds
-            // Get the current deck to access its piles
-            const deckObj = state.objects[deckId] as Deck;
-            if (deckObj?.piles) {
-              const updatedPiles = deckObj.piles.map(p =>
-                p.id === pileId ? { ...p, cardIds: newCardIds } : p
-              );
-              dispatch({ type: 'UPDATE_OBJECT', payload: { id: deckId, piles: updatedPiles } });
-            }
-          } else {
-            dispatch({ type: 'UPDATE_OBJECT', payload: { id: deckId, cardIds: newCardIds } });
-          }
-        }
-
-        // Update local state if modal is still open
-        if (globalSearchDragData.modalOpen) {
-          const newCardOrder = cardOrder.filter(id => id !== card.id);
-          setCardOrder(newCardOrder);
-        }
-      }
-
-      // Clear global state
-      globalSearchDragData = null;
-      globalSearchDragMouseMove = null;
-      globalSearchDragMouseUp = null;
-
-      // Clear local state
-      setDraggingToTable(null);
-      setDragStartPos(null);
-
-      // Remove listeners
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-    };
-
-    if (draggingToTable && dragStartPos) {
-      // Get current deck/pile state at drag start time to avoid stale state issues
-      const currentDeckObj = state.objects[deck.id] as Deck;
-      const currentCardIds = isPile && pile?.id
-        ? currentDeckObj?.piles?.find(p => p.id === pile.id)?.cardIds ?? deck.cardIds
-        : currentDeckObj?.cardIds ?? deck.cardIds;
-
-      // Store drag data globally
-      globalSearchDragData = {
-        cardId: draggingToTable.cardId,
-        startX: dragStartPos.x,
-        startY: dragStartPos.y,
-        currentX: draggingToTable.x,
-        currentY: draggingToTable.y,
-        deckId: deck.id,
-        pileId: pile?.id,
-        isPile,
-        playTopFaceUp: deck.playTopFaceUp ?? true,
-        viewTransform: state.viewTransform,
-        modalOpen: true,
-        fromSearchWindow: true, // Mark that this drag is from search window
-        // Snapshot cardIds at drag start to avoid stale state issues
-        cardIdsSnapshot: currentCardIds
-      };
-
-      // Store handlers globally
-      globalSearchDragMouseMove = handleGlobalMouseMove;
-      globalSearchDragMouseUp = handleGlobalMouseUp;
-
-      window.addEventListener('mousemove', handleGlobalMouseMove);
-      window.addEventListener('mouseup', handleGlobalMouseUp);
-
-      return () => {
-        // Only remove listeners if drag is NOT in progress
-        if (!globalSearchDragData) {
-          window.removeEventListener('mousemove', handleGlobalMouseMove);
-          window.removeEventListener('mouseup', handleGlobalMouseUp);
-        }
-      };
-    }
-  }, [draggingToTable, dragStartPos, cards, cardOrder, deck, pile, isPile, state.viewTransform, state.objects, dispatch, onClose]);
-
-  // Handler for starting card drag to table (Shift+drag only)
-  const handleCardMouseDown = useCallback((e: React.MouseEvent, card: Card) => {
-    // Only start drag-to-table with Shift+drag (normal drag is for reorder)
-    if (e.button === 0 && e.shiftKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      setDraggingToTable({ cardId: card.id, x: e.clientX, y: e.clientY });
-      setDragStartPos({ x: e.clientX, y: e.clientY });
-
-      // Dispatch event for Tabletop to track drag
-      window.dispatchEvent(new CustomEvent('sidebar-drag-start', { detail: { cardId: card.id, fromSearchWindow: true } }));
-    }
-  }, []);
-
-  // Purple slot component - extracted to avoid duplication
-  const PurpleSlot = useCallback(({ index, width, height }: { index: number; width: number; height: number }) => (
-    <div
-      key={`purple-${index}`}
-      className="relative flex-shrink-0 border-2 border-dashed border-purple-500/70 bg-purple-500/20 rounded-lg"
-      style={{ width, height }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'move';
-      }}
-      onDrop={(e) => {
-        e.stopPropagation();
-        handleDrop(e, index);
-      }}
-    >
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-purple-500/50 animate-pulse" />
-      </div>
-    </div>
-  ), [handleDrop]);
-
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-200">
@@ -782,92 +396,19 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
               <p className="text-lg">No cards in {isPile ? 'pile' : 'deck'}</p>
             </div>
           ) : (
-            <div
-              className="flex flex-wrap gap-[2px] w-full relative"
-              onDragOver={(e) => {
-                e.preventDefault();
-                // Just allow drop, don't interfere with card handlers
-              }}
-              onDragLeave={(e) => {
-                // When leaving the container entirely, reset
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
-                  setDragState(prev => ({ ...prev, determiningCardIndex: null, purpleSlotIndex: null }));
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                handleDrop(e, cards.length);
-              }}
-            >
-              {cards.flatMap((card, index) => {
-                const isDraggingCard = dragState.cardId === card.id;
-                const isBlueSlotPosition = isDraggingCard && dragState.showBlueSlot && index === dragState.dragIndex;
+            <div className="flex flex-wrap gap-[2px] w-full">
+              {cards.map((card) => {
                 const buttons = getCardButtonConfigs(card, cardActionButtons);
                 const { width: cardWidth, height: cardHeight } = getCardDimensions(card);
-                // Determine if card should be shown face up based on visibility mode
                 const displayFaceUp = getCardFaceUp(card);
                 const displayCard = { ...card, faceUp: displayFaceUp };
 
-                const result: React.ReactNode[] = [];
-
-                // Insert purple slot BEFORE this card if purpleSlotIndex equals current index
-                if (dragState.purpleSlotIndex === index) {
-                  const determiningCard = cards[dragState.determiningCardIndex ?? index];
-                  const slotDims = determiningCard ? getCardDimensions(determiningCard) : { width: cardWidth, height: cardHeight };
-                  result.push(<PurpleSlot index={index} width={slotDims.width} height={slotDims.height} />);
-                }
-
-                // Add blue slot at dragged card's original position
-                if (isBlueSlotPosition) {
-                  result.push(
-                    <div
-                      key={`blue-${index}`}
-                      className="relative flex-shrink-0 border-2 border-dashed border-blue-500/70 bg-blue-500/20 rounded-lg"
-                      style={{ width: cardWidth, height: cardHeight }}
-                      onDragLeave={(e) => {
-                        const relatedTarget = e.relatedTarget as HTMLElement;
-                        if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
-                          setDragState(prev => ({ ...prev, showBlueSlot: false }));
-                        }
-                      }}
-                      onDrop={(e) => {
-                        e.stopPropagation();
-                        handleDrop(e, index);
-                      }}
-                    >
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-8 h-8 rounded-full border-2 border-blue-500/50 animate-pulse" />
-                      </div>
-                    </div>
-                  );
-                }
-
-                // Skip if card is in invisible preservation slot
-                if (isDraggingCard && dragState.cardInInvisibleSlot) {
-                  return result;
-                }
-
-                // Add the card itself
-                result.push(
+                return (
                   <div
                     key={card.id}
-                    draggable
-                    data-card-index={index}
-                    onDragStart={(e) => handleDragStart(e, card.id, index)}
-                    onDragOver={(e) => {
-                      e.stopPropagation();
-                      handleDragOver(e, index);
-                    }}
-                    onDrop={(e) => {
-                      e.stopPropagation();
-                      handleDrop(e, index);
-                    }}
-                    onDragEnd={handleDragEnd}
                     onContextMenu={(e) => handleContextMenu(e, card)}
-                    onMouseDown={(e) => handleCardMouseDown(e, card)}
                     className="relative flex-shrink-0 group transition-all"
-                    style={{ cursor: dragState.isDragging ? 'grabbing' : 'grab' }}
+                    style={{ width: cardWidth, height: cardHeight }}
                   >
                     <CardComponent
                       card={displayCard}
@@ -894,19 +435,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                     )}
                   </div>
                 );
-
-                return result;
               })}
-
-              {/* Purple slot after last card */}
-              {dragState.purpleSlotIndex === cards.length && (
-                <PurpleSlot
-                  index={cards.length}
-                  width={cards.length > 0 ? getCardDimensions(cards[cards.length - 1]).width : 139}
-                  height={cards.length > 0 ? getCardDimensions(cards[cards.length - 1]).height : 194}
-                />
-              )}
-
             </div>
           )}
         </div>
@@ -916,7 +445,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
-                // Shuffle all cards
                 const newOrder = [...cardOrder].sort(() => Math.random() - 0.5);
                 if (isPile && pile) {
                   const updatedPiles = deck.piles?.map(p =>
@@ -935,7 +463,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             </button>
             <button
               onClick={() => {
-                // Flip all cards using handleFlip to properly track GM states
                 cards.forEach(card => {
                   handleFlip(card.id);
                 });
@@ -968,124 +495,12 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           hideCardActions={true}
         />
       )}
-
-      {/* Drag preview for cards being dragged to table */}
-      {draggingToTable && (() => {
-        const card = cards.find(c => c.id === draggingToTable.cardId);
-        if (!card) return null;
-        const displayFaceUp = getCardFaceUp(card);
-        const displayCard = { ...card, faceUp: displayFaceUp };
-        const { width: cardWidth, height: cardHeight } = getCardDimensions(card);
-
-        return (
-          <div
-            className="fixed pointer-events-none z-[10000]"
-            style={{
-              left: draggingToTable.x,
-              top: draggingToTable.y,
-              transform: 'translate(-50%, -50%)',
-              filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.5))'
-            }}
-          >
-            <CardComponent
-              card={displayCard}
-              overrideWidth={cardWidth}
-              overrideHeight={cardHeight}
-              cardNamePosition={deck.cardNamePosition}
-              cardOrientation={deck.cardOrientation}
-              disableRotationTransform={true}
-            />
-          </div>
-        );
-      })()}
     </div>,
     document.body
   );
 };
 
-// Global drag preview component - renders outside modal to survive unmount
+// Empty component for compatibility - no longer provides drag preview
 export const SearchDeckDragPreview: React.FC = () => {
-  const { state } = useGame();
-  const [previewData, setPreviewData] = useState<{ cardId: string; x: number; y: number; deckId: string } | null>(null);
-
-  useEffect(() => {
-    const updatePreview = () => {
-      if (globalSearchDragData) {
-        setPreviewData({
-          cardId: globalSearchDragData.cardId,
-          x: globalSearchDragData.currentX,
-          y: globalSearchDragData.currentY,
-          deckId: globalSearchDragData.deckId
-        });
-      } else {
-        setPreviewData(null);
-      }
-    };
-
-    // Initial check
-    updatePreview();
-
-    // Watch for changes
-    const interval = setInterval(updatePreview, 16); // ~60fps
-
-    // Also listen for mousemove to update preview position
-    const handleMouseMove = (e: MouseEvent) => {
-      if (globalSearchDragData) {
-        setPreviewData({
-          cardId: globalSearchDragData.cardId,
-          x: e.clientX,
-          y: e.clientY,
-          deckId: globalSearchDragData.deckId
-        });
-      }
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('mousemove', handleMouseMove);
-    };
-  }, []);
-
-  if (!previewData || !globalSearchDragData) return null;
-
-  const card = state.objects[previewData.cardId] as Card;
-  if (!card) return null;
-
-  const deck = state.objects[previewData.deckId] as Deck;
-  if (!deck) return null;
-
-  // Calculate card dimensions (same logic as in SearchDeckModal)
-  const baseCardWidth = 140;
-  const isHorizontal = deck.cardOrientation === 'HORIZONTAL';
-  const scaledBaseCardWidth = isHorizontal ? baseCardWidth * 1.254 : baseCardWidth;
-  const actualCardWidth = card.width ?? 100;
-  const actualCardHeight = card.height ?? 140;
-  const layoutWidth = isHorizontal ? actualCardHeight : actualCardWidth;
-  const layoutHeight = isHorizontal ? actualCardWidth : actualCardHeight;
-  const aspectRatio = layoutWidth / layoutHeight;
-  const cardHeight = scaledBaseCardWidth / aspectRatio;
-
-  return createPortal(
-    <div
-      className="fixed pointer-events-none z-[10000]"
-      style={{
-        left: previewData.x,
-        top: previewData.y,
-        transform: 'translate(-50%, -50%)',
-        filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.5))'
-      }}
-    >
-      <CardComponent
-        card={{ ...card, faceUp: globalSearchDragData.playTopFaceUp }}
-        overrideWidth={scaledBaseCardWidth}
-        overrideHeight={cardHeight}
-        cardNamePosition={deck.cardNamePosition}
-        cardOrientation={deck.cardOrientation}
-        disableRotationTransform={true}
-      />
-    </div>,
-    document.body
-  );
+  return null;
 };
