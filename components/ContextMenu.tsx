@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -18,6 +18,8 @@ interface ContextMenuProps {
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions }) => {
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
+  const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
+  const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
   const submenuRef = React.useRef<HTMLDivElement>(null);
 
   // Helper to get card settings from deck (cards always inherit from deck)
@@ -75,6 +77,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     const handleClickOutside = (e: MouseEvent) => {
       if (submenuRef.current && !submenuRef.current.contains(e.target as Node)) {
         setLayerSubmenuOpen(false);
+        setRotateSubmenuOpen(false);
+        setPilesSubmenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -94,6 +98,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: 'layer',
       icon: <Layers size={14} />,
       visible: !hideCardActions && object.type !== ItemType.CARD && can('layer'),
+      hasSubmenu: true
+    },
+    {
+      label: 'Rotation',
+      action: 'rotate',
+      icon: <RotateCw size={14} />,
+      visible: !hideCardActions && can('rotate'),
       hasSubmenu: true,
       separator: true
     },
@@ -111,10 +122,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       visible: object.type === ItemType.DECK && can('playTopCard')
     },
     {
-      label: 'Shuffle',
-      action: 'shuffleDeck',
-      icon: <Shuffle size={14} />,
-      visible: object.type === ItemType.DECK && can('shuffleDeck')
+      label: (object as Deck).showTopCard ? 'Hide top' : 'Show top',
+      action: 'showTop',
+      icon: <Eye size={14} />,
+      visible: object.type === ItemType.DECK && can('showTop')
+    },
+    {
+      label: 'Top Deck',
+      action: 'topDeck',
+      icon: <ArrowUp size={14} />,
+      visible: object.type === ItemType.DECK && can('topDeck')
     },
     {
       label: 'Search',
@@ -123,10 +140,24 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       visible: object.type === ItemType.DECK && can('searchDeck')
     },
     {
+      label: 'Shuffle',
+      action: 'shuffleDeck',
+      icon: <Shuffle size={14} />,
+      visible: object.type === ItemType.DECK && can('shuffleDeck')
+    },
+    {
+      label: 'Piles',
+      action: 'piles',
+      icon: <Layers size={14} />,
+      visible: object.type === ItemType.DECK && (object as Deck).piles && (object as Deck).piles!.length > 0,
+      hasSubmenu: true
+    },
+    {
       label: 'Return All',
       action: 'returnAll',
       icon: <Undo size={14} />,
-      visible: object.type === ItemType.DECK && can('returnAll')
+      visible: object.type === ItemType.DECK && can('returnAll'),
+      separator: true
     },
     {
       label: object.locked ? 'Unlock' : 'Lock',
@@ -139,12 +170,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: 'flip',
       icon: <Eye size={14} />,
       visible: object.type === ItemType.CARD && can('flip')
-    },
-    {
-      label: 'Rotate 90°',
-      action: 'rotate',
-      icon: <RefreshCw size={14} />,
-      visible: !hideCardActions && object.type !== ItemType.CARD && can('rotate')
     },
     {
       label: 'To Hand',
@@ -203,10 +228,30 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
 
         {finalItems.map((item, idx) => {
             if (item.hasSubmenu) {
+              const isRotateSubmenu = item.action === 'rotate';
+              const isPilesSubmenu = item.action === 'piles';
+              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : layerSubmenuOpen;
+              const deck = object as Deck;
+              const toggleSubmenu = () => {
+                if (isRotateSubmenu) {
+                  setRotateSubmenuOpen(!rotateSubmenuOpen);
+                  setLayerSubmenuOpen(false);
+                  setPilesSubmenuOpen(false);
+                } else if (isPilesSubmenu) {
+                  setPilesSubmenuOpen(!pilesSubmenuOpen);
+                  setLayerSubmenuOpen(false);
+                  setRotateSubmenuOpen(false);
+                } else {
+                  setLayerSubmenuOpen(!layerSubmenuOpen);
+                  setRotateSubmenuOpen(false);
+                  setPilesSubmenuOpen(false);
+                }
+              };
+
               return (
                 <div key={item.action || idx} className="relative" ref={submenuRef}>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setLayerSubmenuOpen(!layerSubmenuOpen); }}
+                    onClick={(e) => { e.stopPropagation(); toggleSubmenu(); }}
                     className="w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                   >
                     <div className="flex items-center gap-2">
@@ -215,25 +260,74 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                     </div>
                     <ChevronRight size={12} />
                   </button>
-                  {layerSubmenuOpen && (
+                  {isSubmenuOpen && (
                     <div
-                      className="absolute left-full top-0 ml-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[160px] z-[10000]"
+                      className="absolute left-full top-0 ml-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] z-[10000]"
                       onMouseDown={(e) => e.stopPropagation()}
                     >
-                      <button
-                        onClick={() => { onAction('layerUp'); onClose(); }}
-                        className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                      >
-                        <ArrowUp size={14} />
-                        <span>Layer Up</span>
-                      </button>
-                      <button
-                        onClick={() => { onAction('layerDown'); onClose(); }}
-                        className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                      >
-                        <ArrowDown size={14} />
-                        <span>Layer Down</span>
-                      </button>
+                      {isRotateSubmenu ? (
+                        <>
+                          <button
+                            onClick={() => { onAction('rotateClockwise'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <RefreshCw size={14} />
+                            <span>Clockwise</span>
+                          </button>
+                          <button
+                            onClick={() => { onAction('rotateCounterClockwise'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                            <span>Counter-Clockwise</span>
+                          </button>
+                          <button
+                            onClick={() => { onAction('freeRotate'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <RotateCw size={14} />
+                            <span>Free Rotate</span>
+                          </button>
+                          <button
+                            onClick={() => { onAction('resetRotation'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <Undo size={14} />
+                            <span>Reset</span>
+                          </button>
+                        </>
+                      ) : isPilesSubmenu ? (
+                        <>
+                          {deck.piles?.map((pile) => (
+                            <button
+                              key={pile.id}
+                              onClick={() => { onAction(`pile-${pile.id}`); onClose(); }}
+                              className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors ${pile.isMillPile ? 'text-red-400' : 'text-gray-200'}`}
+                            >
+                              <Layers size={14} />
+                              <span>{pile.name}</span>
+                              {pile.isMillPile && <span className="ml-auto text-[10px] bg-red-600 px-1 rounded">MILL</span>}
+                            </button>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => { onAction('layerUp'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <ArrowUp size={14} />
+                            <span>Layer Up</span>
+                          </button>
+                          <button
+                            onClick={() => { onAction('layerDown'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <ArrowDown size={14} />
+                            <span>Layer Down</span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                   {item.separator && <div className="h-px bg-slate-700 my-1 mx-2" />}

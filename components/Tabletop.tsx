@@ -1,15 +1,16 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, PilePosition, Deck as DeckType, CardOrientation } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { SearchDeckModal } from './SearchDeckModal';
-import { DECK_OFFSET } from '../constants';
-import { Layers, Lock, Minus, Plus, Shuffle, Hand, Eye, Dices, Search, Undo, RefreshCw, Trash2, Copy } from 'lucide-react';
+import { TopDeckModal } from './TopDeckModal';
+import { DeckComponent } from './DeckComponent';
+import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | null;
 
@@ -203,6 +204,11 @@ export const Tabletop: React.FC = () => {
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number; objX: number; objY: number } | null>(null);
 
+  // Free rotation state
+  const [freeRotatingId, setFreeRotatingId] = useState<string | null>(null);
+  const [rotateStartAngle, setRotateStartAngle] = useState<number>(0);
+  const [rotateStartMouse, setRotateStartMouse] = useState<{ x: number; y: number } | null>(null);
+
   // Store the offset between cursor and object's top-left corner when dragging starts
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -214,10 +220,26 @@ export const Tabletop: React.FC = () => {
   const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
   const [searchModalDeck, setSearchModalDeck] = useState<DeckType | null>(null);
   const [searchModalPile, setSearchModalPile] = useState<CardPile | undefined>(undefined);
+  const [topDeckModalDeck, setTopDeckModalDeck] = useState<DeckType | null>(null);
+  const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: DeckType } | null>(null);
 
   // Pile dragging state (for free position piles)
   const [draggingPile, setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
   const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Refs for drag states - used by global event handlers to check current state
+  const draggingIdRef = useRef<string | null>(null);
+  const isPanningRef = useRef(false);
+  const resizingIdRef = useRef<string | null>(null);
+  const draggingPileRef = useRef<{ pile: CardPile; deck: DeckType } | null>(null);
+  const freeRotatingIdRef = useRef<string | null>(null);
+
+  // Update refs when state changes
+  useEffect(() => { draggingIdRef.current = draggingId; }, [draggingId]);
+  useEffect(() => { isPanningRef.current = isPanning; }, [isPanning]);
+  useEffect(() => { resizingIdRef.current = resizingId; }, [resizingId]);
+  useEffect(() => { draggingPileRef.current = draggingPile; }, [draggingPile]);
+  useEffect(() => { freeRotatingIdRef.current = freeRotatingId; }, [freeRotatingId]);
 
   // Track card being dragged from hand (via sidebar)
   const [draggingCardFromHand, setDraggingCardFromHand] = useState<CardType | null>(null);
@@ -602,7 +624,20 @@ export const Tabletop: React.FC = () => {
         }
         break;
       case 'rotate':
-        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: 90 } });
+        // Legacy rotate action - use rotationStep
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
+        break;
+      case 'rotateClockwise':
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
+        break;
+      case 'rotateCounterClockwise':
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -(obj.rotationStep ?? 45) } });
+        break;
+      case 'freeRotate':
+        setFreeRotatingId(obj.id);
+        break;
+      case 'resetRotation':
+        dispatch({ type: 'SET_ROTATION', payload: { id: obj.id, rotation: 0 } });
         break;
       case 'draw':
         if (obj.type === ItemType.DECK) {
@@ -650,6 +685,27 @@ export const Tabletop: React.FC = () => {
         if (obj.type === ItemType.DECK) {
           setSearchModalDeck(obj as DeckType);
           setSearchModalPile(undefined);
+        }
+        break;
+      case 'topDeck':
+        if (obj.type === ItemType.DECK) {
+          setTopDeckModalDeck(obj as DeckType);
+        }
+        break;
+      case 'piles':
+        // Open piles button menu at the object's position
+        if (obj.type === ItemType.DECK) {
+          const deck = obj as DeckType;
+          // Get the element position for the menu
+          const deckElement = document.querySelector(`[data-object-id="${deck.id}"]`) as HTMLElement;
+          if (deckElement) {
+            const rect = deckElement.getBoundingClientRect();
+            setPilesButtonMenu({
+              x: rect.left,
+              y: rect.bottom + 5,
+              deck
+            });
+          }
         }
         break;
       case 'returnAll':
@@ -900,6 +956,17 @@ export const Tabletop: React.FC = () => {
       case 'layerDown':
         dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } });
         break;
+      case 'showTop':
+        if (obj.type === ItemType.DECK) {
+          dispatch({ type: 'TOGGLE_SHOW_TOP_CARD', payload: { deckId: obj.id } });
+        }
+        break;
+      case 'swingClockwise':
+        dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id } });
+        break;
+      case 'swingCounterClockwise':
+        dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id } });
+        break;
     }
   }, [dispatch, state.activePlayerId, state.objects]);
 
@@ -915,6 +982,20 @@ export const Tabletop: React.FC = () => {
     if (id && e.button === 0) {
       e.stopPropagation();
       const item = state.objects[id];
+
+      // Check if we're in free rotation mode for this object
+      if (freeRotatingId === id && item) {
+        const objCenterX = item.x + (item.width ?? 100) / 2;
+        const objCenterY = item.y + (item.height ?? 100) / 2;
+        const mouseWorldX = (e.clientX - offset.x) / zoom;
+        const mouseWorldY = (e.clientY - offset.y) / zoom;
+
+        // Calculate initial angle from object center to mouse
+        const startAngle = Math.atan2(mouseWorldY - objCenterY, mouseWorldX - objCenterX) * 180 / Math.PI;
+        setRotateStartAngle(item.rotation - startAngle);
+        setRotateStartMouse({ x: e.clientX, y: e.clientY });
+        return;
+      }
 
       // Check if this is a board and if we're clicking on the resize edge
       if (item && item.type === ItemType.TOKEN) {
@@ -946,11 +1027,6 @@ export const Tabletop: React.FC = () => {
           x: mouseWorldX - item.x,
           y: mouseWorldY - item.y
         };
-
-        // Notify sidebar if dragging a card from table
-        if (item.type === ItemType.CARD && (item as CardType).location === CardLocation.TABLE) {
-          window.dispatchEvent(new CustomEvent('tabletop-drag-start', { detail: { cardId: item.id } }));
-        }
       }
     }
   };
@@ -961,6 +1037,27 @@ export const Tabletop: React.FC = () => {
         x: e.clientX - dragStartRef.current.x,
         y: e.clientY - dragStartRef.current.y,
       });
+      return;
+    }
+
+    // Handle free rotation
+    if (freeRotatingId && rotateStartMouse) {
+      const obj = state.objects[freeRotatingId];
+      if (obj) {
+        const objCenterX = obj.x + (obj.width ?? 100) / 2;
+        const objCenterY = obj.y + (obj.height ?? 100) / 2;
+        const mouseWorldX = (e.clientX - offset.x) / zoom;
+        const mouseWorldY = (e.clientY - offset.y) / zoom;
+
+        // Calculate current angle from object center to mouse
+        const currentAngle = Math.atan2(mouseWorldY - objCenterY, mouseWorldX - objCenterX) * 180 / Math.PI;
+        const newRotation = (currentAngle + rotateStartAngle + 360) % 360;
+
+        dispatch({
+          type: 'SET_ROTATION',
+          payload: { id: freeRotatingId, rotation: newRotation }
+        });
+      }
       return;
     }
 
@@ -1013,40 +1110,15 @@ export const Tabletop: React.FC = () => {
 
     // Handle dragging
     if (draggingId) {
-      const mouseWorldX = (e.clientX - offset.x) / zoom;
-      const mouseWorldY = (e.clientY - offset.y) / zoom;
-
       const draggingObj = state.objects[draggingId];
       if (!draggingObj) return;
 
-      // Check if dragging a card near the right edge (to hand)
-      if (draggingObj.type === ItemType.CARD && (draggingObj as CardType).location === CardLocation.TABLE) {
-        const tabletopEl = containerRef.current;
-        if (tabletopEl) {
-          const rect = tabletopEl.getBoundingClientRect();
-          // If cursor is within 50px of right edge, send to hand
-          if (e.clientX > rect.right - 50) {
-            // Send to hand immediately
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: {
-                id: draggingId,
-                location: CardLocation.HAND,
-                ownerId: state.activePlayerId,
-                isOnTable: false
-              }
-            });
-            // Reset drag state
-            setHoveredDeckId(null);
-            setDraggingId(null);
-            window.dispatchEvent(new CustomEvent('tabletop-drag-end'));
-            return;
-          }
-        }
-      }
+      // Always update position - the world coordinates work correctly even when cursor is outside
+      // The global drag preview shows the card at screen position, while this updates the actual card
+      const mouseWorldX = (e.clientX - offset.x) / zoom;
+      const mouseWorldY = (e.clientY - offset.y) / zoom;
 
       // Use the offset to position the object relative to cursor
-      // Calculate where the object's top-left corner should be
       const targetX = mouseWorldX - (dragOffsetRef.current?.x || 0);
       const targetY = mouseWorldY - (dragOffsetRef.current?.y || 0);
 
@@ -1166,9 +1238,19 @@ export const Tabletop: React.FC = () => {
         payload: { id: draggingPile.deck.id, piles: updatedPiles }
       });
     }
-  }, [isPanning, resizingId, resizeStart, resizeHandle, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch]);
+  }, [isPanning, resizingId, resizeStart, resizeHandle, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, freeRotatingId, rotateStartAngle, rotateStartMouse]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
+    // Debug: log when mouseup happens
+    if (draggingId && e) {
+      console.log('[Tabletop] handleMouseUp called', {
+        draggingId,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        target: (e.target as HTMLElement)?.className,
+      });
+    }
+
     // Check if this was a click (not a drag or resize)
     const wasDragging = draggingId !== null;
     const wasResizing = resizingId !== null;
@@ -1336,10 +1418,15 @@ export const Tabletop: React.FC = () => {
     setResizeStart(null);
     dragOffsetRef.current = null;
 
+    // Clear free rotation state
+    setFreeRotatingId(null);
+    setRotateStartAngle(0);
+    setRotateStartMouse(null);
+
     // Clear pile dragging state
     setDraggingPile(null);
     pileDragStartRef.current = null;
-  }, [draggingId, hoveredDeckId, hoveredPileId, state.objects, dispatch, executeClickAction]);
+  }, [draggingId, hoveredDeckId, hoveredPileId, state.objects, dispatch, executeClickAction, freeRotatingId]);
 
   // Keep handleMouseUp ref updated
   useEffect(() => {
@@ -1351,39 +1438,60 @@ export const Tabletop: React.FC = () => {
     handleMouseMoveRef.current = handleMouseMove;
   }, [handleMouseMove]);
 
-  // Global mouseup handler for drag operations that extend beyond the component
+  // Handle Escape key to cancel free rotation mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && freeRotatingId) {
+        setFreeRotatingId(null);
+        setRotateStartAngle(0);
+        setRotateStartMouse(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [freeRotatingId]);
+
+  // Global mouseup handler for drag operations - ALWAYS active, checks state internally
   useEffect(() => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
-      if (draggingId || isPanning || resizingId || draggingPile) {
+      // Only handle actual mouseup events (button was released)
+      // Ignore synthetic events or events during drag
+      if (e.button !== 0) return;
+
+      // Use refs to check current state without depending on them
+      const currentDraggingId = draggingIdRef.current;
+      const currentIsPanning = isPanningRef.current;
+      const currentResizingId = resizingIdRef.current;
+      const currentDraggingPile = draggingPileRef.current;
+      const currentFreeRotatingId = freeRotatingIdRef.current;
+
+      if (currentDraggingId || currentIsPanning || currentResizingId || currentDraggingPile || currentFreeRotatingId) {
         handleMouseUpRef.current(e);
       }
     };
 
-    if (draggingId || isPanning || resizingId || draggingPile) {
-      window.addEventListener('mouseup', handleGlobalMouseUp);
-    }
-
-    return () => {
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-    };
-  }, [draggingId, isPanning, resizingId, draggingPile]);
-
-  // Global mousemove handler for drag operations that extend beyond the component
-  useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (draggingId || isPanning || resizingId || draggingPile) {
+      // Use refs to check current state without depending on them
+      const currentDraggingId = draggingIdRef.current;
+      const currentIsPanning = isPanningRef.current;
+      const currentResizingId = resizingIdRef.current;
+      const currentDraggingPile = draggingPileRef.current;
+      const currentFreeRotatingId = freeRotatingIdRef.current;
+
+      if (currentDraggingId || currentIsPanning || currentResizingId || currentDraggingPile || currentFreeRotatingId) {
         handleMouseMoveRef.current(e);
       }
     };
 
-    if (draggingId || isPanning || resizingId || draggingPile) {
-      window.addEventListener('mousemove', handleGlobalMouseMove);
-    }
+    // Listen in bubbling phase (not capture) to avoid interfering with other handlers
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('mousemove', handleGlobalMouseMove);
 
     return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
       window.removeEventListener('mousemove', handleGlobalMouseMove);
     };
-  }, [draggingId, isPanning, resizingId, draggingPile]);
+  }, []); // Empty deps - handlers check refs for current state
 
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey) {
@@ -1423,6 +1531,18 @@ export const Tabletop: React.FC = () => {
           case 'delete':
               setDeleteCandidateId(object.id);
               return;
+      }
+
+      // Handle pile actions (pile-{pileId})
+      if (action.startsWith('pile-') && object.type === ItemType.DECK) {
+          const pileId = action.replace('pile-', '');
+          const deck = object as DeckType;
+          const pile = deck.piles?.find(p => p.id === pileId);
+          if (pile) {
+              setSearchModalDeck(deck);
+              setSearchModalPile(pile);
+          }
+          return;
       }
 
       // All other actions use the unified executeClickAction
@@ -1467,6 +1587,12 @@ export const Tabletop: React.FC = () => {
               break;
           case 'returnAll':
               executeClickAction(deck, 'returnAll');
+              break;
+          case 'showTop':
+              dispatch({
+                  type: 'TOGGLE_SHOW_TOP_CARD',
+                  payload: { deckId: deck.id, pileId: pile.id }
+              });
               break;
       }
   };
@@ -1518,15 +1644,61 @@ export const Tabletop: React.FC = () => {
       className="w-full h-full bg-table overflow-auto relative cursor-grab active:cursor-grabbing"
       onMouseDown={(e) => handleMouseDown(e)}
       onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
       onContextMenu={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        // Allow drops from hand panel
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDrop={(e) => {
+        // Handle drop from hand panel (when dropped outside the transformed area)
+        e.preventDefault();
+        e.stopPropagation();
+        const cardId = e.dataTransfer.getData('text/plain');
+        if (cardId && state.objects[cardId]) {
+            const card = state.objects[cardId] as CardType;
+            if (card.type === ItemType.CARD && card.location === CardLocation.HAND) {
+                // Calculate world position for the card
+                const worldX = (e.clientX - offset.x) / zoom - (card.width ?? 100) / 2;
+                const worldY = (e.clientY - offset.y) / zoom - (card.height ?? 140) / 2;
+
+                // Get the highest zIndex
+                const tableObjects = Object.values(state.objects).filter(obj => obj.isOnTable);
+                const maxZIndex = tableObjects.length > 0
+                    ? Math.max(...tableObjects.map(obj => obj.zIndex || 0))
+                    : 0;
+
+                // Move card to table
+                dispatch({
+                    type: 'UPDATE_OBJECT',
+                    payload: {
+                        id: cardId,
+                        location: CardLocation.TABLE,
+                        x: worldX,
+                        y: worldY,
+                        isOnTable: true,
+                        faceUp: true,
+                        zIndex: maxZIndex + 1,
+                        ownerId: undefined
+                    }
+                });
+            }
+        }
+      }}
       style={{
         backgroundImage: 'radial-gradient(#34495e 1px, transparent 1px)',
         backgroundSize: '20px 20px',
+        cursor: freeRotatingId ? 'crosshair' : undefined
       }}
     >
+      {/* Free rotation mode indicator */}
+      {freeRotatingId && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-lg z-[1000] flex items-center gap-2">
+          <RotateCw size={16} className="animate-spin" />
+          <span className="text-sm font-medium">Free Rotation Mode - Drag to rotate, press ESC to exit</span>
+        </div>
+      )}
         <div 
             style={{ 
                 width: worldBounds.width, 
@@ -1543,6 +1715,45 @@ export const Tabletop: React.FC = () => {
             className="absolute origin-top-left transition-transform duration-0 ease-linear"
             style={{
                 transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+            }}
+            onDragOver={(e) => {
+                // Allow drops from hand panel
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            }}
+            onDrop={(e) => {
+                // Handle drop from hand panel
+                e.preventDefault();
+                const cardId = e.dataTransfer.getData('text/plain');
+                if (cardId && state.objects[cardId]) {
+                    const card = state.objects[cardId] as CardType;
+                    if (card.type === ItemType.CARD && card.location === CardLocation.HAND) {
+                        // Calculate world position for the card
+                        const worldX = (e.clientX - offset.x) / zoom - (card.width ?? 100) / 2;
+                        const worldY = (e.clientY - offset.y) / zoom - (card.height ?? 140) / 2;
+
+                        // Get the highest zIndex
+                        const tableObjects = Object.values(state.objects).filter(obj => obj.isOnTable);
+                        const maxZIndex = tableObjects.length > 0
+                            ? Math.max(...tableObjects.map(obj => obj.zIndex || 0))
+                            : 0;
+
+                        // Move card to table
+                        dispatch({
+                            type: 'UPDATE_OBJECT',
+                            payload: {
+                                id: cardId,
+                                location: CardLocation.TABLE,
+                                x: worldX,
+                                y: worldY,
+                                isOnTable: true,
+                                faceUp: true,
+                                zIndex: maxZIndex + 1,
+                                ownerId: undefined
+                            }
+                        });
+                    }
+                }
             }}
         >
             {tableObjects.map((obj) => {
@@ -1884,326 +2095,32 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.DECK) {
                     const deck = obj as DeckType;
 
-                    // Check if dragging card from hand via sidebar
-                    const isDraggingFromHandToDeck = draggingCardFromHand && draggingCardFromHand.type === ItemType.CARD;
-                    // Also check if dragging card from table (using custom drag system)
-                    const draggingCard = draggingId ? state.objects[draggingId] as CardType : null;
-                    const isDraggingCardFromTable = draggingCard && draggingCard.type === ItemType.CARD;
-                    // Check if dragging any card (for pile hover detection)
-                    const isDraggingAnyCard = draggingCardFromHand !== null || (draggingId && state.objects[draggingId]?.type === ItemType.CARD);
-                    // Only highlight when cursor is actually hovering over this deck
-                    const canDropCard = (isDraggingFromHandToDeck || isDraggingCardFromTable) && hoveredDeckId === obj.id;
-
-                    // Calculate pile positions
-                    const pileOffset = 4;
-
-                    // Group piles by position and calculate their order
-                    const visiblePiles = deck.piles?.filter(p => p.visible) || [];
-                    const pilesByPosition: Record<string, CardPile[]> = {
-                        left: [],
-                        right: [],
-                        top: [],
-                        bottom: [],
-                        free: []
-                    };
-                    visiblePiles.forEach(p => {
-                        if (p.position !== 'free') {
-                            pilesByPosition[p.position].push(p);
-                        }
-                    });
-
-                    const getPilePosition = (pile: CardPile) => {
-                        const pileSize = pile.size ?? 1;
-                        const isHalfSize = pileSize === 0.5;
-
-                        if (pile.position === 'free') {
-                            return { x: pile.x ?? 0, y: pile.y ?? 0 };
-                        }
-
-                        // Find index of this pile in its position group
-                        const positionGroup = pilesByPosition[pile.position] || [];
-                        const pileIndex = positionGroup.findIndex(p => p.id === pile.id);
-
-                        switch (pile.position) {
-                            case 'left':
-                                // Half-size piles stack vertically, full-size are single
-                                if (isHalfSize) {
-                                    const yOffset = pileIndex * (obj.height * 0.5 + 2);
-                                    return { x: obj.x - obj.width * 0.5 - 4, y: obj.y + yOffset };
-                                }
-                                return { x: obj.x - obj.width - 4, y: obj.y };
-                            case 'right':
-                                // Half-size piles stack vertically, full-size are single
-                                if (isHalfSize) {
-                                    const yOffset = pileIndex * (obj.height * 0.5 + 2);
-                                    return { x: obj.x + obj.width + 4, y: obj.y + yOffset };
-                                }
-                                return { x: obj.x + obj.width + 4, y: obj.y };
-                            case 'top':
-                                // Half-size piles stack horizontally, full-size are single
-                                if (isHalfSize) {
-                                    const xOffset = pileIndex * (obj.width * 0.5 + 2);
-                                    return { x: obj.x + xOffset, y: obj.y - obj.height * 0.5 - 4 };
-                                }
-                                return { x: obj.x, y: obj.y - obj.height - 4 };
-                            case 'bottom':
-                                // Half-size piles stack horizontally, full-size are single
-                                if (isHalfSize) {
-                                    const xOffset = pileIndex * (obj.width * 0.5 + 2);
-                                    return { x: obj.x + xOffset, y: obj.y + obj.height + 4 };
-                                }
-                                return { x: obj.x, y: obj.y + obj.height + 4 };
-                            default:
-                                return { x: obj.x, y: obj.y };
-                        }
-                    };
-
                     return (
-                        <React.Fragment key={obj.id}>
-                            {/* Render piles */}
-                            {deck.piles?.filter(p => p.visible).map(pile => {
-                                const pilePos = getPilePosition(pile);
-                                const pileCards = pile.cardIds.map(id => state.objects[id]).filter(Boolean) as CardType[];
-                                const topCard = pileCards.length > 0 ? pileCards[0] : null; // Top card is first element (index 0)
-                                const pileSize = pile.size ?? 1;
-
-                                // Check if dragging a card and hovering over this pile
-                                const isHoveringPile = isDraggingAnyCard && hoveredPileId === pile.id;
-
-                                return (
-                                    <div
-                                        key={pile.id}
-                                        onMouseEnter={() => {
-                                            // Allow hover if dragging any card (from hand or table)
-                                            const draggingFromHand = draggingCardFromHand !== null;
-                                            const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-                                            if (draggingFromHand || draggingFromTable) {
-                                                setHoveredPileId(pile.id);
-                                            }
-                                        }}
-                                        onMouseLeave={() => {
-                                            if (hoveredPileId === pile.id) {
-                                                setHoveredPileId(null);
-                                            }
-                                        }}
-                                        className={`absolute group ${isHoveringPile ? 'ring-2 ring-green-400 ring-offset-2 ring-offset-slate-900' : ''} ${draggingPile?.pile.id === pile.id ? 'opacity-50 scale-95 cursor-grabbing' : ''}`}
-                                        style={{
-                                            left: pilePos.x,
-                                            top: pilePos.y,
-                                            width: obj.width * pileSize,
-                                            height: obj.height * pileSize,
-                                            transform: `rotate(${obj.rotation}deg)`
-                                        }}
-                                    >
-                                        {/* Pile visual representation */}
-                                        <div
-                                            className={`absolute inset-0 bg-slate-800 border-2 rounded flex flex-col items-center justify-center transition-colors ${
-                                                pile.position === 'free'
-                                                    ? pile.locked
-                                                        ? 'border-red-600 cursor-pointer'
-                                                        : draggingPile?.pile.id === pile.id
-                                                            ? 'border-yellow-400 cursor-grabbing'
-                                                            : 'border-slate-600 cursor-move hover:border-slate-500'
-                                                    : 'border-slate-600 cursor-pointer'
-                                            }`}
-                                            onContextMenu={(e) => handlePileContextMenu(e, pile, deck)}
-                                            onMouseDown={(e) => {
-                                                if (pile.position === 'free' && !pile.locked && e.button === 0) {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    setDraggingPile({ pile, deck });
-                                                    pileDragStartRef.current = {
-                                                        x: e.clientX - (pile.x ?? 0),
-                                                        y: e.clientY - (pile.y ?? 0)
-                                                    };
-                                                }
-                                            }}
-                                        >
-                                            {topCard ? (
-                                                <div className="w-full h-full relative overflow-hidden rounded">
-                                                    <div
-                                                        className="w-full h-full"
-                                                        style={{
-                                                            backgroundColor: pile.faceUp ? 'white' : '#1e293b',
-                                                            backgroundImage: pile.faceUp && topCard.content ? `url(${topCard.content})` : undefined,
-                                                            backgroundSize: 'cover',
-                                                            backgroundPosition: 'center'
-                                                        }}
-                                                    />
-                                                    {/* Pile name overlay with count */}
-                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
-                                                        <span className="text-xs text-white font-bold px-2 text-center select-none drop-shadow-md">
-                                                            {pile.name}
-                                                        </span>
-                                                        <span className="text-xs text-slate-300 select-none drop-shadow-md">{pileCards.length}</span>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex flex-col items-center justify-center">
-                                                    <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{pile.name}</span>
-                                                    <span className="text-xs text-slate-500 select-none">{pileCards.length}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-
-                            {/* Render the deck itself */}
-                            <div
-                                onMouseDown={(e) => isGM && handleMouseDown(e, obj.id)}
-                                onContextMenu={(e) => handleContextMenu(e, obj)}
-                                onMouseEnter={() => {
-                                    // Allow hover if dragging any card (from hand or table)
-                                    const draggingFromHand = draggingCardFromHand !== null;
-                                    const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-                                    if (draggingFromHand || draggingFromTable) {
-                                        setHoveredDeckId(obj.id);
-                                    }
-                                }}
-                                onMouseLeave={() => {
-                                    if (hoveredDeckId === obj.id) {
-                                        setHoveredDeckId(null);
-                                    }
-                                }}
-                                className={`absolute group ${draggingClass} ${canDropCard ? 'ring-2 ring-yellow-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                                style={{
-                                    left: obj.x,
-                                    top: obj.y,
-                                    width: obj.width,
-                                    height: obj.height,
-                                    transform: `rotate(${obj.rotation}deg)`
-                                }}
-                            >
-                                {[2, 1, 0].map(i => (
-                                    <div
-                                        key={i}
-                                        className="absolute rounded bg-slate-800 border-2 border-slate-600 shadow-md"
-                                        style={{
-                                            inset: 0,
-                                            transform: `translate(${i * -DECK_OFFSET}px, ${i * -DECK_OFFSET}px)`,
-                                            zIndex: -i
-                                        }}
-                                    />
-                                ))}
-
-                                <div className="absolute inset-0 bg-slate-900 rounded border-2 border-slate-500 flex flex-col items-center justify-center cursor-pointer transition-colors">
-                                    <Layers className="text-slate-400 mb-2" />
-                                    <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{obj.name}</span>
-                                    <span className="text-xs text-slate-500 select-none">{deck.cardIds.length} / {deck.initialCardCount || deck.cardIds.length}</span>
-                                </div>
-
-                                {/* Action buttons on bottom edge - like cards */}
-                                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30 pointer-events-none">
-                                    {(() => {
-                                        // Define all possible buttons based on actionButtons setting
-                                        const actionButtons = obj.actionButtons || [];
-
-                                        const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
-                                            draw: {
-                                                key: 'draw',
-                                                action: () => dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: state.activePlayerId }}),
-                                                className: 'bg-blue-600 hover:bg-blue-500',
-                                                title: 'Draw',
-                                                icon: <Hand size={14} />
-                                            },
-                                            playTopCard: {
-                                                key: 'playTopCard',
-                                                action: () => {
-                                                    const deck = obj as any;
-                                                    if (deck.cardIds && deck.cardIds.length > 0) {
-                                                        const topCardId = deck.cardIds[0]; // Top card is first element (index 0)
-                                                        const newCardIds = deck.cardIds.slice(1);
-                                                        dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: newCardIds }});
-                                                        const faceUp = deck.playTopFaceUp ?? true;
-                                                        dispatch({
-                                                            type: 'UPDATE_OBJECT',
-                                                            payload: {
-                                                                id: topCardId,
-                                                                location: CardLocation.TABLE,
-                                                                x: deck.x + 10,
-                                                                y: deck.y + 10,
-                                                                faceUp: faceUp,
-                                                                zIndex: (deck.zIndex || 0) + 1,
-                                                                isOnTable: true
-                                                            }
-                                                        });
-                                                    }
-                                                },
-                                                className: 'bg-green-600 hover:bg-green-500',
-                                                title: 'Play Top',
-                                                icon: <Eye size={14} />
-                                            },
-                                            shuffleDeck: {
-                                                key: 'shuffleDeck',
-                                                action: () => dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id }}),
-                                                className: 'bg-purple-600 hover:bg-purple-500',
-                                                title: 'Shuffle',
-                                                icon: <Shuffle size={14} />
-                                            },
-                                            searchDeck: {
-                                                key: 'searchDeck',
-                                                action: () => {
-                                                    setSearchModalDeck(obj as DeckType);
-                                                    setSearchModalPile(undefined);
-                                                },
-                                                className: 'bg-cyan-600 hover:bg-cyan-500',
-                                                title: 'Search',
-                                                icon: <Search size={14} />
-                                            },
-                                            clone: {
-                                                key: 'clone',
-                                                action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id }}),
-                                                className: 'bg-cyan-600 hover:bg-cyan-500',
-                                                title: 'Clone',
-                                                icon: <Copy size={14} />
-                                            },
-                                            delete: {
-                                                key: 'delete',
-                                                action: () => setDeleteCandidateId(obj.id),
-                                                className: 'bg-red-600 hover:bg-red-500',
-                                                title: 'Delete',
-                                                icon: <Trash2 size={14} />
-                                            },
-                                            lock: {
-                                                key: 'lock',
-                                                action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id }}),
-                                                className: 'bg-yellow-600 hover:bg-yellow-500',
-                                                title: obj.locked ? 'Unlock' : 'Lock',
-                                                icon: obj.locked ? <Lock size={14} /> : <Lock size={14} />
-                                            },
-                                            layer: {
-                                                key: 'layer',
-                                                action: () => {
-                                                    // Show layer submenu - for now just layer up
-                                                    dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id }});
-                                                },
-                                                className: 'bg-indigo-600 hover:bg-indigo-500',
-                                                title: 'Layer Up',
-                                                icon: <Layers size={14} />
-                                            },
-                                        };
-
-                                        const buttons = actionButtons
-                                            .map(action => buttonConfigs[action])
-                                            .filter(Boolean)
-                                            .slice(0, 4);
-
-                                        return buttons.map(btn => (
-                                            <button
-                                                key={btn.key}
-                                                onClick={(e) => { e.stopPropagation(); btn.action(); }}
-                                                className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
-                                                title={btn.title}
-                                            >
-                                                {btn.icon}
-                                            </button>
-                                        ));
-                                    })()}
-                                </div>
-                            </div>
-                        </React.Fragment>
-                    )
+                        <DeckComponent
+                            key={obj.id}
+                            deck={deck}
+                            isDraggingCardFromHand={draggingCardFromHand !== null}
+                            draggingId={draggingId}
+                            hoveredDeckId={hoveredDeckId}
+                            hoveredPileId={hoveredPileId}
+                            setHoveredDeckId={setHoveredDeckId}
+                            setHoveredPileId={setHoveredPileId}
+                            isGM={isGM}
+                            draggingClass={draggingClass}
+                            draggingPile={draggingPile}
+                            setDraggingPile={setDraggingPile}
+                            pileDragStartRef={pileDragStartRef}
+                            setTopDeckModalDeck={setTopDeckModalDeck}
+                            handleMouseDown={handleMouseDown}
+                            handleContextMenu={handleContextMenu}
+                            handlePileContextMenu={handlePileContextMenu}
+                            setSearchModalDeck={setSearchModalDeck}
+                            setSearchModalPile={setSearchModalPile}
+                            setPilesButtonMenu={setPilesButtonMenu}
+                            setDeleteCandidateId={setDeleteCandidateId}
+                            executeClickAction={executeClickAction}
+                        />
+                    );
                 }
 
                 if (obj.type === ItemType.CARD) {
@@ -2219,23 +2136,24 @@ export const Tabletop: React.FC = () => {
                     return (
                         <div
                             key={obj.id}
-                            style={{ left: obj.x, top: obj.y, position: 'absolute' }}
+                            style={{ left: obj.x, top: obj.y, position: 'absolute', transform: `rotate(${obj.rotation}deg)` }}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}
                             className={`${draggingClass} rounded-lg`}
                         >
-                            <Card
-                                card={card}
-                                canFlip={isGM || (cardSettings.actionButtons !== undefined && cardSettings.actionButtons.includes('flip'))}
-                                onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
-                                showActionButtons={true}
-                                actionButtons={cardSettings.actionButtons}
-                                overrideWidth={displayWidth}
-                                overrideHeight={displayHeight}
-                                cardNamePosition={cardSettings.cardNamePosition}
-                                cardOrientation={cardSettings.cardOrientation}
-                                disableRotationTransform={true}
-                                onActionButtonClick={(action) => {
+                            <div style={{ transform: `rotate(${-obj.rotation}deg)` }}>
+                              <Card
+                                  card={card}
+                                  canFlip={isGM || (cardSettings.actionButtons !== undefined && cardSettings.actionButtons.includes('flip'))}
+                                  onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
+                                  showActionButtons={true}
+                                  actionButtons={cardSettings.actionButtons}
+                                  overrideWidth={displayWidth}
+                                  overrideHeight={displayHeight}
+                                  cardNamePosition={cardSettings.cardNamePosition}
+                                  cardOrientation={cardSettings.cardOrientation}
+                                  disableRotationTransform={true}
+                                  onActionButtonClick={(action) => {
                                     switch (action) {
                                         case 'flip':
                                             dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }});
@@ -2254,6 +2172,18 @@ export const Tabletop: React.FC = () => {
                                         case 'rotate':
                                             dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: 90 }});
                                             break;
+                                        case 'rotateClockwise':
+                                            dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id }});
+                                            break;
+                                        case 'rotateCounterClockwise':
+                                            dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -(obj.rotationStep ?? 45) }});
+                                            break;
+                                        case 'swingClockwise':
+                                            dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id }});
+                                            break;
+                                        case 'swingCounterClockwise':
+                                            dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id }});
+                                            break;
                                         case 'clone':
                                             dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id }});
                                             break;
@@ -2266,6 +2196,7 @@ export const Tabletop: React.FC = () => {
                                     }
                                 }}
                             />
+                            </div>
                         </div>
                     )
                 }
@@ -2333,6 +2264,55 @@ export const Tabletop: React.FC = () => {
             />
         )}
 
+        {/* Piles Button Menu */}
+        {pilesButtonMenu && (
+            <>
+                <div
+                    className="fixed inset-0 z-[9998]"
+                    onClick={() => setPilesButtonMenu(null)}
+                />
+                <div
+                    className="fixed z-[9999] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100"
+                    style={{
+                        left: pilesButtonMenu.x,
+                        top: pilesButtonMenu.y
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <div className="px-3 py-2 border-b border-slate-700 mb-1">
+                        <span className="text-xs text-gray-400 font-bold uppercase">Piles</span>
+                    </div>
+                    {pilesButtonMenu.deck.piles?.map((pile) => (
+                        <button
+                            key={pile.id}
+                            onClick={() => {
+                                setSearchModalDeck(pilesButtonMenu.deck);
+                                setSearchModalPile(pile);
+                                setPilesButtonMenu(null);
+                            }}
+                            className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors ${pile.isMillPile ? 'text-red-400' : 'text-gray-200'}`}
+                        >
+                            <Layers size={14} />
+                            <span>{pile.name}</span>
+                            {pile.isMillPile && <span className="ml-auto text-[10px] bg-red-600 px-1 rounded">MILL</span>}
+                        </button>
+                    ))}
+                    <div className="h-px bg-slate-700 my-1 mx-2" />
+                    <button
+                        onClick={() => {
+                            setSearchModalDeck(pilesButtonMenu.deck);
+                            setSearchModalPile(undefined);
+                            setPilesButtonMenu(null);
+                        }}
+                        className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                    >
+                        <Search size={14} />
+                        <span>Main Deck</span>
+                    </button>
+                </div>
+            </>
+        )}
+
         {/* Search Deck/Pile Modal */}
         {searchModalDeck && (
             <SearchDeckModal
@@ -2342,6 +2322,14 @@ export const Tabletop: React.FC = () => {
                     setSearchModalDeck(null);
                     setSearchModalPile(undefined);
                 }}
+            />
+        )}
+
+        {/* Top Deck Modal */}
+        {topDeckModalDeck && (
+            <TopDeckModal
+                deck={topDeckModalDeck}
+                onClose={() => setTopDeckModalDeck(null)}
             />
         )}
     </div>

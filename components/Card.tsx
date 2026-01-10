@@ -58,6 +58,26 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
         title: 'Rotate',
         icon: <RefreshCw size={14} />
       },
+      rotateClockwise: {
+        className: 'bg-yellow-600 hover:bg-yellow-500',
+        title: 'Rotate Clockwise',
+        icon: <RefreshCw size={14} />
+      },
+      rotateCounterClockwise: {
+        className: 'bg-yellow-600 hover:bg-yellow-500',
+        title: 'Rotate Counter-Clockwise',
+        icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+      },
+      swingClockwise: {
+        className: 'bg-orange-600 hover:bg-orange-500',
+        title: 'Swing Clockwise',
+        icon: <RefreshCw size={14} />
+      },
+      swingCounterClockwise: {
+        className: 'bg-orange-600 hover:bg-orange-500',
+        title: 'Swing Counter-Clockwise',
+        icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+      },
       clone: {
         className: 'bg-cyan-600 hover:bg-cyan-500',
         title: 'Clone',
@@ -169,6 +189,24 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   const styles = getShapeStyles();
   const isGeometric = shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
 
+  // Calculate transform for card rotation
+  const getCardTransform = (orientation: CardOrientation, disableRotation: boolean | undefined, cardRotation: number) => {
+    const transforms: string[] = [];
+
+    // Apply card's rotation property (custom rotation from rotate actions)
+    if (cardRotation) {
+      transforms.push(`rotate(${cardRotation}deg)`);
+    }
+
+    // Apply horizontal orientation (90 degrees clockwise = -90deg CSS)
+    // Unless disabled (for search window, hand, etc.)
+    if (!disableRotation && orientation === CardOrientation.HORIZONTAL) {
+      transforms.push('rotate(-90deg)');
+    }
+
+    return transforms.length > 0 ? transforms.join(' ') : undefined;
+  };
+
   return (
     <div className={`relative inline-block group ${isHovered ? 'scale-105 z-50' : ''}`}>
       {/* Action buttons on bottom edge - outside overflow-hidden */}
@@ -187,8 +225,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           boxSizing: 'border-box',
           // Apply rotation for horizontal orientation (90 degrees clockwise = -90deg CSS)
           // Unless disableRotationTransform is true (for search window, hand, etc.)
-          // But the content stays oriented the same way - only the shape rotates
-          transform: !disableRotationTransform && orientation === CardOrientation.HORIZONTAL ? 'rotate(-90deg)' : undefined,
+          // Plus the card's own rotation property for custom rotation
+          transform: getCardTransform(orientation, disableRotationTransform, card.rotation),
           // For geometric shapes that get clipped, we use a drop-shadow filter to simulate a border/shadow
           // since the actual CSS border is clipped away.
           filter: isGeometric

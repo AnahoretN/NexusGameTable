@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility } from '../types';
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw } from 'lucide-react';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
   object: TableObject;
@@ -8,24 +8,30 @@ interface ObjectSettingsModalProps {
   onClose: () => void;
 }
 
-// All available actions for Context Menu (sorted alphabetically)
+// All available actions for Context Menu (ordered same as deck context menu)
 const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
+  { id: 'draw', label: 'Draw Card' },
+  { id: 'playTopCard', label: 'Play Top' },
+  { id: 'showTop', label: 'Show Top' },
+  { id: 'topDeck', label: 'Top Deck' },
+  { id: 'searchDeck', label: 'Search' },
+  { id: 'shuffleDeck', label: 'Shuffle' },
+  { id: 'piles', label: 'Piles' },
+  { id: 'returnAll', label: 'Return All' },
   { id: 'clone', label: 'Clone Object' },
   { id: 'delete', label: 'Delete Object' },
-  { id: 'draw', label: 'Draw Card' },
   { id: 'flip', label: 'Flip Card' },
   { id: 'layer', label: 'Change Layer' },
   { id: 'lock', label: 'Lock/Unlock Position' },
-  { id: 'playTopCard', label: 'Play Top Card' },
-  { id: 'returnAll', label: 'Return All Cards' },
-  { id: 'rotate', label: 'Rotate' },
-  { id: 'searchDeck', label: 'Search' },
-  { id: 'shuffleDeck', label: 'Shuffle Deck' },
+  { id: 'rotateClockwise', label: 'Rotate Clockwise' },
+  { id: 'rotateCounterClockwise', label: 'Rotate Counter-Clockwise' },
+  { id: 'swingClockwise', label: 'Swing Clockwise' },
+  { id: 'swingCounterClockwise', label: 'Swing Counter-Clockwise' },
   { id: 'toHand', label: 'To Hand' },
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'returnAll'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'returnAll', 'showTop', 'topDeck', 'piles'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -43,6 +49,11 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'shuffleDeck':
     case 'searchDeck':
       return [ItemType.DECK];
+    case 'rotateClockwise':
+    case 'rotateCounterClockwise':
+    case 'swingClockwise':
+    case 'swingCounterClockwise':
+      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT];
     case 'toHand':
       return [ItemType.CARD];
     case 'flip':
@@ -404,6 +415,40 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               </div>
 
+              {/* Rotation Step */}
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Rotation Step (degrees)</label>
+                <input
+                  type="number"
+                  value={(data as any).rotationStep ?? 45}
+                  onChange={e => update('rotationStep', Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  min="1"
+                  max="360"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">Degrees to rotate when using rotate actions (default: 45°)</p>
+              </div>
+
+              {/* Show Top Card (for decks) */}
+              {isDeck && (
+                <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                  <label className="text-xs text-gray-400 flex items-center gap-2">
+                    <Eye size={12} />
+                    Show Top Card on Deck
+                  </label>
+                  <button
+                    onClick={() => update('showTopCard', !(data as Deck).showTopCard)}
+                    className={`w-10 h-5 rounded-full transition-colors ${
+                      (data as Deck).showTopCard ? 'bg-green-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                      (data as Deck).showTopCard ? 'translate-x-5' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+              )}
+
               {/* Color (for tokens) */}
               {isToken && !isBoard && (
                 <div>
@@ -762,6 +807,42 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         </div>
                       )}
 
+                      {/* Mill Pile toggle */}
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                        <label className="text-xs text-gray-400 flex items-center gap-2">
+                          <Trash2 size={12} />
+                          Mill Pile
+                        </label>
+                        <button
+                          onClick={() => updatePile(index, 'isMillPile', !pile.isMillPile)}
+                          className={`w-10 h-5 rounded-full transition-colors ${
+                            pile.isMillPile ? 'bg-red-600' : 'bg-slate-700'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                            pile.isMillPile ? 'translate-x-5' : 'translate-x-0.5'
+                          }`} />
+                        </button>
+                      </div>
+
+                      {/* Show Top Card toggle */}
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                        <label className="text-xs text-gray-400 flex items-center gap-2">
+                          <Eye size={12} />
+                          Show Top Card
+                        </label>
+                        <button
+                          onClick={() => updatePile(index, 'showTopCard', !pile.showTopCard)}
+                          className={`w-10 h-5 rounded-full transition-colors ${
+                            pile.showTopCard ? 'bg-green-600' : 'bg-slate-700'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                            pile.showTopCard ? 'translate-x-5' : 'translate-x-0.5'
+                          }`} />
+                        </button>
+                      </div>
+
                       {/* Cards count indicator */}
                       <div className="text-xs text-gray-500 text-center">
                         {pile.cardIds.length} card{pile.cardIds.length !== 1 ? 's' : ''} in this pile
@@ -894,7 +975,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       // Only show card-applicable actions
                       if (action.id === 'draw' || action.id === 'playTopCard' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'returnAll') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'piles') return false;
                       return true;
                     })
                     .map((action) => {
@@ -948,7 +1029,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       // Only card-applicable actions
                       if (action.id === 'draw' || action.id === 'playTopCard' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'returnAll' || action.id === 'delete') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
                       return true;
                     })
                     .map((action) => {
