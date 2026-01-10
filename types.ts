@@ -68,9 +68,11 @@ export interface CardPile {
   visible: boolean; // Whether pile is shown/hidden
   size?: PileSize; // Size of pile relative to deck (0.5 = half, 1 = full)
   locked?: boolean; // Whether pile position is locked (only for free position)
+  isMillPile?: boolean; // If true, this is the default pile for "mill" action
+  showTopCard?: boolean; // Whether to show the top card face on the pile itself
 }
 
-export type ContextAction = 'flip' | 'rotate' | 'delete' | 'lock' | 'clone' | 'toHand' | 'draw' | 'layer' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'returnAll' | 'removeFromTable';
+export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'lock' | 'clone' | 'toHand' | 'draw' | 'layer' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'returnAll' | 'removeFromTable' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop';
 export type ClickAction = ContextAction | 'none';
 
 export interface Coordinates {
@@ -84,13 +86,14 @@ export interface GameItem {
   x: number;
   y: number;
   rotation: number;
+  rotationStep?: number; // Degrees to rotate when using rotate actions (default 45)
   width: number;
   height: number;
   content: string; // Image URL or Text
   name: string;
   ownerId?: string; // For tokens locked to a player
   color?: string;
-  
+
   // New props for context menu features
   locked: boolean;
   isOnTable: boolean; // Controls visibility on the battlefield vs just in the list
@@ -100,6 +103,7 @@ export interface GameItem {
   singleClickAction?: ClickAction; // Action to perform on single click
   doubleClickAction?: ClickAction; // Action to perform on double click
   zIndex?: number; // Visual layering order
+  baseRotation?: number; // Base rotation for swing actions (undefined = current rotation is base)
 }
 
 // Where to show the card name
@@ -124,6 +128,7 @@ export interface Deck extends GameItem {
   cardOrientation?: CardOrientation; // Default orientation for cards from this deck (undefined = VERTICAL)
   initialCardCount?: number; // Initial number of cards when deck was created
   piles?: CardPile[]; // Additional card piles associated with this deck (discard, etc.)
+  showTopCard?: boolean; // Whether to show the top card face on the deck itself
 
   // Settings for cards belonging to this deck (inherited by cards)
   cardAllowedActions?: ContextAction[]; // Actions players are allowed on cards from this deck

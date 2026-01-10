@@ -68,7 +68,8 @@ const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
         cardIds: [],
         faceUp: false,
         visible: false,
-        size: 1
+        size: 1,
+        isMillPile: true
       }
     ]
   };
@@ -98,13 +99,14 @@ type Action =
   | { type: 'PLAY_CARD'; payload: { cardId: string; x: number; y: number } }
   | { type: 'SHUFFLE_DECK'; payload: { deckId: string } }
   | { type: 'FLIP_CARD'; payload: { cardId: string } }
-  | { type: 'ROLL_DICE_LOG'; payload: { value: number; playerName: string } } 
+  | { type: 'ROLL_DICE_LOG'; payload: { value: number; playerName: string } }
   | { type: 'ROLL_PHYSICAL_DICE'; payload: { id: string } }
   | { type: 'UPDATE_COUNTER'; payload: { id: string; delta: number } }
   | { type: 'SWITCH_ROLE'; payload: { playerId: string } }
   | { type: 'TOGGLE_LOCK'; payload: { id: string } }
   | { type: 'TOGGLE_ON_TABLE'; payload: { id: string } }
-  | { type: 'ROTATE_OBJECT'; payload: { id: string; angle: number } }
+  | { type: 'ROTATE_OBJECT'; payload: { id: string; angle?: number } }
+  | { type: 'SET_ROTATION'; payload: { id: string; rotation: number } }
   | { type: 'CLONE_OBJECT'; payload: { id: string } }
   | { type: 'RETURN_TO_DECK'; payload: { cardId: string } }
   | { type: 'ADD_CARD_TO_TOP_OF_DECK'; payload: { cardId: string; deckId: string } }
@@ -124,7 +126,12 @@ type Action =
   | { type: 'SYNC_STATE'; payload: GameState } // Network sync
   | { type: 'UPDATE_VIEW_TRANSFORM'; payload: ViewTransform }
   | { type: 'UPDATE_HAND_CARD_ORDER'; payload: { playerId: string; cardOrder: string[] } }
-  | { type: 'UPDATE_DECK_CARD_DIMENSIONS'; payload: { deckId: string; cardWidth?: number; cardHeight?: number } };
+  | { type: 'UPDATE_DECK_CARD_DIMENSIONS'; payload: { deckId: string; cardWidth?: number; cardHeight?: number } }
+  | { type: 'MILL_CARD_TO_BOTTOM'; payload: { cardId: string; deckId: string } }
+  | { type: 'MILL_CARD_TO_PILE'; payload: { cardId: string; deckId: string; pileId: string } }
+  | { type: 'TOGGLE_SHOW_TOP_CARD'; payload: { deckId: string; pileId?: string } }
+  | { type: 'SWING_CLOCKWISE'; payload: { id: string } }
+  | { type: 'SWING_COUNTER_CLOCKWISE'; payload: { id: string } };
 
 const initialState: GameState = {
   objects: {},
@@ -215,7 +222,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const updatedObj = { ...obj, ...action.payload } as TableObject;
       const newObjects = { ...state.objects, [action.payload.id]: updatedObj };
 
-
+      // Handle exclusive isMillPile toggle for piles
       if (updatedObj.type === ItemType.DECK) {
           const deck = updatedObj as Deck;
           const oldDeck = obj as Deck;
@@ -234,6 +241,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                       } as Card;
                   }
               });
+          }
+          // Handle isMillPile exclusive toggle
+          if (deck.piles) {
+              const oldPiles = oldDeck.piles || [];
+              // Check if any pile's isMillPile changed to true
+              const newlyEnabledMillPileIndex = deck.piles.findIndex(
+                  (pile, idx) => pile.isMillPile && !oldPiles[idx]?.isMillPile
+              );
+              if (newlyEnabledMillPileIndex !== -1) {
+                  // Disable isMillPile on all other piles
+                  deck.piles = deck.piles.map((pile, idx) =>
+                      idx === newlyEnabledMillPileIndex
+                          ? pile
+                          : { ...pile, isMillPile: false }
+                  );
+                  newObjects[deck.id] = deck;
+              }
           }
       }
       return { ...state, objects: newObjects };
@@ -374,7 +398,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'ROTATE_OBJECT': {
         const obj = state.objects[action.payload.id];
         if (!obj) return state;
-        return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: (obj.rotation + action.payload.angle) % 360 } } };
+        // If angle is provided in payload, use it; otherwise use object's rotationStep
+        const angle = action.payload.angle ?? obj.rotationStep ?? 45;
+        return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: (obj.rotation + angle) % 360 } } };
+    }
+    case 'SET_ROTATION': {
+        const obj = state.objects[action.payload.id];
+        if (!obj) return state;
+        return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: action.payload.rotation } } };
     }
     case 'CLONE_OBJECT': {
         const obj = state.objects[action.payload.id];
@@ -691,6 +722,139 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       return {
         ...state,
         objects: newObjects,
+      };
+    }
+    case 'MILL_CARD_TO_BOTTOM': {
+      // Move card to bottom of deck (last position in cardIds array)
+      const { cardId, deckId } = action.payload;
+      const deck = state.objects[deckId] as Deck;
+      if (!deck || deck.type !== ItemType.DECK) return state;
+      if (!deck.cardIds.includes(cardId)) return state;
+
+      // Remove card from current position and add to end
+      const newCardIds = [...deck.cardIds.filter(id => id !== cardId), cardId];
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [deckId]: { ...deck, cardIds: newCardIds }
+        }
+      };
+    }
+    case 'MILL_CARD_TO_PILE': {
+      // Move card from deck to pile
+      const { cardId, deckId, pileId } = action.payload;
+      const deck = state.objects[deckId] as Deck;
+      if (!deck || deck.type !== ItemType.DECK) return state;
+      if (!deck.cardIds.includes(cardId)) return state;
+
+      const pile = deck.piles?.find(p => p.id === pileId);
+      if (!pile) return state;
+
+      // Remove from deck cardIds
+      const newDeckCardIds = deck.cardIds.filter(id => id !== cardId);
+      // Add to pile cardIds
+      const newPileCardIds = [...pile.cardIds, cardId];
+
+      // Update piles array
+      const updatedPiles = deck.piles?.map(p =>
+        p.id === pileId ? { ...p, cardIds: newPileCardIds } : p
+      );
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [deckId]: {
+            ...deck,
+            cardIds: newDeckCardIds,
+            piles: updatedPiles
+          }
+        }
+      };
+    }
+    case 'TOGGLE_SHOW_TOP_CARD': {
+      // Toggle showTopCard for deck or pile
+      const { deckId, pileId } = action.payload;
+      const deck = state.objects[deckId] as Deck;
+      if (!deck || deck.type !== ItemType.DECK) return state;
+
+      if (pileId) {
+        // Toggle showTopCard for a specific pile
+        const pile = deck.piles?.find(p => p.id === pileId);
+        if (!pile) return state;
+
+        const updatedPiles = deck.piles?.map(p =>
+          p.id === pileId ? { ...p, showTopCard: !p.showTopCard } : p
+        );
+
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [deckId]: { ...deck, piles: updatedPiles }
+          }
+        };
+      } else {
+        // Toggle showTopCard for the deck itself
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [deckId]: { ...deck, showTopCard: !deck.showTopCard }
+          }
+        };
+      }
+    }
+    case 'SWING_CLOCKWISE': {
+      const obj = state.objects[action.payload.id];
+      if (!obj) return state;
+
+      const rotationStep = obj.rotationStep ?? 45;
+      const baseRotation = obj.baseRotation ?? obj.rotation;
+
+      // If current rotation is at base, rotate clockwise by rotationStep
+      // Otherwise return to base rotation
+      const newRotation = obj.rotation === baseRotation
+        ? (obj.rotation + rotationStep) % 360
+        : baseRotation;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [action.payload.id]: {
+            ...obj,
+            rotation: newRotation,
+            baseRotation: baseRotation
+          }
+        }
+      };
+    }
+    case 'SWING_COUNTER_CLOCKWISE': {
+      const obj = state.objects[action.payload.id];
+      if (!obj) return state;
+
+      const rotationStep = obj.rotationStep ?? 45;
+      const baseRotation = obj.baseRotation ?? obj.rotation;
+
+      // If current rotation is at base, rotate counter-clockwise by rotationStep
+      // Otherwise return to base rotation
+      const newRotation = obj.rotation === baseRotation
+        ? (obj.rotation - rotationStep + 360) % 360
+        : baseRotation;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [action.payload.id]: {
+            ...obj,
+            rotation: newRotation,
+            baseRotation: baseRotation
+          }
+        }
       };
     }
     default:
