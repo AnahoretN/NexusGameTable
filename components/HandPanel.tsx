@@ -1,11 +1,14 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
 import { Card, ContextAction, Deck as DeckType, CardOrientation, CardNamePosition } from '../types';
-import { Hand, Plus, Minus, Eye, RefreshCw, Copy } from 'lucide-react';
+import { Hand, Plus, Minus, Eye, RefreshCw, Copy, GripVertical } from 'lucide-react';
 import { Card as CardComponent } from './Card';
+import { useCardDrag } from '../hooks/useCardDrag';
 
 interface HandPanelProps {
   width?: number;
+  isDragTarget?: boolean; // When a card from tabletop is being dragged over hand
+  panelBounds?: { x: number; y: number; width: number; height: number } | null; // Bounds for drag detection when inside another panel
 }
 
 const getCardButtonConfigs = (
@@ -44,31 +47,15 @@ const getCardButtonConfigs = (
   return actionButtons.map(action => configs[action]).filter(Boolean);
 };
 
-export const HandPanel: React.FC<HandPanelProps> = ({ width = 286 }) => {
+export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget = false, panelBounds }) => {
   const { state, dispatch } = useGame();
+  const { startDrag } = useCardDrag();
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Track which card is being dragged
-  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
-
-  // Listen for drag events
-  useEffect(() => {
-    const handleDragStart = (e: Event) => {
-      const customEvent = e as CustomEvent<{ data: { cardId: string }; dragId: string }>;
-      setDraggingCardId(customEvent.detail.data?.cardId || null);
-    };
-
-    const handleDragEnd = () => {
-      setDraggingCardId(null);
-    };
-
-    window.addEventListener('global-drag-start', handleDragStart);
-    window.addEventListener('global-drag-end', handleDragEnd);
-
-    return () => {
-      window.removeEventListener('global-drag-start', handleDragStart);
-      window.removeEventListener('global-drag-end', handleDragEnd);
-    };
-  }, []);
+  // Local drag state for reorder
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Get cards in hand for current player
   const cards = useMemo(() =>
@@ -139,8 +126,217 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286 }) => {
     setDisplayScale(prev => Math.max(0.5, Math.min(2, prev + delta)));
   };
 
+  // Handle card mouse down - start drag
+  const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number) => {
+    // Only left click
+    if (e.button !== 0) return;
+
+    // Don't drag if clicking on action buttons
+    const target = e.target as HTMLElement;
+    if (target.closest('button')) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    setDragIndex(index);
+
+    // Start global drag
+    startDrag(cardId, 'hand', e.nativeEvent);
+  }, [startDrag]);
+
+  // Handle mouse move for reorder preview
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (dragIndex === null) return;
+
+    // Check if we moved enough to consider it a drag
+    if (dragStartPosRef.current) {
+      const dx = e.clientX - dragStartPosRef.current.x;
+      const dy = e.clientY - dragStartPosRef.current.y;
+      const moveThreshold = 5;
+
+      if (Math.abs(dx) < moveThreshold && Math.abs(dy) < moveThreshold) {
+        return;
+      }
+    }
+
+    // Find which card we're hovering over
+    const container = containerRef.current;
+    if (!container) return;
+
+    const scrollContainer = container.querySelector('.custom-scrollbar') as HTMLElement;
+    if (!scrollContainer) return;
+
+    const cards = scrollContainer.querySelectorAll('[data-card-index]');
+
+    cards.forEach((cardEl) => {
+      const index = parseInt(cardEl.getAttribute('data-card-index') || '-1');
+      if (index !== dragIndex && index >= 0) {
+        const rect = cardEl.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right &&
+            e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          setDragOverIndex(index);
+        }
+      }
+    });
+  }, [dragIndex]);
+
+  // Handle mouse up to complete reorder or drop to tabletop
+  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    if (dragIndex === null) return;
+
+    // Check if we're dropping outside hand panel (to tabletop)
+    const container = containerRef.current;
+    if (container && !container.contains(e.target as Node)) {
+      // Drop to tabletop - will be handled by tabletop listener
+      setDragIndex(null);
+      setDragOverIndex(null);
+      dragStartPosRef.current = null;
+      return;
+    }
+
+    // Check if we're reordering within hand
+    if (dragOverIndex !== null && dragOverIndex !== dragIndex) {
+      // Reorder cards
+      const newCards = [...cards];
+      const [movedCard] = newCards.splice(dragIndex, 1);
+      newCards.splice(dragOverIndex, 0, movedCard);
+
+      const newCardOrder = newCards.map(c => c.id);
+      dispatch({
+        type: 'UPDATE_HAND_CARD_ORDER',
+        payload: { playerId: state.activePlayerId, cardOrder: newCardOrder }
+      });
+    }
+
+    setDragIndex(null);
+    setDragOverIndex(null);
+    dragStartPosRef.current = null;
+  }, [dragIndex, dragOverIndex, cards, state.activePlayerId, dispatch]);
+
+  // Set up global mouse listeners during drag
+  useEffect(() => {
+    if (dragIndex === null) return;
+
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      handleMouseMove(e as any);
+    };
+
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      handleMouseUp(e as any);
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [dragIndex, handleMouseMove, handleMouseUp]);
+
+  // Listen for drag end events to handle drops to tabletop
+  useEffect(() => {
+    const handleDragEnd = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        wasDragging: boolean;
+        cardId: string | null;
+        source: 'hand' | 'tabletop' | null;
+        x: number;
+        y: number;
+      }>;
+
+      if (customEvent.detail.wasDragging && customEvent.detail.source === 'hand') {
+        const cardId = customEvent.detail.cardId;
+        if (cardId) {
+          // Check if drop was outside hand panel (on tabletop)
+          const tabletop = document.querySelector('[data-tabletop="true"]');
+          if (tabletop) {
+            const rect = tabletop.getBoundingClientRect();
+            const x = customEvent.detail.x;
+            const y = customEvent.detail.y;
+
+            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+              // Play card to tabletop
+              dispatch({
+                type: 'PLAY_CARD',
+                payload: {
+                  cardId,
+                  x: (x - rect.left) / 1, // Will be adjusted by tabletop
+                  y: (y - rect.top) / 1,
+                }
+              });
+            }
+          }
+        }
+      }
+
+      // Handle drop from tabletop to hand
+      if (customEvent.detail.wasDragging && customEvent.detail.source === 'tabletop') {
+        const cardId = customEvent.detail.cardId;
+        if (cardId) {
+          // Check if drop was over hand panel
+          const x = customEvent.detail.x;
+          const y = customEvent.detail.y;
+          let isOver = false;
+
+          // Use panelBounds if provided (when hand is inside another panel like main menu)
+          if (panelBounds) {
+            isOver = x >= panelBounds.x && x <= panelBounds.x + panelBounds.width &&
+                     y >= panelBounds.y && y <= panelBounds.y + panelBounds.height;
+          } else {
+            // Otherwise use container's bounding rect
+            const container = containerRef.current;
+            if (container) {
+              const rect = container.getBoundingClientRect();
+              isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+            }
+          }
+
+          if (isOver) {
+            // Add card to hand at first position
+            const card = state.objects[cardId] as Card;
+            if (card && card.type === 'CARD') {
+              // Get current hand cards
+              const handCards = Object.values(state.objects).filter(o =>
+                o.type === 'CARD' && (o as Card).location === 'HAND' && (o as Card).ownerId === state.activePlayerId
+              ) as Card[];
+
+              // New order: new card first, then existing cards
+              const newCardOrder = [cardId, ...handCards.map(c => c.id)];
+
+              dispatch({
+                type: 'UPDATE_HAND_CARD_ORDER',
+                payload: { playerId: state.activePlayerId, cardOrder: newCardOrder }
+              });
+
+              // Update card location to hand
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: cardId,
+                  location: 'HAND' as any,
+                  ownerId: state.activePlayerId,
+                  isOnTable: false,
+                  faceUp: true
+                } as any
+              });
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('card-drag-end', handleDragEnd);
+    return () => window.removeEventListener('card-drag-end', handleDragEnd);
+  }, [dispatch, state.objects, state.activePlayerId, panelBounds]);
+
   return (
-    <div className="h-full flex flex-col p-2" style={{ width }}>
+    <div
+      ref={containerRef}
+      className="h-full flex flex-col p-2 transition-all"
+      style={{ width }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-3 px-2">
         <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
@@ -168,8 +364,10 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286 }) => {
         </div>
       </div>
 
-      {/* Cards Grid */}
+      {/* Cards Grid - outer scroll container */}
       <div className="flex-1 overflow-y-scroll custom-scrollbar">
+        {/* Inner content container with purple ring when drag target */}
+        <div className={`h-full transition-all ${isDragTarget ? 'ring-4 ring-purple-500 ring-inset -mb-px pb-[1px] -ml-px pl-[1px]' : ''}`}>
         {cards.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
             <Hand size={32} className="mb-2 opacity-50" />
@@ -178,7 +376,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286 }) => {
           </div>
         ) : (
           <div className="flex flex-wrap gap-[2px] w-full">
-            {cards.map(card => {
+            {cards.map((card, index) => {
               const cardSettings = getCardSettings(card);
               const cardActionButtons = cardSettings.cardActionButtons;
               const { width: cardWidth, height: cardHeight } = getCardDimensions(card);
@@ -191,12 +389,28 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286 }) => {
                 () => handleClone(card.id)
               );
 
+              const isDragging = dragIndex === index;
+              const isDragOver = dragOverIndex === index;
+
               return (
                 <div
                   key={card.id}
+                  data-card-index={index}
                   className="relative flex-shrink-0 group transition-all"
-                  style={{ width: cardWidth, height: cardHeight, zIndex: draggingCardId === card.id ? 200 : 'auto' }}
+                  style={{
+                    width: cardWidth,
+                    height: cardHeight,
+                    zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
+                    opacity: isDragging ? 0.5 : 1,
+                    transform: isDragOver ? 'scale(1.05)' : undefined,
+                  }}
+                  onMouseDown={(e) => handleCardMouseDown(e, card.id, index)}
                 >
+                  {/* Drag handle indicator */}
+                  {isDragging && (
+                    <div className="absolute inset-0 bg-purple-500/20 rounded-lg pointer-events-none z-10" />
+                  )}
+
                   <CardComponent
                     card={card}
                     overrideWidth={cardWidth}
@@ -207,6 +421,11 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286 }) => {
                     cardOrientation={cardSettings.cardOrientation}
                     disableRotationTransform={true}
                   />
+
+                  {/* Drag handle for reorder */}
+                  <div className="absolute top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                    <GripVertical size={12} className="text-slate-500" />
+                  </div>
 
                   {buttons.length > 0 && (
                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
@@ -228,6 +447,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286 }) => {
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

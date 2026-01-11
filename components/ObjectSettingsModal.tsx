@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility } from '../types';
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye } from 'lucide-react';
 
@@ -320,7 +321,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     setPiles(piles.filter((_, i) => i !== index));
   };
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
@@ -1114,4 +1115,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

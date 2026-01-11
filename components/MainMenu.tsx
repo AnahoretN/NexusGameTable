@@ -1,11 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useGame, GameState } from '../store/GameContext';
-import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape } from '../types';
+import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, PanelType } from '../types';
 import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Settings, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanel } from './HandPanel';
+import { cardDragAPI, DragState } from '../hooks/useCardDrag';
 
 // Helper for safe ID generation
 const generateUUID = () => {
@@ -17,11 +18,11 @@ const generateUUID = () => {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 };
 
-interface SidebarProps {
+interface MainMenuProps {
     width?: number;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ width = 350 }) => {
+export const MainMenu: React.FC<MainMenuProps> = ({ width = 350 }) => {
   const { state, dispatch, isHost, peerId, connectionStatus } = useGame();
   const activePlayer = state.players.find(p => p.id === state.activePlayerId);
   const isGM = activePlayer?.isGM;
@@ -31,13 +32,63 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 350 }) => {
   const [chatHistory, setChatHistory] = useState<{sender: string, text: string}[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const sidebarRef = useRef<HTMLDivElement>(null);
+  const mainMenuRef = useRef<HTMLDivElement>(null);
 
   const [openCategory, setOpenCategory] = useState<string | null>(null);
 
   const [editingObject, setEditingObject] = useState<TableObject | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
+
+  // Drag state for tabletop to hand
+  const [dragOverHand, setDragOverHand] = useState(false);
+  const [previousTab, setPreviousTab] = useState<typeof activeTab>('create');
+
+  // Listen for card drag events to switch to hand tab
+  useEffect(() => {
+    const handleDragMove = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        cardId: string | null;
+        source: 'hand' | 'tabletop' | null;
+        x: number;
+        y: number;
+      }>;
+
+      // Only care about tabletop source (dragging from tabletop to main menu)
+      if (customEvent.detail.source !== 'tabletop') return;
+
+      const mainMenu = mainMenuRef.current;
+      if (!mainMenu) return;
+
+      const rect = mainMenu.getBoundingClientRect();
+      const x = customEvent.detail.x;
+      const y = customEvent.detail.y;
+
+      const isOverMainMenu = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+      if (isOverMainMenu) {
+        if (activeTab !== 'hand') {
+          setPreviousTab(activeTab);
+          setActiveTab('hand');
+        }
+        setDragOverHand(true);
+      } else {
+        setDragOverHand(false);
+      }
+    };
+
+    const handleDragEnd = () => {
+      setDragOverHand(false);
+    };
+
+    window.addEventListener('card-drag-move', handleDragMove);
+    window.addEventListener('card-drag-end', handleDragEnd);
+
+    return () => {
+      window.removeEventListener('card-drag-move', handleDragMove);
+      window.removeEventListener('card-drag-end', handleDragEnd);
+    };
+  }, [activeTab]);
 
   const handleChat = async () => {
       if (!chatInput.trim()) return;
@@ -54,6 +105,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 350 }) => {
       document.body.appendChild(downloadAnchorNode); // required for firefox
       downloadAnchorNode.click();
       downloadAnchorNode.remove();
+  };
+
+  const handleCreatePanel = (panelType: PanelType) => {
+      // Position panel in center of viewport
+      const x = window.innerWidth / 2 - 150;
+      const y = window.innerHeight / 2 - 200;
+
+      dispatch({
+          type: 'CREATE_PANEL',
+          payload: {
+              panelType,
+              x,
+              y,
+              width: 300,
+              height: 400,
+              title: panelType === PanelType.HAND ? 'Your Hand' : panelType,
+          }
+      });
   };
 
   const handleLoadGame = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -326,8 +395,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 350 }) => {
   return (
     <>
     <div
-        ref={sidebarRef}
-        className="h-full bg-slate-900 border-l border-slate-700 flex flex-col shadow-2xl z-50"
+        ref={mainMenuRef}
+        className="h-full bg-slate-900 border-l border-slate-700 flex flex-col shadow-2xl"
         style={{ width: `${width}px` }}
     >
         <div className="p-4 border-b border-slate-700 bg-slate-800">
@@ -507,7 +576,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 350 }) => {
             )}
 
             {activeTab === 'hand' && (
-                <HandPanel width={width} />
+                <HandPanel width={width} isDragTarget={dragOverHand} />
             )}
 
             {activeTab === 'players' && (
@@ -549,6 +618,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 350 }) => {
                                 />
                              </div>
                          )}
+                     </div>
+
+                     <div>
+                         <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">UI Panels</h3>
+                         <div className="grid grid-cols-2 gap-2">
+                             <button
+                                 onClick={() => handleCreatePanel(PanelType.HAND)}
+                                 className="py-2 px-3 rounded bg-slate-800 border border-slate-600 hover:bg-slate-700 text-gray-300 flex items-center justify-center gap-2 text-sm"
+                             >
+                                 <Hand size={14}/> Hand Panel
+                             </button>
+                         </div>
                      </div>
 
                      <div className="space-y-4">

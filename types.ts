@@ -5,6 +5,10 @@ export enum ItemType {
   DECK = 'DECK',
   DICE_OBJECT = 'DICE_OBJECT',
   COUNTER = 'COUNTER',
+  BOARD = 'BOARD',        // Game boards/tables with grids
+  RANDOMIZER = 'RANDOMIZER', // Randomizers (spinners, etc.)
+  PANEL = 'PANEL',        // UI panels (hand, deck search, etc.)
+  WINDOW = 'WINDOW',      // Modal windows
 }
 
 // Visual subtypes for tokens to handle Chips, Figurines, Badges, Boards
@@ -166,7 +170,22 @@ export interface Counter extends GameItem {
   value: number;
 }
 
-export type TableObject = Card | Deck | Token | DiceObject | Counter;
+export interface Board extends GameItem {
+  type: ItemType.BOARD;
+  shape: TokenShape.RECTANGLE;
+  gridType: GridType;
+  gridSize: number;
+  snapToGrid: boolean;
+}
+
+export interface Randomizer extends GameItem {
+  type: ItemType.RANDOMIZER;
+  randomizerType: 'spinner' | 'coin' | 'custom';
+  currentValue?: string;
+  options?: string[]; // For custom randomizers
+}
+
+export type TableObject = Card | Deck | Token | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject;
 
 export interface Player {
   id: string;
@@ -181,4 +200,59 @@ export interface DiceRoll {
   value: number;
   timestamp: number;
   playerName: string;
+}
+
+// Panel types for UI elements
+export enum PanelType {
+  HAND = 'HAND',
+  DECK_SEARCH = 'DECK_SEARCH',
+  DECK_BUILD = 'DECK_BUILD',
+  CHAT = 'CHAT',
+  PLAYERS = 'PLAYERS',
+  CREATE = 'CREATE',
+  MAIN_MENU = 'MAIN_MENU',  // Main right menu panel
+  TABLEAU = 'TABLEAU',  // Tableau panel for card tableau
+  PULL = 'PULL',        // Pull panel for drawing cards
+}
+
+// Window types for modal windows
+export enum WindowType {
+  OBJECT_SETTINGS = 'OBJECT_SETTINGS',
+  DELETE_CONFIRM = 'DELETE_CONFIRM',
+  TOP_DECK = 'TOP_DECK',
+}
+
+// Base interface for all UI objects (panels and windows)
+export interface UIObject {
+  id: string;
+  type: ItemType.PANEL | ItemType.WINDOW;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  zIndex?: number;
+  locked?: boolean;
+  minimized?: boolean;
+  visible: boolean; // Can be hidden/closed
+}
+
+// Panel object - persistent UI panels on the game board
+export interface PanelObject extends UIObject {
+  type: ItemType.PANEL;
+  panelType: PanelType;
+  title: string;
+  // Optional: associated deck ID for deck-related panels
+  deckId?: string;
+  // Optional: player ID for player-specific panels
+  playerId?: string;
+}
+
+// Window object - modal dialogs on the game board
+export interface WindowObject extends UIObject {
+  type: ItemType.WINDOW;
+  windowType: WindowType;
+  title: string;
+  // Optional: target object ID this window operates on
+  targetObjectId?: string;
 }

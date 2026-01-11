@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -10,7 +10,9 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { SearchDeckModal } from './SearchDeckModal';
 import { TopDeckModal } from './TopDeckModal';
 import { DeckComponent } from './DeckComponent';
+import { UIObjectRenderer } from './UIObjectRenderer';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
+import { useCardDrag } from '../hooks/useCardDrag';
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | null;
 
@@ -191,6 +193,7 @@ const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch } = useGame();
+  const { startDrag: startCardDrag } = useCardDrag();
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(0.8);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -241,7 +244,7 @@ export const Tabletop: React.FC = () => {
   useEffect(() => { draggingPileRef.current = draggingPile; }, [draggingPile]);
   useEffect(() => { freeRotatingIdRef.current = freeRotatingId; }, [freeRotatingId]);
 
-  // Track card being dragged from hand (via sidebar)
+  // Track card being dragged from hand (via main menu)
   const [draggingCardFromHand, setDraggingCardFromHand] = useState<CardType | null>(null);
   const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
   const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
@@ -320,7 +323,7 @@ export const Tabletop: React.FC = () => {
   const activePlayer = state.players.find(p => p.id === state.activePlayerId);
   const isGM = !!activePlayer?.isGM;
 
-  // Listen for drag events from sidebar (cards from hand)
+  // Listen for drag events from main menu (cards from hand)
   useEffect(() => {
     const handleDragStart = (e: Event) => {
       const customEvent = e as CustomEvent<{ cardId: string; fromSearchWindow?: boolean }>;
@@ -432,12 +435,147 @@ export const Tabletop: React.FC = () => {
       }
     };
 
-    window.addEventListener('sidebar-drag-start', handleDragStart as EventListener);
-    window.addEventListener('sidebar-drag-end', handleDragEnd as EventListener);
+    // Handle card drag start from hand
+    const handleCardDragStart = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        cardId: string | null;
+        source: 'hand' | 'tabletop' | null;
+      }>;
+
+      if (customEvent.detail.source !== 'hand') return;
+      if (!customEvent.detail.cardId) return;
+
+      const card = stateRef.current.objects[customEvent.detail.cardId] as CardType;
+      if (card && card.type === ItemType.CARD) {
+        setDraggingCardFromHand(card);
+      }
+    };
+
+    // Handle card drag from hand using useCardDrag hook
+    const handleCardDragEnd = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        wasDragging: boolean;
+        cardId: string | null;
+        source: 'hand' | 'tabletop' | null;
+        x: number;
+        y: number;
+      }>;
+
+      if (!customEvent.detail.wasDragging || customEvent.detail.source !== 'hand') return;
+      if (!customEvent.detail.cardId) return;
+
+      const { cardId, x: clientX, y: clientY } = customEvent.detail;
+
+      // Get current card from state
+      const card = stateRef.current.objects[cardId] as CardType;
+      if (!card || card.type !== ItemType.CARD) return;
+
+      // Find if cursor is over any visible pile
+      type PileInfo = { pile: CardPile; deck: DeckType };
+      let pileInfo: PileInfo | null = null;
+
+      for (const obj of Object.values(stateRef.current.objects)) {
+        if (obj.type === ItemType.DECK) {
+          const deck = obj as DeckType;
+          const visiblePiles = deck.piles?.filter(p => p.visible) || [];
+
+          for (const pile of visiblePiles) {
+            const pileSize = pile.size ?? 1;
+            let pileX: number, pileY: number;
+
+            if (pile.position === 'free') {
+              pileX = pile.x ?? 0;
+              pileY = pile.y ?? 0;
+            } else if (pile.position === 'right') {
+              pileX = obj.x + obj.width + 4;
+              pileY = obj.y;
+            } else if (pile.position === 'left') {
+              pileX = obj.x - obj.width - 4;
+              pileY = obj.y;
+            } else if (pile.position === 'top') {
+              pileX = obj.x;
+              pileY = obj.y - obj.height - 4;
+            } else if (pile.position === 'bottom') {
+              pileX = obj.x;
+              pileY = obj.y + obj.height + 4;
+            } else {
+              pileX = obj.x;
+              pileY = obj.y;
+            }
+
+            // Convert to screen coordinates
+            const currentViewTransform = stateRef.current.viewTransform;
+            const screenX = pileX * currentViewTransform.zoom + currentViewTransform.offset.x;
+            const screenY = pileY * currentViewTransform.zoom + currentViewTransform.offset.y;
+            const screenWidth = obj.width * pileSize * currentViewTransform.zoom;
+            const screenHeight = obj.height * pileSize * currentViewTransform.zoom;
+
+            // Check if cursor is within pile bounds
+            if (clientX >= screenX && clientX <= screenX + screenWidth &&
+                clientY >= screenY && clientY <= screenY + screenHeight) {
+              pileInfo = { pile, deck };
+              break;
+            }
+          }
+          if (pileInfo) break;
+        }
+      }
+
+      if (pileInfo) {
+        dispatch({
+          type: 'ADD_CARD_TO_PILE',
+          payload: { cardId, pileId: pileInfo.pile.id, deckId: pileInfo.deck.id }
+        });
+        return;
+      }
+
+      // Check if dropping on a deck
+      let foundDeck: string | null = null;
+      Object.values(stateRef.current.objects).forEach(obj => {
+        if (obj.type === ItemType.DECK) {
+          const currentViewTransform = stateRef.current.viewTransform;
+          const screenX = obj.x * currentViewTransform.zoom + currentViewTransform.offset.x;
+          const screenY = obj.y * currentViewTransform.zoom + currentViewTransform.offset.y;
+          const screenWidth = obj.width * currentViewTransform.zoom;
+          const screenHeight = obj.height * currentViewTransform.zoom;
+
+          if (clientX >= screenX && clientX <= screenX + screenWidth &&
+              clientY >= screenY && clientY <= screenY + screenHeight) {
+            foundDeck = obj.id;
+          }
+        }
+      });
+
+      if (foundDeck) {
+        dispatch({
+          type: 'ADD_CARD_TO_TOP_OF_DECK',
+          payload: { cardId, deckId: foundDeck }
+        });
+        return;
+      }
+
+      // Otherwise, play card to table at drop position
+      // Convert screen coordinates to world coordinates
+      const currentViewTransform = stateRef.current.viewTransform;
+      const worldX = (clientX - currentViewTransform.offset.x) / currentViewTransform.zoom;
+      const worldY = (clientY - currentViewTransform.offset.y) / currentViewTransform.zoom;
+
+      dispatch({
+        type: 'PLAY_CARD',
+        payload: { cardId, x: worldX, y: worldY }
+      });
+    };
+
+    window.addEventListener('main-menu-drag-start', handleDragStart as EventListener);
+    window.addEventListener('main-menu-drag-end', handleDragEnd as EventListener);
+    window.addEventListener('card-drag-start', handleCardDragStart);
+    window.addEventListener('card-drag-end', handleCardDragEnd);
 
     return () => {
-      window.removeEventListener('sidebar-drag-start', handleDragStart as EventListener);
-      window.removeEventListener('sidebar-drag-end', handleDragEnd as EventListener);
+      window.removeEventListener('main-menu-drag-start', handleDragStart as EventListener);
+      window.removeEventListener('main-menu-drag-end', handleDragEnd as EventListener);
+      window.removeEventListener('card-drag-start', handleCardDragStart);
+      window.removeEventListener('card-drag-end', handleCardDragEnd);
     };
   }, [dispatch]);
 
@@ -973,15 +1111,33 @@ export const Tabletop: React.FC = () => {
   const handleMouseDown = (e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
 
-    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
-      setIsPanning(true);
-      dragStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
-      return;
+    // Check if clicking on a UI object - if it has an id, process normally
+    // If no id (background), check for panning
+    if (!id) {
+      if (e.button === 0 && e.shiftKey) {
+        setIsPanning(true);
+        dragStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
+        return;
+      }
     }
 
     if (id && e.button === 0) {
       e.stopPropagation();
       const item = state.objects[id];
+
+      // Check if this is a UI object (panel or window) - handled differently
+      if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
+        if (item.locked) return;
+
+        // UI objects use screen coordinates directly, not world coordinates
+        setDraggingId(id);
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+        dragOffsetRef.current = {
+          x: e.clientX - item.x,
+          y: e.clientY - item.y
+        };
+        return;
+      }
 
       // Check if we're in free rotation mode for this object
       if (freeRotatingId === id && item) {
@@ -1017,8 +1173,19 @@ export const Tabletop: React.FC = () => {
       // Store click start position for click detection
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
+      // For cards on tabletop, also start the card drag for hand drop
+      if (item.type === ItemType.CARD) {
+        startCardDrag(id, 'tabletop', e.nativeEvent);
+      }
+
       setDraggingId(id);
       if (item) {
+        // Bring dragged object to front (zIndex 9999)
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id, zIndex: 9999 }
+        });
+
         // Calculate the offset from cursor to object's top-left corner
         // This keeps the object in the same position relative to cursor during drag
         const mouseWorldX = (e.clientX - offset.x) / zoom;
@@ -1113,8 +1280,24 @@ export const Tabletop: React.FC = () => {
       const draggingObj = state.objects[draggingId];
       if (!draggingObj) return;
 
+      // UI objects (panels and windows) use screen coordinates directly
+      if (draggingObj.type === ItemType.PANEL || draggingObj.type === ItemType.WINDOW) {
+        const targetX = e.clientX - (dragOffsetRef.current?.x || 0);
+        const targetY = e.clientY - (dragOffsetRef.current?.y || 0);
+
+        dispatch({
+          type: 'MOVE_OBJECT',
+          payload: {
+            id: draggingId,
+            x: targetX,
+            y: targetY,
+          },
+        });
+        return;
+      }
+
+      // Game objects use world coordinates with zoom and offset
       // Always update position - the world coordinates work correctly even when cursor is outside
-      // The global drag preview shows the card at screen position, while this updates the actual card
       const mouseWorldX = (e.clientX - offset.x) / zoom;
       const mouseWorldY = (e.clientY - offset.y) / zoom;
 
@@ -1400,7 +1583,7 @@ export const Tabletop: React.FC = () => {
       }
     }
 
-    // Notify that drag ended (for sidebar)
+    // Notify that drag ended (for main menu)
     if (draggingId) {
       const draggingObj = state.objects[draggingId];
       if (draggingObj && draggingObj.type === ItemType.CARD && (draggingObj as CardType).location === CardLocation.TABLE) {
@@ -1601,7 +1784,9 @@ export const Tabletop: React.FC = () => {
     .filter(obj => {
         if (!obj.isOnTable) return false;
         if (obj.type === ItemType.CARD) return (obj as CardType).location === CardLocation.TABLE;
-        return true; 
+        // Filter out hidden objects (visible === false)
+        if (obj.visible === false) return false;
+        return true;
     })
     .sort((a, b) => {
         const zA = a.zIndex ?? 0;
@@ -1616,6 +1801,22 @@ export const Tabletop: React.FC = () => {
 
         return 0;
     });
+
+  // UI objects (panels and windows) - separate from game objects
+  const uiObjects = useMemo(() => {
+    return (Object.values(state.objects) as TableObject[])
+      .filter(obj => obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW)
+      .filter(obj => {
+        if (obj.type === ItemType.PANEL) {
+          return (obj as PanelObject).visible !== false;
+        }
+        if (obj.type === ItemType.WINDOW) {
+          return (obj as WindowObject).visible !== false;
+        }
+        return true;
+      })
+      .sort((a, b) => (a.zIndex || 1000) - (b.zIndex || 1000));
+  }, [state.objects]);
 
   const worldBounds = useMemo(() => {
     let maxX = 0;
@@ -1641,6 +1842,7 @@ export const Tabletop: React.FC = () => {
   return (
     <div
       ref={containerRef}
+      data-tabletop="true"
       className="w-full h-full bg-table overflow-auto relative cursor-grab active:cursor-grabbing"
       onMouseDown={(e) => handleMouseDown(e)}
       onMouseMove={handleMouseMove}
@@ -1663,13 +1865,7 @@ export const Tabletop: React.FC = () => {
                 const worldX = (e.clientX - offset.x) / zoom - (card.width ?? 100) / 2;
                 const worldY = (e.clientY - offset.y) / zoom - (card.height ?? 140) / 2;
 
-                // Get the highest zIndex
-                const tableObjects = Object.values(state.objects).filter(obj => obj.isOnTable);
-                const maxZIndex = tableObjects.length > 0
-                    ? Math.max(...tableObjects.map(obj => obj.zIndex || 0))
-                    : 0;
-
-                // Move card to table
+                // Cards on table get zIndex 9999 (same as dragging, above panels at 9998)
                 dispatch({
                     type: 'UPDATE_OBJECT',
                     payload: {
@@ -1679,7 +1875,7 @@ export const Tabletop: React.FC = () => {
                         y: worldY,
                         isOnTable: true,
                         faceUp: true,
-                        zIndex: maxZIndex + 1,
+                        zIndex: 9999,
                         ownerId: undefined
                     }
                 });
@@ -1699,7 +1895,8 @@ export const Tabletop: React.FC = () => {
           <span className="text-sm font-medium">Free Rotation Mode - Drag to rotate, press ESC to exit</span>
         </div>
       )}
-        <div 
+
+      <div 
             style={{ 
                 width: worldBounds.width, 
                 height: worldBounds.height, 
@@ -1716,49 +1913,53 @@ export const Tabletop: React.FC = () => {
             style={{
                 transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
             }}
-            onDragOver={(e) => {
-                // Allow drops from hand panel
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-            }}
-            onDrop={(e) => {
-                // Handle drop from hand panel
-                e.preventDefault();
-                const cardId = e.dataTransfer.getData('text/plain');
-                if (cardId && state.objects[cardId]) {
-                    const card = state.objects[cardId] as CardType;
-                    if (card.type === ItemType.CARD && card.location === CardLocation.HAND) {
-                        // Calculate world position for the card
-                        const worldX = (e.clientX - offset.x) / zoom - (card.width ?? 100) / 2;
-                        const worldY = (e.clientY - offset.y) / zoom - (card.height ?? 140) / 2;
-
-                        // Get the highest zIndex
-                        const tableObjects = Object.values(state.objects).filter(obj => obj.isOnTable);
-                        const maxZIndex = tableObjects.length > 0
-                            ? Math.max(...tableObjects.map(obj => obj.zIndex || 0))
-                            : 0;
-
-                        // Move card to table
-                        dispatch({
-                            type: 'UPDATE_OBJECT',
-                            payload: {
-                                id: cardId,
-                                location: CardLocation.TABLE,
-                                x: worldX,
-                                y: worldY,
-                                isOnTable: true,
-                                faceUp: true,
-                                zIndex: maxZIndex + 1,
-                                ownerId: undefined
-                            }
-                        });
-                    }
-                }
-            }}
         >
+            {/* All objects in unified space - game objects first, then UI objects */}
             {tableObjects.map((obj) => {
                 const isOwner = !obj.ownerId || obj.ownerId === state.activePlayerId || isGM;
-                const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100]' : 'cursor-grab';
+                const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[9999]' : 'cursor-grab';
+
+                if (obj.type === ItemType.BOARD) {
+                    const board = obj as BoardType;
+                    const isResizing = resizingId === obj.id;
+                    const isDragging = draggingId === obj.id;
+                    const canResize = !obj.locked;
+                    const currentResizeHandle = isResizing ? resizeHandle : null;
+                    const showGrid = board.gridType && board.gridType !== GridType.NONE;
+                    const gridSize = board.gridSize || 50;
+
+                    const hexR = gridSize;
+                    const hexW = hexR * Math.sqrt(3);
+                    const hexPath =
+                      `M 0 ${hexR/2} ` +
+                      `L ${hexW/2} 0 ` +
+                      `L ${hexW} ${hexR/2} ` +
+                      `L ${hexW} ${hexR*1.5} ` +
+                      `L ${hexW/2} ${hexR*2} ` +
+                      `L 0 ${hexR*1.5} Z ` +
+                      `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+
+                    return (
+                        <BoardWithResize
+                            key={obj.id}
+                            token={board}
+                            obj={obj}
+                            isOwner={isOwner}
+                            isDragging={isDragging}
+                            isResizing={isResizing}
+                            resizeHandle={currentResizeHandle}
+                            canResize={canResize}
+                            zoom={zoom}
+                            getResizeCursor={getResizeCursor}
+                            onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                            onContextMenu={(e) => handleContextMenu(e, obj)}
+                            gridSize={gridSize}
+                            hexR={hexR}
+                            hexW={hexW}
+                            hexPath={hexPath}
+                        />
+                    );
+                }
 
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
@@ -2133,10 +2334,18 @@ export const Tabletop: React.FC = () => {
                     const displayWidth = isHorizontal ? actualCardHeight : actualCardWidth;
                     const displayHeight = isHorizontal ? actualCardWidth : actualCardHeight;
 
+                    const isDragging = draggingId === obj.id;
+
                     return (
                         <div
                             key={obj.id}
-                            style={{ left: obj.x, top: obj.y, position: 'absolute', transform: `rotate(${obj.rotation}deg)` }}
+                            data-tabletop-card="true"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                position: 'absolute',
+                                transform: `rotate(${obj.rotation}deg)`,
+                            }}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}
                             className={`${draggingClass} rounded-lg`}
@@ -2202,8 +2411,20 @@ export const Tabletop: React.FC = () => {
                 }
                 return null;
             })}
+
+            {/* UI Objects - Panels and Windows rendered in the same unified space */}
+            {uiObjects.map((uiObj) => (
+                <UIObjectRenderer
+                    key={uiObj.id}
+                    uiObject={uiObj as PanelObject | WindowObject}
+                    isDragging={draggingId === uiObj.id}
+                    onMouseDown={handleMouseDown}
+                    offset={offset}
+                    zoom={zoom}
+                />
+            ))}
         </div>
-        
+
         {contextMenu && (
             <ContextMenu
                 x={contextMenu.x}
@@ -2325,7 +2546,6 @@ export const Tabletop: React.FC = () => {
             />
         )}
 
-        {/* Top Deck Modal */}
         {topDeckModalDeck && (
             <TopDeckModal
                 deck={topDeckModalDeck}
