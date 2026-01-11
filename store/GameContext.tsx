@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
-import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile } from '../types';
+import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS } from '../constants';
 import { Peer } from 'peerjs';
 
@@ -131,7 +131,13 @@ type Action =
   | { type: 'MILL_CARD_TO_PILE'; payload: { cardId: string; deckId: string; pileId: string } }
   | { type: 'TOGGLE_SHOW_TOP_CARD'; payload: { deckId: string; pileId?: string } }
   | { type: 'SWING_CLOCKWISE'; payload: { id: string } }
-  | { type: 'SWING_COUNTER_CLOCKWISE'; payload: { id: string } };
+  | { type: 'SWING_COUNTER_CLOCKWISE'; payload: { id: string } }
+  // UI Object actions
+  | { type: 'CREATE_PANEL'; payload: { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string } }
+  | { type: 'CREATE_WINDOW'; payload: { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string } }
+  | { type: 'CLOSE_UI_OBJECT'; payload: { id: string } }
+  | { type: 'TOGGLE_MINIMIZE'; payload: { id: string } }
+  | { type: 'RESIZE_UI_OBJECT'; payload: { id: string; width: number; height: number } };
 
 const initialState: GameState = {
   objects: {},
@@ -199,17 +205,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'ADD_OBJECT': {
-      const isBoard = action.payload.type === ItemType.TOKEN && (action.payload as any).shape === TokenShape.RECTANGLE;
+      const isBoard = action.payload.type === ItemType.BOARD || (action.payload.type === ItemType.TOKEN && (action.payload as any).shape === TokenShape.RECTANGLE);
       const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
       const currentMaxZ = allZ.length ? Math.max(...allZ) : 0;
       const defaultZ = isBoard ? -100 : (currentMaxZ + 1);
-      
+
       const newObj = {
           ...action.payload,
           zIndex: defaultZ,
           isOnTable: action.payload.isOnTable ?? true,
       };
-      
+
       return {
         ...state,
         objects: { ...state.objects, [action.payload.id]: newObj },
@@ -539,8 +545,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const index = sortedObjects.findIndex(o => o.id === obj.id);
         if (index <= 0) return state;
         const prevObj = sortedObjects[index - 1];
-        const isPrevBoard = prevObj.type === ItemType.TOKEN && (prevObj as Token).shape === TokenShape.RECTANGLE;
-        const isCurrentBoard = obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.RECTANGLE;
+        const isPrevBoard = prevObj.type === ItemType.BOARD || (prevObj.type === ItemType.TOKEN && (prevObj as Token).shape === TokenShape.RECTANGLE);
+        const isCurrentBoard = obj.type === ItemType.BOARD || (obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.RECTANGLE);
         if (isPrevBoard && !isCurrentBoard) return state;
         const currentZ = obj.zIndex || 0;
         const prevZ = prevObj.zIndex || 0;
@@ -857,6 +863,111 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       };
     }
+    case 'CREATE_PANEL': {
+      const { panelType, x = 100, y = 100, width = 300, height = 400, title, deckId } = action.payload;
+      const panelId = generateUUID();
+
+      // UI panels have zIndex 9998, draggable cards have 9999
+      const panelZ = 9998;
+
+      const panel: PanelObject = {
+        id: panelId,
+        type: ItemType.PANEL,
+        panelType,
+        title: title || panelType,
+        x,
+        y,
+        width,
+        height,
+        rotation: 0,
+        zIndex: panelZ,
+        locked: false,
+        minimized: false,
+        visible: true,
+        deckId,
+      };
+
+      return {
+        ...state,
+        objects: { ...state.objects, [panelId]: panel },
+      };
+    }
+    case 'CREATE_WINDOW': {
+      const { windowType, x = 200, y = 200, title, targetObjectId } = action.payload;
+      const windowId = generateUUID();
+
+      // UI windows have zIndex 9999 (above panels, same as dragging cards)
+      const windowZ = 9999;
+
+      const windowObj: WindowObject = {
+        id: windowId,
+        type: ItemType.WINDOW,
+        windowType,
+        title: title || windowType,
+        x,
+        y,
+        width: 400,
+        height: 300,
+        rotation: 0,
+        zIndex: windowZ,
+        locked: false,
+        minimized: false,
+        visible: true,
+        targetObjectId,
+      };
+
+      return {
+        ...state,
+        objects: { ...state.objects, [windowId]: windowObj },
+      };
+    }
+    case 'CLOSE_UI_OBJECT': {
+      const obj = state.objects[action.payload.id];
+      if (!obj || (obj.type !== ItemType.PANEL && obj.type !== ItemType.WINDOW)) return state;
+
+      // For windows, close = delete; for panels, close = hide
+      if (obj.type === ItemType.WINDOW) {
+        const newObjects = { ...state.objects };
+        delete newObjects[action.payload.id];
+        return { ...state, objects: newObjects };
+      } else {
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [action.payload.id]: { ...obj, visible: false } as PanelObject,
+          },
+        };
+      }
+    }
+    case 'TOGGLE_MINIMIZE': {
+      const obj = state.objects[action.payload.id];
+      if (!obj || (obj.type !== ItemType.PANEL && obj.type !== ItemType.WINDOW)) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [action.payload.id]: { ...obj, minimized: !obj.minimized } as PanelObject | WindowObject,
+        },
+      };
+    }
+    case 'RESIZE_UI_OBJECT': {
+      const obj = state.objects[action.payload.id];
+      if (!obj || (obj.type !== ItemType.PANEL && obj.type !== ItemType.WINDOW)) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [action.payload.id]: {
+            ...obj,
+            width: action.payload.width,
+            height: action.payload.height,
+          } as PanelObject | WindowObject,
+        },
+      };
+    }
     default:
       return state;
   }
@@ -887,9 +998,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Create game board
         const boardId = 'demo-board';
-        const board: Token = {
+        const board: Board = {
              id: boardId,
-             type: ItemType.TOKEN,
+             type: ItemType.BOARD,
              shape: TokenShape.RECTANGLE,
              x: 100, y: 100,
              width: 800, height: 600,
@@ -902,24 +1013,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
              gridType: GridType.HEX,
              gridSize: 60,
              snapToGrid: true,
-             zIndex: -100
         };
         localDispatch({ type: 'ADD_OBJECT', payload: board });
 
         // Create Standard Deck positioned in top-right corner
-        // Position: 10px from top, 60px from right sidebar
-        const SIDEBAR_WIDTH = 286;
+        // Position: 10px from top, 60px from right main menu
+        const MAIN_MENU_WIDTH = 286;
         const MARGIN_X = 80;
         const MARGIN_Y = -80;
         const { deck, cards } = createStandardDeck();
 
         // Calculate world coordinates for top-right position
         // screenX = worldX * zoom + offset.x
-        // We want screenX to be near right edge (windowWidth - SIDEBAR_WIDTH - MARGIN_X - deckWidth/2)
+        // We want screenX to be near right edge (windowWidth - MAIN_MENU_WIDTH - MARGIN_X - deckWidth/2)
         // With default offset.x = 0, zoom = 0.8:
         // worldX = (screenX - offset.x) / zoom
         const windowWidth = window.innerWidth;
-        const deckScreenWidth = windowWidth - SIDEBAR_WIDTH - MARGIN_X - (deck.width / 2);
+        const deckScreenWidth = windowWidth - MAIN_MENU_WIDTH - MARGIN_X - (deck.width / 2);
         const deckScreenY = MARGIN_Y + (deck.height / 2);
 
         deck.x = deckScreenWidth / state.viewTransform.zoom - state.viewTransform.offset.x;
@@ -929,6 +1039,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
         // Then add the deck
         localDispatch({ type: 'ADD_OBJECT', payload: deck });
+
+        // Create Main Menu panel in the unified space
+        // Position slightly to the left to account for scrollbar (approximately 15px)
+        const SCROLLBAR_WIDTH = 15;
+        const mainMenuX = window.innerWidth - 286 - SCROLLBAR_WIDTH;
+        const mainMenuY = 0;
+        localDispatch({
+            type: 'CREATE_PANEL',
+            payload: {
+                panelType: PanelType.MAIN_MENU,
+                x: mainMenuX,
+                y: mainMenuY,
+                width: 286,
+                height: window.innerHeight,
+                title: 'Main Menu'
+            }
+        });
     }
   }, [isHost]);
 
