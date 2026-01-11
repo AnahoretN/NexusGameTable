@@ -1,51 +1,16 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
-import { Card, ContextAction, Deck as DeckType, CardOrientation, CardNamePosition } from '../types';
-import { Hand, Plus, Minus, Eye, RefreshCw, Copy, GripVertical } from 'lucide-react';
+import { Card, Deck as DeckType } from '../types';
+import { Hand, Plus, Minus, GripVertical } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { useCardDrag } from '../hooks/useCardDrag';
+import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
 
 interface HandPanelProps {
   width?: number;
   isDragTarget?: boolean; // When a card from tabletop is being dragged over hand
   panelBounds?: { x: number; y: number; width: number; height: number } | null; // Bounds for drag detection when inside another panel
 }
-
-const getCardButtonConfigs = (
-  card: Card,
-  actionButtons: ContextAction[] = [],
-  onFlip: () => void,
-  onRotate: () => void,
-  onClone: () => void
-) => {
-  const configs: Record<string, {
-    className: string;
-    title: string;
-    icon: JSX.Element;
-    onAction: () => void;
-  }> = {
-    flip: {
-      className: 'bg-purple-600 hover:bg-purple-500',
-      title: 'Flip',
-      icon: card.faceUp ? <Eye size={14} /> : <Eye size={14} />,
-      onAction: onFlip
-    },
-    rotate: {
-      className: 'bg-green-600 hover:bg-green-500',
-      title: 'Rotate',
-      icon: <RefreshCw size={14} />,
-      onAction: onRotate
-    },
-    clone: {
-      className: 'bg-cyan-600 hover:bg-cyan-500',
-      title: 'Clone',
-      icon: <Copy size={14} />,
-      onAction: onClone
-    }
-  };
-
-  return actionButtons.map(action => configs[action]).filter(Boolean);
-};
 
 export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget = false, panelBounds }) => {
   const { state, dispatch } = useGame();
@@ -68,46 +33,17 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
   // Base scale is 0.9 (90%), but displayed as 100% to user
   const BASE_SCALE = 0.9;
   const [displayScale, setDisplayScale] = useState(1);
-  const actualScale = displayScale * BASE_SCALE;
 
-  // Get card settings from deck
-  const getCardSettings = useCallback((card: Card) => {
-    if (!card.deckId) {
-      return {
-        cardWidth: 100,
-        cardHeight: 140,
-        cardNamePosition: 'none' as CardNamePosition,
-        cardOrientation: CardOrientation.VERTICAL,
-        cardActionButtons: []
-      };
-    }
+  // Memoized getCardDimensions with current scale
+  const computeCardDimensions = useCallback((card: Card) => {
+    const deck = card.deckId ? (state.objects[card.deckId] as DeckType | undefined) : undefined;
+    return getCardDimensions(card, deck, displayScale, BASE_SCALE);
+  }, [state.objects, displayScale, BASE_SCALE]);
 
-    const deck = state.objects[card.deckId] as DeckType | undefined;
-    return {
-      cardWidth: deck?.cardWidth ?? 100,
-      cardHeight: deck?.cardHeight ?? 140,
-      cardNamePosition: (deck?.cardNamePosition ?? 'none') as CardNamePosition,
-      cardOrientation: (deck?.cardOrientation ?? CardOrientation.VERTICAL) as CardOrientation,
-      cardActionButtons: deck?.cardActionButtons ?? []
-    };
+  // Memoized getCardSettings
+  const computeCardSettings = useCallback((card: Card) => {
+    return getCardSettings(card, state.objects);
   }, [state.objects]);
-
-  // Get card dimensions based on scale
-  const getCardDimensions = useCallback((card: Card) => {
-    const settings = getCardSettings(card);
-    const actualCardWidth = settings.cardWidth;
-    const actualCardHeight = settings.cardHeight;
-    const scaledWidth = actualCardWidth * actualScale;
-    const scaledHeight = actualCardHeight * actualScale;
-    const aspectRatio = scaledWidth / scaledHeight;
-
-    // For horizontal cards, we calculate height based on width
-    const baseWidth = 140;
-    let cardWidth = baseWidth * actualScale;
-    let cardHeight = cardWidth / aspectRatio;
-
-    return { width: cardWidth, height: cardHeight };
-  }, [actualScale, getCardSettings]);
 
   // Action handlers
   const handleFlip = useCallback((cardId: string) => {
@@ -377,9 +313,9 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
         ) : (
           <div className="flex flex-wrap gap-[2px] w-full">
             {cards.map((card, index) => {
-              const cardSettings = getCardSettings(card);
+              const cardSettings = computeCardSettings(card);
               const cardActionButtons = cardSettings.cardActionButtons;
-              const { width: cardWidth, height: cardHeight } = getCardDimensions(card);
+              const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
 
               const buttons = getCardButtonConfigs(
                 card,

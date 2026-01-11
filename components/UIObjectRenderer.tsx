@@ -1,6 +1,6 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType } from '../types';
-import { X, Minus, GripHorizontal } from 'lucide-react';
+import { X, Minus } from 'lucide-react';
 import { HandPanel } from './HandPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -16,11 +16,30 @@ interface UIObjectRendererProps {
   zoom?: number;
 }
 
-export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({ uiObject, isDragging, onMouseDown, offset = { x: 0, y: 0 }, zoom = 1 }) => {
+export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
+  uiObject,
+  isDragging,
+  onMouseDown,
+  offset = { x: 0, y: 0 },
+  zoom = 1
+}) => {
   const { dispatch } = useGame();
-  const [isResizing, setIsResizing] = useState(false);
-  const resizeHandleRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Track if this panel is currently being resized
+  const [isResizing, setIsResizing] = useState(false);
+
+  const minimized = uiObject.minimized || false;
+  const visible = uiObject.visible !== false;
+
+  if (!visible) return null;
+
+  // Check if this is a main menu panel (no header, content has its own tabs)
+  const isMainMenu = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.MAIN_MENU;
+
+  // Can resize non-main-menu panels when not minimized
+  const canResize = !isMainMenu && !minimized;
 
   const handleClose = useCallback(() => {
     dispatch({ type: 'CLOSE_UI_OBJECT', payload: { id: uiObject.id } });
@@ -31,11 +50,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({ uiObject, is
     dispatch({ type: 'TOGGLE_MINIMIZE', payload: { id: uiObject.id } });
   }, [dispatch, uiObject.id]);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsResizing(true);
-  }, []);
-
   const handleBringToFront = useCallback(() => {
     // Bring to front by setting high z-index
     // UI panels max at 9900, dragging cards are at 9999 (always above)
@@ -45,13 +59,86 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({ uiObject, is
     });
   }, [dispatch, uiObject.id]);
 
-  const minimized = uiObject.minimized || false;
-  const visible = uiObject.visible !== false;
+  // Track resize manually to avoid ResizeObserver issues
+  useEffect(() => {
+    if (!canResize || !containerRef.current) return;
 
-  if (!visible) return null;
+    const container = containerRef.current;
+    let resizing = false;
+    let startX = 0;
+    let startY = 0;
+    let startWidth = 0;
+    let startHeight = 0;
 
-  // Check if this is a main menu panel (no header, content has its own tabs)
-  const isMainMenu = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.MAIN_MENU;
+    const handleMouseDown = (e: MouseEvent) => {
+      // Check if clicking on the resize handle (bottom-right corner)
+      const rect = container.getBoundingClientRect();
+      const handleSize = 20;
+
+      // Only start resize if near bottom-right corner
+      if (e.clientX >= rect.right - handleSize &&
+          e.clientY >= rect.bottom - handleSize &&
+          e.clientX <= rect.right + 10 &&
+          e.clientY <= rect.bottom + 10) {
+        resizing = true;
+        setIsResizing(true);
+        startX = e.clientX;
+        startY = e.clientY;
+        startWidth = rect.width;
+        startHeight = rect.height;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizing) return;
+
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      const minSize = 200;
+
+      const newWidth = Math.max(minSize, startWidth + deltaX);
+      const newHeight = Math.max(minSize, startHeight + deltaY);
+
+      // Update container style directly for smooth resize
+      if (container) {
+        container.style.width = `${newWidth}px`;
+        container.style.height = `${newHeight}px`;
+      }
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (!resizing) return;
+
+      const rect = container.getBoundingClientRect();
+      const newWidth = Math.round(rect.width);
+      const newHeight = Math.round(rect.height);
+
+      // Only update store if size actually changed
+      if (Math.abs(newWidth - uiObject.width) > 5 || Math.abs(newHeight - uiObject.height) > 5) {
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: uiObject.id, width: newWidth, height: newHeight }
+        });
+      }
+
+      resizing = false;
+      setIsResizing(false);
+    };
+
+    container.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      container.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      // Clean up resize state on unmount
+      if (resizing) setIsResizing(false);
+    };
+  }, [canResize, uiObject.id, uiObject.width, uiObject.height, dispatch]);
 
   // UI objects use screen coordinates, so we need to compensate for the world transform
   // The parent container has: translate(offset.x, offset.y) scale(zoom)
@@ -68,6 +155,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({ uiObject, is
     transformOrigin: 'top left',
     zIndex: uiObject.zIndex || 1000,
     pointerEvents: 'auto',
+    // Enable native CSS resize
+    resize: canResize ? 'both' : 'none',
+    overflow: canResize ? 'hidden' : 'hidden',
   };
 
   const headerBg = uiObject.type === ItemType.WINDOW
@@ -80,9 +170,10 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({ uiObject, is
 
   return (
     <div
+      ref={containerRef}
       data-ui-object={uiObject.id}
       style={containerStyle}
-      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl overflow-hidden flex flex-col`}
+      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col`}
       onMouseDown={(e) => {
         e.stopPropagation();
         handleBringToFront();
@@ -126,23 +217,24 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({ uiObject, is
       {/* Content */}
       {!minimized && (
         <div ref={contentRef} className="flex-1 overflow-hidden">
-          {uiObject.type === ItemType.PANEL && (
-            <PanelContent panel={uiObject as PanelObject} />
+          {isResizing ? (
+            // Show resize indicator during resize
+            <div className="h-full flex items-center justify-center text-slate-400">
+              <div className="text-center">
+                <div className="text-4xl mb-2">⤡</div>
+                <div className="text-sm">Resizing...</div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {uiObject.type === ItemType.PANEL && (
+                <PanelContent panel={uiObject as PanelObject} />
+              )}
+              {uiObject.type === ItemType.WINDOW && (
+                <WindowContent window={uiObject as WindowObject} />
+              )}
+            </>
           )}
-          {uiObject.type === ItemType.WINDOW && (
-            <WindowContent window={uiObject as WindowObject} />
-          )}
-        </div>
-      )}
-
-      {/* Resize Handle - not shown for Main Menu */}
-      {!isMainMenu && (
-        <div
-          ref={resizeHandleRef}
-          onMouseDown={handleResizeStart}
-          className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize flex items-center justify-center opacity-50 hover:opacity-100"
-        >
-          <GripHorizontal size={12} className="text-white rotate-[-45deg]" />
         </div>
       )}
     </div>
@@ -292,7 +384,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
       ) : null;
     case WindowType.TOP_DECK:
       const deck = windowObj.targetObjectId ? state.objects[windowObj.targetObjectId] : null;
-      return deck && deck.type === ItemType.DECK ? (
+      return deck && deck.type === 'DECK' ? (
         <TopDeckModal
           deck={deck}
           onClose={handleClose}

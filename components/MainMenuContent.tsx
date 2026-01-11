@@ -39,7 +39,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const mainMenuRef = useRef<HTMLDivElement>(null);
 
   const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
-  const isHost = true; // TODO: from context
+  const isHost = true;
 
   // Get main menu panel bounds for drag detection
   const mainMenuBounds = useMemo(() => {
@@ -368,7 +368,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   };
 
   // Count objects on table that match this category (all objects, including hidden)
-  const objectsOnTable = Object.values(state.objects).filter(category.matcher);
+  const objectsOnTable = useMemo(() =>
+    Object.values(state.objects).filter(category.matcher),
+    [state.objects, category.matcher]
+  );
 
   const handleCreateItem = (item: typeof category.items[number]) => {
     const centerX = (window.innerWidth - 286) / 2; // Subtract mainMenu width
