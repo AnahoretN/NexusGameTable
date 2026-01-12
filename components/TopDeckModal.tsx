@@ -5,6 +5,7 @@ import { Deck, Card, CardPile } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { CardOrientation } from '../types';
+import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 
 const DEFAULT_MODAL_WIDTH = 75.75; // vw
 const MIN_MODAL_WIDTH = 50; // vw
@@ -34,13 +35,13 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
   // Get the mill pile (pile with isMillPile = true)
   const millPile = deck.piles?.find(p => p.isMillPile);
 
-  const baseCardWidth = 140;
+  const baseCardWidth = DEFAULT_HAND_CARD_WIDTH;
   const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
   const scaledBaseCardWidth = isHorizontal ? baseCardWidth * 1.254 : baseCardWidth;
 
   const getCardDimensions = useCallback((card: Card) => {
-    const actualCardWidth = card.width ?? 100;
-    const actualCardHeight = card.height ?? 140;
+    const actualCardWidth = card.width ?? DEFAULT_DECK_WIDTH;
+    const actualCardHeight = card.height ?? DEFAULT_DECK_HEIGHT;
     const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
     const layoutWidth = isHorizontal ? actualCardHeight : actualCardWidth;
     const layoutHeight = isHorizontal ? actualCardWidth : actualCardHeight;

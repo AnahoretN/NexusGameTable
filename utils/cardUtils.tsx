@@ -14,13 +14,23 @@ export function getCardDimensions(
   const actualScale = displayScale * baseScale;
   const cardWidth = deck?.cardWidth ?? 100;
   const cardHeight = deck?.cardHeight ?? 140;
-  const scaledWidth = cardWidth * actualScale;
-  const scaledHeight = cardHeight * actualScale;
-  const aspectRatio = scaledWidth / scaledHeight;
+  const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
 
+  // For horizontal orientation, swap width and height for the card itself
+  const actualCardWidth = isHorizontal ? cardHeight : cardWidth;
+  const actualCardHeight = isHorizontal ? cardWidth : cardHeight;
+
+  // Base width for display - horizontal cards get more width
+  // This matches the logic in SearchDeckModal where horizontal cards get 1.254x multiplier
   const baseWidth = 140;
-  let finalWidth = baseWidth * actualScale;
-  let finalHeight = finalWidth / aspectRatio;
+  const scaledBaseWidth = isHorizontal ? baseWidth * 1.254 * actualScale : baseWidth * actualScale;
+
+  // Calculate aspect ratio from the card's actual dimensions
+  const aspectRatio = actualCardWidth / actualCardHeight;
+
+  // Final dimensions based on base width and aspect ratio
+  const finalWidth = scaledBaseWidth;
+  const finalHeight = scaledBaseWidth / aspectRatio;
 
   return { width: finalWidth, height: finalHeight };
 }
