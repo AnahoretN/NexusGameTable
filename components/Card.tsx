@@ -192,6 +192,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   // Calculate transform for card rotation
   const getCardTransform = (orientation: CardOrientation, disableRotation: boolean | undefined, cardRotation: number) => {
     const transforms: string[] = [];
+    const isGeometricShape = shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
 
     // Apply card's rotation property (custom rotation from rotate actions)
     if (cardRotation) {
@@ -200,7 +201,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
 
     // Apply horizontal orientation (90 degrees clockwise = -90deg CSS)
     // Unless disabled (for search window, hand, etc.)
-    if (!disableRotation && orientation === CardOrientation.HORIZONTAL) {
+    // For geometric shapes (HEX, TRIANGLE, CIRCLE), orientation affects dimensions but NOT shape rotation
+    if (!disableRotation && orientation === CardOrientation.HORIZONTAL && !isGeometricShape) {
       transforms.push('rotate(-90deg)');
     }
 
@@ -269,8 +271,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               )}
 
               {/* Card name - position based on cardNamePosition setting */}
-              {card.faceUp && !showActionButtons && cardNamePosition !== 'none' && (
-                  <div className={`absolute inset-x-0 bg-black/60 p-0.5 h-[12.5%] flex items-center justify-center ${
+              {card.faceUp && cardNamePosition !== 'none' && (
+                  <div className={`absolute inset-x-0 bg-black/60 p-0.5 h-[12.5%] flex items-center justify-center z-10 ${
                     cardNamePosition === 'top' ? 'top-0' : 'bottom-0'
                   }`}>
                       <p className="text-[10px] text-white truncate text-center font-medium w-full">{card.name}</p>

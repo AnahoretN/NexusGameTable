@@ -315,9 +315,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         shape: deck.cardShape || CardShape.POKER,
       };
       const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
+
+      // Add drawn card to the beginning of player's hand card order (top-right position in hand panel)
+      const player = state.players.find(p => p.id === action.payload.playerId);
+      const currentHandOrder = player?.handCardOrder || [];
+      const newHandOrder = [drawnCardId, ...currentHandOrder];
+
       return {
         ...state,
         objects: { ...state.objects, [action.payload.deckId]: updatedDeck, [drawnCardId]: updatedCard },
+        players: state.players.map(p =>
+          p.id === action.payload.playerId
+            ? { ...p, handCardOrder: newHandOrder }
+            : p
+        ),
       };
     }
     case 'PLAY_CARD': {
@@ -458,7 +469,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'ADD_CARD_TO_TOP_OF_DECK': {
         const card = state.objects[action.payload.cardId] as Card;
         const deck = state.objects[action.payload.deckId] as Deck;
-        if (!card || !deck || deck.type !== ItemType.DECK) return state;
+        if (!deck || deck.type !== ItemType.DECK) return state;
+
+        // If card exists in state, use it; otherwise it might be coming from cursor slot
+        // and we need to handle it differently (it will be added back to objects)
+        if (!card) return state;
 
         // Add card to the beginning of the deck (top position)
         const newCardIds = [card.id, ...deck.cardIds];

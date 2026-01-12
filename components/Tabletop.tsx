@@ -892,6 +892,10 @@ export const Tabletop: React.FC = () => {
 
     if (item.type === ItemType.CARD) {
       const card = item as CardType;
+      // Get deck to check orientation
+      const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+      const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
+
       itemClone = {
         id: card.id,
         type: ItemType.CARD,
@@ -900,6 +904,7 @@ export const Tabletop: React.FC = () => {
         frontFaceUrl: (card as any).frontFaceUrl,
         backFaceUrl: (card as any).backFaceUrl,
         deckId: card.deckId,
+        // Use the card's actual current dimensions (what player sees on table)
         width: card.width,
         height: card.height,
         x: card.x,
@@ -910,6 +915,8 @@ export const Tabletop: React.FC = () => {
         ownerId: card.ownerId,
         isOnTable: card.isOnTable,
         locked: card.locked,
+        // Store orientation info for cursor slot rendering
+        isHorizontal: isHorizontal,
       } as CardType;
     } else {
       itemClone = { ...item } as TokenType;
@@ -934,6 +941,66 @@ export const Tabletop: React.FC = () => {
   const dropCursorSlot = useCallback((clientX: number, clientY: number) => {
     if (cursorSlot.length === 0) return;
 
+    // Check if dropping on a deck
+    if (hoveredDeckId) {
+      // Add all cards from slot to the deck (in reverse order so first card ends up on top)
+      const cardsInSlot = cursorSlot.filter(item => item.type === ItemType.CARD);
+      if (cardsInSlot.length > 0) {
+        // First, add cards back to state (they were removed when added to slot)
+        cardsInSlot.forEach((item) => {
+          dispatch({
+            type: 'ADD_OBJECT',
+            payload: item
+          });
+        });
+
+        // Then add them to the deck in reverse order (last in slot = first to be added = ends up on top)
+        [...cardsInSlot].reverse().forEach((item) => {
+          dispatch({
+            type: 'ADD_CARD_TO_TOP_OF_DECK',
+            payload: { cardId: item.id, deckId: hoveredDeckId }
+          });
+        });
+      }
+      // For non-card items, drop them on the tabletop as usual
+      const nonCardsInSlot = cursorSlot.filter(item => item.type !== ItemType.CARD);
+
+      if (nonCardsInSlot.length > 0) {
+        const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
+        const scrollTop = scrollContainerRef.current?.scrollTop || 0;
+        const currentOffset = state.viewTransform.offset;
+        const currentZoom = state.viewTransform.zoom;
+        const worldX = (clientX - currentOffset.x + scrollLeft) / currentZoom;
+        const worldY = (clientY - currentOffset.y + scrollTop) / currentZoom;
+
+        nonCardsInSlot.forEach((item, index) => {
+          const baseWidth = item.width ?? 50;
+          const baseHeight = item.height ?? 50;
+          const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
+          const offsetFromBack = (nonCardsInSlot.length - 1 - index) * offsetAmount;
+
+          const itemWithId = {
+            ...item,
+            id: `slot-${Date.now()}-${index}`,
+            x: worldX - baseWidth / 2 + offsetFromBack,
+            y: worldY - baseHeight / 2 + offsetFromBack,
+            zIndex: 10000,
+          };
+
+          dispatch({
+            type: 'ADD_OBJECT',
+            payload: itemWithId
+          });
+        });
+      }
+
+      // Clear the slot
+      setCursorSlot([]);
+      setCursorPosition(null);
+      return;
+    }
+
+    // Not dropping on a deck - drop items on tabletop
     // Get current scroll position from container
     const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
     const scrollTop = scrollContainerRef.current?.scrollTop || 0;
@@ -985,7 +1052,65 @@ export const Tabletop: React.FC = () => {
     // Clear the slot
     setCursorSlot([]);
     setCursorPosition(null);
-  }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch]);
+    setCursorSlotSource(null);
+  }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, hoveredDeckId]);
+
+  // Drop cursor slot items to a specific deck (called from DeckComponent on mouseup)
+  const dropToDeck = useCallback((deckId: string) => {
+    if (cursorSlot.length === 0) return;
+
+    // Only add cards to deck (not tokens)
+    const cardsInSlot = cursorSlot.filter(item => item.type === ItemType.CARD);
+    if (cardsInSlot.length > 0) {
+      // First, add cards back to state (they were removed when added to slot)
+      cardsInSlot.forEach((item) => {
+        dispatch({
+          type: 'ADD_OBJECT',
+          payload: item
+        });
+      });
+
+      // Then add them to the deck in reverse order (last in slot = first to be added = ends up on top)
+      [...cardsInSlot].reverse().forEach((item) => {
+        dispatch({
+          type: 'ADD_CARD_TO_TOP_OF_DECK',
+          payload: { cardId: item.id, deckId }
+        });
+      });
+    }
+
+    // For non-card items (tokens), drop them on the tabletop at deck position
+    const nonCardsInSlot = cursorSlot.filter(item => item.type !== ItemType.CARD);
+    if (nonCardsInSlot.length > 0) {
+      const deck = state.objects[deckId] as DeckType;
+      if (deck) {
+        nonCardsInSlot.forEach((item, index) => {
+          const baseWidth = item.width ?? 50;
+          const baseHeight = item.height ?? 50;
+          const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
+          const offsetFromBack = (nonCardsInSlot.length - 1 - index) * offsetAmount;
+
+          const itemWithId = {
+            ...item,
+            id: `slot-${Date.now()}-${index}`,
+            x: deck.x + deck.width / 2 - baseWidth / 2 + offsetFromBack,
+            y: deck.y + deck.height / 2 - baseHeight / 2 + offsetFromBack,
+            zIndex: 10000,
+          };
+
+          dispatch({
+            type: 'ADD_OBJECT',
+            payload: itemWithId
+          });
+        });
+      }
+    }
+
+    // Clear the slot
+    setCursorSlot([]);
+    setCursorPosition(null);
+    setCursorSlotSource(null);
+  }, [cursorSlot, dispatch, state.objects]);
 
   // Global click handler to drop cursor slot items when clicking outside hand panel
   useEffect(() => {
@@ -1029,6 +1154,7 @@ export const Tabletop: React.FC = () => {
   }, [cursorSlot.length, dropCursorSlot, cursorSlot]);
 
   // Dispatch cursor position events for MainMenuContent to track
+  // Also update hoveredDeckId when dragging cards in cursor slot
   useEffect(() => {
     if (cursorSlot.length === 0) return;
 
@@ -1040,12 +1166,44 @@ export const Tabletop: React.FC = () => {
           hasCards: cursorSlot.some(item => item.type === ItemType.CARD)
         }
       }));
+
+      // Update hoveredDeckId when dragging cards in cursor slot
+      const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
+      const scrollTop = scrollContainerRef.current?.scrollTop || 0;
+      const currentOffset = state.viewTransform.offset;
+      const currentZoom = state.viewTransform.zoom;
+
+      // Convert screen coordinates to world coordinates
+      const worldX = (e.clientX - currentOffset.x + scrollLeft) / currentZoom;
+      const worldY = (e.clientY - currentOffset.y + scrollTop) / currentZoom;
+
+      // Check if hovering over any deck
+      let foundDeckId: string | null = null;
+      for (const obj of Object.values(state.objects)) {
+        if (obj.type === ItemType.DECK) {
+          const deck = obj as DeckType;
+          // Check if cursor is within deck bounds (accounting for rotation)
+          const deckLeft = deck.x;
+          const deckTop = deck.y;
+          const deckRight = deck.x + deck.width;
+          const deckBottom = deck.y + deck.height;
+
+          if (worldX >= deckLeft && worldX <= deckRight &&
+              worldY >= deckTop && worldY <= deckBottom) {
+            foundDeckId = deck.id;
+            break;
+          }
+        }
+      }
+
+      setHoveredDeckId(foundDeckId);
     };
 
     const handleMouseLeave = () => {
       window.dispatchEvent(new CustomEvent('cursor-position-update', {
         detail: { x: -1, y: -1, hasCards: false }
       }));
+      setHoveredDeckId(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -1055,7 +1213,14 @@ export const Tabletop: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, [cursorSlot.length, cursorSlot]);
+  }, [cursorSlot.length, cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, state.objects]);
+
+  // Clear hoveredDeckId when cursor slot becomes empty
+  useEffect(() => {
+    if (cursorSlot.length === 0) {
+      setHoveredDeckId(null);
+    }
+  }, [cursorSlot.length]);
 
   // Cleanup long-press timer on unmount
   useEffect(() => {
@@ -2563,6 +2728,8 @@ export const Tabletop: React.FC = () => {
                                 setPilesButtonMenu={setPilesButtonMenu}
                                 setDeleteCandidateId={setDeleteCandidateId}
                                 executeClickAction={executeClickAction}
+                                cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
+                                onDropToDeck={dropToDeck}
                             />
                         </div>
                     );
@@ -2822,8 +2989,10 @@ export const Tabletop: React.FC = () => {
                 {/* Render stacked items - newest in front, older items offset */}
                 {cursorSlot.map((item, index) => {
                     const isCard = item.type === ItemType.CARD;
-                    const baseWidth = item.width ?? (isCard ? 63 : 50);
-                    const baseHeight = item.height ?? (isCard ? 88 : 50);
+                    // Use the card's actual dimensions (same as on table)
+                    let baseWidth = item.width ?? (isCard ? 63 : 50);
+                    let baseHeight = item.height ?? (isCard ? 88 : 50);
+
                     // Scale by zoom to match in-game size
                     const width = baseWidth * zoom;
                     const height = baseHeight * zoom;
@@ -2835,36 +3004,35 @@ export const Tabletop: React.FC = () => {
 
                     if (isCard) {
                         const card = item as CardType;
+                        const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+                        const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
+
+                        // For horizontal cards, swap width and height to match tabletop appearance
+                        // (wide rectangle instead of tall), but disable rotation transform
+                        const cardWidth = isHorizontal ? height : width;
+                        const cardHeight = isHorizontal ? width : height;
+
                         return (
                             <div
                                 key={`${card.id}-${index}`}
                                 className="absolute"
                                 style={{
-                                    left: -width / 2 + offsetFromBack,
-                                    top: -height / 2 + offsetFromBack,
-                                    width: `${width}px`,
-                                    height: `${height}px`,
+                                    left: -cardWidth / 2 + offsetFromBack,
+                                    top: -cardHeight / 2 + offsetFromBack,
                                     zIndex,
                                 }}
                             >
-                                {/* Card back or face */}
-                                <div
-                                    className="w-full h-full rounded shadow-lg border-2 border-white flex flex-col items-center justify-center text-white font-bold select-none"
-                                    style={{
-                                        backgroundColor: card.faceUp ? '#ecf0f1' : '#3498db',
-                                        backgroundImage: card.faceUp && card.content ? `url(${card.content})` : undefined,
-                                        backgroundSize: 'cover',
-                                        backgroundPosition: 'center',
-                                        opacity: 0.9,
-                                    }}
-                                >
-                                    {!card.faceUp && !card.content && (
-                                        <div className="text-2xl">🂠</div>
-                                    )}
-                                    {card.faceUp && !card.content && card.name && (
-                                        <div className="text-xs text-gray-800 text-center px-1">{card.name}</div>
-                                    )}
-                                </div>
+                                {/* Use the same Card component as on table for identical appearance */}
+                                <Card
+                                    card={card}
+                                    overrideWidth={cardWidth}
+                                    overrideHeight={cardHeight}
+                                    cardWidth={deck?.cardWidth}
+                                    cardHeight={deck?.cardHeight}
+                                    cardOrientation={deck?.cardOrientation}
+                                    cardNamePosition={deck?.cardNamePosition}
+                                    disableRotationTransform={true}
+                                />
                             </div>
                         );
                     }
