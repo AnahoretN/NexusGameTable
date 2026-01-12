@@ -111,7 +111,11 @@ export interface GameItem {
   // Viewport pinning - when true, object stays fixed on screen regardless of camera movement
   isPinnedToViewport?: boolean;
   // Screen position where object is pinned (constant, used for render-time calculation)
+  // For dual position mode, use expandedPinnedPosition and collapsedPinnedPosition
   pinnedScreenPosition?: { x: number; y: number };
+  // Dual pinned positions for panels with dualPosition mode enabled
+  expandedPinnedPosition?: { x: number; y: number };
+  collapsedPinnedPosition?: { x: number; y: number };
 }
 
 // Where to show the card name
@@ -256,7 +260,11 @@ export interface UIObject {
   // Viewport pinning - when true, object stays fixed on screen regardless of camera movement
   isPinnedToViewport?: boolean;
   // Screen position where object is pinned (constant, used for render-time calculation)
+  // For dual position mode, use expandedPinnedPosition and collapsedPinnedPosition
   pinnedScreenPosition?: { x: number; y: number };
+  // Dual pinned positions for panels with dualPosition mode enabled
+  expandedPinnedPosition?: { x: number; y: number };
+  collapsedPinnedPosition?: { x: number; y: number };
 }
 
 // Panel object - persistent UI panels on the game board

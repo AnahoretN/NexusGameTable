@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
-import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, X, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings } from 'lucide-react';
+import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile } from '../types';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -68,6 +69,16 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [settingsObjectId, setSettingsObjectId] = useState<string | null>(null);
   const mainMenuRef = useRef<HTMLDivElement>(null);
 
+  // Hand card scale state (stored in localStorage)
+  const [handCardScale, setHandCardScale] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hand-card-scale');
+      return saved ? parseFloat(saved) : 1;
+    } catch {
+      return 1;
+    }
+  });
+
   const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
   const isHost = true;
 
@@ -78,32 +89,79 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     ) as PanelObject | undefined;
   }, [state.objects]);
 
-  // Get main menu panel bounds for drag detection
-  const mainMenuBounds = useMemo(() => {
-    if (!mainMenuPanel) return null;
-
-    return {
-      x: mainMenuPanel.x,
-      y: mainMenuPanel.y,
-      width: mainMenuPanel.width,
-      height: mainMenuPanel.height
-    };
-  }, [mainMenuPanel]);
-
   // Check if main menu panel is minimized
   const isMainMenuMinimized = mainMenuPanel?.minimized || false;
 
-  // Handle cursor slot move over main menu for hand panel
+  // Listen for hand card scale changes from settings modal
   useEffect(() => {
-    const handleCursorSlotMove = (e: Event) => {
+    const handleHandCardScaleChanged = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        scale: number;
+      }>;
+      setHandCardScale(customEvent.detail.scale);
+    };
+
+    window.addEventListener('hand-card-scale-changed', handleHandCardScaleChanged);
+    return () => window.removeEventListener('hand-card-scale-changed', handleHandCardScaleChanged);
+  }, []);
+
+  // Handle opening HAND panel settings from button on the panel
+  useEffect(() => {
+    const handleOpenHandPanelSettings = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        panelId: string;
+      }>;
+
+      const { panelId } = customEvent.detail;
+
+      // Check if it's a HAND panel
+      const panel = state.objects[panelId] as PanelObject | undefined;
+      if (panel?.panelType === PanelType.HAND) {
+        setSettingsObjectId(panelId);
+        // Switch to create tab to show the settings modal
+        setActiveTab('create');
+      }
+    };
+
+    window.addEventListener('open-hand-panel-settings', handleOpenHandPanelSettings);
+    return () => window.removeEventListener('open-hand-panel-settings', handleOpenHandPanelSettings);
+  }, [state.objects]);
+
+  // Track cursor over main menu when cursor slot has items
+  useEffect(() => {
+    const handleCursorPositionUpdate = (e: Event) => {
       const customEvent = e as CustomEvent<{
         x: number;
         y: number;
-        isOverMainMenu: boolean;
         hasCards: boolean;
       }>;
 
-      const { isOverMainMenu, hasCards } = customEvent.detail;
+      const { x, y, hasCards } = customEvent.detail;
+
+      if (!hasCards) {
+        setDragOverHand(false);
+        return;
+      }
+
+      // Find main menu panel element in DOM to get actual screen position
+      const mainMenuElement = document.querySelector('[data-main-menu="true"]') as HTMLElement;
+
+      if (!mainMenuElement) return;
+
+      // Get actual screen position of main menu using getBoundingClientRect
+      const rect = mainMenuElement.getBoundingClientRect();
+
+      // Check if cursor is over main menu bounds
+      const isOverMainMenu =
+        x >= rect.left &&
+        x <= rect.right &&
+        y >= rect.top &&
+        y <= rect.bottom;
+
+      // Dispatch event for HandPanel to show purple ring
+      window.dispatchEvent(new CustomEvent('cursor-slot-move', {
+        detail: { x, y, isOverMainMenu, hasCards }
+      }));
 
       // Only switch to hand tab if cursor is over main menu AND slot has cards
       if (isOverMainMenu && hasCards) {
@@ -128,11 +186,11 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       setDragOverHand(false);
     };
 
-    window.addEventListener('cursor-slot-move', handleCursorSlotMove);
+    window.addEventListener('cursor-position-update', handleCursorPositionUpdate);
     window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
 
     return () => {
-      window.removeEventListener('cursor-slot-move', handleCursorSlotMove);
+      window.removeEventListener('cursor-position-update', handleCursorPositionUpdate);
       window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     };
   }, [activeTab, mainMenuPanel, dispatch]);
@@ -312,7 +370,46 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         )}
 
         {activeTab === 'hand' && (
-          <HandPanel width={width} isDragTarget={dragOverHand} panelBounds={mainMenuBounds} />
+          <div className="h-full flex flex-col">
+            {/* Hand Header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-1">
+                <Hand size={14} />
+                Your Hand ({Object.values(state.objects).filter(o =>
+                  o.type === ItemType.CARD && (o as Card).location === 'HAND' && (o as Card).ownerId === state.activePlayerId
+                ).length})
+              </h3>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    const newScale = Math.max(0.5, handCardScale - 0.1);
+                    setHandCardScale(newScale);
+                    localStorage.setItem('hand-card-scale', String(newScale));
+                  }}
+                  className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
+                  title="Decrease card size"
+                >
+                  <Minus size={12} />
+                </button>
+                <span className="text-xs text-gray-400 w-8 text-center">{Math.round(handCardScale * 100)}%</span>
+                <button
+                  onClick={() => {
+                    const newScale = Math.min(2, handCardScale + 0.1);
+                    setHandCardScale(newScale);
+                    localStorage.setItem('hand-card-scale', String(newScale));
+                  }}
+                  className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
+                  title="Increase card size"
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+            </div>
+            {/* Hand Panel */}
+            <div className="flex-1 overflow-hidden">
+              <HandPanel width={width} isDragTarget={dragOverHand} cardScale={handCardScale} />
+            </div>
+          </div>
         )}
 
         {activeTab === 'players' && (
@@ -341,6 +438,44 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     {p.isGM && <span className="text-xs bg-yellow-600 px-1 rounded ml-auto text-white">GM</span>}
                   </div>
                 ))}
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Hand Settings</h3>
+              <div className="p-3 bg-slate-800 rounded space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-300 flex items-center gap-2">
+                    <Hand size={14} />
+                    Card Scale
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        const newScale = Math.max(0.5, handCardScale - 0.1);
+                        setHandCardScale(newScale);
+                        localStorage.setItem('hand-card-scale', String(newScale));
+                      }}
+                      className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
+                      title="Decrease card size"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span className="text-xs text-gray-400 w-10 text-center">{Math.round(handCardScale * 100)}%</span>
+                    <button
+                      onClick={() => {
+                        const newScale = Math.min(2, handCardScale + 0.1);
+                        setHandCardScale(newScale);
+                        localStorage.setItem('hand-card-scale', String(newScale));
+                      }}
+                      className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
+                      title="Increase card size"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-500">Adjust the size of cards in your hand panel</p>
+              </div>
             </div>
           </div>
         )}
@@ -427,19 +562,17 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           height: 140,
           rotation: 0,
           color: '#2c3e50',
-          faceUp: false,
+          content: '',
           isOnTable: true,
           locked: false,
           cardIds: [],
-          faceUpCardIds: [],
           showTopCard: false,
           piles: [],
           // Deck-specific properties
-          cardShape: CardShape.RECTANGLE,
-          cardOrientation: 'vertical' as const,
+          cardShape: CardShape.POKER,
+          cardOrientation: CardOrientation.VERTICAL,
           cardWidth: 100,
           cardHeight: 140,
-          cardBackImage: '',
           cardAllowedActions: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardAllowedActionsForGM: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardActionButtons: ['flip'],
@@ -461,18 +594,16 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           height: 140,
           rotation: 0,
           color: '#2c3e50',
-          faceUp: false,
+          content: '',
           isOnTable: true,
           locked: false,
           cardIds: [],
-          faceUpCardIds: [],
           showTopCard: false,
           piles: [],
-          cardShape: CardShape.RECTANGLE,
-          cardOrientation: 'vertical' as const,
+          cardShape: CardShape.POKER,
+          cardOrientation: CardOrientation.VERTICAL,
           cardWidth: 100,
           cardHeight: 140,
-          cardBackImage: '',
           cardAllowedActions: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardAllowedActionsForGM: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardActionButtons: ['flip'],
@@ -516,6 +647,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           height: 60,
           rotation: 0,
           color: '#6366f1',
+          content: '',
           isOnTable: true,
           locked: false,
           sides: item.sides || 6,
@@ -535,6 +667,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           height: 50,
           rotation: 0,
           color: '#10b981',
+          content: '',
           isOnTable: true,
           locked: false,
           value: 20,
@@ -613,7 +746,16 @@ const CategorySection: React.FC<CategorySectionProps> = ({
               <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">On Table</div>
               {objectsOnTable.map(obj => {
                 const isLocked = obj.locked || false;
-                const isVisible = obj.visible !== false;
+                // visible property only exists on some types
+                const isVisible = 'visible' in obj ? obj.visible !== false : true;
+                // Get color - panels don't have color property
+                const objColor = 'color' in obj ? obj.color : '#6366f1';
+                // Get name - handle different object types
+                const getDisplayName = () => {
+                  if (obj.type === ItemType.PANEL) return (obj as PanelObject).title;
+                  if (obj.type === ItemType.WINDOW) return (obj as any).title || 'Window';
+                  return 'name' in obj ? obj.name : 'Object';
+                };
                 return (
                   <div
                     key={obj.id}
@@ -622,9 +764,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     <span className="text-gray-500 flex-shrink-0">{getTypeIcon(obj)}</span>
                     <div
                       className="w-3 h-3 rounded flex-shrink-0"
-                      style={{ backgroundColor: isVisible ? obj.color : '#4a5568' }}
+                      style={{ backgroundColor: isVisible ? objColor : '#4a5568' }}
                     />
-                    <span className="flex-1 truncate text-xs">{obj.type === ItemType.PANEL ? (obj as PanelObject).title : obj.name}</span>
+                    <span className="flex-1 truncate text-xs">{getDisplayName()}</span>
                     <button
                       onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
                       className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-700 rounded"
@@ -666,7 +808,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           objectName={
             state.objects[deleteCandidateId]?.type === ItemType.PANEL
               ? (state.objects[deleteCandidateId] as PanelObject).title
-              : state.objects[deleteCandidateId]?.name || 'Object'
+              : state.objects[deleteCandidateId]?.type === ItemType.WINDOW
+                ? (state.objects[deleteCandidateId] as any).title || 'Window'
+                : state.objects[deleteCandidateId]?.name || 'Object'
           }
           onConfirm={() => {
             dispatch({ type: 'DELETE_OBJECT', payload: { id: deleteCandidateId }});
@@ -715,6 +859,20 @@ const PanelSettingsModalInline: React.FC<{
   const [dualPosition, setDualPosition] = React.useState(panel.dualPosition || false);
   const [zIndex, setZIndex] = React.useState(panel.zIndex || 1000);
 
+  // Hand card scale state for HAND panels
+  const isHandPanel = panel.panelType === PanelType.HAND;
+  const [handCardScale, setHandCardScale] = React.useState(() => {
+    if (isHandPanel) {
+      try {
+        const saved = localStorage.getItem('hand-card-scale');
+        return saved ? parseFloat(saved) : 1;
+      } catch {
+        return 1;
+      }
+    }
+    return 1;
+  });
+
   const handleSave = () => {
     dispatch({
       type: 'UPDATE_OBJECT',
@@ -730,6 +888,14 @@ const PanelSettingsModalInline: React.FC<{
         zIndex
       }
     });
+    // Save hand card scale to localStorage for HAND panels
+    if (isHandPanel) {
+      localStorage.setItem('hand-card-scale', String(handCardScale));
+      // Dispatch event to update hand card scale in HandPanel
+      window.dispatchEvent(new CustomEvent('hand-card-scale-changed', {
+        detail: { scale: handCardScale }
+      }));
+    }
     onClose();
   };
 
@@ -737,11 +903,8 @@ const PanelSettingsModalInline: React.FC<{
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-slate-700">
-          <h3 className="text-lg font-bold text-white">Settings: {panel.title}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X size={20} />
-          </button>
+        <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
+          <h3 className="text-base font-bold text-white">Settings: {panel.title}</h3>
         </div>
 
         {/* Tabs */}
@@ -826,16 +989,46 @@ const PanelSettingsModalInline: React.FC<{
             />
           </div>
 
-          {/* Z-Index */}
-          <div>
-            <label className="block text-xs font-bold text-gray-400 mb-1">Z-Index (layer order)</label>
-            <input
-              type="number"
-              value={zIndex}
-              onChange={e => setZIndex(Number(e.target.value))}
-              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-            />
-          </div>
+          {/* Z-Index and Card Scale in one row for HAND panels */}
+          {isHandPanel ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Card Scale (%)</label>
+                <input
+                  type="number"
+                  value={Math.round(handCardScale * 100)}
+                  onChange={e => {
+                    const val = Number(e.target.value);
+                    if (!isNaN(val) && val >= 50 && val <= 200) {
+                      setHandCardScale(val / 100);
+                    }
+                  }}
+                  min={50}
+                  max={200}
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Z-Index</label>
+                <input
+                  type="number"
+                  value={zIndex}
+                  onChange={e => setZIndex(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">Z-Index (layer order)</label>
+              <input
+                type="number"
+                value={zIndex}
+                onChange={e => setZIndex(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+          )}
 
           {/* Dual Position Toggle */}
           <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 border border-slate-700">
@@ -854,9 +1047,6 @@ const PanelSettingsModalInline: React.FC<{
               }`} />
             </button>
           </div>
-          <p className="text-[10px] text-gray-500 -mt-2">
-            When enabled, panel remembers separate positions for collapsed and expanded states
-          </p>
         </div>
 
         {/* Footer */}

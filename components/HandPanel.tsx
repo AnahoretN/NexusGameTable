@@ -1,7 +1,7 @@
+
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType, ItemType } from '../types';
-import { Hand, Plus, Minus } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
 
@@ -9,9 +9,10 @@ interface HandPanelProps {
   width?: number;
   isDragTarget?: boolean; // When a card from tabletop is being dragged over hand
   isCollapsed?: boolean; // When true, show only header (height 32px)
+  cardScale?: number; // Scale for card display (0.5 - 2)
 }
 
-export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget = false, isCollapsed = false }) => {
+export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget = false, isCollapsed = false, cardScale = 1 }) => {
   const { state, dispatch } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -85,15 +86,11 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
     [state.objects, state.activePlayerId]
   );
 
-  // Base scale is 0.9 (90%), but displayed as 100% to user
-  const BASE_SCALE = 0.9;
-  const [displayScale, setDisplayScale] = useState(1);
-
-  // Memoized getCardDimensions with current scale
+  // Memoized getCardDimensions
   const computeCardDimensions = useCallback((card: Card) => {
     const deck = card.deckId ? (state.objects[card.deckId] as DeckType | undefined) : undefined;
-    return getCardDimensions(card, deck, displayScale, BASE_SCALE);
-  }, [state.objects, displayScale, BASE_SCALE]);
+    return getCardDimensions(card, deck, cardScale, 1);
+  }, [state.objects, cardScale]);
 
   // Memoized getCardSettings
   const computeCardSettings = useCallback((card: Card) => {
@@ -112,10 +109,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
   const handleClone = useCallback((cardId: string) => {
     dispatch({ type: 'CLONE_OBJECT', payload: { id: cardId } });
   }, [dispatch]);
-
-  const changeCardScale = (delta: number) => {
-    setDisplayScale(prev => Math.max(0.5, Math.min(2, prev + delta)));
-  };
 
   // Handle card mouse down - start reorder drag or add to cursor slot with Shift or long-press
   const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number, _cardElement: HTMLDivElement | null) => {
@@ -369,39 +362,12 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
     <div
       ref={containerRef}
       data-hand-panel="true"
-      className="h-full flex flex-col p-1 transition-all"
+      className="h-full flex flex-col transition-all"
       style={{ width }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-2" style={{ height: 32 }}>
-        <h3 className="text-sm font-semibold text-white flex items-center gap-1">
-          <Hand size={14} />
-          Your Hand
-        </h3>
-        <div className="flex items-center gap-1">
-          {/* Scale controls */}
-          <button
-            onClick={() => changeCardScale(-0.1)}
-            className="p-0.6 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
-            title="Decrease card size"
-          >
-            <Minus size={14} />
-          </button>
-          <span className="text-xs text-gray-400 w-7 text-center">{Math.round(displayScale * 100)}%</span>
-          <button
-            onClick={() => changeCardScale(0.1)}
-            className="p-0.6 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
-            title="Increase card size"
-          >
-            <Plus size={14} />
-          </button>
-          <span className="text-xs bg-purple-600 px-1.5 py-0.6 rounded text-white ml-1">{cards.length}</span>
-        </div>
-      </div>
-
       {/* Cards Grid - outer scroll container - hidden when collapsed */}
       {!isCollapsed && (
-        <div className="flex-1 overflow-y-scroll custom-scrollbar relative">
+        <div className="flex-1 overflow-y-auto custom-scrollbar relative p-1">
           {/* Purple ring overlay - rendered separately with high z-index */}
           {(isDragTarget || isCursorOverHand) && (
             <div className="absolute inset-0 m-1 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
@@ -410,7 +376,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
           <div className="h-full transition-all">
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
-              <Hand size={32} className="mb-2 opacity-50" />
               <p className="text-sm">No cards in hand</p>
               <p className="text-xs mt-1">Draw cards from a deck</p>
             </div>

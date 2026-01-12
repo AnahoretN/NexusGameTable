@@ -869,6 +869,45 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj) return state;
 
+      const isMinimized = (obj as any).minimized || false;
+      const hasDualPosition = (obj as any).dualPosition || false;
+
+      // For dual position mode, store separate positions for minimized and expanded states
+      if (hasDualPosition) {
+        const updatedObj: any = {
+          ...obj,
+          isPinnedToViewport: true,
+        };
+
+        if (isMinimized) {
+          // Store as collapsed pinned position when currently minimized
+          updatedObj.collapsedPinnedPosition = { x: action.payload.screenX, y: action.payload.screenY };
+          // Keep expanded position if it exists
+          if (!updatedObj.expandedPinnedPosition && (obj as any).pinnedScreenPosition) {
+            updatedObj.expandedPinnedPosition = { ...(obj as any).pinnedScreenPosition };
+          }
+        } else {
+          // Store as expanded pinned position when currently expanded
+          updatedObj.expandedPinnedPosition = { x: action.payload.screenX, y: action.payload.screenY };
+          // Keep collapsed position if it exists
+          if (!updatedObj.collapsedPinnedPosition && (obj as any).pinnedScreenPosition) {
+            updatedObj.collapsedPinnedPosition = { ...(obj as any).pinnedScreenPosition };
+          }
+        }
+
+        // Also set the legacy pinnedScreenPosition for backward compatibility
+        updatedObj.pinnedScreenPosition = { x: action.payload.screenX, y: action.payload.screenY };
+
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [action.payload.id]: updatedObj
+          }
+        };
+      }
+
+      // Single position mode (original behavior)
       return {
         ...state,
         objects: {
@@ -892,7 +931,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           [action.payload.id]: {
             ...obj,
             isPinnedToViewport: false,
-            pinnedScreenPosition: undefined
+            pinnedScreenPosition: undefined,
+            expandedPinnedPosition: undefined,
+            collapsedPinnedPosition: undefined
           }
         }
       };
@@ -921,10 +962,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         deckId,
       };
 
-      // Main menu is pinned to viewport by default
+      // Main menu is pinned to viewport by default with dual position mode enabled
       if (panelType === PanelType.MAIN_MENU) {
         (panel as any).isPinnedToViewport = true;
         (panel as any).pinnedScreenPosition = { x, y };
+        (panel as any).dualPosition = true; // Enable dual position mode by default
       }
 
       return {
@@ -984,11 +1026,76 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj || (obj.type !== ItemType.PANEL && obj.type !== ItemType.WINDOW)) return state;
 
+      const isMinimizing = !obj.minimized;
+      const hasDualPosition = (obj as any).dualPosition || false;
+      const isPinned = (obj as any).isPinnedToViewport || false;
+
+      let newObj: PanelObject | WindowObject = { ...obj, minimized: isMinimizing } as PanelObject | WindowObject;
+
+      // If dual position mode is enabled and object is pinned, update position
+      if (hasDualPosition && isPinned) {
+        const scrollContainer = typeof document !== 'undefined'
+          ? document.querySelector('[data-tabletop="true"]') as HTMLElement
+          : null;
+        const currentScrollLeft = scrollContainer?.scrollLeft || 0;
+        const currentScrollTop = scrollContainer?.scrollTop || 0;
+
+        if (isMinimizing) {
+          // Collapsing: save current expanded position as expandedPinnedPosition if not set
+          if (!(obj as any).expandedPinnedPosition) {
+            (newObj as any).expandedPinnedPosition = {
+              x: obj.x - currentScrollLeft,
+              y: obj.y - currentScrollTop
+            };
+          }
+
+          // Save expanded state for size restoration
+          (newObj as any).expandedState = {
+            x: obj.x,
+            y: obj.y,
+            width: obj.width,
+            height: obj.height,
+          };
+
+          // Move to collapsed pinned position (or stay in place if none set yet)
+          if ((obj as any).collapsedPinnedPosition) {
+            (newObj as any).x = (obj as any).collapsedPinnedPosition.x + currentScrollLeft;
+            (newObj as any).y = (obj as any).collapsedPinnedPosition.y + currentScrollTop;
+          }
+        } else {
+          // Expanding: save current collapsed position as collapsedPinnedPosition if not set
+          if (!(obj as any).collapsedPinnedPosition) {
+            (newObj as any).collapsedPinnedPosition = {
+              x: obj.x - currentScrollLeft,
+              y: obj.y - currentScrollTop
+            };
+          }
+
+          // Move to expanded pinned position
+          if ((obj as any).expandedPinnedPosition) {
+            (newObj as any).x = (obj as any).expandedPinnedPosition.x + currentScrollLeft;
+            (newObj as any).y = (obj as any).expandedPinnedPosition.y + currentScrollTop;
+          }
+
+          // Restore size if we have saved state
+          if ((obj as any).expandedState) {
+            newObj.width = (obj as any).expandedState.width;
+            newObj.height = (obj as any).expandedState.height;
+          }
+        }
+
+        // Update legacy pinnedScreenPosition to match current state
+        (newObj as any).pinnedScreenPosition = {
+          x: newObj.x - currentScrollLeft,
+          y: newObj.y - currentScrollTop
+        };
+      }
+
       return {
         ...state,
         objects: {
           ...state.objects,
-          [action.payload.id]: { ...obj, minimized: !obj.minimized } as PanelObject | WindowObject,
+          [action.payload.id]: newObj,
         },
       };
     }
