@@ -108,6 +108,10 @@ export interface GameItem {
   doubleClickAction?: ClickAction; // Action to perform on double click
   zIndex?: number; // Visual layering order
   baseRotation?: number; // Base rotation for swing actions (undefined = current rotation is base)
+  // Viewport pinning - when true, object stays fixed on screen regardless of camera movement
+  isPinnedToViewport?: boolean;
+  // Screen position where object is pinned (constant, used for render-time calculation)
+  pinnedScreenPosition?: { x: number; y: number };
 }
 
 // Where to show the card name
@@ -235,6 +239,24 @@ export interface UIObject {
   locked?: boolean;
   minimized?: boolean;
   visible: boolean; // Can be hidden/closed
+  // Collapse state memory - for storing expanded size/position when collapsed
+  collapsedState?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  // Expanded state memory - for storing collapsed size/position when expanded
+  expandedState?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  // Viewport pinning - when true, object stays fixed on screen regardless of camera movement
+  isPinnedToViewport?: boolean;
+  // Screen position where object is pinned (constant, used for render-time calculation)
+  pinnedScreenPosition?: { x: number; y: number };
 }
 
 // Panel object - persistent UI panels on the game board
@@ -246,6 +268,8 @@ export interface PanelObject extends UIObject {
   deckId?: string;
   // Optional: player ID for player-specific panels
   playerId?: string;
+  // Dual position mode: when true, panel has separate positions for collapsed and expanded states
+  dualPosition?: boolean;
 }
 
 // Window object - modal dialogs on the game board

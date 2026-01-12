@@ -1,12 +1,16 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType } from '../types';
-import { X, Minus } from 'lucide-react';
+import { X, Minus, Plus, Eye, EyeOff, Settings, Maximize2, Check, Pin } from 'lucide-react';
 import { HandPanel } from './HandPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { TopDeckModal } from './TopDeckModal';
 import { useGame } from '../store/GameContext';
+
+const GAME_NAME = 'Nexus Game Table';
+const GAME_VERSION = 'v0.1.0';
 
 interface UIObjectRendererProps {
   uiObject: PanelObject | WindowObject;
@@ -23,20 +27,23 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   offset = { x: 0, y: 0 },
   zoom = 1
 }) => {
-  const { dispatch } = useGame();
+  const { dispatch, state } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // Check if this is a main menu panel (must be before useState that uses it)
+  const isMainMenu = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.MAIN_MENU;
+
   // Track if this panel is currently being resized
   const [isResizing, setIsResizing] = useState(false);
+
+  // Main menu specific state
+  const [showGameSettings, setShowGameSettings] = useState(false);
 
   const minimized = uiObject.minimized || false;
   const visible = uiObject.visible !== false;
 
   if (!visible) return null;
-
-  // Check if this is a main menu panel (no header, content has its own tabs)
-  const isMainMenu = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.MAIN_MENU;
 
   // Can resize non-main-menu panels when not minimized
   const canResize = !isMainMenu && !minimized;
@@ -45,10 +52,129 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     dispatch({ type: 'CLOSE_UI_OBJECT', payload: { id: uiObject.id } });
   }, [dispatch, uiObject.id]);
 
-  const handleToggleMinimize = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    dispatch({ type: 'TOGGLE_MINIMIZE', payload: { id: uiObject.id } });
+  const isCollapsed = uiObject.width === 200 && uiObject.height === 32;
+  // For main menu, use minimized flag; for other panels, use size-based check
+  const shouldExpand = isMainMenu ? minimized : isCollapsed;
+  const dualPosition = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).dualPosition;
+
+  const handleToggleCollapse = useCallback((e?: React.MouseEvent) => {
+    // Toggle between collapsed (200px wide, title only) and full size
+
+    if (shouldExpand) {
+      // Currently collapsed - expand to saved state or default
+      const restoreState = uiObject.expandedState;
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: uiObject.id,
+          minimized: false,
+          collapsedState: {
+            x: uiObject.x,
+            y: uiObject.y,
+            width: uiObject.width,
+            height: uiObject.height,
+          },
+          ...(dualPosition && restoreState ? {
+            x: restoreState.x,
+            y: restoreState.y,
+            width: restoreState.width,
+            height: restoreState.height,
+          } : dualPosition ? {
+            width: 300,
+            height: 400,
+          } : {
+            // In single position mode, restore expanded dimensions but keep position
+            width: restoreState?.width ?? 300,
+            height: restoreState?.height ?? 400,
+          })
+        }
+      });
+    } else {
+      // Currently expanded - collapse to 200px and minimize
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: uiObject.id,
+          minimized: true,
+          expandedState: {
+            x: uiObject.x,
+            y: uiObject.y,
+            width: uiObject.width,
+            height: uiObject.height,
+          },
+          ...(dualPosition ? {
+            // In dual position mode, restore collapsed position
+            ...(uiObject.collapsedState ? {
+              x: uiObject.collapsedState.x,
+              y: uiObject.collapsedState.y,
+            } : {})
+          } : {}),
+          width: 200,
+          height: 32, // Title bar height
+        }
+      });
+    }
+  }, [dispatch, uiObject, shouldExpand, dualPosition, isMainMenu]);
+
+  // Toggle pin to viewport - using GameContext pinning system
+  const handleTogglePin = useCallback(() => {
+    const isPinned = uiObject.isPinnedToViewport === true;
+
+    if (isPinned) {
+      // Unpin
+      dispatch({
+        type: 'UNPIN_FROM_VIEWPORT',
+        payload: { id: uiObject.id }
+      });
+    } else {
+      // Pin - calculate current screen position
+      // For UI panels/windows, we need to account for scroll and offset
+      const scrollContainer = document.querySelector('[data-tabletop="true"]') as HTMLElement;
+      const scrollLeft = scrollContainer?.scrollLeft || 0;
+      const scrollTop = scrollContainer?.scrollTop || 0;
+
+      // Screen position = panel position - scroll
+      const screenX = uiObject.x - scrollLeft;
+      const screenY = uiObject.y - scrollTop;
+
+      dispatch({
+        type: 'PIN_TO_VIEWPORT',
+        payload: {
+          id: uiObject.id,
+          screenX,
+          screenY
+        }
+      });
+    }
+  }, [dispatch, uiObject]);
+
+  const handleHide = useCallback(() => {
+    // Hide panel instead of closing it
+    dispatch({ type: 'UPDATE_OBJECT', payload: { id: uiObject.id, visible: false } });
   }, [dispatch, uiObject.id]);
+
+  const handleOpenSettings = useCallback(() => {
+    // Check if settings window is already open
+    const settingsWindowId = `settings-${uiObject.id}`;
+    const existingWindow = state.objects[settingsWindowId];
+    if (existingWindow) {
+      // Already open, just close it
+      dispatch({ type: 'CLOSE_UI_OBJECT', payload: { id: settingsWindowId } });
+      return;
+    }
+
+    // Open settings window - uses CREATE_WINDOW which routes to PanelSettingsModal for panels
+    dispatch({
+      type: 'CREATE_WINDOW',
+      payload: {
+        windowType: 'OBJECT_SETTINGS',
+        title: 'Settings',
+        targetObjectId: uiObject.id,
+        x: uiObject.x + 50,
+        y: uiObject.y + 50,
+      }
+    });
+  }, [dispatch, uiObject, state.objects]);
 
   const handleBringToFront = useCallback(() => {
     // Bring to front by setting high z-index
@@ -149,7 +275,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     left: (uiObject.x - offset.x) / zoom,
     top: (uiObject.y - offset.y) / zoom,
     width: uiObject.width,
-    height: minimized ? 40 : uiObject.height,
+    height: minimized ? 32 : uiObject.height,
     // Reverse the scale and apply rotation
     transform: `rotate(${uiObject.rotation}deg) scale(${1 / zoom})`,
     transformOrigin: 'top left',
@@ -174,42 +300,185 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       data-ui-object={uiObject.id}
       style={containerStyle}
       className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col`}
-      onMouseDown={(e) => {
-        e.stopPropagation();
-        handleBringToFront();
-        onMouseDown(e, uiObject.id);
-      }}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
       }}
     >
-      {/* Header / Title Bar - not shown for Main Menu */}
-      {!isMainMenu && (
+      {/* Header / Title Bar */}
+      {isMainMenu ? (
+        // Main Menu header - always shown, but different when minimized
         <div
-          className={`${headerBg} px-3 py-2 flex items-center justify-between cursor-move select-none flex-shrink-0`}
-          style={{ height: 40 }}
+          className={`${headerBg} px-2 py-1 flex items-center select-none flex-shrink-0`}
+          style={{ height: 32, position: 'relative' }}
         >
-          <span className="text-sm font-semibold text-white truncate flex-1">
-            {uiObject.title}
-          </span>
-          <div className="flex items-center gap-1">
-            {uiObject.type === ItemType.PANEL && (
+          {/* Left side - Game name and version */}
+          <div
+            className="flex items-center gap-2 truncate cursor-move"
+            style={{ flex: 1, minWidth: 0, pointerEvents: 'auto' }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              handleBringToFront();
+              onMouseDown(e, uiObject.id);
+            }}
+          >
+            <span className="text-sm font-bold text-white truncate">{GAME_NAME}</span>
+            {!minimized && (
+              <span className="text-xs text-gray-500 flex-shrink-0">{GAME_VERSION}</span>
+            )}
+          </div>
+          {/* Right side - Control buttons */}
+          <div className="flex items-center gap-0.5 flex-shrink-0 ml-1" style={{ pointerEvents: 'auto' }}>
+            {!minimized && (
+              <>
+                {/* Settings button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowGameSettings(true);
+                  }}
+                  className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                  title="Settings"
+                >
+                  <Settings size={14} className="text-white" />
+                </button>
+                {/* Pin to screen button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTogglePin();
+                  }}
+                  className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
+                  title={uiObject.isPinnedToViewport ? 'Unpin from screen' : 'Pin to screen'}
+                >
+                  <Pin size={14} className="text-white" />
+                </button>
+              </>
+            )}
+            {/* Minimize/Expand button */}
+            {minimized ? (
               <button
-                onClick={handleToggleMinimize}
-                className="p-1 hover:bg-white/20 rounded transition-colors"
-                title={minimized ? 'Expand' : 'Minimize'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleCollapse();
+                }}
+                className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                title="Expand"
+              >
+                <Plus size={14} className="text-white" />
+              </button>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleCollapse();
+                }}
+                className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                title="Minimize"
               >
                 <Minus size={14} className="text-white" />
               </button>
             )}
-            <button
-              onClick={handleClose}
-              className="p-1 hover:bg-red-500 rounded transition-colors"
-              title="Close"
-            >
-              <X size={14} className="text-white" />
-            </button>
+          </div>
+        </div>
+      ) : (
+        // Other panels header
+        <div
+          className={`${headerBg} px-2 py-1 flex items-center select-none flex-shrink-0`}
+          style={{ height: 32, position: 'relative' }}
+        >
+          {/* Drag handle - only this area triggers drag */}
+          <div
+            className="text-sm font-semibold text-white truncate cursor-move"
+            style={{ flex: 1, minWidth: 0, pointerEvents: 'auto' }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              handleBringToFront();
+              onMouseDown(e, uiObject.id);
+            }}
+          >
+            {uiObject.title}
+          </div>
+          {/* Buttons container - separate from drag handle */}
+          <div className="flex items-center gap-0.5 flex-shrink-0 ml-1" style={{ pointerEvents: 'auto' }}>
+            {uiObject.type === ItemType.PANEL ? (
+              <>
+                {/* Settings button - only shown when expanded */}
+                {!isCollapsed && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenSettings();
+                    }}
+                    className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                    title="Settings"
+                  >
+                    <Settings size={14} className="text-white" />
+                  </button>
+                )}
+                {/* Pin to viewport button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTogglePin();
+                  }}
+                  className={`p-0.5 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600 hover:bg-purple-500' : 'hover:bg-white/20'}`}
+                  title={uiObject.isPinnedToViewport ? 'Unpin from Screen' : 'Pin to Screen'}
+                >
+                  <Pin size={14} className="text-white" />
+                </button>
+                {/* Collapse/Expand button - minimizes and collapses to 200px */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleCollapse();
+                  }}
+                  className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                  title={isCollapsed ? 'Expand' : 'Collapse'}
+                >
+                  <Minus size={14} className="text-white" />
+                </button>
+                {/* Hide button (eye icon) - only shown when expanded */}
+                {!isCollapsed && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleHide();
+                    }}
+                    className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                    title="Hide"
+                  >
+                    <EyeOff size={14} className="text-white" />
+                  </button>
+                )}
+              </>
+            ) : (
+              // Windows have pin and close buttons
+              <>
+                {/* Pin to viewport button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTogglePin();
+                  }}
+                  className={`p-0.5 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600 hover:bg-purple-500' : 'hover:bg-white/20'}`}
+                  title={uiObject.isPinnedToViewport ? 'Unpin from Screen' : 'Pin to Screen'}
+                >
+                  <Pin size={14} className="text-white" />
+                </button>
+                {/* Close button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClose();
+                  }}
+                  className="p-0.5 hover:bg-red-500 rounded transition-colors"
+                  title="Close"
+                >
+                  <X size={14} className="text-white" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -236,6 +505,35 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             </>
           )}
         </div>
+      )}
+
+      {/* Game Settings Modal for Main Menu */}
+      {isMainMenu && showGameSettings && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowGameSettings(false)}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[400px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-4 border-b border-slate-700">
+              <h3 className="text-lg font-bold text-white">Game Settings</h3>
+              <button onClick={() => setShowGameSettings(false)} className="text-gray-400 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="text-sm text-gray-400">
+                <p>{GAME_NAME} {GAME_VERSION}</p>
+                <p className="mt-2">Game settings will be available here.</p>
+              </div>
+            </div>
+            <div className="flex justify-end p-4 border-t border-slate-700">
+              <button
+                onClick={() => setShowGameSettings(false)}
+                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -309,9 +607,11 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
     };
   }, []);
 
+  const isCollapsed = panel.width === 200 && panel.height === 40;
+
   return (
     <div ref={containerRef} className="h-full">
-      <HandPanel width={panel.width} isDragTarget={isDragTarget} />
+      <HandPanel width={panel.width} isDragTarget={isDragTarget} isCollapsed={isCollapsed} />
     </div>
   );
 };
@@ -340,6 +640,190 @@ const PullPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   );
 };
 
+// Panel settings modal component
+type PanelSettingsTab = 'general';
+
+const PanelSettingsModal: React.FC<{
+  panel: PanelObject;
+  onClose: () => void;
+}> = ({ panel, onClose }) => {
+  const { dispatch } = useGame();
+  const [activeTab, setActiveTab] = React.useState<PanelSettingsTab>('general');
+  const [title, setTitle] = React.useState(panel.title);
+  const [x, setX] = React.useState(panel.x);
+  const [y, setY] = React.useState(panel.y);
+  const [width, setWidth] = React.useState(panel.width);
+  const [height, setHeight] = React.useState(panel.height);
+  const [rotation, setRotation] = React.useState(panel.rotation);
+  const [dualPosition, setDualPosition] = React.useState(panel.dualPosition || false);
+  const [zIndex, setZIndex] = React.useState(panel.zIndex || 1000);
+
+  const handleSave = () => {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: panel.id,
+        title,
+        x,
+        y,
+        width,
+        height,
+        rotation,
+        dualPosition,
+        zIndex
+      }
+    });
+    onClose();
+  };
+
+  const modalContent = (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
+      <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-700">
+          <h3 className="text-lg font-bold text-white">Settings: {panel.title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-700">
+          <button
+            onClick={() => setActiveTab('general')}
+            className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+              activeTab === 'general'
+                ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            <Settings size={16} /> General
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {/* Name */}
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+            />
+          </div>
+
+          {/* Position */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">X Position</label>
+              <input
+                type="number"
+                value={Math.round(x)}
+                onChange={e => setX(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">Y Position</label>
+              <input
+                type="number"
+                value={Math.round(y)}
+                onChange={e => setY(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Size */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">Width</label>
+              <input
+                type="number"
+                value={width}
+                onChange={e => setWidth(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">Height</label>
+              <input
+                type="number"
+                value={height}
+                onChange={e => setHeight(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Rotation */}
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Rotation (degrees)</label>
+            <input
+              type="number"
+              value={rotation}
+              onChange={e => setRotation(Number(e.target.value))}
+              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+            />
+          </div>
+
+          {/* Z-Index */}
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Z-Index (layer order)</label>
+            <input
+              type="number"
+              value={zIndex}
+              onChange={e => setZIndex(Number(e.target.value))}
+              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+            />
+          </div>
+
+          {/* Dual Position Toggle */}
+          <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 border border-slate-700">
+            <label className="text-xs text-gray-300 flex items-center gap-2">
+              <Maximize2 size={12} />
+              Dual Position Mode
+            </label>
+            <button
+              onClick={() => setDualPosition(!dualPosition)}
+              className={`w-10 h-5 rounded-full transition-colors ${
+                dualPosition ? 'bg-green-600' : 'bg-slate-700'
+              }`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                dualPosition ? 'translate-x-5' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-500 -mt-2">
+            When enabled, panel remembers separate positions for collapsed and expanded states
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 p-4 border-t border-slate-700">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
+          >
+            <Check size={16} /> Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modalContent, document.body);
+};
+
 // Window content renderer
 const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }) => {
   const { state, dispatch } = useGame();
@@ -351,6 +835,14 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
   switch (windowObj.windowType) {
     case WindowType.OBJECT_SETTINGS:
       const targetObj = windowObj.targetObjectId ? state.objects[windowObj.targetObjectId] : null;
+      // Panels are stored in state.objects, not state.uiObjects
+      const targetPanel = targetObj?.type === ItemType.PANEL ? targetObj as PanelObject : null;
+
+      if (targetPanel) {
+        // Show panel settings for panels
+        return <PanelSettingsModal panel={targetPanel} onClose={handleClose} />;
+      }
+
       if (!targetObj) {
         // Object not found, close the window
         return (

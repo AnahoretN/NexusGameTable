@@ -302,8 +302,13 @@ export const Tabletop: React.FC = () => {
     hoveredPileRef.current = hoveredPileId;
   }, [hoveredPileId]);
 
+  // Pinned object positions are calculated at render time based on offset/zoom
+  // Debug: track offset changes
+  const prevOffsetRef = useRef({ x: 0, y: 0 });
+
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleMouseUpRef = useRef<(e?: MouseEvent | React.MouseEvent) => void>(() => {});
   const handleMouseMoveRef = useRef<(e: MouseEvent | React.MouseEvent) => void>(() => {});
 
@@ -312,6 +317,47 @@ export const Tabletop: React.FC = () => {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // Debug: log offset changes (camera movement)
+  useEffect(() => {
+    const deltaX = offset.x - prevOffsetRef.current.x;
+    const deltaY = offset.y - prevOffsetRef.current.y;
+
+    // Only log if there's actual movement (not initial render)
+    if (prevOffsetRef.current.x !== 0 || prevOffsetRef.current.y !== 0) {
+      if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
+        // Find pinned deck
+        const pinnedDeck = Object.values(state.objects).find(obj =>
+          (obj as any).isPinnedToViewport && obj.type === ItemType.DECK
+        ) as any;
+
+        if (pinnedDeck) {
+          const oldDeckScreenX = pinnedDeck.x * zoom + prevOffsetRef.current.x;
+          const oldDeckScreenY = pinnedDeck.y * zoom + prevOffsetRef.current.y;
+          const newDeckScreenX = pinnedDeck.x * zoom + offset.x;
+          const newDeckScreenY = pinnedDeck.y * zoom + offset.y;
+
+          console.log('[OFFSET CHANGE]', {
+            deckName: pinnedDeck.name,
+            offsetDelta: { x: deltaX, y: deltaY },
+            oldOffset: { ...prevOffsetRef.current },
+            newOffset: { ...offset },
+            deckWorldPos: { x: pinnedDeck.x, y: pinnedDeck.y },
+            oldDeckScreenPos: { x: oldDeckScreenX, y: oldDeckScreenY },
+            newDeckScreenPos: { x: newDeckScreenX, y: newDeckScreenY },
+            deckScreenDelta: { x: newDeckScreenX - oldDeckScreenX, y: newDeckScreenY - oldDeckScreenY }
+          });
+        } else {
+          console.log('[OFFSET CHANGE] No pinned deck found', {
+            offsetDelta: { x: deltaX, y: deltaY },
+            newOffset: { ...offset }
+          });
+        }
+      }
+    }
+
+    prevOffsetRef.current = offset;
+  }, [offset.x, offset.y, state.objects, zoom]);
 
   // Click tracking for single/double click detection
   const clickTrackerRef = useRef<{ objectId: string | null; timestamp: number; clickCount: number }>({
@@ -340,6 +386,9 @@ export const Tabletop: React.FC = () => {
       const customEvent = e as CustomEvent<{ cardId: string; clientX: number; clientY: number; fromSearchWindow?: boolean }>;
       // Ignore drags from search window - they handle their own drop logic
       if (customEvent.detail.fromSearchWindow) return;
+
+      // Clear dragging card from hand
+      setDraggingCardFromHand(null);
 
       const { cardId, clientX, clientY } = customEvent.detail;
 
@@ -460,6 +509,9 @@ export const Tabletop: React.FC = () => {
         x: number;
         y: number;
       }>;
+
+      // Always clear dragging card from hand when drag ends
+      setDraggingCardFromHand(null);
 
       if (!customEvent.detail.wasDragging || customEvent.detail.source !== 'hand') return;
       if (!customEvent.detail.cardId) return;
@@ -1200,10 +1252,35 @@ export const Tabletop: React.FC = () => {
 
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     if (isPanning) {
-      setOffset({
+      const newOffset = {
         x: e.clientX - dragStartRef.current.x,
         y: e.clientY - dragStartRef.current.y,
-      });
+      };
+
+      // Log pan movement and find pinned deck
+      const pinnedDeck = Object.values(state.objects).find(obj =>
+        (obj as any).isPinnedToViewport && obj.type === ItemType.DECK
+      ) as any;
+
+      if (pinnedDeck) {
+        const deckScreenX = pinnedDeck.x * zoom + offset.x;
+        const deckScreenY = pinnedDeck.y * zoom + offset.y;
+        const newDeckScreenX = pinnedDeck.x * zoom + newOffset.x;
+        const newDeckScreenY = pinnedDeck.y * zoom + newOffset.y;
+
+        console.log('[PAN DEBUG]', {
+          deckName: pinnedDeck.name,
+          offsetDelta: { x: newOffset.x - offset.x, y: newOffset.y - offset.y },
+          oldOffset: offset,
+          newOffset: newOffset,
+          deckWorldPos: { x: pinnedDeck.x, y: pinnedDeck.y },
+          oldDeckScreenPos: { x: deckScreenX, y: deckScreenY },
+          newDeckScreenPos: { x: newDeckScreenX, y: newDeckScreenY },
+          deckScreenDelta: { x: newDeckScreenX - deckScreenX, y: newDeckScreenY - deckScreenY }
+        });
+      }
+
+      setOffset(newOffset);
       return;
     }
 
@@ -1621,7 +1698,7 @@ export const Tabletop: React.FC = () => {
     handleMouseMoveRef.current = handleMouseMove;
   }, [handleMouseMove]);
 
-  // Handle Escape key to cancel free rotation mode
+  // Handle Escape key to cancel free rotation mode, Space for testing pin compensation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && freeRotatingId) {
@@ -1629,10 +1706,40 @@ export const Tabletop: React.FC = () => {
         setRotateStartAngle(0);
         setRotateStartMouse(null);
       }
+      // TEST: Spacebar manually compensates pinned deck position based on scroll
+      if (e.key === ' ' && !e.repeat) {
+        e.preventDefault();
+        const pinnedDeck = Object.values(state.objects).find(obj =>
+          (obj as any).isPinnedToViewport && obj.type === ItemType.DECK
+        ) as DeckType | undefined;
+        if (pinnedDeck && (pinnedDeck as any).pinnedScreenPosition) {
+          const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
+          const scrollTop = scrollContainerRef.current?.scrollTop || 0;
+          // Manually compensate deck position
+          const newRenderX = ((pinnedDeck as any).pinnedScreenPosition.x - offset.x + scrollLeft) / zoom;
+          const newRenderY = ((pinnedDeck as any).pinnedScreenPosition.y - offset.y + scrollTop) / zoom;
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: pinnedDeck.id,
+              x: newRenderX,
+              y: newRenderY
+            }
+          });
+          console.log('[SPACEBAR - Manual pin compensation]', {
+            deckName: pinnedDeck.name,
+            oldPosition: { x: pinnedDeck.x, y: pinnedDeck.y },
+            newPosition: { x: newRenderX, y: newRenderY },
+            scroll: { left: scrollLeft, top: scrollTop },
+            offset,
+            zoom
+          });
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [freeRotatingId]);
+  }, [freeRotatingId, state.objects, offset, zoom]);
 
   // Global mouseup handler for drag operations - ALWAYS active, checks state internally
   useEffect(() => {
@@ -1714,6 +1821,34 @@ export const Tabletop: React.FC = () => {
           case 'delete':
               setDeleteCandidateId(object.id);
               return;
+          case 'pinToViewport':
+              // Calculate current screen position for the object
+              // Need to account for scroll position since scrollbars move the viewport
+              const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
+              const scrollTop = scrollContainerRef.current?.scrollTop || 0;
+              const screenX = object.x * zoom + offset.x - scrollLeft;
+              const screenY = object.y * zoom + offset.y - scrollTop;
+              console.log('[PIN ACTION - Saving screen position]', {
+                  objectId: object.id,
+                  objectName: 'name' in object ? object.name : (object.type),
+                  worldPosition: { x: object.x, y: object.y },
+                  offset,
+                  scroll: { left: scrollLeft, top: scrollTop },
+                  zoom,
+                  calculatedScreenPosition: { x: screenX, y: screenY }
+              });
+              dispatch({
+                  type: 'PIN_TO_VIEWPORT',
+                  payload: {
+                      id: object.id,
+                      screenX,
+                      screenY
+                  }
+              });
+              return;
+          case 'unpinFromViewport':
+              dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: object.id } });
+              return;
       }
 
       // Handle pile actions (pile-{pileId})
@@ -1782,10 +1917,12 @@ export const Tabletop: React.FC = () => {
 
   const tableObjects = (Object.values(state.objects) as TableObject[])
     .filter(obj => {
+        // Exclude UI objects (panels and windows) - they have their own rendering
+        if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
         if (!obj.isOnTable) return false;
         if (obj.type === ItemType.CARD) return (obj as CardType).location === CardLocation.TABLE;
         // Filter out hidden objects (visible === false)
-        if (obj.visible === false) return false;
+        if ((obj as any).visible === false) return false;
         return true;
     })
     .sort((a, b) => {
@@ -1841,12 +1978,61 @@ export const Tabletop: React.FC = () => {
 
   return (
     <div
-      ref={containerRef}
+      ref={scrollContainerRef}
       data-tabletop="true"
       className="w-full h-full bg-table overflow-auto relative cursor-grab active:cursor-grabbing"
       onMouseDown={(e) => handleMouseDown(e)}
       onMouseMove={handleMouseMove}
       onWheel={handleWheel}
+      onScroll={(e) => {
+        const target = e.target as HTMLElement;
+        if (target.scrollLeft === undefined || target.scrollTop === undefined) return;
+
+        // Find all pinned objects and update their positions
+        const pinnedObjects = Object.values(state.objects).filter(obj =>
+          (obj as any).isPinnedToViewport
+        );
+
+        if (pinnedObjects.length > 0) {
+          const scrollLeft = target.scrollLeft;
+          const scrollTop = target.scrollTop;
+
+          pinnedObjects.forEach(obj => {
+            const pinnedObj = obj as any;
+            if (pinnedObj.pinnedScreenPosition) {
+              let newX: number;
+              let newY: number;
+
+              // UI panels/windows are NOT in the transform container, so no zoom/offset affect
+              if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
+                // For UI objects: screenX = obj.x - scrollLeft
+                // We want: screenX = pinnedScreenPosition.x
+                // So: obj.x = pinnedScreenPosition.x + scrollLeft
+                newX = pinnedObj.pinnedScreenPosition.x + scrollLeft;
+                newY = pinnedObj.pinnedScreenPosition.y + scrollTop;
+              } else {
+                // For game objects in transform container: screenX = obj.x * zoom + offset.x - scrollLeft
+                // We want: screenX = pinnedScreenPosition.x
+                // So: obj.x = (pinnedScreenPosition.x - offset.x + scrollLeft) / zoom
+                newX = (pinnedObj.pinnedScreenPosition.x - offset.x + scrollLeft) / zoom;
+                newY = (pinnedObj.pinnedScreenPosition.y - offset.y + scrollTop) / zoom;
+              }
+
+              // Only dispatch if position actually changed significantly
+              if (Math.abs(newX - obj.x) > 0.5 || Math.abs(newY - obj.y) > 0.5) {
+                dispatch({
+                  type: 'UPDATE_OBJECT',
+                  payload: {
+                    id: obj.id,
+                    x: newX,
+                    y: newY
+                  }
+                });
+              }
+            }
+          });
+        }
+      }}
       onContextMenu={(e) => e.preventDefault()}
       onDragOver={(e) => {
         // Allow drops from hand panel
@@ -1914,10 +2100,10 @@ export const Tabletop: React.FC = () => {
                 transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
             }}
         >
-            {/* All objects in unified space - game objects first, then UI objects */}
+            {/* All objects in unified space */}
             {tableObjects.map((obj) => {
                 const isOwner = !obj.ownerId || obj.ownerId === state.activePlayerId || isGM;
-                const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[9999]' : 'cursor-grab';
+                const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
 
                 if (obj.type === ItemType.BOARD) {
                     const board = obj as BoardType;
@@ -2035,6 +2221,18 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`
                             }}
                         >
+                            {(obj as any).isPinnedToViewport && (
+                                <div
+                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                                    title="Pinned to screen"
+                                    style={{ transform: `scale(${1/zoom})` }}
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                        <line x1="12" y1="17" x2="12" y2="22"></line>
+                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                    </svg>
+                                </div>
+                            )}
                             {showGrid && (
                                 <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
                                     <defs>
@@ -2149,6 +2347,18 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`
                             }}
                         >
+                            {(obj as any).isPinnedToViewport && (
+                                <div
+                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                                    title="Pinned to screen"
+                                    style={{ transform: `scale(${1/zoom})` }}
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                        <line x1="12" y1="17" x2="12" y2="22"></line>
+                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                    </svg>
+                                </div>
+                            )}
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
                             <span className="text-xl font-bold">{counter.value}</span>
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
@@ -2234,6 +2444,18 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`
                             }}
                         >
+                            {(obj as any).isPinnedToViewport && (
+                                <div
+                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                                    title="Pinned to screen"
+                                    style={{ transform: `scale(${1/zoom})` }}
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                        <line x1="12" y1="17" x2="12" y2="22"></line>
+                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                    </svg>
+                                </div>
+                            )}
                             <span className="text-2xl font-bold">{rollingDice[dice.id] ?? dice.currentValue}</span>
                             <span className="text-[8px] opacity-75">d{dice.sides}</span>
 
@@ -2297,30 +2519,43 @@ export const Tabletop: React.FC = () => {
                     const deck = obj as DeckType;
 
                     return (
-                        <DeckComponent
-                            key={obj.id}
-                            deck={deck}
-                            isDraggingCardFromHand={draggingCardFromHand !== null}
-                            draggingId={draggingId}
-                            hoveredDeckId={hoveredDeckId}
-                            hoveredPileId={hoveredPileId}
-                            setHoveredDeckId={setHoveredDeckId}
-                            setHoveredPileId={setHoveredPileId}
-                            isGM={isGM}
-                            draggingClass={draggingClass}
-                            draggingPile={draggingPile}
-                            setDraggingPile={setDraggingPile}
-                            pileDragStartRef={pileDragStartRef}
-                            setTopDeckModalDeck={setTopDeckModalDeck}
-                            handleMouseDown={handleMouseDown}
-                            handleContextMenu={handleContextMenu}
-                            handlePileContextMenu={handlePileContextMenu}
-                            setSearchModalDeck={setSearchModalDeck}
-                            setSearchModalPile={setSearchModalPile}
-                            setPilesButtonMenu={setPilesButtonMenu}
-                            setDeleteCandidateId={setDeleteCandidateId}
-                            executeClickAction={executeClickAction}
-                        />
+                        <div key={obj.id} style={{ position: 'relative' }}>
+                            {(obj as any).isPinnedToViewport && (
+                                <div
+                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                                    title="Pinned to screen"
+                                    style={{ transform: `scale(${1/zoom})` }}
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                        <line x1="12" y1="17" x2="12" y2="22"></line>
+                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                    </svg>
+                                </div>
+                            )}
+                            <DeckComponent
+                                deck={deck}
+                                isDraggingCardFromHand={draggingCardFromHand !== null}
+                                draggingId={draggingId}
+                                hoveredDeckId={hoveredDeckId}
+                                hoveredPileId={hoveredPileId}
+                                setHoveredDeckId={setHoveredDeckId}
+                                setHoveredPileId={setHoveredPileId}
+                                isGM={isGM}
+                                draggingClass={draggingClass}
+                                draggingPile={draggingPile}
+                                setDraggingPile={setDraggingPile}
+                                pileDragStartRef={pileDragStartRef}
+                                setTopDeckModalDeck={setTopDeckModalDeck}
+                                handleMouseDown={handleMouseDown}
+                                handleContextMenu={handleContextMenu}
+                                handlePileContextMenu={handlePileContextMenu}
+                                setSearchModalDeck={setSearchModalDeck}
+                                setSearchModalPile={setSearchModalPile}
+                                setPilesButtonMenu={setPilesButtonMenu}
+                                setDeleteCandidateId={setDeleteCandidateId}
+                                executeClickAction={executeClickAction}
+                            />
+                        </div>
                     );
                 }
 
@@ -2350,6 +2585,18 @@ export const Tabletop: React.FC = () => {
                             onContextMenu={(e) => handleContextMenu(e, obj)}
                             className={`${draggingClass} rounded-lg`}
                         >
+                            {(obj as any).isPinnedToViewport && (
+                                <div
+                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                                    title="Pinned to screen"
+                                    style={{ transform: `scale(${1/zoom})` }}
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                        <line x1="12" y1="17" x2="12" y2="22"></line>
+                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                    </svg>
+                                </div>
+                            )}
                             <div style={{ transform: `rotate(${-obj.rotation}deg)` }}>
                               <Card
                                   card={card}
@@ -2423,6 +2670,7 @@ export const Tabletop: React.FC = () => {
                     zoom={zoom}
                 />
             ))}
+
         </div>
 
         {contextMenu && (

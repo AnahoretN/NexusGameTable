@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType } from '../types';
-import { Hand, Plus, Minus, GripVertical } from 'lucide-react';
+import { Hand, Plus, Minus } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { useCardDrag } from '../hooks/useCardDrag';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
@@ -9,10 +9,10 @@ import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../uti
 interface HandPanelProps {
   width?: number;
   isDragTarget?: boolean; // When a card from tabletop is being dragged over hand
-  panelBounds?: { x: number; y: number; width: number; height: number } | null; // Bounds for drag detection when inside another panel
+  isCollapsed?: boolean; // When true, show only header (height 32px)
 }
 
-export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget = false, panelBounds }) => {
+export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget = false, isCollapsed = false }) => {
   const { state, dispatch } = useGame();
   const { startDrag } = useCardDrag();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -211,22 +211,15 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
       if (customEvent.detail.wasDragging && customEvent.detail.source === 'tabletop') {
         const cardId = customEvent.detail.cardId;
         if (cardId) {
-          // Check if drop was over hand panel
+          // Check if drop was over hand panel using container's bounding rect
           const x = customEvent.detail.x;
           const y = customEvent.detail.y;
           let isOver = false;
 
-          // Use panelBounds if provided (when hand is inside another panel like main menu)
-          if (panelBounds) {
-            isOver = x >= panelBounds.x && x <= panelBounds.x + panelBounds.width &&
-                     y >= panelBounds.y && y <= panelBounds.y + panelBounds.height;
-          } else {
-            // Otherwise use container's bounding rect
-            const container = containerRef.current;
-            if (container) {
-              const rect = container.getBoundingClientRect();
-              isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-            }
+          const container = containerRef.current;
+          if (container) {
+            const rect = container.getBoundingClientRect();
+            isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
           }
 
           if (isOver) {
@@ -265,52 +258,57 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
 
     window.addEventListener('card-drag-end', handleDragEnd);
     return () => window.removeEventListener('card-drag-end', handleDragEnd);
-  }, [dispatch, state.objects, state.activePlayerId, panelBounds]);
+  }, [dispatch, state.objects, state.activePlayerId]);
 
   return (
     <div
       ref={containerRef}
-      className="h-full flex flex-col p-2 transition-all"
+      className="h-full flex flex-col p-1 transition-all"
       style={{ width }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-3 px-2">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-          <Hand size={16} />
+      <div className="flex items-center justify-between px-2" style={{ height: 32 }}>
+        <h3 className="text-sm font-semibold text-white flex items-center gap-1">
+          <Hand size={14} />
           Your Hand
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {/* Scale controls */}
           <button
             onClick={() => changeCardScale(-0.1)}
-            className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
+            className="p-0.6 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
             title="Decrease card size"
           >
-            <Minus size={12} />
+            <Minus size={14} />
           </button>
-          <span className="text-xs text-gray-400 w-8 text-center">{Math.round(displayScale * 100)}%</span>
+          <span className="text-xs text-gray-400 w-7 text-center">{Math.round(displayScale * 100)}%</span>
           <button
             onClick={() => changeCardScale(0.1)}
-            className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
+            className="p-0.6 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
             title="Increase card size"
           >
-            <Plus size={12} />
+            <Plus size={14} />
           </button>
-          <span className="text-xs bg-purple-600 px-2 py-1 rounded-full text-white ml-1">{cards.length}</span>
+          <span className="text-xs bg-purple-600 px-1.5 py-0.6 rounded text-white ml-1">{cards.length}</span>
         </div>
       </div>
 
-      {/* Cards Grid - outer scroll container */}
-      <div className="flex-1 overflow-y-scroll custom-scrollbar">
-        {/* Inner content container with purple ring when drag target */}
-        <div className={`h-full transition-all ${isDragTarget ? 'ring-4 ring-purple-500 ring-inset -mb-px pb-[1px] -ml-px pl-[1px]' : ''}`}>
-        {cards.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
-            <Hand size={32} className="mb-2 opacity-50" />
-            <p className="text-sm">No cards in hand</p>
-            <p className="text-xs mt-1">Draw cards from a deck</p>
-          </div>
-        ) : (
+      {/* Cards Grid - outer scroll container - hidden when collapsed */}
+      {!isCollapsed && (
+        <div className="flex-1 overflow-y-scroll custom-scrollbar relative">
+          {/* Purple ring overlay - rendered separately with high z-index */}
+          {isDragTarget && (
+            <div className="absolute inset-0 m-1 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
+          )}
+          {/* Inner content container */}
+          <div className="h-full transition-all">
+          {cards.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
+              <Hand size={32} className="mb-2 opacity-50" />
+              <p className="text-sm">No cards in hand</p>
+              <p className="text-xs mt-1">Draw cards from a deck</p>
+            </div>
+          ) : (
           <div className="flex flex-wrap gap-[2px] w-full">
             {cards.map((card, index) => {
               const cardSettings = computeCardSettings(card);
@@ -332,7 +330,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
                 <div
                   key={card.id}
                   data-card-index={index}
-                  className="relative flex-shrink-0 group transition-all"
+                  className="relative flex-shrink-0 group"
                   style={{
                     width: cardWidth,
                     height: cardHeight,
@@ -358,11 +356,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
                     disableRotationTransform={true}
                   />
 
-                  {/* Drag handle for reorder */}
-                  <div className="absolute top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
-                    <GripVertical size={12} className="text-slate-500" />
-                  </div>
-
                   {buttons.length > 0 && (
                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
                       {buttons.map(btn => (
@@ -385,6 +378,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
         )}
         </div>
       </div>
+      )}
     </div>
   );
 };

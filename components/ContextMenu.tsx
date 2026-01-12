@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -164,6 +164,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
       visible: !hideCardActions && object.type !== ItemType.CARD && can('lock')
+    },
+    {
+      label: (object as any).isPinnedToViewport ? 'Unpin from Screen' : 'Pin to Screen',
+      action: (object as any).isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
+      icon: <Pin size={14} />,
+      visible: !hideCardActions,
+      separator: true
     },
     {
       label: 'Flip',

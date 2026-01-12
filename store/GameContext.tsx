@@ -132,6 +132,8 @@ type Action =
   | { type: 'TOGGLE_SHOW_TOP_CARD'; payload: { deckId: string; pileId?: string } }
   | { type: 'SWING_CLOCKWISE'; payload: { id: string } }
   | { type: 'SWING_COUNTER_CLOCKWISE'; payload: { id: string } }
+  | { type: 'PIN_TO_VIEWPORT'; payload: { id: string; screenX: number; screenY: number } }
+  | { type: 'UNPIN_FROM_VIEWPORT'; payload: { id: string } }
   // UI Object actions
   | { type: 'CREATE_PANEL'; payload: { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string } }
   | { type: 'CREATE_WINDOW'; payload: { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string } }
@@ -863,6 +865,38 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       };
     }
+    case 'PIN_TO_VIEWPORT': {
+      const obj = state.objects[action.payload.id];
+      if (!obj) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [action.payload.id]: {
+            ...obj,
+            isPinnedToViewport: true,
+            pinnedScreenPosition: { x: action.payload.screenX, y: action.payload.screenY }
+          }
+        }
+      };
+    }
+    case 'UNPIN_FROM_VIEWPORT': {
+      const obj = state.objects[action.payload.id];
+      if (!obj) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [action.payload.id]: {
+            ...obj,
+            isPinnedToViewport: false,
+            pinnedScreenPosition: undefined
+          }
+        }
+      };
+    }
     case 'CREATE_PANEL': {
       const { panelType, x = 100, y = 100, width = 300, height = 400, title, deckId } = action.payload;
       const panelId = generateUUID();
@@ -886,6 +920,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         visible: true,
         deckId,
       };
+
+      // Main menu is pinned to viewport by default
+      if (panelType === PanelType.MAIN_MENU) {
+        (panel as any).isPinnedToViewport = true;
+        (panel as any).pinnedScreenPosition = { x, y };
+      }
 
       return {
         ...state,
