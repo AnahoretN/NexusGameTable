@@ -4,6 +4,7 @@ import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType, ItemType } from '../types';
 import { Card as CardComponent } from './Card';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
+import { MAIN_MENU_WIDTH } from '../constants';
 
 interface HandPanelProps {
   width?: number;
@@ -12,7 +13,7 @@ interface HandPanelProps {
   cardScale?: number; // Scale for card display (0.5 - 2)
 }
 
-export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget = false, isCollapsed = false, cardScale = 1 }) => {
+export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, isDragTarget = false, isCollapsed = false, cardScale = 1 }) => {
   const { state, dispatch } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -367,13 +368,19 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
     >
       {/* Cards Grid - outer scroll container - hidden when collapsed */}
       {!isCollapsed && (
-        <div className="flex-1 overflow-y-auto custom-scrollbar relative p-1">
+        <>
+          <style>{`
+            [data-hand-panel="true"] .hand-panel-scrollbar::-webkit-scrollbar {
+              width: 16px !important;
+            }
+          `}</style>
+          <div className="flex-1 hand-panel-scrollbar relative">
           {/* Purple ring overlay - rendered separately with high z-index */}
           {(isDragTarget || isCursorOverHand) && (
-            <div className="absolute inset-0 m-1 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
+            <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
           )}
           {/* Inner content container */}
-          <div className="h-full transition-all">
+          <div className="h-full transition-all p-1">
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
               <p className="text-sm">No cards in hand</p>
@@ -443,6 +450,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
         )}
         </div>
       </div>
+        </>
       )}
     </div>
   );

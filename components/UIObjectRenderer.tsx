@@ -8,6 +8,7 @@ import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { TopDeckModal } from './TopDeckModal';
 import { useGame } from '../store/GameContext';
+import { MAIN_MENU_WIDTH } from '../constants';
 
 const GAME_NAME = 'Nexus Game Table';
 const GAME_VERSION = 'v0.1.0';
@@ -80,11 +81,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             width: restoreState.width,
             height: restoreState.height,
           } : dualPosition ? {
-            width: 300,
+            width: MAIN_MENU_WIDTH,
             height: 400,
           } : {
             // In single position mode, restore expanded dimensions but keep position
-            width: restoreState?.width ?? 300,
+            width: restoreState?.width ?? MAIN_MENU_WIDTH,
             height: restoreState?.height ?? 400,
           })
         }
@@ -580,6 +581,27 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
   const [isDragTarget, setIsDragTarget] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
+  // Get card scale from localStorage
+  const [cardScale, setCardScale] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem('hand-card-scale');
+      return saved ? parseFloat(saved) : 1;
+    } catch {
+      return 1;
+    }
+  });
+
+  // Listen for card scale changes
+  React.useEffect(() => {
+    const handleHandCardScaleChanged = (e: Event) => {
+      const customEvent = e as CustomEvent<{ scale: number }>;
+      setCardScale(customEvent.detail.scale);
+    };
+
+    window.addEventListener('hand-card-scale-changed', handleHandCardScaleChanged);
+    return () => window.removeEventListener('hand-card-scale-changed', handleHandCardScaleChanged);
+  }, []);
+
   React.useEffect(() => {
     const handleDragMove = (e: Event) => {
       const customEvent = e as CustomEvent<{
@@ -619,7 +641,7 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
 
   return (
     <div ref={containerRef} className="h-full">
-      <HandPanel width={panel.width} isDragTarget={isDragTarget} isCollapsed={isCollapsed} />
+      <HandPanel width={panel.width} isDragTarget={isDragTarget} isCollapsed={isCollapsed} cardScale={cardScale} />
     </div>
   );
 };

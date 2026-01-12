@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile } from '../types';
 import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings } from 'lucide-react';
-import { TOKEN_SIZE, CARD_SHAPE_DIMS } from '../constants';
+import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanel } from './HandPanel';
@@ -196,7 +196,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   }, [activeTab, mainMenuPanel, dispatch]);
 
   const handleCreatePanel = (panelType: PanelType) => {
-    const x = window.innerWidth / 2 - 150;
+    const x = window.innerWidth / 2 - MAIN_MENU_WIDTH / 2;
     const y = window.innerHeight / 2 - 200;
 
     dispatch({
@@ -205,7 +205,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         panelType,
         x,
         y,
-        width: 300,
+        width: MAIN_MENU_WIDTH,
         height: 400,
         title: panelType === PanelType.HAND ? 'Standard Hand Panel' : panelType,
       }
@@ -382,7 +382,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => {
-                    const newScale = Math.max(0.5, handCardScale - 0.1);
+                    const newScale = Math.max(0.5, handCardScale - 0.03);
                     setHandCardScale(newScale);
                     localStorage.setItem('hand-card-scale', String(newScale));
                   }}
@@ -394,7 +394,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 <span className="text-xs text-gray-400 w-8 text-center">{Math.round(handCardScale * 100)}%</span>
                 <button
                   onClick={() => {
-                    const newScale = Math.min(2, handCardScale + 0.1);
+                    const newScale = Math.min(2, handCardScale + 0.03);
                     setHandCardScale(newScale);
                     localStorage.setItem('hand-card-scale', String(newScale));
                   }}
@@ -558,8 +558,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           name: item.name,
           x: centerX,
           y: centerY,
-          width: 100,
-          height: 140,
+          width: DEFAULT_DECK_WIDTH,
+          height: DEFAULT_DECK_HEIGHT,
           rotation: 0,
           color: '#2c3e50',
           content: '',
@@ -571,8 +571,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           // Deck-specific properties
           cardShape: CardShape.POKER,
           cardOrientation: CardOrientation.VERTICAL,
-          cardWidth: 100,
-          cardHeight: 140,
+          cardWidth: DEFAULT_DECK_WIDTH,
+          cardHeight: DEFAULT_DECK_HEIGHT,
           cardAllowedActions: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardAllowedActionsForGM: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardActionButtons: ['flip'],
@@ -590,8 +590,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           name: 'Empty Deck',
           x: centerX,
           y: centerY,
-          width: 100,
-          height: 140,
+          width: DEFAULT_DECK_WIDTH,
+          height: DEFAULT_DECK_HEIGHT,
           rotation: 0,
           color: '#2c3e50',
           content: '',
@@ -602,8 +602,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           piles: [],
           cardShape: CardShape.POKER,
           cardOrientation: CardOrientation.VERTICAL,
-          cardWidth: 100,
-          cardHeight: 140,
+          cardWidth: DEFAULT_DECK_WIDTH,
+          cardHeight: DEFAULT_DECK_HEIGHT,
           cardAllowedActions: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardAllowedActionsForGM: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardActionButtons: ['flip'],
@@ -643,8 +643,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           name: item.name,
           x: centerX,
           y: centerY,
-          width: 60,
-          height: 60,
+          width: DEFAULT_DICE_SIZE,
+          height: DEFAULT_DICE_SIZE,
           rotation: 0,
           color: '#6366f1',
           content: '',
@@ -663,8 +663,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           name: item.name,
           x: centerX,
           y: centerY,
-          width: 120,
-          height: 50,
+          width: DEFAULT_COUNTER_WIDTH,
+          height: DEFAULT_COUNTER_HEIGHT,
           rotation: 0,
           color: '#10b981',
           content: '',

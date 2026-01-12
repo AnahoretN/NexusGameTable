@@ -6,6 +6,20 @@ export const CARD_HEIGHT = 210;
 export const TOKEN_SIZE = 80;
 export const DECK_OFFSET = 3;
 
+// UI Panel dimensions
+export const MAIN_MENU_WIDTH = 310; 
+export const SCROLLBAR_WIDTH = 16;
+
+// Default object dimensions
+export const DEFAULT_DECK_WIDTH = 100;
+export const DEFAULT_DECK_HEIGHT = 140;
+export const DEFAULT_DICE_SIZE = 60;
+export const DEFAULT_COUNTER_WIDTH = 120;
+export const DEFAULT_COUNTER_HEIGHT = 50;
+export const DEFAULT_PANEL_WIDTH = 300;
+export const DEFAULT_PANEL_HEIGHT = 400;
+export const DEFAULT_HAND_CARD_WIDTH = 140; // Base width for cards in hand panel modals
+
 export const INITIAL_VIEWPORT: Coordinates = { x: 0, y: 0 };
 export const INITIAL_ZOOM = 0.8;
 

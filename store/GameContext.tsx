@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
 import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer } from '../types';
-import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS } from '../constants';
+import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { Peer } from 'peerjs';
 
 // Helper for safe ID generation
@@ -215,8 +215,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const newObj = {
           ...action.payload,
           zIndex: action.payload.zIndex ?? defaultZ, // Don't override existing zIndex
-          isOnTable: action.payload.isOnTable ?? true,
-      };
+      } as any;
+      const payload = action.payload as any;
+      if (payload.isOnTable !== undefined) {
+          newObj.isOnTable = payload.isOnTable;
+      } else {
+          newObj.isOnTable = true;
+      }
 
       return {
         ...state,
@@ -399,12 +404,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, locked: !obj.locked } } };
     }
     case 'TOGGLE_ON_TABLE': {
-        const obj = state.objects[action.payload.id];
+        const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
         return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, isOnTable: !obj.isOnTable } } };
     }
     case 'ROTATE_OBJECT': {
-        const obj = state.objects[action.payload.id];
+        const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
         // If angle is provided in payload, use it; otherwise use object's rotationStep
         const angle = action.payload.angle ?? obj.rotationStep ?? 45;
@@ -416,12 +421,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: action.payload.rotation } } };
     }
     case 'CLONE_OBJECT': {
-        const obj = state.objects[action.payload.id];
+        const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
         const newId = generateUUID();
         const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
         const maxZ = allZ.length ? Math.max(...allZ) : 0;
-        const clonedObj: TableObject = {
+        const clonedObj: any = {
             ...obj,
             id: newId,
             x: obj.x + 30,
@@ -432,8 +437,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             zIndex: maxZ + 1
         };
         if (clonedObj.type === ItemType.DECK) {
-            (clonedObj as Deck).cardIds = [];
-            (clonedObj as Deck).initialCardCount = 0;
+            clonedObj.cardIds = [];
+            clonedObj.initialCardCount = 0;
         }
         return { ...state, objects: { ...state.objects, [newId]: clonedObj } };
     }
@@ -513,14 +518,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard } };
     }
     case 'UPDATE_PERMISSIONS': {
-        const obj = state.objects[action.payload.id];
+        const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
         // Cards don't have allowedActions - skip
         if (obj.type === ItemType.CARD) return state;
         return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, allowedActions: action.payload.actions } } };
     }
     case 'UPDATE_ACTION_BUTTONS': {
-        const obj = state.objects[action.payload.id];
+        const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
         // Cards don't have actionButtons - skip
         if (obj.type === ItemType.CARD) return state;
@@ -816,7 +821,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
     }
     case 'SWING_CLOCKWISE': {
-      const obj = state.objects[action.payload.id];
+      const obj = state.objects[action.payload.id] as any;
       if (!obj) return state;
 
       const rotationStep = obj.rotationStep ?? 45;
@@ -841,7 +846,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'SWING_COUNTER_CLOCKWISE': {
-      const obj = state.objects[action.payload.id];
+      const obj = state.objects[action.payload.id] as any;
       if (!obj) return state;
 
       const rotationStep = obj.rotationStep ?? 45;
@@ -939,7 +944,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'CREATE_PANEL': {
-      const { panelType, x = 100, y = 100, width = 300, height = 400, title, deckId } = action.payload;
+      const { panelType, x = 100, y = 100, width = DEFAULT_PANEL_WIDTH, height = DEFAULT_PANEL_HEIGHT, title, deckId } = action.payload;
       const panelId = generateUUID();
 
       // UI panels have zIndex 9998, draggable cards have 9999
@@ -1165,7 +1170,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Create Standard Deck positioned in top-right corner
         // Position: 10px from top, 60px from right main menu
-        const MAIN_MENU_WIDTH = 286;
         const MARGIN_X = 80;
         const MARGIN_Y = -80;
         const { deck, cards } = createStandardDeck();
@@ -1188,9 +1192,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localDispatch({ type: 'ADD_OBJECT', payload: deck });
 
         // Create Main Menu panel in the unified space
-        // Position slightly to the left to account for scrollbar (approximately 15px)
-        const SCROLLBAR_WIDTH = 15;
-        const mainMenuX = window.innerWidth - 286 - SCROLLBAR_WIDTH;
+        // Position slightly to the left to account for scrollbar
+        const mainMenuX = window.innerWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH;
         const mainMenuY = 0;
         localDispatch({
             type: 'CREATE_PANEL',
@@ -1198,7 +1201,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 panelType: PanelType.MAIN_MENU,
                 x: mainMenuX,
                 y: mainMenuY,
-                width: 286,
+                width: MAIN_MENU_WIDTH,
                 height: window.innerHeight,
                 title: 'Main Menu'
             }

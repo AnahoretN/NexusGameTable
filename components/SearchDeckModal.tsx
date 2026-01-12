@@ -5,6 +5,7 @@ import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibilit
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
+import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 
 const DEFAULT_MODAL_WIDTH = 75.75; // vw
 const MIN_MODAL_WIDTH = 50; // vw
@@ -140,13 +141,13 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   );
 
   const cardActionButtons = deck.cardActionButtons || [];
-  const baseCardWidth = 140;
+  const baseCardWidth = DEFAULT_HAND_CARD_WIDTH;
   const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
   const scaledBaseCardWidth = isHorizontal ? baseCardWidth * 1.254 : baseCardWidth;
 
   const getCardDimensions = useCallback((card: Card) => {
-    const actualCardWidth = card.width ?? 100;
-    const actualCardHeight = card.height ?? 140;
+    const actualCardWidth = card.width ?? DEFAULT_DECK_WIDTH;
+    const actualCardHeight = card.height ?? DEFAULT_DECK_HEIGHT;
     const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
     const layoutWidth = isHorizontal ? actualCardHeight : actualCardWidth;
     const layoutHeight = isHorizontal ? actualCardWidth : actualCardHeight;
