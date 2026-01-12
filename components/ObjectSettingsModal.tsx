@@ -325,9 +325,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-slate-700">
-          <h3 className="text-lg font-bold text-white">Settings: {object.name}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={20} /></button>
+        <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
+          <h3 className="text-base font-bold text-white">Settings: {object.name}</h3>
         </div>
 
         {/* Tabs */}

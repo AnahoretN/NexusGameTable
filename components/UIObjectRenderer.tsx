@@ -154,6 +154,16 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   }, [dispatch, uiObject.id]);
 
   const handleOpenSettings = useCallback(() => {
+    // Check if this is a HAND panel - if so, dispatch event for MainMenuContent to handle
+    const panelObj = state.objects[uiObject.id] as PanelObject | undefined;
+    if (panelObj?.panelType === PanelType.HAND) {
+      // Dispatch custom event for MainMenuContent to open HAND panel settings
+      window.dispatchEvent(new CustomEvent('open-hand-panel-settings', {
+        detail: { panelId: uiObject.id }
+      }));
+      return;
+    }
+
     // Check if settings window is already open
     const settingsWindowId = `settings-${uiObject.id}`;
     const existingWindow = state.objects[settingsWindowId];
@@ -512,11 +522,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       {isMainMenu && showGameSettings && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowGameSettings(false)}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[400px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center p-4 border-b border-slate-700">
-              <h3 className="text-lg font-bold text-white">Game Settings</h3>
-              <button onClick={() => setShowGameSettings(false)} className="text-gray-400 hover:text-white">
-                <X size={20} />
-              </button>
+            <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
+              <h3 className="text-base font-bold text-white">Game Settings</h3>
             </div>
             <div className="p-4 space-y-4">
               <div className="text-sm text-gray-400">
@@ -681,11 +688,8 @@ const PanelSettingsModal: React.FC<{
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-slate-700">
-          <h3 className="text-lg font-bold text-white">Settings: {panel.title}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X size={20} />
-          </button>
+        <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
+          <h3 className="text-base font-bold text-white">Settings: {panel.title}</h3>
         </div>
 
         {/* Tabs */}
@@ -839,8 +843,8 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
       // Panels are stored in state.objects, not state.uiObjects
       const targetPanel = targetObj?.type === ItemType.PANEL ? targetObj as PanelObject : null;
 
-      if (targetPanel) {
-        // Show panel settings for panels
+      if (targetPanel && targetPanel.panelType !== PanelType.HAND) {
+        // Show panel settings for panels (except HAND panels which use MainMenuContent settings)
         return <PanelSettingsModal panel={targetPanel} onClose={handleClose} />;
       }
 

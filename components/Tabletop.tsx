@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType, PanelType } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -1028,41 +1028,23 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('mousedown', handleGlobalClick, { capture: true } as any);
   }, [cursorSlot.length, dropCursorSlot, cursorSlot]);
 
-  // Track cursor over main menu when cursor slot has items
+  // Dispatch cursor position events for MainMenuContent to track
   useEffect(() => {
     if (cursorSlot.length === 0) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      // Find main menu panel element in DOM to get actual screen position
-      const mainMenuElement = document.querySelector('[data-main-menu="true"]') as HTMLElement;
-
-      if (!mainMenuElement) return;
-
-      // Get actual screen position of main menu using getBoundingClientRect
-      const rect = mainMenuElement.getBoundingClientRect();
-
-      // Check if cursor is over main menu bounds
-      const isOverMainMenu =
-        e.clientX >= rect.left &&
-        e.clientX <= rect.right &&
-        e.clientY >= rect.top &&
-        e.clientY <= rect.bottom;
-
-      // Dispatch event for MainMenuContent to handle
-      window.dispatchEvent(new CustomEvent('cursor-slot-move', {
+      window.dispatchEvent(new CustomEvent('cursor-position-update', {
         detail: {
           x: e.clientX,
           y: e.clientY,
-          isOverMainMenu,
           hasCards: cursorSlot.some(item => item.type === ItemType.CARD)
         }
       }));
     };
 
     const handleMouseLeave = () => {
-      // Dispatch event indicating cursor left window
-      window.dispatchEvent(new CustomEvent('cursor-slot-move', {
-        detail: { x: -1, y: -1, isOverMainMenu: false, hasCards: false }
+      window.dispatchEvent(new CustomEvent('cursor-position-update', {
+        detail: { x: -1, y: -1, hasCards: false }
       }));
     };
 
@@ -1146,6 +1128,14 @@ export const Tabletop: React.FC = () => {
       if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
         if (item.locked) return;
 
+        // Unpin from viewport if pinned (manual drag cancels pin)
+        if ((item as any).isPinnedToViewport) {
+          dispatch({
+            type: 'UNPIN_FROM_VIEWPORT',
+            payload: { id }
+          });
+        }
+
         // UI objects use screen coordinates directly, not world coordinates
         setDraggingId(id);
         dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -1214,6 +1204,14 @@ export const Tabletop: React.FC = () => {
 
       setDraggingId(id);
       if (item) {
+        // Unpin from viewport if pinned (manual drag cancels pin)
+        if ((item as any).isPinnedToViewport) {
+          dispatch({
+            type: 'UNPIN_FROM_VIEWPORT',
+            payload: { id }
+          });
+        }
+
         // Bring dragged object to front (zIndex 9999)
         dispatch({
           type: 'UPDATE_OBJECT',
@@ -1995,23 +1993,44 @@ export const Tabletop: React.FC = () => {
 
           pinnedObjects.forEach(obj => {
             const pinnedObj = obj as any;
-            if (pinnedObj.pinnedScreenPosition) {
+            const isMinimized = pinnedObj.minimized || false;
+            const hasDualPosition = pinnedObj.dualPosition || false;
+
+            // Determine which pinned position to use based on dual position mode and minimized state
+            let pinnedPosition = pinnedObj.pinnedScreenPosition;
+
+            if (hasDualPosition) {
+              // In dual position mode, try to use the state-specific position first
+              if (isMinimized) {
+                // When minimized, prefer collapsedPinnedPosition, fall back to expandedPinnedPosition, then pinnedScreenPosition
+                pinnedPosition = pinnedObj.collapsedPinnedPosition ||
+                               pinnedObj.expandedPinnedPosition ||
+                               pinnedObj.pinnedScreenPosition;
+              } else {
+                // When expanded, prefer expandedPinnedPosition, fall back to collapsedPinnedPosition, then pinnedScreenPosition
+                pinnedPosition = pinnedObj.expandedPinnedPosition ||
+                               pinnedObj.collapsedPinnedPosition ||
+                               pinnedObj.pinnedScreenPosition;
+              }
+            }
+
+            if (pinnedPosition) {
               let newX: number;
               let newY: number;
 
               // UI panels/windows are NOT in the transform container, so no zoom/offset affect
               if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
                 // For UI objects: screenX = obj.x - scrollLeft
-                // We want: screenX = pinnedScreenPosition.x
-                // So: obj.x = pinnedScreenPosition.x + scrollLeft
-                newX = pinnedObj.pinnedScreenPosition.x + scrollLeft;
-                newY = pinnedObj.pinnedScreenPosition.y + scrollTop;
+                // We want: screenX = pinnedPosition.x
+                // So: obj.x = pinnedPosition.x + scrollLeft
+                newX = pinnedPosition.x + scrollLeft;
+                newY = pinnedPosition.y + scrollTop;
               } else {
                 // For game objects in transform container: screenX = obj.x * zoom + offset.x - scrollLeft
-                // We want: screenX = pinnedScreenPosition.x
-                // So: obj.x = (pinnedScreenPosition.x - offset.x + scrollLeft) / zoom
-                newX = (pinnedObj.pinnedScreenPosition.x - offset.x + scrollLeft) / zoom;
-                newY = (pinnedObj.pinnedScreenPosition.y - offset.y + scrollTop) / zoom;
+                // We want: screenX = pinnedPosition.x
+                // So: obj.x = (pinnedPosition.x - offset.x + scrollLeft) / zoom
+                newX = (pinnedPosition.x - offset.x + scrollLeft) / zoom;
+                newY = (pinnedPosition.y - offset.y + scrollTop) / zoom;
               }
 
               // Only dispatch if position actually changed significantly
