@@ -93,31 +93,30 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   // Check if main menu panel is minimized
   const isMainMenuMinimized = mainMenuPanel?.minimized || false;
 
-  // Handle card drag over mainMenu for hand panel
+  // Handle cursor slot move over main menu for hand panel
   useEffect(() => {
-    const handleDragMove = (e: Event) => {
+    const handleCursorSlotMove = (e: Event) => {
       const customEvent = e as CustomEvent<{
-        cardId: string | null;
-        source: 'hand' | 'tabletop' | null;
         x: number;
         y: number;
+        isOverMainMenu: boolean;
+        hasCards: boolean;
       }>;
 
-      // Only handle cards dragged from tabletop to hand
-      if (customEvent.detail.source !== 'tabletop') return;
+      const { isOverMainMenu, hasCards } = customEvent.detail;
 
-      if (!mainMenuBounds) return;
-
-      const x = customEvent.detail.x;
-      const y = customEvent.detail.y;
-
-      const isOverMainMenu = x >= mainMenuBounds.x && x <= mainMenuBounds.x + mainMenuBounds.width &&
-                             y >= mainMenuBounds.y && y <= mainMenuBounds.y + mainMenuBounds.height;
-
-      if (isOverMainMenu) {
+      // Only switch to hand tab if cursor is over main menu AND slot has cards
+      if (isOverMainMenu && hasCards) {
         if (activeTab !== 'hand') {
           setPreviousTab(activeTab);
           setActiveTab('hand');
+        }
+        // Also unminimize main menu if it's minimized
+        if (mainMenuPanel?.minimized) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: { id: mainMenuPanel.id, minimized: false }
+          });
         }
         setDragOverHand(true);
       } else {
@@ -125,18 +124,18 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       }
     };
 
-    const handleDragEnd = () => {
+    const handleCursorSlotDrop = () => {
       setDragOverHand(false);
     };
 
-    window.addEventListener('card-drag-move', handleDragMove);
-    window.addEventListener('card-drag-end', handleDragEnd);
+    window.addEventListener('cursor-slot-move', handleCursorSlotMove);
+    window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
 
     return () => {
-      window.removeEventListener('card-drag-move', handleDragMove);
-      window.removeEventListener('card-drag-end', handleDragEnd);
+      window.removeEventListener('cursor-slot-move', handleCursorSlotMove);
+      window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     };
-  }, [activeTab, mainMenuBounds]);
+  }, [activeTab, mainMenuPanel, dispatch]);
 
   const handleCreatePanel = (panelType: PanelType) => {
     const x = window.innerWidth / 2 - 150;
@@ -209,8 +208,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     {
       id: 'boards', label: 'Game Boards', icon: <LayoutGrid size={16}/>,
       items: [
-        { name: 'Square Board', type: 'BOARD', gridType: GridType.SQUARE },
-        { name: 'Hex Board', type: 'BOARD', gridType: GridType.HEX },
+        { name: 'Standard Board', type: 'BOARD', gridType: GridType.SQUARE },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.BOARD
     },

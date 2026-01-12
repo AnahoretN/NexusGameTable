@@ -3,11 +3,9 @@ import { Layers, Lock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw
 import { useGame } from '../store/GameContext';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType } from '../types';
 import { DECK_OFFSET } from '../constants';
-import { cardDragAPI } from '../hooks/useCardDrag';
 
 interface DeckComponentProps {
   deck: DeckType;
-  isDraggingCardFromHand: boolean;
   draggingId: string | null;
   hoveredDeckId: string | null;
   hoveredPileId: string | null;
@@ -31,7 +29,6 @@ interface DeckComponentProps {
 
 export const DeckComponent: React.FC<DeckComponentProps> = ({
   deck,
-  isDraggingCardFromHand,
   draggingId,
   hoveredDeckId,
   hoveredPileId,
@@ -55,8 +52,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   const { state } = useGame();
 
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-  const isDraggingAnyCard = isDraggingCardFromHand || isDraggingCardFromTable;
-  const canDropCard = isDraggingAnyCard && hoveredDeckId === deck.id;
+  const canDropCard = isDraggingCardFromTable && hoveredDeckId === deck.id;
 
   // Get top card for showTopCard feature
   const topCard = deck.cardIds.length > 0 ? state.objects[deck.cardIds[0]] as CardType : null;
@@ -145,7 +141,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         const pileSize = pile.size ?? 1;
 
         // Check if dragging a card and hovering over this pile
-        const isHoveringPile = isDraggingAnyCard && hoveredPileId === pile.id;
+        const isHoveringPile = isDraggingCardFromTable && hoveredPileId === pile.id;
 
         return (
           <React.Fragment key={pile.id}>
@@ -166,13 +162,9 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             {/* Pile container - keeps normal z-index */}
             <div
               onMouseEnter={() => {
-                // Only allow hover if actively dragging a card (check via cardDragAPI)
-                if (!cardDragAPI.isDragging()) return;
-
-                // Allow hover if dragging any card (from hand or table)
-                const draggingFromHand = isDraggingCardFromHand;
+                // Only allow hover if actively dragging a card from table
                 const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-                if (draggingFromHand || draggingFromTable) {
+                if (draggingFromTable) {
                   setHoveredPileId(pile.id);
                 }
               }}
@@ -282,13 +274,9 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           onMouseDown={(e) => isGM && handleMouseDown(e, deck.id)}
           onContextMenu={(e) => handleContextMenu(e, deck)}
           onMouseEnter={() => {
-            // Only allow hover if actively dragging a card (check via cardDragAPI)
-            if (!cardDragAPI.isDragging()) return;
-
-            // Allow hover if dragging any card (from hand or table)
-            const draggingFromHand = isDraggingCardFromHand;
+            // Only allow hover if actively dragging a card from table
             const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-            if (draggingFromHand || draggingFromTable) {
+            if (draggingFromTable) {
               setHoveredDeckId(deck.id);
             }
           }}

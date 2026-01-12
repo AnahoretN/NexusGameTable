@@ -8,6 +8,9 @@ export interface DragState {
   startY: number;
   currentX: number;
   currentY: number;
+  // Offset from cursor to card's top-left corner (where user grabbed the card)
+  offsetX: number;
+  offsetY: number;
 }
 
 // Global drag state shared across components
@@ -19,6 +22,8 @@ let globalDragState: DragState = {
   startY: 0,
   currentX: 0,
   currentY: 0,
+  offsetX: 0,
+  offsetY: 0,
 };
 
 let onGlobalMouseMove: ((e: MouseEvent) => void) | null = null;
@@ -35,19 +40,44 @@ export function useCardDrag() {
   const startDrag = useCallback((
     cardId: string,
     source: 'hand' | 'tabletop',
-    e: MouseEvent
+    e: MouseEvent,
+    offsetX: number = 0,
+    offsetY: number = 0,
+    overrideClientX?: number,
+    overrideClientY?: number
   ) => {
     if (globalDragState.isDragging) return;
 
     dragIdRef.current = cardId;
+
+    // Use override coordinates if provided (from React event which is more reliable),
+    // otherwise fall back to native event coordinates
+    const startX = overrideClientX ?? e.clientX;
+    const startY = overrideClientY ?? e.clientY;
+
+    console.log('[useCardDrag] startDrag:', {
+      cardId,
+      source,
+      overrideClientX,
+      overrideClientY,
+      startX,
+      startY,
+      nativeScreenX: e.screenX,
+      nativeScreenY: e.screenY,
+      nativeClientX: e.clientX,
+      nativeClientY: e.clientY,
+    });
+
     globalDragState = {
       isDragging: true,
       cardId,
       source,
-      startX: e.clientX,
-      startY: e.clientY,
-      currentX: e.clientX,
-      currentY: e.clientY,
+      startX: startX,
+      startY: startY,
+      currentX: startX,
+      currentY: startY,
+      offsetX,
+      offsetY,
     };
 
     listeners.forEach(listener => listener({ ...globalDragState }));
@@ -58,11 +88,13 @@ export function useCardDrag() {
     window.addEventListener('mousemove', onGlobalMouseMove);
     window.addEventListener('mouseup', onGlobalMouseUp);
 
-    // Dispatch card-drag-start event
+    // Dispatch card-drag-start event with offset
     window.dispatchEvent(new CustomEvent('card-drag-start', {
       detail: {
         cardId,
         source,
+        offsetX,
+        offsetY,
       }
     }));
 
@@ -93,6 +125,8 @@ export function useCardDrag() {
       startY: 0,
       currentX: 0,
       currentY: 0,
+      offsetX: 0,
+      offsetY: 0,
     };
 
     dragIdRef.current = null;
@@ -129,8 +163,13 @@ export function useCardDrag() {
 function handleMouseMove(e: MouseEvent) {
   if (!globalDragState.isDragging) return;
 
-  globalDragState.currentX = e.clientX;
-  globalDragState.currentY = e.clientY;
+  // Accumulate position using movementX/movementY
+  // These represent the delta from the last mousemove event and are more reliable
+  const currentX = globalDragState.currentX + e.movementX;
+  const currentY = globalDragState.currentY + e.movementY;
+
+  globalDragState.currentX = currentX;
+  globalDragState.currentY = currentY;
 
   listeners.forEach(listener => listener({ ...globalDragState }));
 
@@ -138,8 +177,10 @@ function handleMouseMove(e: MouseEvent) {
     detail: {
       cardId: globalDragState.cardId,
       source: globalDragState.source,
-      x: e.clientX,
-      y: e.clientY,
+      x: currentX,
+      y: currentY,
+      offsetX: globalDragState.offsetX,
+      offsetY: globalDragState.offsetY,
     }
   }));
 }
@@ -150,8 +191,28 @@ function handleMouseUp(e: MouseEvent) {
   const wasDragging = globalDragState.isDragging;
   const droppedCardId = globalDragState.cardId;
   const source = globalDragState.source;
-  const x = e.clientX;
-  const y = e.clientY;
+
+  // Use currentX/currentY from globalDragState directly
+  // These have been continuously updated by handleMouseMove with reliable coordinates
+  const x = globalDragState.currentX;
+  const y = globalDragState.currentY;
+  const offsetX = globalDragState.offsetX;
+  const offsetY = globalDragState.offsetY;
+
+  console.log('[useCardDrag] handleMouseUp:', {
+    cardId: droppedCardId,
+    source,
+    startX: globalDragState.startX,
+    startY: globalDragState.startY,
+    currentX: x,
+    currentY: y,
+    offsetX,
+    offsetY,
+    eventScreenX: e.screenX,
+    eventScreenY: e.screenY,
+    eventClientX: e.clientX,
+    eventClientY: e.clientY,
+  });
 
   if (onGlobalMouseMove) {
     window.removeEventListener('mousemove', onGlobalMouseMove);
@@ -170,12 +231,14 @@ function handleMouseUp(e: MouseEvent) {
     startY: 0,
     currentX: 0,
     currentY: 0,
+    offsetX: 0,
+    offsetY: 0,
   };
 
   listeners.forEach(listener => listener({ ...globalDragState }));
 
   window.dispatchEvent(new CustomEvent('card-drag-end', {
-    detail: { wasDragging, cardId: droppedCardId, source, x, y }
+    detail: { wasDragging, cardId: droppedCardId, source, x, y, offsetX, offsetY }
   }));
 }
 

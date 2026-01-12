@@ -298,6 +298,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     <div
       ref={containerRef}
       data-ui-object={uiObject.id}
+      data-main-menu={isMainMenu ? "true" : undefined}
       style={containerStyle}
       className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col`}
       onContextMenu={(e) => {
