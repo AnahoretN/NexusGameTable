@@ -3,6 +3,7 @@ import { Layers, Lock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw
 import { useGame } from '../store/GameContext';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType } from '../types';
 import { DECK_OFFSET } from '../constants';
+import { cardDragAPI } from '../hooks/useCardDrag';
 
 interface DeckComponentProps {
   deck: DeckType;
@@ -165,6 +166,9 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             {/* Pile container - keeps normal z-index */}
             <div
               onMouseEnter={() => {
+                // Only allow hover if actively dragging a card (check via cardDragAPI)
+                if (!cardDragAPI.isDragging()) return;
+
                 // Allow hover if dragging any card (from hand or table)
                 const draggingFromHand = isDraggingCardFromHand;
                 const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
@@ -278,6 +282,9 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           onMouseDown={(e) => isGM && handleMouseDown(e, deck.id)}
           onContextMenu={(e) => handleContextMenu(e, deck)}
           onMouseEnter={() => {
+            // Only allow hover if actively dragging a card (check via cardDragAPI)
+            if (!cardDragAPI.isDragging()) return;
+
             // Allow hover if dragging any card (from hand or table)
             const draggingFromHand = isDraggingCardFromHand;
             const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;

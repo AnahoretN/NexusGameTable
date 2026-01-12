@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility } from '../types';
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye } from 'lucide-react';
+import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board } from '../types';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye, Grid3x3 } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
   object: TableObject;
@@ -292,7 +292,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   };
 
   const isToken = data.type === ItemType.TOKEN;
-  const isBoard = isToken && (data as Token).shape === TokenShape.RECTANGLE;
+  const isBoard = data.type === ItemType.BOARD;
   const isDeck = data.type === ItemType.DECK;
   const isCard = data.type === ItemType.CARD; // Cards don't have their own settings
 
@@ -450,7 +450,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               )}
 
-              {/* Color (for tokens) */}
+              {/* Color (for tokens) - full width for tokens only */}
               {isToken && !isBoard && (
                 <div>
                   <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
@@ -460,6 +460,30 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     onChange={e => update('color', e.target.value)}
                     className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
                   />
+                </div>
+              )}
+
+              {/* Color + Image URL (for boards) - side by side, Color is smaller */}
+              {isBoard && (
+                <div className="grid grid-cols-[80px_1fr] gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
+                    <input
+                      type="color"
+                      value={data.color || '#ffffff'}
+                      onChange={e => update('color', e.target.value)}
+                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Background Image URL</label>
+                    <input
+                      value={data.content || ''}
+                      onChange={e => update('content', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm h-10"
+                      placeholder="https://..."
+                    />
+                  </div>
                 </div>
               )}
 
@@ -478,37 +502,47 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
               {/* Grid Settings (for boards) */}
               {isBoard && (
-                <div className="space-y-4 border-t border-slate-700 pt-4">
+                <div className="space-y-3 border-t border-slate-700 pt-4">
                   <h4 className="text-sm font-bold text-purple-400">Grid Settings</h4>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Grid Type</label>
-                    <select
-                      value={(data as Token).gridType || GridType.NONE}
-                      onChange={e => update('gridType', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">Grid Type</label>
+                      <select
+                        value={(data as Board).gridType || GridType.NONE}
+                        onChange={e => update('gridType', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      >
+                        {Object.values(GridType).map(v => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">Grid Size (px)</label>
+                      <input
+                        type="number"
+                        value={(data as Board).gridSize || 50}
+                        onChange={e => update('gridSize', Number(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                    <label className="text-xs text-gray-400 flex items-center gap-2">
+                      <Grid3x3 size={12} />
+                      Snap Objects to Grid
+                    </label>
+                    <button
+                      onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
+                      className={`w-10 h-5 rounded-full transition-colors ${
+                        (data as Board).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
+                      }`}
                     >
-                      {Object.values(GridType).map(v => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Grid Size (px)</label>
-                    <input
-                      type="number"
-                      value={(data as Token).gridSize || 50}
-                      onChange={e => update('gridSize', Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                    />
-                  </div>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={(data as Token).snapToGrid || false}
-                      onChange={e => update('snapToGrid', e.target.checked)}
-                    />
-                    <span className="text-sm text-gray-300">Snap Objects to Grid</span>
-                  </label>
                 </div>
               )}
             </div>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useGame, GameState } from '../store/GameContext';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Settings, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, X, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -16,6 +16,36 @@ const generateUUID = () => {
     } catch (e) {}
   }
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
+// Get icon component for object type
+const getTypeIcon = (obj: TableObject): React.ReactElement => {
+  switch (obj.type) {
+    case ItemType.TOKEN:
+      const token = obj as Token;
+      if (token.shape === TokenShape.CIRCLE) return <CircleDot size={10} />;
+      if (token.shape === TokenShape.HEX) return <Hexagon size={10} />;
+      if (token.shape === TokenShape.STANDEE) return <User size={10} />;
+      return <Square size={10} />;
+    case ItemType.CARD:
+      return <CreditCard size={10} />;
+    case ItemType.DECK:
+      return <Layers size={10} />;
+    case ItemType.DICE_OBJECT:
+      return <Dices size={10} />;
+    case ItemType.COUNTER:
+      return <Asterisk size={10} />;
+    case ItemType.BOARD:
+      return <LayoutGrid size={10} />;
+    case ItemType.RANDOMIZER:
+      return <Rows size={10} />;
+    case ItemType.PANEL:
+      return <PanelLeft size={10} />;
+    case ItemType.WINDOW:
+      return <Box size={10} />;
+    default:
+      return <Component size={10} />;
+  }
 };
 
 interface MainMenuContentProps {
@@ -41,13 +71,15 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
   const isHost = true;
 
-  // Get main menu panel bounds for drag detection
-  const mainMenuBounds = useMemo(() => {
-    // UI panels are stored in state.objects, not a separate uiObjects
-    const mainMenuPanel = Object.values(state.objects).find(
+  // Get main menu panel for bounds and minimized state
+  const mainMenuPanel = useMemo(() => {
+    return Object.values(state.objects).find(
       obj => obj.type === ItemType.PANEL && (obj as any).panelType === PanelType.MAIN_MENU
     ) as PanelObject | undefined;
+  }, [state.objects]);
 
+  // Get main menu panel bounds for drag detection
+  const mainMenuBounds = useMemo(() => {
     if (!mainMenuPanel) return null;
 
     return {
@@ -56,7 +88,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       width: mainMenuPanel.width,
       height: mainMenuPanel.height
     };
-  }, [state.objects]);
+  }, [mainMenuPanel]);
+
+  // Check if main menu panel is minimized
+  const isMainMenuMinimized = mainMenuPanel?.minimized || false;
 
   // Handle card drag over mainMenu for hand panel
   useEffect(() => {
@@ -115,7 +150,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         y,
         width: 300,
         height: 400,
-        title: panelType === PanelType.HAND ? 'Your Hand' : panelType,
+        title: panelType === PanelType.HAND ? 'Standard Hand Panel' : panelType,
       }
     });
   };
@@ -242,20 +277,23 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
   return (
     <div className="h-full bg-slate-900 flex flex-col transition-all">
-      <div className="flex border-b border-slate-700">
-        <button onClick={() => { setActiveTab('create'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'create' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
-          <Library size={20} />
-        </button>
-        <button onClick={() => { setActiveTab('hand'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'hand' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
-          <Hand size={20} />
-        </button>
-        <button onClick={() => { setActiveTab('chat'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'chat' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
-          <MessageSquare size={20} />
-        </button>
-        <button onClick={() => { setActiveTab('players'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'players' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
-          <User size={20} />
-        </button>
-      </div>
+      {/* Tabs and Content - hidden when minimized */}
+      {!isMainMenuMinimized && (
+        <>
+          <div className="flex border-b border-slate-700">
+            <button onClick={() => { setActiveTab('create'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'create' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+              <Library size={20} />
+            </button>
+            <button onClick={() => { setActiveTab('hand'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'hand' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+              <Hand size={20} />
+            </button>
+            <button onClick={() => { setActiveTab('chat'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'chat' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+              <MessageSquare size={20} />
+            </button>
+            <button onClick={() => { setActiveTab('players'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'players' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+              <User size={20} />
+            </button>
+          </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar relative">
         {activeTab === 'create' && (
@@ -309,6 +347,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };
@@ -581,11 +621,12 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     key={obj.id}
                     className={`flex items-center gap-1 py-1 px-2 rounded text-sm group ${isVisible ? 'text-gray-300 hover:bg-slate-800' : 'text-gray-600 hover:bg-slate-800/50'}`}
                   >
+                    <span className="text-gray-500 flex-shrink-0">{getTypeIcon(obj)}</span>
                     <div
                       className="w-3 h-3 rounded flex-shrink-0"
                       style={{ backgroundColor: isVisible ? obj.color : '#4a5568' }}
                     />
-                    <span className="flex-1 truncate text-xs">{obj.name}</span>
+                    <span className="flex-1 truncate text-xs">{obj.type === ItemType.PANEL ? (obj as PanelObject).title : obj.name}</span>
                     <button
                       onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
                       className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-700 rounded"
@@ -624,7 +665,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
       {deleteCandidateId && category.matcher(state.objects[deleteCandidateId]) && (
         <DeleteConfirmModal
-          objectName={state.objects[deleteCandidateId]?.name || 'Object'}
+          objectName={
+            state.objects[deleteCandidateId]?.type === ItemType.PANEL
+              ? (state.objects[deleteCandidateId] as PanelObject).title
+              : state.objects[deleteCandidateId]?.name || 'Object'
+          }
           onConfirm={() => {
             dispatch({ type: 'DELETE_OBJECT', payload: { id: deleteCandidateId }});
             setDeleteCandidateId(null);
@@ -634,15 +679,206 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       )}
 
       {settingsObjectId && category.matcher(state.objects[settingsObjectId]) && (
-        <ObjectSettingsModal
-          object={state.objects[settingsObjectId]}
-          onClose={() => setSettingsObjectId(null)}
-          onSave={(updatedObj) => {
-            dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
-            setSettingsObjectId(null);
-          }}
-        />
+        <>
+          {state.objects[settingsObjectId]?.type === ItemType.PANEL ? (
+            <PanelSettingsModalInline
+              panel={state.objects[settingsObjectId] as PanelObject}
+              onClose={() => setSettingsObjectId(null)}
+            />
+          ) : (
+            <ObjectSettingsModal
+              object={state.objects[settingsObjectId]}
+              onClose={() => setSettingsObjectId(null)}
+              onSave={(updatedObj) => {
+                dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
+                setSettingsObjectId(null);
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );
+};
+
+// Inline PanelSettingsModal for use in MainMenuContent (same as in UIObjectRenderer)
+const PanelSettingsModalInline: React.FC<{
+  panel: PanelObject;
+  onClose: () => void;
+}> = ({ panel, onClose }) => {
+  const { dispatch } = useGame();
+  const [activeTab, setActiveTab] = React.useState<'general'>('general');
+  const [title, setTitle] = React.useState(panel.title);
+  const [x, setX] = React.useState(panel.x);
+  const [y, setY] = React.useState(panel.y);
+  const [width, setWidth] = React.useState(panel.width);
+  const [height, setHeight] = React.useState(panel.height);
+  const [rotation, setRotation] = React.useState(panel.rotation);
+  const [dualPosition, setDualPosition] = React.useState(panel.dualPosition || false);
+  const [zIndex, setZIndex] = React.useState(panel.zIndex || 1000);
+
+  const handleSave = () => {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: panel.id,
+        title,
+        x,
+        y,
+        width,
+        height,
+        rotation,
+        dualPosition,
+        zIndex
+      }
+    });
+    onClose();
+  };
+
+  const modalContent = (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
+      <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-700">
+          <h3 className="text-lg font-bold text-white">Settings: {panel.title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-700">
+          <button
+            onClick={() => setActiveTab('general')}
+            className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+              activeTab === 'general'
+                ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            <Settings size={16} /> General
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {/* Name */}
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+            />
+          </div>
+
+          {/* Position */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">X Position</label>
+              <input
+                type="number"
+                value={Math.round(x)}
+                onChange={e => setX(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">Y Position</label>
+              <input
+                type="number"
+                value={Math.round(y)}
+                onChange={e => setY(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Size */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">Width</label>
+              <input
+                type="number"
+                value={width}
+                onChange={e => setWidth(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-400 mb-1">Height</label>
+              <input
+                type="number"
+                value={height}
+                onChange={e => setHeight(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Rotation */}
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Rotation (degrees)</label>
+            <input
+              type="number"
+              value={rotation}
+              onChange={e => setRotation(Number(e.target.value))}
+              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+            />
+          </div>
+
+          {/* Z-Index */}
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1">Z-Index (layer order)</label>
+            <input
+              type="number"
+              value={zIndex}
+              onChange={e => setZIndex(Number(e.target.value))}
+              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+            />
+          </div>
+
+          {/* Dual Position Toggle */}
+          <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 border border-slate-700">
+            <label className="text-xs text-gray-300 flex items-center gap-2">
+              <Maximize2 size={12} />
+              Dual Position Mode
+            </label>
+            <button
+              onClick={() => setDualPosition(!dualPosition)}
+              className={`w-10 h-5 rounded-full transition-colors ${
+                dualPosition ? 'bg-green-600' : 'bg-slate-700'
+              }`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                dualPosition ? 'translate-x-5' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-500 -mt-2">
+            When enabled, panel remembers separate positions for collapsed and expanded states
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 p-4 border-t border-slate-700">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
+          >
+            <Check size={16} /> Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modalContent, document.body);
 };
