@@ -187,7 +187,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
   // Card settings functions
   const updateCardSettings = (field: keyof CardSettings, value: any) => {
-    setCardSettings(prev => ({ ...prev, [field]: value }));
+    setCardSettings(prev => {
+      const updated = { ...prev, [field]: value };
+
+      // When card shape changes to SQUARE or CIRCLE, force orientation to VERTICAL
+      if (field === 'cardShape') {
+        if (value === CardShape.SQUARE || value === CardShape.CIRCLE) {
+          updated.cardOrientation = CardOrientation.VERTICAL;
+        }
+      }
+
+      return updated;
+    });
   };
 
   const toggleCardActionButton = (action: ContextAction) => {
@@ -911,13 +922,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     </select>
                   </div>
 
-                  {/* Card Orientation */}
+                  {/* Card Orientation - disabled for SQUARE and CIRCLE shapes */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Card Orientation</label>
                     <select
                       value={cardSettings.cardOrientation ?? CardOrientation.VERTICAL}
                       onChange={(e) => updateCardSettings('cardOrientation', e.target.value as CardOrientation)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      disabled={cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE}
+                      className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${
+                        cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE
+                          ? 'opacity-50 cursor-not-allowed'
+                          : ''
+                      }`}
                     >
                       <option value={CardOrientation.VERTICAL}>Vertical</option>
                       <option value={CardOrientation.HORIZONTAL}>Horizontal</option>

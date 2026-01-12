@@ -578,7 +578,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardActionButtons: ['flip'],
           cardSingleClickAction: undefined,
           cardDoubleClickAction: undefined,
-          cardNamePosition: 'bottom' as const,
+          cardNamePosition: 'none' as const,
         };
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;
@@ -609,7 +609,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardActionButtons: ['flip'],
           cardSingleClickAction: undefined,
           cardDoubleClickAction: undefined,
-          cardNamePosition: 'bottom' as const,
+          cardNamePosition: 'none' as const,
         };
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;

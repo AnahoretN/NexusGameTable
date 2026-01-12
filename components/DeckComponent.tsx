@@ -25,6 +25,8 @@ interface DeckComponentProps {
   setPilesButtonMenu: (menu: { x: number; y: number; deck: DeckType } | null) => void;
   setDeleteCandidateId: (id: string | null) => void;
   executeClickAction: (obj: any, action: string) => void;
+  cursorSlotHasCards: boolean;
+  onDropToDeck?: (deckId: string) => void;
 }
 
 export const DeckComponent: React.FC<DeckComponentProps> = ({
@@ -48,11 +50,13 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   setPilesButtonMenu,
   setDeleteCandidateId,
   executeClickAction,
+  cursorSlotHasCards = false,
+  onDropToDeck,
 }) => {
   const { state } = useGame();
 
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-  const canDropCard = isDraggingCardFromTable && hoveredDeckId === deck.id;
+  const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
 
   // Get top card for showTopCard feature
   const topCard = deck.cardIds.length > 0 ? state.objects[deck.cardIds[0]] as CardType : null;
@@ -141,7 +145,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         const pileSize = pile.size ?? 1;
 
         // Check if dragging a card and hovering over this pile
-        const isHoveringPile = isDraggingCardFromTable && hoveredPileId === pile.id;
+        const isHoveringPile = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredPileId === pile.id;
 
         return (
           <React.Fragment key={pile.id}>
@@ -162,9 +166,9 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             {/* Pile container - keeps normal z-index */}
             <div
               onMouseEnter={() => {
-                // Only allow hover if actively dragging a card from table
+                // Allow hover if dragging card OR if cursor slot has cards
                 const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-                if (draggingFromTable) {
+                if (draggingFromTable || cursorSlotHasCards) {
                   setHoveredPileId(pile.id);
                 }
               }}
@@ -273,10 +277,17 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           data-object-id={deck.id}
           onMouseDown={(e) => isGM && handleMouseDown(e, deck.id)}
           onContextMenu={(e) => handleContextMenu(e, deck)}
+          onMouseUp={(e) => {
+            // Drop cards from cursor slot when releasing mouse over deck
+            if (cursorSlotHasCards && onDropToDeck && hoveredDeckId === deck.id) {
+              e.stopPropagation();
+              onDropToDeck(deck.id);
+            }
+          }}
           onMouseEnter={() => {
-            // Only allow hover if actively dragging a card from table
+            // Allow hover if dragging card OR if cursor slot has cards
             const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-            if (draggingFromTable) {
+            if (draggingFromTable || cursorSlotHasCards) {
               setHoveredDeckId(deck.id);
             }
           }}
@@ -329,7 +340,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         )}
 
         {/* Action buttons on bottom edge - like cards */}
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30 pointer-events-none">
+        {/* Hide buttons when cursor slot has cards */}
+        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 transition-opacity z-30 pointer-events-none ${cursorSlotHasCards ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}>
           {(() => {
             // Define all possible buttons based on actionButtons setting
             const actionButtons = deck.actionButtons || [];
@@ -456,6 +468,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               <button
                 key={btn.key}
                 onClick={(e) => { e.stopPropagation(); btn.action(); }}
+                onMouseDown={(e) => { e.stopPropagation(); }}
                 className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
                 title={btn.title}
               >

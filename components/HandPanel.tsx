@@ -79,13 +79,24 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
     };
   }, []);
 
-  // Get cards in hand for current player
-  const cards = useMemo(() =>
-    Object.values(state.objects).filter(o =>
+  // Get cards in hand for current player, sorted by handCardOrder
+  const cards = useMemo(() => {
+    const player = state.players.find(p => p.id === state.activePlayerId);
+    const handCardOrder = player?.handCardOrder || [];
+
+    // Get all cards in hand for this player
+    const handCards = Object.values(state.objects).filter(o =>
       o.type === 'CARD' && (o as Card).location === 'HAND' && (o as Card).ownerId === state.activePlayerId
-    ) as Card[],
-    [state.objects, state.activePlayerId]
-  );
+    ) as Card[];
+
+    // Sort by handCardOrder (first in order = top-right position)
+    const cardOrderMap = new Map(handCardOrder.map((id, index) => [id, index]));
+    return handCards.sort((a, b) => {
+      const aIndex = cardOrderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = cardOrderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+      return aIndex - bIndex;
+    });
+  }, [state.objects, state.activePlayerId, state.players]);
 
   // Memoized getCardDimensions
   const computeCardDimensions = useCallback((card: Card) => {
@@ -309,16 +320,15 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
 
       if (cards.length === 0) return;
 
-      // Get current hand cards
-      const handCards = Object.values(state.objects).filter(o =>
-        o.type === ItemType.CARD && (o as Card).location === 'HAND' && (o as Card).ownerId === state.activePlayerId
-      ) as Card[];
+      // Get current player's hand card order
+      const player = state.players.find(p => p.id === state.activePlayerId);
+      const currentHandOrder = player?.handCardOrder || [];
 
-      // New card IDs to add at the beginning
+      // New card IDs to add at the beginning (top-right position)
       const newCardIds = cards.map(c => c.id);
 
       // New order: new cards first, then existing cards
-      const newCardOrder = [...newCardIds, ...handCards.map(c => c.id)];
+      const newCardOrder = [...newCardIds, ...currentHandOrder];
 
       // Update hand card order
       dispatch({
@@ -357,7 +367,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
 
     window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     return () => window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
-  }, [dispatch, state.objects, state.activePlayerId]);
+  }, [dispatch, state.objects, state.activePlayerId, state.players]);
 
   return (
     <div
