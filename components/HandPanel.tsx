@@ -1,9 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType } from '../types';
+import { Card, Deck as DeckType, ItemType } from '../types';
 import { Hand, Plus, Minus } from 'lucide-react';
 import { Card as CardComponent } from './Card';
-import { useCardDrag } from '../hooks/useCardDrag';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
 
 interface HandPanelProps {
@@ -14,13 +13,69 @@ interface HandPanelProps {
 
 export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget = false, isCollapsed = false }) => {
   const { state, dispatch } = useGame();
-  const { startDrag } = useCardDrag();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Local drag state for reorder
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Long-press state for adding cards to cursor slot
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressCardRef = useRef<{ cardId: string; startX: number; startY: number } | null>(null);
+
+  // Local state for cursor slot hover (purple ring effect)
+  const [isCursorOverHand, setIsCursorOverHand] = useState(false);
+
+  // Listen for cursor slot move events to show purple ring when cursor with cards is over hand panel
+  useEffect(() => {
+    const handleCursorSlotMove = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        x: number;
+        y: number;
+        isOverMainMenu: boolean;
+        hasCards: boolean;
+      }>;
+
+      const { x, y, hasCards } = customEvent.detail;
+
+      if (!hasCards) {
+        setIsCursorOverHand(false);
+        return;
+      }
+
+      // Check if cursor is over hand panel using container's bounding rect
+      const container = containerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+        setIsCursorOverHand(isOver);
+      } else {
+        setIsCursorOverHand(false);
+      }
+    };
+
+    const handleCursorSlotDrop = () => {
+      setIsCursorOverHand(false);
+    };
+
+    window.addEventListener('cursor-slot-move', handleCursorSlotMove);
+    window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
+
+    return () => {
+      window.removeEventListener('cursor-slot-move', handleCursorSlotMove);
+      window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
+    };
+  }, []);
+
+  // Cleanup long-press timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
 
   // Get cards in hand for current player
   const cards = useMemo(() =>
@@ -62,8 +117,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
     setDisplayScale(prev => Math.max(0.5, Math.min(2, prev + delta)));
   };
 
-  // Handle card mouse down - start drag
-  const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number) => {
+  // Handle card mouse down - start reorder drag or add to cursor slot with Shift or long-press
+  const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number, _cardElement: HTMLDivElement | null) => {
     // Only left click
     if (e.button !== 0) return;
 
@@ -71,18 +126,75 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
 
+    // Shift+click: add to cursor slot immediately
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+        detail: { cardId, clientX: e.clientX, clientY: e.clientY }
+      }));
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
 
+    // Start long-press timer (500ms) - if completed, add card to cursor slot
+    longPressCardRef.current = {
+      cardId,
+      startX: e.clientX,
+      startY: e.clientY
+    };
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      if (longPressCardRef.current) {
+        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+          detail: {
+            cardId: longPressCardRef.current.cardId,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            source: 'hold' // Mark as coming from long-press, so it drops on mouseup
+          }
+        }));
+        longPressCardRef.current = null;
+        longPressTimerRef.current = null;
+        setDragIndex(null); // Cancel reorder drag
+      }
+    }, 250); // 250ms long-press
+
     dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     setDragIndex(index);
-
-    // Start global drag
-    startDrag(cardId, 'hand', e.nativeEvent);
-  }, [startDrag]);
+  }, []);
 
   // Handle mouse move for reorder preview
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    // Check for long-press movement - if mouse moves while holding on a card, add to slot immediately
+    if (longPressCardRef.current) {
+      const moveThreshold = 5; // pixels
+      const dx = e.clientX - longPressCardRef.current.startX;
+      const dy = e.clientY - longPressCardRef.current.startY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance >= moveThreshold) {
+        // Mouse moved enough - cancel timer and add to slot immediately
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+          detail: {
+            cardId: longPressCardRef.current.cardId,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            source: 'hold' // Mark as coming from drag, so it drops on mouseup
+          }
+        }));
+        longPressCardRef.current = null;
+        setDragIndex(null); // Cancel reorder drag
+        return;
+      }
+    }
+
     if (dragIndex === null) return;
 
     // Check if we moved enough to consider it a drag
@@ -119,6 +231,13 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
 
   // Handle mouse up to complete reorder or drop to tabletop
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    // Clear long-press timer if mouse is released before timeout
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressCardRef.current = null;
+
     if (dragIndex === null) return;
 
     // Check if we're dropping outside hand panel (to tabletop)
@@ -171,98 +290,85 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
     };
   }, [dragIndex, handleMouseMove, handleMouseUp]);
 
-  // Listen for drag end events to handle drops to tabletop
+  // Listen for cursor slot drop events to add cards to hand
   useEffect(() => {
-    const handleDragEnd = (e: Event) => {
+    const handleCursorSlotDrop = (e: Event) => {
       const customEvent = e as CustomEvent<{
-        wasDragging: boolean;
-        cardId: string | null;
-        source: 'hand' | 'tabletop' | null;
-        x: number;
-        y: number;
+        items: Array<{
+          id: string;
+          type: string;
+          name?: string;
+          frontFaceUrl?: string;
+          backFaceUrl?: string;
+          deckId?: string;
+          width?: number;
+          height?: number;
+          [key: string]: any;
+        }>;
       }>;
 
-      if (customEvent.detail.wasDragging && customEvent.detail.source === 'hand') {
-        const cardId = customEvent.detail.cardId;
-        if (cardId) {
-          // Check if drop was outside hand panel (on tabletop)
-          const tabletop = document.querySelector('[data-tabletop="true"]');
-          if (tabletop) {
-            const rect = tabletop.getBoundingClientRect();
-            const x = customEvent.detail.x;
-            const y = customEvent.detail.y;
+      const items = customEvent.detail.items;
+      if (!items || items.length === 0) return;
 
-            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-              // Play card to tabletop
-              dispatch({
-                type: 'PLAY_CARD',
-                payload: {
-                  cardId,
-                  x: (x - rect.left) / 1, // Will be adjusted by tabletop
-                  y: (y - rect.top) / 1,
-                }
-              });
-            }
-          }
-        }
-      }
+      // Filter only cards (tokens can't be in hand)
+      const cards = items.filter(item => item.type === ItemType.CARD);
 
-      // Handle drop from tabletop to hand
-      if (customEvent.detail.wasDragging && customEvent.detail.source === 'tabletop') {
-        const cardId = customEvent.detail.cardId;
-        if (cardId) {
-          // Check if drop was over hand panel using container's bounding rect
-          const x = customEvent.detail.x;
-          const y = customEvent.detail.y;
-          let isOver = false;
+      if (cards.length === 0) return;
 
-          const container = containerRef.current;
-          if (container) {
-            const rect = container.getBoundingClientRect();
-            isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-          }
+      // Get current hand cards
+      const handCards = Object.values(state.objects).filter(o =>
+        o.type === ItemType.CARD && (o as Card).location === 'HAND' && (o as Card).ownerId === state.activePlayerId
+      ) as Card[];
 
-          if (isOver) {
-            // Add card to hand at first position
-            const card = state.objects[cardId] as Card;
-            if (card && card.type === 'CARD') {
-              // Get current hand cards
-              const handCards = Object.values(state.objects).filter(o =>
-                o.type === 'CARD' && (o as Card).location === 'HAND' && (o as Card).ownerId === state.activePlayerId
-              ) as Card[];
+      // New card IDs to add at the beginning
+      const newCardIds = cards.map(c => c.id);
 
-              // New order: new card first, then existing cards
-              const newCardOrder = [cardId, ...handCards.map(c => c.id)];
+      // New order: new cards first, then existing cards
+      const newCardOrder = [...newCardIds, ...handCards.map(c => c.id)];
 
-              dispatch({
-                type: 'UPDATE_HAND_CARD_ORDER',
-                payload: { playerId: state.activePlayerId, cardOrder: newCardOrder }
-              });
+      // Update hand card order
+      dispatch({
+        type: 'UPDATE_HAND_CARD_ORDER',
+        payload: { playerId: state.activePlayerId, cardOrder: newCardOrder }
+      });
 
-              // Update card location to hand
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: {
-                  id: cardId,
-                  location: 'HAND' as any,
-                  ownerId: state.activePlayerId,
-                  isOnTable: false,
-                  faceUp: true
-                } as any
-              });
-            }
-          }
-        }
-      }
+      // Add each card to the game state with hand location
+      cards.forEach(card => {
+        const cardPayload: Card = {
+          id: card.id,
+          type: ItemType.CARD,
+          x: 0, // Cards in hand don't need world coordinates
+          y: 0,
+          rotation: 0,
+          content: card.content || card.frontFaceUrl || '', // Use content (main image URL) first
+          name: card.name || 'Card',
+          locked: false,
+          location: 'HAND' as any,
+          ownerId: state.activePlayerId,
+          isOnTable: false,
+          faceUp: true,
+          ...(card.frontFaceUrl && { frontFaceUrl: card.frontFaceUrl }),
+          ...(card.backFaceUrl && { backFaceUrl: card.backFaceUrl }),
+          ...(card.deckId && { deckId: card.deckId }),
+          ...(card.width && { width: card.width }),
+          ...(card.height && { height: card.height }),
+        };
+
+        dispatch({
+          type: 'ADD_OBJECT',
+          payload: cardPayload
+        });
+      });
     };
 
-    window.addEventListener('card-drag-end', handleDragEnd);
-    return () => window.removeEventListener('card-drag-end', handleDragEnd);
+    window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
+    return () => window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
   }, [dispatch, state.objects, state.activePlayerId]);
 
   return (
     <div
       ref={containerRef}
+      data-hand-panel="true"
       className="h-full flex flex-col p-1 transition-all"
       style={{ width }}
     >
@@ -297,7 +403,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
       {!isCollapsed && (
         <div className="flex-1 overflow-y-scroll custom-scrollbar relative">
           {/* Purple ring overlay - rendered separately with high z-index */}
-          {isDragTarget && (
+          {(isDragTarget || isCursorOverHand) && (
             <div className="absolute inset-0 m-1 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
           )}
           {/* Inner content container */}
@@ -335,16 +441,10 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = 286, isDragTarget 
                     width: cardWidth,
                     height: cardHeight,
                     zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
-                    opacity: isDragging ? 0.5 : 1,
                     transform: isDragOver ? 'scale(1.05)' : undefined,
                   }}
-                  onMouseDown={(e) => handleCardMouseDown(e, card.id, index)}
+                  onMouseDown={(e) => handleCardMouseDown(e, card.id, index, e.currentTarget as HTMLDivElement)}
                 >
-                  {/* Drag handle indicator */}
-                  {isDragging && (
-                    <div className="absolute inset-0 bg-purple-500/20 rounded-lg pointer-events-none z-10" />
-                  )}
-
                   <CardComponent
                     card={card}
                     overrideWidth={cardWidth}

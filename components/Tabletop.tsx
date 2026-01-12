@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType, PanelType } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -12,23 +12,19 @@ import { TopDeckModal } from './TopDeckModal';
 import { DeckComponent } from './DeckComponent';
 import { UIObjectRenderer } from './UIObjectRenderer';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
-import { useCardDrag } from '../hooks/useCardDrag';
 
-type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | null;
-
-// Board component with resize handles
+// Board component with resize handle (corner only, like panels)
 interface BoardWithResizeProps {
-    token: TokenType;
+    token: TokenType | BoardType;
     obj: TableObject;
     isOwner: boolean;
     isDragging: boolean;
     isResizing: boolean;
-    resizeHandle: ResizeHandle;
     canResize: boolean;
     zoom: number;
-    getResizeCursor: (handle: ResizeHandle | null) => string;
     onMouseDown: (e: React.MouseEvent) => void;
     onContextMenu: (e: React.MouseEvent) => void;
+    onResizeStart: (e: React.MouseEvent) => void;
     gridSize: number;
     hexR: number;
     hexW: number;
@@ -41,86 +37,48 @@ const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     isOwner,
     isDragging,
     isResizing,
-    resizeHandle,
     canResize,
     zoom,
-    getResizeCursor,
     onMouseDown,
     onContextMenu,
+    onResizeStart,
     gridSize,
     hexR,
     hexW,
     hexPath,
 }) => {
-    const [hoverHandle, setHoverHandle] = useState<ResizeHandle>(null);
+    const [isHoveringCorner, setIsHoveringCorner] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
-        if (!containerRef.current) return;
+        if (!containerRef.current || !canResize) return;
         const rect = containerRef.current.getBoundingClientRect();
-        // Get position relative to the visible element (can be negative if outside)
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+        const handleSize = 20;
 
-        // Convert to board coordinates (0 to obj.width/height inside the element)
-        // The element might be scaled by zoom, so we need to account for that
-        const objWidth = obj.width ?? 100;
-        const objHeight = obj.height ?? 100;
-        const scaleX = objWidth / rect.width;
-        const scaleY = objHeight / rect.height;
-        const localX = mouseX * scaleX;
-        const localY = mouseY * scaleY;
+        // Check if hovering near bottom-right corner
+        const nearCorner = e.clientX >= rect.right - handleSize &&
+                          e.clientY >= rect.bottom - handleSize &&
+                          e.clientX <= rect.right + 10 &&
+                          e.clientY <= rect.bottom + 10;
 
-        // Check which edge we're on - threshold extends beyond the element
-        // to allow grabbing from outside, centered on the border line
-        const edgeThreshold = 6 / zoom;
-        const leftEdge = localX < edgeThreshold;
-        const rightEdge = localX > objWidth - edgeThreshold;
-        const topEdge = localY < edgeThreshold;
-        const bottomEdge = localY > objHeight - edgeThreshold;
-
-        let handle: ResizeHandle = null;
-        if (leftEdge && topEdge) handle = 'nw';
-        else if (rightEdge && topEdge) handle = 'ne';
-        else if (leftEdge && bottomEdge) handle = 'sw';
-        else if (rightEdge && bottomEdge) handle = 'se';
-        else if (topEdge) handle = 'n';
-        else if (bottomEdge) handle = 's';
-        else if (leftEdge) handle = 'w';
-        else if (rightEdge) handle = 'e';
-
-        setHoverHandle(canResize ? handle : null);
-    }, [canResize, obj.width, obj.height, zoom]);
+        setIsHoveringCorner(nearCorner);
+    }, [canResize]);
 
     const handleMouseLeave = useCallback(() => {
-        setHoverHandle(null);
+        setIsHoveringCorner(false);
     }, []);
 
     const showGrid = token.gridType && token.gridType !== GridType.NONE;
 
     // Determine cursor based on hover state and action state
     const getCursor = useCallback(() => {
-        if (isResizing && resizeHandle) {
-            return getResizeCursor(resizeHandle);
-        }
+        if (isResizing) return 'nwse-resize';
         if (isDragging) return 'grabbing';
-        if (hoverHandle && canResize) return getResizeCursor(hoverHandle);
+        if (isHoveringCorner && canResize) return 'nwse-resize';
         return 'grab';
-    }, [hoverHandle, canResize, isDragging, isResizing, resizeHandle, getResizeCursor]);
+    }, [isHoveringCorner, canResize, isDragging, isResizing]);
 
     const cursor = getCursor();
-
-    // Edge highlight styles - centered on the border (2px thick, so offset by 1px)
-    const edgeStyle = {
-        position: 'absolute' as const,
-        backgroundColor: 'rgba(250, 204, 21, 0.6)',
-        transition: 'none',
-        pointerEvents: 'none' as const,
-    };
-
-    // Edge thickness is 6/zoom, centered on the 2px border
-    // So we position it at -1px offset (half of border) and extend by half thickness on each side
-    const edgeThickness = 6 / zoom;
 
     return (
         <div
@@ -135,8 +93,8 @@ const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 top: obj.y,
                 width: obj.width,
                 height: obj.height,
-                backgroundColor: obj.content ? 'transparent' : (obj.color || '#34495e'),
-                backgroundImage: obj.content ? `url(${obj.content})` : undefined,
+                backgroundColor: (obj as any).content ? 'transparent' : ((obj as any).color || '#34495e'),
+                backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
                 border: '2px solid white',
@@ -164,27 +122,19 @@ const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 </svg>
             )}
 
-            {/* Resize edge highlights - shown when hovering over edges */}
-            {/* Centered on the border line (border is 2px, positioned at edge) */}
-            {canResize && hoverHandle && !isDragging && !isResizing && (
-                <>
-                    {/* Top edge - positioned above the element, centered on border */}
-                    {(hoverHandle === 'n' || hoverHandle === 'nw' || hoverHandle === 'ne') && (
-                        <div style={{ ...edgeStyle, top: -edgeThickness/2, left: 0, right: 0, height: edgeThickness }} />
-                    )}
-                    {/* Bottom edge - positioned below the element, centered on border */}
-                    {(hoverHandle === 's' || hoverHandle === 'sw' || hoverHandle === 'se') && (
-                        <div style={{ ...edgeStyle, bottom: -edgeThickness/2, left: 0, right: 0, height: edgeThickness }} />
-                    )}
-                    {/* Left edge - positioned left of the element, centered on border */}
-                    {(hoverHandle === 'w' || hoverHandle === 'nw' || hoverHandle === 'sw') && (
-                        <div style={{ ...edgeStyle, left: -edgeThickness/2, top: 0, bottom: 0, width: edgeThickness }} />
-                    )}
-                    {/* Right edge - positioned right of the element, centered on border */}
-                    {(hoverHandle === 'e' || hoverHandle === 'ne' || hoverHandle === 'se') && (
-                        <div style={{ ...edgeStyle, right: -edgeThickness/2, top: 0, bottom: 0, width: edgeThickness }} />
-                    )}
-                </>
+            {/* Resize handle - bottom-right corner */}
+            {canResize && !isDragging && (
+                <div
+                    onMouseDown={onResizeStart}
+                    className={`absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize transition-opacity ${
+                        isHoveringCorner || isResizing ? 'opacity-100' : 'opacity-75'
+                    }`}
+                    style={{
+                        background: 'linear-gradient(135deg, transparent 50%, rgba(147, 51, 234, 0.8) 50%)',
+                        borderTopLeftRadius: '4px',
+                        pointerEvents: 'auto',
+                    }}
+                />
             )}
 
         </div>
@@ -193,7 +143,6 @@ const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch } = useGame();
-  const { startDrag: startCardDrag } = useCardDrag();
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(0.8);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -204,13 +153,26 @@ export const Tabletop: React.FC = () => {
 
   // Resizing state for boards
   const [resizingId, setResizingId] = useState<string | null>(null);
-  const [resizeHandle, setResizeHandle] = useState<ResizeHandle>(null);
-  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number; objX: number; objY: number } | null>(null);
+  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   // Free rotation state
   const [freeRotatingId, setFreeRotatingId] = useState<string | null>(null);
   const [rotateStartAngle, setRotateStartAngle] = useState<number>(0);
   const [rotateStartMouse, setRotateStartMouse] = useState<{ x: number; y: number } | null>(null);
+
+  // Cursor slot state - holds cards and tokens picked up with Shift+click (max 100 items)
+  // Stores full object data and removes objects from their original position
+  const [cursorSlot, setCursorSlot] = useState<(CardType | TokenType)[]>([]);
+  const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
+
+  // Track how items were added to cursor slot:
+  // - 'shift' = Shift+click (drop only on click, not on mouseup)
+  // - 'hold' = Long press or drag (drop on mouseup)
+  const [cursorSlotSource, setCursorSlotSource] = useState<'shift' | 'hold' | null>(null);
+
+  // Long-press state for cards/tokens - adds to cursor slot after 500ms hold
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressItemRef = useRef<{ id: string; item: TableObject; startX: number; startY: number } | null>(null);
 
   // Store the offset between cursor and object's top-left corner when dragging starts
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
@@ -236,6 +198,7 @@ export const Tabletop: React.FC = () => {
   const resizingIdRef = useRef<string | null>(null);
   const draggingPileRef = useRef<{ pile: CardPile; deck: DeckType } | null>(null);
   const freeRotatingIdRef = useRef<string | null>(null);
+  const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
 
   // Update refs when state changes
   useEffect(() => { draggingIdRef.current = draggingId; }, [draggingId]);
@@ -243,9 +206,64 @@ export const Tabletop: React.FC = () => {
   useEffect(() => { resizingIdRef.current = resizingId; }, [resizingId]);
   useEffect(() => { draggingPileRef.current = draggingPile; }, [draggingPile]);
   useEffect(() => { freeRotatingIdRef.current = freeRotatingId; }, [freeRotatingId]);
+  useEffect(() => { cursorSlotRef.current = cursorSlot; }, [cursorSlot]);
+
+  // Listen for add-to-cursor-slot events from other components (e.g., HandPanel)
+  useEffect(() => {
+    const handleAddToSlot = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        cardId: string;
+        clientX: number;
+        clientY: number;
+        source?: 'shift' | 'hold';
+      }>;
+      const { cardId, clientX, clientY, source = 'shift' } = customEvent.detail;
+      const item = state.objects[cardId];
+      if (item && cursorSlot.length < 100) {
+        // Set source based on how the item was added (only if slot was empty before)
+        if (cursorSlot.length === 0) {
+          setCursorSlotSource(source);
+        }
+
+        // Deep clone to preserve all properties (especially content/image URL)
+        let itemClone: TableObject;
+
+        if (item.type === ItemType.CARD) {
+          const card = item as CardType;
+          itemClone = {
+            id: card.id,
+            type: ItemType.CARD,
+            name: card.name,
+            content: card.content, // Image URL - this is the main image
+            frontFaceUrl: (card as any).frontFaceUrl,
+            backFaceUrl: (card as any).backFaceUrl,
+            deckId: card.deckId,
+            width: card.width,
+            height: card.height,
+            x: card.x,
+            y: card.y,
+            rotation: card.rotation,
+            location: card.location,
+            faceUp: card.faceUp,
+            ownerId: card.ownerId,
+            isOnTable: card.isOnTable,
+            locked: card.locked,
+          } as CardType;
+        } else {
+          itemClone = { ...item } as TokenType;
+        }
+
+        setCursorSlot(prev => [...prev, itemClone]);
+        dispatch({ type: 'DELETE_OBJECT', payload: { id: cardId } });
+        setCursorPosition({ x: clientX, y: clientY });
+      }
+    };
+
+    window.addEventListener('add-to-cursor-slot', handleAddToSlot);
+    return () => window.removeEventListener('add-to-cursor-slot', handleAddToSlot);
+  }, [cursorSlot.length, dispatch, state.objects]);
 
   // Track card being dragged from hand (via main menu)
-  const [draggingCardFromHand, setDraggingCardFromHand] = useState<CardType | null>(null);
   const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
   const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
 
@@ -290,10 +308,6 @@ export const Tabletop: React.FC = () => {
   const hoveredPileRef = useRef<string | null>(null);
 
   // Keep refs in sync with state
-  useEffect(() => {
-    draggingCardRef.current = draggingCardFromHand;
-  }, [draggingCardFromHand]);
-
   useEffect(() => {
     hoveredDeckRef.current = hoveredDeckId;
   }, [hoveredDeckId]);
@@ -369,268 +383,6 @@ export const Tabletop: React.FC = () => {
   const activePlayer = state.players.find(p => p.id === state.activePlayerId);
   const isGM = !!activePlayer?.isGM;
 
-  // Listen for drag events from main menu (cards from hand)
-  useEffect(() => {
-    const handleDragStart = (e: Event) => {
-      const customEvent = e as CustomEvent<{ cardId: string; fromSearchWindow?: boolean }>;
-      // Ignore drags from search window - they handle their own drop logic
-      if (customEvent.detail.fromSearchWindow) return;
-
-      const card = stateRef.current.objects[customEvent.detail.cardId] as CardType;
-      if (card && card.type === ItemType.CARD) {
-        setDraggingCardFromHand(card);
-      }
-    };
-
-    const handleDragEnd = (e: Event) => {
-      const customEvent = e as CustomEvent<{ cardId: string; clientX: number; clientY: number; fromSearchWindow?: boolean }>;
-      // Ignore drags from search window - they handle their own drop logic
-      if (customEvent.detail.fromSearchWindow) return;
-
-      // Clear dragging card from hand
-      setDraggingCardFromHand(null);
-
-      const { cardId, clientX, clientY } = customEvent.detail;
-
-      // Get current card from state (it may have been updated by UPDATE_OBJECT)
-      const card = stateRef.current.objects[cardId] as CardType;
-
-      if (!card || card.type !== ItemType.CARD) {
-        return;
-      }
-
-      // Find if cursor is over any visible pile
-      type PileInfo = { pile: CardPile; deck: DeckType; pileRect: { left: number; top: number; right: number; bottom: number } };
-      let pileInfo: PileInfo | null = null;
-
-      for (const obj of Object.values(stateRef.current.objects)) {
-        if (obj.type === ItemType.DECK) {
-          const deck = obj as DeckType;
-          const visiblePiles = deck.piles?.filter(p => p.visible) || [];
-
-          for (const pile of visiblePiles) {
-            // Calculate pile position (same logic as in render)
-            const pileSize = pile.size ?? 1;
-            let pileX: number, pileY: number;
-
-            if (pile.position === 'free') {
-              pileX = pile.x ?? 0;
-              pileY = pile.y ?? 0;
-            } else if (pile.position === 'right') {
-              pileX = obj.x + obj.width + 4;
-              pileY = obj.y;
-            } else if (pile.position === 'left') {
-              pileX = obj.x - obj.width - 4;
-              pileY = obj.y;
-            } else if (pile.position === 'top') {
-              pileX = obj.x;
-              pileY = obj.y - obj.height - 4;
-            } else if (pile.position === 'bottom') {
-              pileX = obj.x;
-              pileY = obj.y + obj.height + 4;
-            } else {
-              pileX = obj.x;
-              pileY = obj.y;
-            }
-
-            // Convert to screen coordinates
-            const currentViewTransform = stateRef.current.viewTransform;
-            const screenX = pileX * currentViewTransform.zoom + currentViewTransform.offset.x;
-            const screenY = pileY * currentViewTransform.zoom + currentViewTransform.offset.y;
-            const screenWidth = obj.width * pileSize * currentViewTransform.zoom;
-            const screenHeight = obj.height * pileSize * currentViewTransform.zoom;
-
-            // Check if cursor is within pile bounds
-            if (clientX >= screenX && clientX <= screenX + screenWidth &&
-                clientY >= screenY && clientY <= screenY + screenHeight) {
-              pileInfo = { pile, deck, pileRect: { left: screenX, top: screenY, right: screenX + screenWidth, bottom: screenY + screenHeight } };
-              break; // Found pile, stop searching
-            }
-          }
-          if (pileInfo) break; // Found pile in this deck, stop searching
-        }
-      }
-
-      if (pileInfo) {
-        dispatch({
-          type: 'ADD_CARD_TO_PILE',
-          payload: { cardId: card.id, pileId: pileInfo.pile.id, deckId: pileInfo.deck.id }
-        });
-        return;
-      }
-
-      // Check if dropping on a deck (original logic)
-      let foundDeck = null;
-      Object.values(stateRef.current.objects).forEach(obj => {
-        if (obj.type === ItemType.DECK) {
-          const currentViewTransform = stateRef.current.viewTransform;
-          const screenX = obj.x * currentViewTransform.zoom + currentViewTransform.offset.x;
-          const screenY = obj.y * currentViewTransform.zoom + currentViewTransform.offset.y;
-          const screenWidth = obj.width * currentViewTransform.zoom;
-          const screenHeight = obj.height * currentViewTransform.zoom;
-
-          if (clientX >= screenX && clientX <= screenX + screenWidth &&
-              clientY >= screenY && clientY <= screenY + screenHeight) {
-            foundDeck = obj.id;
-          }
-        }
-      });
-
-      if (foundDeck) {
-        dispatch({
-          type: 'ADD_CARD_TO_TOP_OF_DECK',
-          payload: { cardId: card.id, deckId: foundDeck }
-        });
-      }
-    };
-
-    // Handle card drag start from hand
-    const handleCardDragStart = (e: Event) => {
-      const customEvent = e as CustomEvent<{
-        cardId: string | null;
-        source: 'hand' | 'tabletop' | null;
-      }>;
-
-      if (customEvent.detail.source !== 'hand') return;
-      if (!customEvent.detail.cardId) return;
-
-      const card = stateRef.current.objects[customEvent.detail.cardId] as CardType;
-      if (card && card.type === ItemType.CARD) {
-        setDraggingCardFromHand(card);
-      }
-    };
-
-    // Handle card drag from hand using useCardDrag hook
-    const handleCardDragEnd = (e: Event) => {
-      const customEvent = e as CustomEvent<{
-        wasDragging: boolean;
-        cardId: string | null;
-        source: 'hand' | 'tabletop' | null;
-        x: number;
-        y: number;
-      }>;
-
-      // Always clear dragging card from hand when drag ends
-      setDraggingCardFromHand(null);
-
-      if (!customEvent.detail.wasDragging || customEvent.detail.source !== 'hand') return;
-      if (!customEvent.detail.cardId) return;
-
-      const { cardId, x: clientX, y: clientY } = customEvent.detail;
-
-      // Get current card from state
-      const card = stateRef.current.objects[cardId] as CardType;
-      if (!card || card.type !== ItemType.CARD) return;
-
-      // Find if cursor is over any visible pile
-      type PileInfo = { pile: CardPile; deck: DeckType };
-      let pileInfo: PileInfo | null = null;
-
-      for (const obj of Object.values(stateRef.current.objects)) {
-        if (obj.type === ItemType.DECK) {
-          const deck = obj as DeckType;
-          const visiblePiles = deck.piles?.filter(p => p.visible) || [];
-
-          for (const pile of visiblePiles) {
-            const pileSize = pile.size ?? 1;
-            let pileX: number, pileY: number;
-
-            if (pile.position === 'free') {
-              pileX = pile.x ?? 0;
-              pileY = pile.y ?? 0;
-            } else if (pile.position === 'right') {
-              pileX = obj.x + obj.width + 4;
-              pileY = obj.y;
-            } else if (pile.position === 'left') {
-              pileX = obj.x - obj.width - 4;
-              pileY = obj.y;
-            } else if (pile.position === 'top') {
-              pileX = obj.x;
-              pileY = obj.y - obj.height - 4;
-            } else if (pile.position === 'bottom') {
-              pileX = obj.x;
-              pileY = obj.y + obj.height + 4;
-            } else {
-              pileX = obj.x;
-              pileY = obj.y;
-            }
-
-            // Convert to screen coordinates
-            const currentViewTransform = stateRef.current.viewTransform;
-            const screenX = pileX * currentViewTransform.zoom + currentViewTransform.offset.x;
-            const screenY = pileY * currentViewTransform.zoom + currentViewTransform.offset.y;
-            const screenWidth = obj.width * pileSize * currentViewTransform.zoom;
-            const screenHeight = obj.height * pileSize * currentViewTransform.zoom;
-
-            // Check if cursor is within pile bounds
-            if (clientX >= screenX && clientX <= screenX + screenWidth &&
-                clientY >= screenY && clientY <= screenY + screenHeight) {
-              pileInfo = { pile, deck };
-              break;
-            }
-          }
-          if (pileInfo) break;
-        }
-      }
-
-      if (pileInfo) {
-        dispatch({
-          type: 'ADD_CARD_TO_PILE',
-          payload: { cardId, pileId: pileInfo.pile.id, deckId: pileInfo.deck.id }
-        });
-        return;
-      }
-
-      // Check if dropping on a deck
-      let foundDeck: string | null = null;
-      Object.values(stateRef.current.objects).forEach(obj => {
-        if (obj.type === ItemType.DECK) {
-          const currentViewTransform = stateRef.current.viewTransform;
-          const screenX = obj.x * currentViewTransform.zoom + currentViewTransform.offset.x;
-          const screenY = obj.y * currentViewTransform.zoom + currentViewTransform.offset.y;
-          const screenWidth = obj.width * currentViewTransform.zoom;
-          const screenHeight = obj.height * currentViewTransform.zoom;
-
-          if (clientX >= screenX && clientX <= screenX + screenWidth &&
-              clientY >= screenY && clientY <= screenY + screenHeight) {
-            foundDeck = obj.id;
-          }
-        }
-      });
-
-      if (foundDeck) {
-        dispatch({
-          type: 'ADD_CARD_TO_TOP_OF_DECK',
-          payload: { cardId, deckId: foundDeck }
-        });
-        return;
-      }
-
-      // Otherwise, play card to table at drop position
-      // Convert screen coordinates to world coordinates
-      const currentViewTransform = stateRef.current.viewTransform;
-      const worldX = (clientX - currentViewTransform.offset.x) / currentViewTransform.zoom;
-      const worldY = (clientY - currentViewTransform.offset.y) / currentViewTransform.zoom;
-
-      dispatch({
-        type: 'PLAY_CARD',
-        payload: { cardId, x: worldX, y: worldY }
-      });
-    };
-
-    window.addEventListener('main-menu-drag-start', handleDragStart as EventListener);
-    window.addEventListener('main-menu-drag-end', handleDragEnd as EventListener);
-    window.addEventListener('card-drag-start', handleCardDragStart);
-    window.addEventListener('card-drag-end', handleCardDragEnd);
-
-    return () => {
-      window.removeEventListener('main-menu-drag-start', handleDragStart as EventListener);
-      window.removeEventListener('main-menu-drag-end', handleDragEnd as EventListener);
-      window.removeEventListener('card-drag-start', handleCardDragStart);
-      window.removeEventListener('card-drag-end', handleCardDragEnd);
-    };
-  }, [dispatch]);
-
   // --- Grid Snapping Logic ---
   const getSnappedCoordinates = (cursorX: number, cursorY: number, objects: Record<string, TableObject>, currentDraggingId: string | null): { x: number, y: number } => {
       const draggingObj = objects[currentDraggingId || ''];
@@ -698,7 +450,7 @@ export const Tabletop: React.FC = () => {
 
               const collisionThreshold = size * 0.4;
               const existingItems = Object.values(objects).filter(o => {
-                  if (o.id === currentDraggingId || !o.isOnTable || o.locked) return false;
+                  if (o.id === currentDraggingId || !(o as any).isOnTable || o.locked) return false;
                   const oWidth = o.width ?? 100;
                   const oHeight = o.height ?? 100;
                   const oCenterX = o.x + (oWidth / 2);
@@ -752,38 +504,7 @@ export const Tabletop: React.FC = () => {
     }, intervalTime);
   };
 
-  // Check if cursor is near the edge of a board for resize
-  const getResizeHandle = useCallback((cursorX: number, cursorY: number, obj: TokenType): ResizeHandle => {
-    // Border is 2px, so threshold is 6px (3x wider than border), scaled by zoom
-    const edgeThreshold = 6 / zoom;
-    const leftEdge = Math.abs(cursorX - obj.x) < edgeThreshold;
-    const rightEdge = Math.abs(cursorX - (obj.x + obj.width)) < edgeThreshold;
-    const topEdge = Math.abs(cursorY - obj.y) < edgeThreshold;
-    const bottomEdge = Math.abs(cursorY - (obj.y + obj.height)) < edgeThreshold;
-
-    if (leftEdge && topEdge) return 'nw';
-    if (rightEdge && topEdge) return 'ne';
-    if (leftEdge && bottomEdge) return 'sw';
-    if (rightEdge && bottomEdge) return 'se';
-    if (topEdge) return 'n';
-    if (bottomEdge) return 's';
-    if (leftEdge) return 'w';
-    if (rightEdge) return 'e';
-    return null;
-  }, [zoom]);
-
-  // Get cursor style based on resize handle
-  const getResizeCursor = (handle: ResizeHandle | null): string => {
-    switch (handle) {
-      case 'n': case 's': return 'ns-resize';
-      case 'e': case 'w': return 'ew-resize';
-      case 'ne': case 'sw': return 'nesw-resize';
-      case 'nw': case 'se': return 'nwse-resize';
-      default: return 'grab';
-    }
-  };
-
-  const handleResizeStart = (e: React.MouseEvent, id: string, handle: ResizeHandle) => {
+  const handleResizeStart = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (contextMenu) setContextMenu(null);
 
@@ -791,14 +512,11 @@ export const Tabletop: React.FC = () => {
     if (!obj || obj.locked) return;
 
     setResizingId(id);
-    setResizeHandle(handle);
     setResizeStart({
       x: e.clientX,
       y: e.clientY,
       width: obj.width ?? 100,
       height: obj.height ?? 100,
-      objX: obj.x,
-      objY: obj.y,
     });
     dragStartRef.current = { x: e.clientX, y: e.clientY };
   };
@@ -821,7 +539,7 @@ export const Tabletop: React.FC = () => {
         dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
         break;
       case 'rotateCounterClockwise':
-        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -(obj.rotationStep ?? 45) } });
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -((obj as any).rotationStep ?? 45) } });
         break;
       case 'freeRotate':
         setFreeRotatingId(obj.id);
@@ -1160,15 +878,262 @@ export const Tabletop: React.FC = () => {
     }
   }, [dispatch, state.activePlayerId, state.objects]);
 
+  // Add object to cursor slot (Shift+click or long-press on card/token)
+  const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift') => {
+    if (cursorSlot.length >= 100) return; // Max 100 items in slot
+
+    // Set source based on how the item was added (only if slot was empty before)
+    if (cursorSlot.length === 0) {
+      setCursorSlotSource(source);
+    }
+
+    // Clone the item to store it in the slot - deep copy to preserve all properties
+    let itemClone: TableObject;
+
+    if (item.type === ItemType.CARD) {
+      const card = item as CardType;
+      itemClone = {
+        id: card.id,
+        type: ItemType.CARD,
+        name: card.name,
+        content: card.content, // Image URL - this is the main image
+        frontFaceUrl: (card as any).frontFaceUrl,
+        backFaceUrl: (card as any).backFaceUrl,
+        deckId: card.deckId,
+        width: card.width,
+        height: card.height,
+        x: card.x,
+        y: card.y,
+        rotation: card.rotation,
+        location: card.location,
+        faceUp: card.faceUp,
+        ownerId: card.ownerId,
+        isOnTable: card.isOnTable,
+        locked: card.locked,
+      } as CardType;
+    } else {
+      itemClone = { ...item } as TokenType;
+    }
+
+    setCursorSlot(prev => [...prev, itemClone]);
+
+    // Remove the item from the game state
+    dispatch({ type: 'DELETE_OBJECT', payload: { id } });
+
+    // Calculate screen position of object center (world -> screen)
+    const itemCenterX = item.x + (item.width ?? 63) / 2;
+    const itemCenterY = item.y + (item.height ?? 88) / 2;
+    const screenX = itemCenterX * zoom + offset.x;
+    const screenY = itemCenterY * zoom + offset.y;
+
+    // Set cursor position to object center on screen
+    setCursorPosition({ x: screenX, y: screenY });
+  }, [cursorSlot.length, dispatch, offset.x, offset.y, zoom]);
+
+  // Drop all items from cursor slot at specified screen coordinates
+  const dropCursorSlot = useCallback((clientX: number, clientY: number) => {
+    if (cursorSlot.length === 0) return;
+
+    // Get current scroll position from container
+    const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
+    const scrollTop = scrollContainerRef.current?.scrollTop || 0;
+
+    // Use current viewTransform from state to get accurate offset/zoom
+    const currentOffset = state.viewTransform.offset;
+    const currentZoom = state.viewTransform.zoom;
+
+    // Convert screen coordinates to world coordinates
+    // Formula: screenX = worldX * zoom + offset.x - scrollLeft
+    // So: worldX = (screenX - offset.x + scrollLeft) / zoom
+    const worldX = (clientX - currentOffset.x + scrollLeft) / currentZoom;
+    const worldY = (clientY - currentOffset.y + scrollTop) / currentZoom;
+
+    // Add all items from slot back to the game with same offsets as in cursor display
+    cursorSlot.forEach((item, index) => {
+      const isCard = item.type === ItemType.CARD;
+      const baseWidth = item.width ?? (isCard ? 63 : 50);
+      const baseHeight = item.height ?? (isCard ? 88 : 50);
+      // Offset is 10% of object size (same as in cursor display)
+      const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
+      const offsetFromBack = (cursorSlot.length - 1 - index) * offsetAmount;
+      // Use high z-index for visibility
+      const zIndex = 10000;
+
+      const finalX = worldX - baseWidth / 2 + offsetFromBack;
+      const finalY = worldY - baseHeight / 2 + offsetFromBack;
+
+      const itemWithId = {
+        ...item,
+        id: `slot-${Date.now()}-${index}`,
+        x: finalX,
+        y: finalY,
+        zIndex, // High z-index to ensure visibility
+      };
+
+      // For cards, ensure they go to tabletop (not hand)
+      if (isCard) {
+        (itemWithId as any).location = CardLocation.TABLE;
+        (itemWithId as any).isOnTable = true;
+      }
+
+      dispatch({
+        type: 'ADD_OBJECT',
+        payload: itemWithId
+      });
+    });
+
+    // Clear the slot
+    setCursorSlot([]);
+    setCursorPosition(null);
+  }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch]);
+
+  // Global click handler to drop cursor slot items when clicking outside hand panel
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      // Only drop if we have items in slot and it's a left click without Shift
+      if (cursorSlot.length === 0 || e.button !== 0) return;
+
+      // Check if Shift is pressed
+      if (e.shiftKey) return;
+
+      const target = e.target as HTMLElement;
+
+      // Check if clicking inside hand panel - dispatch event to add cards to hand
+      const handPanel = target.closest('[data-hand-panel]');
+      if (handPanel) {
+        // Dispatch custom event for hand panel to handle
+        window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
+          detail: { items: cursorSlot }
+        }));
+        // Clear the slot
+        setCursorSlot([]);
+        setCursorPosition(null);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      // Check if clicking on UI objects (panels, windows) - don't drop there
+      if (target.closest('[data-ui-object]')) {
+        return;
+      }
+
+      // Drop items at cursor position on tabletop
+      e.preventDefault();
+      e.stopPropagation();
+      dropCursorSlot(e.clientX, e.clientY);
+    };
+
+    window.addEventListener('mousedown', handleGlobalClick, { capture: true });
+    return () => window.removeEventListener('mousedown', handleGlobalClick, { capture: true } as any);
+  }, [cursorSlot.length, dropCursorSlot, cursorSlot]);
+
+  // Track cursor over main menu when cursor slot has items
+  useEffect(() => {
+    if (cursorSlot.length === 0) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Find main menu panel element in DOM to get actual screen position
+      const mainMenuElement = document.querySelector('[data-main-menu="true"]') as HTMLElement;
+
+      if (!mainMenuElement) return;
+
+      // Get actual screen position of main menu using getBoundingClientRect
+      const rect = mainMenuElement.getBoundingClientRect();
+
+      // Check if cursor is over main menu bounds
+      const isOverMainMenu =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+
+      // Dispatch event for MainMenuContent to handle
+      window.dispatchEvent(new CustomEvent('cursor-slot-move', {
+        detail: {
+          x: e.clientX,
+          y: e.clientY,
+          isOverMainMenu,
+          hasCards: cursorSlot.some(item => item.type === ItemType.CARD)
+        }
+      }));
+    };
+
+    const handleMouseLeave = () => {
+      // Dispatch event indicating cursor left window
+      window.dispatchEvent(new CustomEvent('cursor-slot-move', {
+        detail: { x: -1, y: -1, isOverMainMenu: false, hasCards: false }
+      }));
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseleave', handleMouseLeave);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [cursorSlot.length, cursorSlot]);
+
+  // Cleanup long-press timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Global mouseup handler for cursor slot drop (when source='hold')
+  useEffect(() => {
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      // Only process if cursor slot has items with source='hold'
+      if (cursorSlot.length === 0 || cursorSlotSource !== 'hold') return;
+
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+
+      // Check if we're over hand panel
+      const target = e.target as HTMLElement;
+      const handPanel = target.closest('[data-hand-panel]');
+
+      if (handPanel) {
+        // Over hand panel - dispatch event to add cards to hand
+        window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
+          detail: { items: cursorSlot }
+        }));
+        // Clear the slot
+        setCursorSlot([]);
+        setCursorPosition(null);
+        setCursorSlotSource(null);
+        e.stopPropagation();
+        e.preventDefault();
+      } else {
+        // Not over hand panel - drop on tabletop
+        dropCursorSlot(clientX, clientY);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [cursorSlot.length, cursorSlotSource, cursorSlot, dropCursorSlot]);
+
   const handleMouseDown = (e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
 
     // Check if clicking on a UI object - if it has an id, process normally
-    // If no id (background), check for panning
+    // If no id (background), check for panning or dropping cursor slot
     if (!id) {
       if (e.button === 0 && e.shiftKey) {
         setIsPanning(true);
         dragStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
+        return;
+      }
+
+      // If cursor slot has items and we click without shift, drop all items
+      if (e.button === 0 && !e.shiftKey && cursorSlot.length > 0) {
+        e.stopPropagation();
+        dropCursorSlot(e.clientX, e.clientY);
         return;
       }
     }
@@ -1205,30 +1170,47 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      // Check if this is a board and if we're clicking on the resize edge
-      if (item && item.type === ItemType.TOKEN) {
-        const token = item as TokenType;
-        if (token.shape === TokenShape.RECTANGLE) {
-          const mouseWorldX = (e.clientX - offset.x) / zoom;
-          const mouseWorldY = (e.clientY - offset.y) / zoom;
-          const handle = getResizeHandle(mouseWorldX, mouseWorldY, token);
+      if (item && item.locked && !isGM) return;
 
-          if (handle && !item.locked) {
-            handleResizeStart(e, id, handle);
-            return;
-          }
-        }
+      // Cards and tokens: Shift+click immediately adds to cursor slot
+      if (e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
+        addToCursorSlot(id, item);
+        return;
       }
 
-      if (item && item.locked && !isGM) return;
+      // If cursor slot has items and we click without shift, drop all items first
+      if (!e.shiftKey && cursorSlot.length > 0) {
+        dropCursorSlot(e.clientX, e.clientY);
+        return; // Don't proceed with normal drag handling
+      }
+
+      // For cards and tokens: start long-press timer (500ms) to add to cursor slot
+      if (!e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
+        // Store the item and start position for long-press detection
+        longPressItemRef.current = {
+          id,
+          item,
+          startX: e.clientX,
+          startY: e.clientY
+        };
+
+        // Start timer - after 250ms, add to cursor slot
+        longPressTimerRef.current = window.setTimeout(() => {
+          if (longPressItemRef.current) {
+            addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
+            longPressItemRef.current = null;
+            longPressTimerRef.current = null;
+          }
+        }, 250); // 250ms long-press
+
+        // Don't return - we need to continue to set dragStartRef for movement detection
+      }
 
       // Store click start position for click detection
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
-      // For cards on tabletop, also start the card drag for hand drop
-      if (item.type === ItemType.CARD) {
-        startCardDrag(id, 'tabletop', e.nativeEvent);
-      }
+      // Note: Cards and tokens are handled via Shift+click cursor slot only,
+      // they never reach this point since we return early above
 
       setDraggingId(id);
       if (item) {
@@ -1251,6 +1233,29 @@ export const Tabletop: React.FC = () => {
   };
 
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
+    // Update cursor position for slot visualization
+    if (cursorSlot.length > 0) {
+      setCursorPosition({ x: e.clientX, y: e.clientY });
+    }
+
+    // Check for long-press movement - if mouse moves while holding on a card/token, add to slot immediately
+    if (longPressItemRef.current) {
+      const moveThreshold = 5; // pixels
+      const dx = e.clientX - longPressItemRef.current.startX;
+      const dy = e.clientY - longPressItemRef.current.startY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance >= moveThreshold) {
+        // Mouse moved enough - cancel timer and add to slot immediately
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
+        longPressItemRef.current = null;
+      }
+    }
+
     if (isPanning) {
       const newOffset = {
         x: e.clientX - dragStartRef.current.x,
@@ -1305,8 +1310,8 @@ export const Tabletop: React.FC = () => {
       return;
     }
 
-    // Handle resizing
-    if (resizingId && resizeStart && resizeHandle) {
+    // Handle resizing (corner only - changes width/height only)
+    if (resizingId && resizeStart) {
       const obj = state.objects[resizingId];
       if (!obj) return;
 
@@ -1314,30 +1319,8 @@ export const Tabletop: React.FC = () => {
       const deltaY = (e.clientY - resizeStart.y) / zoom;
 
       const minSize = 100;
-      let newWidth = resizeStart.width;
-      let newHeight = resizeStart.height;
-      let newX = resizeStart.objX;
-      let newY = resizeStart.objY;
-
-      // Calculate new dimensions and position based on resize handle
-      if (resizeHandle.includes('e')) {
-        newWidth = Math.max(minSize, resizeStart.width + deltaX);
-      }
-      if (resizeHandle.includes('w')) {
-        const maxDelta = resizeStart.width - minSize;
-        const validDelta = Math.min(deltaX, maxDelta);
-        newWidth = resizeStart.width - validDelta;
-        newX = resizeStart.objX + validDelta;
-      }
-      if (resizeHandle.includes('s')) {
-        newHeight = Math.max(minSize, resizeStart.height + deltaY);
-      }
-      if (resizeHandle.includes('n')) {
-        const maxDelta = resizeStart.height - minSize;
-        const validDelta = Math.min(deltaY, maxDelta);
-        newHeight = resizeStart.height - validDelta;
-        newY = resizeStart.objY + validDelta;
-      }
+      const newWidth = Math.max(minSize, resizeStart.width + deltaX);
+      const newHeight = Math.max(minSize, resizeStart.height + deltaY);
 
       dispatch({
         type: 'UPDATE_OBJECT',
@@ -1345,8 +1328,6 @@ export const Tabletop: React.FC = () => {
           id: resizingId,
           width: newWidth,
           height: newHeight,
-          x: newX,
-          y: newY,
         },
       });
       return;
@@ -1498,9 +1479,19 @@ export const Tabletop: React.FC = () => {
         payload: { id: draggingPile.deck.id, piles: updatedPiles }
       });
     }
-  }, [isPanning, resizingId, resizeStart, resizeHandle, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, freeRotatingId, rotateStartAngle, rotateStartMouse]);
+  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, freeRotatingId, rotateStartAngle, rotateStartMouse, cursorSlot]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
+    // Clear long-press timer if mouse is released before timeout
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressItemRef.current = null;
+
+    // Note: Cursor slot drop on mouseup is handled by the global handler above
+    // This handleMouseUp is only called when there's an active drag/pan/resize operation
+
     // Debug: log when mouseup happens
     if (draggingId && e) {
       console.log('[Tabletop] handleMouseUp called', {
@@ -1644,7 +1635,6 @@ export const Tabletop: React.FC = () => {
           setDraggingId(null);
           setIsPanning(false);
           setResizingId(null);
-          setResizeHandle(null);
           setResizeStart(null);
           dragOffsetRef.current = null;
           return;
@@ -1660,11 +1650,27 @@ export const Tabletop: React.FC = () => {
       }
     }
 
-    // Notify that drag ended (for main menu)
+    // Notify that drag ended (for main menu and hand panel)
     if (draggingId) {
       const draggingObj = state.objects[draggingId];
-      if (draggingObj && draggingObj.type === ItemType.CARD && (draggingObj as CardType).location === CardLocation.TABLE) {
-        window.dispatchEvent(new CustomEvent('tabletop-drag-end'));
+      if (draggingObj && draggingObj.type === ItemType.CARD) {
+        // Send card-drag-end for hand panel to receive cards
+        window.dispatchEvent(new CustomEvent('card-drag-end', {
+          detail: {
+            wasDragging: true,
+            cardId: draggingId,
+            source: 'tabletop',
+            x: clientX,
+            y: clientY,
+            offsetX: 0,
+            offsetY: 0,
+          }
+        }));
+
+        // Also send tabletop-drag-end for main menu
+        if ((draggingObj as CardType).location === CardLocation.TABLE) {
+          window.dispatchEvent(new CustomEvent('tabletop-drag-end'));
+        }
       }
     }
 
@@ -1674,7 +1680,6 @@ export const Tabletop: React.FC = () => {
     setDraggingId(null);
     setIsPanning(false);
     setResizingId(null);
-    setResizeHandle(null);
     setResizeStart(null);
     dragOffsetRef.current = null;
 
@@ -1784,7 +1789,7 @@ export const Tabletop: React.FC = () => {
   }, []); // Empty deps - handlers check refs for current state
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey) {
+    if (e.shiftKey) {
         e.preventDefault();
         const scaleAmount = -e.deltaY * 0.001;
         setZoom(z => Math.min(Math.max(0.2, z + scaleAmount), 3));
@@ -1956,18 +1961,9 @@ export const Tabletop: React.FC = () => {
   }, [state.objects]);
 
   const worldBounds = useMemo(() => {
-    let maxX = 0;
-    let maxY = 0;
-    tableObjects.forEach(obj => {
-        const objWidth = obj.width ?? 100;
-        const objHeight = obj.height ?? 100;
-        const right = obj.x + objWidth;
-        const bottom = obj.y + objHeight;
-        if (right > maxX) maxX = right;
-        if (bottom > maxY) maxY = bottom;
-    });
-    return { width: Math.max(maxX + 500, window.innerWidth), height: Math.max(maxY + 500, window.innerHeight) };
-  }, [tableObjects]);
+    // Fixed world size: 5000x5000
+    return { width: 5000, height: 5000 };
+  }, []);
 
   const confirmDelete = () => {
     if (deleteCandidateId) {
@@ -1980,7 +1976,7 @@ export const Tabletop: React.FC = () => {
     <div
       ref={scrollContainerRef}
       data-tabletop="true"
-      className="w-full h-full bg-table overflow-auto relative cursor-grab active:cursor-grabbing"
+      className={`w-full h-full bg-table overflow-auto relative ${cursorSlot.length > 0 ? 'cursor-grabbing' : 'cursor-grab'} active:cursor-grabbing`}
       onMouseDown={(e) => handleMouseDown(e)}
       onMouseMove={handleMouseMove}
       onWheel={handleWheel}
@@ -2102,7 +2098,7 @@ export const Tabletop: React.FC = () => {
         >
             {/* All objects in unified space */}
             {tableObjects.map((obj) => {
-                const isOwner = !obj.ownerId || obj.ownerId === state.activePlayerId || isGM;
+                const isOwner = !(obj as any).ownerId || (obj as any).ownerId === state.activePlayerId || isGM;
                 const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
 
                 if (obj.type === ItemType.BOARD) {
@@ -2110,8 +2106,6 @@ export const Tabletop: React.FC = () => {
                     const isResizing = resizingId === obj.id;
                     const isDragging = draggingId === obj.id;
                     const canResize = !obj.locked;
-                    const currentResizeHandle = isResizing ? resizeHandle : null;
-                    const showGrid = board.gridType && board.gridType !== GridType.NONE;
                     const gridSize = board.gridSize || 50;
 
                     const hexR = gridSize;
@@ -2133,12 +2127,11 @@ export const Tabletop: React.FC = () => {
                             isOwner={isOwner}
                             isDragging={isDragging}
                             isResizing={isResizing}
-                            resizeHandle={currentResizeHandle}
                             canResize={canResize}
                             zoom={zoom}
-                            getResizeCursor={getResizeCursor}
                             onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}
+                            onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
                             gridSize={gridSize}
                             hexR={hexR}
                             hexW={hexW}
@@ -2176,7 +2169,6 @@ export const Tabletop: React.FC = () => {
                         const isResizing = resizingId === obj.id;
                         const isDragging = draggingId === obj.id;
                         const canResize = !obj.locked;
-                        const currentResizeHandle = isResizing ? resizeHandle : null;
 
                         return (
                             <BoardWithResize
@@ -2186,12 +2178,11 @@ export const Tabletop: React.FC = () => {
                                 isOwner={isOwner}
                                 isDragging={isDragging}
                                 isResizing={isResizing}
-                                resizeHandle={currentResizeHandle}
                                 canResize={canResize}
                                 zoom={zoom}
-                                getResizeCursor={getResizeCursor}
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
+                                onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
                                 gridSize={gridSize}
                                 hexR={hexR}
                                 hexW={hexW}
@@ -2534,7 +2525,6 @@ export const Tabletop: React.FC = () => {
                             )}
                             <DeckComponent
                                 deck={deck}
-                                isDraggingCardFromHand={draggingCardFromHand !== null}
                                 draggingId={draggingId}
                                 hoveredDeckId={hoveredDeckId}
                                 hoveredPileId={hoveredPileId}
@@ -2715,7 +2705,7 @@ export const Tabletop: React.FC = () => {
 
         {deleteCandidateId && (
             <DeleteConfirmModal
-                objectName={state.objects[deleteCandidateId]?.name || 'Object'}
+                objectName={(state.objects[deleteCandidateId] as any)?.name || 'Object'}
                 onConfirm={confirmDelete}
                 onCancel={() => setDeleteCandidateId(null)}
             />
@@ -2799,6 +2789,110 @@ export const Tabletop: React.FC = () => {
                 deck={topDeckModalDeck}
                 onClose={() => setTopDeckModalDeck(null)}
             />
+        )}
+
+        {/* Cursor Slot Visualization - renders items following cursor */}
+        {cursorSlot.length > 0 && cursorPosition && (
+            <div
+                className="fixed pointer-events-none z-[100001]"
+                style={{
+                    left: cursorPosition.x,
+                    top: cursorPosition.y,
+                }}
+            >
+                {/* Render stacked items - newest in front, older items offset */}
+                {cursorSlot.map((item, index) => {
+                    const isCard = item.type === ItemType.CARD;
+                    const baseWidth = item.width ?? (isCard ? 63 : 50);
+                    const baseHeight = item.height ?? (isCard ? 88 : 50);
+                    // Scale by zoom to match in-game size
+                    const width = baseWidth * zoom;
+                    const height = baseHeight * zoom;
+                    // Offset is 10% of object size
+                    const offsetAmount = Math.min(width, height) * 0.1;
+                    const offsetFromBack = (cursorSlot.length - 1 - index) * offsetAmount;
+                    // Cards at bottom (lower z-index), tokens at top (higher z-index)
+                    const zIndex = isCard ? index : index + 1000;
+
+                    if (isCard) {
+                        const card = item as CardType;
+                        return (
+                            <div
+                                key={`${card.id}-${index}`}
+                                className="absolute"
+                                style={{
+                                    left: -width / 2 + offsetFromBack,
+                                    top: -height / 2 + offsetFromBack,
+                                    width: `${width}px`,
+                                    height: `${height}px`,
+                                    zIndex,
+                                }}
+                            >
+                                {/* Card back or face */}
+                                <div
+                                    className="w-full h-full rounded shadow-lg border-2 border-white flex flex-col items-center justify-center text-white font-bold select-none"
+                                    style={{
+                                        backgroundColor: card.faceUp ? '#ecf0f1' : '#3498db',
+                                        backgroundImage: card.faceUp && card.content ? `url(${card.content})` : undefined,
+                                        backgroundSize: 'cover',
+                                        backgroundPosition: 'center',
+                                        opacity: 0.9,
+                                    }}
+                                >
+                                    {!card.faceUp && !card.content && (
+                                        <div className="text-2xl">🂠</div>
+                                    )}
+                                    {card.faceUp && !card.content && card.name && (
+                                        <div className="text-xs text-gray-800 text-center px-1">{card.name}</div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    // Token rendering
+                    const token = item as TokenType;
+                    return (
+                        <div
+                            key={`${token.id}-${index}`}
+                            className="absolute"
+                            style={{
+                                left: -width / 2 + offsetFromBack,
+                                top: -height / 2 + offsetFromBack,
+                                width: `${width}px`,
+                                height: `${height}px`,
+                                zIndex,
+                            }}
+                        >
+                            <div
+                                className="w-full h-full flex items-center justify-center text-white font-bold select-none"
+                                style={{
+                                    backgroundColor: token.color || '#34495e',
+                                    backgroundImage: token.content ? `url(${token.content})` : undefined,
+                                    backgroundSize: 'cover',
+                                    backgroundPosition: 'center',
+                                    border: '2px solid white',
+                                    borderRadius: token.shape === TokenShape.CIRCLE ? '50%' : '4px',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                                    opacity: 0.9,
+                                }}
+                            />
+                        </div>
+                    );
+                })}
+
+                {/* Stack counter badge - only show if more than 1 item */}
+                {cursorSlot.length > 1 && (
+                    <div className="absolute" style={{
+                        left: `${((cursorSlot[0]?.width ?? 63) * zoom) / 2 + 4}px`,
+                        top: `${-((cursorSlot[0]?.height ?? 88) * zoom) / 2 - 4}px`,
+                    }}>
+                        <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
+                            {cursorSlot.length}
+                        </div>
+                    </div>
+                )}
+            </div>
         )}
     </div>
   );

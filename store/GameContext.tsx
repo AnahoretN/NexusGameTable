@@ -214,7 +214,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       const newObj = {
           ...action.payload,
-          zIndex: defaultZ,
+          zIndex: action.payload.zIndex ?? defaultZ, // Don't override existing zIndex
           isOnTable: action.payload.isOnTable ?? true,
       };
 
