@@ -13,6 +13,7 @@ import { DeckComponent } from './DeckComponent';
 import { UIObjectRenderer } from './UIObjectRenderer';
 import { Tooltip } from './Tooltip';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
+import { CARD_SHAPE_DIMS } from '../constants';
 
 // Board component with resize handle (corner only, like panels)
 interface BoardWithResizeProps {
@@ -144,13 +145,15 @@ const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch } = useGame();
+
+  // Viewport state
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(0.8);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isPanning, setIsPanning] = useState(false);
 
-  // Local state to handle the visual "rapid change" animation of dice
-  const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
+  // Dragging state
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [draggingPile, setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
 
   // Resizing state for boards
   const [resizingId, setResizingId] = useState<string | null>(null);
@@ -165,23 +168,18 @@ export const Tabletop: React.FC = () => {
   // Stores full object data and removes objects from their original position
   const [cursorSlot, setCursorSlot] = useState<(CardType | TokenType)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
-
   // Track how items were added to cursor slot:
   // - 'shift' = Shift+click (drop only on click, not on mouseup)
   // - 'hold' = Long press or drag (drop on mouseup)
   const [cursorSlotSource, setCursorSlotSource] = useState<'shift' | 'hold' | null>(null);
 
-  // Long-press state for cards/tokens - adds to cursor slot after 500ms hold
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressItemRef = useRef<{ id: string; item: TableObject; startX: number; startY: number } | null>(null);
+  // Local state to handle the visual "rapid change" animation of dice
+  const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
 
-  // Store the offset between cursor and object's top-left corner when dragging starts
-  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
-
+  // UI modal/menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
-
   // Pile context menu and search modal
   const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
   const [searchModalDeck, setSearchModalDeck] = useState<DeckType | null>(null);
@@ -189,17 +187,22 @@ export const Tabletop: React.FC = () => {
   const [topDeckModalDeck, setTopDeckModalDeck] = useState<DeckType | null>(null);
   const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: DeckType } | null>(null);
 
-  // Pile dragging state (for free position piles)
-  const [draggingPile, setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
-  const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Hover state for deck/pile drop targets
+  const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
+  const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
 
-  // Refs for drag states - used by global event handlers to check current state
+  // Refs
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressItemRef = useRef<{ id: string; item: TableObject; startX: number; startY: number } | null>(null);
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const draggingIdRef = useRef<string | null>(null);
   const isPanningRef = useRef(false);
   const resizingIdRef = useRef<string | null>(null);
   const draggingPileRef = useRef<{ pile: CardPile; deck: DeckType } | null>(null);
   const freeRotatingIdRef = useRef<string | null>(null);
   const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
+  const globalMousePosRef = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
   // Update refs when state changes
   useEffect(() => { draggingIdRef.current = draggingId; }, [draggingId]);
@@ -208,6 +211,15 @@ export const Tabletop: React.FC = () => {
   useEffect(() => { draggingPileRef.current = draggingPile; }, [draggingPile]);
   useEffect(() => { freeRotatingIdRef.current = freeRotatingId; }, [freeRotatingId]);
   useEffect(() => { cursorSlotRef.current = cursorSlot; }, [cursorSlot]);
+
+  // Track global mouse position for playTopCard and other features
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      globalMousePosRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
 
   // Listen for add-to-cursor-slot events from other components (e.g., HandPanel)
   useEffect(() => {
@@ -263,10 +275,6 @@ export const Tabletop: React.FC = () => {
     window.addEventListener('add-to-cursor-slot', handleAddToSlot);
     return () => window.removeEventListener('add-to-cursor-slot', handleAddToSlot);
   }, [cursorSlot.length, dispatch, state.objects]);
-
-  // Track card being dragged from hand (via main menu)
-  const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
-  const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
 
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = useCallback((card: CardType) => {
@@ -351,22 +359,6 @@ export const Tabletop: React.FC = () => {
           const oldDeckScreenY = pinnedDeck.y * zoom + prevOffsetRef.current.y;
           const newDeckScreenX = pinnedDeck.x * zoom + offset.x;
           const newDeckScreenY = pinnedDeck.y * zoom + offset.y;
-
-          console.log('[OFFSET CHANGE]', {
-            deckName: pinnedDeck.name,
-            offsetDelta: { x: deltaX, y: deltaY },
-            oldOffset: { ...prevOffsetRef.current },
-            newOffset: { ...offset },
-            deckWorldPos: { x: pinnedDeck.x, y: pinnedDeck.y },
-            oldDeckScreenPos: { x: oldDeckScreenX, y: oldDeckScreenY },
-            newDeckScreenPos: { x: newDeckScreenX, y: newDeckScreenY },
-            deckScreenDelta: { x: newDeckScreenX - oldDeckScreenX, y: newDeckScreenY - oldDeckScreenY }
-          });
-        } else {
-          console.log('[OFFSET CHANGE] No pinned deck found', {
-            offsetDelta: { x: deltaX, y: deltaY },
-            newOffset: { ...offset }
-          });
         }
       }
     }
@@ -523,7 +515,7 @@ export const Tabletop: React.FC = () => {
   };
 
   // Execute a click action on an object
-  const executeClickAction = useCallback((obj: TableObject, action: string) => {
+  const executeClickAction = useCallback((obj: TableObject, action: string, event?: React.MouseEvent) => {
     if (!action || action === 'none') return;
 
     switch (action) {
@@ -554,44 +546,52 @@ export const Tabletop: React.FC = () => {
         }
         break;
       case 'playTopCard':
-        // Take the top card from deck and place it on the table at deck position with offset
+        // Take the top card from deck and add it to cursor slot
         if (obj.type === ItemType.DECK) {
-          const deck = obj as any;
+          const deck = obj as DeckType;
           if (deck.cardIds && deck.cardIds.length > 0) {
-            const topCardId = deck.cardIds[0]; // Top card is first element (index 0)
+            const topCardId = deck.cardIds[0];
+            const card = state.objects[topCardId] as CardType;
+            if (!card) return;
 
-            console.log('📤 PLAY TOP CARD', {
-              deckId: deck.id,
-              deckName: deck.name,
-              deckPosition: { x: deck.x, y: deck.y },
-              deckSize: { width: deck.width, height: deck.height },
-              deckRotation: deck.rotation,
-              deckZIndex: deck.zIndex,
-              topCardId: topCardId,
-              cardIdsRemaining: deck.cardIds.length - 1,
-            });
+            const faceUp = deck.playTopFaceUp ?? true;
 
-            // Remove from deck
+            // Get mouse position: from click event, or current cursorPosition, or global mouse ref
+            const mousePos = event
+              ? { x: event.clientX, y: event.clientY }
+              : cursorPosition || globalMousePosRef.current;
+
+            // Prepare card with all properties for cursor slot
+            const cardForSlot: CardType = {
+              ...card,
+              location: CardLocation.CURSOR_SLOT,
+              faceUp: faceUp,
+              isOnTable: false, // Important: card should NOT render on table
+            };
+
+            // Set cursor position first to ensure immediate render
+            setCursorPosition(mousePos);
+
+            // Add to cursor slot
+            cursorSlotRef.current = [...cursorSlotRef.current, cardForSlot];
+            setCursorSlot(prev => [...prev, cardForSlot]);
+            if (cursorSlot.length === 0) {
+              setCursorSlotSource('shift');
+            }
+
+            // Remove card from deck and update in state
             const newCardIds = deck.cardIds.slice(1);
-            // Update deck
             dispatch({
               type: 'UPDATE_OBJECT',
-              payload: {
-                id: deck.id,
-                cardIds: newCardIds
-              }
+              payload: { id: deck.id, cardIds: newCardIds }
             });
-            // Update card - place it at deck position with slight offset down-left, use playTopFaceUp setting
-            const faceUp = deck.playTopFaceUp ?? true;
             dispatch({
               type: 'UPDATE_OBJECT',
               payload: {
                 id: topCardId,
-                location: CardLocation.TABLE,
-                x: deck.x + 10,
-                y: deck.y + 10,
+                location: CardLocation.CURSOR_SLOT,
                 faceUp: faceUp,
-                zIndex: (deck.zIndex || 0) + 1
+                isOnTable: false,
               }
             });
           }
@@ -891,7 +891,7 @@ export const Tabletop: React.FC = () => {
         dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id } });
         break;
     }
-  }, [dispatch, state.activePlayerId, state.objects]);
+  }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition]);
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift') => {
@@ -1021,20 +1021,15 @@ export const Tabletop: React.FC = () => {
   const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType)[]) => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
-    console.log('🔵 DROP TO DECK called', { deckId, slotLength: currentSlot.length });
 
     if (currentSlot.length === 0) {
-      console.log('🔵 DROP TO DECK: No cards in slot, returning');
       return;
     }
 
     const deck = state.objects[deckId] as DeckType;
     if (!deck) {
-      console.log('🔵 DROP TO DECK: Deck not found', { deckId });
       return;
     }
-
-    console.log('🔵 DROP TO DECK: Adding cards', { cardCount: currentSlot.filter(item => item.type === ItemType.CARD).length });
 
     // Only add cards to deck (not tokens)
     const cardsInSlot = currentSlot.filter(item => item.type === ItemType.CARD);
@@ -1086,18 +1081,13 @@ export const Tabletop: React.FC = () => {
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
-
-    console.log('🔵 DROP TO DECK: Complete');
   }, [cursorSlot, dispatch, state.objects, cursorSlotRef]);
 
   // Global click handler to drop cursor slot items when clicking outside hand panel
   // NOTE: This effect depends on cursorSlot to ensure the handler has fresh data
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
-      console.log('🟢 GLOBAL CLICK: handler called', { slotLength: cursorSlot.length, button: e.button });
-
       if (cursorSlot.length === 0 || e.button !== 0) {
-        console.log('🟢 GLOBAL CLICK: Early return - no cards or wrong button');
         return;
       }
 
@@ -1129,7 +1119,6 @@ export const Tabletop: React.FC = () => {
         const obj = objectId ? state.objects[objectId] : undefined;
         if (obj && obj.type === ItemType.DECK && objectId) {
           // Drop cards to the deck directly - pass cursorSlot from closure
-          console.log('🟢 GLOBAL CLICK: Dropping to deck', { objectId, deckName: obj.name, slotLength: cursorSlot.length });
           e.preventDefault();
           e.stopPropagation();
           dropToDeck(objectId, cursorSlot);
@@ -1143,7 +1132,6 @@ export const Tabletop: React.FC = () => {
       }
 
       // Drop items at cursor position on tabletop - pass cursorSlot from closure
-      console.log('🟢 GLOBAL CLICK: Dropping to tabletop', { x: e.clientX, y: e.clientY, slotLength: cursorSlot.length });
       e.preventDefault();
       e.stopPropagation();
       dropCursorSlot(e.clientX, e.clientY, cursorSlot);
@@ -1301,7 +1289,6 @@ export const Tabletop: React.FC = () => {
         const objectId = deckElement.getAttribute('data-object-id');
         const obj = objectId ? state.objects[objectId] : undefined;
         if (obj && obj.type === ItemType.DECK && objectId) {
-          console.log('🟡 MOUSEUP DROP TO DECK', { objectId, deckName: obj.name, slotLength: currentSlot.length });
           e.preventDefault();
           e.stopPropagation();
           dropToDeck(objectId, currentSlot);
@@ -1319,7 +1306,6 @@ export const Tabletop: React.FC = () => {
                 const deck = obj as DeckType;
                 const pile = deck.piles?.find(p => p.id === pileId);
                 if (pile) {
-                  console.log('🟡 MOUSEUP DROP TO PILE', { pileId, pileName: pile.name, deckId: deck.id, slotLength: currentSlot.length });
                   e.preventDefault();
                   e.stopPropagation();
 
@@ -1524,29 +1510,6 @@ export const Tabletop: React.FC = () => {
         y: e.clientY - dragStartRef.current.y,
       };
 
-      // Log pan movement and find pinned deck
-      const pinnedDeck = Object.values(state.objects).find(obj =>
-        (obj as any).isPinnedToViewport && obj.type === ItemType.DECK
-      ) as any;
-
-      if (pinnedDeck) {
-        const deckScreenX = pinnedDeck.x * zoom + offset.x;
-        const deckScreenY = pinnedDeck.y * zoom + offset.y;
-        const newDeckScreenX = pinnedDeck.x * zoom + newOffset.x;
-        const newDeckScreenY = pinnedDeck.y * zoom + newOffset.y;
-
-        console.log('[PAN DEBUG]', {
-          deckName: pinnedDeck.name,
-          offsetDelta: { x: newOffset.x - offset.x, y: newOffset.y - offset.y },
-          oldOffset: offset,
-          newOffset: newOffset,
-          deckWorldPos: { x: pinnedDeck.x, y: pinnedDeck.y },
-          oldDeckScreenPos: { x: deckScreenX, y: deckScreenY },
-          newDeckScreenPos: { x: newDeckScreenX, y: newDeckScreenY },
-          deckScreenDelta: { x: newDeckScreenX - deckScreenX, y: newDeckScreenY - deckScreenY }
-        });
-      }
-
       setOffset(newOffset);
       return;
     }
@@ -1748,16 +1711,6 @@ export const Tabletop: React.FC = () => {
 
     // Note: Cursor slot drop on mouseup is handled by the global handler above
     // This handleMouseUp is only called when there's an active drag/pan/resize operation
-
-    // Debug: log when mouseup happens
-    if (draggingId && e) {
-      console.log('[Tabletop] handleMouseUp called', {
-        draggingId,
-        clientX: e.clientX,
-        clientY: e.clientY,
-        target: (e.target as HTMLElement)?.className,
-      });
-    }
 
     // Check if this was a click (not a drag or resize)
     const wasDragging = draggingId !== null;
@@ -2026,14 +1979,6 @@ export const Tabletop: React.FC = () => {
               y: newRenderY
             }
           });
-          console.log('[SPACEBAR - Manual pin compensation]', {
-            deckName: pinnedDeck.name,
-            oldPosition: { x: pinnedDeck.x, y: pinnedDeck.y },
-            newPosition: { x: newRenderX, y: newRenderY },
-            scroll: { left: scrollLeft, top: scrollTop },
-            offset,
-            zoom
-          });
         }
       }
     };
@@ -2099,7 +2044,7 @@ export const Tabletop: React.FC = () => {
     });
   }, [offset, zoom, dispatch]);
 
-  const handleContextMenu = (e: React.MouseEvent, obj: TableObject) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
       e.preventDefault();
       e.stopPropagation();
       setContextMenu({
@@ -2107,7 +2052,7 @@ export const Tabletop: React.FC = () => {
           y: e.clientY,
           object: obj
       });
-  };
+  }, []);
 
   const executeMenuAction = (action: string) => {
       if (!contextMenu) return;
@@ -2128,15 +2073,6 @@ export const Tabletop: React.FC = () => {
               const scrollTop = scrollContainerRef.current?.scrollTop || 0;
               const screenX = object.x * zoom + offset.x - scrollLeft;
               const screenY = object.y * zoom + offset.y - scrollTop;
-              console.log('[PIN ACTION - Saving screen position]', {
-                  objectId: object.id,
-                  objectName: 'name' in object ? object.name : String((object as any).type),
-                  worldPosition: { x: object.x, y: object.y },
-                  offset,
-                  scroll: { left: scrollLeft, top: scrollTop },
-                  zoom,
-                  calculatedScreenPosition: { x: screenX, y: screenY }
-              });
               dispatch({
                   type: 'PIN_TO_VIEWPORT',
                   payload: {
@@ -2167,7 +2103,7 @@ export const Tabletop: React.FC = () => {
       executeClickAction(object, action);
   };
 
-  const handlePileContextMenu = (e: React.MouseEvent, pile: CardPile, deck: DeckType) => {
+  const handlePileContextMenu = useCallback((e: React.MouseEvent, pile: CardPile, deck: DeckType) => {
       e.preventDefault();
       e.stopPropagation();
       setPileContextMenu({
@@ -2176,7 +2112,7 @@ export const Tabletop: React.FC = () => {
           pile,
           deck
       });
-  };
+  }, []);
 
   const executePileMenuAction = (action: string) => {
       if (!pileContextMenu) return;
@@ -2215,34 +2151,38 @@ export const Tabletop: React.FC = () => {
       }
   };
 
-  const tableObjects = (Object.values(state.objects) as TableObject[])
-    .filter(obj => {
-        // Exclude UI objects (panels and windows) - they have their own rendering
-        if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
-        if (!obj.isOnTable) return false;
-        if (obj.type === ItemType.CARD) {
-          const card = obj as CardType;
-          if (card.location !== CardLocation.TABLE) return false;
-          // Filter out hidden cards for players (GM sees them)
-          if (card.hidden && !isGM) return false;
-        }
-        // Filter out hidden objects (visible === false)
-        if ((obj as any).visible === false) return false;
-        return true;
-    })
-    .sort((a, b) => {
-        const zA = a.zIndex ?? 0;
-        const zB = b.zIndex ?? 0;
-        if (zA !== zB) return zA - zB;
+  // Memoize table objects to prevent unnecessary re-renders
+  const tableObjects = useMemo(() => {
+    return (Object.values(state.objects) as TableObject[])
+      .filter(obj => {
+          // Exclude UI objects (panels and windows) - they have their own rendering
+          if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
+          if (!obj.isOnTable) return false;
+          if (obj.type === ItemType.CARD) {
+            const card = obj as CardType;
+            // Only render cards on TABLE - exclude DECK, HAND, PILE, CURSOR_SLOT
+            if (card.location !== CardLocation.TABLE) return false;
+            // Filter out hidden cards for players (GM sees them)
+            if (card.hidden && !isGM) return false;
+          }
+          // Filter out hidden objects (visible === false)
+          if ((obj as any).visible === false) return false;
+          return true;
+      })
+      .sort((a, b) => {
+          const zA = a.zIndex ?? 0;
+          const zB = b.zIndex ?? 0;
+          if (zA !== zB) return zA - zB;
 
-        if (a.type === ItemType.TOKEN && (a as TokenType).shape === TokenShape.RECTANGLE) return -1;
-        if (b.type === ItemType.TOKEN && (b as TokenType).shape === TokenShape.RECTANGLE) return 1;
-        
-        if (a.locked && !b.locked) return -1;
-        if (!a.locked && b.locked) return 1;
+          if (a.type === ItemType.TOKEN && (a as TokenType).shape === TokenShape.RECTANGLE) return -1;
+          if (b.type === ItemType.TOKEN && (b as TokenType).shape === TokenShape.RECTANGLE) return 1;
 
-        return 0;
-    });
+          if (a.locked && !b.locked) return -1;
+          if (!a.locked && b.locked) return 1;
+
+          return 0;
+      });
+  }, [state.objects, isGM]);
 
   // UI objects (panels and windows) - separate from game objects
   const uiObjects = useMemo(() => {

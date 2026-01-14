@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Layers, Lock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { useGame } from '../store/GameContext';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType } from '../types';
@@ -25,7 +25,7 @@ interface DeckComponentProps {
   setSearchModalPile: (pile: CardPile | undefined) => void;
   setPilesButtonMenu: (menu: { x: number; y: number; deck: DeckType } | null) => void;
   setDeleteCandidateId: (id: string | null) => void;
-  executeClickAction: (obj: any, action: string) => void;
+  executeClickAction: (obj: any, action: string, event?: React.MouseEvent) => void;
   cursorSlotHasCards: boolean;
   allObjects: Record<string, any>;
 }
@@ -59,109 +59,83 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
   const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
 
-  // Log when canDropCard changes to true
-  React.useEffect(() => {
-    if (canDropCard) {
-      const draggingCard = draggingId ? state.objects[draggingId] as CardType : null;
+  // Memoize visible card count calculation
+  const visibleCardCount = useMemo(() => {
+    return deck.cardIds.filter(id => {
+      const card = allObjects?.[id];
+      return card && !card.hidden;
+    }).length;
+  }, [deck.cardIds, allObjects]);
 
-      // Get all decks and their zIndex for debugging
-      const allDecks = Object.values(state.objects)
-        .filter(obj => obj.type === ItemType.DECK)
-        .map(d => ({ id: d.id, name: d.name, zIndex: d.zIndex, x: d.x, y: d.y }));
+  // Memoize top card calculation
+  const topCard = useMemo(() => {
+    const visibleCardIds = deck.cardIds.filter(id => {
+      const card = allObjects?.[id];
+      return card && !card.hidden;
+    });
+    return visibleCardIds.length > 0 ? (allObjects[visibleCardIds[0]] as CardType) : null;
+  }, [deck.cardIds, allObjects]);
 
-      console.log('🟣 PURPLE HIGHLIGHT ON', {
-        deckId: deck.id,
-        deckName: deck.name,
-        deckPosition: { x: deck.x, y: deck.y },
-        deckSize: { width: deck.width, height: deck.height },
-        deckRotation: deck.rotation,
-        deckZIndex: deck.zIndex,
-        hoveredDeckId: hoveredDeckId,
-        isDraggingCardFromTable,
-        cursorSlotHasCards,
-        draggingCardId: draggingId,
-        draggingCardPosition: draggingCard ? { x: draggingCard.x, y: draggingCard.y } : null,
-        draggingCardZIndex: draggingCard?.zIndex,
-        allDecks,
-      });
-    }
-  }, [canDropCard, deck.id, deck.name, deck.x, deck.y, deck.width, deck.height, deck.rotation, deck.zIndex, hoveredDeckId, isDraggingCardFromTable, cursorSlotHasCards, draggingId, state.objects]);
+  // Memoize piles grouping by position
+  const { pilesByPosition, getPilePosition } = useMemo(() => {
+    const visiblePiles = deck.piles?.filter(p => p.visible) || [];
+    const pilesByPosition: Record<string, CardPile[]> = {
+      left: [],
+      right: [],
+      top: [],
+      bottom: [],
+      free: []
+    };
+    visiblePiles.forEach(p => {
+      if (p.position !== 'free') {
+        pilesByPosition[p.position].push(p);
+      }
+    });
 
-  // Count visible cards (excluding hidden ones)
-  const visibleCardCount = deck.cardIds.filter(id => {
-    const card = allObjects?.[id];
-    return card && !card.hidden;
-  }).length;
+    const getPilePosition = (pile: CardPile) => {
+      const pileSize = pile.size ?? 1;
+      const isHalfSize = pileSize === 0.5;
 
-  // Get top card for showTopCard feature (excluding hidden cards)
-  const topCard = deck.cardIds.filter(id => {
-    const card = allObjects?.[id];
-    return card && !card.hidden;
-  }).length > 0 ? allObjects[deck.cardIds.find(id => {
-    const card = allObjects?.[id];
-    return card && !card.hidden;
-  })!] as CardType : null;
+      if (pile.position === 'free') {
+        return { x: pile.x ?? 0, y: pile.y ?? 0 };
+      }
 
-  // Group piles by position and calculate their order
-  const visiblePiles = deck.piles?.filter(p => p.visible) || [];
-  const pilesByPosition: Record<string, CardPile[]> = {
-    left: [],
-    right: [],
-    top: [],
-    bottom: [],
-    free: []
-  };
-  visiblePiles.forEach(p => {
-    if (p.position !== 'free') {
-      pilesByPosition[p.position].push(p);
-    }
-  });
+      // Find index of this pile in its position group
+      const positionGroup = pilesByPosition[pile.position] || [];
+      const pileIndex = positionGroup.findIndex(p => p.id === pile.id);
 
-  const getPilePosition = (pile: CardPile) => {
-    const pileSize = pile.size ?? 1;
-    const isHalfSize = pileSize === 0.5;
+      switch (pile.position) {
+        case 'left':
+          if (isHalfSize) {
+            const yOffset = pileIndex * (deck.height * 0.5 + 2);
+            return { x: deck.x - deck.width * 0.5 - 4, y: deck.y + yOffset };
+          }
+          return { x: deck.x - deck.width - 4, y: deck.y };
+        case 'right':
+          if (isHalfSize) {
+            const yOffset = pileIndex * (deck.height * 0.5 + 2);
+            return { x: deck.x + deck.width + 4, y: deck.y + yOffset };
+          }
+          return { x: deck.x + deck.width + 4, y: deck.y };
+        case 'top':
+          if (isHalfSize) {
+            const xOffset = pileIndex * (deck.width * 0.5 + 2);
+            return { x: deck.x + xOffset, y: deck.y - deck.height * 0.5 - 4 };
+          }
+          return { x: deck.x, y: deck.y - deck.height - 4 };
+        case 'bottom':
+          if (isHalfSize) {
+            const xOffset = pileIndex * (deck.width * 0.5 + 2);
+            return { x: deck.x + xOffset, y: deck.y + deck.height + 4 };
+          }
+          return { x: deck.x, y: deck.y + deck.height + 4 };
+        default:
+          return { x: deck.x, y: deck.y };
+      }
+    };
 
-    if (pile.position === 'free') {
-      return { x: pile.x ?? 0, y: pile.y ?? 0 };
-    }
-
-    // Find index of this pile in its position group
-    const positionGroup = pilesByPosition[pile.position] || [];
-    const pileIndex = positionGroup.findIndex(p => p.id === pile.id);
-
-    switch (pile.position) {
-      case 'left':
-        // Half-size piles stack vertically, full-size are single
-        if (isHalfSize) {
-          const yOffset = pileIndex * (deck.height * 0.5 + 2);
-          return { x: deck.x - deck.width * 0.5 - 4, y: deck.y + yOffset };
-        }
-        return { x: deck.x - deck.width - 4, y: deck.y };
-      case 'right':
-        // Half-size piles stack vertically, full-size are single
-        if (isHalfSize) {
-          const yOffset = pileIndex * (deck.height * 0.5 + 2);
-          return { x: deck.x + deck.width + 4, y: deck.y + yOffset };
-        }
-        return { x: deck.x + deck.width + 4, y: deck.y };
-      case 'top':
-        // Half-size piles stack horizontally, full-size are single
-        if (isHalfSize) {
-          const xOffset = pileIndex * (deck.width * 0.5 + 2);
-          return { x: deck.x + xOffset, y: deck.y - deck.height * 0.5 - 4 };
-        }
-        return { x: deck.x, y: deck.y - deck.height - 4 };
-      case 'bottom':
-        // Half-size piles stack horizontally, full-size are single
-        if (isHalfSize) {
-          const xOffset = pileIndex * (deck.width * 0.5 + 2);
-          return { x: deck.x + xOffset, y: deck.y + deck.height + 4 };
-        }
-        return { x: deck.x, y: deck.y + deck.height + 4 };
-      default:
-        return { x: deck.x, y: deck.y };
-    }
-  };
+    return { pilesByPosition, getPilePosition };
+  }, [deck.piles, deck.x, deck.y, deck.width, deck.height]);
 
   const handlePilesButtonClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -329,19 +303,6 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             // Allow hover if dragging card OR if cursor slot has cards
             const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
             if (draggingFromTable || cursorSlotHasCards) {
-              const draggingCard = draggingId ? state.objects[draggingId] as CardType : null;
-              console.log('🔵 DECK HOVER ENTER', {
-                deckId: deck.id,
-                deckName: deck.name,
-                deckPosition: { x: deck.x, y: deck.y },
-                deckSize: { width: deck.width, height: deck.height },
-                deckRotation: deck.rotation,
-                deckZIndex: deck.zIndex,
-                draggingCardId: draggingId,
-                draggingCardPosition: draggingCard ? { x: draggingCard.x, y: draggingCard.y } : null,
-                draggingCardZIndex: draggingCard?.zIndex,
-                cursorSlotHasCards,
-              });
               setHoveredDeckId(deck.id);
             }
           }}
@@ -403,7 +364,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             // Define all possible buttons based on actionButtons setting
             const actionButtons = deck.actionButtons || [];
 
-            const buttonConfigs: Record<string, { key: string; action: (e?: any) => void; className: string; title: string; icon: React.ReactNode }> = {
+            const buttonConfigs: Record<string, { key: string; action: (e?: React.MouseEvent | undefined) => void; className: string; title: string; icon: React.ReactNode }> = {
               draw: {
                 key: 'draw',
                 action: () => executeClickAction(deck, 'draw'),
@@ -413,7 +374,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               },
               playTopCard: {
                 key: 'playTopCard',
-                action: () => executeClickAction(deck, 'playTopCard'),
+                action: (e?: React.MouseEvent) => executeClickAction(deck, 'playTopCard', e),
                 className: 'bg-green-600 hover:bg-green-500',
                 title: 'Play Top',
                 icon: <Eye size={14} />
@@ -446,7 +407,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               },
               piles: {
                 key: 'piles',
-                action: handlePilesButtonClick,
+                action: (e?: React.MouseEvent) => { if (e) handlePilesButtonClick(e); },
                 className: 'bg-indigo-600 hover:bg-indigo-500',
                 title: 'Piles',
                 icon: <Layers size={14} />
@@ -524,7 +485,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             return buttons.map(btn => (
               <button
                 key={btn.key}
-                onClick={(e) => { e.stopPropagation(); btn.action(); }}
+                onClick={(e) => { e.stopPropagation(); btn.action(e); }}
                 onMouseDown={(e) => { e.stopPropagation(); }}
                 className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
                 title={btn.title}

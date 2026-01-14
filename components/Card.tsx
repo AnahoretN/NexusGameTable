@@ -1,8 +1,9 @@
 
 import React from 'react';
 import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition } from '../types';
-import { Eye, EyeOff, Hand, Layers, RefreshCw, Copy, Trash2, Lock, Unlock, Search, Shuffle, Undo, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
+import { Layers, Undo, ChevronRight, ArrowUp, ArrowDown, Hand, Eye, EyeOff } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { getCardButtonConfig, ButtonAction, CardButtonConfig } from '../utils/buttonConfig';
 
 interface CardProps {
   card: CardType;
@@ -44,70 +45,12 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   const displayWidth = overrideWidth ?? card.width ?? cardWidth ?? 100;
   const displayHeight = overrideHeight ?? card.height ?? cardHeight ?? 100;
 
-  // Define button configurations for cards
-  const getCardButtonConfigs = () => {
+  // Define button configurations for cards using shared utility
+  const getCardButtonConfigs = (): CardButtonConfig[] => {
     const buttons = actionButtons || [];
-    const configs: Partial<Record<ContextAction, { className: string; title: string; icon: React.ReactNode }>> = {
-      flip: {
-        className: 'bg-purple-600 hover:bg-purple-500',
-        title: 'Flip',
-        icon: card.faceUp ? <EyeOff size={14} /> : <Eye size={14} />
-      },
-      toHand: {
-        className: 'bg-blue-600 hover:bg-blue-500',
-        title: 'To Hand',
-        icon: <Hand size={14} />
-      },
-      rotate: {
-        className: 'bg-green-600 hover:bg-green-500',
-        title: 'Rotate',
-        icon: <RefreshCw size={14} />
-      },
-      rotateClockwise: {
-        className: 'bg-yellow-600 hover:bg-yellow-500',
-        title: 'Rotate Clockwise',
-        icon: <RefreshCw size={14} />
-      },
-      rotateCounterClockwise: {
-        className: 'bg-yellow-600 hover:bg-yellow-500',
-        title: 'Rotate Counter-Clockwise',
-        icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
-      },
-      swingClockwise: {
-        className: 'bg-orange-600 hover:bg-orange-500',
-        title: 'Swing Clockwise',
-        icon: <RefreshCw size={14} />
-      },
-      swingCounterClockwise: {
-        className: 'bg-orange-600 hover:bg-orange-500',
-        title: 'Swing Counter-Clockwise',
-        icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
-      },
-      clone: {
-        className: 'bg-cyan-600 hover:bg-cyan-500',
-        title: 'Clone',
-        icon: <Copy size={14} />
-      },
-      delete: {
-        className: 'bg-red-600 hover:bg-red-500',
-        title: 'Delete',
-        icon: <Trash2 size={14} />
-      },
-      lock: {
-        className: 'bg-yellow-600 hover:bg-yellow-500',
-        title: card.locked ? 'Unlock' : 'Lock',
-        icon: card.locked ? <Unlock size={14} /> : <Lock size={14} />
-      },
-      layer: {
-        className: 'bg-indigo-600 hover:bg-indigo-500',
-        title: 'Layer',
-        icon: <Layers size={14} />
-      },
-    };
-
     return buttons
-      .filter(action => action in configs)
-      .map(action => ({ action, ...configs[action]! }))
+      .map(action => getCardButtonConfig(action as ButtonAction, card.faceUp, card.locked))
+      .filter((config): config is CardButtonConfig => config !== null)
       .slice(0, 4);
   };
 
@@ -307,3 +250,20 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     )
   );
 };
+
+// Memoize Card component to prevent unnecessary re-renders
+// Only re-render when props actually change
+export default React.memo(Card, (prevProps, nextProps) => {
+  return (
+    prevProps.card.id === nextProps.card.id &&
+    prevProps.card.faceUp === nextProps.card.faceUp &&
+    prevProps.card.rotation === nextProps.card.rotation &&
+    prevProps.card.location === nextProps.card.location &&
+    prevProps.card.hidden === nextProps.card.hidden &&
+    prevProps.isHovered === nextProps.isHovered &&
+    prevProps.showActionButtons === nextProps.showActionButtons &&
+    prevProps.overrideWidth === nextProps.overrideWidth &&
+    prevProps.overrideHeight === nextProps.overrideHeight &&
+    prevProps.disablePointerEvents === nextProps.disablePointerEvents
+  );
+});
