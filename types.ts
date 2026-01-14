@@ -136,6 +136,32 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
   width?: number; // Can override deck's cardWidth (optional)
   height?: number; // Can override deck's cardHeight (optional)
   hidden?: boolean; // GM can hide cards - hidden cards are excluded from deck count, search, and top deck
+
+  // Sprite sheet info - if this card is part of a sprite sheet
+  spriteIndex?: number; // Index of this card in the sprite sheet (0-based)
+  spriteUrl?: string; // URL of the sprite sheet image
+  spriteColumns?: number; // Number of columns in the sprite sheet
+  spriteRows?: number; // Number of rows in the sprite sheet
+}
+
+// Sprite sheet configuration for cards
+export interface CardSpriteConfig {
+  // URL of the sprite sheet image containing all cards
+  spriteUrl: string;
+  // URL of the card back image (rubashka)
+  cardBackUrl: string;
+  // Number of cards per row in the sprite sheet
+  columns: number;
+  // Number of rows in the sprite sheet
+  rows: number;
+  // Total number of cards to generate (columns * rows by default, but can be less)
+  totalCards?: number;
+}
+
+// Per-card sprite position info (stored in card.description or separate metadata)
+export interface CardSpriteInfo {
+  // Index of this card in the sprite sheet (0-based)
+  spriteIndex: number;
 }
 
 export interface Deck extends GameItem {
@@ -161,6 +187,9 @@ export interface Deck extends GameItem {
   searchWindowVisibility?: SearchWindowVisibility; // How cards are displayed in search window for players
   perPlayerSearchFaceUp?: Record<string, boolean>; // Player ID -> their preferred face up setting (for 'lastState' mode)
   gmSearchFaceUp?: Record<string, boolean>; // Card ID -> GM's preferred face up setting in search window
+
+  // Sprite sheet configuration for importing cards from a single image
+  spriteConfig?: CardSpriteConfig;
 }
 
 export interface Token extends GameItem {

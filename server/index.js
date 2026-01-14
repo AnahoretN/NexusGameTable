@@ -234,7 +234,7 @@ export function createWebSocketServer(httpServer) {
 
   console.log(`\n🎮 Nexus Table Server`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-  console.log(`📡 WebSocket: ws://localhost:5173/ws`);
+  console.log(`📡 WebSocket: ws://localhost:5177/ws`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
   return { wss, clients, rooms };

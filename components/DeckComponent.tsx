@@ -27,7 +27,6 @@ interface DeckComponentProps {
   setDeleteCandidateId: (id: string | null) => void;
   executeClickAction: (obj: any, action: string) => void;
   cursorSlotHasCards: boolean;
-  onDropToDeck?: (deckId: string) => void;
   allObjects: Record<string, any>;
 }
 
@@ -53,13 +52,40 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   setDeleteCandidateId,
   executeClickAction,
   cursorSlotHasCards = false,
-  onDropToDeck,
   allObjects,
 }) => {
   const { state } = useGame();
 
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
   const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
+
+  // Log when canDropCard changes to true
+  React.useEffect(() => {
+    if (canDropCard) {
+      const draggingCard = draggingId ? state.objects[draggingId] as CardType : null;
+
+      // Get all decks and their zIndex for debugging
+      const allDecks = Object.values(state.objects)
+        .filter(obj => obj.type === ItemType.DECK)
+        .map(d => ({ id: d.id, name: d.name, zIndex: d.zIndex, x: d.x, y: d.y }));
+
+      console.log('🟣 PURPLE HIGHLIGHT ON', {
+        deckId: deck.id,
+        deckName: deck.name,
+        deckPosition: { x: deck.x, y: deck.y },
+        deckSize: { width: deck.width, height: deck.height },
+        deckRotation: deck.rotation,
+        deckZIndex: deck.zIndex,
+        hoveredDeckId: hoveredDeckId,
+        isDraggingCardFromTable,
+        cursorSlotHasCards,
+        draggingCardId: draggingId,
+        draggingCardPosition: draggingCard ? { x: draggingCard.x, y: draggingCard.y } : null,
+        draggingCardZIndex: draggingCard?.zIndex,
+        allDecks,
+      });
+    }
+  }, [canDropCard, deck.id, deck.name, deck.x, deck.y, deck.width, deck.height, deck.rotation, deck.zIndex, hoveredDeckId, isDraggingCardFromTable, cursorSlotHasCards, draggingId, state.objects]);
 
   // Count visible cards (excluding hidden ones)
   const visibleCardCount = deck.cardIds.filter(id => {
@@ -186,6 +212,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             )}
             {/* Pile container - keeps normal z-index */}
             <div
+              data-pile-id={pile.id}
               onMouseEnter={() => {
                 // Allow hover if dragging card OR if cursor slot has cards
                 const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
@@ -298,17 +325,23 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           data-object-id={deck.id}
           onMouseDown={(e) => isGM && handleMouseDown(e, deck.id)}
           onContextMenu={(e) => handleContextMenu(e, deck)}
-          onMouseUp={(e) => {
-            // Drop cards from cursor slot when releasing mouse over deck
-            if (cursorSlotHasCards && onDropToDeck && hoveredDeckId === deck.id) {
-              e.stopPropagation();
-              onDropToDeck(deck.id);
-            }
-          }}
           onMouseEnter={() => {
             // Allow hover if dragging card OR if cursor slot has cards
             const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
             if (draggingFromTable || cursorSlotHasCards) {
+              const draggingCard = draggingId ? state.objects[draggingId] as CardType : null;
+              console.log('🔵 DECK HOVER ENTER', {
+                deckId: deck.id,
+                deckName: deck.name,
+                deckPosition: { x: deck.x, y: deck.y },
+                deckSize: { width: deck.width, height: deck.height },
+                deckRotation: deck.rotation,
+                deckZIndex: deck.zIndex,
+                draggingCardId: draggingId,
+                draggingCardPosition: draggingCard ? { x: draggingCard.x, y: draggingCard.y } : null,
+                draggingCardZIndex: draggingCard?.zIndex,
+                cursorSlotHasCards,
+              });
               setHoveredDeckId(deck.id);
             }
           }}
@@ -329,9 +362,12 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         {[2, 1, 0].map(i => (
           <div
             key={i}
-            className="absolute rounded bg-slate-800 border-2 border-slate-600 shadow-md"
+            className="absolute rounded bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
             style={{
-              inset: 0,
+              width: '100%',
+              height: '100%',
+              top: 0,
+              left: 0,
               transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
               zIndex: -i
             }}

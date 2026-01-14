@@ -11,7 +11,8 @@ import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
 
 const GAME_NAME = 'Nexus Game Table';
-const GAME_VERSION = 'v0.1.0';
+// Version is imported from package.json during build
+const GAME_VERSION = 'v0.0.7';
 
 interface UIObjectRendererProps {
   uiObject: PanelObject | WindowObject;

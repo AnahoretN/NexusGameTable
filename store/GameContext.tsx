@@ -208,9 +208,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     }
     case 'ADD_OBJECT': {
       const isBoard = action.payload.type === ItemType.BOARD || (action.payload.type === ItemType.TOKEN && (action.payload as any).shape === TokenShape.RECTANGLE);
+      const isDeck = action.payload.type === ItemType.DECK;
       const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
       const currentMaxZ = allZ.length ? Math.max(...allZ) : 0;
-      const defaultZ = isBoard ? -100 : (currentMaxZ + 1);
+      // Decks get low z-index so they don't interfere with dragging cards
+      // Boards get -100, decks get 0, other objects get currentMaxZ + 1
+      const defaultZ = isBoard ? -100 : (isDeck ? 0 : (currentMaxZ + 1));
 
       const newObj = {
           ...action.payload,
@@ -233,6 +236,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (!obj) return state;
 
       const updatedObj = { ...obj, ...action.payload } as TableObject;
+
+      // Ensure decks don't have excessively high z-index that interferes with card dragging
+      // Cards use zIndex 9999 when dragging, so decks should stay below that
+      if (updatedObj.type === ItemType.DECK && (updatedObj.zIndex === undefined || updatedObj.zIndex > 100)) {
+        updatedObj.zIndex = 0;
+      }
+
       const newObjects = { ...state.objects, [action.payload.id]: updatedObj };
 
       // Handle exclusive isMillPile toggle for piles
@@ -291,10 +301,33 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         if (!objectToDelete) return state;
         const newObjects = { ...state.objects };
         delete newObjects[action.payload.id];
+
+        // If deleting a deck, delete all its cards
         if (objectToDelete.type === ItemType.DECK) {
              const deck = objectToDelete as Deck;
              if (deck.cardIds) { deck.cardIds.forEach(cid => delete newObjects[cid]); }
         }
+
+        // If deleting a card, remove it from deck's cardIds and update initialCardCount
+        if (objectToDelete.type === ItemType.CARD) {
+            const card = objectToDelete as Card;
+            if (card.deckId) {
+                const deck = newObjects[card.deckId] as Deck;
+                if (deck && deck.type === ItemType.DECK) {
+                    // Remove card from deck's cardIds
+                    const updatedCardIds = (deck.cardIds || []).filter(id => id !== card.id);
+                    newObjects[card.deckId] = {
+                        ...deck,
+                        cardIds: updatedCardIds,
+                        // Update initialCardCount if it exists
+                        initialCardCount: deck.initialCardCount
+                            ? Math.max(updatedCardIds.length, deck.initialCardCount - 1)
+                            : undefined
+                    };
+                }
+            }
+        }
+
         return { ...state, objects: newObjects };
     }
     case 'DRAW_CARD': {
@@ -475,25 +508,67 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // and we need to handle it differently (it will be added back to objects)
         if (!card) return state;
 
+        console.log('📥 CARD ADDED TO DECK', {
+            deckId: deck.id,
+            deckName: deck.name,
+            deckPosition: { x: deck.x, y: deck.y },
+            deckSize: { width: deck.width, height: deck.height },
+            deckRotation: deck.rotation,
+            deckZIndex: deck.zIndex,
+            cardId: card.id,
+            cardName: card.name,
+            cardPosition: { x: card.x, y: card.y },
+            cardZIndex: card.zIndex,
+            cardDeckId: card.deckId,
+        });
+
+        // Remove card from its previous deck's cardIds (if it was in one)
+        // Find which deck currently contains this card
+        let previousDeckId: string | undefined = card.deckId;
+        // If card doesn't have a deckId yet, check which deck's cardIds contains it
+        if (!previousDeckId) {
+            Object.values(state.objects).forEach(obj => {
+                if (obj.type === ItemType.DECK) {
+                    const d = obj as Deck;
+                    if (d.cardIds.includes(card.id)) {
+                        previousDeckId = d.id;
+                    }
+                }
+            });
+        }
+
+        // Remove from previous deck's cardIds (but keep deckId unchanged - it belongs to original deck)
+        let updatedState = state;
+        if (previousDeckId && previousDeckId !== deck.id) {
+            const previousDeck = state.objects[previousDeckId] as Deck;
+            if (previousDeck && previousDeck.cardIds.includes(card.id)) {
+                const updatedPreviousDeck: Deck = {
+                    ...previousDeck,
+                    cardIds: previousDeck.cardIds.filter(id => id !== card.id)
+                };
+                updatedState = { ...state, objects: { ...state.objects, [previousDeckId]: updatedPreviousDeck } };
+            }
+        }
+
         // Add card to the beginning of the deck (top position)
-        const newCardIds = [card.id, ...deck.cardIds];
+        // Use updatedState instead of state to include previous deck changes
+        const newCardIds = [action.payload.cardId, ...deck.cardIds];
         const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
 
         // Update card to be in deck
-        // Keep the card's original deckId to track which deck it belongs to
+        // Keep the card's original deckId - cards always belong to their original deck
         const updatedCard: Card = {
             ...card,
             location: CardLocation.DECK,
-            // Only update deckId if the card doesn't already have one (e.g., newly created card)
-            // This preserves the original deckId when moving cards between decks
+            // Set deckId if not already set (card from empty deck may not have one)
             deckId: card.deckId || deck.id,
-            faceUp: true,
+            faceUp: false,  // Cards are face down in deck
             x: deck.x,
             y: deck.y,
             isOnTable: true
         };
 
-        return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard } };
+        return { ...updatedState, objects: { ...updatedState.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard } };
     }
     case 'ADD_CARD_TO_PILE': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -504,11 +579,42 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const pile = deck.piles?.find(p => p.id === action.payload.pileId);
         if (!pile) return state;
 
+        // Remove card from its previous deck's cardIds (if it was in one)
+        // Find which deck currently contains this card
+        let previousDeckId: string | undefined = card.deckId;
+        // If card doesn't have a deckId yet, check which deck's cardIds contains it
+        if (!previousDeckId) {
+            Object.values(state.objects).forEach(obj => {
+                if (obj.type === ItemType.DECK) {
+                    const d = obj as Deck;
+                    if (d.cardIds.includes(card.id)) {
+                        previousDeckId = d.id;
+                    }
+                }
+            });
+        }
+
+        // Remove from previous deck's cardIds (but keep deckId unchanged - it belongs to original deck)
+        if (previousDeckId && previousDeckId !== deck.id) {
+            const previousDeck = state.objects[previousDeckId] as Deck;
+            if (previousDeck && previousDeck.cardIds.includes(card.id)) {
+                const updatedPreviousDeck: Deck = {
+                    ...previousDeck,
+                    cardIds: previousDeck.cardIds.filter(id => id !== card.id)
+                };
+                // Also remove from previous deck's piles if present
+                const updatedPreviousPiles = previousDeck.piles?.map(p => ({
+                    ...p,
+                    cardIds: p.cardIds.filter(id => id !== card.id)
+                }));
+                return { ...state, objects: { ...state.objects, [previousDeckId]: { ...updatedPreviousDeck, piles: updatedPreviousPiles } } };
+            }
+        }
 
         // Create updated pile with new card added to TOP (beginning of array)
         const updatedPile: CardPile = {
             ...pile,
-            cardIds: [card.id, ...pile.cardIds]
+            cardIds: [action.payload.cardId, ...pile.cardIds]
         };
 
         // Update deck's piles array
@@ -519,18 +625,18 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updatedDeck: Deck = { ...deck, piles: updatedPiles };
 
         // Update card to be in pile
-        // Keep the card's original deckId to track which deck it belongs to
+        // Keep the card's original deckId - cards always belong to their original deck
         const updatedCard: Card = {
             ...card,
             location: CardLocation.PILE,
-            // Only update deckId if the card doesn't already have one
+            // Set deckId if not already set (card from empty deck may not have one)
             deckId: card.deckId || deck.id,
             faceUp: pile.faceUp ?? false,
             isOnTable: true
         };
 
 
-        return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard } };
+        return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard } };
     }
     case 'UPDATE_PERMISSIONS': {
         const obj = state.objects[action.payload.id] as any;

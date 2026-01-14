@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board } from '../types';
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye, Grid3x3 } from 'lucide-react';
+import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig } from '../types';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye, Grid3x3, Image as ImageIcon } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
   object: TableObject;
@@ -72,7 +72,7 @@ const CLICK_ACTIONS = [
   ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
 ];
 
-type Tab = 'general' | 'actions' | 'piles' | 'cards';
+type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite';
 
 export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
@@ -134,6 +134,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     return {};
   });
 
+  // Sprite sheet configuration state
+  const [spriteConfig, setSpriteConfig] = useState<CardSpriteConfig | null>(
+    deck.type === ItemType.DECK ? (deck.spriteConfig || null) : null
+  );
+
   // Reset data when object changes
   useEffect(() => {
     setData({ ...object });
@@ -167,6 +172,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         searchFaceUp: deckObj.searchFaceUp ?? true,
         playTopFaceUp: deckObj.playTopFaceUp ?? true,
       });
+      // Initialize sprite config
+      setSpriteConfig(deckObj.spriteConfig || null);
     }
   }, [object]);
 
@@ -297,6 +304,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       (toSave as Deck).searchFaceUp = cardSettings.searchFaceUp;
       (toSave as Deck).playTopFaceUp = cardSettings.playTopFaceUp;
       (toSave as Deck).searchWindowVisibility = cardSettings.searchWindowVisibility;
+      (toSave as Deck).spriteConfig = spriteConfig || undefined;
     }
     onSave(toSave);
     onClose();
@@ -386,6 +394,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               }`}
             >
               <Square size={16} /> Cards
+            </button>
+          )}
+          {isDeck && (
+            <button
+              onClick={() => setActiveTab('sprite')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'sprite'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <ImageIcon size={16} /> Import
             </button>
           )}
         </div>
@@ -1194,6 +1214,166 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'sprite' && (
+            <div className="space-y-4">
+              <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4">
+                <p className="text-xs text-blue-200">
+                  <strong>Sprite Import:</strong> Load cards from a single image. The image will be divided into equal parts based on the grid you specify.
+                </p>
+              </div>
+
+              {/* Sprite Sheet URL */}
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Sprite Sheet URL</label>
+                <input
+                  type="text"
+                  value={spriteConfig?.spriteUrl || ''}
+                  onChange={(e) => setSpriteConfig(prev => ({ ...prev, spriteUrl: e.target.value, cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  placeholder="https://example.com/cards.png"
+                />
+                {spriteConfig?.spriteUrl && (
+                  <div className="mt-2 bg-slate-900 rounded p-2 border border-slate-700">
+                    <img
+                      src={spriteConfig.spriteUrl}
+                      alt="Sprite sheet preview"
+                      className="max-w-full max-h-48 mx-auto"
+                      onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23334155%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2394a3b8%22 dy=%22.3em%22%3EImage not found%3C/text%3E%3C/svg%3E'; }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Card Back URL */}
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Card Back URL (Rubashka)</label>
+                <input
+                  type="text"
+                  value={spriteConfig?.cardBackUrl || ''}
+                  onChange={(e) => setSpriteConfig(prev => ({ ...prev, cardBackUrl: e.target.value, spriteUrl: prev?.spriteUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  placeholder="https://example.com/card-back.png"
+                />
+                {spriteConfig?.cardBackUrl && (
+                  <div className="mt-2 bg-slate-900 rounded p-2 border border-slate-700 flex justify-center">
+                    <img
+                      src={spriteConfig.cardBackUrl}
+                      alt="Card back preview"
+                      className="max-w-24 max-h-32"
+                      onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2275%22%3E%3Crect fill=%22%231e293b%22 width=%2250%22 height=%2275%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2364748b%22 dy=%22.3em%22 font-size=%2210%22%3EN/A%3C/text%3E%3C/svg%3E'; }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Grid Settings */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Columns (cards per row)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={spriteConfig?.columns || 1}
+                    onChange={(e) => setSpriteConfig(prev => ({ ...prev, columns: Math.max(1, parseInt(e.target.value) || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Rows</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={spriteConfig?.rows || 1}
+                    onChange={(e) => setSpriteConfig(prev => ({ ...prev, rows: Math.max(1, parseInt(e.target.value) || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, totalCards: prev?.totalCards }))}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Total Cards (optional) */}
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Total Cards (optional)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={spriteConfig?.totalCards || (spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : '')}
+                  onChange={(e) => setSpriteConfig(prev => ({ ...prev, totalCards: e.target.value ? parseInt(e.target.value) : undefined, spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1 }))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  placeholder={`Auto: ${spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : 'N/A'}`}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty to use all cards from the grid ({spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : 0} cards)
+                </p>
+              </div>
+
+              {/* Preview Grid */}
+              {spriteConfig?.columns && spriteConfig?.rows && spriteConfig?.spriteUrl && (
+                <div className="border-t border-slate-700 pt-4">
+                  <h4 className="text-sm font-bold text-gray-300 mb-3">Grid Preview</h4>
+                  <div
+                    className="bg-slate-900 rounded p-2 border border-slate-700 overflow-auto"
+                    style={{ maxHeight: '200px' }}
+                  >
+                    <div
+                      className="grid gap-0.5 mx-auto"
+                      style={{
+                        gridTemplateColumns: `repeat(${spriteConfig.columns}, minmax(0, 1fr))`,
+                        width: 'fit-content'
+                      }}
+                    >
+                      {Array.from({ length: spriteConfig.totalCards || (spriteConfig.columns * spriteConfig.rows) }).map((_, index) => {
+                        const row = Math.floor(index / spriteConfig.columns);
+                        const col = index % spriteConfig.columns;
+                        return (
+                          <div
+                            key={index}
+                            className="aspect-square bg-slate-800 border border-slate-600 rounded overflow-hidden relative group"
+                            style={{ width: '40px' }}
+                          >
+                            <img
+                              src={spriteConfig.spriteUrl}
+                              alt={`Card ${index + 1}`}
+                              className="w-full h-full object-cover"
+                              style={{
+                                imageRendering: 'pixelated',
+                                width: `${spriteConfig.columns * 40}px`,
+                                height: `${spriteConfig.rows * 40}px`,
+                                marginLeft: `-${col * 40}px`,
+                                marginTop: `-${row * 40}px`,
+                                maxWidth: 'none',
+                              }}
+                            />
+                            <span className="absolute bottom-0 right-0 bg-black/70 text-white text-[8px] px-0.5 rounded-tl">
+                              {index + 1}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Generate Cards Button */}
+              {spriteConfig?.spriteUrl && spriteConfig.columns > 0 && spriteConfig.rows > 0 && (
+                <div className="border-t border-slate-700 pt-4">
+                  <button
+                    onClick={() => {
+                      // This will be handled by the parent component via onSave
+                      // The card generation will happen in the reducer
+                      (data as Deck).spriteConfig = spriteConfig;
+                      onSave(data);
+                      onClose();
+                    }}
+                    className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Plus size={16} /> Generate Cards from Sprite
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
