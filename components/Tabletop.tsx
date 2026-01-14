@@ -592,6 +592,11 @@ export const Tabletop: React.FC = () => {
                 location: CardLocation.CURSOR_SLOT,
                 faceUp: faceUp,
                 isOnTable: false,
+                // Preserve sprite properties
+                spriteUrl: card.spriteUrl,
+                spriteIndex: card.spriteIndex,
+                spriteColumns: card.spriteColumns,
+                spriteRows: card.spriteRows,
               }
             });
           }
@@ -932,6 +937,12 @@ export const Tabletop: React.FC = () => {
         locked: card.locked,
         // Store orientation info for cursor slot rendering
         isHorizontal: isHorizontal,
+        // Preserve sprite properties for proper card display
+        spriteUrl: card.spriteUrl,
+        spriteIndex: card.spriteIndex,
+        spriteColumns: card.spriteColumns,
+        spriteRows: card.spriteRows,
+        shape: card.shape,
       } as CardType;
     } else {
       itemClone = { ...item } as TokenType;
@@ -2916,6 +2927,7 @@ export const Tabletop: React.FC = () => {
                                   cardNamePosition={cardSettings.cardNamePosition}
                                   cardOrientation={cardSettings.cardOrientation}
                                   disableRotationTransform={true}
+                                  deckSpriteConfig={card.deckId ? (state.objects[card.deckId] as Deck)?.spriteConfig : undefined}
                                   onActionButtonClick={(action) => {
                                     switch (action) {
                                         case 'flip':
@@ -3211,6 +3223,7 @@ export const Tabletop: React.FC = () => {
                                     disablePointerEvents={true}
                                     showActionButtons={false}
                                     skipTooltip={true}
+                                    deckSpriteConfig={deck?.spriteConfig}
                                 />
                             </div>
                         );

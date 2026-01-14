@@ -356,6 +356,12 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
           ...(card.deckId && { deckId: card.deckId }),
           ...(card.width && { width: card.width }),
           ...(card.height && { height: card.height }),
+          // Preserve sprite properties for proper card display
+          ...(card.spriteUrl && { spriteUrl: card.spriteUrl }),
+          ...(card.spriteIndex !== undefined && { spriteIndex: card.spriteIndex }),
+          ...(card.spriteColumns && { spriteColumns: card.spriteColumns }),
+          ...(card.spriteRows && { spriteRows: card.spriteRows }),
+          ...(card.shape && { shape: card.shape }),
         };
 
         dispatch({
@@ -402,6 +408,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
               const cardSettings = computeCardSettings(card);
               const cardActionButtons = cardSettings.cardActionButtons;
               const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
+              const deck = card.deckId ? (state.objects[card.deckId] as DeckType | undefined) : undefined;
 
               const buttons = getCardButtonConfigs(
                 card,
@@ -436,6 +443,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                     cardNamePosition={cardSettings.cardNamePosition}
                     cardOrientation={cardSettings.cardOrientation}
                     disableRotationTransform={true}
+                    deckSpriteConfig={deck?.spriteConfig}
                   />
 
                   {buttons.length > 0 && (

@@ -1219,12 +1219,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
           {activeTab === 'sprite' && (
             <div className="space-y-4">
-              <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4">
-                <p className="text-xs text-blue-200">
-                  <strong>Sprite Import:</strong> Load cards from a single image. The image will be divided into equal parts based on the grid you specify.
-                </p>
-              </div>
-
               {/* Sprite Sheet URL */}
               <div>
                 <label className="block text-xs font-bold text-gray-400 mb-1">Sprite Sheet URL</label>
@@ -1249,7 +1243,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
               {/* Card Back URL */}
               <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Card Back URL (Rubashka)</label>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Card Back URL</label>
                 <input
                   type="text"
                   value={spriteConfig?.cardBackUrl || ''}
@@ -1270,9 +1264,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Grid Settings */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Columns (cards per row)</label>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Columns</label>
                   <input
                     type="number"
                     min="1"
@@ -1291,22 +1285,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                   />
                 </div>
-              </div>
-
-              {/* Total Cards (optional) */}
-              <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Total Cards (optional)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={spriteConfig?.totalCards || (spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : '')}
-                  onChange={(e) => setSpriteConfig(prev => ({ ...prev, totalCards: e.target.value ? parseInt(e.target.value) : undefined, spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1 }))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                  placeholder={`Auto: ${spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : 'N/A'}`}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Leave empty to use all cards from the grid ({spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : 0} cards)
-                </p>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Total Cards</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={spriteConfig?.totalCards || (spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : '')}
+                    onChange={(e) => setSpriteConfig(prev => ({ ...prev, totalCards: e.target.value ? parseInt(e.target.value) : undefined, spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1 }))}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    placeholder={`Auto: ${spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : 'N/A'}`}
+                  />
+                </div>
               </div>
 
               {/* Preview Grid */}
@@ -1317,42 +1306,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     className="bg-slate-900 rounded p-2 border border-slate-700 overflow-auto"
                     style={{ maxHeight: '200px' }}
                   >
-                    <div
-                      className="grid gap-0.5 mx-auto"
+                    <img
+                      src={spriteConfig.spriteUrl}
+                      alt="Sprite Sheet Preview"
+                      className="mx-auto border border-slate-600"
                       style={{
-                        gridTemplateColumns: `repeat(${spriteConfig.columns}, minmax(0, 1fr))`,
-                        width: 'fit-content'
+                        maxWidth: '100%',
+                        height: 'auto',
+                        imageRendering: 'pixelated',
                       }}
-                    >
-                      {Array.from({ length: spriteConfig.totalCards || (spriteConfig.columns * spriteConfig.rows) }).map((_, index) => {
-                        const row = Math.floor(index / spriteConfig.columns);
-                        const col = index % spriteConfig.columns;
-                        return (
-                          <div
-                            key={index}
-                            className="aspect-square bg-slate-800 border border-slate-600 rounded overflow-hidden relative group"
-                            style={{ width: '40px' }}
-                          >
-                            <img
-                              src={spriteConfig.spriteUrl}
-                              alt={`Card ${index + 1}`}
-                              className="w-full h-full object-cover"
-                              style={{
-                                imageRendering: 'pixelated',
-                                width: `${spriteConfig.columns * 40}px`,
-                                height: `${spriteConfig.rows * 40}px`,
-                                marginLeft: `-${col * 40}px`,
-                                marginTop: `-${row * 40}px`,
-                                maxWidth: 'none',
-                              }}
-                            />
-                            <span className="absolute bottom-0 right-0 bg-black/70 text-white text-[8px] px-0.5 rounded-tl">
-                              {index + 1}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    />
                   </div>
                 </div>
               )}

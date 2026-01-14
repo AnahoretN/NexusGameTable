@@ -317,9 +317,30 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         }
         setCardOrder(filteredOrder);
         break;
+      case 'setCardBack':
+        // Set the current card's image as the deck's card back
+        const card = object as Card;
+        if (card.deckId) {
+          const parentDeck = state.objects[card.deckId] as Deck;
+          if (parentDeck && parentDeck.spriteConfig) {
+            // If the card is from a sprite sheet, save the sprite info for the card back
+            const updatedSpriteConfig = {
+              ...parentDeck.spriteConfig,
+              cardBackSpriteUrl: card.spriteUrl || card.content,
+              cardBackSpriteIndex: card.spriteIndex ?? 0,
+              cardBackSpriteColumns: card.spriteColumns ?? 1,
+              cardBackSpriteRows: card.spriteRows ?? 1,
+            };
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: parentDeck.id, spriteConfig: updatedSpriteConfig }
+            });
+          }
+        }
+        break;
     }
     setContextMenu(null);
-  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, deck.id, state.activePlayerId, cardOrder, isPile, pile, state.objects]);
+  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, deck.id, state.activePlayerId, cardOrder, isPile, pile, state.objects, deck]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -434,6 +455,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                       cardNamePosition={deck.cardNamePosition}
                       cardOrientation={deck.cardOrientation}
                       disableRotationTransform={true}
+                      deckSpriteConfig={deck.spriteConfig}
                     />
 
                     {buttons.length > 0 && (

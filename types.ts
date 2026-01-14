@@ -157,6 +157,11 @@ export interface CardSpriteConfig {
   rows: number;
   // Total number of cards to generate (columns * rows by default, but can be less)
   totalCards?: number;
+  // Card back as sprite sheet (optional - if not set, uses cardBackUrl as simple image)
+  cardBackSpriteUrl?: string; // URL of the sprite sheet for card back
+  cardBackSpriteIndex?: number; // Index of the card back in the sprite sheet
+  cardBackSpriteColumns?: number; // Number of columns in the card back sprite sheet
+  cardBackSpriteRows?: number; // Number of rows in the card back sprite sheet
 }
 
 // Per-card sprite position info (stored in card.description or separate metadata)
