@@ -11,8 +11,8 @@ export const MAIN_MENU_WIDTH = 310;
 export const SCROLLBAR_WIDTH = 16;
 
 // Default object dimensions
-export const DEFAULT_DECK_WIDTH = 100;
-export const DEFAULT_DECK_HEIGHT = 140;
+export const DEFAULT_DECK_WIDTH = 150;
+export const DEFAULT_DECK_HEIGHT = 210;
 export const DEFAULT_DICE_SIZE = 60;
 export const DEFAULT_COUNTER_WIDTH = 120;
 export const DEFAULT_COUNTER_HEIGHT = 50;

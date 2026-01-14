@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition } from '../types';
+import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition, CardSpriteConfig } from '../types';
 import { Layers, Undo, ChevronRight, ArrowUp, ArrowDown, Hand, Eye, EyeOff } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { getCardButtonConfig, ButtonAction, CardButtonConfig } from '../utils/buttonConfig';
@@ -31,9 +31,11 @@ interface CardProps {
   disablePointerEvents?: boolean;
   // When true, skip the Tooltip wrapper (for cursor slot cards)
   skipTooltip?: boolean;
+  // Sprite config from deck (for custom card back support)
+  deckSpriteConfig?: CardSpriteConfig;
 }
 
-export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip }) => {
+export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig }) => {
   const shape = card.shape || CardShape.POKER;
   const orientation = cardOrientation ?? CardOrientation.VERTICAL;
 
@@ -191,13 +193,38 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               className={`w-full h-full ${!isGeometric ? 'border-2 border-gray-700 rounded-lg' : ''} ${isHovered && !isGeometric ? 'ring-2 ring-yellow-400' : ''}`}
               style={{
                   backgroundColor: card.faceUp ? 'white' : '#1e293b',
-                  backgroundImage: card.faceUp ? `url(${card.spriteUrl || card.content})` : `repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)`,
-                  backgroundSize: card.spriteUrl && card.spriteColumns && card.spriteRows
-                    ? `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`
-                    : 'cover',
-                  backgroundPosition: card.spriteUrl && card.spriteIndex !== undefined && card.spriteColumns && card.spriteRows
-                    ? `${(card.spriteIndex % card.spriteColumns) * (100 / (card.spriteColumns - 1 || 1))}% ${Math.floor(card.spriteIndex / card.spriteColumns) * (100 / ((card.spriteRows || 1) - 1 || 1))}%`
-                    : 'center',
+                  backgroundImage: (() => {
+                    if (card.faceUp) {
+                      return `url(${card.spriteUrl || card.content})`;
+                    }
+                    // Card is face down - check for custom sprite back
+                    if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
+                      return `url(${deckSpriteConfig.cardBackSpriteUrl})`;
+                    }
+                    // Default pattern
+                    return `repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)`;
+                  })(),
+                  backgroundSize: (() => {
+                    if (card.faceUp && card.spriteUrl && card.spriteColumns && card.spriteRows) {
+                      return `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`;
+                    }
+                    if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
+                      return `${deckSpriteConfig.cardBackSpriteColumns * 100}% ${deckSpriteConfig.cardBackSpriteRows * 100}%`;
+                    }
+                    return 'cover';
+                  })(),
+                  backgroundPosition: (() => {
+                    if (card.faceUp && card.spriteUrl && card.spriteIndex !== undefined && card.spriteColumns && card.spriteRows) {
+                      return `${(card.spriteIndex % card.spriteColumns) * (100 / (card.spriteColumns - 1 || 1))}% ${Math.floor(card.spriteIndex / card.spriteColumns) * (100 / ((card.spriteRows || 1) - 1 || 1))}%`;
+                    }
+                    if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
+                      const idx = deckSpriteConfig.cardBackSpriteIndex;
+                      const cols = deckSpriteConfig.cardBackSpriteColumns;
+                      const rows = deckSpriteConfig.cardBackSpriteRows;
+                      return `${(idx % cols) * (100 / (cols - 1 || 1))}% ${Math.floor(idx / cols) * (100 / ((rows || 1) - 1 || 1))}%`;
+                    }
+                    return 'center';
+                  })(),
               }}
           >
               {/* Visual Border helper for clipped shapes (rendered inside the clip area) */}

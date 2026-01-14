@@ -260,6 +260,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
                       cardOrientation={deck.cardOrientation}
                       disableRotationTransform={true}
                       showActionButtons={false}
+                      deckSpriteConfig={deck.spriteConfig}
                     />
 
                     {/* Custom action buttons for Top Deck */}

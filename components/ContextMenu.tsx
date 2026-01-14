@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -92,6 +92,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: 'configure',
       icon: <Settings size={14} />,
       visible: isGM,
+      separator: false
+    },
+    {
+      label: 'Set as Card Back',
+      action: 'setCardBack',
+      icon: <ImageDown size={14} />,
+      visible: isSearchWindow && isGM && object.type === ItemType.CARD,
       separator: true
     },
     {
