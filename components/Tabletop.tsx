@@ -2095,7 +2095,12 @@ export const Tabletop: React.FC = () => {
         // Exclude UI objects (panels and windows) - they have their own rendering
         if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
         if (!obj.isOnTable) return false;
-        if (obj.type === ItemType.CARD) return (obj as CardType).location === CardLocation.TABLE;
+        if (obj.type === ItemType.CARD) {
+          const card = obj as CardType;
+          if (card.location !== CardLocation.TABLE) return false;
+          // Filter out hidden cards for players (GM sees them)
+          if (card.hidden && !isGM) return false;
+        }
         // Filter out hidden objects (visible === false)
         if ((obj as any).visible === false) return false;
         return true;
@@ -2788,6 +2793,7 @@ export const Tabletop: React.FC = () => {
                                 executeClickAction={executeClickAction}
                                 cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
                                 onDropToDeck={dropToDeck}
+                                allObjects={state.objects}
                             />
                         </div>
                     );
@@ -2804,6 +2810,7 @@ export const Tabletop: React.FC = () => {
                     const displayHeight = isHorizontal ? actualCardWidth : actualCardHeight;
 
                     const isDragging = draggingId === obj.id;
+                    const isCardHidden = (card as any).hidden === true;
 
                     return (
                         <div
@@ -2814,6 +2821,7 @@ export const Tabletop: React.FC = () => {
                                 top: obj.y,
                                 position: 'absolute',
                                 transform: `rotate(${obj.rotation}deg)`,
+                                opacity: isCardHidden && isGM ? 0.5 : 1,
                             }}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}

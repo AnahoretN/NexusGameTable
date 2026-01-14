@@ -20,6 +20,10 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
   const { state, dispatch } = useGame();
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
+  const currentPlayerId = state.activePlayerId;
+  const currentPlayer = state.players.find(p => p.id === currentPlayerId);
+  const isGM = currentPlayer?.isGM ?? false;
+
   const [cardOrder, setCardOrder] = useState<string[]>(deck.cardIds);
 
   // Modal width state
@@ -28,8 +32,8 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
   const resizeStartRef = useRef<{ mouseX: number; startWidth: number } | null>(null);
 
   const cards = useMemo(() =>
-    cardOrder.map(id => state.objects[id] as Card).filter(Boolean),
-    [cardOrder, state.objects]
+    cardOrder.map(id => state.objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
+    [cardOrder, state.objects, isGM]
   );
 
   // Get the mill pile (pile with isMillPile = true)
@@ -257,7 +261,11 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
                   <div
                     key={card.id}
                     className="relative flex-shrink-0 group transition-all"
-                    style={{ width: cardWidth, height: cardHeight }}
+                    style={{
+                      width: cardWidth,
+                      height: cardHeight,
+                      opacity: card.hidden && isGM ? 0.5 : 1
+                    }}
                   >
                     <CardComponent
                       card={card}

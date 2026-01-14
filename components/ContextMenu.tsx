@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -14,9 +14,10 @@ interface ContextMenuProps {
   onClose: () => void;
   allObjects: Record<string, TableObject>; // Added to access deck for card inheritance
   hideCardActions?: boolean; // Hide layer, lock, and rotate for cards
+  isSearchWindow?: boolean; // Show additional GM actions in search window
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow }) => {
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
@@ -185,16 +186,24 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       visible: object.type === ItemType.CARD && can('toHand')
     },
     {
+      label: (object as Card).hidden ? 'Unhide Card' : 'Hide Card',
+      action: 'toggleHide',
+      icon: (object as Card).hidden ? <Eye size={14} /> : <EyeOff size={14} />,
+      visible: isSearchWindow && isGM && object.type === ItemType.CARD
+    },
+    {
       label: 'Clone',
       action: 'clone',
       icon: <Copy size={14} />,
       visible: !hideCardActions && object.type !== ItemType.CARD && can('clone')
+        || (isSearchWindow && isGM && object.type === ItemType.CARD && can('clone'))
     },
     {
       label: 'Delete',
       action: 'delete',
       icon: <Trash2 size={14} />,
       visible: !hideCardActions && object.type !== ItemType.CARD && can('delete')
+        || (isSearchWindow && isGM && object.type === ItemType.CARD && can('delete'))
     },
   ];
 
@@ -229,7 +238,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       >
         <div className="px-3 py-2 border-b border-slate-700 mb-1">
             <span className="text-xs text-gray-400 font-bold uppercase truncate block max-w-[150px]">
-              {object.type === ItemType.CARD && !(object as Card).faceUp ? '*****' : object.name}
+              {object.type === ItemType.CARD
+                ? (object as Card).hidden
+                  ? 'HIDDEN'
+                  : (object as Card).faceUp
+                    ? object.name
+                    : '*****'
+                : object.name}
             </span>
         </div>
 
