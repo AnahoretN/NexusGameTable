@@ -508,20 +508,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // and we need to handle it differently (it will be added back to objects)
         if (!card) return state;
 
-        console.log('📥 CARD ADDED TO DECK', {
-            deckId: deck.id,
-            deckName: deck.name,
-            deckPosition: { x: deck.x, y: deck.y },
-            deckSize: { width: deck.width, height: deck.height },
-            deckRotation: deck.rotation,
-            deckZIndex: deck.zIndex,
-            cardId: card.id,
-            cardName: card.name,
-            cardPosition: { x: card.x, y: card.y },
-            cardZIndex: card.zIndex,
-            cardDeckId: card.deckId,
-        });
-
         // Remove card from its previous deck's cardIds (if it was in one)
         // Find which deck currently contains this card
         let previousDeckId: string | undefined = card.deckId;
