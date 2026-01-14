@@ -5,6 +5,7 @@ import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibilit
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
+import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 
 const DEFAULT_MODAL_WIDTH = 75.75; // vw
@@ -63,6 +64,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
+
+  // Settings modal state
+  const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
 
   // Track modified faceUp states for this player (for LAST_STATE mode)
   const [playerFlipStates, setPlayerFlipStates] = useState<Record<string, boolean>>({});
@@ -160,24 +164,19 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     if (isGM) {
       const currentState = gmFlipStates[cardId] ?? true;
       const newState = !currentState;
-      setGmFlipStates(prev => {
-        const updated = { ...prev, [cardId]: newState };
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: { id: deck.id, gmSearchFaceUp: updated }
-        });
-        return updated;
+      const updated = { ...gmFlipStates, [cardId]: newState };
+      setGmFlipStates(updated);
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: deck.id, gmSearchFaceUp: updated }
       });
-      dispatch({ type: 'FLIP_CARD', payload: { cardId } });
     } else if (visibility === SearchWindowVisibility.LAST_STATE) {
       setPlayerFlipStates(prev => {
         const currentState = prev[cardId] ?? true;
         return { ...prev, [cardId]: !currentState };
       });
-      dispatch({ type: 'FLIP_CARD', payload: { cardId } });
-    } else {
-      dispatch({ type: 'FLIP_CARD', payload: { cardId } });
     }
+    dispatch({ type: 'FLIP_CARD', payload: { cardId } });
   }, [dispatch, visibility, isGM, gmFlipStates, deck.id]);
 
   const handleToHand = useCallback((cardId: string) => {
@@ -241,6 +240,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     const { object } = contextMenu;
 
     switch(action) {
+      case 'configure':
+        setSettingsModalObj(object);
+        setContextMenu(null);
+        return;
       case 'flip':
         if (isGM) {
           const currentState = gmFlipStates[object.id] ?? true;
@@ -308,30 +311,15 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           const updatedPiles = deck.piles?.map(p =>
             p.id === pile.id ? { ...p, cardIds: filteredOrder } : p
           );
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: deck.id,
-              piles: updatedPiles,
-              initialCardCount: newInitialCount
-            }
-          });
+          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
         } else {
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: deck.id,
-              cardIds: filteredOrder,
-              initialCardCount: newInitialCount
-            }
-          });
+          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: filteredOrder, initialCardCount: newInitialCount } });
         }
         setCardOrder(filteredOrder);
-        dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, dispatch, state.activePlayerId, cardOrder, isPile, pile, deck, visibility, isGM, gmFlipStates, deck.id, state.objects]);
+  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, deck.id, state.activePlayerId, cardOrder, isPile, pile, state.objects]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -344,7 +332,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     setIsResizing(true);
   }, [modalWidth]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing || !resizeStartRef.current) return;
 
@@ -372,36 +360,32 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   }, [isResizing]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       <div
         ref={modalContainerRef}
-        className="bg-slate-900 border border-slate-600 rounded-xl shadow-2xl h-[80vh] flex flex-col relative overflow-hidden"
+        className="bg-slate-900 border border-slate-700 h-[85vh] flex flex-col relative overflow-hidden"
         style={{ width: `${modalWidth}vw` }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 bg-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-600/20 flex items-center justify-center">
-              <Search className="text-purple-400" size={20} />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white">{title}</h2>
-              <p className="text-sm text-slate-400">{cards.length} card{cards.length !== 1 ? 's' : ''}</p>
-            </div>
+        {/* Header - minimal style */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+          <div className="flex items-center gap-2">
+            <Search size={16} className="text-slate-400" />
+            <span className="text-sm font-semibold text-white">{title}</span>
+            <span className="text-xs text-slate-500">({cards.length})</span>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setModalWidth(DEFAULT_MODAL_WIDTH)}
-              className="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white"
+              className="p-1 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-white"
               title="Reset Size"
             >
-              <RefreshCw size={18} />
+              <RefreshCw size={14} />
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white"
+              className="p-1 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-white"
             >
-              <X size={20} />
+              <X size={16} />
             </button>
           </div>
         </div>
@@ -409,7 +393,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         {/* Left resize handle */}
         <div
           onMouseDown={handleResizeStart}
-          className={`absolute left-0 top-0 bottom-0 w-1 cursor-col-resize bg-slate-700 hover:bg-purple-500 transition-colors z-10 flex items-center justify-center select-none
+          className={`absolute left-0 top-0 bottom-0 cursor-col-resize bg-slate-700 hover:bg-purple-500 transition-colors z-10 flex items-center justify-center select-none
             ${isResizing ? 'w-2' : 'w-1'}`}
           style={{ minWidth: isResizing ? '8px' : '4px' }}
         >
@@ -417,11 +401,12 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         </div>
 
         {/* Cards Grid */}
-        <div className="flex-1 overflow-y-scroll p-3 custom-scrollbar">
+        <div className="flex-1 overflow-y-scroll p-2 custom-scrollbar">
+          <style>{`.custom-scrollbar::-webkit-scrollbar { width: 12px; } .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 6px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }`}</style>
           {cards.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500">
-              <Search size={48} className="mb-4 opacity-50" />
-              <p className="text-lg">No cards in {isPile ? 'pile' : 'deck'}</p>
+            <div className="flex flex-col items-center justify-center h-full text-slate-600">
+              <Search size={32} className="mb-2 opacity-30" />
+              <p className="text-sm">No cards</p>
             </div>
           ) : (
             <div className="flex flex-wrap gap-[2px] w-full">
@@ -472,8 +457,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-between items-center px-4 py-2 border-t border-slate-700 bg-slate-800">
+        {/* Footer - minimal */}
+        <div className="flex items-center justify-between px-3 py-2 border-t border-slate-700">
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -488,29 +473,39 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                 }
                 setCardOrder(newOrder);
               }}
-              className="px-3 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors flex items-center gap-1"
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
               title="Shuffle All"
             >
               <RefreshCw size={14} />
             </button>
             <button
               onClick={() => {
-                cards.forEach(card => {
-                  handleFlip(card.id);
-                });
+                if (isGM) {
+                  // For GM: invert all gmFlipStates
+                  const updated: Record<string, boolean> = {};
+                  cards.forEach(card => {
+                    updated[card.id] = !(gmFlipStates[card.id] ?? true);
+                    dispatch({ type: 'FLIP_CARD', payload: { cardId: card.id }});
+                  });
+                  setGmFlipStates(updated);
+                  dispatch({
+                    type: 'UPDATE_OBJECT',
+                    payload: { id: deck.id, gmSearchFaceUp: updated }
+                  });
+                } else {
+                  // For players: just flip all cards
+                  cards.forEach(card => {
+                    dispatch({ type: 'FLIP_CARD', payload: { cardId: card.id }});
+                  });
+                }
               }}
-              className="px-3 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors flex items-center gap-1"
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
               title="Flip All"
             >
               <Eye size={14} />
             </button>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
-          >
-            Close
-          </button>
+          <span className="text-xs text-slate-600">Search</span>
         </div>
       </div>
 
@@ -526,6 +521,18 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           allObjects={state.objects}
           hideCardActions={true}
           isSearchWindow={true}
+        />
+      )}
+
+      {/* Object Settings Modal */}
+      {settingsModalObj && (
+        <ObjectSettingsModal
+          object={settingsModalObj}
+          onSave={(updatedObj) => {
+            dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
+            setSettingsModalObj(null);
+          }}
+          onClose={() => setSettingsModalObj(null)}
         />
       )}
     </div>,

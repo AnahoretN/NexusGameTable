@@ -155,11 +155,9 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
 
   // Action buttons for each card (Flip, To Hand, Mill to Bottom, Mill)
   const getCardButtons = (card: Card, index: number) => {
-    const isTopCard = index === 0;
-
     return (
       <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-        {/* Flip - always available */}
+        {/* Flip */}
         <button
           onClick={(e) => { e.stopPropagation(); handleFlip(card.id); }}
           className="p-1.5 rounded-lg text-white shadow bg-purple-600 hover:bg-purple-500 pointer-events-auto"
@@ -168,7 +166,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
           {card.faceUp ? <EyeOff size={12} /> : <Eye size={12} />}
         </button>
 
-        {/* To Hand - always available */}
+        {/* To Hand */}
         <button
           onClick={(e) => { e.stopPropagation(); handleToHand(card.id); }}
           className="p-1.5 rounded-lg text-white shadow bg-blue-600 hover:bg-blue-500 pointer-events-auto"
@@ -177,7 +175,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
           <Hand size={12} />
         </button>
 
-        {/* Mill to Bottom - send to bottom of deck */}
+        {/* Mill to Bottom */}
         <button
           onClick={(e) => { e.stopPropagation(); handleMillToBottom(card.id); }}
           className="p-1.5 rounded-lg text-white shadow bg-green-600 hover:bg-green-500 pointer-events-auto"
@@ -201,56 +199,43 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       <div
         ref={modalContainerRef}
-        className="bg-slate-900 border border-slate-600 rounded-xl shadow-2xl h-[80vh] flex flex-col relative overflow-hidden"
+        className="bg-slate-900 border border-slate-700 h-[85vh] flex flex-col relative overflow-hidden"
         style={{ width: `${modalWidth}vw` }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 bg-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-green-600/20 flex items-center justify-center">
-              <ArrowUp className="text-green-400" size={20} />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white">Top Deck - {deck.name}</h2>
-              <p className="text-sm text-slate-400">{cards.length} card{cards.length !== 1 ? 's' : ''}</p>
-            </div>
+        {/* Header - minimal style */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+          <div className="flex items-center gap-2">
+            <ArrowUp size={16} className="text-slate-400" />
+            <span className="text-sm font-semibold text-white">Top Deck - {deck.name}</span>
+            <span className="text-xs text-slate-500">({cards.length})</span>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setModalWidth(DEFAULT_MODAL_WIDTH)}
-              className="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white"
+              className="p-1 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-white"
               title="Reset Size"
             >
-              <RefreshCw size={18} />
+              <RefreshCw size={14} />
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white"
+              className="p-1 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-white"
             >
-              <X size={20} />
+              <X size={16} />
             </button>
           </div>
         </div>
 
-        {/* Left resize handle */}
-        <div
-          onMouseDown={handleResizeStart}
-          className={`absolute left-0 top-0 bottom-0 w-1 cursor-col-resize bg-slate-700 hover:bg-green-500 transition-colors z-10 flex items-center justify-center select-none
-            ${isResizing ? 'w-2' : 'w-1'}`}
-          style={{ minWidth: isResizing ? '8px' : '4px' }}
-        >
-          <RefreshCw size={14} className="text-slate-500 opacity-50 hover:opacity-100" />
-        </div>
-
         {/* Cards Grid */}
-        <div className="flex-1 overflow-y-scroll p-3 custom-scrollbar">
+        <div className="flex-1 overflow-y-scroll p-2 custom-scrollbar">
+          <style>{`.custom-scrollbar::-webkit-scrollbar { width: 12px; } .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 6px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }`}</style>
           {cards.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500">
-              <ArrowUp size={48} className="mb-4 opacity-50" />
-              <p className="text-lg">No cards in deck</p>
+            <div className="flex flex-col items-center justify-center h-full text-slate-600">
+              <ArrowUp size={32} className="mb-2 opacity-30" />
+              <p className="text-sm">No cards in deck</p>
             </div>
           ) : (
             <div className="flex flex-wrap gap-[2px] w-full">
@@ -286,21 +271,16 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-between items-center px-4 py-2 border-t border-slate-700 bg-slate-800">
-          <div className="text-sm text-slate-400">
+        {/* Footer - minimal */}
+        <div className="flex items-center justify-between px-3 py-2 border-t border-slate-700">
+          <div className="text-xs text-slate-500">
             {millPile ? (
-              <span>Mill pile: <span className="text-green-400">{millPile.name}</span></span>
+              <span>Mill: {millPile.name}</span>
             ) : (
-              <span className="text-yellow-500">No mill pile configured</span>
+              <span className="text-slate-600">No mill pile</span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
-          >
-            Close
-          </button>
+          <span className="text-xs text-slate-600">Top Deck</span>
         </div>
       </div>
     </div>,

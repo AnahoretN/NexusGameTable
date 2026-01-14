@@ -439,44 +439,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   </div>
                 ))}
             </div>
-
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Hand Settings</h3>
-              <div className="p-3 bg-slate-800 rounded space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-300 flex items-center gap-2">
-                    <Hand size={14} />
-                    Card Scale
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => {
-                        const newScale = Math.max(0.5, handCardScale - 0.1);
-                        setHandCardScale(newScale);
-                        localStorage.setItem('hand-card-scale', String(newScale));
-                      }}
-                      className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
-                      title="Decrease card size"
-                    >
-                      <Minus size={12} />
-                    </button>
-                    <span className="text-xs text-gray-400 w-10 text-center">{Math.round(handCardScale * 100)}%</span>
-                    <button
-                      onClick={() => {
-                        const newScale = Math.min(2, handCardScale + 0.1);
-                        setHandCardScale(newScale);
-                        localStorage.setItem('hand-card-scale', String(newScale));
-                      }}
-                      className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
-                      title="Increase card size"
-                    >
-                      <Plus size={12} />
-                    </button>
-                  </div>
-                </div>
-                <p className="text-[10px] text-gray-500">Adjust the size of cards in your hand panel</p>
-              </div>
-            </div>
           </div>
         )}
       </div>
