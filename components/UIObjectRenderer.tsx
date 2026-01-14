@@ -178,7 +178,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     dispatch({
       type: 'CREATE_WINDOW',
       payload: {
-        windowType: 'OBJECT_SETTINGS',
+        windowType: WindowType.OBJECT_SETTINGS,
         title: 'Settings',
         targetObjectId: uiObject.id,
         x: uiObject.x + 50,

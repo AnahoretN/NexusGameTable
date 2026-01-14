@@ -2005,7 +2005,7 @@ export const Tabletop: React.FC = () => {
               const screenY = object.y * zoom + offset.y - scrollTop;
               console.log('[PIN ACTION - Saving screen position]', {
                   objectId: object.id,
-                  objectName: 'name' in object ? object.name : (object.type),
+                  objectName: 'name' in object ? object.name : String((object as any).type),
                   worldPosition: { x: object.x, y: object.y },
                   offset,
                   scroll: { left: scrollLeft, top: scrollTop },

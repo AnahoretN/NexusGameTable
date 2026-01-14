@@ -704,7 +704,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
             panelType: item.panelType!,
             x: centerX - 150,
             y: centerY - 200,
-            width: 300,
+            width: MAIN_MENU_WIDTH,
             height: 400,
             title: item.name,
           }

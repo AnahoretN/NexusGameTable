@@ -968,6 +968,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const panel: PanelObject = {
         id: panelId,
         type: ItemType.PANEL,
+        name: title || panelType,
         panelType,
         title: title || panelType,
         x,
@@ -1004,6 +1005,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const windowObj: WindowObject = {
         id: windowId,
         type: ItemType.WINDOW,
+        name: title || windowType,
         windowType,
         title: title || windowType,
         x,
