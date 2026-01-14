@@ -54,7 +54,8 @@ export enum CardLocation {
   TABLE = 'TABLE',
   DECK = 'DECK',
   HAND = 'HAND',
-  PILE = 'PILE'
+  PILE = 'PILE',
+  CURSOR_SLOT = 'CURSOR_SLOT',
 }
 
 export type PilePosition = 'left' | 'right' | 'top' | 'bottom' | 'free';
