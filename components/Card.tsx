@@ -26,9 +26,13 @@ interface CardProps {
   cardOrientation?: CardOrientation;
   // When true, orientation affects dimensions but does NOT rotate the card content
   disableRotationTransform?: boolean;
+  // When true, all pointer events are disabled (for cursor slot drag preview)
+  disablePointerEvents?: boolean;
+  // When true, skip the Tooltip wrapper (for cursor slot cards)
+  skipTooltip?: boolean;
 }
 
-export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform }) => {
+export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip }) => {
   const shape = card.shape || CardShape.POKER;
   const orientation = cardOrientation ?? CardOrientation.VERTICAL;
 
@@ -210,13 +214,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     return transforms.length > 0 ? transforms.join(' ') : undefined;
   };
 
-  return (
-    <Tooltip
-      text={card.tooltipText}
-      showImage={card.showTooltipImage}
-      imageSrc={card.content}
-      scale={card.tooltipScale}
-    >
+  const cardContent = (
       <div className={`relative inline-block group ${isHovered ? 'scale-105 z-50' : ''}`}>
       {/* Action buttons on bottom edge - outside overflow-hidden */}
       {showActionButtons && (
@@ -241,6 +239,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           filter: isGeometric
               ? `drop-shadow(0 4px 4px rgba(0,0,0,0.5)) ${isHovered ? 'drop-shadow(0 0 4px #facc15)' : ''}`
               : 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))',
+          // Disable pointer events when dragging in cursor slot to allow mouse events to pass through to decks/piles
+          pointerEvents: disablePointerEvents ? 'none' : 'auto',
           ...styles
         }}
       >
@@ -248,9 +248,13 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               className={`w-full h-full ${!isGeometric ? 'border-2 border-gray-700 rounded-lg' : ''} ${isHovered && !isGeometric ? 'ring-2 ring-yellow-400' : ''}`}
               style={{
                   backgroundColor: card.faceUp ? 'white' : '#1e293b',
-                  backgroundImage: card.faceUp ? `url(${card.content})` : `repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
+                  backgroundImage: card.faceUp ? `url(${card.spriteUrl || card.content})` : `repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)`,
+                  backgroundSize: card.spriteUrl && card.spriteColumns && card.spriteRows
+                    ? `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`
+                    : 'cover',
+                  backgroundPosition: card.spriteUrl && card.spriteIndex !== undefined && card.spriteColumns && card.spriteRows
+                    ? `${(card.spriteIndex % card.spriteColumns) * (100 / (card.spriteColumns - 1 || 1))}% ${Math.floor(card.spriteIndex / card.spriteColumns) * (100 / ((card.spriteRows || 1) - 1 || 1))}%`
+                    : 'center',
               }}
           >
               {/* Visual Border helper for clipped shapes (rendered inside the clip area) */}
@@ -288,6 +292,18 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           </div>
       </div>
       </div>
-    </Tooltip>
+  );
+
+  return (
+    skipTooltip ? cardContent : (
+      <Tooltip
+        text={card.tooltipText}
+        showImage={card.showTooltipImage}
+        imageSrc={card.content}
+        scale={card.tooltipScale}
+      >
+        {cardContent}
+      </Tooltip>
+    )
   );
 };
