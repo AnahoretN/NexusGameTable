@@ -1,14 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import type { ViteDevServer } from 'vite';
 
 // Plugin to run the WebSocket server alongside Vite
 function serverPlugin() {
   return {
     name: 'websocket-server',
-    configureServer(server) {
+    configureServer(server: ViteDevServer) {
       // Import and start the WebSocket server
-      import('./server/index.js').then(({ createWebSocketServer }) => {
-        createWebSocketServer(server.httpServer);
+      import('./server/index.js' as any).then(({ createWebSocketServer }: any) => {
+        createWebSocketServer(server.httpServer!);
       });
     },
   };

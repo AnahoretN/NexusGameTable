@@ -266,7 +266,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       ...data,
       allowedActions: normalizedAllowedActions,
       allowedActionsForGM: normalizedAllowedActionsForGM,
-      actionButtons: (data as any).actionButtons || []
+      ...(isDeck ? { actionButtons: (data as any).actionButtons || [] } : {})
     };
     // Add piles for decks
     if (toSave.type === ItemType.DECK) {

@@ -238,6 +238,7 @@ export enum WindowType {
 export interface UIObject {
   id: string;
   type: ItemType.PANEL | ItemType.WINDOW;
+  name: string;
   x: number;
   y: number;
   width: number;
@@ -269,6 +270,9 @@ export interface UIObject {
   // Dual pinned positions for panels with dualPosition mode enabled
   expandedPinnedPosition?: { x: number; y: number };
   collapsedPinnedPosition?: { x: number; y: number };
+  // Permission actions (for panels/windows that can have actions)
+  allowedActions?: ContextAction[];
+  allowedActionsForGM?: ContextAction[];
 }
 
 // Panel object - persistent UI panels on the game board
