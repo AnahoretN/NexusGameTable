@@ -3,6 +3,7 @@ import { Layers, Lock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw
 import { useGame } from '../store/GameContext';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType } from '../types';
 import { DECK_OFFSET } from '../constants';
+import { Tooltip } from './Tooltip';
 
 interface DeckComponentProps {
   deck: DeckType;
@@ -136,8 +137,14 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   }, [deck.id, setPilesButtonMenu]);
 
   return (
-    <React.Fragment>
-      {/* Render piles */}
+    <Tooltip
+      text={deck.tooltipText}
+      showImage={deck.showTooltipImage}
+      imageSrc={deck.content}
+      scale={deck.tooltipScale}
+    >
+      <div style={{ position: 'relative', width: deck.width, height: deck.height }}>
+        {/* Render piles */}
       {deck.piles?.filter(p => p.visible).map(pile => {
         const pilePos = getPilePosition(pile);
         const pileCards = pile.cardIds.map(id => state.objects[id]).filter(Boolean) as CardType[];
@@ -311,7 +318,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             className="absolute rounded bg-slate-800 border-2 border-slate-600 shadow-md"
             style={{
               inset: 0,
-              transform: `translate(${i * -DECK_OFFSET}px, ${i * -DECK_OFFSET}px)`,
+              transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
               zIndex: -i
             }}
           />
@@ -479,6 +486,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         </div>
         </div>
       </React.Fragment>
-    </React.Fragment>
+      </div>
+    </Tooltip>
   );
 };

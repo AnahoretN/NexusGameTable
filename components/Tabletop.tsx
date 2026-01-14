@@ -11,6 +11,7 @@ import { SearchDeckModal } from './SearchDeckModal';
 import { TopDeckModal } from './TopDeckModal';
 import { DeckComponent } from './DeckComponent';
 import { UIObjectRenderer } from './UIObjectRenderer';
+import { Tooltip } from './Tooltip';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
 
 // Board component with resize handle (corner only, like panels)
@@ -1869,6 +1870,12 @@ export const Tabletop: React.FC = () => {
   // Handle Escape key to cancel free rotation mode, Space for testing pin compensation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        return;
+      }
+
       if (e.key === 'Escape' && freeRotatingId) {
         setFreeRotatingId(null);
         setRotateStartAngle(0);
@@ -2304,23 +2311,30 @@ export const Tabletop: React.FC = () => {
                       `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
 
                     return (
-                        <BoardWithResize
+                        <Tooltip
                             key={obj.id}
-                            token={board}
-                            obj={obj}
-                            isOwner={isOwner}
-                            isDragging={isDragging}
-                            isResizing={isResizing}
-                            canResize={canResize}
-                            zoom={zoom}
-                            onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
-                            onContextMenu={(e) => handleContextMenu(e, obj)}
-                            onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
-                            gridSize={gridSize}
-                            hexR={hexR}
-                            hexW={hexW}
-                            hexPath={hexPath}
-                        />
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
+                        >
+                            <BoardWithResize
+                                token={board}
+                                obj={obj}
+                                isOwner={isOwner}
+                                isDragging={isDragging}
+                                isResizing={isResizing}
+                                canResize={canResize}
+                                zoom={zoom}
+                                onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
+                                gridSize={gridSize}
+                                hexR={hexR}
+                                hexW={hexW}
+                                hexPath={hexPath}
+                            />
+                        </Tooltip>
                     );
                 }
 
@@ -2376,26 +2390,55 @@ export const Tabletop: React.FC = () => {
                     }
 
                     return (
-                        <div
+                        <Tooltip
                             key={obj.id}
-                            onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
-                            onContextMenu={(e) => handleContextMenu(e, obj)}
-                            className={`absolute flex items-center justify-center text-white font-bold select-none hover:ring-2 ring-yellow-400 ${draggingClass} ${isStandee ? 'origin-bottom' : ''} group`}
-                            style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: obj.width,
-                                height: obj.height,
-                                borderRadius: borderRadius,
-                                backgroundColor: obj.content ? 'transparent' : (obj.color || '#e74c3c'),
-                                backgroundImage: obj.content ? `url(${obj.content})` : undefined,
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center',
-                                border: isStandee ? 'none' : '2px solid white',
-                                boxShadow: isStandee ? 'none' : '0 4px 6px rgba(0,0,0,0.3)',
-                                transform: `rotate(${obj.rotation}deg)`
-                            }}
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
                         >
+                            <div
+                                onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                className={`absolute flex items-center justify-center text-white font-bold select-none hover:ring-2 ring-yellow-400 ${draggingClass} ${isStandee ? 'origin-bottom' : ''} group`}
+                                style={{
+                                    left: obj.x,
+                                    top: obj.y,
+                                    width: obj.width,
+                                    height: obj.height,
+                                    borderRadius: borderRadius,
+                                    border: isStandee ? 'none' : '2px solid white',
+                                    boxShadow: isStandee ? 'none' : '0 4px 6px rgba(0,0,0,0.3)',
+                                    transform: `rotate(${obj.rotation}deg)`
+                                }}
+                            >
+                                {/* Token thickness effect layers */}
+                                {!isStandee && [2, 1].map(i => (
+                                    <div
+                                        key={i}
+                                        className="absolute rounded pointer-events-none"
+                                        style={{
+                                            inset: 0,
+                                            borderRadius: borderRadius,
+                                            backgroundColor: obj.color || '#e74c3c',
+                                            transform: `translate(${i * 2}px, ${i * 2}px)`,
+                                            zIndex: -i,
+                                            opacity: 0.4
+                                        }}
+                                    />
+                                ))}
+
+                                {/* Main token content */}
+                                <div
+                                    className="absolute inset-0 rounded"
+                                    style={{
+                                        backgroundColor: obj.content ? 'transparent' : (obj.color || '#e74c3c'),
+                                        backgroundImage: obj.content ? `url(${obj.content})` : undefined,
+                                        backgroundSize: 'cover',
+                                        backgroundPosition: 'center',
+                                        borderRadius: borderRadius,
+                                    }}
+                                />
                             {(obj as any).isPinnedToViewport && (
                                 <div
                                     className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
@@ -2503,25 +2546,32 @@ export const Tabletop: React.FC = () => {
                                 })()}
                             </div>
                         </div>
+                        </Tooltip>
                     );
                 }
 
                 if (obj.type === ItemType.COUNTER) {
                     const counter = obj as Counter;
                     return (
-                        <div
+                        <Tooltip
                             key={obj.id}
-                            onMouseDown={(e) => handleMouseDown(e, obj.id)}
-                            onContextMenu={(e) => handleContextMenu(e, obj)}
-                            className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${draggingClass} group`}
-                            style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: Math.max(obj.width, 100),
-                                height: 50,
-                                transform: `rotate(${obj.rotation}deg)`
-                            }}
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
                         >
+                            <div
+                                onMouseDown={(e) => handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${draggingClass} group`}
+                                style={{
+                                    left: obj.x,
+                                    top: obj.y,
+                                    width: Math.max(obj.width, 100),
+                                    height: 50,
+                                    transform: `rotate(${obj.rotation}deg)`
+                                }}
+                            >
                             {(obj as any).isPinnedToViewport && (
                                 <div
                                     className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
@@ -2599,6 +2649,7 @@ export const Tabletop: React.FC = () => {
                                 })()}
                             </div>
                         </div>
+                        </Tooltip>
                     );
                 }
 
@@ -2606,33 +2657,39 @@ export const Tabletop: React.FC = () => {
                     const dice = obj as DiceObject;
 
                     return (
-                        <div
+                        <Tooltip
                             key={obj.id}
-                            onMouseDown={(e) => handleMouseDown(e, obj.id)}
-                            onContextMenu={(e) => handleContextMenu(e, obj)}
-                            className={`absolute bg-indigo-600 text-white flex flex-col items-center justify-center rounded-lg shadow-xl border-2 border-indigo-400 group ${draggingClass}`}
-                            style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: 60,
-                                height: 60,
-                                transform: `rotate(${obj.rotation}deg)`
-                            }}
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
                         >
-                            {(obj as any).isPinnedToViewport && (
-                                <div
-                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
-                                    title="Pinned to screen"
-                                    style={{ transform: `scale(${1/zoom})` }}
-                                >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                                        <line x1="12" y1="17" x2="12" y2="22"></line>
-                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                                    </svg>
-                                </div>
-                            )}
-                            <span className="text-2xl font-bold">{rollingDice[dice.id] ?? dice.currentValue}</span>
-                            <span className="text-[8px] opacity-75">d{dice.sides}</span>
+                            <div
+                                onMouseDown={(e) => handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                className={`absolute bg-indigo-600 text-white flex flex-col items-center justify-center rounded-lg shadow-xl border-2 border-indigo-400 group ${draggingClass}`}
+                                style={{
+                                    left: obj.x,
+                                    top: obj.y,
+                                    width: 60,
+                                    height: 60,
+                                    transform: `rotate(${obj.rotation}deg)`
+                                }}
+                            >
+                                {(obj as any).isPinnedToViewport && (
+                                    <div
+                                        className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                                        title="Pinned to screen"
+                                        style={{ transform: `scale(${1/zoom})` }}
+                                    >
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                            <line x1="12" y1="17" x2="12" y2="22"></line>
+                                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                        </svg>
+                                    </div>
+                                )}
+                                <span className="text-2xl font-bold">{rollingDice[dice.id] ?? dice.currentValue}</span>
+                                <span className="text-[8px] opacity-75">d{dice.sides}</span>
 
                             {/* Action buttons */}
                             <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
@@ -2687,9 +2744,10 @@ export const Tabletop: React.FC = () => {
                                 })()}
                             </div>
                         </div>
+                        </Tooltip>
                     );
                 }
-                
+
                 if (obj.type === ItemType.DECK) {
                     const deck = obj as DeckType;
 

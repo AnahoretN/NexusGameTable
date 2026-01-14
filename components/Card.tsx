@@ -2,6 +2,7 @@
 import React from 'react';
 import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition } from '../types';
 import { Eye, EyeOff, Hand, Layers, RefreshCw, Copy, Trash2, Lock, Unlock, Search, Shuffle, Undo, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 interface CardProps {
   card: CardType;
@@ -210,7 +211,13 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   };
 
   return (
-    <div className={`relative inline-block group ${isHovered ? 'scale-105 z-50' : ''}`}>
+    <Tooltip
+      text={card.tooltipText}
+      showImage={card.showTooltipImage}
+      imageSrc={card.content}
+      scale={card.tooltipScale}
+    >
+      <div className={`relative inline-block group ${isHovered ? 'scale-105 z-50' : ''}`}>
       {/* Action buttons on bottom edge - outside overflow-hidden */}
       {showActionButtons && (
           <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30 pointer-events-none">
@@ -280,6 +287,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               )}
           </div>
       </div>
-    </div>
+      </div>
+    </Tooltip>
   );
 };

@@ -116,6 +116,10 @@ export interface GameItem {
   // Dual pinned positions for panels with dualPosition mode enabled
   expandedPinnedPosition?: { x: number; y: number };
   collapsedPinnedPosition?: { x: number; y: number };
+  // Tooltip settings
+  tooltipText?: string;
+  showTooltipImage?: boolean;
+  tooltipScale?: number; // Default 125 (1.25x)
 }
 
 // Where to show the card name
