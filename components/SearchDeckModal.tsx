@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation } from '../types';
+import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, ItemType } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
@@ -136,8 +136,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const title = isPile ? `${pile.name} - ${deck.name}` : deck.name;
 
   const cards = useMemo(() =>
-    cardOrder.map(id => state.objects[id] as Card).filter(Boolean),
-    [cardOrder, state.objects]
+    cardOrder.map(id => state.objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
+    [cardOrder, state.objects, isGM]
   );
 
   const cardActionButtons = deck.cardActionButtons || [];
@@ -245,13 +245,11 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         if (isGM) {
           const currentState = gmFlipStates[object.id] ?? true;
           const newState = !currentState;
-          setGmFlipStates(prev => {
-            const updated = { ...prev, [object.id]: newState };
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: { id: deck.id, gmSearchFaceUp: updated }
-            });
-            return updated;
+          const updated = { ...gmFlipStates, [object.id]: newState };
+          setGmFlipStates(updated);
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: { id: deck.id, gmSearchFaceUp: updated }
           });
         } else if (visibility === SearchWindowVisibility.LAST_STATE) {
           setPlayerFlipStates(prev => {
@@ -289,22 +287,51 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       case 'clone':
         dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id }});
         break;
+      case 'toggleHide':
+        const isHidden = (object as any).hidden === true;
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: object.id, hidden: !isHidden }
+        });
+        break;
       case 'delete':
         const filteredOrder = cardOrder.filter(id => id !== object.id);
+        // Calculate new initialCardCount (excluding hidden cards)
+        const allCards = Object.values(state.objects).filter(o =>
+          o.type === ItemType.CARD &&
+          (o as any).deckId === deck.id &&
+          !(o as any).hidden
+        );
+        const newInitialCount = Math.max(0, allCards.length - 1);
+
         if (isPile && pile) {
           const updatedPiles = deck.piles?.map(p =>
             p.id === pile.id ? { ...p, cardIds: filteredOrder } : p
           );
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: deck.id,
+              piles: updatedPiles,
+              initialCardCount: newInitialCount
+            }
+          });
         } else {
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: filteredOrder } });
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: deck.id,
+              cardIds: filteredOrder,
+              initialCardCount: newInitialCount
+            }
+          });
         }
         setCardOrder(filteredOrder);
         dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, dispatch, state.activePlayerId, cardOrder, isPile, pile, deck, visibility, isGM, gmFlipStates, deck.id]);
+  }, [contextMenu, dispatch, state.activePlayerId, cardOrder, isPile, pile, deck, visibility, isGM, gmFlipStates, deck.id, state.objects]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -407,9 +434,13 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                 return (
                   <div
                     key={card.id}
-                    onContextMenu={(e) => handleContextMenu(e, card)}
+                    onContextMenu={(e) => handleContextMenu(e, displayCard)}
                     className="relative flex-shrink-0 group transition-all"
-                    style={{ width: cardWidth, height: cardHeight }}
+                    style={{
+                      width: cardWidth,
+                      height: cardHeight,
+                      opacity: card.hidden && isGM ? 0.5 : 1
+                    }}
                   >
                     <CardComponent
                       card={displayCard}
@@ -494,6 +525,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           onClose={() => setContextMenu(null)}
           allObjects={state.objects}
           hideCardActions={true}
+          isSearchWindow={true}
         />
       )}
     </div>,

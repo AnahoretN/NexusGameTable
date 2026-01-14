@@ -135,6 +135,7 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
   shape?: CardShape;
   width?: number; // Can override deck's cardWidth (optional)
   height?: number; // Can override deck's cardHeight (optional)
+  hidden?: boolean; // GM can hide cards - hidden cards are excluded from deck count, search, and top deck
 }
 
 export interface Deck extends GameItem {

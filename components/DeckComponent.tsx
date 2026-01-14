@@ -28,6 +28,7 @@ interface DeckComponentProps {
   executeClickAction: (obj: any, action: string) => void;
   cursorSlotHasCards: boolean;
   onDropToDeck?: (deckId: string) => void;
+  allObjects: Record<string, any>;
 }
 
 export const DeckComponent: React.FC<DeckComponentProps> = ({
@@ -53,14 +54,27 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   executeClickAction,
   cursorSlotHasCards = false,
   onDropToDeck,
+  allObjects,
 }) => {
   const { state } = useGame();
 
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
   const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
 
-  // Get top card for showTopCard feature
-  const topCard = deck.cardIds.length > 0 ? state.objects[deck.cardIds[0]] as CardType : null;
+  // Count visible cards (excluding hidden ones)
+  const visibleCardCount = deck.cardIds.filter(id => {
+    const card = allObjects?.[id];
+    return card && !card.hidden;
+  }).length;
+
+  // Get top card for showTopCard feature (excluding hidden cards)
+  const topCard = deck.cardIds.filter(id => {
+    const card = allObjects?.[id];
+    return card && !card.hidden;
+  }).length > 0 ? allObjects[deck.cardIds.find(id => {
+    const card = allObjects?.[id];
+    return card && !card.hidden;
+  })!] as CardType : null;
 
   // Group piles by position and calculate their order
   const visiblePiles = deck.piles?.filter(p => p.visible) || [];
@@ -342,7 +356,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           <div className="absolute inset-0 bg-slate-900 rounded border-2 border-slate-500 flex flex-col items-center justify-center cursor-pointer transition-colors">
             <Layers className="text-slate-400 mb-2" />
             <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{deck.name}</span>
-            <span className="text-xs text-slate-500 select-none">{deck.cardIds.length} / {deck.initialCardCount || deck.cardIds.length}</span>
+            <span className="text-xs text-slate-500 select-none">{visibleCardCount} / {deck.initialCardCount || visibleCardCount}</span>
           </div>
         )}
 
