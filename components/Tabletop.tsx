@@ -1948,11 +1948,14 @@ export const Tabletop: React.FC = () => {
   };
 
   // Memoize table objects to prevent unnecessary re-renders
+  // Note: DECK objects are filtered out here and rendered separately (pinned/unpinned)
   const tableObjects = useMemo(() => {
     return (Object.values(state.objects) as TableObject[])
       .filter(obj => {
           // Exclude UI objects (panels and windows) - they have their own rendering
           if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
+          // Exclude DECK objects - they are rendered separately with pinned/unpinned logic
+          if (obj.type === ItemType.DECK) return false;
           if (!obj.isOnTable) return false;
           if (obj.type === ItemType.CARD) {
             const card = obj as CardType;
@@ -2005,6 +2008,15 @@ export const Tabletop: React.FC = () => {
     return uiObjects.filter(obj => (obj as PanelObject | WindowObject).isPinnedToViewport !== true);
   }, [uiObjects]);
 
+  // Split deck objects into pinned and unpinned for separate rendering
+  const pinnedDecks = useMemo(() => {
+    return tableObjects.filter(obj => obj.type === ItemType.DECK && (obj as any).isPinnedToViewport === true);
+  }, [tableObjects]);
+
+  const unpinnedDecks = useMemo(() => {
+    return tableObjects.filter(obj => obj.type === ItemType.DECK && (obj as any).isPinnedToViewport !== true);
+  }, [tableObjects]);
+
   const worldBounds = useMemo(() => {
     // Fixed world size: 5000x5000
     return { width: 5000, height: 5000 };
@@ -2029,11 +2041,12 @@ export const Tabletop: React.FC = () => {
         const target = e.target as HTMLElement;
         if (target.scrollLeft === undefined || target.scrollTop === undefined) return;
 
-        // Find all pinned GAME objects (not UI panels/windows - they render in fixed container now)
+        // Find all pinned GAME objects (not UI panels/windows/decks - they render in fixed container now)
         const pinnedObjects = Object.values(state.objects).filter(obj =>
           (obj as any).isPinnedToViewport &&
           obj.type !== ItemType.PANEL &&
-          obj.type !== ItemType.WINDOW
+          obj.type !== ItemType.WINDOW &&
+          obj.type !== ItemType.DECK
         );
 
         if (pinnedObjects.length > 0) {
@@ -2595,48 +2608,8 @@ export const Tabletop: React.FC = () => {
                 }
 
                 if (obj.type === ItemType.DECK) {
-                    const deck = obj as DeckType;
-
-                    return (
-                        <div key={obj.id} style={{ position: 'relative' }}>
-                            {(obj as any).isPinnedToViewport && (
-                                <div
-                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
-                                    title="Pinned to screen"
-                                    style={{ transform: `scale(${1/zoom})` }}
-                                >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                                        <line x1="12" y1="17" x2="12" y2="22"></line>
-                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                                    </svg>
-                                </div>
-                            )}
-                            <DeckComponent
-                                deck={deck}
-                                draggingId={draggingId}
-                                hoveredDeckId={hoveredDeckId}
-                                hoveredPileId={hoveredPileId}
-                                setHoveredDeckId={setHoveredDeckId}
-                                setHoveredPileId={setHoveredPileId}
-                                isGM={isGM}
-                                draggingClass={draggingClass}
-                                draggingPile={draggingPile}
-                                setDraggingPile={setDraggingPile}
-                                pileDragStartRef={pileDragStartRef}
-                                setTopDeckModalDeck={setTopDeckModalDeck}
-                                handleMouseDown={handleMouseDown}
-                                handleContextMenu={handleContextMenu}
-                                handlePileContextMenu={handlePileContextMenu}
-                                setSearchModalDeck={setSearchModalDeck}
-                                setSearchModalPile={setSearchModalPile}
-                                setPilesButtonMenu={setPilesButtonMenu}
-                                setDeleteCandidateId={setDeleteCandidateId}
-                                executeClickAction={executeClickAction}
-                                cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
-                                allObjects={state.objects}
-                            />
-                        </div>
-                    );
+                    // DECKs are now rendered separately via pinnedDecks and unpinnedDecks
+                    return null;
                 }
 
                 if (obj.type === ItemType.CARD) {
@@ -2743,6 +2716,41 @@ export const Tabletop: React.FC = () => {
                 return null;
             })}
 
+            {/* Unpinned Decks - rendered in the transform container with other game objects */}
+            {unpinnedDecks.map((deck) => {
+                const deckObj = deck as DeckType;
+                const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
+
+                return (
+                    <div key={deckObj.id} style={{ position: 'absolute', left: deckObj.x, top: deckObj.y }}>
+                        <DeckComponent
+                            deck={deckObj}
+                            draggingId={draggingId}
+                            hoveredDeckId={hoveredDeckId}
+                            hoveredPileId={hoveredPileId}
+                            setHoveredDeckId={setHoveredDeckId}
+                            setHoveredPileId={setHoveredPileId}
+                            isGM={isGM}
+                            draggingClass={draggingClass}
+                            draggingPile={draggingPile}
+                            setDraggingPile={setDraggingPile}
+                            pileDragStartRef={pileDragStartRef}
+                            setTopDeckModalDeck={setTopDeckModalDeck}
+                            handleMouseDown={handleMouseDown}
+                            handleContextMenu={handleContextMenu}
+                            handlePileContextMenu={handlePileContextMenu}
+                            setSearchModalDeck={setSearchModalDeck}
+                            setSearchModalPile={setSearchModalPile}
+                            setPilesButtonMenu={setPilesButtonMenu}
+                            setDeleteCandidateId={setDeleteCandidateId}
+                            executeClickAction={executeClickAction}
+                            cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
+                            allObjects={state.objects}
+                        />
+                    </div>
+                );
+            })}
+
             {/* UI Objects - Panels and Windows rendered in the same unified space */}
             {unpinnedUIObjects.map((uiObj) => (
                 <UIObjectRenderer
@@ -2771,6 +2779,63 @@ export const Tabletop: React.FC = () => {
                     isPinnedMode={true}
                 />
             ))}
+
+            {/* Pinned Decks - rendered in fixed container using pinnedScreenPosition */}
+            {pinnedDecks.map((deck) => {
+                const deckObj = deck as DeckType;
+                const pinnedPosition = (deckObj as any).pinnedScreenPosition;
+                if (!pinnedPosition) return null;
+
+                const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
+
+                return (
+                    <div
+                        key={deckObj.id}
+                        className="pointer-events-auto"
+                        style={{
+                            position: 'fixed',
+                            left: pinnedPosition.x,
+                            top: pinnedPosition.y,
+                            zIndex: deckObj.zIndex || 1000,
+                        }}
+                    >
+                        {/* Pinned indicator */}
+                        <div
+                            className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                            title="Pinned to screen"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                <line x1="12" y1="17" x2="12" y2="22"></line>
+                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                            </svg>
+                        </div>
+                        <DeckComponent
+                            deck={deckObj}
+                            draggingId={draggingId}
+                            hoveredDeckId={hoveredDeckId}
+                            hoveredPileId={hoveredPileId}
+                            setHoveredDeckId={setHoveredDeckId}
+                            setHoveredPileId={setHoveredPileId}
+                            isGM={isGM}
+                            draggingClass={draggingClass}
+                            draggingPile={draggingPile}
+                            setDraggingPile={setDraggingPile}
+                            pileDragStartRef={pileDragStartRef}
+                            setTopDeckModalDeck={setTopDeckModalDeck}
+                            handleMouseDown={handleMouseDown}
+                            handleContextMenu={handleContextMenu}
+                            handlePileContextMenu={handlePileContextMenu}
+                            setSearchModalDeck={setSearchModalDeck}
+                            setSearchModalPile={setSearchModalPile}
+                            setPilesButtonMenu={setPilesButtonMenu}
+                            setDeleteCandidateId={setDeleteCandidateId}
+                            executeClickAction={executeClickAction}
+                            cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
+                            allObjects={state.objects}
+                        />
+                    </div>
+                );
+            })}
         </div>
 
         {contextMenu && (
