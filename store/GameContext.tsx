@@ -174,8 +174,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'LOAD_GAME': {
+        // Migrate old decks without baseCardIds - initialize from cardIds
+        const migratedObjects = { ...action.payload.objects };
+        Object.values(migratedObjects).forEach(obj => {
+            if (obj.type === ItemType.DECK) {
+                const deck = obj as Deck;
+                if (!deck.baseCardIds || deck.baseCardIds.length === 0) {
+                    // Migrate: set baseCardIds from current cardIds
+                    (deck as any).baseCardIds = [...deck.cardIds];
+                }
+            }
+        });
         return {
             ...action.payload,
+            objects: migratedObjects,
             viewTransform: action.payload.viewTransform || { offset: { x: 0, y: 0 }, zoom: 0.8 }
         };
     }
@@ -224,6 +236,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           newObj.isOnTable = payload.isOnTable;
       } else {
           newObj.isOnTable = true;
+      }
+
+      // Migrate old decks without baseCardIds
+      if (isDeck && !newObj.baseCardIds) {
+        newObj.baseCardIds = [...(newObj.cardIds || [])];
       }
 
       return {
@@ -708,59 +725,44 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const deck = state.objects[action.payload.deckId] as Deck;
       if (!deck || deck.type !== ItemType.DECK) return state;
 
+      const baseCardIds = deck.baseCardIds || [];
       const newObjects = { ...state.objects };
-      const allCardIds: string[] = [];
 
-      // Collect all card IDs that belong to this deck in a predictable order:
-      // 1. Cards currently in the deck
-      allCardIds.push(...deck.cardIds);
-
-      // 2. Cards from each pile (in pile order)
-      if (deck.piles) {
-        deck.piles.forEach(pile => {
-          allCardIds.push(...pile.cardIds);
-        });
-      }
-
-      // 3. Cards from table and hand (sorted by id for consistency)
-      const otherCardIds: string[] = [];
-      Object.values(state.objects).forEach(obj => {
-        if (obj.type === ItemType.CARD) {
-          const card = obj as Card;
-          if (card.deckId === deck.id && card.location !== CardLocation.DECK && card.location !== CardLocation.PILE) {
-            otherCardIds.push(card.id);
-          }
-        }
-      });
-      otherCardIds.sort(); // Sort by ID for consistent ordering
-      allCardIds.push(...otherCardIds);
-
-      // Clear all piles of this deck
+      // 1. Clear all piles of this deck
       let updatedDeck = { ...deck };
-      if (updatedDeck.piles && updatedDeck.piles.length > 0) {
+      if (updatedDeck.piles) {
         updatedDeck.piles = updatedDeck.piles.map(pile => ({
           ...pile,
           cardIds: []
         }));
       }
 
-      // Reset deck's cardIds to contain all cards
-      updatedDeck.cardIds = [...allCardIds];
+      // 2. Set cardIds = baseCardIds (reset to base)
+      updatedDeck.cardIds = [...baseCardIds];
 
-      // Update all cards to be back in deck
-      // Cards are face up by default (GM sees actual state, players see based on deck settings)
-      allCardIds.forEach(cardId => {
-        const card = state.objects[cardId] as Card;
-        if (card) {
-          newObjects[cardId] = {
-            ...card,
-            location: CardLocation.DECK,
-            faceUp: true,
-            x: deck.x,
-            y: deck.y,
-            isOnTable: true,
-            ownerId: undefined,
-          } as Card;
+      // 3. Process all cards in the game
+      Object.values(state.objects).forEach(obj => {
+        if (obj.type !== ItemType.CARD) return;
+        const card = obj as Card;
+
+        // Cards that belong to THIS deck
+        if (card.deckId === deck.id) {
+          if (baseCardIds.includes(card.id)) {
+            // Card is in baseCardIds - move it to THIS deck
+            newObjects[card.id] = {
+              ...card,
+              location: CardLocation.DECK,
+              faceUp: true,
+              x: deck.x,
+              y: deck.y,
+              isOnTable: true,
+              ownerId: undefined,
+            };
+          } else {
+            // Card has this deck's deckId but is NOT in baseCardIds
+            // This means it was permanently removed by GM deletion - delete it
+            delete newObjects[card.id];
+          }
         }
       });
 

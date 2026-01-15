@@ -353,7 +353,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           <div className="absolute inset-0 bg-slate-900 rounded border-2 border-slate-500 flex flex-col items-center justify-center cursor-pointer transition-colors">
             <Layers className="text-slate-400 mb-2" />
             <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{deck.name}</span>
-            <span className="text-xs text-slate-500 select-none">{visibleCardCount} / {deck.initialCardCount || visibleCardCount}</span>
+            <span className="text-xs text-slate-500 select-none">{visibleCardCount} / {(deck.baseCardIds || deck.cardIds).length}</span>
           </div>
         )}
 
