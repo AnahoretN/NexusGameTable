@@ -125,11 +125,30 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     const isPinned = uiObject.isPinnedToViewport === true;
 
     if (isPinned) {
-      // Unpin
-      dispatch({
-        type: 'UNPIN_FROM_VIEWPORT',
-        payload: { id: uiObject.id }
-      });
+      // Unpin - calculate world coordinates from current pinned screen position
+      const scrollContainer = document.querySelector('[data-tabletop="true"]') as HTMLElement;
+      const scrollLeft = scrollContainer?.scrollLeft || 0;
+      const scrollTop = scrollContainer?.scrollTop || 0;
+
+      // Get current screen position from pinnedScreenPosition
+      const pinnedPos = (uiObject as any).pinnedScreenPosition;
+      if (pinnedPos) {
+        const screenX = pinnedPos.x;
+        const screenY = pinnedPos.y;
+        // Convert screen to world coordinates: worldX = screenX + scrollLeft
+        const worldX = screenX + scrollLeft;
+        const worldY = screenY + scrollTop;
+        dispatch({
+          type: 'UNPIN_FROM_VIEWPORT',
+          payload: { id: uiObject.id, worldX, worldY }
+        });
+      } else {
+        // Fallback: use current object position
+        dispatch({
+          type: 'UNPIN_FROM_VIEWPORT',
+          payload: { id: uiObject.id, worldX: uiObject.x, worldY: uiObject.y }
+        });
+      }
     } else {
       // Pin - calculate current screen position
       // For UI panels/windows, we need to account for scroll and offset
@@ -461,7 +480,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     handleTogglePin();
                   }}
                   className={`p-0.5 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600 hover:bg-purple-500' : 'hover:bg-white/20'}`}
-                  title={uiObject.isPinnedToViewport ? 'Unpin from Screen' : 'Pin to Screen'}
+                  title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
                 >
                   <Pin size={14} className="text-white" />
                 </button>
@@ -500,7 +519,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     handleTogglePin();
                   }}
                   className={`p-0.5 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600 hover:bg-purple-500' : 'hover:bg-white/20'}`}
-                  title={uiObject.isPinnedToViewport ? 'Unpin from Screen' : 'Pin to Screen'}
+                  title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
                 >
                   <Pin size={14} className="text-white" />
                 </button>

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
 import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer } from '../types';
-import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
+import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { Peer } from 'peerjs';
 
 // Helper for safe ID generation
@@ -81,6 +81,7 @@ const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
 export interface ViewTransform {
   offset: { x: number; y: number };
   zoom: number;
+  scroll: { x: number; y: number };
 }
 
 export interface GameState {
@@ -134,7 +135,7 @@ type Action =
   | { type: 'SWING_CLOCKWISE'; payload: { id: string } }
   | { type: 'SWING_COUNTER_CLOCKWISE'; payload: { id: string } }
   | { type: 'PIN_TO_VIEWPORT'; payload: { id: string; screenX: number; screenY: number } }
-  | { type: 'UNPIN_FROM_VIEWPORT'; payload: { id: string } }
+  | { type: 'UNPIN_FROM_VIEWPORT'; payload: { id: string; worldX: number; worldY: number } }
   // UI Object actions
   | { type: 'CREATE_PANEL'; payload: { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string } }
   | { type: 'CREATE_WINDOW'; payload: { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string } }
@@ -150,7 +151,7 @@ const initialState: GameState = {
   ],
   activePlayerId: 'gm',
   diceRolls: [],
-  viewTransform: { offset: { x: 0, y: 0 }, zoom: 0.8 },
+  viewTransform: { offset: { x: 0, y: 0 }, zoom: 1, scroll: { x: 0, y: 0 } },
 };
 
 const GameContext = createContext<{
@@ -189,7 +190,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         return {
             ...action.payload,
             objects: migratedObjects,
-            viewTransform: action.payload.viewTransform || { offset: { x: 0, y: 0 }, zoom: 0.8 }
+            viewTransform: action.payload.viewTransform || { offset: { x: 0, y: 0 }, zoom: 0.8, scroll: { x: 0, y: 0 } }
         };
     }
     case 'SET_ACTIVE_ID': {
@@ -263,10 +264,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       const newObjects = { ...state.objects, [action.payload.id]: updatedObj };
 
-      // Handle exclusive isMillPile toggle for piles
+      // Handle deck updates
       if (updatedObj.type === ItemType.DECK) {
           const deck = updatedObj as Deck;
           const oldDeck = obj as Deck;
+
+          // When cardShape changes, update deck size and all cards
           if (deck.cardShape && deck.cardShape !== oldDeck.cardShape) {
               const dims = CARD_SHAPE_DIMS[deck.cardShape] || CARD_SHAPE_DIMS[CardShape.POKER];
               updatedObj.width = dims.width;
@@ -283,6 +286,31 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   }
               });
           }
+
+          // When cardWidth or cardHeight changes, update only cards that had the previous default size
+          // This allows users to change deck size without affecting cards,
+          // but changing card size will update cards that still have default sizes
+          const oldCardWidth = oldDeck.cardWidth ?? DEFAULT_DECK_WIDTH;
+          const oldCardHeight = oldDeck.cardHeight ?? DEFAULT_DECK_HEIGHT;
+          const newCardWidth = deck.cardWidth ?? DEFAULT_DECK_WIDTH;
+          const newCardHeight = deck.cardHeight ?? DEFAULT_DECK_HEIGHT;
+
+          if (newCardWidth !== oldCardWidth || newCardHeight !== oldCardHeight) {
+              Object.values(state.objects).forEach(o => {
+                  if (o.type === ItemType.CARD && (o as Card).deckId === deck.id) {
+                      const card = o as Card;
+                      // Only update cards that currently have the old card dimensions
+                      if (card.width === oldCardWidth && card.height === oldCardHeight) {
+                          newObjects[o.id] = {
+                              ...card,
+                              width: newCardWidth,
+                              height: newCardHeight
+                          } as Card;
+                      }
+                  }
+              });
+          }
+
           // Handle isMillPile exclusive toggle
           if (deck.piles) {
               const oldPiles = oldDeck.piles || [];
@@ -1045,6 +1073,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           ...state.objects,
           [action.payload.id]: {
             ...obj,
+            x: action.payload.worldX,
+            y: action.payload.worldY,
             isPinnedToViewport: false,
             pinnedScreenPosition: undefined,
             expandedPinnedPosition: undefined,
@@ -1280,23 +1310,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         localDispatch({ type: 'ADD_OBJECT', payload: board });
 
-        // Create Standard Deck positioned in top-right corner
-        // Position: 10px from top, 60px from right main menu
-        const MARGIN_X = 80;
-        const MARGIN_Y = -80;
+        // Create Standard Deck positioned offset from center of screen
+        // Calculate world coordinates based on default viewport settings
+        const screenX = window.innerWidth - 460;
+        const screenY = 15;
+        const zoom = 1; // Default zoom (no scaling)
+        const offsetX = 0; // Default offset
+        const offsetY = 0; // Default offset
+        const worldX = (screenX - offsetX) / zoom;
+        const worldY = (screenY - offsetY) / zoom;
         const { deck, cards } = createStandardDeck();
 
-        // Calculate world coordinates for top-right position
-        // screenX = worldX * zoom + offset.x
-        // We want screenX to be near right edge (windowWidth - MAIN_MENU_WIDTH - MARGIN_X - deckWidth/2)
-        // With default offset.x = 0, zoom = 0.8:
-        // worldX = (screenX - offset.x) / zoom
-        const windowWidth = window.innerWidth;
-        const deckScreenWidth = windowWidth - MAIN_MENU_WIDTH - MARGIN_X - (deck.width / 2);
-        const deckScreenY = MARGIN_Y + (deck.height / 2);
-
-        deck.x = deckScreenWidth / state.viewTransform.zoom - state.viewTransform.offset.x;
-        deck.y = deckScreenY / state.viewTransform.zoom - state.viewTransform.offset.y;
+        deck.x = worldX;
+        deck.y = worldY;
 
         // Add all cards first
         cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
@@ -1314,7 +1340,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 x: mainMenuX,
                 y: mainMenuY,
                 width: MAIN_MENU_WIDTH,
-                height: window.innerHeight,
+                height: window.innerHeight - SCROLLBAR_WIDTH,
                 title: 'Main Menu'
             }
         });

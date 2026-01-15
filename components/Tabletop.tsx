@@ -148,7 +148,7 @@ export const Tabletop: React.FC = () => {
 
   // Viewport state
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(0.8);
+  const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
 
   // Dragging state
@@ -325,10 +325,6 @@ export const Tabletop: React.FC = () => {
     hoveredPileRef.current = hoveredPileId;
   }, [hoveredPileId]);
 
-  // Pinned object positions are calculated at render time based on offset/zoom
-  // Debug: track offset changes
-  const prevOffsetRef = useRef({ x: 0, y: 0 });
-
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -340,31 +336,6 @@ export const Tabletop: React.FC = () => {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
-
-  // Debug: log offset changes (camera movement)
-  useEffect(() => {
-    const deltaX = offset.x - prevOffsetRef.current.x;
-    const deltaY = offset.y - prevOffsetRef.current.y;
-
-    // Only log if there's actual movement (not initial render)
-    if (prevOffsetRef.current.x !== 0 || prevOffsetRef.current.y !== 0) {
-      if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
-        // Find pinned deck
-        const pinnedDeck = Object.values(state.objects).find(obj =>
-          (obj as any).isPinnedToViewport && obj.type === ItemType.DECK
-        ) as any;
-
-        if (pinnedDeck) {
-          const oldDeckScreenX = pinnedDeck.x * zoom + prevOffsetRef.current.x;
-          const oldDeckScreenY = pinnedDeck.y * zoom + prevOffsetRef.current.y;
-          const newDeckScreenX = pinnedDeck.x * zoom + offset.x;
-          const newDeckScreenY = pinnedDeck.y * zoom + offset.y;
-        }
-      }
-    }
-
-    prevOffsetRef.current = offset;
-  }, [offset.x, offset.y, state.objects, zoom]);
 
   // Click tracking for single/double click detection
   const clickTrackerRef = useRef<{ objectId: string | null; timestamp: number; clickCount: number }>({
@@ -1825,18 +1796,37 @@ export const Tabletop: React.FC = () => {
   }, []); // Empty deps - handlers check refs for current state
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.shiftKey) {
-        e.preventDefault();
-        const scaleAmount = -e.deltaY * 0.001;
-        setZoom(z => Math.min(Math.max(0.2, z + scaleAmount), 3));
-    }
+    // Zoom disabled - keeping scale at 1
   };
 
-  // Sync offset and zoom changes to global state
+  // Sync local state from global state when it changes externally (e.g., loading saved games)
+  // Only update if values are significantly different to avoid overwriting user interactions
   React.useEffect(() => {
+    const globalOffset = state.viewTransform.offset;
+    const globalZoom = state.viewTransform.zoom;
+
+    // Check if values are different (with small tolerance for floating point)
+    const offsetChanged = Math.abs(globalOffset.x - offset.x) > 1 || Math.abs(globalOffset.y - offset.y) > 1;
+    const zoomChanged = Math.abs(globalZoom - zoom) > 0.01;
+
+    if (offsetChanged || zoomChanged) {
+      console.log('[Tabletop] Syncing from global viewTransform:', {
+        global: { offset: globalOffset, zoom: globalZoom },
+        local: { offset, zoom },
+        changed: { offsetChanged, zoomChanged }
+      });
+      setOffset(globalOffset);
+      setZoom(globalZoom);
+    }
+  }, [state.viewTransform]);
+
+  // Sync offset and zoom changes to global state (preserve current scroll)
+  React.useEffect(() => {
+    const currentScroll = scrollContainerRef.current?.scrollLeft || 0;
+    const currentScrollTop = scrollContainerRef.current?.scrollTop || 0;
     dispatch({
       type: 'UPDATE_VIEW_TRANSFORM',
-      payload: { offset, zoom }
+      payload: { offset, zoom, scroll: { x: currentScroll, y: currentScrollTop } }
     });
   }, [offset, zoom, dispatch]);
 
@@ -1879,7 +1869,30 @@ export const Tabletop: React.FC = () => {
               });
               return;
           case 'unpinFromViewport':
-              dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: object.id } });
+              // Calculate world coordinates from current pinned screen position
+              // This keeps the object at its current visual position when unpinning
+              const scrollLeftUnpin = scrollContainerRef.current?.scrollLeft || 0;
+              const scrollTopUnpin = scrollContainerRef.current?.scrollTop || 0;
+
+              // Get current screen position from pinnedScreenPosition
+              const pinnedPos = (object as any).pinnedScreenPosition;
+              if (pinnedPos) {
+                  const screenX = pinnedPos.x;
+                  const screenY = pinnedPos.y;
+                  // Convert screen to world coordinates: worldX = (screenX + scrollLeft - offset.x) / zoom
+                  const worldX = (screenX + scrollLeftUnpin - offset.x) / zoom;
+                  const worldY = (screenY + scrollTopUnpin - offset.y) / zoom;
+                  dispatch({
+                      type: 'UNPIN_FROM_VIEWPORT',
+                      payload: { id: object.id, worldX, worldY }
+                  });
+              } else {
+                  // Fallback: use current object position
+                  dispatch({
+                      type: 'UNPIN_FROM_VIEWPORT',
+                      payload: { id: object.id, worldX: object.x, worldY: object.y }
+                  });
+              }
               return;
       }
 
@@ -2043,6 +2056,18 @@ export const Tabletop: React.FC = () => {
         const target = e.target as HTMLElement;
         if (target.scrollLeft === undefined || target.scrollTop === undefined) return;
 
+        const scrollLeft = target.scrollLeft;
+        const scrollTop = target.scrollTop;
+
+        // Update scroll position in global state for deck positioning
+        dispatch({
+          type: 'UPDATE_VIEW_TRANSFORM',
+          payload: {
+            ...state.viewTransform,
+            scroll: { x: scrollLeft, y: scrollTop }
+          }
+        });
+
         // Find all pinned GAME objects (not UI panels/windows/decks - they render in fixed container now)
         const pinnedObjects = Object.values(state.objects).filter(obj =>
           (obj as any).isPinnedToViewport &&
@@ -2052,9 +2077,6 @@ export const Tabletop: React.FC = () => {
         );
 
         if (pinnedObjects.length > 0) {
-          const scrollLeft = target.scrollLeft;
-          const scrollTop = target.scrollTop;
-
           pinnedObjects.forEach(obj => {
             const pinnedObj = obj as any;
             const pinnedPosition = pinnedObj.pinnedScreenPosition;
@@ -2145,6 +2167,8 @@ export const Tabletop: React.FC = () => {
             data-tabletop="true"
             className="absolute origin-top-left transition-transform duration-0 ease-linear"
             style={{
+                top: 0,
+                left: 0,
                 transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
             }}
         >

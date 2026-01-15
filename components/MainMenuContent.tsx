@@ -7,7 +7,7 @@ import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, D
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanel } from './HandPanel';
-import { cardDragAPI, DragState } from '../hooks/useCardDrag';
+import { cardDragAPI } from '../hooks/useCardDrag';
 
 // Helper for safe ID generation
 const generateUUID = () => {
@@ -509,8 +509,18 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   );
 
   const handleCreateItem = (item: typeof category.items[number]) => {
-    const centerX = (window.innerWidth - 286) / 2; // Subtract mainMenu width
-    const centerY = window.innerHeight / 2;
+    // Screen coordinates (center of viewport)
+    const screenX = window.innerWidth / 2;
+    const screenY = window.innerHeight / 2;
+
+    // Convert screen coordinates to world coordinates
+    // Objects are rendered inside transform container with: translate(offset.x, offset.y) scale(zoom)
+    const zoom = state.viewTransform.zoom;
+    const offsetX = state.viewTransform.offset.x;
+    const offsetY = state.viewTransform.offset.y;
+
+    const worldX = (screenX - offsetX) / zoom;
+    const worldY = (screenY - offsetY) / zoom;
 
     switch (item.type) {
       case 'DECK': {
@@ -518,8 +528,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: generateUUID(),
           type: ItemType.DECK,
           name: item.name,
-          x: centerX,
-          y: centerY,
+          x: worldX,
+          y: worldY,
           width: DEFAULT_DECK_WIDTH,
           height: DEFAULT_DECK_HEIGHT,
           rotation: 0,
@@ -551,8 +561,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: generateUUID(),
           type: ItemType.DECK,
           name: 'Empty Deck',
-          x: centerX,
-          y: centerY,
+          x: worldX,
+          y: worldY,
           width: DEFAULT_DECK_WIDTH,
           height: DEFAULT_DECK_HEIGHT,
           rotation: 0,
@@ -583,8 +593,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: generateUUID(),
           type: ItemType.TOKEN,
           name: item.name,
-          x: centerX,
-          y: centerY,
+          x: worldX,
+          y: worldY,
           width: TOKEN_SIZE,
           height: TOKEN_SIZE,
           rotation: 0,
@@ -605,8 +615,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: generateUUID(),
           type: ItemType.DICE_OBJECT,
           name: item.name,
-          x: centerX,
-          y: centerY,
+          x: worldX,
+          y: worldY,
           width: DEFAULT_DICE_SIZE,
           height: DEFAULT_DICE_SIZE,
           rotation: 0,
@@ -625,8 +635,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: generateUUID(),
           type: ItemType.COUNTER,
           name: item.name,
-          x: centerX,
-          y: centerY,
+          x: worldX,
+          y: worldY,
           width: DEFAULT_COUNTER_WIDTH,
           height: DEFAULT_COUNTER_HEIGHT,
           rotation: 0,
@@ -644,8 +654,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: generateUUID(),
           type: ItemType.BOARD,
           name: item.name,
-          x: centerX - 200,
-          y: centerY - 200,
+          x: worldX - 200,
+          y: worldY - 200,
           width: 400,
           height: 400,
           rotation: 0,
@@ -666,8 +676,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           type: 'CREATE_PANEL',
           payload: {
             panelType: item.panelType!,
-            x: centerX - 150,
-            y: centerY - 200,
+            x: screenX - 150,
+            y: screenY - 200,
             width: MAIN_MENU_WIDTH,
             height: 400,
             title: item.name,
