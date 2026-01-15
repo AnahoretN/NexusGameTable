@@ -1145,13 +1145,7 @@ export const Tabletop: React.FC = () => {
       if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
         if (item.locked) return;
 
-        // Unpin from viewport if pinned (manual drag cancels pin)
-        if ((item as any).isPinnedToViewport) {
-          dispatch({
-            type: 'UNPIN_FROM_VIEWPORT',
-            payload: { id }
-          });
-        }
+        // Note: We DON'T unpin pinned objects on drag - pinned objects stay pinned while dragging
 
         // UI objects use screen coordinates directly, not world coordinates
         setDraggingId(id);
@@ -1221,13 +1215,8 @@ export const Tabletop: React.FC = () => {
 
       setDraggingId(id);
       if (item) {
-        // Unpin from viewport if pinned (manual drag cancels pin)
-        if ((item as any).isPinnedToViewport) {
-          dispatch({
-            type: 'UNPIN_FROM_VIEWPORT',
-            payload: { id }
-          });
-        }
+        // Note: We don't unpin pinned objects on drag anymore - pinned objects stay pinned while dragging
+        // Their position is updated in both x/y and pinnedScreenPosition
 
         // Bring dragged object to front (zIndex 9999)
         dispatch({
@@ -1810,11 +1799,6 @@ export const Tabletop: React.FC = () => {
     const zoomChanged = Math.abs(globalZoom - zoom) > 0.01;
 
     if (offsetChanged || zoomChanged) {
-      console.log('[Tabletop] Syncing from global viewTransform:', {
-        global: { offset: globalOffset, zoom: globalZoom },
-        local: { offset, zoom },
-        changed: { offsetChanged, zoomChanged }
-      });
       setOffset(globalOffset);
       setZoom(globalZoom);
     }
@@ -1869,30 +1853,44 @@ export const Tabletop: React.FC = () => {
               });
               return;
           case 'unpinFromViewport':
-              // Calculate world coordinates from current pinned screen position
-              // This keeps the object at its current visual position when unpinning
-              const scrollLeftUnpin = scrollContainerRef.current?.scrollLeft || 0;
-              const scrollTopUnpin = scrollContainerRef.current?.scrollTop || 0;
+              // Convert viewport coordinates to world coordinates
+              // For pinned objects, x/y are viewport coordinates (position: fixed)
+              // For unpinned objects, x/y need to be world coordinates (position: absolute)
+              let worldX: number, worldY: number;
 
-              // Get current screen position from pinnedScreenPosition
-              const pinnedPos = (object as any).pinnedScreenPosition;
-              if (pinnedPos) {
-                  const screenX = pinnedPos.x;
-                  const screenY = pinnedPos.y;
-                  // Convert screen to world coordinates: worldX = (screenX + scrollLeft - offset.x) / zoom
-                  const worldX = (screenX + scrollLeftUnpin - offset.x) / zoom;
-                  const worldY = (screenY + scrollTopUnpin - offset.y) / zoom;
-                  dispatch({
-                      type: 'UNPIN_FROM_VIEWPORT',
-                      payload: { id: object.id, worldX, worldY }
-                  });
+              if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+                  // UI objects: no scroll involved (both pinned and unpinned ignore scroll)
+                  // Pinned: position: fixed, left: uiObject.x (viewport)
+                  // Unpinned: position: absolute inside transform, left: (uiObject.x - offset.x) / zoom
+                  // To keep same visual position: worldX = viewportX * zoom + offset.x
+                  // For pinned UI objects, object.x/y ARE the current viewport coordinates
+                  worldX = object.x * zoom + offset.x;
+                  worldY = object.y * zoom + offset.y;
               } else {
-                  // Fallback: use current object position
-                  dispatch({
-                      type: 'UNPIN_FROM_VIEWPORT',
-                      payload: { id: object.id, worldX: object.x, worldY: object.y }
-                  });
+                  // Game objects (decks, etc.): render in scrollable transform container
+                  // For pinned game objects, visual position comes from pinnedScreenPosition
+                  // object.x/y are world coordinates (unchanged from before pin)
+                  const pinnedPos = (object as any).pinnedScreenPosition;
+                  if (!pinnedPos) {
+                      // No pinned position - shouldn't happen, but use current position as fallback
+                      worldX = object.x;
+                      worldY = object.y;
+                  } else {
+                      // pinnedPos contains current viewport coordinates
+                      // Unpinned decks render with: left: deck.x inside transform container
+                      // Visual position: screenX = (deck.x * zoom + offset.x) - scrollLeft
+                      // So: deck.x = (screenX + scrollLeft - offset.x) / zoom
+                      const scrollLeftUnpin = scrollContainerRef.current?.scrollLeft || 0;
+                      const scrollTopUnpin = scrollContainerRef.current?.scrollTop || 0;
+                      worldX = (pinnedPos.x + scrollLeftUnpin - offset.x) / zoom;
+                      worldY = (pinnedPos.y + scrollTopUnpin - offset.y) / zoom;
+                  }
               }
+
+              dispatch({
+                  type: 'UNPIN_FROM_VIEWPORT',
+                  payload: { id: object.id, worldX, worldY }
+              });
               return;
       }
 

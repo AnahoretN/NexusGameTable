@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile } from '../types';
@@ -6,6 +7,7 @@ import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, Lay
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
+import { PanelSettingsModal } from './PanelSettingsModal';
 import { HandPanel } from './HandPanel';
 import { cardDragAPI } from '../hooks/useCardDrag';
 
@@ -69,18 +71,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [settingsObjectId, setSettingsObjectId] = useState<string | null>(null);
   const mainMenuRef = useRef<HTMLDivElement>(null);
 
-  // Hand card scale state (stored in localStorage)
-  const [handCardScale, setHandCardScale] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hand-card-scale');
-      return saved ? parseFloat(saved) : 1;
-    } catch {
-      return 1;
-    }
-  });
+  // Hand card scale state with localStorage persistence
+  const { scale: handCardScale, setHandCardScale } = useHandCardScale();
 
   const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
-  const isHost = true;
 
   // Get main menu panel for bounds and minimized state
   const mainMenuPanel = useMemo(() => {
@@ -92,19 +86,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   // Check if main menu panel is minimized
   const isMainMenuMinimized = mainMenuPanel?.minimized || false;
 
-  // Listen for hand card scale changes from settings modal
-  useEffect(() => {
-    const handleHandCardScaleChanged = (e: Event) => {
-      const customEvent = e as CustomEvent<{
-        scale: number;
-      }>;
-      setHandCardScale(customEvent.detail.scale);
-    };
-
-    window.addEventListener('hand-card-scale-changed', handleHandCardScaleChanged);
-    return () => window.removeEventListener('hand-card-scale-changed', handleHandCardScaleChanged);
-  }, []);
-
   // Handle opening HAND panel settings from button on the panel
   useEffect(() => {
     const handleOpenHandPanelSettings = (e: Event) => {
@@ -113,6 +94,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       }>;
 
       const { panelId } = customEvent.detail;
+
+      // Check if main menu is minimized - if so, don't open settings
+      const mainMenuPanel = Object.values(state.objects).find(
+        obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
+      ) as PanelObject | undefined;
+      if (mainMenuPanel?.minimized) {
+        return;
+      }
 
       // Check if it's a HAND panel
       const panel = state.objects[panelId] as PanelObject | undefined;
@@ -430,7 +419,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Active Players</h3>
               {state.players
-                .filter(p => isHost || p.id !== 'player-view')
                 .map(p => (
                   <div key={p.id} className="flex items-center gap-3 p-2 bg-slate-800 rounded">
                     <div className="w-3 h-3 rounded-full" style={{backgroundColor: p.color}} />
@@ -797,7 +785,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       {settingsObjectId && category.matcher(state.objects[settingsObjectId]) && (
         <>
           {state.objects[settingsObjectId]?.type === ItemType.PANEL ? (
-            <PanelSettingsModalInline
+            <PanelSettingsModal
               panel={state.objects[settingsObjectId] as PanelObject}
               onClose={() => setSettingsObjectId(null)}
             />
@@ -835,17 +823,7 @@ const PanelSettingsModalInline: React.FC<{
 
   // Hand card scale state for HAND panels
   const isHandPanel = panel.panelType === PanelType.HAND;
-  const [handCardScale, setHandCardScale] = React.useState(() => {
-    if (isHandPanel) {
-      try {
-        const saved = localStorage.getItem('hand-card-scale');
-        return saved ? parseFloat(saved) : 1;
-      } catch {
-        return 1;
-      }
-    }
-    return 1;
-  });
+  const { scale: handCardScale, setHandCardScale } = useHandCardScale();
 
   const handleSave = () => {
     dispatch({
