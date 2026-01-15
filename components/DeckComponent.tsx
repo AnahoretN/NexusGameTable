@@ -285,8 +285,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           <div
             className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none rounded"
             style={{
-              left: deck.x,
-              top: deck.y,
+              left: 0,
+              top: 0,
               width: deck.width,
               height: deck.height,
               transform: `rotate(${deck.rotation}deg)`,
@@ -313,8 +313,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           }}
           className={`absolute group ${draggingClass}`}
           style={{
-            left: deck.x,
-            top: deck.y,
+            left: 0,
+            top: 0,
             width: deck.width,
             height: deck.height,
             transform: `rotate(${deck.rotation}deg)`
