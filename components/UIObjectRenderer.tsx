@@ -1,14 +1,16 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType } from '../types';
-import { X, Minus, Plus, Eye, EyeOff, Settings, Maximize2, Check, Pin } from 'lucide-react';
+import { X, Minus, Plus, Eye, EyeOff, Pin, Settings } from 'lucide-react';
 import { HandPanel } from './HandPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { TopDeckModal } from './TopDeckModal';
+import { PanelSettingsModal } from './PanelSettingsModal';
 import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
+import { useHandCardScale } from '../hooks/useHandCardScale';
 
 const GAME_NAME = 'Nexus Game Table';
 // Version is imported from package.json during build
@@ -125,30 +127,19 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     const isPinned = uiObject.isPinnedToViewport === true;
 
     if (isPinned) {
-      // Unpin - calculate world coordinates from current pinned screen position
-      const scrollContainer = document.querySelector('[data-tabletop="true"]') as HTMLElement;
-      const scrollLeft = scrollContainer?.scrollLeft || 0;
-      const scrollTop = scrollContainer?.scrollTop || 0;
+      // Unpin - convert viewport coordinates to world coordinates
+      // For pinned objects, uiObject.x/y are viewport coordinates (position: fixed)
+      // For unpinned objects, uiObject.x/y need to be world coordinates (position: absolute)
+      // Pinned: left: uiObject.x (viewport)
+      // Unpinned: left: (uiObject.x - offset.x) / zoom
+      // To keep same visual position: worldX = viewportX * zoom + offset.x
+      const worldX = uiObject.x * zoom + offset.x;
+      const worldY = uiObject.y * zoom + offset.y;
 
-      // Get current screen position from pinnedScreenPosition
-      const pinnedPos = (uiObject as any).pinnedScreenPosition;
-      if (pinnedPos) {
-        const screenX = pinnedPos.x;
-        const screenY = pinnedPos.y;
-        // Convert screen to world coordinates: worldX = screenX + scrollLeft
-        const worldX = screenX + scrollLeft;
-        const worldY = screenY + scrollTop;
-        dispatch({
-          type: 'UNPIN_FROM_VIEWPORT',
-          payload: { id: uiObject.id, worldX, worldY }
-        });
-      } else {
-        // Fallback: use current object position
-        dispatch({
-          type: 'UNPIN_FROM_VIEWPORT',
-          payload: { id: uiObject.id, worldX: uiObject.x, worldY: uiObject.y }
-        });
-      }
+      dispatch({
+        type: 'UNPIN_FROM_VIEWPORT',
+        payload: { id: uiObject.id, worldX, worldY }
+      });
     } else {
       // Pin - calculate current screen position
       // For UI panels/windows, we need to account for scroll and offset
@@ -320,13 +311,13 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   const containerStyle: React.CSSProperties = {
     position: isPinnedMode ? 'fixed' : 'absolute',
-    // For pinned mode: use pinnedScreenPosition if available (saved screen position)
+    // For pinned mode: use x/y directly (they are screen coordinates for UI objects)
     // For unpinned mode: convert screen coords to world coords: subtract offset, divide by zoom
     left: isPinnedMode
-      ? (pinnedPosition?.x ?? uiObject.x)
+      ? uiObject.x
       : (uiObject.x - offset.x) / zoom,
     top: isPinnedMode
-      ? (pinnedPosition?.y ?? uiObject.y)
+      ? uiObject.y
       : (uiObject.y - offset.y) / zoom,
     width: uiObject.width,
     height: minimized ? 32 : uiObject.height,
@@ -406,7 +397,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     handleTogglePin();
                   }}
                   className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
-                  title={uiObject.isPinnedToViewport ? 'Unpin from screen' : 'Pin to screen'}
+                  title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
                 >
                   <Pin size={14} className="text-white" />
                 </button>
@@ -414,16 +405,30 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             )}
             {/* Minimize/Expand button */}
             {minimized ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleToggleCollapse();
-                }}
-                className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                title="Expand"
-              >
-                <Plus size={14} className="text-white" />
-              </button>
+              <>
+                {/* Pin button for collapsed state */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTogglePin();
+                  }}
+                  className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
+                  title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
+                >
+                  <Pin size={14} className="text-white" />
+                </button>
+                {/* Expand button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleCollapse();
+                  }}
+                  className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                  title="Expand"
+                >
+                  <Plus size={14} className="text-white" />
+                </button>
+              </>
             ) : (
               <button
                 onClick={(e) => {
@@ -626,26 +631,8 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
   const [isDragTarget, setIsDragTarget] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
-  // Get card scale from localStorage
-  const [cardScale, setCardScale] = React.useState(() => {
-    try {
-      const saved = localStorage.getItem('hand-card-scale');
-      return saved ? parseFloat(saved) : 1;
-    } catch {
-      return 1;
-    }
-  });
-
-  // Listen for card scale changes
-  React.useEffect(() => {
-    const handleHandCardScaleChanged = (e: Event) => {
-      const customEvent = e as CustomEvent<{ scale: number }>;
-      setCardScale(customEvent.detail.scale);
-    };
-
-    window.addEventListener('hand-card-scale-changed', handleHandCardScaleChanged);
-    return () => window.removeEventListener('hand-card-scale-changed', handleHandCardScaleChanged);
-  }, []);
+  // Get card scale from localStorage with custom hook
+  const { scale: cardScale } = useHandCardScale();
 
   React.useEffect(() => {
     const handleDragMove = (e: Event) => {
@@ -713,187 +700,6 @@ const PullPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
       </div>
     </div>
   );
-};
-
-// Panel settings modal component
-type PanelSettingsTab = 'general';
-
-const PanelSettingsModal: React.FC<{
-  panel: PanelObject;
-  onClose: () => void;
-}> = ({ panel, onClose }) => {
-  const { dispatch } = useGame();
-  const [activeTab, setActiveTab] = React.useState<PanelSettingsTab>('general');
-  const [title, setTitle] = React.useState(panel.title);
-  const [x, setX] = React.useState(panel.x);
-  const [y, setY] = React.useState(panel.y);
-  const [width, setWidth] = React.useState(panel.width);
-  const [height, setHeight] = React.useState(panel.height);
-  const [rotation, setRotation] = React.useState(panel.rotation);
-  const [dualPosition, setDualPosition] = React.useState(panel.dualPosition || false);
-  const [zIndex, setZIndex] = React.useState(panel.zIndex || 1000);
-
-  const handleSave = () => {
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        title,
-        x,
-        y,
-        width,
-        height,
-        rotation,
-        dualPosition,
-        zIndex
-      }
-    });
-    onClose();
-  };
-
-  const modalContent = (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
-      <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
-          <h3 className="text-base font-bold text-white">Settings: {panel.title}</h3>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-slate-700">
-          <button
-            onClick={() => setActiveTab('general')}
-            className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
-              activeTab === 'general'
-                ? 'bg-slate-700 text-white border-b-2 border-purple-500'
-                : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
-            }`}
-          >
-            <Settings size={16} /> General
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-3">
-          {/* Name */}
-          <div>
-            <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
-            <input
-              type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-            />
-          </div>
-
-          {/* Position */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">X Position</label>
-              <input
-                type="number"
-                value={Math.round(x)}
-                onChange={e => setX(Number(e.target.value))}
-                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">Y Position</label>
-              <input
-                type="number"
-                value={Math.round(y)}
-                onChange={e => setY(Number(e.target.value))}
-                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Size */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">Width</label>
-              <input
-                type="number"
-                value={width}
-                onChange={e => setWidth(Number(e.target.value))}
-                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">Height</label>
-              <input
-                type="number"
-                value={height}
-                onChange={e => setHeight(Number(e.target.value))}
-                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Rotation */}
-          <div>
-            <label className="block text-xs font-bold text-gray-400 mb-1">Rotation (degrees)</label>
-            <input
-              type="number"
-              value={rotation}
-              onChange={e => setRotation(Number(e.target.value))}
-              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-            />
-          </div>
-
-          {/* Z-Index */}
-          <div>
-            <label className="block text-xs font-bold text-gray-400 mb-1">Z-Index (layer order)</label>
-            <input
-              type="number"
-              value={zIndex}
-              onChange={e => setZIndex(Number(e.target.value))}
-              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-            />
-          </div>
-
-          {/* Dual Position Toggle */}
-          <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 border border-slate-700">
-            <label className="text-xs text-gray-300 flex items-center gap-2">
-              <Maximize2 size={12} />
-              Dual Position Mode
-            </label>
-            <button
-              onClick={() => setDualPosition(!dualPosition)}
-              className={`w-10 h-5 rounded-full transition-colors ${
-                dualPosition ? 'bg-green-600' : 'bg-slate-700'
-              }`}
-            >
-              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                dualPosition ? 'translate-x-5' : 'translate-x-0.5'
-              }`} />
-            </button>
-          </div>
-          <p className="text-[10px] text-gray-500 -mt-2">
-            When enabled, panel remembers separate positions for collapsed and expanded states
-          </p>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-2 p-4 border-t border-slate-700">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
-          >
-            <Check size={16} /> Save Changes
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  return createPortal(modalContent, document.body);
 };
 
 // Window content renderer

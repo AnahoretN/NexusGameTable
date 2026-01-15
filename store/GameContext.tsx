@@ -334,6 +334,21 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'MOVE_OBJECT': {
       const obj = state.objects[action.payload.id];
       if (!obj || obj.locked) return state;
+      // For pinned objects, also update pinnedScreenPosition to maintain visual position
+      if ((obj as any).isPinnedToViewport) {
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [action.payload.id]: {
+              ...obj,
+              x: action.payload.x,
+              y: action.payload.y,
+              pinnedScreenPosition: { x: action.payload.x, y: action.payload.y }
+            } as TableObject,
+          },
+        };
+      }
       return {
         ...state,
         objects: {
