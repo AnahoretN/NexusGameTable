@@ -52,6 +52,7 @@ const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
     rotation: 0,
     name: 'Standard Deck',
     content: '',
+    baseCardIds: [...cardIds], // Base list - starts same as cardIds
     cardIds,
     locked: false,
     isOnTable: true,
