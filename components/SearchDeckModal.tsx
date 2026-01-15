@@ -299,21 +299,19 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         break;
       case 'delete':
         const filteredOrder = cardOrder.filter(id => id !== object.id);
-        // Calculate new initialCardCount (excluding hidden cards)
-        const allCards = Object.values(state.objects).filter(o =>
-          o.type === ItemType.CARD &&
-          (o as any).deckId === deck.id &&
-          !(o as any).hidden
-        );
-        const newInitialCount = Math.max(0, allCards.length - 1);
+        // GM deletion removes card from baseCardIds (permanent removal from deck's card pool)
+        // Get the current baseCardIds from state to ensure we're working with latest data
+        const currentDeck = state.objects[deck.id] as Deck;
+        const currentBaseCardIds = currentDeck?.baseCardIds || deck.baseCardIds || [];
+        const filteredBaseCardIds = currentBaseCardIds.filter(id => id !== object.id);
 
         if (isPile && pile) {
-          const updatedPiles = deck.piles?.map(p =>
+          const updatedPiles = (currentDeck?.piles || deck.piles)?.map(p =>
             p.id === pile.id ? { ...p, cardIds: filteredOrder } : p
           );
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
+          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles, baseCardIds: filteredBaseCardIds } });
         } else {
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: filteredOrder, initialCardCount: newInitialCount } });
+          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: filteredOrder, baseCardIds: filteredBaseCardIds } });
         }
         setCardOrder(filteredOrder);
         break;

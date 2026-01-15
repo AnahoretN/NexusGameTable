@@ -172,10 +172,11 @@ export interface CardSpriteInfo {
 
 export interface Deck extends GameItem {
   type: ItemType.DECK;
-  cardIds: string[]; // IDs of cards currently in the stack
+  baseCardIds: string[]; // Base list of cards - immutable set by sprite generation or GM deletion, defines max cards
+  cardIds: string[]; // Current list of cards in the stack - changes with draw, shuffle, play top, etc.
   cardShape?: CardShape; // The shape setting for cards in this deck
   cardOrientation?: CardOrientation; // Default orientation for cards from this deck (undefined = VERTICAL)
-  initialCardCount?: number; // Initial number of cards when deck was created
+  initialCardCount?: number; // DEPRECATED: Now calculated from baseCardIds.length, kept for backwards compatibility
   piles?: CardPile[]; // Additional card piles associated with this deck (discard, etc.)
   showTopCard?: boolean; // Whether to show the top card face on the deck itself
 
