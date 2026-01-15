@@ -2010,12 +2010,14 @@ export const Tabletop: React.FC = () => {
 
   // Split deck objects into pinned and unpinned for separate rendering
   const pinnedDecks = useMemo(() => {
-    return tableObjects.filter(obj => obj.type === ItemType.DECK && (obj as any).isPinnedToViewport === true);
-  }, [tableObjects]);
+    return (Object.values(state.objects) as TableObject[])
+      .filter(obj => obj.type === ItemType.DECK && obj.isOnTable && (obj as any).isPinnedToViewport === true);
+  }, [state.objects]);
 
   const unpinnedDecks = useMemo(() => {
-    return tableObjects.filter(obj => obj.type === ItemType.DECK && (obj as any).isPinnedToViewport !== true);
-  }, [tableObjects]);
+    return (Object.values(state.objects) as TableObject[])
+      .filter(obj => obj.type === ItemType.DECK && obj.isOnTable && (obj as any).isPinnedToViewport !== true);
+  }, [state.objects]);
 
   const worldBounds = useMemo(() => {
     // Fixed world size: 5000x5000
