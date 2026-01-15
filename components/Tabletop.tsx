@@ -1996,6 +1996,15 @@ export const Tabletop: React.FC = () => {
       .sort((a, b) => (a.zIndex || 1000) - (b.zIndex || 1000));
   }, [state.objects]);
 
+  // Split UI objects into pinned and unpinned for separate rendering
+  const pinnedUIObjects = useMemo(() => {
+    return uiObjects.filter(obj => (obj as PanelObject | WindowObject).isPinnedToViewport === true);
+  }, [uiObjects]);
+
+  const unpinnedUIObjects = useMemo(() => {
+    return uiObjects.filter(obj => (obj as PanelObject | WindowObject).isPinnedToViewport !== true);
+  }, [uiObjects]);
+
   const worldBounds = useMemo(() => {
     // Fixed world size: 5000x5000
     return { width: 5000, height: 5000 };
@@ -2020,9 +2029,11 @@ export const Tabletop: React.FC = () => {
         const target = e.target as HTMLElement;
         if (target.scrollLeft === undefined || target.scrollTop === undefined) return;
 
-        // Find all pinned objects and update their positions
+        // Find all pinned GAME objects (not UI panels/windows - they render in fixed container now)
         const pinnedObjects = Object.values(state.objects).filter(obj =>
-          (obj as any).isPinnedToViewport
+          (obj as any).isPinnedToViewport &&
+          obj.type !== ItemType.PANEL &&
+          obj.type !== ItemType.WINDOW
         );
 
         if (pinnedObjects.length > 0) {
@@ -2031,45 +2042,14 @@ export const Tabletop: React.FC = () => {
 
           pinnedObjects.forEach(obj => {
             const pinnedObj = obj as any;
-            const isMinimized = pinnedObj.minimized || false;
-            const hasDualPosition = pinnedObj.dualPosition || false;
-
-            // Determine which pinned position to use based on dual position mode and minimized state
-            let pinnedPosition = pinnedObj.pinnedScreenPosition;
-
-            if (hasDualPosition) {
-              // In dual position mode, try to use the state-specific position first
-              if (isMinimized) {
-                // When minimized, prefer collapsedPinnedPosition, fall back to expandedPinnedPosition, then pinnedScreenPosition
-                pinnedPosition = pinnedObj.collapsedPinnedPosition ||
-                               pinnedObj.expandedPinnedPosition ||
-                               pinnedObj.pinnedScreenPosition;
-              } else {
-                // When expanded, prefer expandedPinnedPosition, fall back to collapsedPinnedPosition, then pinnedScreenPosition
-                pinnedPosition = pinnedObj.expandedPinnedPosition ||
-                               pinnedObj.collapsedPinnedPosition ||
-                               pinnedObj.pinnedScreenPosition;
-              }
-            }
+            const pinnedPosition = pinnedObj.pinnedScreenPosition;
 
             if (pinnedPosition) {
-              let newX: number;
-              let newY: number;
-
-              // UI panels/windows are NOT in the transform container, so no zoom/offset affect
-              if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
-                // For UI objects: screenX = obj.x - scrollLeft
-                // We want: screenX = pinnedPosition.x
-                // So: obj.x = pinnedPosition.x + scrollLeft
-                newX = pinnedPosition.x + scrollLeft;
-                newY = pinnedPosition.y + scrollTop;
-              } else {
-                // For game objects in transform container: screenX = obj.x * zoom + offset.x - scrollLeft
-                // We want: screenX = pinnedPosition.x
-                // So: obj.x = (pinnedPosition.x - offset.x + scrollLeft) / zoom
-                newX = (pinnedPosition.x - offset.x + scrollLeft) / zoom;
-                newY = (pinnedPosition.y - offset.y + scrollTop) / zoom;
-              }
+              // For game objects in transform container: screenX = obj.x * zoom + offset.x - scrollLeft
+              // We want: screenX = pinnedPosition.x
+              // So: obj.x = (pinnedPosition.x - offset.x + scrollLeft) / zoom
+              const newX = (pinnedPosition.x - offset.x + scrollLeft) / zoom;
+              const newY = (pinnedPosition.y - offset.y + scrollTop) / zoom;
 
               // Only dispatch if position actually changed significantly
               if (Math.abs(newX - obj.x) > 0.5 || Math.abs(newY - obj.y) > 0.5) {
@@ -2712,7 +2692,7 @@ export const Tabletop: React.FC = () => {
                                   cardNamePosition={cardSettings.cardNamePosition}
                                   cardOrientation={cardSettings.cardOrientation}
                                   disableRotationTransform={true}
-                                  deckSpriteConfig={card.deckId ? (state.objects[card.deckId] as Deck)?.spriteConfig : undefined}
+                                  deckSpriteConfig={card.deckId ? (state.objects[card.deckId] as DeckType)?.spriteConfig : undefined}
                                   onActionButtonClick={(action) => {
                                     switch (action) {
                                         case 'flip':
@@ -2764,7 +2744,7 @@ export const Tabletop: React.FC = () => {
             })}
 
             {/* UI Objects - Panels and Windows rendered in the same unified space */}
-            {uiObjects.map((uiObj) => (
+            {unpinnedUIObjects.map((uiObj) => (
                 <UIObjectRenderer
                     key={uiObj.id}
                     uiObject={uiObj as PanelObject | WindowObject}
@@ -2772,9 +2752,25 @@ export const Tabletop: React.FC = () => {
                     onMouseDown={handleMouseDown}
                     offset={offset}
                     zoom={zoom}
+                    isPinnedMode={false}
                 />
             ))}
 
+        </div>
+
+        {/* Pinned UI Objects Container - rendered outside transform, not affected by camera/scroll */}
+        <div className="fixed inset-0 pointer-events-none z-[9998]">
+            {pinnedUIObjects.map((uiObj) => (
+                <UIObjectRenderer
+                    key={uiObj.id}
+                    uiObject={uiObj as PanelObject | WindowObject}
+                    isDragging={draggingId === uiObj.id}
+                    onMouseDown={handleMouseDown}
+                    offset={{ x: 0, y: 0 }}
+                    zoom={1}
+                    isPinnedMode={true}
+                />
+            ))}
         </div>
 
         {contextMenu && (

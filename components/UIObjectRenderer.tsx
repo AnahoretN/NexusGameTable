@@ -20,6 +20,7 @@ interface UIObjectRendererProps {
   onMouseDown: (e: React.MouseEvent, id: string) => void;
   offset?: { x: number; y: number };
   zoom?: number;
+  isPinnedMode?: boolean;
 }
 
 export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
@@ -27,7 +28,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   isDragging,
   onMouseDown,
   offset = { x: 0, y: 0 },
-  zoom = 1
+  zoom = 1,
+  isPinnedMode = false
 }) => {
   const { dispatch, state } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -281,15 +283,38 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   // UI objects use screen coordinates, so we need to compensate for the world transform
   // The parent container has: translate(offset.x, offset.y) scale(zoom)
   // We need to reverse this for UI objects to keep them at screen positions
+  // In pinned mode, use fixed positioning with screen coordinates (no transform compensation)
+  const getPinnedPosition = () => {
+    const obj = uiObject as any;
+    // Check for dual position mode
+    if (obj.dualPosition) {
+      if (minimized) {
+        return obj.collapsedPinnedPosition || obj.expandedPinnedPosition || obj.pinnedScreenPosition;
+      } else {
+        return obj.expandedPinnedPosition || obj.collapsedPinnedPosition || obj.pinnedScreenPosition;
+      }
+    }
+    return obj.pinnedScreenPosition;
+  };
+
+  const pinnedPosition = isPinnedMode ? getPinnedPosition() : null;
+
   const containerStyle: React.CSSProperties = {
-    position: 'absolute',
-    // Convert screen coords to world coords: subtract offset, divide by zoom
-    left: (uiObject.x - offset.x) / zoom,
-    top: (uiObject.y - offset.y) / zoom,
+    position: isPinnedMode ? 'fixed' : 'absolute',
+    // For pinned mode: use pinnedScreenPosition if available (saved screen position)
+    // For unpinned mode: convert screen coords to world coords: subtract offset, divide by zoom
+    left: isPinnedMode
+      ? (pinnedPosition?.x ?? uiObject.x)
+      : (uiObject.x - offset.x) / zoom,
+    top: isPinnedMode
+      ? (pinnedPosition?.y ?? uiObject.y)
+      : (uiObject.y - offset.y) / zoom,
     width: uiObject.width,
     height: minimized ? 32 : uiObject.height,
-    // Reverse the scale and apply rotation
-    transform: `rotate(${uiObject.rotation}deg) scale(${1 / zoom})`,
+    // In pinned mode, no scale transform; in unpinned mode, reverse the scale
+    transform: isPinnedMode
+      ? `rotate(${uiObject.rotation}deg)`
+      : `rotate(${uiObject.rotation}deg) scale(${1 / zoom})`,
     transformOrigin: 'top left',
     zIndex: uiObject.zIndex || 1000,
     pointerEvents: 'auto',
