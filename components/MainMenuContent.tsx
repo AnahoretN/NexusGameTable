@@ -708,8 +708,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
               <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">On Table</div>
               {objectsOnTable.map(obj => {
                 const isLocked = obj.locked || false;
-                // visible property only exists on some types
-                const isVisible = 'visible' in obj ? obj.visible !== false : true;
+                // For UI objects check 'visible', for game objects check 'isOnTable'
+                const isVisible = 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
                 const objColor = 'color' in obj ? obj.color : '#6366f1';
                 // Get name - handle different object types
