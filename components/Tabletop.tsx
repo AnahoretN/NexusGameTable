@@ -645,6 +645,13 @@ export const Tabletop: React.FC = () => {
           dispatch({ type: 'TOGGLE_SHOW_TOP_CARD', payload: { deckId: obj.id } });
         }
         break;
+      case 'removeFromTable':
+        // Remove object from table (hide it)
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: obj.id, isOnTable: false }
+        });
+        break;
       case 'swingClockwise':
         dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id } });
         break;
