@@ -731,10 +731,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     <span className="flex-1 truncate text-xs">{getDisplayName()}</span>
                     <button
                       onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-700 rounded"
+                      className={`opacity-0 group-hover:opacity-100 p-1 rounded ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'}`}
                       title={isLocked ? 'Unlock' : 'Lock'}
                     >
-                      {isLocked ? <Lock size={10} className="text-red-500" /> : <Unlock size={10} />}
+                      {isLocked ? <Lock size={10} /> : <Unlock size={10} />}
                     </button>
                     <button
                       onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } })}
