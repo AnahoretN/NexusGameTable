@@ -55,19 +55,6 @@ export function useCardDrag() {
     const startX = overrideClientX ?? e.clientX;
     const startY = overrideClientY ?? e.clientY;
 
-    console.log('[useCardDrag] startDrag:', {
-      cardId,
-      source,
-      overrideClientX,
-      overrideClientY,
-      startX,
-      startY,
-      nativeScreenX: e.screenX,
-      nativeScreenY: e.screenY,
-      nativeClientX: e.clientX,
-      nativeClientY: e.clientY,
-    });
-
     globalDragState = {
       isDragging: true,
       cardId,
@@ -198,21 +185,6 @@ function handleMouseUp(e: MouseEvent) {
   const y = globalDragState.currentY;
   const offsetX = globalDragState.offsetX;
   const offsetY = globalDragState.offsetY;
-
-  console.log('[useCardDrag] handleMouseUp:', {
-    cardId: droppedCardId,
-    source,
-    startX: globalDragState.startX,
-    startY: globalDragState.startY,
-    currentX: x,
-    currentY: y,
-    offsetX,
-    offsetY,
-    eventScreenX: e.screenX,
-    eventScreenY: e.screenY,
-    eventClientX: e.clientX,
-    eventClientY: e.clientY,
-  });
 
   if (onGlobalMouseMove) {
     window.removeEventListener('mousemove', onGlobalMouseMove);

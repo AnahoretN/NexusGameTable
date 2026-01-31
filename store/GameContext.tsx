@@ -3,16 +3,7 @@ import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Toke
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { Peer } from 'peerjs';
 import { PlayerNameModal } from '../components/PlayerNameModal';
-
-// Helper for safe ID generation
-const generateUUID = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    try {
-      return crypto.randomUUID();
-    } catch (e) {}
-  }
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-};
+import { generateUUID } from '../utils/uuid';
 
 // Helper function to create a Standard Deck with 54 cards
 const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
