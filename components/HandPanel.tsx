@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType, ItemType } from '../types';
+import { Card, Deck as DeckType, ItemType, CardShape } from '../types';
 import { Card as CardComponent } from './Card';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
 import { MAIN_MENU_WIDTH } from '../constants';
@@ -97,6 +97,26 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
       return aIndex - bIndex;
     });
   }, [state.objects, state.activePlayerId, state.players]);
+
+  // Group cards by shape, maintaining order within each group
+  const cardsByShape = useMemo(() => {
+    const groups: Record<string, { cards: Card[]; shape: CardShape | 'Mixed' }> = {};
+
+    cards.forEach(card => {
+      const shape = card.shape ?? CardShape.POKER;
+      if (!groups[shape]) {
+        groups[shape] = { cards: [], shape };
+      }
+      groups[shape].cards.push(card);
+    });
+
+    // Convert to array and sort groups by shape name for consistent display
+    return Object.values(groups).sort((a, b) => {
+      if (a.shape === 'Mixed') return 1;
+      if (b.shape === 'Mixed') return -1;
+      return a.shape.localeCompare(b.shape);
+    });
+  }, [cards]);
 
   // Memoized getCardDimensions
   const computeCardDimensions = useCallback((card: Card) => {
@@ -403,71 +423,93 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
               <p className="text-xs mt-1">Draw cards from a deck</p>
             </div>
           ) : (
-          <div className="flex flex-wrap gap-[2px] w-full">
-            {cards.map((card, index) => {
-              const cardSettings = computeCardSettings(card);
-              const cardActionButtons = cardSettings.cardActionButtons;
-              const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
-              const deck = card.deckId ? (state.objects[card.deckId] as DeckType | undefined) : undefined;
+            <>
+              {cardsByShape.map((group, groupIndex) => {
+                const groupOffset = groupIndex === 0 ? 0 : cardsByShape.slice(0, groupIndex).reduce((sum, g) => sum + g.cards.length, 0);
 
-              const buttons = getCardButtonConfigs(
-                card,
-                cardActionButtons,
-                () => handleFlip(card.id),
-                () => handleRotate(card.id),
-                () => handleClone(card.id)
-              );
-
-              const isDragging = dragIndex === index;
-              const isDragOver = dragOverIndex === index;
-
-              return (
-                <div
-                  key={card.id}
-                  data-card-index={index}
-                  className="relative flex-shrink-0 group"
-                  style={{
-                    width: cardWidth,
-                    height: cardHeight,
-                    zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
-                    transform: isDragOver ? 'scale(1.05)' : undefined,
-                  }}
-                  onMouseDown={(e) => handleCardMouseDown(e, card.id, index, e.currentTarget as HTMLDivElement)}
-                >
-                  <CardComponent
-                    card={card}
-                    overrideWidth={cardWidth}
-                    overrideHeight={cardHeight}
-                    cardWidth={cardSettings.cardWidth}
-                    cardHeight={cardSettings.cardHeight}
-                    cardNamePosition={cardSettings.cardNamePosition}
-                    cardOrientation={cardSettings.cardOrientation}
-                    disableRotationTransform={true}
-                    deckSpriteConfig={deck?.spriteConfig}
-                  />
-
-                  {buttons.length > 0 && (
-                    <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-                      {buttons.map(btn => (
-                        <button
-                          key={btn.title}
-                          onClick={(e) => { e.stopPropagation(); btn.onAction(); }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          className={`p-1.5 rounded-lg text-white shadow ${btn.className} pointer-events-auto`}
-                          title={btn.title}
-                        >
-                          {btn.icon}
-                        </button>
-                      ))}
+                return (
+                  <div key={group.shape} className="mb-3">
+                    <div className="text-xs text-gray-500 font-bold mb-1 px-1">
+                      {group.shape === CardShape.HEX ? 'HEX'
+                        : group.shape === CardShape.TRIANGLE ? 'TRIANGLE'
+                          : group.shape === CardShape.CIRCLE ? 'CIRCLE'
+                          : group.shape === CardShape.SQUARE ? 'SQUARE'
+                          : group.shape === CardShape.MINI_US ? 'MINI US'
+                          : group.shape === CardShape.MINI_EURO ? 'MINI EURO'
+                          : group.shape === CardShape.BRIDGE ? 'BRIDGE'
+                          : group.shape === CardShape.POKER ? 'POKER'
+                          : group.shape}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <div className="flex flex-wrap gap-[2px] w-full">
+                      {group.cards.map((card, index) => {
+                        const cardSettings = computeCardSettings(card);
+                        const cardActionButtons = cardSettings.cardActionButtons;
+                        const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
+                        const deck = card.deckId ? (state.objects[card.deckId] as DeckType | undefined) : undefined;
+
+                        const buttons = getCardButtonConfigs(
+                          card,
+                          cardActionButtons,
+                          () => handleFlip(card.id),
+                          () => handleRotate(card.id),
+                          () => handleClone(card.id)
+                        );
+
+                        const actualIndex = groupOffset + index;
+                        const isDragging = dragIndex === actualIndex;
+                        const isDragOver = dragOverIndex === actualIndex;
+
+                        return (
+                          <div
+                            key={card.id}
+                            data-card-index={actualIndex}
+                            className="relative flex-shrink-0 group"
+                            style={{
+                              width: cardWidth,
+                              height: cardHeight,
+                              zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
+                              transform: isDragOver ? 'scale(1.05)' : undefined,
+                            }}
+                            onMouseDown={(e) => handleCardMouseDown(e, card.id, actualIndex, e.currentTarget as HTMLDivElement)}
+                          >
+                            <CardComponent
+                              card={card}
+                              overrideWidth={cardWidth}
+                              overrideHeight={cardHeight}
+                              cardWidth={cardSettings.cardWidth}
+                              cardHeight={cardSettings.cardHeight}
+                              cardNamePosition={cardSettings.cardNamePosition}
+                              cardOrientation={cardSettings.cardOrientation}
+                              disableRotationTransform={true}
+                              deckSpriteConfig={deck?.spriteConfig}
+                            />
+
+                            {buttons.length > 0 && (
+                              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+                                {buttons.map(btn => (
+                                  <button
+                                    key={btn.title}
+                                    onClick={(e) => { e.stopPropagation(); btn.onAction(); }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    className={`p-1.5 rounded-lg text-white shadow ${btn.className} pointer-events-auto`}
+                                    title={btn.title}
+                                  >
+                                    {btn.icon}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
           </div>
-        )}
         </div>
-      </div>
         </>
       )}
     </div>

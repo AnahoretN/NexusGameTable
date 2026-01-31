@@ -72,19 +72,6 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
     ? deck.width
     : deck.height;
 
-  // Get effective dimensions based on card orientation
-  // For geometric shapes with horizontal orientation, swap width/height
-  const cardShape = deck.cardShape ?? CardShape.POKER;
-  const cardOrientation = deck.cardOrientation ?? CardOrientation.VERTICAL;
-  const isGeometricShape = cardShape === CardShape.HEX || cardShape === CardShape.TRIANGLE || cardShape === CardShape.CIRCLE;
-
-  const effectiveWidth = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
-    ? deck.height
-    : deck.width;
-  const effectiveHeight = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
-    ? deck.width
-    : deck.height;
-
   // Memoize visible card count calculation
   const visibleCardCount = useMemo(() => {
     return deck.cardIds.filter(id => {

@@ -1248,33 +1248,47 @@ export const Tabletop: React.FC = () => {
           payload: { id, zIndex: 9999 }
         });
 
-        // Calculate the offset from cursor to object's top-left corner
-        // This keeps the object in the same position relative to cursor during drag
-        // Note: CSS transform is translate(offset) scale(zoom), so:
-        // screenX = (worldX + offset.x) * zoom, therefore:
-        // worldX = screenX / zoom - offset.x
-        const mouseWorldX = e.clientX / zoom - offset.x;
-        const mouseWorldY = e.clientY / zoom - offset.y;
+        // Check if this object is pinned to viewport
+        const isPinned = (item as any).isPinnedToViewport === true;
 
-        // For horizontal cards, dimensions are swapped for display, which shifts the visual center
-        // We need to adjust the offset so the visual center stays under cursor during drag
-        let offsetX = mouseWorldX - item.x;
-        let offsetY = mouseWorldY - item.y;
+        // Calculate the offset from cursor to object's position
+        // For pinned objects, use screen coordinates (like UI objects)
+        // For unpinned objects, use world coordinates with zoom and offset
+        let offsetX: number;
+        let offsetY: number;
 
-        if (item.type === ItemType.CARD) {
-          const card = item as CardType;
-          const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
-          if (deck?.cardOrientation === CardOrientation.HORIZONTAL) {
-            const storedWidth = item.width ?? 100;
-            const storedHeight = item.height ?? 100;
-            // Visual dimensions are swapped
-            const visualWidth = storedHeight;
-            const visualHeight = storedWidth;
-            // The visual center is shifted by the difference in dimensions
-            const shiftX = (visualWidth - storedWidth) / 2;
-            const shiftY = ( visualHeight - storedHeight) / 2;
-            offsetX += shiftX;
-            offsetY += shiftY;
+        if (isPinned) {
+          // Pinned objects: use screen coordinates directly
+          // item.x for pinned objects is already the screen coordinate
+          offsetX = e.clientX - item.x;
+          offsetY = e.clientY - item.y;
+        } else {
+          // Unpinned objects: use world coordinates
+          // Note: CSS transform is translate(offset) scale(zoom), so:
+          // screenX = (worldX + offset.x) * zoom, therefore:
+          // worldX = screenX / zoom - offset.x
+          const mouseWorldX = e.clientX / zoom - offset.x;
+          const mouseWorldY = e.clientY / zoom - offset.y;
+
+          offsetX = mouseWorldX - item.x;
+          offsetY = mouseWorldY - item.y;
+
+          // For horizontal cards, dimensions are swapped for display, which shifts the visual center
+          if (item.type === ItemType.CARD) {
+            const card = item as CardType;
+            const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+            if (deck?.cardOrientation === CardOrientation.HORIZONTAL) {
+              const storedWidth = item.width ?? 100;
+              const storedHeight = item.height ?? 100;
+              // Visual dimensions are swapped
+              const visualWidth = storedHeight;
+              const visualHeight = storedWidth;
+              // The visual center is shifted by the difference in dimensions
+              const shiftX = (visualWidth - storedWidth) / 2;
+              const shiftY = (visualHeight - storedHeight) / 2;
+              offsetX += shiftX;
+              offsetY += shiftY;
+            }
           }
         }
 
@@ -1369,8 +1383,9 @@ export const Tabletop: React.FC = () => {
       const draggingObj = state.objects[draggingId];
       if (!draggingObj) return;
 
-      // UI objects (panels and windows) use screen coordinates directly
-      if (draggingObj.type === ItemType.PANEL || draggingObj.type === ItemType.WINDOW) {
+      // Pinned objects (boards, decks) and UI objects use screen coordinates directly
+      const isPinned = (draggingObj as any).isPinnedToViewport === true;
+      if (draggingObj.type === ItemType.PANEL || draggingObj.type === ItemType.WINDOW || isPinned) {
         const targetX = e.clientX - (dragOffsetRef.current?.x || 0);
         const targetY = e.clientY - (dragOffsetRef.current?.y || 0);
 
@@ -1385,7 +1400,7 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      // Game objects use world coordinates with zoom and offset
+      // Unpinned game objects use world coordinates with zoom and offset
       // Always update position - the world coordinates work correctly even when cursor is outside
       // Note: CSS transform is translate(offset) scale(zoom), so:
       // screenX = (worldX + offset.x) * zoom, therefore:
@@ -1893,17 +1908,37 @@ export const Tabletop: React.FC = () => {
       // Actions specific to context menu
       switch(action) {
           case 'configure':
+              setContextMenu(null);
               setSettingsModalObj(object);
               return;
           case 'delete':
+              setContextMenu(null);
               setDeleteCandidateId(object.id);
               return;
           case 'pinToViewport':
-              // Calculate current screen position for the object
-              // CSS transform is: translate(offset) scale(zoom)
-              // So: screenX = (worldX + offset.x) * zoom
-              const screenX = (object.x + offset.x) * zoom;
-              const screenY = (object.y + offset.y) * zoom;
+              let screenX: number, screenY: number;
+
+              if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+                  // For UI objects, find the actual rendered element and get its screen position
+                  const uiElement = document.querySelector(`[data-ui-object="${object.id}"]`) as HTMLElement;
+                  if (uiElement) {
+                      const rect = uiElement.getBoundingClientRect();
+                      screenX = rect.left;
+                      screenY = rect.top;
+                  } else {
+                      // Fallback: calculate from object position (unpinned UI objects use object.x directly)
+                      screenX = object.x;
+                      screenY = object.y;
+                  }
+              } else {
+                  // For game objects (decks, etc.) in transform container
+                  // CSS transform is: translate(offset) scale(zoom)
+                  // So: screenX = (worldX + offset.x) * zoom
+                  screenX = (object.x + offset.x) * zoom;
+                  screenY = (object.y + offset.y) * zoom;
+              }
+
+              setContextMenu(null);
               dispatch({
                   type: 'PIN_TO_VIEWPORT',
                   payload: {
@@ -1914,6 +1949,7 @@ export const Tabletop: React.FC = () => {
               });
               return;
           case 'unpinFromViewport':
+              setContextMenu(null);
               // Convert viewport coordinates to world coordinates
               // For pinned objects, x/y are viewport coordinates (position: fixed)
               // For unpinned objects, x/y need to be world coordinates (position: absolute)
@@ -2121,12 +2157,13 @@ export const Tabletop: React.FC = () => {
           }
         });
 
-        // Find all pinned GAME objects (not UI panels/windows/decks - they render in fixed container now)
+        // Find all pinned GAME objects (not UI panels/windows/decks/boards - they render in fixed container now)
         const pinnedObjects = Object.values(state.objects).filter(obj =>
           (obj as any).isPinnedToViewport &&
           obj.type !== ItemType.PANEL &&
           obj.type !== ItemType.WINDOW &&
-          obj.type !== ItemType.DECK
+          obj.type !== ItemType.DECK &&
+          obj.type !== ItemType.BOARD
         );
 
         if (pinnedObjects.length > 0) {
@@ -2231,6 +2268,11 @@ export const Tabletop: React.FC = () => {
                 const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
 
                 if (obj.type === ItemType.BOARD) {
+                    // Skip pinned boards - they are rendered separately in fixed container
+                    if ((obj as any).isPinnedToViewport === true) {
+                        return null;
+                    }
+
                     const board = obj as BoardType;
                     const isResizing = resizingId === obj.id;
                     const isDragging = draggingId === obj.id;
@@ -2912,6 +2954,91 @@ export const Tabletop: React.FC = () => {
                             cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
                             allObjects={state.objects}
                         />
+                    </div>
+                );
+            })}
+
+            {/* Pinned Boards - rendered in fixed container using pinnedScreenPosition */}
+            {Object.values(state.objects).filter(obj =>
+              obj.type === ItemType.BOARD && (obj as any).isPinnedToViewport === true
+            ).map((obj) => {
+                const board = obj as any;
+                const pinnedPosition = board.pinnedScreenPosition;
+                if (!pinnedPosition) return null;
+
+                const gridSize = board.gridSize || 50;
+                const hexR = gridSize;
+                const hexW = hexR * Math.sqrt(3);
+                const hexPath =
+                  `M 0 ${hexR/2} ` +
+                  `L ${hexW/2} 0 ` +
+                  `L ${hexW} ${hexR/2} ` +
+                  `L ${hexW} ${hexR*1.5} ` +
+                  `L ${hexW/2} ${hexR*2} ` +
+                  `L 0 ${hexR*1.5} Z ` +
+                  `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+
+                const isDragging = draggingId === board.id;
+                const isResizing = resizingId === board.id;
+
+                // For pinned boards, override position to 0,0 since the outer container
+                // is already positioned at the pinned screen position
+                const pinnedBoardObj = { ...board, x: 0, y: 0 };
+
+                return (
+                    <div
+                        key={board.id}
+                        className="pointer-events-auto"
+                        style={{
+                            position: 'fixed',
+                            left: pinnedPosition.x,
+                            top: pinnedPosition.y,
+                            zIndex: board.zIndex || 1000,
+                        }}
+                    >
+                        <BoardWithResize
+                            token={board}
+                            obj={pinnedBoardObj}
+                            isOwner={true}
+                            isDragging={isDragging}
+                            isResizing={isResizing}
+                            canResize={!board.locked}
+                            zoom={zoom}
+                            onMouseDown={(e) => handleMouseDown(e, board.id)}
+                            onContextMenu={(e) => handleContextMenu(e, board)}
+                            onResizeStart={(e) => !board.locked && handleResizeStart(e, board.id)}
+                            gridSize={gridSize}
+                            hexR={hexR}
+                            hexW={hexW}
+                            hexPath={hexPath}
+                        />
+                        <BoardWithResize
+                            token={board}
+                            obj={pinnedBoardObj}
+                            isOwner={true}
+                            isDragging={isDragging}
+                            isResizing={isResizing}
+                            canResize={!board.locked}
+                            zoom={zoom}
+                            onMouseDown={(e) => handleMouseDown(e, board.id)}
+                            onContextMenu={(e) => handleContextMenu(e, board)}
+                            onResizeStart={(e) => !board.locked && handleResizeStart(e, board.id)}
+                            gridSize={gridSize}
+                            hexR={hexR}
+                            hexW={hexW}
+                            hexPath={hexPath}
+                        />
+                        {/* Pinned indicator - top-right corner */}
+                        <div
+                            className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 pointer-events-none"
+                            style={{ zIndex: 10001 }}
+                            title="Pinned to screen"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                <line x1="12" y1="17" x2="12" y2="22"></line>
+                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                            </svg>
+                        </div>
                     </div>
                 );
             })}
