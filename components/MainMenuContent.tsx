@@ -272,7 +272,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       id: 'decks', label: 'Decks', icon: <Library size={16}/>,
       items: [
         { name: 'Standard Deck', type: 'DECK' },
-        { name: 'Empty Deck', type: 'EMPTY_DECK' },
+        { name: 'Hex Deck', type: 'HEX_DECK' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.DECK
     },
@@ -282,14 +282,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         { name: 'Round Token', type: 'TOKEN', shape: TokenShape.CIRCLE },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.CIRCLE
-    },
-    {
-      id: 'badges', label: 'Badges / Tiles', icon: <Square size={16}/>,
-      items: [
-        { name: 'Square Tile', type: 'TOKEN', shape: TokenShape.SQUARE },
-        { name: 'Hex Tile', type: 'TOKEN', shape: TokenShape.HEX },
-      ],
-      matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && ((obj as Token).shape === TokenShape.SQUARE || (obj as Token).shape === TokenShape.HEX)
     },
     {
       id: 'figurines', label: 'Figurines', icon: <User size={16}/>,
@@ -652,15 +644,21 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;
       }
-      case 'EMPTY_DECK': {
+      case 'HEX_DECK': {
+        // Hex card dimensions for pointy-top orientation (vertices at top/bottom)
+        // Width = sqrt(3) * height / 2, Height = 2 * radius
+        // Using similar height to standard cards (168), width ≈ 145.5
+        const hexHeight = DEFAULT_DECK_HEIGHT;  // 168
+        const hexWidth = Math.sqrt(3) * hexHeight / 2;  // ≈ 145.5
+
         const deck: Deck = {
           id: generateUUID(),
           type: ItemType.DECK,
-          name: 'Empty Deck',
+          name: 'Hex Deck',
           x: worldX,
           y: worldY,
-          width: DEFAULT_DECK_WIDTH,
-          height: DEFAULT_DECK_HEIGHT,
+          width: hexWidth,
+          height: hexHeight,
           rotation: 0,
           color: '#2c3e50',
           content: '',
@@ -670,10 +668,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardIds: [],
           showTopCard: false,
           piles: [],
-          cardShape: CardShape.POKER,
+          cardShape: CardShape.HEX,
           cardOrientation: CardOrientation.VERTICAL,
-          cardWidth: DEFAULT_DECK_WIDTH,
-          cardHeight: DEFAULT_DECK_HEIGHT,
+          cardWidth: hexWidth,
+          cardHeight: hexHeight,
           cardAllowedActions: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardAllowedActionsForGM: ['flip', 'rotate', 'toHand', 'delete', 'clone', 'lock', 'layer'],
           cardActionButtons: ['flip'],

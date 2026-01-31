@@ -350,12 +350,23 @@ export const Tabletop: React.FC = () => {
   // --- Grid Snapping Logic ---
   const getSnappedCoordinates = (cursorX: number, cursorY: number, objects: Record<string, TableObject>, currentDraggingId: string | null): { x: number, y: number } => {
       const draggingObj = objects[currentDraggingId || ''];
-      const objHalfW = draggingObj ? (draggingObj.width ?? 100) / 2 : 0;
-      const objHalfH = draggingObj ? (draggingObj.height ?? 100) / 2 : 0;
+      let objHalfW = draggingObj ? (draggingObj.width ?? 100) / 2 : 0;
+      let objHalfH = draggingObj ? (draggingObj.height ?? 100) / 2 : 0;
 
-      const boards = Object.values(objects).filter(obj => 
-          obj.type === ItemType.TOKEN && 
-          (obj as TokenType).shape === TokenShape.RECTANGLE && 
+      // For horizontal cards, dimensions are swapped for display
+      // We need to use visual dimensions for the calculation
+      if (draggingObj && draggingObj.type === ItemType.CARD) {
+        const card = draggingObj as CardType;
+        const deck = card.deckId ? objects[card.deckId] as DeckType | undefined : undefined;
+        if (deck?.cardOrientation === CardOrientation.HORIZONTAL) {
+          // For horizontal cards, visual dimensions are swapped
+          [objHalfW, objHalfH] = [objHalfH, objHalfW];
+        }
+      }
+
+      const boards = Object.values(objects).filter(obj =>
+          obj.type === ItemType.TOKEN &&
+          (obj as TokenType).shape === TokenShape.RECTANGLE &&
           (obj as TokenType).snapToGrid &&
           (obj as TokenType).gridType !== GridType.NONE &&
           obj.isOnTable &&
@@ -436,6 +447,8 @@ export const Tabletop: React.FC = () => {
           }
       }
 
+      // No board snap - return top-left coordinates directly
+      // cursorX and cursorY are the center position, so convert to top-left
       return { x: cursorX - objHalfW, y: cursorY - objHalfH };
   };
 
@@ -736,25 +749,29 @@ export const Tabletop: React.FC = () => {
     // This function only handles dropping on the tabletop (not on decks)
 
     // Not dropping on a deck - drop items on tabletop
-    // Get current scroll position from container
-    const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
-    const scrollTop = scrollContainerRef.current?.scrollTop || 0;
-
     // Use current viewTransform from state to get accurate offset/zoom
     const currentOffset = state.viewTransform.offset;
     const currentZoom = state.viewTransform.zoom;
 
     // Convert screen coordinates to world coordinates
-    // Formula: screenX = worldX * zoom + offset.x - scrollLeft
-    // So: worldX = (screenX - offset.x + scrollLeft) / zoom
-    const worldX = (clientX - currentOffset.x + scrollLeft) / currentZoom;
-    const worldY = (clientY - currentOffset.y + scrollTop) / currentZoom;
+    // CSS transform is: translate(offset) scale(zoom)
+    // So: screenX = (worldX + offset.x) * zoom
+    // Therefore: worldX = screenX / zoom - offset.x
+    const worldX = clientX / currentZoom - currentOffset.x;
+    const worldY = clientY / currentZoom - currentOffset.y;
 
     // Add all items from slot back to the game with same offsets as in cursor display
     currentSlot.forEach((item, index) => {
       const isCard = item.type === ItemType.CARD;
-      const baseWidth = item.width ?? (isCard ? 63 : 50);
-      const baseHeight = item.height ?? (isCard ? 88 : 50);
+      let baseWidth = item.width ?? (isCard ? 63 : 50);
+      let baseHeight = item.height ?? (isCard ? 88 : 50);
+
+      // For horizontal cards, swap dimensions to match cursor visualization
+      // (same logic as in cursor slot rendering)
+      if (isCard && (item as any).isHorizontal) {
+        [baseWidth, baseHeight] = [baseHeight, baseWidth];
+      }
+
       // Offset is 10% of object size (same as in cursor display)
       const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
       const offsetFromBack = (currentSlot.length - 1 - index) * offsetAmount;
@@ -1168,8 +1185,8 @@ export const Tabletop: React.FC = () => {
       if (freeRotatingId === id && item) {
         const objCenterX = item.x + (item.width ?? 100) / 2;
         const objCenterY = item.y + (item.height ?? 100) / 2;
-        const mouseWorldX = (e.clientX - offset.x) / zoom;
-        const mouseWorldY = (e.clientY - offset.y) / zoom;
+        const mouseWorldX = e.clientX / zoom - offset.x;
+        const mouseWorldY = e.clientY / zoom - offset.y;
 
         // Calculate initial angle from object center to mouse
         const startAngle = Math.atan2(mouseWorldY - objCenterY, mouseWorldX - objCenterX) * 180 / Math.PI;
@@ -1233,11 +1250,37 @@ export const Tabletop: React.FC = () => {
 
         // Calculate the offset from cursor to object's top-left corner
         // This keeps the object in the same position relative to cursor during drag
-        const mouseWorldX = (e.clientX - offset.x) / zoom;
-        const mouseWorldY = (e.clientY - offset.y) / zoom;
+        // Note: CSS transform is translate(offset) scale(zoom), so:
+        // screenX = (worldX + offset.x) * zoom, therefore:
+        // worldX = screenX / zoom - offset.x
+        const mouseWorldX = e.clientX / zoom - offset.x;
+        const mouseWorldY = e.clientY / zoom - offset.y;
+
+        // For horizontal cards, dimensions are swapped for display, which shifts the visual center
+        // We need to adjust the offset so the visual center stays under cursor during drag
+        let offsetX = mouseWorldX - item.x;
+        let offsetY = mouseWorldY - item.y;
+
+        if (item.type === ItemType.CARD) {
+          const card = item as CardType;
+          const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+          if (deck?.cardOrientation === CardOrientation.HORIZONTAL) {
+            const storedWidth = item.width ?? 100;
+            const storedHeight = item.height ?? 100;
+            // Visual dimensions are swapped
+            const visualWidth = storedHeight;
+            const visualHeight = storedWidth;
+            // The visual center is shifted by the difference in dimensions
+            const shiftX = (visualWidth - storedWidth) / 2;
+            const shiftY = ( visualHeight - storedHeight) / 2;
+            offsetX += shiftX;
+            offsetY += shiftY;
+          }
+        }
+
         dragOffsetRef.current = {
-          x: mouseWorldX - item.x,
-          y: mouseWorldY - item.y
+          x: offsetX,
+          y: offsetY
         };
       }
     }
@@ -1283,8 +1326,8 @@ export const Tabletop: React.FC = () => {
       if (obj) {
         const objCenterX = obj.x + (obj.width ?? 100) / 2;
         const objCenterY = obj.y + (obj.height ?? 100) / 2;
-        const mouseWorldX = (e.clientX - offset.x) / zoom;
-        const mouseWorldY = (e.clientY - offset.y) / zoom;
+        const mouseWorldX = e.clientX / zoom - offset.x;
+        const mouseWorldY = e.clientY / zoom - offset.y;
 
         // Calculate current angle from object center to mouse
         const currentAngle = Math.atan2(mouseWorldY - objCenterY, mouseWorldX - objCenterX) * 180 / Math.PI;
@@ -1344,16 +1387,31 @@ export const Tabletop: React.FC = () => {
 
       // Game objects use world coordinates with zoom and offset
       // Always update position - the world coordinates work correctly even when cursor is outside
-      const mouseWorldX = (e.clientX - offset.x) / zoom;
-      const mouseWorldY = (e.clientY - offset.y) / zoom;
+      // Note: CSS transform is translate(offset) scale(zoom), so:
+      // screenX = (worldX + offset.x) * zoom, therefore:
+      // worldX = screenX / zoom - offset.x
+      const mouseWorldX = e.clientX / zoom - offset.x;
+      const mouseWorldY = e.clientY / zoom - offset.y;
 
       // Use the offset to position the object relative to cursor
       const targetX = mouseWorldX - (dragOffsetRef.current?.x || 0);
       const targetY = mouseWorldY - (dragOffsetRef.current?.y || 0);
 
       // getSnappedCoordinates expects the CENTER position, so add half dimensions
-      const draggingObjWidth = draggingObj.width ?? 100;
-      const draggingObjHeight = draggingObj.height ?? 100;
+      // For horizontal cards, use visual dimensions (swapped) for center calculation
+      let draggingObjWidth = draggingObj.width ?? 100;
+      let draggingObjHeight = draggingObj.height ?? 100;
+
+      // Check if this is a card with horizontal orientation (display dimensions are swapped)
+      if (draggingObj.type === ItemType.CARD) {
+        const card = draggingObj as CardType;
+        const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+        if (deck?.cardOrientation === CardOrientation.HORIZONTAL) {
+          // Horizontal cards have width and height swapped for display
+          [draggingObjWidth, draggingObjHeight] = [draggingObjHeight, draggingObjWidth];
+        }
+      }
+
       const centerX = targetX + draggingObjWidth / 2;
       const centerY = targetY + draggingObjHeight / 2;
 
@@ -1371,10 +1429,9 @@ export const Tabletop: React.FC = () => {
       // Check if cursor is over a deck (for card-to-deck drop)
       if (draggingObj.type === ItemType.CARD) {
         // Convert cursor screen coordinates to world coordinates
-        const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
-        const scrollTop = scrollContainerRef.current?.scrollTop || 0;
-        const worldX = (e.clientX - offset.x + scrollLeft) / zoom;
-        const worldY = (e.clientY - offset.y + scrollTop) / zoom;
+        // Note: scroll is handled by browser, not by game coordinates
+        const worldX = e.clientX / zoom - offset.x;
+        const worldY = e.clientY / zoom - offset.y;
 
         // First check if cursor is over any pile (piles take priority)
         let foundPile = null;
@@ -1443,8 +1500,8 @@ export const Tabletop: React.FC = () => {
 
     // Handle pile dragging (for free-position piles)
     if (draggingPile && pileDragStartRef.current) {
-      const mouseWorldX = (e.clientX - offset.x) / zoom;
-      const mouseWorldY = (e.clientY - offset.y) / zoom;
+      const mouseWorldX = e.clientX / zoom - offset.x;
+      const mouseWorldY = e.clientY / zoom - offset.y;
 
       // Calculate new position based on drag start offset
       const newX = mouseWorldX - pileDragStartRef.current.x;
@@ -1551,10 +1608,9 @@ export const Tabletop: React.FC = () => {
         dropClientY = e?.clientY ?? 0;
 
         // Convert cursor screen coordinates to world coordinates
-        const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
-        const scrollTop = scrollContainerRef.current?.scrollTop || 0;
-        const worldX = (dropClientX - offset.x + scrollLeft) / zoom;
-        const worldY = (dropClientY - offset.y + scrollTop) / zoom;
+        // CSS transform is: translate(offset) scale(zoom)
+        const worldX = dropClientX / zoom - offset.x;
+        const worldY = dropClientY / zoom - offset.y;
 
         // First check if dropping on a pile (piles should take priority over decks)
         type PileInfo = { pile: CardPile; deck: DeckType };
@@ -1630,10 +1686,9 @@ export const Tabletop: React.FC = () => {
             if (obj.type === ItemType.DECK) {
               const deck = obj as DeckType;
               // Convert cursor screen coordinates to world coordinates
-              const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
-              const scrollTop = scrollContainerRef.current?.scrollTop || 0;
-              const worldX = (dropClientX - offset.x + scrollLeft) / zoom;
-              const worldY = (dropClientY - offset.y + scrollTop) / zoom;
+              // CSS transform is: translate(offset) scale(zoom)
+              const worldX = dropClientX / zoom - offset.x;
+              const worldY = dropClientY / zoom - offset.y;
 
               // Check if cursor is within deck bounds (accounting for rotation)
               if (isPointInRotatedRect(worldX, worldY, deck.x, deck.y, deck.width, deck.height, deck.rotation || 0)) {
@@ -1729,11 +1784,11 @@ export const Tabletop: React.FC = () => {
           (obj as any).isPinnedToViewport && obj.type === ItemType.DECK
         ) as DeckType | undefined;
         if (pinnedDeck && (pinnedDeck as any).pinnedScreenPosition) {
-          const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
-          const scrollTop = scrollContainerRef.current?.scrollTop || 0;
-          // Manually compensate deck position
-          const newRenderX = ((pinnedDeck as any).pinnedScreenPosition.x - offset.x + scrollLeft) / zoom;
-          const newRenderY = ((pinnedDeck as any).pinnedScreenPosition.y - offset.y + scrollTop) / zoom;
+          // For pinned objects: convert screen position to world position
+          // CSS transform is: translate(offset) scale(zoom)
+          // So: worldX = screenX / zoom - offset.x
+          const newRenderX = (pinnedDeck as any).pinnedScreenPosition.x / zoom - offset.x;
+          const newRenderY = (pinnedDeck as any).pinnedScreenPosition.y / zoom - offset.y;
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -1845,11 +1900,10 @@ export const Tabletop: React.FC = () => {
               return;
           case 'pinToViewport':
               // Calculate current screen position for the object
-              // Need to account for scroll position since scrollbars move the viewport
-              const scrollLeft = scrollContainerRef.current?.scrollLeft || 0;
-              const scrollTop = scrollContainerRef.current?.scrollTop || 0;
-              const screenX = object.x * zoom + offset.x - scrollLeft;
-              const screenY = object.y * zoom + offset.y - scrollTop;
+              // CSS transform is: translate(offset) scale(zoom)
+              // So: screenX = (worldX + offset.x) * zoom
+              const screenX = (object.x + offset.x) * zoom;
+              const screenY = (object.y + offset.y) * zoom;
               dispatch({
                   type: 'PIN_TO_VIEWPORT',
                   payload: {
@@ -1866,17 +1920,15 @@ export const Tabletop: React.FC = () => {
               let worldX: number, worldY: number;
 
               if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
-                  // UI objects: no scroll involved (both pinned and unpinned ignore scroll)
-                  // Pinned: position: fixed, left: uiObject.x (viewport)
-                  // Unpinned: position: absolute inside transform, left: (uiObject.x - offset.x) / zoom
-                  // To keep same visual position: worldX = viewportX * zoom + offset.x
-                  // For pinned UI objects, object.x/y ARE the current viewport coordinates
+                  // UI objects: For pinned UI objects, object.x/y ARE the current viewport coordinates
+                  // To convert to world coordinates for unpinned: worldX = screenX / zoom + offset.x
+                  // But for UI objects, they use position: absolute with left: object.x (no transform)
+                  // So: worldX = object.x * zoom + offset.x
                   worldX = object.x * zoom + offset.x;
                   worldY = object.y * zoom + offset.y;
               } else {
-                  // Game objects (decks, etc.): render in scrollable transform container
+                  // Game objects (decks, etc.): render in transform container
                   // For pinned game objects, visual position comes from pinnedScreenPosition
-                  // object.x/y are world coordinates (unchanged from before pin)
                   const pinnedPos = (object as any).pinnedScreenPosition;
                   if (!pinnedPos) {
                       // No pinned position - shouldn't happen, but use current position as fallback
@@ -1884,13 +1936,9 @@ export const Tabletop: React.FC = () => {
                       worldY = object.y;
                   } else {
                       // pinnedPos contains current viewport coordinates
-                      // Unpinned decks render with: left: deck.x inside transform container
-                      // Visual position: screenX = (deck.x * zoom + offset.x) - scrollLeft
-                      // So: deck.x = (screenX + scrollLeft - offset.x) / zoom
-                      const scrollLeftUnpin = scrollContainerRef.current?.scrollLeft || 0;
-                      const scrollTopUnpin = scrollContainerRef.current?.scrollTop || 0;
-                      worldX = (pinnedPos.x + scrollLeftUnpin - offset.x) / zoom;
-                      worldY = (pinnedPos.y + scrollTopUnpin - offset.y) / zoom;
+                      // Convert to world coordinates: worldX = screenX / zoom - offset.x
+                      worldX = pinnedPos.x / zoom - offset.x;
+                      worldY = pinnedPos.y / zoom - offset.y;
                   }
               }
 
@@ -2087,11 +2135,11 @@ export const Tabletop: React.FC = () => {
             const pinnedPosition = pinnedObj.pinnedScreenPosition;
 
             if (pinnedPosition) {
-              // For game objects in transform container: screenX = obj.x * zoom + offset.x - scrollLeft
+              // For game objects in transform container: screenX = (obj.x + offset.x) * zoom
               // We want: screenX = pinnedPosition.x
-              // So: obj.x = (pinnedPosition.x - offset.x + scrollLeft) / zoom
-              const newX = (pinnedPosition.x - offset.x + scrollLeft) / zoom;
-              const newY = (pinnedPosition.y - offset.y + scrollTop) / zoom;
+              // So: obj.x = pinnedPosition.x / zoom - offset.x
+              const newX = pinnedPosition.x / zoom - offset.x;
+              const newY = pinnedPosition.y / zoom - offset.y;
 
               // Only dispatch if position actually changed significantly
               if (Math.abs(newX - obj.x) > 0.5 || Math.abs(newY - obj.y) > 0.5) {
@@ -2123,8 +2171,8 @@ export const Tabletop: React.FC = () => {
             const card = state.objects[cardId] as CardType;
             if (card.type === ItemType.CARD && card.location === CardLocation.HAND) {
                 // Calculate world position for the card
-                const worldX = (e.clientX - offset.x) / zoom - (card.width ?? 100) / 2;
-                const worldY = (e.clientY - offset.y) / zoom - (card.height ?? 140) / 2;
+                const worldX = e.clientX / zoom - offset.x - (card.width ?? 100) / 2;
+                const worldY = e.clientY / zoom - offset.y - (card.height ?? 140) / 2;
 
                 // Cards on table get zIndex 9999 (same as dragging, above panels at 9998)
                 dispatch({
@@ -3139,16 +3187,25 @@ export const Tabletop: React.FC = () => {
                 })}
 
                 {/* Stack counter badge - only show if more than 1 item */}
-                {cursorSlot.length > 1 && (
-                    <div className="absolute" style={{
-                        left: `${((cursorSlot[0]?.width ?? 63) * zoom) / 2 + 4}px`,
-                        top: `${-((cursorSlot[0]?.height ?? 88) * zoom) / 2 - 4}px`,
-                    }}>
-                        <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
-                            {cursorSlot.length}
+                {cursorSlot.length > 1 && (() => {
+                    const firstItem = cursorSlot[0];
+                    let badgeWidth = firstItem?.width ?? 63;
+                    let badgeHeight = firstItem?.height ?? 88;
+                    // For horizontal cards, swap dimensions to match visual card size
+                    if (firstItem?.type === ItemType.CARD && (firstItem as any).isHorizontal) {
+                        [badgeWidth, badgeHeight] = [badgeHeight, badgeWidth];
+                    }
+                    return (
+                        <div className="absolute" style={{
+                            left: `${(badgeWidth * zoom) / 2 + 4}px`,
+                            top: `${-(badgeHeight * zoom) / 2 - 4}px`,
+                        }}>
+                            <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
+                                {cursorSlot.length}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
             </div>
         )}
     </div>
