@@ -636,6 +636,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-1">
                   {AVAILABLE_ACTIONS
                     .filter(action => {
+                      // Deck-specific actions - only for decks, not cards
+                      if (isCard && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                        return false;
+                      }
                       // 'toHand' only applies to cards, not decks
                       if (action.id === 'toHand' && isDeck) return false;
                       // 'flip' only applies to cards and tokens, not decks
@@ -771,9 +775,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={e => update('singleClickAction', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      {CLICK_ACTIONS.map(action => (
-                        <option key={action.id} value={action.id}>{action.label}</option>
-                      ))}
+                      {CLICK_ACTIONS
+                        .filter(action => {
+                          // Deck-specific actions - only for decks, not cards
+                          if (isCard && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                            return false;
+                          }
+                          return true;
+                        })
+                        .map(action => (
+                          <option key={action.id} value={action.id}>{action.label}</option>
+                        ))}
                     </select>
                   </div>
 
@@ -785,9 +797,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={e => update('doubleClickAction', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      {CLICK_ACTIONS.map(action => (
-                        <option key={action.id} value={action.id}>{action.label}</option>
-                      ))}
+                      {CLICK_ACTIONS
+                        .filter(action => {
+                          // Deck-specific actions - only for decks, not cards
+                          if (isCard && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                            return false;
+                          }
+                          return true;
+                        })
+                        .map(action => (
+                          <option key={action.id} value={action.id}>{action.label}</option>
+                        ))}
                     </select>
                   </div>
                 </div>
