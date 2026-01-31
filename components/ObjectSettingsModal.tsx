@@ -1132,17 +1132,26 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Tooltip Settings for Cards - stored on deck */}
-              <div className="space-y-3 pt-4 border-t border-slate-700">
-                <h4 className="text-sm font-bold text-gray-300 mb-2">Card Tooltip</h4>
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <label className="text-xs text-gray-400">Show Image in Tooltip</label>
-                  </div>
+              <div className="pt-4 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-2">Card Tooltip Image</h4>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs text-gray-400">Scale</label>
+                  <input
+                    type="number"
+                    value={(data as any).tooltipScale ?? 125}
+                    onChange={e => update('tooltipScale', Number(e.target.value))}
+                    className="w-20 bg-slate-900 border border-slate-700 rounded p-1 text-white text-sm text-center"
+                    min="50"
+                    max="300"
+                    step="5"
+                  />
+                  <span className="text-xs text-gray-500">%</span>
                   <button
                     onClick={() => update('showTooltipImage', !(data as any).showTooltipImage)}
                     className={`w-10 h-5 rounded-full transition-colors ${
                       (data as any).showTooltipImage ? 'bg-green-600' : 'bg-slate-700'
                     }`}
+                    title={(data as any).showTooltipImage ? 'Hide tooltip image' : 'Show tooltip image'}
                   >
                     <div
                       className={`w-4 h-4 bg-white rounded-full transition-transform ${
@@ -1151,22 +1160,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     />
                   </button>
                 </div>
-
-                {(data as any).showTooltipImage && (
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs text-gray-400">Tooltip Scale</label>
-                    <input
-                      type="number"
-                      value={(data as any).tooltipScale ?? 125}
-                      onChange={e => update('tooltipScale', Number(e.target.value))}
-                      className="w-20 bg-slate-900 border border-slate-700 rounded p-1 text-white text-sm text-center"
-                      min="50"
-                      max="300"
-                      step="5"
-                    />
-                    <span className="text-xs text-gray-500">%</span>
-                  </div>
-                )}
               </div>
 
               <div className="border-t border-slate-700 pt-4">
