@@ -128,6 +128,10 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
       case CardShape.CIRCLE:
         return { borderRadius: '50%' };
       case CardShape.HEX:
+        // Vertical: vertices at top/bottom, Horizontal: vertices at left/right
+        if (orientation === CardOrientation.HORIZONTAL) {
+          return { clipPath: 'polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)' };
+        }
         return { clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' };
       case CardShape.TRIANGLE:
         return { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' };
@@ -205,13 +209,19 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                     return `repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)`;
                   })(),
                   backgroundSize: (() => {
+                    // For hex cards, scale up background to fill the hex shape properly
+                    // Hex has ~86.6% height utilization in vertical orientation (sin(60°))
+                    // So we need 1/0.866 ≈ 1.155x scale to fill the visible area
+                    const isHex = shape === CardShape.HEX;
+                    const hexScale = isHex ? '115% 115%' : 'cover';
+
                     if (card.faceUp && card.spriteUrl && card.spriteColumns && card.spriteRows) {
                       return `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`;
                     }
                     if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
                       return `${deckSpriteConfig.cardBackSpriteColumns * 100}% ${deckSpriteConfig.cardBackSpriteRows * 100}%`;
                     }
-                    return 'cover';
+                    return hexScale;
                   })(),
                   backgroundPosition: (() => {
                     if (card.faceUp && card.spriteUrl && card.spriteIndex !== undefined && card.spriteColumns && card.spriteRows) {
