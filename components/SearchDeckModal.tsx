@@ -291,7 +291,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id }});
         break;
       case 'toggleHide':
-        const isHidden = (object as any).hidden === true;
+        const isHidden = (object as Card).hidden === true;
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: { id: object.id, hidden: !isHidden }
