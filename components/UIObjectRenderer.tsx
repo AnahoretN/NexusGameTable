@@ -141,26 +141,21 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         payload: { id: uiObject.id, worldX, worldY }
       });
     } else {
-      // Pin - calculate current screen position
-      // For UI panels/windows, we need to account for scroll and offset
-      const scrollContainer = document.querySelector('[data-tabletop="true"]') as HTMLElement;
-      const scrollLeft = scrollContainer?.scrollLeft || 0;
-      const scrollTop = scrollContainer?.scrollTop || 0;
-
-      // Screen position = panel position - scroll
-      const screenX = uiObject.x - scrollLeft;
-      const screenY = uiObject.y - scrollTop;
-
-      dispatch({
-        type: 'PIN_TO_VIEWPORT',
-        payload: {
-          id: uiObject.id,
-          screenX,
-          screenY
-        }
-      });
+      // Pin - use getBoundingClientRect for accurate screen position
+      const container = containerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        dispatch({
+          type: 'PIN_TO_VIEWPORT',
+          payload: {
+            id: uiObject.id,
+            screenX: rect.left,
+            screenY: rect.top
+          }
+        });
+      }
     }
-  }, [dispatch, uiObject]);
+  }, [dispatch, uiObject, zoom, offset]);
 
   const handleHide = useCallback(() => {
     // Hide panel instead of closing it
@@ -311,13 +306,13 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   const containerStyle: React.CSSProperties = {
     position: isPinnedMode ? 'fixed' : 'absolute',
-    // For pinned mode: use x/y directly (they are screen coordinates for UI objects)
+    // For pinned mode: use pinnedScreenPosition (actual screen coordinates)
     // For unpinned mode: convert screen coords to world coords: subtract offset, divide by zoom
     left: isPinnedMode
-      ? uiObject.x
+      ? (pinnedPosition?.x ?? uiObject.x)
       : (uiObject.x - offset.x) / zoom,
     top: isPinnedMode
-      ? uiObject.y
+      ? (pinnedPosition?.y ?? uiObject.y)
       : (uiObject.y - offset.y) / zoom,
     width: uiObject.width,
     height: minimized ? 32 : uiObject.height,

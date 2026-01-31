@@ -57,36 +57,30 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   };
 
   const renderActionButtons = () => {
-    // If actionButtons are provided (even as empty array), use that setting only
-    // Empty array or undefined means no buttons should be shown when showActionButtons is true
-    // Only use legacy fallback when showActionButtons is false (backward compatibility)
-    const useActionButtonSetting = actionButtons !== undefined;
+    // If actionButtons are provided and non-empty, use that setting
+    const hasActionButtons = actionButtons && actionButtons.length > 0;
 
-    if (useActionButtonSetting) {
-      if (actionButtons.length > 0 && onActionButtonClick) {
-        const buttons = getCardButtonConfigs();
-        return (
-          <>
-            {buttons.map(btn => (
-              <button
-                key={btn.action}
-                onClick={(e) => { e.stopPropagation(); onActionButtonClick(btn.action); }}
-                className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
-                title={btn.title}
-              >
-                {btn.icon}
-              </button>
-            ))}
-          </>
-        );
-      }
-      // actionButtons is explicitly set to empty array - show no buttons
-      return null;
+    if (hasActionButtons && onActionButtonClick) {
+      const buttons = getCardButtonConfigs();
+      return (
+        <>
+          {buttons.map(btn => (
+            <button
+              key={btn.action}
+              onClick={(e) => { e.stopPropagation(); onActionButtonClick(btn.action); }}
+              className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
+              title={btn.title}
+            >
+              {btn.icon}
+            </button>
+          ))}
+        </>
+      );
     }
 
-    // Fallback to legacy button props for backward compatibility (when actionButtons is not provided)
-    // Only use this when showActionButtons is false
-    if (!showActionButtons) {
+    // Fallback to legacy button props for backward compatibility
+    // Show these when actionButtons is not provided, is empty, or showActionButtons is false
+    if (!hasActionButtons) {
       return (
         <>
           {onToHand && (
@@ -149,15 +143,19 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     const isGeometricShape = shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
 
     // Apply card's rotation property (custom rotation from rotate actions)
-    if (cardRotation) {
+    if (!disableRotation && cardRotation) {
       transforms.push(`rotate(${cardRotation}deg)`);
     }
 
     // Apply horizontal orientation (90 degrees clockwise = -90deg CSS)
-    // Unless disabled (for search window, hand, etc.)
     // For geometric shapes (HEX, TRIANGLE, CIRCLE), orientation affects dimensions but NOT shape rotation
-    if (!disableRotation && orientation === CardOrientation.HORIZONTAL && !isGeometricShape) {
-      transforms.push('rotate(-90deg)');
+    // For other shapes, only rotate if dimensions indicate the card isn't already in horizontal orientation
+    if (orientation === CardOrientation.HORIZONTAL && !isGeometricShape) {
+      // If width > height, card is already landscape - don't rotate
+      // Otherwise (portrait card being displayed horizontally), apply -90deg rotation
+      if (displayWidth <= displayHeight) {
+        transforms.push('rotate(-90deg)');
+      }
     }
 
     return transforms.length > 0 ? transforms.join(' ') : undefined;
@@ -180,7 +178,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           height: displayHeight,
           boxSizing: 'border-box',
           // Apply rotation for horizontal orientation (90 degrees clockwise = -90deg CSS)
-          // Unless disableRotationTransform is true (for search window, hand, etc.)
+          // Geometric shapes use clip-path instead of rotation
           // Plus the card's own rotation property for custom rotation
           transform: getCardTransform(orientation, disableRotationTransform, card.rotation),
           // For geometric shapes that get clipped, we use a drop-shadow filter to simulate a border/shadow
