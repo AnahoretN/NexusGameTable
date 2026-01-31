@@ -3,12 +3,13 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings, Pencil } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { PanelSettingsModal } from './PanelSettingsModal';
 import { HandPanel } from './HandPanel';
+import { PlayerNameModal } from './PlayerNameModal';
 import { cardDragAPI } from '../hooks/useCardDrag';
 
 // Helper for safe ID generation
@@ -56,7 +57,7 @@ interface MainMenuContentProps {
 }
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, peerId } = useGame();
   const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players'>('create');
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<{ sender: string; text: string }[]>([]);
@@ -69,6 +70,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [dragOverHand, setDragOverHand] = useState(false);
   const [previousTab, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players'>('create');
   const [settingsObjectId, setSettingsObjectId] = useState<string | null>(null);
+  const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const mainMenuRef = useRef<HTMLDivElement>(null);
 
   // Hand card scale state with localStorage persistence
@@ -202,12 +204,19 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   };
 
   const handleInvite = useCallback(() => {
-    const link = window.location.href;
-    navigator.clipboard.writeText(link).then(() => {
+    if (!peerId) {
+      alert("PeerJS is not ready yet. Please wait a moment and try again.");
+      return;
+    }
+
+    const baseUrl = window.location.href.split('?')[0];
+    const inviteLink = `${baseUrl}?hostId=${peerId}`;
+
+    navigator.clipboard.writeText(inviteLink).then(() => {
       setInviteCopied(true);
       setTimeout(() => setInviteCopied(false), 2000);
     });
-  }, []);
+  }, [peerId]);
 
   const handleSaveGame = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
@@ -405,6 +414,11 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           <div className="p-4 space-y-6">
             <div>
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Session Tools</h3>
+              {/* Session ID Display */}
+              <div className="mb-2 p-2 bg-slate-800 rounded border border-slate-700">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Session ID</div>
+                <div className="text-sm text-gray-300 font-mono break-all">{state.sessionId || 'Generating...'}</div>
+              </div>
               <div className="grid grid-cols-1 gap-2">
                 <button
                   onClick={handleInvite}
@@ -413,24 +427,118 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   {inviteCopied ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
                   {inviteCopied ? 'Link Copied!' : 'Invite Player'}
                 </button>
+                <button
+                  onClick={handleSaveGame}
+                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                >
+                  <Save size={16} />
+                  Save Session
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                >
+                  <Upload size={16} />
+                  Load Session
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleLoadGame}
+                  className="hidden"
+                />
               </div>
             </div>
 
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Active Players</h3>
               {state.players
-                .map(p => (
-                  <div key={p.id} className="flex items-center gap-3 p-2 bg-slate-800 rounded">
-                    <div className="w-3 h-3 rounded-full" style={{backgroundColor: p.color}} />
-                    <span className="font-medium text-white">{p.name}</span>
-                    {p.isGM && <span className="text-xs bg-yellow-600 px-1 rounded ml-auto text-white">GM</span>}
-                  </div>
-                ))}
+                .map(p => {
+                  const isCurrentPlayer = p.id === state.activePlayerId;
+                  const isGMPlayer = p.id === 'gm-player';
+                  const isGameMaster = p.id === 'gm';
+                  const isGMView = state.activePlayerId === 'gm';
+
+                  // Check if current user is the host (can switch between GM and GM Player modes)
+                  const isHostUser = state.activePlayerId === 'gm' || state.activePlayerId === 'gm-player';
+
+                  // Determine which buttons to show
+                  let showSwitchButton = false;
+                  let showRenameButton = false;
+
+                  if (isHostUser) {
+                    // Host can switch between GM and GM Player modes
+                    if (isGameMaster || isGMPlayer) {
+                      showSwitchButton = true;
+                    } else {
+                      // Other players - Host can rename them
+                      showRenameButton = true;
+                    }
+                  } else {
+                    // Non-host players can only rename themselves
+                    if (isCurrentPlayer) {
+                      showRenameButton = true;
+                    }
+                  }
+
+                  return (
+                    <div key={p.id} className={`flex items-center gap-3 p-2 rounded ${isCurrentPlayer ? 'bg-purple-900/30 border border-purple-700/50' : 'bg-slate-800'}`}>
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{backgroundColor: p.color}} />
+                      <span className="font-medium text-white truncate">{p.name}</span>
+                      {p.isGM && <span className="text-xs bg-yellow-600 px-1 rounded text-white">GM</span>}
+                      {isCurrentPlayer && <span className="text-xs bg-slate-600 px-1 rounded text-gray-300">You</span>}
+
+                      {/* GM Mode Switch Button - shown for both Game Master and GM Player when current user is host */}
+                      {showSwitchButton && (
+                        <button
+                          onClick={() => {
+                            if (isGMView) {
+                              // Switch to GM Player mode
+                              dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm-player' });
+                            } else {
+                              // Switch back to GM mode
+                              dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm' });
+                            }
+                          }}
+                          className="ml-auto p-1 bg-purple-600/20 hover:bg-purple-600/40 rounded text-purple-400 hover:text-purple-300 transition-colors"
+                          title={isGMView ? "Switch to Player Mode" : "Switch to GM Mode"}
+                        >
+                          <User size={14} />
+                        </button>
+                      )}
+
+                      {/* Rename button - not shown when switch button is visible */}
+                      {showRenameButton && (
+                        <button
+                          onClick={() => setRenamePlayerId(p.id)}
+                          className="ml-auto p-1 hover:bg-slate-700 rounded text-gray-400 hover:text-white transition-colors"
+                          title="Edit name"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           </div>
         )}
       </div>
         </>
+      )}
+
+      {/* Player name rename modal */}
+      {renamePlayerId && (
+        <PlayerNameModal
+          isOpen={renamePlayerId !== null}
+          onSubmit={(newName) => {
+            dispatch({ type: 'UPDATE_PLAYER_NAME', payload: { playerId: renamePlayerId, name: newName } });
+            setRenamePlayerId(null);
+          }}
+          defaultName={state.players.find(p => p.id === renamePlayerId)?.name || 'Player'}
+          title={renamePlayerId === state.activePlayerId ? 'Edit Your Name' : 'Edit Player Name'}
+        />
       )}
     </div>
   );
