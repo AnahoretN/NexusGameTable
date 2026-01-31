@@ -348,12 +348,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70">
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
+        <div className="flex justify-center items-center py-2 px-4">
           <h3 className="text-base font-bold text-white">Settings: {object.name}</h3>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-700">
+        <div className="flex">
           <button
             onClick={() => setActiveTab('general')}
             className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
@@ -535,7 +535,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
               {/* Grid Settings (for boards) */}
               {isBoard && (
-                <div className="space-y-3 border-t border-slate-700 pt-4">
+                <div className="space-y-3 pt-4">
                   <h4 className="text-sm font-bold text-purple-400">Grid Settings</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -580,7 +580,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               )}
 
               {/* Tooltip Settings */}
-              <div className="space-y-3 pt-4 border-t border-slate-700">
+              <div className="space-y-3 pt-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-400 mb-1">Tooltip Text</label>
                   <textarea
@@ -737,7 +737,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Action Buttons - 2 columns, max 4 selected */}
-              <div className="border-t border-slate-700 pt-4">
+              <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Settings size={14} /> Action Buttons
                   <span className="text-xs text-gray-500 font-normal">(max 4)</span>
@@ -777,7 +777,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Click Actions */}
-              <div className="border-t border-slate-700 pt-4">
+              <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <MousePointer size={14} /> Mouse Click Actions
                 </h4>
@@ -1132,7 +1132,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Tooltip Settings for Cards - stored on deck */}
-              <div className="pt-4 border-t border-slate-700">
+              <div className="pt-4">
                 <div className="flex items-center justify-between gap-2">
                   <h4 className="text-sm font-bold text-gray-300">Card Tooltip Image</h4>
                   <div className="flex items-center gap-1">
@@ -1163,7 +1163,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               </div>
 
-              <div className="border-t border-slate-700 pt-4">
+              <div className="pt-4">
               {/* Context Menu Actions - with PL and GM toggle buttons */}
               <div>
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
@@ -1218,7 +1218,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Action Buttons - 2 columns, max 4 selected */}
-              <div className="border-t border-slate-700 pt-4">
+              <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Settings size={14} /> Action Buttons for Cards
                   <span className="text-xs text-gray-500 font-normal">(max 4)</span>
@@ -1262,7 +1262,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Click Actions */}
-              <div className="border-t border-slate-700 pt-4">
+              <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <MousePointer size={14} /> Mouse Click Actions for Cards
                 </h4>
@@ -1384,7 +1384,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
               {/* Preview Grid */}
               {spriteConfig?.columns && spriteConfig?.rows && spriteConfig?.spriteUrl && (
-                <div className="border-t border-slate-700 pt-4">
+                <div className="pt-4">
                   <h4 className="text-sm font-bold text-gray-300 mb-3">Grid Preview</h4>
                   <div
                     className="bg-slate-900 rounded p-2 border border-slate-700 overflow-auto"
@@ -1406,7 +1406,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
               {/* Generate Cards Button */}
               {spriteConfig?.spriteUrl && spriteConfig.columns > 0 && spriteConfig.rows > 0 && (
-                <div className="border-t border-slate-700 pt-4">
+                <div className="pt-4">
                   <button
                     onClick={() => {
                       // This will be handled by the parent component via onSave
@@ -1426,7 +1426,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 p-4 border-t border-slate-700">
+        <div className="flex justify-end gap-2 p-4">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded">Cancel</button>
           <button
             onClick={handleSave}
