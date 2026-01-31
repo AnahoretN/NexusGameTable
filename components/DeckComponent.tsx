@@ -59,6 +59,32 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
   const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
 
+  // Get effective dimensions based on card orientation
+  // For geometric shapes with horizontal orientation, swap width/height
+  const cardShape = deck.cardShape ?? CardShape.POKER;
+  const cardOrientation = deck.cardOrientation ?? CardOrientation.VERTICAL;
+  const isGeometricShape = cardShape === CardShape.HEX || cardShape === CardShape.TRIANGLE || cardShape === CardShape.CIRCLE;
+
+  const effectiveWidth = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
+    ? deck.height
+    : deck.width;
+  const effectiveHeight = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
+    ? deck.width
+    : deck.height;
+
+  // Get effective dimensions based on card orientation
+  // For geometric shapes with horizontal orientation, swap width/height
+  const cardShape = deck.cardShape ?? CardShape.POKER;
+  const cardOrientation = deck.cardOrientation ?? CardOrientation.VERTICAL;
+  const isGeometricShape = cardShape === CardShape.HEX || cardShape === CardShape.TRIANGLE || cardShape === CardShape.CIRCLE;
+
+  const effectiveWidth = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
+    ? deck.height
+    : deck.width;
+  const effectiveHeight = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
+    ? deck.width
+    : deck.height;
+
   // Memoize visible card count calculation
   const visibleCardCount = useMemo(() => {
     return deck.cardIds.filter(id => {
@@ -104,38 +130,42 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
       const positionGroup = pilesByPosition[pile.position] || [];
       const pileIndex = positionGroup.findIndex(p => p.id === pile.id);
 
+      // Use effective dimensions for pile positioning
+      const ew = effectiveWidth;
+      const eh = effectiveHeight;
+
       switch (pile.position) {
         case 'left':
           if (isHalfSize) {
-            const yOffset = pileIndex * (deck.height * 0.5 + 2);
-            return { x: deck.x - deck.width * 0.5 - 4, y: deck.y + yOffset };
+            const yOffset = pileIndex * (eh * 0.5 + 2);
+            return { x: deck.x - ew * 0.5 - 4, y: deck.y + yOffset };
           }
-          return { x: deck.x - deck.width - 4, y: deck.y };
+          return { x: deck.x - ew - 4, y: deck.y };
         case 'right':
           if (isHalfSize) {
-            const yOffset = pileIndex * (deck.height * 0.5 + 2);
-            return { x: deck.x + deck.width + 4, y: deck.y + yOffset };
+            const yOffset = pileIndex * (eh * 0.5 + 2);
+            return { x: deck.x + ew + 4, y: deck.y + yOffset };
           }
-          return { x: deck.x + deck.width + 4, y: deck.y };
+          return { x: deck.x + ew + 4, y: deck.y };
         case 'top':
           if (isHalfSize) {
-            const xOffset = pileIndex * (deck.width * 0.5 + 2);
-            return { x: deck.x + xOffset, y: deck.y - deck.height * 0.5 - 4 };
+            const xOffset = pileIndex * (ew * 0.5 + 2);
+            return { x: deck.x + xOffset, y: deck.y - eh * 0.5 - 4 };
           }
-          return { x: deck.x, y: deck.y - deck.height - 4 };
+          return { x: deck.x, y: deck.y - eh - 4 };
         case 'bottom':
           if (isHalfSize) {
-            const xOffset = pileIndex * (deck.width * 0.5 + 2);
-            return { x: deck.x + xOffset, y: deck.y + deck.height + 4 };
+            const xOffset = pileIndex * (ew * 0.5 + 2);
+            return { x: deck.x + xOffset, y: deck.y + eh + 4 };
           }
-          return { x: deck.x, y: deck.y + deck.height + 4 };
+          return { x: deck.x, y: deck.y + eh + 4 };
         default:
           return { x: deck.x, y: deck.y };
       }
     };
 
     return { pilesByPosition, getPilePosition };
-  }, [deck.piles, deck.x, deck.y, deck.width, deck.height]);
+  }, [deck.piles, deck.x, deck.y, deck.width, deck.height, effectiveWidth, effectiveHeight]);
 
   const handlePilesButtonClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -177,7 +207,6 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   }, [deck.cardShape, deck.cardOrientation]);
 
   const shapeStyles = getShapeStyles;
-  const isGeometricShape = (deck.cardShape === CardShape.HEX || deck.cardShape === CardShape.TRIANGLE || deck.cardShape === CardShape.CIRCLE);
 
   return (
     <Tooltip
@@ -186,7 +215,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
       imageSrc={deck.content}
       scale={deck.tooltipScale}
     >
-      <div style={{ position: 'relative', width: deck.width, height: deck.height }}>
+      <div style={{ position: 'relative', width: effectiveWidth, height: effectiveHeight }}>
         {/* Render piles */}
       {deck.piles?.filter(p => p.visible).map(pile => {
         const pilePos = getPilePosition(pile);
@@ -206,8 +235,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                 style={{
                   left: pilePos.x,
                   top: pilePos.y,
-                  width: deck.width * pileSize,
-                  height: deck.height * pileSize,
+                  width: effectiveWidth * pileSize,
+                  height: effectiveHeight * pileSize,
                   transform: `rotate(${deck.rotation}deg)`,
                   zIndex: 100,
                   ...(!isGeometricShape ? shapeStyles : {})
@@ -233,8 +262,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               style={{
                 left: pilePos.x,
                 top: pilePos.y,
-                width: deck.width * pileSize,
-                height: deck.height * pileSize,
+                width: effectiveWidth * pileSize,
+                height: effectiveHeight * pileSize,
                 transform: `rotate(${deck.rotation}deg)`
               }}
             >
@@ -318,8 +347,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             style={{
               left: 0,
               top: 0,
-              width: deck.width,
-              height: deck.height,
+              width: effectiveWidth,
+              height: effectiveHeight,
               transform: `rotate(${deck.rotation}deg)`,
               zIndex: 100,
               ...(!isGeometricShape ? shapeStyles : {})
@@ -347,8 +376,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           style={{
             left: 0,
             top: 0,
-            width: deck.width,
-            height: deck.height,
+            width: effectiveWidth,
+            height: effectiveHeight,
             transform: `rotate(${deck.rotation}deg)`
           }}
         >
