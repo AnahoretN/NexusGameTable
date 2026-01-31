@@ -11,7 +11,10 @@ import { PanelSettingsModal } from './PanelSettingsModal';
 import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { useHandCardScale } from '../hooks/useHandCardScale';
-import { APP_NAME, APP_VERSION } from '../version';
+
+// Get version from package.json via Vite env
+const APP_NAME = (import.meta.env.APP_NAME as string) || 'Nexus Game Table';
+const APP_VERSION = (import.meta.env.PACKAGE_VERSION as string) || 'v0.0.8';
 
 interface UIObjectRendererProps {
   uiObject: PanelObject | WindowObject;
