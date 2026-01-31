@@ -11,10 +11,7 @@ import { PanelSettingsModal } from './PanelSettingsModal';
 import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { useHandCardScale } from '../hooks/useHandCardScale';
-
-const GAME_NAME = 'Nexus Game Table';
-// Version is imported from package.json during build
-const GAME_VERSION = 'v0.0.7';
+import { APP_NAME, APP_VERSION } from '../version';
 
 interface UIObjectRendererProps {
   uiObject: PanelObject | WindowObject;
@@ -370,9 +367,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               onMouseDown(e, uiObject.id);
             }}
           >
-            <span className="text-sm font-bold text-white truncate">{GAME_NAME}</span>
+            <span className="text-sm font-bold text-white truncate">{APP_NAME}</span>
             {!minimized && (
-              <span className="text-xs text-gray-500 flex-shrink-0">{GAME_VERSION}</span>
+              <span className="text-xs text-gray-500 flex-shrink-0">{APP_VERSION}</span>
             )}
           </div>
           {/* Right side - Control buttons */}
@@ -578,7 +575,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             </div>
             <div className="p-4 space-y-4">
               <div className="text-sm text-gray-400">
-                <p>{GAME_NAME} {GAME_VERSION}</p>
+                <p>{APP_NAME} {APP_VERSION}</p>
                 <p className="mt-2">Game settings will be available here.</p>
               </div>
             </div>
