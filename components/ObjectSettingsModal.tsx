@@ -596,7 +596,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 {!isBoard && !isDeck && (
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <label className="text-xs text-gray-400">Show Image in Tooltip</label>
+                      <label className="text-xs text-gray-400">Tooltip Image</label>
                     </div>
                     <button
                       onClick={() => update('showTooltipImage', !(data as any).showTooltipImage)}
