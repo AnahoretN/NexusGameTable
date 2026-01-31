@@ -248,8 +248,8 @@ export const Tabletop: React.FC = () => {
             type: ItemType.CARD,
             name: card.name,
             content: card.content, // Image URL - this is the main image
-            frontFaceUrl: (card as any).frontFaceUrl,
-            backFaceUrl: (card as any).backFaceUrl,
+            frontFaceUrl: card.frontFaceUrl,
+            backFaceUrl: card.backFaceUrl,
             deckId: card.deckId,
             width: card.width,
             height: card.height,
@@ -697,8 +697,8 @@ export const Tabletop: React.FC = () => {
         type: ItemType.CARD,
         name: card.name,
         content: card.content, // Image URL - this is the main image
-        frontFaceUrl: (card as any).frontFaceUrl,
-        backFaceUrl: (card as any).backFaceUrl,
+        frontFaceUrl: card.frontFaceUrl,
+        backFaceUrl: card.backFaceUrl,
         deckId: card.deckId,
         // Use the card's actual current dimensions (what player sees on table)
         width: card.width,

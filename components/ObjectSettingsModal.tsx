@@ -184,7 +184,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   const toggleActionButton = (action: ContextAction) => {
     // Cards don't have actionButtons - only decks do
     if (isCard) return;
-    const current = (data as any).actionButtons || [];
+    const current = 'actionButtons' in data ? data.actionButtons || [] : [];
     if (current.includes(action)) {
       update('actionButtons', current.filter((a: ContextAction) => a !== action));
     } else {
@@ -252,7 +252,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     const allActionIds = AVAILABLE_ACTIONS.map(a => a.id);
 
     // For players: only convert to undefined if contains ALL actions
-    let normalizedAllowedActions: ContextAction[] | undefined = (data as any).allowedActions;
+    let normalizedAllowedActions: ContextAction[] | undefined = 'allowedActions' in data ? data.allowedActions : undefined;
     if (normalizedAllowedActions && normalizedAllowedActions.length === allActionIds.length) {
       // Check if it contains exactly all actions
       const hasAll = allActionIds.every(id => normalizedAllowedActions?.includes(id));
@@ -261,7 +261,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     // Empty array stays as empty array (none allowed)
 
     // For GM: only convert to undefined if contains ALL actions
-    let normalizedAllowedActionsForGM: ContextAction[] | undefined = (data as any).allowedActionsForGM;
+    let normalizedAllowedActionsForGM: ContextAction[] | undefined = 'allowedActionsForGM' in data ? data.allowedActionsForGM : undefined;
     if (normalizedAllowedActionsForGM && normalizedAllowedActionsForGM.length === allActionIds.length) {
       const hasAll = allActionIds.every(id => normalizedAllowedActionsForGM?.includes(id));
       if (hasAll) normalizedAllowedActionsForGM = undefined;

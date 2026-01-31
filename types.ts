@@ -143,6 +143,13 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
   spriteUrl?: string; // URL of the sprite sheet image
   spriteColumns?: number; // Number of columns in the sprite sheet
   spriteRows?: number; // Number of rows in the sprite sheet
+
+  // Individual card face URLs (override deck defaults)
+  frontFaceUrl?: string; // Custom front face image URL
+  backFaceUrl?: string; // Custom back face image URL
+
+  // Additional card properties
+  isHorizontal?: boolean; // Used internally for cursor slot rendering
 }
 
 // Sprite sheet configuration for cards
