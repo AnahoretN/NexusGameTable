@@ -273,13 +273,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.CIRCLE
     },
-    {
-      id: 'figurines', label: 'Figurines', icon: <User size={16}/>,
-      items: [
-        { name: 'Character Standee', type: 'TOKEN', shape: TokenShape.STANDEE },
-      ],
-      matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.STANDEE
-    },
+    // Figurines menu disabled
+    // {
+    //   id: 'figurines', label: 'Figurines', icon: <User size={16}/>,
+    //   items: [
+    //     { name: 'Character Standee', type: 'TOKEN', shape: TokenShape.STANDEE },
+    //   ],
+    //   matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.STANDEE
+    // },
     {
       id: 'randomizers', label: 'Randomizers & Dice', icon: <Dices size={16}/>,
       items: [

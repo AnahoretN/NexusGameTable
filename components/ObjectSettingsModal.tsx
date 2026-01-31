@@ -1027,14 +1027,13 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </h4>
 
                 <div className="grid grid-cols-2 gap-3 mb-2">
-                  {/* Card Shape - temporarily disabled */}
+                  {/* Card Shape */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Card Shape</label>
                     <select
                       value={cardSettings.cardShape ?? CardShape.POKER}
                       onChange={(e) => updateCardSettings('cardShape', e.target.value as CardShape)}
-                      disabled={true}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm opacity-50 cursor-not-allowed"
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       {Object.keys(CardShape).map(key => (
                         <option key={key} value={key}>{key}</option>
