@@ -22,7 +22,11 @@
       "Bash(npm run build:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
