@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { ViteDevServer } from 'vite';
+import { readFileSync } from 'fs';
+
+// Read package.json for version
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 // Plugin to run the WebSocket server alongside Vite
 function serverPlugin() {
@@ -18,7 +22,10 @@ function serverPlugin() {
 export default defineConfig({
   plugins: [react(), serverPlugin()],
   define: {
-    'process.env': {}
+    'process.env': {},
+    // Expose package.json version as env variable
+    'import.meta.env.PACKAGE_VERSION': JSON.stringify(`v${pkg.version}`),
+    'import.meta.env.APP_NAME': JSON.stringify(pkg.name.replace(/^nexus-/, 'Nexus ').replace(/-/, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())),
   },
   base: '/',
   server: {
