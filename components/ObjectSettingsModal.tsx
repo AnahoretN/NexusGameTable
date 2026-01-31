@@ -23,6 +23,8 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'delete', label: 'Delete Object' },
   { id: 'flip', label: 'Flip Card' },
   { id: 'layer', label: 'Change Layer' },
+  { id: 'layerUp', label: 'Layer Up' },
+  { id: 'layerDown', label: 'Layer Down' },
   { id: 'lock', label: 'Lock/Unlock Position' },
   { id: 'rotateClockwise', label: 'Rotate Clockwise' },
   { id: 'rotateCounterClockwise', label: 'Rotate Counter-Clockwise' },
@@ -54,13 +56,15 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'rotateCounterClockwise':
     case 'swingClockwise':
     case 'swingCounterClockwise':
-      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT];
+    case 'layerUp':
+    case 'layerDown':
+      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
     case 'toHand':
       return [ItemType.CARD];
     case 'flip':
       return [ItemType.CARD, ItemType.TOKEN];
     case 'rotate':
-      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT];
+      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
     default:
       return [];
   }
@@ -644,8 +648,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
                         return false;
                       }
-                      // Dice/counter rotation actions - only for dice/counters
-                      if ((isDeck || isCard || isBoard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                      // Dice/counter rotation actions - only for dice/counters and boards
+                      if ((isDeck || isCard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
                       // 'toHand' only applies to cards, not decks
@@ -793,8 +797,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
                             return false;
                           }
-                          // Dice/counter rotation actions - only for dice/counters
-                          if ((isDeck || isCard || isBoard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                          // Dice/counter rotation actions - only for dice/counters and boards
+                          if ((isDeck || isCard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                             return false;
                           }
                           return true;
@@ -823,8 +827,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
                             return false;
                           }
-                          // Dice/counter rotation actions - only for dice/counters
-                          if ((isDeck || isCard || isBoard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                          // Dice/counter rotation actions - only for dice/counters and boards
+                          if ((isDeck || isCard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                             return false;
                           }
                           return true;
