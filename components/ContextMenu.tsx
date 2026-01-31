@@ -324,6 +324,21 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                             <Undo size={14} />
                             <span>Reset</span>
                           </button>
+                          <div className="h-px bg-slate-700 my-1 mx-2" />
+                          <button
+                            onClick={() => { onAction('swingClockwise'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <RefreshCw size={14} />
+                            <span>Swing CW</span>
+                          </button>
+                          <button
+                            onClick={() => { onAction('swingCounterClockwise'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <RefreshCw size={14} style={{ transform: 'scaleY(-1)' }} />
+                            <span>Swing CCW</span>
+                          </button>
                         </>
                       ) : isPilesSubmenu ? (
                         <>
