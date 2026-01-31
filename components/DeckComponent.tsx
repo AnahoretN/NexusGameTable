@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { Layers, Lock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { useGame } from '../store/GameContext';
-import { Deck as DeckType, CardPile, Card as CardType, ItemType } from '../types';
+import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation } from '../types';
 import { DECK_OFFSET } from '../constants';
 import { Tooltip } from './Tooltip';
 
@@ -150,6 +150,35 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
     }
   }, [deck.id, setPilesButtonMenu]);
 
+  // Get shape styles based on deck's cardShape setting
+  const getShapeStyles = useMemo(() => {
+    const shape = deck.cardShape ?? CardShape.POKER;
+    const orientation = deck.cardOrientation ?? CardOrientation.VERTICAL;
+
+    switch (shape) {
+      case CardShape.CIRCLE:
+        return { borderRadius: '50%', clipPath: undefined };
+      case CardShape.HEX:
+        // Vertical: vertices at top/bottom, Horizontal: vertices at left/right
+        if (orientation === CardOrientation.HORIZONTAL) {
+          return { borderRadius: '0', clipPath: 'polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)' };
+        }
+        return { borderRadius: '0', clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' };
+      case CardShape.TRIANGLE:
+        return { borderRadius: '0', clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' };
+      case CardShape.SQUARE:
+      case CardShape.MINI_US:
+      case CardShape.MINI_EURO:
+      case CardShape.BRIDGE:
+      case CardShape.POKER:
+      default:
+        return { borderRadius: '8px', clipPath: undefined };
+    }
+  }, [deck.cardShape, deck.cardOrientation]);
+
+  const shapeStyles = getShapeStyles;
+  const isGeometricShape = (deck.cardShape === CardShape.HEX || deck.cardShape === CardShape.TRIANGLE || deck.cardShape === CardShape.CIRCLE);
+
   return (
     <Tooltip
       text={deck.tooltipText}
@@ -173,14 +202,15 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             {/* Highlight overlay - rendered separately with high z-index */}
             {isHoveringPile && (
               <div
-                className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none rounded"
+                className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none"
                 style={{
                   left: pilePos.x,
                   top: pilePos.y,
                   width: deck.width * pileSize,
                   height: deck.height * pileSize,
                   transform: `rotate(${deck.rotation}deg)`,
-                  zIndex: 100
+                  zIndex: 100,
+                  ...(!isGeometricShape ? shapeStyles : {})
                 }}
               />
             )}
@@ -210,7 +240,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             >
               {/* Pile visual representation */}
               <div
-                className={`absolute inset-0 bg-slate-800 border-2 rounded flex flex-col items-center justify-center transition-colors ${
+                className={`absolute inset-0 bg-slate-800 border-2 flex flex-col items-center justify-center transition-colors ${
                   pile.position === 'free'
                     ? pile.locked
                       ? 'border-red-600 cursor-pointer'
@@ -219,6 +249,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                         : 'border-slate-600 cursor-move hover:border-slate-500'
                     : 'border-slate-600 cursor-pointer'
                 }`}
+                style={shapeStyles}
                 onContextMenu={(e) => handlePileContextMenu(e, pile, deck)}
                 onMouseDown={(e) => {
                   if (pile.position === 'free' && !pile.locked && e.button === 0) {
@@ -234,7 +265,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               >
                 {pile.showTopCard && topCard ? (
                   // Show top card face without text overlay
-                  <div className="w-full h-full relative overflow-hidden rounded">
+                  <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
                     <div
                       className="w-full h-full"
                       style={{
@@ -247,7 +278,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                   </div>
                 ) : topCard ? (
                   // Normal pile appearance with optional face up display
-                  <div className="w-full h-full relative overflow-hidden rounded">
+                  <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
                     <div
                       className="w-full h-full"
                       style={{
@@ -283,14 +314,15 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         {/* Highlight overlay - rendered separately with high z-index */}
         {canDropCard && (
           <div
-            className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none rounded"
+            className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none"
             style={{
               left: 0,
               top: 0,
               width: deck.width,
               height: deck.height,
               transform: `rotate(${deck.rotation}deg)`,
-              zIndex: 100
+              zIndex: 100,
+              ...(!isGeometricShape ? shapeStyles : {})
             }}
           />
         )}
@@ -323,21 +355,22 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         {[2, 1, 0].map(i => (
           <div
             key={i}
-            className="absolute rounded bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
+            className="absolute bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
             style={{
               width: '100%',
               height: '100%',
               top: 0,
               left: 0,
               transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
-              zIndex: -i
+              zIndex: -i,
+              ...shapeStyles
             }}
           />
         ))}
 
         {deck.showTopCard && topCard ? (
           // Show top card face
-          <div className="w-full h-full relative overflow-hidden rounded">
+          <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
             <div
               className="w-full h-full"
               style={{
@@ -350,7 +383,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           </div>
         ) : (
           // Normal deck appearance
-          <div className="absolute inset-0 bg-slate-900 rounded border-2 border-slate-500 flex flex-col items-center justify-center cursor-pointer transition-colors">
+          <div className="absolute inset-0 bg-slate-900 border-2 border-slate-500 flex flex-col items-center justify-center cursor-pointer transition-colors" style={shapeStyles}>
             <Layers className="text-slate-400 mb-2" />
             <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{deck.name}</span>
             <span className="text-xs text-slate-500 select-none">{visibleCardCount} / {(deck.baseCardIds || deck.cardIds).length}</span>
