@@ -636,8 +636,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-1">
                   {AVAILABLE_ACTIONS
                     .filter(action => {
-                      // Deck-specific actions - only for decks, not cards
-                      if (isCard && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      // Deck-specific actions - only for decks, not cards or boards
+                      if ((isCard || isBoard) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                        return false;
+                      }
+                      // Card-specific actions - only for cards/tokens
+                      if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
+                        return false;
+                      }
+                      // Dice/counter rotation actions - only for dice/counters
+                      if ((isDeck || isCard || isBoard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
                       // 'toHand' only applies to cards, not decks
@@ -777,8 +785,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     >
                       {CLICK_ACTIONS
                         .filter(action => {
-                          // Deck-specific actions - only for decks, not cards
-                          if (isCard && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                          // Deck-specific actions - only for decks, not cards or boards
+                          if ((isCard || isBoard) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                            return false;
+                          }
+                          // Card-specific actions - only for cards/tokens
+                          if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
+                            return false;
+                          }
+                          // Dice/counter rotation actions - only for dice/counters
+                          if ((isDeck || isCard || isBoard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                             return false;
                           }
                           return true;
@@ -799,8 +815,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     >
                       {CLICK_ACTIONS
                         .filter(action => {
-                          // Deck-specific actions - only for decks, not cards
-                          if (isCard && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                          // Deck-specific actions - only for decks, not cards or boards
+                          if ((isCard || isBoard) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                            return false;
+                          }
+                          // Card-specific actions - only for cards/tokens
+                          if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
+                            return false;
+                          }
+                          // Dice/counter rotation actions - only for dice/counters
+                          if ((isDeck || isCard || isBoard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                             return false;
                           }
                           return true;
