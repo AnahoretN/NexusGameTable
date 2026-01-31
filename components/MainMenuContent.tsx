@@ -10,17 +10,7 @@ import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { PanelSettingsModal } from './PanelSettingsModal';
 import { HandPanel } from './HandPanel';
 import { PlayerNameModal } from './PlayerNameModal';
-import { cardDragAPI } from '../hooks/useCardDrag';
-
-// Helper for safe ID generation
-const generateUUID = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    try {
-      return crypto.randomUUID();
-    } catch (e) {}
-  }
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-};
+import { generateUUID } from '../utils/uuid';
 
 // Get icon component for object type
 const getTypeIcon = (obj: TableObject): React.ReactElement => {
