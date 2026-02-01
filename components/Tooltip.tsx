@@ -8,6 +8,10 @@ interface TooltipProps {
   scale?: number;
   aspectRatio?: number; // width/height ratio for proper tooltip sizing
   baseWidth?: number; // Actual card width at 100% scale (for realistic tooltip sizing)
+  // Sprite sheet support - for showing specific card from sprite sheet
+  spriteIndex?: number;
+  spriteColumns?: number;
+  spriteRows?: number;
   children: React.ReactElement;
 }
 
@@ -18,6 +22,9 @@ export const Tooltip: React.FC<TooltipProps> = ({
   scale = 125,
   aspectRatio = 1, // Default to square (1:1)
   baseWidth = 300, // Default to 300px for backward compatibility
+  spriteIndex,
+  spriteColumns,
+  spriteRows,
   children
 }) => {
   const [isVisible, setIsVisible] = useState(false);
@@ -77,14 +84,25 @@ export const Tooltip: React.FC<TooltipProps> = ({
     >
       <div className="bg-slate-900/95 border border-slate-600 rounded-lg overflow-hidden shadow-xl">
         {hasImageContent && (
-          <img
-            src={imageSrc}
-            alt=""
+          <div
             className="block"
             style={{
               width: `${baseWidth * (scale / 100)}px`,
               height: `${baseWidth * (scale / 100) / aspectRatio}px`,
-              objectFit: 'contain',
+              backgroundImage: imageSrc ? `url(${imageSrc})` : undefined,
+              backgroundSize: spriteIndex !== undefined && spriteColumns && spriteRows
+                ? `${spriteColumns * 100}% ${spriteRows * 100}%`
+                : 'cover',
+              backgroundPosition: spriteIndex !== undefined && spriteColumns && spriteRows
+                ? (() => {
+                    const col = spriteIndex % spriteColumns;
+                    const row = Math.floor(spriteIndex / spriteColumns);
+                    const colPercent = spriteColumns > 1 ? (col / (spriteColumns - 1)) * 100 : 0;
+                    const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
+                    return `${colPercent}% ${rowPercent}%`;
+                  })()
+                : 'center',
+              backgroundRepeat: 'no-repeat',
             }}
           />
         )}

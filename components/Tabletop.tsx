@@ -243,6 +243,10 @@ export const Tabletop: React.FC = () => {
 
         if (item.type === ItemType.CARD) {
           const card = item as CardType;
+          // Get deck to check orientation
+          const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+          const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
+
           itemClone = {
             id: card.id,
             type: ItemType.CARD,
@@ -261,6 +265,14 @@ export const Tabletop: React.FC = () => {
             ownerId: card.ownerId,
             isOnTable: card.isOnTable,
             locked: card.locked,
+            // Store orientation info for cursor slot rendering
+            isHorizontal: isHorizontal,
+            // Preserve sprite properties for proper card display
+            spriteIndex: card.spriteIndex,
+            spriteColumns: card.spriteColumns,
+            spriteRows: card.spriteRows,
+            spriteUrl: card.spriteUrl,
+            shape: card.shape,
           } as CardType;
         } else {
           itemClone = { ...item } as TokenType;
@@ -546,11 +558,14 @@ export const Tabletop: React.FC = () => {
               : cursorPosition || globalMousePosRef.current;
 
             // Prepare card with all properties for cursor slot
+            const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
             const cardForSlot: CardType = {
               ...card,
               location: CardLocation.CURSOR_SLOT,
               faceUp: faceUp,
               isOnTable: false, // Important: card should NOT render on table
+              // Store orientation info for cursor slot rendering
+              isHorizontal: isHorizontal,
             };
 
             // Set cursor position first to ensure immediate render
@@ -797,9 +812,18 @@ export const Tabletop: React.FC = () => {
       let baseWidth = item.width ?? (isCard ? 63 : 50);
       let baseHeight = item.height ?? (isCard ? 88 : 50);
 
+      // For cards, get settings from deck for proper dimensions
+      let isHorizontal = (item as any).isHorizontal;
+      if (isCard) {
+        const cardSettings = getCardSettings(item as CardType);
+        baseWidth = item.width ?? cardSettings.cardWidth ?? 63;
+        baseHeight = item.height ?? cardSettings.cardHeight ?? 88;
+        isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
+      }
+
       // For horizontal cards, swap dimensions to match cursor visualization
       // (same logic as in cursor slot rendering)
-      if (isCard && (item as any).isHorizontal) {
+      if (isHorizontal) {
         [baseWidth, baseHeight] = [baseHeight, baseWidth];
       }
 
@@ -837,7 +861,7 @@ export const Tabletop: React.FC = () => {
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
-  }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, cursorSlotRef]);
+  }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, cursorSlotRef, getCardSettings]);
 
   // Drop cursor slot items to a specific deck (called from handleGlobalClick when clicking on deck)
   const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType)[]) => {
@@ -3273,13 +3297,28 @@ export const Tabletop: React.FC = () => {
                 {/* Render stacked items - newest in front, older items offset */}
                 {cursorSlot.map((item, index) => {
                     const isCard = item.type === ItemType.CARD;
-                    // Use the card's actual dimensions (same as on table)
+
+                    // For cards, get settings from deck for proper dimensions (same as in rendering)
                     let baseWidth = item.width ?? (isCard ? 63 : 50);
                     let baseHeight = item.height ?? (isCard ? 88 : 50);
+                    let isHorizontal = (item as any).isHorizontal;
+
+                    if (isCard) {
+                        const cardSettings = getCardSettings(item as CardType);
+                        baseWidth = item.width ?? cardSettings.cardWidth ?? 63;
+                        baseHeight = item.height ?? cardSettings.cardHeight ?? 88;
+                        isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
+                    }
 
                     // Scale by zoom to match in-game size
-                    const width = baseWidth * zoom;
-                    const height = baseHeight * zoom;
+                    let width = baseWidth * zoom;
+                    let height = baseHeight * zoom;
+
+                    // For horizontal cards, swap dimensions for display
+                    if (isHorizontal) {
+                        [width, height] = [height, width];
+                    }
+
                     // Offset is 10% of object size
                     const offsetAmount = Math.min(width, height) * 0.1;
                     const offsetFromBack = (cursorSlot.length - 1 - index) * offsetAmount;
@@ -3289,20 +3328,14 @@ export const Tabletop: React.FC = () => {
                     if (isCard) {
                         const card = item as CardType;
                         const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
-                        const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
-
-                        // For horizontal cards, swap width and height to match tabletop appearance
-                        // (wide rectangle instead of tall), but disable rotation transform
-                        const cardWidth = isHorizontal ? height : width;
-                        const cardHeight = isHorizontal ? width : height;
 
                         return (
                             <div
                                 key={`${card.id}-${index}`}
                                 className="absolute"
                                 style={{
-                                    left: -cardWidth / 2 + offsetFromBack,
-                                    top: -cardHeight / 2 + offsetFromBack,
+                                    left: -width / 2 + offsetFromBack,
+                                    top: -height / 2 + offsetFromBack,
                                     zIndex,
                                     pointerEvents: 'none',
                                 }}
@@ -3310,8 +3343,8 @@ export const Tabletop: React.FC = () => {
                                 {/* Use the same Card component as on table for identical appearance */}
                                 <Card
                                     card={card}
-                                    overrideWidth={cardWidth}
-                                    overrideHeight={cardHeight}
+                                    overrideWidth={width}
+                                    overrideHeight={height}
                                     cardWidth={deck?.cardWidth}
                                     cardHeight={deck?.cardHeight}
                                     cardOrientation={deck?.cardOrientation}

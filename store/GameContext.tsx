@@ -799,6 +799,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       const baseCardIds = deck.baseCardIds || [];
       const newObjects = { ...state.objects };
+      const spriteConfig = deck.spriteConfig;
 
       // 1. Clear all piles of this deck
       let updatedDeck = { ...deck };
@@ -812,7 +813,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // 2. Set cardIds = baseCardIds (reset to base)
       updatedDeck.cardIds = [...baseCardIds];
 
-      // 3. Process all cards in the game
+      // 3. Track which base card IDs we've found
+      const foundBaseCardIds = new Set<string>();
+
+      // 4. Process all existing cards
       Object.values(state.objects).forEach(obj => {
         if (obj.type !== ItemType.CARD) return;
         const card = obj as Card;
@@ -821,6 +825,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         if (card.deckId === deck.id) {
           if (baseCardIds.includes(card.id)) {
             // Card is in baseCardIds - move it to THIS deck
+            foundBaseCardIds.add(card.id);
             newObjects[card.id] = {
               ...card,
               location: CardLocation.DECK,
@@ -837,6 +842,38 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
         }
       });
+
+      // 5. Re-create missing cards using sprite config
+      // baseCardIds is ordered by spriteIndex (baseCardIds[i] has spriteIndex = i)
+      if (spriteConfig && spriteConfig.columns > 0 && spriteConfig.rows > 0) {
+        baseCardIds.forEach((cardId, index) => {
+          if (!foundBaseCardIds.has(cardId)) {
+            // Card is missing - recreate it
+            newObjects[cardId] = {
+              id: cardId,
+              type: ItemType.CARD,
+              name: `Card ${index + 1}`,
+              content: spriteConfig.cardBackUrl || spriteConfig.spriteUrl,
+              deckId: deck.id,
+              width: deck.cardWidth || deck.width || 63,
+              height: deck.cardHeight || deck.height || 88,
+              x: deck.x,
+              y: deck.y,
+              rotation: 0,
+              location: CardLocation.DECK,
+              faceUp: true,
+              isOnTable: true,
+              locked: false,
+              // Sprite properties - index is the position in baseCardIds
+              spriteIndex: index,
+              spriteUrl: spriteConfig.spriteUrl,
+              spriteColumns: spriteConfig.columns,
+              spriteRows: spriteConfig.rows,
+              shape: deck.cardShape,
+            };
+          }
+        });
+      }
 
       newObjects[deck.id] = updatedDeck;
 
