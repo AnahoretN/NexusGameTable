@@ -273,14 +273,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.CIRCLE
     },
-    // Figurines menu disabled
-    // {
-    //   id: 'figurines', label: 'Figurines', icon: <User size={16}/>,
-    //   items: [
-    //     { name: 'Character Standee', type: 'TOKEN', shape: TokenShape.STANDEE },
-    //   ],
-    //   matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.STANDEE
-    // },
+    {
+      id: 'figurines', label: 'Figures', icon: <User size={16}/>,
+      items: [
+        { name: 'Character Standee', type: 'TOKEN', shape: TokenShape.STANDEE, disabled: true },
+      ],
+      matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.STANDEE,
+      disabled: true
+    },
     {
       id: 'randomizers', label: 'Randomizers & Dice', icon: <Dices size={16}/>,
       items: [
@@ -533,6 +533,7 @@ interface CategorySectionProps {
     id: string;
     label: string;
     icon: React.ReactNode;
+    disabled?: boolean;
     items: Array<{
       name: string;
       type: string;
@@ -540,6 +541,7 @@ interface CategorySectionProps {
       shape?: TokenShape;
       gridType?: GridType;
       panelType?: PanelType;
+      disabled?: boolean;
     }>;
     matcher: (obj: TableObject) => boolean;
   };
@@ -807,7 +809,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     <div className="mb-3 border-b border-slate-700 pb-3">
       <button
         onClick={toggleExpanded}
-        className="w-full flex items-center gap-2 text-gray-300 hover:text-white py-1 px-2 rounded hover:bg-slate-800 transition-colors"
+        className={`w-full flex items-center gap-2 py-1 px-2 rounded transition-colors ${
+          category.disabled
+            ? 'text-gray-600 cursor-not-allowed'
+            : 'text-gray-300 hover:text-white hover:bg-slate-800'
+        }`}
       >
         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         {category.icon}
@@ -818,16 +824,24 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       {isExpanded && (
         <div className="mt-2 space-y-1 pl-4">
           {/* Create items */}
-          {category.items.map((item, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleCreateItem(item)}
-              className="w-full flex items-center gap-2 text-gray-400 hover:text-white hover:bg-slate-800 py-1 px-2 rounded text-sm transition-colors"
-            >
-              <Plus size={12} />
-              <span>{item.name}</span>
-            </button>
-          ))}
+          {category.items.map((item, idx) => {
+            const isItemDisabled = category.disabled || item.disabled;
+            return (
+              <button
+                key={idx}
+                onClick={() => !isItemDisabled && handleCreateItem(item)}
+                disabled={isItemDisabled}
+                className={`w-full flex items-center gap-2 py-1 px-2 rounded text-sm transition-colors ${
+                  isItemDisabled
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Plus size={12} />
+                <span>{item.name}</span>
+              </button>
+            );
+          })}
 
           {/* Objects on table */}
           {objectsOnTable.length > 0 && (
