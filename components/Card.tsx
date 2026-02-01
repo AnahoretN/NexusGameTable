@@ -203,7 +203,9 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                   backgroundColor: card.faceUp ? 'white' : '#1e293b',
                   backgroundImage: (() => {
                     if (card.faceUp) {
-                      return `url(${card.spriteUrl || card.content})`;
+                      // Use card's spriteUrl, or deck's spriteConfig spriteUrl, or card's content
+                      const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl || card.content;
+                      return spriteUrl ? `url(${spriteUrl})` : undefined;
                     }
                     // Card is face down - check for custom sprite back
                     if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
@@ -219,8 +221,13 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                     const isHex = shape === CardShape.HEX;
                     const hexScale = isHex ? '115% 115%' : 'cover';
 
-                    if (card.faceUp && card.spriteUrl && card.spriteColumns && card.spriteRows) {
-                      return `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`;
+                    // Use card's sprite dimensions or fall back to deck's spriteConfig
+                    const spriteCols = card.spriteColumns || deckSpriteConfig?.columns;
+                    const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
+                    const hasSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
+
+                    if (card.faceUp && hasSpriteUrl && spriteCols && spriteRows) {
+                      return `${spriteCols * 100}% ${spriteRows * 100}%`;
                     }
                     if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
                       return `${deckSpriteConfig.cardBackSpriteColumns * 100}% ${deckSpriteConfig.cardBackSpriteRows * 100}%`;
@@ -228,8 +235,18 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                     return hexScale;
                   })(),
                   backgroundPosition: (() => {
-                    if (card.faceUp && card.spriteUrl && card.spriteIndex !== undefined && card.spriteColumns && card.spriteRows) {
-                      return `${(card.spriteIndex % card.spriteColumns) * (100 / (card.spriteColumns - 1 || 1))}% ${Math.floor(card.spriteIndex / card.spriteColumns) * (100 / ((card.spriteRows || 1) - 1 || 1))}%`;
+                    // Use card's sprite index or fall back to deck's spriteConfig
+                    const spriteIdx = card.spriteIndex !== undefined ? card.spriteIndex : deckSpriteConfig?.spriteIndex;
+                    const spriteCols = card.spriteColumns || deckSpriteConfig?.columns;
+                    const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
+                    const hasSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
+
+                    if (card.faceUp && hasSpriteUrl && spriteIdx !== undefined && spriteCols && spriteRows) {
+                      const col = spriteIdx % spriteCols;
+                      const row = Math.floor(spriteIdx / spriteCols);
+                      const colPercent = spriteCols > 1 ? (col / (spriteCols - 1)) * 100 : 0;
+                      const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
+                      return `${colPercent}% ${rowPercent}%`;
                     }
                     if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
                       const idx = deckSpriteConfig.cardBackSpriteIndex;
@@ -278,15 +295,44 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
       </div>
   );
 
+  // Determine the correct image source for tooltip
+  // Priority: spriteUrl (if face up with sprites) > content > card back (if face down)
+  const getTooltipImageSrc = (): string | undefined => {
+    if (!deckShowTooltipImage) return undefined;
+
+    // If face up and using sprite sheet, use spriteUrl
+    if (card.faceUp && card.spriteUrl) {
+      return card.spriteUrl;
+    }
+    // If face up, use content (individual card image)
+    if (card.faceUp && card.content) {
+      return card.content;
+    }
+    // If face down and has custom card back sprite
+    if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl) {
+      return deckSpriteConfig.cardBackSpriteUrl;
+    }
+    // If face down and has simple card back
+    if (!card.faceUp && deckSpriteConfig?.cardBackUrl) {
+      return deckSpriteConfig.cardBackUrl;
+    }
+    // Face down with default - show nothing (tooltip shows text only or nothing)
+    return undefined;
+  };
+
   return (
     skipTooltip ? cardContent : (
       <Tooltip
         text={card.tooltipText}
-        showImage={deckShowTooltipImage}
-        imageSrc={card.content}
+        showImage={deckShowTooltipImage && getTooltipImageSrc() !== undefined}
+        imageSrc={getTooltipImageSrc() || card.content}
         scale={deckTooltipScale ?? 125}
         aspectRatio={aspectRatio}
         baseWidth={displayWidth}
+        // Pass sprite info for proper tooltip positioning
+        spriteIndex={card.spriteIndex}
+        spriteColumns={card.spriteColumns}
+        spriteRows={card.spriteRows}
       >
         {cardContent}
       </Tooltip>
@@ -307,6 +353,9 @@ export default React.memo(Card, (prevProps, nextProps) => {
     prevProps.showActionButtons === nextProps.showActionButtons &&
     prevProps.overrideWidth === nextProps.overrideWidth &&
     prevProps.overrideHeight === nextProps.overrideHeight &&
-    prevProps.disablePointerEvents === nextProps.disablePointerEvents
+    prevProps.disablePointerEvents === nextProps.disablePointerEvents &&
+    prevProps.card.spriteUrl === nextProps.card.spriteUrl &&
+    prevProps.card.spriteIndex === nextProps.card.spriteIndex &&
+    prevProps.deckSpriteConfig?.cardBackSpriteUrl === nextProps.deckSpriteConfig?.cardBackSpriteUrl
   );
 });
