@@ -27,7 +27,7 @@ export default defineConfig({
     'import.meta.env.PACKAGE_VERSION': JSON.stringify(`v${pkg.version}`),
     'import.meta.env.APP_NAME': JSON.stringify(pkg.name.replace(/^nexus-/, 'Nexus ').replace(/-/, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())),
   },
-  base: '/',
+  base: './',
   server: {
     port: 5177,
     host: true,
