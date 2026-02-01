@@ -658,6 +658,37 @@ export const Tabletop: React.FC = () => {
           dispatch({ type: 'TOGGLE_SHOW_TOP_CARD', payload: { deckId: obj.id } });
         }
         break;
+      case 'millTopCard':
+        if (obj.type === ItemType.DECK) {
+          const deck = obj as DeckType;
+          if (deck.cardIds && deck.cardIds.length > 0 && deck.piles && deck.piles.length > 0) {
+            const topCardId = deck.cardIds[0];
+            // Use mill pile if exists, otherwise use first available pile
+            const millPile = deck.piles.find(p => p.isMillPile) || deck.piles[0];
+            if (millPile && topCardId) {
+              // Add card to mill pile
+              dispatch({
+                type: 'ADD_CARD_TO_PILE',
+                payload: { deckId: deck.id, pileId: millPile.id, cardId: topCardId }
+              });
+            }
+          }
+        }
+        break;
+      case 'toBottom':
+        if (obj.type === ItemType.DECK) {
+          const deck = obj as DeckType;
+          if (deck.cardIds && deck.cardIds.length > 0) {
+            const topCardId = deck.cardIds[0];
+            // Remove from front and add to back
+            const newCardIds = [...deck.cardIds.slice(1), topCardId];
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: deck.id, cardIds: newCardIds }
+            });
+          }
+        }
+        break;
       case 'removeFromTable':
         // Remove object from table (hide it)
         dispatch({

@@ -603,8 +603,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
     switch (item.type) {
       case 'DECK': {
+        const deckId = generateUUID();
         const deck: Deck = {
-          id: generateUUID(),
+          id: deckId,
           type: ItemType.DECK,
           name: item.name,
           x: worldX,
@@ -619,7 +620,17 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           baseCardIds: [],
           cardIds: [],
           showTopCard: false,
-          piles: [],
+          piles: [{
+            id: generateUUID(),
+            name: 'Discard',
+            deckId: deckId,
+            position: 'right',
+            cardIds: [],
+            faceUp: false,
+            visible: false,
+            size: 1,
+            isMillPile: true,
+          }],
           // Deck-specific properties
           cardShape: CardShape.POKER,
           cardOrientation: CardOrientation.VERTICAL,
@@ -631,6 +642,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardSingleClickAction: undefined,
           cardDoubleClickAction: undefined,
           cardNamePosition: 'none' as const,
+          // Deck actions (for the deck itself, not cards)
+          actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
+          allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll'],
+          allowedActionsForGM: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll'],
         };
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;
@@ -641,9 +656,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         // Using similar height to standard cards (168), width ≈ 145.5
         const hexHeight = DEFAULT_DECK_HEIGHT;  // 168
         const hexWidth = Math.sqrt(3) * hexHeight / 2;  // ≈ 145.5
+        const deckId = generateUUID();
 
         const deck: Deck = {
-          id: generateUUID(),
+          id: deckId,
           type: ItemType.DECK,
           name: 'Hex Deck',
           x: worldX,
@@ -658,7 +674,17 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           baseCardIds: [],
           cardIds: [],
           showTopCard: false,
-          piles: [],
+          piles: [{
+            id: generateUUID(),
+            name: 'Discard',
+            deckId: deckId,
+            position: 'right',
+            cardIds: [],
+            faceUp: false,
+            visible: false,
+            size: 1,
+            isMillPile: true,
+          }],
           cardShape: CardShape.HEX,
           cardOrientation: CardOrientation.VERTICAL,
           cardWidth: hexWidth,
@@ -669,6 +695,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardSingleClickAction: undefined,
           cardDoubleClickAction: undefined,
           cardNamePosition: 'none' as const,
+          // Deck actions (for the deck itself, not cards)
+          actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
+          allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll'],
+          allowedActionsForGM: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll'],
         };
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;

@@ -662,7 +662,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
 
         // Remove from previous deck's cardIds (but keep deckId unchanged - it belongs to original deck)
+        let deckWithUpdatedCardIds: Deck = deck;
         if (previousDeckId && previousDeckId !== deck.id) {
+            // Card coming from a different deck - remove from that deck's cardIds
             const previousDeck = state.objects[previousDeckId] as Deck;
             if (previousDeck && previousDeck.cardIds.includes(card.id)) {
                 const updatedPreviousDeck: Deck = {
@@ -676,6 +678,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 }));
                 return { ...state, objects: { ...state.objects, [previousDeckId]: { ...updatedPreviousDeck, piles: updatedPreviousPiles } } };
             }
+        } else if (previousDeckId === deck.id && deck.cardIds.includes(card.id)) {
+            // Card coming from same deck's cardIds (e.g., milling from deck to pile) - remove from deck.cardIds
+            deckWithUpdatedCardIds = {
+                ...deck,
+                cardIds: deck.cardIds.filter(id => id !== card.id)
+            };
         }
 
         // Create updated pile with new card added to TOP (beginning of array)
@@ -685,11 +693,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
 
         // Update deck's piles array
-        const updatedPiles = deck.piles?.map(p =>
+        const updatedPiles = deckWithUpdatedCardIds.piles?.map(p =>
             p.id === action.payload.pileId ? updatedPile : p
         ) || [updatedPile];
 
-        const updatedDeck: Deck = { ...deck, piles: updatedPiles };
+        const updatedDeck: Deck = { ...deckWithUpdatedCardIds, piles: updatedPiles };
 
         // Update card to be in pile
         // Keep the card's original deckId - cards always belong to their original deck

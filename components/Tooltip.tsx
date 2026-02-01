@@ -62,7 +62,10 @@ export const Tooltip: React.FC<TooltipProps> = ({
     };
   }, []);
 
-  const hasContent = text || showImage;
+  // Only show tooltip if we have actual content to display
+  const hasImageContent = showImage && imageSrc;
+  const hasTextContent = text && !showImage;
+  const hasContent = hasImageContent || hasTextContent;
 
   const tooltipContent = isVisible && hasContent && (
     <div
@@ -73,7 +76,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
       }}
     >
       <div className="bg-slate-900/95 border border-slate-600 rounded-lg overflow-hidden shadow-xl">
-        {showImage && imageSrc && (
+        {hasImageContent && (
           <img
             src={imageSrc}
             alt=""
@@ -85,7 +88,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
             }}
           />
         )}
-        {text && !showImage && (
+        {hasTextContent && (
           <div className="p-3">
             <p className="text-sm text-white whitespace-pre-wrap">{text}</p>
           </div>

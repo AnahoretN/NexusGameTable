@@ -21,6 +21,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
+  const [topDeckSubmenuOpen, setTopDeckSubmenuOpen] = useState(false);
   const submenuRef = React.useRef<HTMLDivElement>(null);
 
   // Helper to get card settings from deck (cards always inherit from deck)
@@ -80,6 +81,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         setLayerSubmenuOpen(false);
         setRotateSubmenuOpen(false);
         setPilesSubmenuOpen(false);
+        setTopDeckSubmenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -118,28 +120,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     },
     // Deck-specific actions
     {
-      label: 'Draw',
-      action: 'draw',
-      icon: <Hand size={14} />,
-      visible: object.type === ItemType.DECK && can('draw')
-    },
-    {
-      label: 'Play Top',
-      action: 'playTopCard',
-      icon: <Eye size={14} />,
-      visible: object.type === ItemType.DECK && can('playTopCard')
-    },
-    {
-      label: (object as Deck).showTopCard ? 'Hide top' : 'Show top',
-      action: 'showTop',
-      icon: <Eye size={14} />,
-      visible: object.type === ItemType.DECK && can('showTop')
-    },
-    {
       label: 'Top Deck',
       action: 'topDeck',
       icon: <ArrowUp size={14} />,
-      visible: object.type === ItemType.DECK && can('topDeck')
+      visible: object.type === ItemType.DECK && can('topDeck'),
+      hasSubmenu: true
     },
     {
       label: 'Search',
@@ -259,21 +244,30 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
             if (item.hasSubmenu) {
               const isRotateSubmenu = item.action === 'rotate';
               const isPilesSubmenu = item.action === 'piles';
-              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : layerSubmenuOpen;
+              const isTopDeckSubmenu = item.action === 'topDeck';
+              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : isTopDeckSubmenu ? topDeckSubmenuOpen : layerSubmenuOpen;
               const deck = object as Deck;
               const toggleSubmenu = () => {
                 if (isRotateSubmenu) {
                   setRotateSubmenuOpen(!rotateSubmenuOpen);
                   setLayerSubmenuOpen(false);
                   setPilesSubmenuOpen(false);
+                  setTopDeckSubmenuOpen(false);
                 } else if (isPilesSubmenu) {
                   setPilesSubmenuOpen(!pilesSubmenuOpen);
                   setLayerSubmenuOpen(false);
                   setRotateSubmenuOpen(false);
+                  setTopDeckSubmenuOpen(false);
+                } else if (isTopDeckSubmenu) {
+                  setTopDeckSubmenuOpen(!topDeckSubmenuOpen);
+                  setLayerSubmenuOpen(false);
+                  setRotateSubmenuOpen(false);
+                  setPilesSubmenuOpen(false);
                 } else {
                   setLayerSubmenuOpen(!layerSubmenuOpen);
                   setRotateSubmenuOpen(false);
                   setPilesSubmenuOpen(false);
+                  setTopDeckSubmenuOpen(false);
                 }
               };
 
@@ -346,13 +340,66 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                             <button
                               key={pile.id}
                               onClick={() => { onAction(`pile-${pile.id}`); onClose(); }}
-                              className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors ${pile.isMillPile ? 'text-red-400' : 'text-gray-200'}`}
+                              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                             >
                               <Layers size={14} />
                               <span>{pile.name}</span>
-                              {pile.isMillPile && <span className="ml-auto text-[10px] bg-red-600 px-1 rounded">MILL</span>}
                             </button>
                           ))}
+                        </>
+                      ) : isTopDeckSubmenu ? (
+                        <>
+                          <button
+                            onClick={() => { onAction('topDeck'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <Settings size={14} />
+                            <span>Manager</span>
+                          </button>
+                          <div className="h-px bg-slate-700 my-1 mx-2" />
+                          {can('draw') && (
+                            <button
+                              onClick={() => { onAction('draw'); onClose(); }}
+                              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                            >
+                              <Hand size={14} />
+                              <span>Draw</span>
+                            </button>
+                          )}
+                          {can('playTopCard') && (
+                            <button
+                              onClick={() => { onAction('playTopCard'); onClose(); }}
+                              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                            >
+                              <Eye size={14} />
+                              <span>Play</span>
+                            </button>
+                          )}
+                          {deck.piles && deck.piles.length > 0 && (
+                            <button
+                              onClick={() => { onAction('millTopCard'); onClose(); }}
+                              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                            >
+                              <Undo size={14} />
+                              <span>Mill</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { onAction('toBottom'); onClose(); }}
+                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                          >
+                            <ArrowDown size={14} />
+                            <span>To Bottom</span>
+                          </button>
+                          {can('showTop') && (
+                            <button
+                              onClick={() => { onAction('showTop'); onClose(); }}
+                              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                            >
+                              <Eye size={14} />
+                              <span>{(object as Deck).showTopCard ? 'Hide Top' : 'Show Top'}</span>
+                            </button>
+                          )}
                         </>
                       ) : (
                         <>

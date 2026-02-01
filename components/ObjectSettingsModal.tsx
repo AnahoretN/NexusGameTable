@@ -13,8 +13,10 @@ interface ObjectSettingsModalProps {
 const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'draw', label: 'Draw Card' },
   { id: 'playTopCard', label: 'Play Top' },
+  { id: 'millTopCard', label: 'Mill' },
+  { id: 'toBottom', label: 'To Bottom' },
   { id: 'showTop', label: 'Show Top' },
-  { id: 'topDeck', label: 'Top Deck' },
+  { id: 'topDeck', label: 'Top Deck (section)' },
   { id: 'searchDeck', label: 'Search' },
   { id: 'shuffleDeck', label: 'Shuffle' },
   { id: 'piles', label: 'Piles' },
@@ -34,7 +36,7 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'returnAll', 'showTop', 'topDeck', 'piles'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'returnAll', 'showTop', 'topDeck', 'piles', 'millToBottom'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -51,6 +53,8 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'playTopCard':
     case 'shuffleDeck':
     case 'searchDeck':
+    case 'millTopCard':
+    case 'toBottom':
       return [ItemType.DECK];
     case 'rotateClockwise':
     case 'rotateCounterClockwise':
@@ -331,17 +335,25 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       visible: true,
       size: 1
     };
-    setPiles([...piles, newPile]);
+    const updatedPiles = [...piles, newPile];
+    setPiles(updatedPiles);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, piles: updatedPiles } as TableObject));
   };
 
   const updatePile = (index: number, field: keyof CardPile, value: any) => {
     const updated = [...piles];
     updated[index] = { ...updated[index], [field]: value };
     setPiles(updated);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, piles: updated } as TableObject));
   };
 
   const removePile = (index: number) => {
-    setPiles(piles.filter((_, i) => i !== index));
+    const updated = piles.filter((_, i) => i !== index);
+    setPiles(updated);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, piles: updated } as TableObject));
   };
 
   const modalContent = (
@@ -616,7 +628,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   {AVAILABLE_ACTIONS
                     .filter(action => {
                       // Deck-specific actions - only for decks, not cards or boards
-                      if ((isCard || isBoard) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if ((isCard || isBoard) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards/tokens
@@ -873,17 +885,20 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           </button>
                         </div>
 
-                        {/* Face Up toggle */}
+                        {/* Show Top Card toggle */}
                         <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
-                          <label className="text-xs text-gray-400">Face Up</label>
+                          <label className="text-xs text-gray-400 flex items-center gap-2">
+                            <Eye size={12} />
+                            Show Top Card
+                          </label>
                           <button
-                            onClick={() => updatePile(index, 'faceUp', !pile.faceUp)}
+                            onClick={() => updatePile(index, 'showTopCard', !pile.showTopCard)}
                             className={`w-10 h-5 rounded-full transition-colors ${
-                              pile.faceUp ? 'bg-green-600' : 'bg-slate-700'
+                              pile.showTopCard ? 'bg-green-600' : 'bg-slate-700'
                             }`}
                           >
                             <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                              pile.faceUp ? 'translate-x-5' : 'translate-x-0.5'
+                              pile.showTopCard ? 'translate-x-5' : 'translate-x-0.5'
                             }`} />
                           </button>
                         </div>
@@ -956,24 +971,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         >
                           <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
                             pile.isMillPile ? 'translate-x-5' : 'translate-x-0.5'
-                          }`} />
-                        </button>
-                      </div>
-
-                      {/* Show Top Card toggle */}
-                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
-                        <label className="text-xs text-gray-400 flex items-center gap-2">
-                          <Eye size={12} />
-                          Show Top Card
-                        </label>
-                        <button
-                          onClick={() => updatePile(index, 'showTopCard', !pile.showTopCard)}
-                          className={`w-10 h-5 rounded-full transition-colors ${
-                            pile.showTopCard ? 'bg-green-600' : 'bg-slate-700'
-                          }`}
-                        >
-                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                            pile.showTopCard ? 'translate-x-5' : 'translate-x-0.5'
                           }`} />
                         </button>
                       </div>
@@ -1147,7 +1144,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   {AVAILABLE_ACTIONS
                     .filter(action => {
                       // Only show card-applicable actions
-                      if (action.id === 'draw' || action.id === 'playTopCard' ||
+                      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' || action.id === 'toBottom' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'piles') return false;
                       return true;
@@ -1201,7 +1198,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   {AVAILABLE_ACTIONS
                     .filter(action => {
                       // Only card-applicable actions
-                      if (action.id === 'draw' || action.id === 'playTopCard' ||
+                      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' || action.id === 'toBottom' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
                       return true;
@@ -1287,16 +1284,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                   placeholder="https://example.com/cards.png"
                 />
-                {spriteConfig?.spriteUrl && (
-                  <div className="bg-slate-900 rounded p-2 border border-slate-700">
-                    <img
-                      src={spriteConfig.spriteUrl}
-                      alt="Sprite sheet preview"
-                      className="max-w-full max-h-48 mx-auto"
-                      onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23334155%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2394a3b8%22 dy=%22.3em%22%3EImage not found%3C/text%3E%3C/svg%3E'; }}
-                    />
-                  </div>
-                )}
               </div>
 
               {/* Card Back URL */}
