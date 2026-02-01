@@ -107,14 +107,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Change Layer',
       action: 'layer',
       icon: <Layers size={14} />,
-      visible: !hideCardActions && object.type !== ItemType.CARD && can('layer'),
+      visible: can('layer'),
       hasSubmenu: true
     },
     {
       label: 'Rotation',
       action: 'rotate',
       icon: <RotateCw size={14} />,
-      visible: !hideCardActions && can('rotate'),
+      visible: can('rotate'),
       hasSubmenu: true,
       separator: true
     },
@@ -142,7 +142,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Piles',
       action: 'piles',
       icon: <Layers size={14} />,
-      visible: object.type === ItemType.DECK && (object as Deck).piles && (object as Deck).piles!.length > 0,
+      visible: object.type === ItemType.DECK && can('piles') && (object as Deck).piles && (object as Deck).piles!.length > 0,
       hasSubmenu: true
     },
     {
@@ -156,13 +156,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: object.locked ? 'Unlock' : 'Lock',
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
-      visible: !hideCardActions && object.type !== ItemType.CARD && can('lock')
+      visible: can('lock')
     },
     {
       label: object.isPinnedToViewport ? 'Unpin' : 'Pin',
       action: object.isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
       icon: <Pin size={14} />,
-      visible: !hideCardActions && object.type !== ItemType.CARD && can('pin'),
+      visible: can('pin'),
       separator: true
     },
     {
@@ -187,15 +187,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Clone',
       action: 'clone',
       icon: <Copy size={14} />,
-      visible: !hideCardActions && object.type !== ItemType.CARD && can('clone')
-        || (isSearchWindow && isGM && object.type === ItemType.CARD && can('clone'))
+      visible: can('clone')
     },
     {
       label: 'Delete',
       action: 'delete',
       icon: <Trash2 size={14} />,
-      visible: !hideCardActions && object.type !== ItemType.CARD && can('delete')
-        || (isSearchWindow && isGM && object.type === ItemType.CARD && can('delete'))
+      visible: can('delete')
     },
   ];
 
