@@ -37,7 +37,7 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'showTop', 'topDeck', 'piles', 'millToBottom'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotateClockwise', 'showTop', 'topDeck', 'piles', 'millToBottom'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
