@@ -15,6 +15,8 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'playTopCard', label: 'Play Top' },
   { id: 'millTopCard', label: 'Mill' },
   { id: 'toBottom', label: 'To Bottom' },
+  { id: 'millToBottom', label: 'Mill to Bottom' },
+  { id: 'removeFromTable', label: 'Remove From Table' },
   { id: 'showTop', label: 'Show Top' },
   { id: 'topDeck', label: 'Top Deck (section)' },
   { id: 'searchDeck', label: 'Search' },
@@ -29,6 +31,7 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'layerDown', label: 'Layer Down' },
   { id: 'lock', label: 'Lock/Unlock Position' },
   { id: 'pin', label: 'Pin/Unpin to Screen' },
+  { id: 'rotate', label: 'Rotation (section)' },
   { id: 'rotateClockwise', label: 'Rotate Clockwise' },
   { id: 'rotateCounterClockwise', label: 'Rotate Counter-Clockwise' },
   { id: 'swingClockwise', label: 'Swing Clockwise' },
@@ -37,7 +40,7 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotateClockwise', 'showTop', 'topDeck', 'piles', 'millToBottom'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'rotateClockwise', 'showTop', 'topDeck', 'piles', 'millToBottom'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -287,16 +290,19 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     // Add piles for decks
     if (toSave.type === ItemType.DECK) {
       (toSave as Deck).piles = piles;
-      // Normalize card settings
+      // Normalize card settings - cards can only use card-specific actions, not deck-specific ones
+      const deckOnlyActions = ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'removeFromTable', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'];
+      const cardOnlyActions = allActionIds.filter(id => !deckOnlyActions.includes(id));
+
       let normalizedCardAllowedActions: ContextAction[] | undefined = cardSettings.allowedActions;
-      if (normalizedCardAllowedActions && normalizedCardAllowedActions.length === allActionIds.length) {
-        const hasAll = allActionIds.every(id => normalizedCardAllowedActions?.includes(id));
+      if (normalizedCardAllowedActions && normalizedCardAllowedActions.length === cardOnlyActions.length) {
+        const hasAll = cardOnlyActions.every(id => normalizedCardAllowedActions?.includes(id));
         if (hasAll) normalizedCardAllowedActions = undefined;
       }
 
       let normalizedCardAllowedActionsForGM: ContextAction[] | undefined = cardSettings.allowedActionsForGM;
-      if (normalizedCardAllowedActionsForGM && normalizedCardAllowedActionsForGM.length === allActionIds.length) {
-        const hasAll = allActionIds.every(id => normalizedCardAllowedActionsForGM?.includes(id));
+      if (normalizedCardAllowedActionsForGM && normalizedCardAllowedActionsForGM.length === cardOnlyActions.length) {
+        const hasAll = cardOnlyActions.every(id => normalizedCardAllowedActionsForGM?.includes(id));
         if (hasAll) normalizedCardAllowedActionsForGM = undefined;
       }
 
@@ -1149,8 +1155,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-1">
                   {AVAILABLE_ACTIONS
                     .filter(action => {
-                      // Only show card-applicable actions
-                      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' || action.id === 'toBottom' ||
+                      // Only show card-applicable actions (exclude deck-specific actions)
+                      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+                          action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
+                          action.id === 'showTop' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'piles') return false;
                       return true;
