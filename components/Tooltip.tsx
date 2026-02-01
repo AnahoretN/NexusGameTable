@@ -6,6 +6,8 @@ interface TooltipProps {
   showImage?: boolean;
   imageSrc?: string;
   scale?: number;
+  aspectRatio?: number; // width/height ratio for proper tooltip sizing
+  baseWidth?: number; // Actual card width at 100% scale (for realistic tooltip sizing)
   children: React.ReactElement;
 }
 
@@ -14,6 +16,8 @@ export const Tooltip: React.FC<TooltipProps> = ({
   showImage,
   imageSrc,
   scale = 125,
+  aspectRatio = 1, // Default to square (1:1)
+  baseWidth = 300, // Default to 300px for backward compatibility
   children
 }) => {
   const [isVisible, setIsVisible] = useState(false);
@@ -33,7 +37,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
     // Show tooltip after a short delay
     timeoutRef.current = window.setTimeout(() => {
       setIsVisible(true);
-    }, 300);
+    }, 500);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -64,33 +68,27 @@ export const Tooltip: React.FC<TooltipProps> = ({
     <div
       className="fixed z-[99999] pointer-events-none"
       style={{
-        left: position.x + 15,
+        left: position.x + 5,
         top: position.y,
-        transform: 'translateY(-100%)',
       }}
     >
-      <div className="bg-slate-900/95 border border-slate-600 rounded-lg p-3 shadow-xl max-w-xs">
+      <div className="bg-slate-900/95 border border-slate-600 rounded-lg overflow-hidden shadow-xl">
         {showImage && imageSrc && (
-          <div
-            className="mb-2 rounded overflow-hidden bg-slate-800"
+          <img
+            src={imageSrc}
+            alt=""
+            className="block"
             style={{
-              maxWidth: '300px',
+              width: `${baseWidth * (scale / 100)}px`,
+              height: `${baseWidth * (scale / 100) / aspectRatio}px`,
+              objectFit: 'contain',
             }}
-          >
-            <img
-              src={imageSrc}
-              alt=""
-              style={{
-                width: '100%',
-                transform: `scale(${scale / 100})`,
-                transformOrigin: 'center center',
-                display: 'block',
-              }}
-            />
-          </div>
+          />
         )}
         {text && !showImage && (
-          <p className="text-sm text-white whitespace-pre-wrap">{text}</p>
+          <div className="p-3">
+            <p className="text-sm text-white whitespace-pre-wrap">{text}</p>
+          </div>
         )}
       </div>
     </div>
