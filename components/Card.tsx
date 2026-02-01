@@ -85,8 +85,9 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     }
 
     // Fallback to legacy button props for backward compatibility
-    // Show these when actionButtons is not provided, is empty, or showActionButtons is false
-    if (!hasActionButtons) {
+    // ONLY show legacy buttons when actionButtons is NOT provided (undefined)
+    // If actionButtons is explicitly set (even to empty array), respect that setting
+    if (actionButtons === undefined) {
       return (
         <>
           {onToHand && (

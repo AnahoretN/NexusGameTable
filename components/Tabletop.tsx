@@ -2832,7 +2832,7 @@ export const Tabletop: React.FC = () => {
                             <div style={{ transform: `rotate(${-obj.rotation}deg)` }}>
                               <Card
                                   card={card}
-                                  canFlip={isGM || (cardSettings.actionButtons !== undefined && cardSettings.actionButtons.includes('flip'))}
+                                  canFlip={(cardSettings.actionButtons === undefined || cardSettings.actionButtons.includes('flip'))}
                                   onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
                                   showActionButtons={true}
                                   actionButtons={cardSettings.actionButtons}
