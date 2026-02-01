@@ -628,6 +628,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-1">
                   {AVAILABLE_ACTIONS
                     .filter(action => {
+                      // Cards should ONLY use "Context Menu Actions for Cards" from deck settings
+                      // Skip all card-specific actions in the general Context Menu Actions section
+                      if (isCard && ['flip', 'toHand', 'layer', 'layerUp', 'layerDown', 'pin'].includes(action.id)) {
+                        return false;
+                      }
                       // Deck-specific actions - only for decks, not cards or boards
                       if ((isCard || isBoard) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                         return false;
