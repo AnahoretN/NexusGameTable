@@ -162,7 +162,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: object.isPinnedToViewport ? 'Unpin' : 'Pin',
       action: object.isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
       icon: <Pin size={14} />,
-      visible: !hideCardActions,
+      visible: !hideCardActions && object.type !== ItemType.CARD && can('pin'),
       separator: true
     },
     {
