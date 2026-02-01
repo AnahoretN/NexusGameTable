@@ -1,5 +1,5 @@
 import React from 'react';
-import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search } from 'lucide-react';
+import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin } from 'lucide-react';
 import { ContextAction } from '../types';
 
 // Re-export ContextAction for convenience
@@ -17,6 +17,7 @@ export const BUTTON_STYLES: Record<ButtonAction, { className: string; title: str
   clone: { className: 'bg-cyan-600 hover:bg-cyan-500', title: 'Clone' },
   delete: { className: 'bg-red-600 hover:bg-red-500', title: 'Delete' },
   lock: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Lock' },
+  pin: { className: 'bg-pink-600 hover:bg-pink-500', title: 'Pin/Unpin' },
   layer: { className: 'bg-indigo-600 hover:bg-indigo-500', title: 'Layer Up' },
   draw: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Draw' },
   playTopCard: { className: 'bg-green-600 hover:bg-green-500', title: 'Play Top' },
@@ -44,6 +45,7 @@ export const ButtonIcons = {
   clone: () => <Copy size={14} />,
   delete: () => <Trash2 size={14} />,
   lock: (locked: boolean) => locked ? <Unlock size={14} /> : <Lock size={14} />,
+  pin: (pinned: boolean) => pinned ? <Pin size={14} /> : <Pin size={14} />,
   layer: () => <Layers size={14} />,
   draw: () => <Hand size={14} />,
   playTopCard: () => <Eye size={14} />,
