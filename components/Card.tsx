@@ -33,9 +33,12 @@ interface CardProps {
   skipTooltip?: boolean;
   // Sprite config from deck (for custom card back support)
   deckSpriteConfig?: CardSpriteConfig;
+  // Tooltip settings from deck (inherited, can be overridden by card's own settings)
+  deckShowTooltipImage?: boolean;
+  deckTooltipScale?: number;
 }
 
-export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig }) => {
+export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig, deckShowTooltipImage, deckTooltipScale }) => {
   const shape = card.shape || CardShape.POKER;
   const orientation = cardOrientation ?? CardOrientation.VERTICAL;
 
@@ -46,6 +49,9 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   // 4. Default to 100x100 if none specified
   const displayWidth = overrideWidth ?? card.width ?? cardWidth ?? 100;
   const displayHeight = overrideHeight ?? card.height ?? cardHeight ?? 100;
+
+  // Calculate aspect ratio for tooltip (width/height)
+  const aspectRatio = displayWidth / displayHeight;
 
   // Define button configurations for cards using shared utility
   const getCardButtonConfigs = (): CardButtonConfig[] => {
@@ -276,9 +282,11 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     skipTooltip ? cardContent : (
       <Tooltip
         text={card.tooltipText}
-        showImage={card.showTooltipImage}
+        showImage={deckShowTooltipImage}
         imageSrc={card.content}
-        scale={card.tooltipScale}
+        scale={deckTooltipScale ?? 125}
+        aspectRatio={aspectRatio}
+        baseWidth={displayWidth}
       >
         {cardContent}
       </Tooltip>

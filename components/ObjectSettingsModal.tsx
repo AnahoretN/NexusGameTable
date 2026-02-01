@@ -418,54 +418,57 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
           {activeTab === 'general' && (
             <div className="space-y-4">
-              {/* Name */}
-              <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
-                <input
-                  value={data.name}
-                  onChange={e => update('name', e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                />
-              </div>
-
-              {/* Size */}
-              <div className="grid grid-cols-2 gap-2">
+              {/* Basic Properties - Name, Size, Rotation */}
+              <div className="space-y-2">
+                {/* Name */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Width</label>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
                   <input
-                    type="number"
-                    value={data.width}
-                    onChange={e => update('width', Number(e.target.value))}
+                    value={data.name}
+                    onChange={e => update('name', e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                   />
                 </div>
+
+                {/* Size */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Width</label>
+                    <input
+                      type="number"
+                      value={data.width}
+                      onChange={e => update('width', Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Height</label>
+                    <input
+                      type="number"
+                      value={data.height}
+                      onChange={e => update('height', Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Rotation Step */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Height</label>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Rotation Step (degrees)</label>
                   <input
                     type="number"
-                    value={data.height}
-                    onChange={e => update('height', Number(e.target.value))}
+                    value={(data as any).rotationStep ?? 45}
+                    onChange={e => update('rotationStep', Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    min="1"
+                    max="360"
                   />
                 </div>
-              </div>
-
-              {/* Rotation Step */}
-              <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Rotation Step (degrees)</label>
-                <input
-                  type="number"
-                  value={(data as any).rotationStep ?? 45}
-                  onChange={e => update('rotationStep', Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                  min="1"
-                  max="360"
-                />
               </div>
 
               {/* Show Top Card (for decks) */}
               {isDeck && (
-                <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 mt-5 mb-5">
                   <label className="text-xs text-gray-400 flex items-center gap-2">
                     <Eye size={12} />
                     Show Top Card on Deck
@@ -535,8 +538,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
               {/* Grid Settings (for boards) */}
               {isBoard && (
-                <div className="space-y-3 pt-4">
-                  <h4 className="text-sm font-bold text-purple-400">Grid Settings</h4>
+                <div className="pt-4 space-y-3">
+                  <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                    <Grid3x3 size={14} /> Grid Settings
+                  </h4>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-bold text-gray-400 mb-1">Grid Type</label>
@@ -580,7 +585,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               )}
 
               {/* Tooltip Settings */}
-              <div className="space-y-3 pt-4">
+              <div className="pt-2 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <Eye size={14} /> Tooltip Settings
+                </h4>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 mb-1">Tooltip Text</label>
                   <textarea
@@ -592,43 +600,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   />
                 </div>
 
-                {/* Tooltip toggle - only for tokens (not for boards or decks) */}
-                {!isBoard && !isDeck && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <label className="text-xs text-gray-400">Tooltip Image</label>
-                    </div>
-                    <button
-                      onClick={() => update('showTooltipImage', !(data as any).showTooltipImage)}
-                      className={`w-10 h-5 rounded-full transition-colors ${
-                        (data as any).showTooltipImage ? 'bg-green-600' : 'bg-slate-700'
-                      }`}
-                    >
-                      <div
-                        className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          (data as any).showTooltipImage ? 'translate-x-5' : 'translate-x-0.5'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                )}
-
-                {/* Tooltip Scale - shown for tokens when enabled */}
-                {!isBoard && !isDeck && (data as any).showTooltipImage && (
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs text-gray-400">Tooltip Scale</label>
-                    <input
-                      type="number"
-                      value={(data as any).tooltipScale ?? 125}
-                      onChange={e => update('tooltipScale', Number(e.target.value))}
-                      className="w-20 bg-slate-900 border border-slate-700 rounded p-1 text-white text-sm text-center"
-                      min="50"
-                      max="300"
-                      step="5"
-                    />
-                    <span className="text-xs text-gray-500">%</span>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -636,7 +607,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
           {activeTab === 'actions' && (
             <div className="space-y-4">
               {/* Context Menu Actions - with PL and GM toggle buttons */}
-              <div>
+              <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Shield size={14} /> Context Menu Actions
                 </h4>
@@ -705,12 +676,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     return (
                       <div
                         key={action.id}
-                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-700 transition-colors bg-slate-800 border border-slate-700"
+                        className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-700 transition-colors bg-slate-800 border border-slate-700"
                       >
                         <span className="text-gray-200 text-xs font-medium leading-tight flex-1 truncate">{action.label}</span>
                         <button
                           onClick={togglePlayer}
-                          className={`w-8 h-8 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
+                          className={`w-7 h-7 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
                             isPlayerAllowed
                               ? 'bg-blue-600 text-white'
                               : 'bg-slate-900 text-gray-400 hover:text-gray-200'
@@ -721,7 +692,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         </button>
                         <button
                           onClick={toggleGM}
-                          className={`w-8 h-8 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
+                          className={`w-7 h-7 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
                             isGMAllowed
                               ? 'bg-purple-600 text-white'
                               : 'bg-slate-900 text-gray-400 hover:text-gray-200'
@@ -1129,23 +1100,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     <option value="none">None</option>
                   </select>
                 </div>
-              </div>
 
-              {/* Tooltip Settings for Cards - stored on deck */}
-              <div className="pt-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-sm font-bold text-gray-300">Card Tooltip Image</h4>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      value={(data as any).tooltipScale ?? 125}
-                      onChange={e => update('tooltipScale', Number(e.target.value))}
-                      className="w-20 bg-slate-900 border border-slate-700 rounded p-1 text-white text-sm text-center"
-                      min="50"
-                      max="300"
-                      step="5"
-                    />
-                    <span className="text-xs text-gray-500">%</span>
+                {/* Card Tooltip Image */}
+                <div className="bg-slate-900 rounded px-3 py-2 space-y-2 mt-5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-gray-400 flex items-center gap-2">
+                      <Eye size={12} />
+                      Card Tooltip Image
+                    </label>
                     <button
                       onClick={() => update('showTooltipImage', !(data as any).showTooltipImage)}
                       className={`w-10 h-5 rounded-full transition-colors ${
@@ -1160,12 +1122,23 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       />
                     </button>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      value={(data as any).tooltipScale ?? 125}
+                      onChange={e => update('tooltipScale', Number(e.target.value))}
+                      className="flex-1 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                      min="50"
+                      max="300"
+                      step="5"
+                    />
+                    <span className="text-xs text-gray-400 w-12 text-right">{(data as any).tooltipScale ?? 125}%</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-4">
               {/* Context Menu Actions - with PL and GM toggle buttons */}
-              <div>
+              <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Shield size={14} /> Context Menu Actions for Cards
                 </h4>
@@ -1186,12 +1159,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     return (
                       <div
                         key={`card-${action.id}`}
-                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-700 transition-colors bg-slate-800 border border-slate-700"
+                        className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-700 transition-colors bg-slate-800 border border-slate-700"
                       >
                         <span className="text-gray-200 text-xs font-medium leading-tight flex-1 truncate">{action.label}</span>
                         <button
                           onClick={() => toggleCardAllowedAction(action.id, false)}
-                          className={`w-8 h-8 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
+                          className={`w-7 h-7 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
                             isPlayerAllowed
                               ? 'bg-blue-600 text-white'
                               : 'bg-slate-900 text-gray-400 hover:text-gray-200'
@@ -1202,7 +1175,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         </button>
                         <button
                           onClick={() => toggleCardAllowedAction(action.id, true)}
-                          className={`w-8 h-8 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
+                          className={`w-7 h-7 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
                             isGMAllowed
                               ? 'bg-purple-600 text-white'
                               : 'bg-slate-900 text-gray-400 hover:text-gray-200'
@@ -1297,15 +1270,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 </div>
               </div>
-              </div>
             </div>
           )}
 
           {activeTab === 'sprite' && (
             <div className="space-y-4">
               {/* Sprite Sheet URL */}
-              <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Sprite Sheet URL</label>
+              <div className="pt-4 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <ImageIcon size={14} /> Sprite Sheet URL
+                </h4>
                 <input
                   type="text"
                   value={spriteConfig?.spriteUrl || ''}
@@ -1314,7 +1288,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   placeholder="https://example.com/cards.png"
                 />
                 {spriteConfig?.spriteUrl && (
-                  <div className="mt-2 bg-slate-900 rounded p-2 border border-slate-700">
+                  <div className="bg-slate-900 rounded p-2 border border-slate-700">
                     <img
                       src={spriteConfig.spriteUrl}
                       alt="Sprite sheet preview"
@@ -1326,8 +1300,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Card Back URL */}
-              <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Card Back URL</label>
+              <div className="pt-4 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <RotateCw size={14} /> Card Back URL
+                </h4>
                 <input
                   type="text"
                   value={spriteConfig?.cardBackUrl || ''}
@@ -1336,7 +1312,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   placeholder="https://example.com/card-back.png"
                 />
                 {spriteConfig?.cardBackUrl && (
-                  <div className="mt-2 bg-slate-900 rounded p-2 border border-slate-700 flex justify-center">
+                  <div className="bg-slate-900 rounded p-2 border border-slate-700 flex justify-center">
                     <img
                       src={spriteConfig.cardBackUrl}
                       alt="Card back preview"
@@ -1348,44 +1324,51 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               </div>
 
               {/* Grid Settings */}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Columns</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={spriteConfig?.columns || 1}
-                    onChange={(e) => setSpriteConfig(prev => ({ ...prev, columns: Math.max(1, parseInt(e.target.value) || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Rows</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={spriteConfig?.rows || 1}
-                    onChange={(e) => setSpriteConfig(prev => ({ ...prev, rows: Math.max(1, parseInt(e.target.value) || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, totalCards: prev?.totalCards }))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Total Cards</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={spriteConfig?.totalCards || (spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : '')}
-                    onChange={(e) => setSpriteConfig(prev => ({ ...prev, totalCards: e.target.value ? parseInt(e.target.value) : undefined, spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1 }))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                    placeholder={`Auto: ${spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : 'N/A'}`}
-                  />
+              <div className="pt-4 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <Grid3x3 size={14} /> Grid Settings
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Columns</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={spriteConfig?.columns || 1}
+                      onChange={(e) => setSpriteConfig(prev => ({ ...prev, columns: Math.max(1, parseInt(e.target.value) || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Rows</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={spriteConfig?.rows || 1}
+                      onChange={(e) => setSpriteConfig(prev => ({ ...prev, rows: Math.max(1, parseInt(e.target.value) || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, totalCards: prev?.totalCards }))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Total Cards</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={spriteConfig?.totalCards || (spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : '')}
+                      onChange={(e) => setSpriteConfig(prev => ({ ...prev, totalCards: e.target.value ? parseInt(e.target.value) : undefined, spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1 }))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      placeholder={`Auto: ${spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : 'N/A'}`}
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Preview Grid */}
               {spriteConfig?.columns && spriteConfig?.rows && spriteConfig?.spriteUrl && (
-                <div className="pt-4">
-                  <h4 className="text-sm font-bold text-gray-300 mb-3">Grid Preview</h4>
+                <div className="pt-4 space-y-3">
+                  <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                    <Eye size={14} /> Grid Preview
+                  </h4>
                   <div
                     className="bg-slate-900 rounded p-2 border border-slate-700 overflow-auto"
                     style={{ maxHeight: '200px' }}

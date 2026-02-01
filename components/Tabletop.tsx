@@ -2787,6 +2787,8 @@ export const Tabletop: React.FC = () => {
                                   cardOrientation={cardSettings.cardOrientation}
                                   disableRotationTransform={true}
                                   deckSpriteConfig={card.deckId ? (state.objects[card.deckId] as DeckType)?.spriteConfig : undefined}
+                                  deckShowTooltipImage={card.deckId ? (state.objects[card.deckId] as DeckType)?.showTooltipImage : undefined}
+                                  deckTooltipScale={card.deckId ? (state.objects[card.deckId] as DeckType)?.tooltipScale : undefined}
                                   onActionButtonClick={(action) => {
                                     switch (action) {
                                         case 'flip':
@@ -2871,8 +2873,10 @@ export const Tabletop: React.FC = () => {
                     </div>
                 );
             })}
+        </div>
 
-            {/* UI Objects - Panels and Windows rendered in the same unified space */}
+        {/* Unpinned UI Objects Container - rendered outside transform, always above game objects */}
+        <div className="fixed inset-0 pointer-events-none z-[9800]">
             {unpinnedUIObjects.map((uiObj) => (
                 <UIObjectRenderer
                     key={uiObj.id}
@@ -2884,11 +2888,11 @@ export const Tabletop: React.FC = () => {
                     isPinnedMode={false}
                 />
             ))}
-
         </div>
 
         {/* Pinned UI Objects Container - rendered outside transform, not affected by camera/scroll */}
-        <div className="fixed inset-0 pointer-events-none z-[9998]">
+        {/* Panels are always above game objects, even when pinned */}
+        <div className="fixed inset-0 pointer-events-none z-[9900]">
             {pinnedUIObjects.map((uiObj) => (
                 <UIObjectRenderer
                     key={uiObj.id}
@@ -2900,7 +2904,10 @@ export const Tabletop: React.FC = () => {
                     isPinnedMode={true}
                 />
             ))}
+        </div>
 
+        {/* Pinned Game Objects Container - rendered outside transform, below panels */}
+        <div className="fixed inset-0 pointer-events-none z-[500]">
             {/* Pinned Decks - rendered in fixed container using pinnedScreenPosition */}
             {pinnedDecks.map((deck) => {
                 const deckObj = deck as DeckType;
@@ -2990,28 +2997,14 @@ export const Tabletop: React.FC = () => {
                         key={board.id}
                         className="pointer-events-auto"
                         style={{
-                            position: 'fixed',
+                            position: 'absolute',
                             left: pinnedPosition.x,
                             top: pinnedPosition.y,
+                            width: board.width,
+                            height: board.height,
                             zIndex: board.zIndex || 1000,
                         }}
                     >
-                        <BoardWithResize
-                            token={board}
-                            obj={pinnedBoardObj}
-                            isOwner={true}
-                            isDragging={isDragging}
-                            isResizing={isResizing}
-                            canResize={!board.locked}
-                            zoom={zoom}
-                            onMouseDown={(e) => handleMouseDown(e, board.id)}
-                            onContextMenu={(e) => handleContextMenu(e, board)}
-                            onResizeStart={(e) => !board.locked && handleResizeStart(e, board.id)}
-                            gridSize={gridSize}
-                            hexR={hexR}
-                            hexW={hexW}
-                            hexPath={hexPath}
-                        />
                         <BoardWithResize
                             token={board}
                             obj={pinnedBoardObj}
@@ -3102,6 +3095,9 @@ export const Tabletop: React.FC = () => {
                                     spriteUrl: spriteConfig.spriteUrl,
                                     spriteColumns: spriteConfig.columns,
                                     spriteRows: spriteConfig.rows,
+                                    // Inherit tooltip settings from deck
+                                    showTooltipImage: newDeck.showTooltipImage,
+                                    tooltipScale: newDeck.tooltipScale,
                                 };
                                 dispatch({ type: 'ADD_OBJECT', payload: cardObj });
                             }
@@ -3118,6 +3114,24 @@ export const Tabletop: React.FC = () => {
                                     deckId: updatedObj.id,
                                     cardWidth: newDeck.cardWidth,
                                     cardHeight: newDeck.cardHeight,
+                                }
+                            });
+                        }
+
+                        // Check if tooltip settings changed - propagate to all cards in deck
+                        if (oldDeck.showTooltipImage !== newDeck.showTooltipImage || oldDeck.tooltipScale !== newDeck.tooltipScale) {
+                            const cardIds = newDeck.cardIds || [];
+                            cardIds.forEach(cardId => {
+                                const card = state.objects[cardId] as CardType;
+                                if (card) {
+                                    dispatch({
+                                        type: 'UPDATE_OBJECT',
+                                        payload: {
+                                            ...card,
+                                            showTooltipImage: newDeck.showTooltipImage,
+                                            tooltipScale: newDeck.tooltipScale,
+                                        }
+                                    });
                                 }
                             });
                         }
@@ -3276,6 +3290,8 @@ export const Tabletop: React.FC = () => {
                                     showActionButtons={false}
                                     skipTooltip={true}
                                     deckSpriteConfig={deck?.spriteConfig}
+                                    deckShowTooltipImage={deck?.showTooltipImage}
+                                    deckTooltipScale={deck?.tooltipScale}
                                 />
                             </div>
                         );

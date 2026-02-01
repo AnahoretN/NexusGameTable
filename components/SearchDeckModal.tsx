@@ -454,6 +454,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                       cardOrientation={deck.cardOrientation}
                       disableRotationTransform={true}
                       deckSpriteConfig={deck.spriteConfig}
+                      deckShowTooltipImage={deck.showTooltipImage}
+                      deckTooltipScale={deck.tooltipScale}
                     />
 
                     {buttons.length > 0 && (

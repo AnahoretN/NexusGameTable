@@ -482,6 +482,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                               cardOrientation={cardSettings.cardOrientation}
                               disableRotationTransform={true}
                               deckSpriteConfig={deck?.spriteConfig}
+                              deckShowTooltipImage={deck?.showTooltipImage}
+                              deckTooltipScale={deck?.tooltipScale}
                             />
 
                             {buttons.length > 0 && (
