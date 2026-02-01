@@ -1203,7 +1203,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
                       // Exclude general actions - use specific actions instead
-                      if (action.id === 'layer' || action.id === 'rotateClockwise') return false;
+                      if (action.id === 'layer' || action.id === 'rotateClockwise' || action.id === 'showTop') return false;
                       return true;
                     })
                     .map((action) => {
