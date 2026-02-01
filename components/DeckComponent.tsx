@@ -110,6 +110,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
       const isHalfSize = pileSize === 0.5;
 
       if (pile.position === 'free') {
+        // For free position, use world coordinates (pile.x, pile.y are in world space)
         return { x: pile.x ?? 0, y: pile.y ?? 0 };
       }
 
@@ -121,33 +122,35 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
       const ew = effectiveWidth;
       const eh = effectiveHeight;
 
+      // Positions are relative to deck's top-left corner (not world coordinates)
+      // since the deck container is already positioned at deck.x, deck.y
       switch (pile.position) {
         case 'left':
           if (isHalfSize) {
             const yOffset = pileIndex * (eh * 0.5 + 2);
-            return { x: deck.x - ew * 0.5 - 4, y: deck.y + yOffset };
+            return { x: -ew * 0.5 - 4, y: yOffset };
           }
-          return { x: deck.x - ew - 4, y: deck.y };
+          return { x: -ew - 4, y: 0 };
         case 'right':
           if (isHalfSize) {
             const yOffset = pileIndex * (eh * 0.5 + 2);
-            return { x: deck.x + ew + 4, y: deck.y + yOffset };
+            return { x: ew + 4, y: yOffset };
           }
-          return { x: deck.x + ew + 4, y: deck.y };
+          return { x: ew + 4, y: 0 };
         case 'top':
           if (isHalfSize) {
             const xOffset = pileIndex * (ew * 0.5 + 2);
-            return { x: deck.x + xOffset, y: deck.y - eh * 0.5 - 4 };
+            return { x: xOffset, y: -eh * 0.5 - 4 };
           }
-          return { x: deck.x, y: deck.y - eh - 4 };
+          return { x: 0, y: -eh - 4 };
         case 'bottom':
           if (isHalfSize) {
             const xOffset = pileIndex * (ew * 0.5 + 2);
-            return { x: deck.x + xOffset, y: deck.y + eh + 4 };
+            return { x: xOffset, y: eh + 4 };
           }
-          return { x: deck.x, y: deck.y + eh + 4 };
+          return { x: 0, y: eh + 4 };
         default:
-          return { x: deck.x, y: deck.y };
+          return { x: 0, y: 0 };
       }
     };
 
@@ -523,6 +526,20 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                 className: 'bg-orange-600 hover:bg-orange-500',
                 title: 'Swing Counter-Clockwise',
                 icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+              },
+              millTopCard: {
+                key: 'millTopCard',
+                action: () => executeClickAction(deck, 'millTopCard'),
+                className: 'bg-teal-600 hover:bg-teal-500',
+                title: 'Mill',
+                icon: <Undo size={14} />
+              },
+              toBottom: {
+                key: 'toBottom',
+                action: () => executeClickAction(deck, 'toBottom'),
+                className: 'bg-yellow-500 hover:bg-yellow-400',
+                title: 'To Bottom',
+                icon: <RefreshCw size={14} style={{ transform: 'rotate(180deg)' }} />
               },
             };
 
