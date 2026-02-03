@@ -105,6 +105,15 @@ export function getCardButtonConfigs(
   onRotate: () => void,
   onClone: () => void
 ): ButtonConfig[] {
+  // Exclude rotate and swing buttons from hand panel
+  const filteredActions = actionButtons.filter(action =>
+    action !== 'rotate' &&
+    action !== 'rotateClockwise' &&
+    action !== 'rotateCounterClockwise' &&
+    action !== 'swingClockwise' &&
+    action !== 'swingCounterClockwise'
+  );
+
   const configs: Record<string, ButtonConfig> = {
     flip: {
       className: 'bg-purple-600 hover:bg-purple-500',
@@ -126,5 +135,5 @@ export function getCardButtonConfigs(
     }
   };
 
-  return actionButtons.map(action => configs[action]).filter(Boolean);
+  return filteredActions.map(action => configs[action]).filter(Boolean);
 }
