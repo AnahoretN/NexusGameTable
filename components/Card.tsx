@@ -188,11 +188,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           // Geometric shapes use clip-path instead of rotation
           // Plus the card's own rotation property for custom rotation
           transform: getCardTransform(orientation, disableRotationTransform, card.rotation),
-          // For geometric shapes that get clipped, we use a drop-shadow filter to simulate a border/shadow
-          // since the actual CSS border is clipped away.
-          filter: isGeometric
-              ? `drop-shadow(0 4px 4px rgba(0,0,0,0.5)) ${isHovered ? 'drop-shadow(0 0 4px #facc15)' : ''}`
-              : 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))',
+          // No drop-shadow filter for cleaner appearance
+          filter: isHovered && !isGeometric ? 'brightness(1.1)' : 'none',
           // Disable pointer events when dragging in cursor slot to allow mouse events to pass through to decks/piles
           pointerEvents: disablePointerEvents ? 'none' : 'auto',
           ...styles

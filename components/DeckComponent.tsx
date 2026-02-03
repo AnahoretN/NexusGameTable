@@ -309,10 +309,10 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                     />
                     {/* Pile name overlay with count */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
-                      <span className="text-xs text-white font-bold px-2 text-center select-none drop-shadow-md">
+                      <span className="text-xs text-white font-bold px-2 text-center select-none">
                         {pile.name}
                       </span>
-                      <span className="text-xs text-slate-300 select-none drop-shadow-md">{pileCards.length}</span>
+                      <span className="text-xs text-slate-300 select-none">{pileCards.length}</span>
                     </div>
                   </div>
                 ) : (
@@ -374,7 +374,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         {[2, 1, 0].map(i => (
           <div
             key={i}
-            className="absolute bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
+            className="absolute bg-slate-800 border-2 border-slate-600 pointer-events-none"
             style={{
               width: '100%',
               height: '100%',
