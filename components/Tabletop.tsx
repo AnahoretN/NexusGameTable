@@ -1066,9 +1066,9 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      // Check if clicking on a deck - handle it directly here
+      // Check if clicking on a deck - only drop if source='shift' (not for drag/drop)
       const deckElement = target.closest('[data-object-id]');
-      if (deckElement) {
+      if (deckElement && cursorSlotSource === 'shift') {
         const objectId = deckElement.getAttribute('data-object-id');
         const obj = objectId ? state.objects[objectId] : undefined;
         if (obj && obj.type === ItemType.DECK && objectId) {
@@ -1080,9 +1080,9 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      // Check if clicking on a pile - handle it here
+      // Check if clicking on a pile - only drop if source='shift'
       const pileElement = target.closest('[data-pile-id]');
-      if (pileElement) {
+      if (pileElement && cursorSlotSource === 'shift') {
         const pileId = pileElement.getAttribute('data-pile-id');
         if (pileId) {
           // Find the deck that owns this pile
@@ -1230,13 +1230,13 @@ export const Tabletop: React.FC = () => {
     };
   }, []);
 
-  // Global mouseup handler for cursor slot drop
+  // Global mouseup handler for cursor slot drop (when source='hold' for drag)
   useEffect(() => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
       // Use cursorSlotRef.current to get the immediate value (avoid closure stale data)
-      // Only process if cursor slot has items
+      // Only process if cursor slot has items with source='hold' (drag, not Shift+click)
       const currentSlot = cursorSlotRef.current;
-      if (currentSlot.length === 0) return;
+      if (currentSlot.length === 0 || cursorSlotSource !== 'hold') return;
 
       const clientX = e.clientX;
       const clientY = e.clientY;
@@ -1304,7 +1304,7 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-  }, [dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, cursorSlotRef]);
+  }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, cursorSlotRef]);
 
   const handleMouseDown = (e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
