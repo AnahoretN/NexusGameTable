@@ -19,6 +19,15 @@ interface SearchDeckModalProps {
 }
 
 const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = []) => {
+  // Exclude rotate and swing buttons from deck window
+  const filteredActions = actionButtons.filter(action =>
+    action !== 'rotate' &&
+    action !== 'rotateClockwise' &&
+    action !== 'rotateCounterClockwise' &&
+    action !== 'swingClockwise' &&
+    action !== 'swingCounterClockwise'
+  );
+
   const configs: Partial<Record<ContextAction, { className: string; title: string; icon: JSX.Element }>> = {
     flip: {
       className: 'bg-purple-600 hover:bg-purple-500',
@@ -42,7 +51,7 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = []) =
     },
   };
 
-  return actionButtons
+  return filteredActions
     .filter(action => action in configs)
     .map(action => ({ action, ...configs[action]! }))
     .slice(0, 4);
