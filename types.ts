@@ -102,6 +102,7 @@ export interface GameItem {
   // New props for context menu features
   locked: boolean;
   isOnTable: boolean; // Controls visibility on the battlefield vs just in the list
+  inCursorSlot?: boolean; // Object is currently in the cursor slot (hidden from tabletop, locked from editing)
   allowedActions?: ContextAction[]; // Actions players are allowed to perform in context menu (undefined = all allowed)
   allowedActionsForGM?: ContextAction[]; // Actions GM is allowed to perform in context menu (undefined = all allowed)
   actionButtons?: ContextAction[]; // Actions shown as buttons on the object (max 4)
