@@ -788,14 +788,11 @@ export const Tabletop: React.FC = () => {
 
   // Drop all items from cursor slot at specified screen coordinates
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
-    // Prevent double-drops
-    if (isDroppingRef.current) return;
-
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
     if (currentSlot.length === 0) return;
 
-    // NOTE: Dropping on decks is handled by handleGlobalClick -> dropToDeck
+    // NOTE: Dropping on decks is handled by handleGlobalMouseUp -> dropToDeck
     // This function only handles dropping on the tabletop (not on decks)
 
     // Not dropping on a deck - drop items on tabletop
@@ -841,7 +838,7 @@ export const Tabletop: React.FC = () => {
       const finalY = worldY - baseHeight / 2 + offsetFromBack;
 
       // Use original item.id (not creating new ID) - restore object to tabletop
-      // For cards, ensure they go to tabletop (not hand)
+      // For cards, ensure they go to tabletop (not hand) and preserve faceUp
       const updatePayload: any = {
         id: item.id,
         inCursorSlot: false,
@@ -853,6 +850,8 @@ export const Tabletop: React.FC = () => {
       if (isCard) {
         updatePayload.location = CardLocation.TABLE;
         updatePayload.isOnTable = true;
+        // Preserve faceUp value from the slot item
+        updatePayload.faceUp = item.faceUp;
       }
 
       dispatch({
@@ -873,15 +872,10 @@ export const Tabletop: React.FC = () => {
 
   // Drop cursor slot items to a specific deck (called from handleGlobalClick when clicking on deck)
   const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType)[]) => {
-    // Prevent double-drops
-    if (isDroppingRef.current) return;
-    isDroppingRef.current = true;
-
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
 
     if (currentSlot.length === 0) {
-      isDroppingRef.current = false;
       return;
     }
 
@@ -946,15 +940,10 @@ export const Tabletop: React.FC = () => {
 
   // Drop cursor slot items to a specific pile (called from handleGlobalClick when clicking on pile)
   const dropToPile = useCallback((pileId: string, deckId: string, slotItems?: (CardType | TokenType)[]) => {
-    // Prevent double-drops
-    if (isDroppingRef.current) return;
-    isDroppingRef.current = true;
-
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
 
     if (currentSlot.length === 0) {
-      isDroppingRef.current = false;
       return;
     }
 
