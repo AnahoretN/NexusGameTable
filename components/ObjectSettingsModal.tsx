@@ -799,15 +799,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
                             return false;
                           }
-                          // Dice/counter rotation actions - only for dice/counters and boards
-                          if ((isDeck || isCard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
-                            return false;
-                          }
-                          // Only show actions that are in actionButtons (if set)
-                          const actionButtons = (data as any).actionButtons;
-                          if (actionButtons && actionButtons.length > 0 && !actionButtons.includes(action.id)) {
-                            return false;
-                          }
                           return true;
                         })
                         .map(action => (
@@ -835,15 +826,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           }
                           // Card-specific actions - only for cards/tokens
                           if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
-                            return false;
-                          }
-                          // Dice/counter rotation actions - only for dice/counters and boards
-                          if ((isDeck || isCard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
-                            return false;
-                          }
-                          // Only show actions that are in actionButtons (if set)
-                          const actionButtons = (data as any).actionButtons;
-                          if (actionButtons && actionButtons.length > 0 && !actionButtons.includes(action.id)) {
                             return false;
                           }
                           return true;
@@ -1279,17 +1261,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       {CLICK_ACTIONS
-                        .filter(action => {
-                          // 'none' is always available
-                          if (action.id === 'none') return true;
-
-                          // Only show actions that are in cardActionButtons (if set)
-                          const cardActionButtons = cardSettings.actionButtons;
-                          if (cardActionButtons && cardActionButtons.length > 0 && !cardActionButtons.includes(action.id)) {
-                            return false;
-                          }
-                          return true;
-                        })
                         .map(action => (
                           <option key={action.id} value={action.id}>{action.label}</option>
                         ))}
@@ -1305,17 +1276,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       {CLICK_ACTIONS
-                        .filter(action => {
-                          // 'none' is always available
-                          if (action.id === 'none') return true;
-
-                          // Only show actions that are in cardActionButtons (if set)
-                          const cardActionButtons = cardSettings.actionButtons;
-                          if (cardActionButtons && cardActionButtons.length > 0 && !cardActionButtons.includes(action.id)) {
-                            return false;
-                          }
-                          return true;
-                        })
                         .map(action => (
                           <option key={action.id} value={action.id}>{action.label}</option>
                         ))}
