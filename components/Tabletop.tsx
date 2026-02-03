@@ -279,7 +279,7 @@ export const Tabletop: React.FC = () => {
         }
 
         setCursorSlot(prev => [...prev, itemClone]);
-        dispatch({ type: 'DELETE_OBJECT', payload: { id: cardId } });
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: cardId, inCursorSlot: true } });
         setCursorPosition({ x: clientX, y: clientY });
       }
     };
@@ -772,8 +772,8 @@ export const Tabletop: React.FC = () => {
 
     setCursorSlot(prev => [...prev, itemClone]);
 
-    // Remove the item from the game state
-    dispatch({ type: 'DELETE_OBJECT', payload: { id } });
+    // Mark the item as inCursorSlot (keeps it in objects list but hidden from tabletop)
+    dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
 
     // Calculate screen position of object center (world -> screen)
     const itemCenterX = item.x + (item.width ?? 63) / 2;
@@ -836,23 +836,24 @@ export const Tabletop: React.FC = () => {
       const finalX = worldX - baseWidth / 2 + offsetFromBack;
       const finalY = worldY - baseHeight / 2 + offsetFromBack;
 
-      const itemWithId = {
-        ...item,
-        id: `slot-${Date.now()}-${index}`,
+      // Use original item.id (not creating new ID) - restore object to tabletop
+      // For cards, ensure they go to tabletop (not hand)
+      const updatePayload: any = {
+        id: item.id,
+        inCursorSlot: false,
         x: finalX,
         y: finalY,
-        zIndex, // High z-index to ensure visibility
+        zIndex,
       };
 
-      // For cards, ensure they go to tabletop (not hand)
       if (isCard) {
-        (itemWithId as any).location = CardLocation.TABLE;
-        (itemWithId as any).isOnTable = true;
+        updatePayload.location = CardLocation.TABLE;
+        updatePayload.isOnTable = true;
       }
 
       dispatch({
-        type: 'ADD_OBJECT',
-        payload: itemWithId
+        type: 'UPDATE_OBJECT',
+        payload: updatePayload
       });
     });
 
@@ -880,12 +881,12 @@ export const Tabletop: React.FC = () => {
     // Only add cards to deck (not tokens)
     const cardsInSlot = currentSlot.filter(item => item.type === ItemType.CARD);
     if (cardsInSlot.length > 0) {
-      // First, add cards back to state (they were removed when added to slot)
+      // First, restore cards from cursor slot (set inCursorSlot: false)
       // ADD_CARD_TO_TOP_OF_DECK will update their position to deck position
       cardsInSlot.forEach((item) => {
         dispatch({
-          type: 'ADD_OBJECT',
-          payload: item
+          type: 'UPDATE_OBJECT',
+          payload: { id: item.id, inCursorSlot: false }
         });
       });
 
@@ -907,17 +908,16 @@ export const Tabletop: React.FC = () => {
         const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
         const offsetFromBack = (nonCardsInSlot.length - 1 - index) * offsetAmount;
 
-        const itemWithId = {
-          ...item,
-          id: `slot-${Date.now()}-${index}`,
-          x: deck.x + deck.width / 2 - baseWidth / 2 + offsetFromBack,
-          y: deck.y + deck.height / 2 - baseHeight / 2 + offsetFromBack,
-          zIndex: 10000,
-        };
-
+        // Use original item.id - restore token to tabletop
         dispatch({
-          type: 'ADD_OBJECT',
-          payload: itemWithId
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: item.id,
+            inCursorSlot: false,
+            x: deck.x + deck.width / 2 - baseWidth / 2 + offsetFromBack,
+            y: deck.y + deck.height / 2 - baseHeight / 2 + offsetFromBack,
+            zIndex: 10000,
+          }
         });
       });
     }
@@ -941,11 +941,11 @@ export const Tabletop: React.FC = () => {
     // Only add cards to pile (not tokens)
     const cardsInSlot = currentSlot.filter(item => item.type === ItemType.CARD);
     if (cardsInSlot.length > 0) {
-      // First, add cards back to state (they were removed when added to slot)
+      // First, restore cards from cursor slot (set inCursorSlot: false)
       cardsInSlot.forEach((item) => {
         dispatch({
-          type: 'ADD_OBJECT',
-          payload: item
+          type: 'UPDATE_OBJECT',
+          payload: { id: item.id, inCursorSlot: false }
         });
       });
 
@@ -993,17 +993,16 @@ export const Tabletop: React.FC = () => {
         const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
         const offsetFromBack = (nonCardsInSlot.length - 1 - index) * offsetAmount;
 
-        const itemWithId = {
-          ...item,
-          id: `slot-${Date.now()}-${index}`,
-          x: pileX + deck.width * pileSize / 2 - baseWidth / 2 + offsetFromBack,
-          y: pileY + deck.height * pileSize / 2 - baseHeight / 2 + offsetFromBack,
-          zIndex: 10000,
-        };
-
+        // Use original item.id - restore token to tabletop
         dispatch({
-          type: 'ADD_OBJECT',
-          payload: itemWithId
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: item.id,
+            inCursorSlot: false,
+            x: pileX + deck.width * pileSize / 2 - baseWidth / 2 + offsetFromBack,
+            y: pileY + deck.height * pileSize / 2 - baseHeight / 2 + offsetFromBack,
+            zIndex: 10000,
+          }
         });
       });
     }
@@ -2201,6 +2200,8 @@ export const Tabletop: React.FC = () => {
           if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
           // Exclude DECK objects - they are rendered separately with pinned/unpinned logic
           if (obj.type === ItemType.DECK) return false;
+          // Exclude objects in cursor slot
+          if (obj.inCursorSlot) return false;
           if (!obj.isOnTable) return false;
           if (obj.type === ItemType.CARD) {
             const card = obj as CardType;

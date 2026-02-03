@@ -583,9 +583,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     }
   };
 
-  // Count objects on table that match this category (all objects, including hidden)
+  // Count objects on table that match this category (excluding objects in cursor slot)
   const objectsOnTable = useMemo(() =>
-    Object.values(state.objects).filter(category.matcher),
+    Object.values(state.objects).filter(obj => !obj.inCursorSlot && category.matcher(obj)),
     [state.objects, category.matcher]
   );
 
@@ -849,6 +849,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
               <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">On Table</div>
               {objectsOnTable.map(obj => {
                 const isLocked = obj.locked || false;
+                const isInSlot = obj.inCursorSlot || false;
                 // For UI objects check 'visible', for game objects check 'isOnTable'
                 const isVisible = 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
@@ -862,39 +863,44 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 return (
                   <div
                     key={obj.id}
-                    className={`flex items-center gap-1 py-1 px-2 rounded text-sm group ${isVisible ? 'text-gray-300 hover:bg-slate-800' : 'text-gray-600 hover:bg-slate-800/50'}`}
+                    className={`flex items-center gap-1 py-1 px-2 rounded text-sm group ${isInSlot ? 'text-yellow-600 bg-yellow-900/20' : isVisible ? 'text-gray-300 hover:bg-slate-800' : 'text-gray-600 hover:bg-slate-800/50'}`}
                   >
                     <span className="text-gray-500 flex-shrink-0">{getTypeIcon(obj)}</span>
                     <div
                       className="w-3 h-3 rounded flex-shrink-0"
-                      style={{ backgroundColor: isVisible ? objColor : '#4a5568' }}
+                      style={{ backgroundColor: isInSlot ? '#fbbf24' : isVisible ? objColor : '#4a5568' }}
                     />
                     <span className="flex-1 truncate text-xs">{getDisplayName()}</span>
+                    {isInSlot && <span className="text-[9px] text-yellow-500">(in slot)</span>}
                     <button
                       onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
-                      className={`opacity-0 group-hover:opacity-100 p-1 rounded ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'}`}
-                      title={isLocked ? 'Unlock' : 'Lock'}
+                      disabled={isInSlot}
+                      className={`p-1 rounded ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} ${isInSlot ? 'opacity-30 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'}`}
+                      title={isInSlot ? 'Locked in cursor slot' : (isLocked ? 'Unlock' : 'Lock')}
                     >
                       {isLocked ? <Lock size={10} /> : <Unlock size={10} />}
                     </button>
                     <button
                       onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } })}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-700 rounded"
-                      title={isVisible ? 'Hide' : 'Show'}
+                      disabled={isInSlot}
+                      className={`p-1 hover:bg-slate-700 rounded ${isInSlot ? 'opacity-30 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'}`}
+                      title={isInSlot ? 'Locked in cursor slot' : (isVisible ? 'Hide' : 'Show')}
                     >
                       {isVisible ? <Eye size={10} /> : <EyeOff size={10} />}
                     </button>
                     <button
                       onClick={() => setSettingsObjectId(obj.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-700 rounded"
-                      title="Settings"
+                      disabled={isInSlot}
+                      className={`p-1 hover:bg-slate-700 rounded ${isInSlot ? 'opacity-30 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'}`}
+                      title={isInSlot ? 'Locked in cursor slot' : 'Settings'}
                     >
                       <Settings size={10} />
                     </button>
                     <button
                       onClick={() => setDeleteCandidateId(obj.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-600 rounded text-red-400 hover:text-white"
-                      title="Delete"
+                      disabled={isInSlot}
+                      className={`p-1 hover:bg-red-600 rounded text-red-400 hover:text-white ${isInSlot ? 'opacity-30 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'}`}
+                      title={isInSlot ? 'Locked in cursor slot' : 'Delete'}
                     >
                       <Trash2 size={10} />
                     </button>
