@@ -788,6 +788,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     >
                       {CLICK_ACTIONS
                         .filter(action => {
+                          // 'none' is always available
+                          if (action.id === 'none') return true;
+
                           // Deck-specific actions - only for decks, not cards or boards
                           if ((isCard || isBoard) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
@@ -798,6 +801,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           }
                           // Dice/counter rotation actions - only for dice/counters and boards
                           if ((isDeck || isCard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                            return false;
+                          }
+                          // Only show actions that are in actionButtons (if set)
+                          const actionButtons = (data as any).actionButtons;
+                          if (actionButtons && actionButtons.length > 0 && !actionButtons.includes(action.id)) {
                             return false;
                           }
                           return true;
@@ -818,6 +826,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     >
                       {CLICK_ACTIONS
                         .filter(action => {
+                          // 'none' is always available
+                          if (action.id === 'none') return true;
+
                           // Deck-specific actions - only for decks, not cards or boards
                           if ((isCard || isBoard) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
@@ -828,6 +839,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           }
                           // Dice/counter rotation actions - only for dice/counters and boards
                           if ((isDeck || isCard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                            return false;
+                          }
+                          // Only show actions that are in actionButtons (if set)
+                          const actionButtons = (data as any).actionButtons;
+                          if (actionButtons && actionButtons.length > 0 && !actionButtons.includes(action.id)) {
                             return false;
                           }
                           return true;
@@ -1262,9 +1278,21 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={(e) => updateCardSettings('singleClickAction', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      {CLICK_ACTIONS.map(action => (
-                        <option key={action.id} value={action.id}>{action.label}</option>
-                      ))}
+                      {CLICK_ACTIONS
+                        .filter(action => {
+                          // 'none' is always available
+                          if (action.id === 'none') return true;
+
+                          // Only show actions that are in cardActionButtons (if set)
+                          const cardActionButtons = cardSettings.actionButtons;
+                          if (cardActionButtons && cardActionButtons.length > 0 && !cardActionButtons.includes(action.id)) {
+                            return false;
+                          }
+                          return true;
+                        })
+                        .map(action => (
+                          <option key={action.id} value={action.id}>{action.label}</option>
+                        ))}
                     </select>
                   </div>
 
@@ -1276,9 +1304,21 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={(e) => updateCardSettings('doubleClickAction', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      {CLICK_ACTIONS.map(action => (
-                        <option key={action.id} value={action.id}>{action.label}</option>
-                      ))}
+                      {CLICK_ACTIONS
+                        .filter(action => {
+                          // 'none' is always available
+                          if (action.id === 'none') return true;
+
+                          // Only show actions that are in cardActionButtons (if set)
+                          const cardActionButtons = cardSettings.actionButtons;
+                          if (cardActionButtons && cardActionButtons.length > 0 && !cardActionButtons.includes(action.id)) {
+                            return false;
+                          }
+                          return true;
+                        })
+                        .map(action => (
+                          <option key={action.id} value={action.id}>{action.label}</option>
+                        ))}
                     </select>
                   </div>
                 </div>
