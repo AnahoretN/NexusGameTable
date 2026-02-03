@@ -203,6 +203,7 @@ export const Tabletop: React.FC = () => {
   const freeRotatingIdRef = useRef<string | null>(null);
   const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
   const globalMousePosRef = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const isDroppingRef = useRef(false);
 
   // Update refs when state changes
   useEffect(() => { draggingIdRef.current = draggingId; }, [draggingId]);
@@ -787,6 +788,9 @@ export const Tabletop: React.FC = () => {
 
   // Drop all items from cursor slot at specified screen coordinates
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
+    // Prevent double-drops
+    if (isDroppingRef.current) return;
+
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
     if (currentSlot.length === 0) return;
@@ -862,14 +866,22 @@ export const Tabletop: React.FC = () => {
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
+
+    // Reset drop flag after a short delay to prevent double-drops
+    setTimeout(() => { isDroppingRef.current = false; }, 100);
   }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, cursorSlotRef, getCardSettings]);
 
   // Drop cursor slot items to a specific deck (called from handleGlobalClick when clicking on deck)
   const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType)[]) => {
+    // Prevent double-drops
+    if (isDroppingRef.current) return;
+    isDroppingRef.current = true;
+
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
 
     if (currentSlot.length === 0) {
+      isDroppingRef.current = false;
       return;
     }
 
@@ -927,14 +939,22 @@ export const Tabletop: React.FC = () => {
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
+
+    // Reset drop flag after a short delay to prevent double-drops
+    setTimeout(() => { isDroppingRef.current = false; }, 100);
   }, [cursorSlot, dispatch, state.objects, cursorSlotRef]);
 
   // Drop cursor slot items to a specific pile (called from handleGlobalClick when clicking on pile)
   const dropToPile = useCallback((pileId: string, deckId: string, slotItems?: (CardType | TokenType)[]) => {
+    // Prevent double-drops
+    if (isDroppingRef.current) return;
+    isDroppingRef.current = true;
+
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
 
     if (currentSlot.length === 0) {
+      isDroppingRef.current = false;
       return;
     }
 
@@ -1012,6 +1032,9 @@ export const Tabletop: React.FC = () => {
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
+
+    // Reset drop flag after a short delay to prevent double-drops
+    setTimeout(() => { isDroppingRef.current = false; }, 100);
   }, [cursorSlot, dispatch, state.objects, cursorSlotRef]);
 
   // Global click handler to drop cursor slot items when clicking outside hand panel
@@ -1207,13 +1230,13 @@ export const Tabletop: React.FC = () => {
     };
   }, []);
 
-  // Global mouseup handler for cursor slot drop (when source='hold')
+  // Global mouseup handler for cursor slot drop
   useEffect(() => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
       // Use cursorSlotRef.current to get the immediate value (avoid closure stale data)
-      // Only process if cursor slot has items with source='hold'
+      // Only process if cursor slot has items
       const currentSlot = cursorSlotRef.current;
-      if (currentSlot.length === 0 || cursorSlotSource !== 'hold') return;
+      if (currentSlot.length === 0) return;
 
       const clientX = e.clientX;
       const clientY = e.clientY;
@@ -1281,7 +1304,7 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-  }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, cursorSlotRef]);
+  }, [dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, cursorSlotRef]);
 
   const handleMouseDown = (e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
