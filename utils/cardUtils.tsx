@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, RefreshCw, Copy } from 'lucide-react';
+import { Eye, RefreshCw, Copy, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card, ContextAction, Deck as DeckType, CardOrientation, CardNamePosition, CardShape } from '../types';
 
 /**
@@ -101,9 +101,17 @@ export interface ButtonConfig {
 export function getCardButtonConfigs(
   card: Card,
   actionButtons: ContextAction[] = [],
-  onFlip: () => void,
-  onRotate: () => void,
-  onClone: () => void
+  callbacks: {
+    onFlip?: () => void;
+    onRotate?: () => void;
+    onRotateClockwise?: () => void;
+    onRotateCounterClockwise?: () => void;
+    onSwingClockwise?: () => void;
+    onSwingCounterClockwise?: () => void;
+    onLayerUp?: () => void;
+    onLayerDown?: () => void;
+    onClone?: () => void;
+  }
 ): ButtonConfig[] {
   // Exclude rotate and swing buttons from hand panel
   const filteredActions = actionButtons.filter(action =>
@@ -119,19 +127,55 @@ export function getCardButtonConfigs(
       className: 'bg-purple-600 hover:bg-purple-500',
       title: 'Flip',
       icon: <Eye size={14} />,
-      onAction: onFlip
+      onAction: callbacks.onFlip || (() => {})
     },
     rotate: {
       className: 'bg-green-600 hover:bg-green-500',
       title: 'Rotate',
       icon: <RefreshCw size={14} />,
-      onAction: onRotate
+      onAction: callbacks.onRotate || (() => {})
+    },
+    rotateClockwise: {
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Rotate Clockwise',
+      icon: <RotateCw size={14} />,
+      onAction: callbacks.onRotateClockwise || (() => {})
+    },
+    rotateCounterClockwise: {
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Rotate Counter-Clockwise',
+      icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />,
+      onAction: callbacks.onRotateCounterClockwise || (() => {})
+    },
+    swingClockwise: {
+      className: 'bg-green-600 hover:bg-green-500',
+      title: 'Swing Clockwise',
+      icon: <Move3D size={14} />,
+      onAction: callbacks.onSwingClockwise || (() => {})
+    },
+    swingCounterClockwise: {
+      className: 'bg-green-600 hover:bg-green-500',
+      title: 'Swing Counter-Clockwise',
+      icon: <Move3D size={14} style={{ transform: 'scaleX(-1)' }} />,
+      onAction: callbacks.onSwingCounterClockwise || (() => {})
+    },
+    layerUp: {
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Layer Up',
+      icon: <ArrowUp size={14} />,
+      onAction: callbacks.onLayerUp || (() => {})
+    },
+    layerDown: {
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Layer Down',
+      icon: <ArrowDown size={14} />,
+      onAction: callbacks.onLayerDown || (() => {})
     },
     clone: {
       className: 'bg-cyan-600 hover:bg-cyan-500',
       title: 'Clone',
       icon: <Copy size={14} />,
-      onAction: onClone
+      onAction: callbacks.onClone || (() => {})
     }
   };
 

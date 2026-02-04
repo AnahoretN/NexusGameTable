@@ -141,6 +141,30 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
     dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: 90 } });
   }, [dispatch]);
 
+  const handleRotateClockwise = useCallback((cardId: string) => {
+    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId } });
+  }, [dispatch]);
+
+  const handleRotateCounterClockwise = useCallback((cardId: string) => {
+    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: -((state.objects[cardId] as any)?.rotationStep ?? 45) } });
+  }, [dispatch, state.objects]);
+
+  const handleSwingingClockwise = useCallback((cardId: string) => {
+    dispatch({ type: 'SWING_CLOCKWISE', payload: { id: cardId } });
+  }, [dispatch]);
+
+  const handleSwingingCounterClockwise = useCallback((cardId: string) => {
+    dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: cardId } });
+  }, [dispatch]);
+
+  const handleLayerUp = useCallback((cardId: string) => {
+    dispatch({ type: 'MOVE_LAYER_UP', payload: { id: cardId } });
+  }, [dispatch]);
+
+  const handleLayerDown = useCallback((cardId: string) => {
+    dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: cardId } });
+  }, [dispatch]);
+
   const handleClone = useCallback((cardId: string) => {
     dispatch({ type: 'CLONE_OBJECT', payload: { id: cardId } });
   }, [dispatch]);
@@ -453,9 +477,17 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                         const buttons = getCardButtonConfigs(
                           card,
                           cardActionButtons,
-                          () => handleFlip(card.id),
-                          () => handleRotate(card.id),
-                          () => handleClone(card.id)
+                          {
+                            onFlip: () => handleFlip(card.id),
+                            onRotate: () => handleRotate(card.id),
+                            onRotateClockwise: () => handleRotateClockwise(card.id),
+                            onRotateCounterClockwise: () => handleRotateCounterClockwise(card.id),
+                            onSwingingClockwise: () => handleSwingingClockwise(card.id),
+                            onSwingingCounterClockwise: () => handleSwingingCounterClockwise(card.id),
+                            onLayerUp: () => handleLayerUp(card.id),
+                            onLayerDown: () => handleLayerDown(card.id),
+                            onClone: () => handleClone(card.id)
+                          }
                         );
 
                         const actualIndex = groupOffset + index;
