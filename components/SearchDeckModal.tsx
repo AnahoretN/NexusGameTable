@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, ItemType } from '../types';
-import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical } from 'lucide-react';
+import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -19,13 +19,9 @@ interface SearchDeckModalProps {
 }
 
 const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = []) => {
-  // Exclude rotate and swing buttons from deck window
+  // Exclude rotate section button from deck window (but keep individual actions)
   const filteredActions = actionButtons.filter(action =>
-    action !== 'rotate' &&
-    action !== 'rotateClockwise' &&
-    action !== 'rotateCounterClockwise' &&
-    action !== 'swingClockwise' &&
-    action !== 'swingCounterClockwise'
+    action !== 'rotate'
   );
 
   const configs: Partial<Record<ContextAction, { className: string; title: string; icon: JSX.Element }>> = {
@@ -43,6 +39,36 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = []) =
       className: 'bg-green-600 hover:bg-green-500',
       title: 'Rotate',
       icon: <RefreshCw size={14} />
+    },
+    rotateClockwise: {
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Rotate Clockwise',
+      icon: <RotateCw size={14} />
+    },
+    rotateCounterClockwise: {
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Rotate Counter-Clockwise',
+      icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />
+    },
+    swingClockwise: {
+      className: 'bg-green-600 hover:bg-green-500',
+      title: 'Swing Clockwise',
+      icon: <Move3D size={14} />
+    },
+    swingCounterClockwise: {
+      className: 'bg-green-600 hover:bg-green-500',
+      title: 'Swing Counter-Clockwise',
+      icon: <Move3D size={14} style={{ transform: 'scaleX(-1)' }} />
+    },
+    layerUp: {
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Layer Up',
+      icon: <ArrowUp size={14} />
+    },
+    layerDown: {
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Layer Down',
+      icon: <ArrowDown size={14} />
     },
     clone: {
       className: 'bg-cyan-600 hover:bg-cyan-500',

@@ -26,7 +26,7 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'clone', label: 'Clone Object' },
   { id: 'delete', label: 'Delete Object' },
   { id: 'flip', label: 'Flip Card' },
-  { id: 'layer', label: 'Change Layer' },
+  { id: 'layer', label: 'Change Layer (section)' },
   { id: 'layerUp', label: 'Layer Up' },
   { id: 'layerDown', label: 'Layer Down' },
   { id: 'lock', label: 'Lock/Unlock Position' },
@@ -40,7 +40,7 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'rotateClockwise', 'showTop', 'topDeck', 'piles', 'millToBottom'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles', 'millToBottom'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -640,7 +640,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         return false;
                       }
                       // Deck-specific actions - only for decks, not cards or boards
-                      if ((isCard || isBoard) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if ((isCard || isBoard) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'removeFromTable', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards/tokens
@@ -799,6 +799,13 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
                             return false;
                           }
+                          // For boards, only allow rotate/swing/layer actions
+                          if (isBoard) {
+                            const boardAllowedActions = ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layerUp', 'layerDown'];
+                            if (!boardAllowedActions.includes(action.id)) {
+                              return false;
+                            }
+                          }
                           return true;
                         })
                         .map(action => (
@@ -827,6 +834,13 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           // Card-specific actions - only for cards/tokens
                           if ((isDeck || isBoard) && ['flip', 'toHand'].includes(action.id)) {
                             return false;
+                          }
+                          // For boards, only allow rotate/swing/layer actions
+                          if (isBoard) {
+                            const boardAllowedActions = ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layerUp', 'layerDown'];
+                            if (!boardAllowedActions.includes(action.id)) {
+                              return false;
+                            }
                           }
                           return true;
                         })
@@ -1214,7 +1228,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
                       // Exclude general actions - use specific actions instead
-                      if (action.id === 'layer' || action.id === 'rotateClockwise' || action.id === 'showTop') return false;
+                      if (action.id === 'layer' || action.id === 'rotate' || action.id === 'showTop') return false;
+                      // Exclude actions not applicable to cards
+                      if (action.id === 'millToBottom' || action.id === 'removeFromTable') return false;
                       return true;
                     })
                     .map((action) => {
