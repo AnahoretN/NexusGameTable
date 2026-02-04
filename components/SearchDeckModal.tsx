@@ -283,10 +283,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     setCardOrder(newCardOrder);
   }, [dispatch, state.activePlayerId, cardOrder, isPile, pile, deck]);
 
-  const handleRotate = useCallback((cardId: string) => {
-    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: 90 } });
-  }, [dispatch]);
-
   const handleActionButtonClick = useCallback((card: Card, action: ContextAction) => {
     switch (action) {
       case 'flip':
@@ -320,14 +316,11 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           // If viewing main deck, cardOrder will sync via useEffect
         }
         break;
-      case 'rotate':
-        handleRotate(card.id);
-        break;
       case 'clone':
         dispatch({ type: 'CLONE_OBJECT', payload: { id: card.id }});
         break;
     }
-  }, [handleFlip, handleToHand, handleRotate, dispatch, cardOrder, isPile, pile, state.objects]);
+  }, [handleFlip, handleToHand, dispatch, cardOrder, isPile, pile, state.objects]);
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, card: Card) => {

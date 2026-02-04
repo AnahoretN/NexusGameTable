@@ -106,8 +106,8 @@ export function getCardButtonConfigs(
     onRotate?: () => void;
     onRotateClockwise?: () => void;
     onRotateCounterClockwise?: () => void;
-    onSwingClockwise?: () => void;
-    onSwingCounterClockwise?: () => void;
+    onSwingingClockwise?: () => void;
+    onSwingingCounterClockwise?: () => void;
     onLayerUp?: () => void;
     onLayerDown?: () => void;
     onClone?: () => void;
@@ -154,13 +154,13 @@ export function getCardButtonConfigs(
       className: 'bg-green-600 hover:bg-green-500',
       title: 'Swing Clockwise',
       icon: <Move3D size={14} />,
-      onAction: callbacks.onSwingClockwise || (() => {})
+      onAction: callbacks.onSwingingClockwise || (() => {})
     },
     swingCounterClockwise: {
       className: 'bg-green-600 hover:bg-green-500',
       title: 'Swing Counter-Clockwise',
       icon: <Move3D size={14} style={{ transform: 'scaleX(-1)' }} />,
-      onAction: callbacks.onSwingCounterClockwise || (() => {})
+      onAction: callbacks.onSwingingCounterClockwise || (() => {})
     },
     layerUp: {
       className: 'bg-blue-600 hover:bg-blue-500',
