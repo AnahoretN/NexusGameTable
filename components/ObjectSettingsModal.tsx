@@ -1277,6 +1277,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       {CLICK_ACTIONS
+                        .filter(action => action.id === 'none' || (cardSettings.actionButtons || []).includes(action.id))
                         .map(action => (
                           <option key={action.id} value={action.id}>{action.label}</option>
                         ))}
@@ -1292,6 +1293,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       {CLICK_ACTIONS
+                        .filter(action => action.id === 'none' || (cardSettings.actionButtons || []).includes(action.id))
                         .map(action => (
                           <option key={action.id} value={action.id}>{action.label}</option>
                         ))}
