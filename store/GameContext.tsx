@@ -548,7 +548,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
         // If angle is provided in payload, use it; otherwise use object's rotationStep
-        const angle = action.payload.angle ?? obj.rotationStep ?? 45;
+        // For cards, also check deck's rotationStep
+        let rotationStep = obj.rotationStep;
+        if (!rotationStep && obj.type === ItemType.CARD && obj.deckId) {
+            const deck = state.objects[obj.deckId] as any;
+            rotationStep = deck?.rotationStep;
+        }
+        const angle = action.payload.angle ?? rotationStep ?? 45;
         return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: (obj.rotation + angle) % 360 } } };
     }
     case 'SET_ROTATION': {
@@ -1171,7 +1177,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id] as any;
       if (!obj) return state;
 
-      const rotationStep = obj.rotationStep ?? 45;
+      // For cards, check deck's rotationStep
+      let rotationStep = obj.rotationStep;
+      if (!rotationStep && obj.type === ItemType.CARD && obj.deckId) {
+        const deck = state.objects[obj.deckId] as any;
+        rotationStep = deck?.rotationStep;
+      }
+      rotationStep = rotationStep ?? 45;
+
       const baseRotation = obj.baseRotation ?? obj.rotation;
 
       // If current rotation is at base, rotate clockwise by rotationStep
@@ -1196,7 +1209,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id] as any;
       if (!obj) return state;
 
-      const rotationStep = obj.rotationStep ?? 45;
+      // For cards, check deck's rotationStep
+      let rotationStep = obj.rotationStep;
+      if (!rotationStep && obj.type === ItemType.CARD && obj.deckId) {
+        const deck = state.objects[obj.deckId] as any;
+        rotationStep = deck?.rotationStep;
+      }
+      rotationStep = rotationStep ?? 45;
+
       const baseRotation = obj.baseRotation ?? obj.rotation;
 
       // If current rotation is at base, rotate counter-clockwise by rotationStep

@@ -67,6 +67,9 @@ export function getCardSettings(
   cardNamePosition: CardNamePosition;
   cardOrientation: CardOrientation;
   cardActionButtons: ContextAction[];
+  allowedActions: ContextAction[] | undefined;
+  allowedActionsForGM: ContextAction[] | undefined;
+  rotationStep: number;
 } {
   if (!card.deckId) {
     return {
@@ -74,7 +77,10 @@ export function getCardSettings(
       cardHeight: 140,
       cardNamePosition: 'none' as CardNamePosition,
       cardOrientation: CardOrientation.VERTICAL,
-      cardActionButtons: []
+      cardActionButtons: [],
+      allowedActions: undefined,
+      allowedActionsForGM: undefined,
+      rotationStep: 45
     };
   }
 
@@ -84,7 +90,10 @@ export function getCardSettings(
     cardHeight: deck?.cardHeight ?? 140,
     cardNamePosition: (deck?.cardNamePosition ?? 'none') as CardNamePosition,
     cardOrientation: (deck?.cardOrientation ?? CardOrientation.VERTICAL) as CardOrientation,
-    cardActionButtons: deck?.cardActionButtons ?? []
+    cardActionButtons: deck?.cardActionButtons ?? [],
+    allowedActions: deck?.cardAllowedActions,
+    allowedActionsForGM: deck?.cardAllowedActionsForGM,
+    rotationStep: deck?.rotationStep ?? 45
   };
 }
 
