@@ -1277,7 +1277,19 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       {CLICK_ACTIONS
-                        .filter(action => action.id === 'none' || (cardSettings.actionButtons || []).includes(action.id))
+                        .filter(action => {
+                          // 'none' is always available
+                          if (action.id === 'none') return true;
+                          // Only show actions that are valid for cards (same options as Action Buttons for Cards)
+                          // Card-applicable actions exclude deck-specific and section headers
+                          if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+                              action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
+                              action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
+                              action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' || action.id === 'rotate') {
+                            return false;
+                          }
+                          return true;
+                        })
                         .map(action => (
                           <option key={action.id} value={action.id}>{action.label}</option>
                         ))}
@@ -1293,7 +1305,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       {CLICK_ACTIONS
-                        .filter(action => action.id === 'none' || (cardSettings.actionButtons || []).includes(action.id))
+                        .filter(action => {
+                          // 'none' is always available
+                          if (action.id === 'none') return true;
+                          // Only show actions that are valid for cards (same options as Action Buttons for Cards)
+                          if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+                              action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
+                              action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
+                              action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' || action.id === 'rotate') {
+                            return false;
+                          }
+                          return true;
+                        })
                         .map(action => (
                           <option key={action.id} value={action.id}>{action.label}</option>
                         ))}
