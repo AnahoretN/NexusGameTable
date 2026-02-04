@@ -169,6 +169,36 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
     dispatch({ type: 'CLONE_OBJECT', payload: { id: cardId } });
   }, [dispatch]);
 
+  // "Move to" action handlers
+  const handleMoveToHand = useCallback((cardId: string) => {
+    const card = state.objects[cardId] as Card;
+    if (card) {
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: cardId,
+          location: 'HAND',
+          ownerId: state.activePlayerId,
+          isOnTable: false
+        }
+      });
+    }
+  }, [dispatch, state.objects, state.activePlayerId]);
+
+  const handleMoveToTopDeck = useCallback((cardId: string) => {
+    const card = state.objects[cardId] as Card;
+    if (card && card.deckId) {
+      dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId, deckId: card.deckId }});
+    }
+  }, [dispatch, state.objects]);
+
+  const handleMoveToBottomDeck = useCallback((cardId: string) => {
+    const card = state.objects[cardId] as Card;
+    if (card && card.deckId) {
+      dispatch({ type: 'RETURN_CARD_TO_DECK_BOTTOM', payload: { cardId, deckId: card.deckId }});
+    }
+  }, [dispatch, state.objects]);
+
   // Handle card mouse down - start reorder drag or add to cursor slot with Shift or long-press
   const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number, _cardElement: HTMLDivElement | null) => {
     // Only left click
@@ -486,7 +516,10 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                             onSwingingCounterClockwise: () => handleSwingingCounterClockwise(card.id),
                             onLayerUp: () => handleLayerUp(card.id),
                             onLayerDown: () => handleLayerDown(card.id),
-                            onClone: () => handleClone(card.id)
+                            onClone: () => handleClone(card.id),
+                            onMoveToHand: () => handleMoveToHand(card.id),
+                            onMoveToTopDeck: () => handleMoveToTopDeck(card.id),
+                            onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id)
                           }
                         );
 

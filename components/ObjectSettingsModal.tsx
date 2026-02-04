@@ -37,10 +37,14 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'swingClockwise', label: 'Swing Clockwise' },
   { id: 'swingCounterClockwise', label: 'Swing Counter-Clockwise' },
   { id: 'toHand', label: 'To Hand' },
+  // New "Move to" actions for action buttons (not context menu)
+  { id: 'moveToHand', label: 'Move to Hand' },
+  { id: 'moveToTopDeck', label: 'Move to Top Deck' },
+  { id: 'moveToBottomDeck', label: 'Move to Bottom Deck' },
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles', 'millToBottom'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles', 'millToBottom', 'toHand'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -73,6 +77,11 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
       return [ItemType.CARD, ItemType.TOKEN];
     case 'rotate':
       return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+    // New "Move to" actions for cards
+    case 'moveToHand':
+    case 'moveToTopDeck':
+    case 'moveToBottomDeck':
+      return [ItemType.CARD];
     default:
       return [];
   }
@@ -1227,6 +1236,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' || action.id === 'toBottom' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
+                      // Exclude old actions - use "Move to" variants instead
+                      if (action.id === 'toHand') return false;
                       // Exclude general actions - use specific actions instead
                       if (action.id === 'layer' || action.id === 'rotate' || action.id === 'showTop') return false;
                       // Exclude actions not applicable to cards
@@ -1280,14 +1291,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         .filter(action => {
                           // 'none' is always available
                           if (action.id === 'none') return true;
-                          // Only show actions that are valid for cards (same options as Action Buttons for Cards)
-                          // Card-applicable actions exclude deck-specific and section headers
+                          // Only show the specific card-applicable actions
+                          // Exclude deck-specific actions and section headers
                           if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
                               action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
                               action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
-                              action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' || action.id === 'rotate') {
+                              action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
+                              action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
                             return false;
                           }
+                          // Exclude old action - use "Move to" variants instead
+                          if (action.id === 'toHand') return false;
                           return true;
                         })
                         .map(action => (
@@ -1308,13 +1322,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         .filter(action => {
                           // 'none' is always available
                           if (action.id === 'none') return true;
-                          // Only show actions that are valid for cards (same options as Action Buttons for Cards)
+                          // Only show the specific card-applicable actions
+                          // Exclude deck-specific actions and section headers
                           if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
                               action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
                               action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
-                              action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' || action.id === 'rotate') {
+                              action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
+                              action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
                             return false;
                           }
+                          // Exclude old action - use "Move to" variants instead
+                          if (action.id === 'toHand') return false;
                           return true;
                         })
                         .map(action => (

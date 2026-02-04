@@ -1,9 +1,8 @@
 
-
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown } from 'lucide-react';
+import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile } from '../types';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -22,6 +21,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
   const [topDeckSubmenuOpen, setTopDeckSubmenuOpen] = useState(false);
+  const [moveSubmenuOpen, setMoveSubmenuOpen] = useState(false);
   const submenuRef = React.useRef<HTMLDivElement>(null);
 
   // Helper to get card settings from deck (cards always inherit from deck)
@@ -82,6 +82,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         setRotateSubmenuOpen(false);
         setPilesSubmenuOpen(false);
         setTopDeckSubmenuOpen(false);
+        setMoveSubmenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -165,18 +166,63 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       visible: can('pin'),
       separator: true
     },
+    // "Move to.." section for cards
+    ...(object.type === ItemType.CARD ? (() => {
+      const card = object as Card;
+      const deck = card.deckId ? allObjects[card.deckId] as DeckType : null;
+      const piles = deck?.piles || [];
+
+      return [
+        {
+          label: 'Move to..',
+          action: 'moveTo',
+          icon: <CornerDownRight size={14} />,
+          visible: can('toHand') || can('toHand') === undefined,
+          hasSubmenu: true,
+          separator: true,
+          submenuItems: [
+            {
+              label: 'Hand',
+              action: 'moveToHand',
+              icon: <Hand size={14} />,
+              visible: true
+            },
+            {
+              label: 'Top Deck',
+              action: 'moveToTopDeck',
+              icon: <ArrowUp size={14} />,
+              visible: !!deck
+            },
+            {
+              label: 'Bottom Deck',
+              action: 'moveToBottomDeck',
+              icon: <ArrowDown size={14} />,
+              visible: !!deck
+            },
+            ...(piles.length > 0 ? [{
+              label: '-',
+              action: 'separator',
+              visible: true,
+              isSeparator: true
+            }] : []),
+            ...piles.map((pile: CardPile) => ({
+              label: pile.name,
+              action: `moveToPile-${pile.id}`,
+              icon: <Layers size={14} />,
+              visible: true,
+              pileId: pile.id
+            }))
+          ]
+        }
+      ];
+    })() : []),
     {
       label: 'Flip',
       action: 'flip',
       icon: <Eye size={14} />,
       visible: object.type === ItemType.CARD && can('flip')
     },
-    {
-      label: 'To Hand',
-      action: 'toHand',
-      icon: <Hand size={14} />,
-      visible: object.type === ItemType.CARD && can('toHand')
-    },
+    // Remove the old "To Hand" item since it's now in "Move to.."
     {
       label: (object as Card).hidden ? 'Unhide Card' : 'Hide Card',
       action: 'toggleHide',
@@ -243,7 +289,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
               const isRotateSubmenu = item.action === 'rotate';
               const isPilesSubmenu = item.action === 'piles';
               const isTopDeckSubmenu = item.action === 'topDeck';
-              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : isTopDeckSubmenu ? topDeckSubmenuOpen : layerSubmenuOpen;
+              const isMoveSubmenu = item.action === 'moveTo';
+              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : isTopDeckSubmenu ? topDeckSubmenuOpen : isMoveSubmenu ? moveSubmenuOpen : layerSubmenuOpen;
               const deck = object as Deck;
               const toggleSubmenu = () => {
                 if (isRotateSubmenu) {
@@ -251,21 +298,31 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                   setLayerSubmenuOpen(false);
                   setPilesSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
+                  setMoveSubmenuOpen(false);
                 } else if (isPilesSubmenu) {
                   setPilesSubmenuOpen(!pilesSubmenuOpen);
                   setLayerSubmenuOpen(false);
                   setRotateSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
+                  setMoveSubmenuOpen(false);
                 } else if (isTopDeckSubmenu) {
                   setTopDeckSubmenuOpen(!topDeckSubmenuOpen);
                   setLayerSubmenuOpen(false);
                   setRotateSubmenuOpen(false);
                   setPilesSubmenuOpen(false);
+                  setMoveSubmenuOpen(false);
+                } else if (isMoveSubmenu) {
+                  setMoveSubmenuOpen(!moveSubmenuOpen);
+                  setLayerSubmenuOpen(false);
+                  setRotateSubmenuOpen(false);
+                  setPilesSubmenuOpen(false);
+                  setTopDeckSubmenuOpen(false);
                 } else {
                   setLayerSubmenuOpen(!layerSubmenuOpen);
                   setRotateSubmenuOpen(false);
                   setPilesSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
+                  setMoveSubmenuOpen(false);
                 }
               };
 
@@ -398,6 +455,31 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                               <span>{(object as Deck).showTopCard ? 'Hide Top' : 'Show Top'}</span>
                             </button>
                           )}
+                        </>
+                      ) : isMoveSubmenu ? (
+                        <>
+                          {/* Move to submenu items */}
+                          {(item.submenuItems || []).map((subItem) => {
+                            if (subItem.isSeparator) {
+                              return (
+                                <div key={subItem.action} className="h-px bg-slate-700 my-1 mx-2" />
+                              );
+                            }
+                            const subAction = subItem.action.toString();
+                            return (
+                              <button
+                                key={subItem.action}
+                                onClick={() => {
+                                  onAction(subAction);
+                                  onClose();
+                                }}
+                                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                              >
+                                {subItem.icon}
+                                <span>{subItem.label}</span>
+                              </button>
+                            );
+                          })}
                         </>
                       ) : (
                         <>
