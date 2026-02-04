@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, RefreshCw, Copy, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
+import { Eye, RefreshCw, Copy, RotateCw, Move3D, ArrowUp, ArrowDown, Hand } from 'lucide-react';
 import { Card, ContextAction, Deck as DeckType, CardOrientation, CardNamePosition, CardShape } from '../types';
 
 /**
@@ -111,6 +111,9 @@ export function getCardButtonConfigs(
     onLayerUp?: () => void;
     onLayerDown?: () => void;
     onClone?: () => void;
+    onMoveToHand?: () => void;
+    onMoveToTopDeck?: () => void;
+    onMoveToBottomDeck?: () => void;
   }
 ): ButtonConfig[] {
   // Exclude rotate and swing buttons from hand panel
@@ -176,6 +179,25 @@ export function getCardButtonConfigs(
       title: 'Clone',
       icon: <Copy size={14} />,
       onAction: callbacks.onClone || (() => {})
+    },
+    // "Move to" actions
+    moveToHand: {
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Move to Hand',
+      icon: <Hand size={14} />,
+      onAction: callbacks.onMoveToHand || (() => {})
+    },
+    moveToTopDeck: {
+      className: 'bg-orange-600 hover:bg-orange-500',
+      title: 'Move to Top Deck',
+      icon: <ArrowUp size={14} />,
+      onAction: callbacks.onMoveToTopDeck || (() => {})
+    },
+    moveToBottomDeck: {
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Move to Bottom Deck',
+      icon: <ArrowDown size={14} />,
+      onAction: callbacks.onMoveToBottomDeck || (() => {})
     }
   };
 

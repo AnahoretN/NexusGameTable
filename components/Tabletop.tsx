@@ -644,6 +644,7 @@ export const Tabletop: React.FC = () => {
         }
         break;
       case 'toHand':
+      case 'moveToHand':
         if (obj.type === ItemType.CARD) {
           dispatch({
             type: 'UPDATE_OBJECT',
@@ -656,6 +657,24 @@ export const Tabletop: React.FC = () => {
           });
         }
         break;
+      case 'moveToTopDeck': {
+        if (obj.type === ItemType.CARD) {
+          const card = obj as CardType;
+          if (card.deckId) {
+            dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId: obj.id, deckId: card.deckId }});
+          }
+        }
+        break;
+      }
+      case 'moveToBottomDeck': {
+        if (obj.type === ItemType.CARD) {
+          const card = obj as CardType;
+          if (card.deckId) {
+            dispatch({ type: 'RETURN_CARD_TO_DECK_BOTTOM', payload: { cardId: obj.id, deckId: card.deckId }});
+          }
+        }
+        break;
+      }
       case 'delete':
         dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } });
         break;
@@ -1375,39 +1394,23 @@ export const Tabletop: React.FC = () => {
         return; // Don't proceed with normal drag handling
       }
 
-      // For cards and tokens: start long-press timer (500ms) to add to cursor slot
-      // Cards and tokens NEVER use drag system - only cursor slot system
-      if (!e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
-        // Store the item and start position for long-press detection
+      // For cards and tokens: Shift+click immediately adds to cursor slot
+      // Without Shift: track mouse movement, add to slot after 3px drag threshold
+
+      // Store click start position for click detection
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
+
+      // Cards and tokens use cursor slot drag system
+      if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
+        console.log('[MOUSEDOWN] Card/token - tracking for drag-to-slot', { id, itemType: item.type });
+        // Store item info for drag threshold detection (no timer, just movement)
         longPressItemRef.current = {
           id,
           item,
           startX: e.clientX,
           startY: e.clientY
         };
-
-        // Start timer - after 250ms, add to cursor slot
-        longPressTimerRef.current = window.setTimeout(() => {
-          if (longPressItemRef.current) {
-            console.log('[LONG-PRESS] Adding to cursor slot', { id: longPressItemRef.current.id, source: 'hold' });
-            // Add to cursor slot
-            addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
-            longPressItemRef.current = null;
-            longPressTimerRef.current = null;
-          }
-        }, 250); // 250ms long-press
-
-        // Don't return - we need to continue to set dragStartRef for movement detection
-        // But we WON'T set draggingId for cards/tokens - they use cursor slot system only
-      }
-
-      // Store click start position for click detection
-      dragStartRef.current = { x: e.clientX, y: e.clientY };
-
-      // Cards and tokens use cursor slot system only - NEVER set draggingId for them
-      if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
-        console.log('[MOUSEDOWN] Card/token - NOT setting draggingId, using cursor slot system', { id, itemType: item.type });
-        return; // Don't proceed with drag system
+        return; // Don't proceed with normal drag system
       }
 
       // For other objects (dice, counters, etc.), use normal drag system
@@ -1480,19 +1483,16 @@ export const Tabletop: React.FC = () => {
       setCursorPosition({ x: e.clientX, y: e.clientY });
     }
 
-    // Check for long-press movement - if mouse moves while holding on a card/token, add to slot immediately
+    // Check for drag movement - if mouse moves 3px while holding on a card/token, add to slot immediately
     if (longPressItemRef.current) {
-      const moveThreshold = 5; // pixels
+      const moveThreshold = 3; // pixels
       const dx = e.clientX - longPressItemRef.current.startX;
       const dy = e.clientY - longPressItemRef.current.startY;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance >= moveThreshold) {
-        // Mouse moved enough - cancel timer and add to slot immediately
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
+        // Mouse moved enough - add to cursor slot for drag
+        console.log('[MOUSEMOVE-DRAG] Adding to cursor slot after 3px movement', { id: longPressItemRef.current.id });
         addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
         longPressItemRef.current = null;
       }
@@ -2160,7 +2160,18 @@ export const Tabletop: React.FC = () => {
               return;
       }
 
-      // Handle pile actions (pile-{pileId})
+      // Handle moveToPile actions (moveToPile-{pileId})
+      if (action.startsWith('moveToPile-') && object.type === ItemType.CARD) {
+          const pileId = action.replace('moveToPile-', '');
+          const card = object as CardType;
+          if (card.deckId) {
+              dispatch({ type: 'ADD_CARD_TO_PILE', payload: { cardId: card.id, pileId, deckId: card.deckId }});
+          }
+          setContextMenu(null);
+          return;
+      }
+
+      // Handle pile actions for decks (pile-{pileId})
       if (action.startsWith('pile-') && object.type === ItemType.DECK) {
           const pileId = action.replace('pile-', '');
           const deck = object as DeckType;
@@ -2954,7 +2965,7 @@ export const Tabletop: React.FC = () => {
                             <div style={{ transform: `rotate(${-obj.rotation}deg)` }}>
                               <Card
                                   card={card}
-                                  canFlip={(cardSettings.actionButtons === undefined || cardSettings.actionButtons.includes('flip'))}
+                                  canFlip={cardSettings.actionButtons?.includes('flip') ?? false}
                                   onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
                                   showActionButtons={true}
                                   actionButtons={cardSettings.actionButtons}
@@ -2972,6 +2983,7 @@ export const Tabletop: React.FC = () => {
                                             dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }});
                                             break;
                                         case 'toHand':
+                                        case 'moveToHand':
                                             dispatch({
                                                 type: 'UPDATE_OBJECT',
                                                 payload: {
@@ -2982,6 +2994,20 @@ export const Tabletop: React.FC = () => {
                                                 }
                                             });
                                             break;
+                                        case 'moveToTopDeck': {
+                                            const card = obj as CardType;
+                                            if (card.deckId) {
+                                                dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId: obj.id, deckId: card.deckId }});
+                                            }
+                                            break;
+                                        }
+                                        case 'moveToBottomDeck': {
+                                            const card = obj as CardType;
+                                            if (card.deckId) {
+                                                dispatch({ type: 'RETURN_CARD_TO_DECK_BOTTOM', payload: { cardId: obj.id, deckId: card.deckId }});
+                                            }
+                                            break;
+                                        }
                                         case 'rotate':
                                             dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: 90 }});
                                             break;

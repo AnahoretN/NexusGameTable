@@ -75,6 +75,21 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = []) =
       title: 'Clone',
       icon: <Copy size={14} />
     },
+    moveToHand: {
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Move to Hand',
+      icon: <Hand size={14} />
+    },
+    moveToTopDeck: {
+      className: 'bg-orange-600 hover:bg-orange-500',
+      title: 'Move to Top Deck',
+      icon: <ArrowUp size={14} />
+    },
+    moveToBottomDeck: {
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Move to Bottom Deck',
+      icon: <ArrowDown size={14} />
+    },
   };
 
   return filteredActions
@@ -118,6 +133,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   useEffect(() => {
     gmInitializedRef.current = false;
   }, [deck.id]);
+
+  // Sync cardOrder with deck.cardIds when viewing main deck
+  // Use a ref to track previous cardIds and only sync on actual changes
+  const prevCardIdsRef = useRef<string[] | null>(null);
 
   // Initialize GM state on first open - set all cards to face up if not set
   useEffect(() => {
@@ -183,6 +202,32 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const baseCardWidth = DEFAULT_HAND_CARD_WIDTH;
   const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
   const scaledBaseCardWidth = isHorizontal ? baseCardWidth * 1.254 : baseCardWidth;
+
+  // Sync cardOrder with deck.cardIds when viewing main deck
+  // This ensures cards reorder visually after move operations
+  useEffect(() => {
+    if (!isPile) {
+      const currentDeck = state.objects[deck.id] as Deck;
+      if (currentDeck && currentDeck.cardIds) {
+        const prevIds = prevCardIdsRef.current;
+        // Only sync if deck.cardIds has changed (reorder operation)
+        if (prevIds && JSON.stringify(currentDeck.cardIds) !== JSON.stringify(prevIds)) {
+          setCardOrder([...currentDeck.cardIds]);
+        }
+        prevCardIdsRef.current = [...currentDeck.cardIds];
+      }
+    }
+  }, [state.objects, deck.id, isPile]);
+
+  // Initialize prevCardIdsRef when deck changes
+  useEffect(() => {
+    if (!isPile) {
+      const currentDeck = state.objects[deck.id] as Deck;
+      if (currentDeck && currentDeck.cardIds) {
+        prevCardIdsRef.current = [...currentDeck.cardIds];
+      }
+    }
+  }, [deck.id, isPile, state.objects]);
 
   const getCardDimensions = useCallback((card: Card) => {
     const actualCardWidth = card.width ?? DEFAULT_DECK_WIDTH;
@@ -250,6 +295,31 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       case 'toHand':
         handleToHand(card.id);
         break;
+      case 'moveToHand':
+        handleToHand(card.id);
+        break;
+      case 'moveToTopDeck':
+        if (card.deckId) {
+          dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId: card.id, deckId: card.deckId } });
+          // Sync cardOrder with updated deck.cardIds after state updates
+          if (isPile && pile) {
+            // Viewing a pile: remove card from pile's cardOrder
+            setCardOrder(cardOrder.filter(id => id !== card.id));
+          }
+          // If viewing main deck, cardOrder will sync via useEffect
+        }
+        break;
+      case 'moveToBottomDeck':
+        if (card.deckId) {
+          dispatch({ type: 'RETURN_CARD_TO_DECK_BOTTOM', payload: { cardId: card.id, deckId: card.deckId } });
+          // Sync cardOrder with updated deck.cardIds after state updates
+          if (isPile && pile) {
+            // Viewing a pile: remove card from pile's cardOrder
+            setCardOrder(cardOrder.filter(id => id !== card.id));
+          }
+          // If viewing main deck, cardOrder will sync via useEffect
+        }
+        break;
       case 'rotate':
         handleRotate(card.id);
         break;
@@ -257,7 +327,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         dispatch({ type: 'CLONE_OBJECT', payload: { id: card.id }});
         break;
     }
-  }, [handleFlip, handleToHand, handleRotate, dispatch]);
+  }, [handleFlip, handleToHand, handleRotate, dispatch, cardOrder, isPile, pile, state.objects]);
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
@@ -322,6 +392,54 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         }
         setCardOrder(newCardOrder);
         break;
+      case 'moveToHand':
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: object.id,
+            location: 'HAND' as any,
+            ownerId: state.activePlayerId,
+            isOnTable: false,
+            faceUp: true
+          } as any
+        });
+        const moveToHandCardOrder = cardOrder.filter(id => id !== object.id);
+        if (isPile && pile) {
+          const updatedPiles = deck.piles?.map(p =>
+            p.id === pile.id ? { ...p, cardIds: moveToHandCardOrder } : p
+          );
+          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
+        } else {
+          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: moveToHandCardOrder } });
+        }
+        setCardOrder(moveToHandCardOrder);
+        break;
+      case 'moveToTopDeck': {
+        const card = object as Card;
+        if (card.deckId) {
+          dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId: card.id, deckId: card.deckId } });
+          // Sync cardOrder with updated deck.cardIds after state updates
+          if (isPile && pile) {
+            // Viewing a pile: remove card from pile's cardOrder
+            setCardOrder(cardOrder.filter(id => id !== card.id));
+          }
+          // If viewing main deck, cardOrder will sync via useEffect
+        }
+        break;
+      }
+      case 'moveToBottomDeck': {
+        const card = object as Card;
+        if (card.deckId) {
+          dispatch({ type: 'RETURN_CARD_TO_DECK_BOTTOM', payload: { cardId: card.id, deckId: card.deckId } });
+          // Sync cardOrder with updated deck.cardIds after state updates
+          if (isPile && pile) {
+            // Viewing a pile: remove card from pile's cardOrder
+            setCardOrder(cardOrder.filter(id => id !== card.id));
+          }
+          // If viewing main deck, cardOrder will sync via useEffect
+        }
+        break;
+      }
       case 'clone':
         dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id }});
         break;

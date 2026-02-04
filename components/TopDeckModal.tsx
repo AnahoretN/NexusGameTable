@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { Deck, Card, CardPile } from '../types';
-import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw } from 'lucide-react';
+import { Deck, Card, CardPile, ContextAction } from '../types';
+import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { CardOrientation } from '../types';
 import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
@@ -56,6 +56,8 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
 
   // Set initial flip state when modal opens: top card face up, others face down
   const initializedRef = useRef(false);
+  const prevCardIdsRef = useRef<string[] | null>(null);
+
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
@@ -71,7 +73,24 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
         dispatch({ type: 'FLIP_CARD', payload: { cardId } });
       }
     });
+
+    // Initialize prevCardIdsRef
+    prevCardIdsRef.current = [...deck.cardIds];
   }, [deck.cardIds, state.objects, dispatch]);
+
+  // Sync cardOrder with deck.cardIds
+  // This ensures cards reorder visually after move operations
+  useEffect(() => {
+    const currentDeck = state.objects[deck.id] as Deck;
+    if (currentDeck && currentDeck.cardIds) {
+      const prevIds = prevCardIdsRef.current;
+      // Only sync if deck.cardIds has changed (reorder operation)
+      if (prevIds && JSON.stringify(currentDeck.cardIds) !== JSON.stringify(prevIds)) {
+        setCardOrder([...currentDeck.cardIds]);
+      }
+      prevCardIdsRef.current = [...currentDeck.cardIds];
+    }
+  }, [state.objects, deck.id]);
 
   // Flip handler
   const handleFlip = useCallback((cardId: string) => {
@@ -99,9 +118,8 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
   // Mill to Bottom - send card to bottom of deck
   const handleMillToBottom = useCallback((cardId: string) => {
     dispatch({ type: 'MILL_CARD_TO_BOTTOM', payload: { cardId, deckId: deck.id } });
-    const newCardOrder = [...cardOrder.filter(id => id !== cardId), cardId];
-    setCardOrder(newCardOrder);
-  }, [dispatch, cardOrder, deck.id]);
+    // cardOrder will sync via useEffect with deck.cardIds
+  }, [dispatch, deck.id]);
 
   // Mill - send card to mill pile
   const handleMill = useCallback((cardId: string) => {
@@ -114,6 +132,23 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
     const newCardOrder = cardOrder.filter(id => id !== cardId);
     setCardOrder(newCardOrder);
   }, [dispatch, cardOrder, deck.id, millPile]);
+
+  // Move to Top Deck
+  const handleMoveToTopDeck = useCallback((cardId: string) => {
+    // Card is already at top in Top Deck modal, just keep it there
+    // No action needed
+  }, []);
+
+  // Move to Bottom Deck
+  const handleMoveToBottomDeck = useCallback((cardId: string) => {
+    dispatch({ type: 'RETURN_CARD_TO_DECK_BOTTOM', payload: { cardId, deckId: deck.id } });
+    // cardOrder will sync via useEffect with deck.cardIds
+  }, [dispatch, deck.id]);
+
+  // Clone
+  const handleClone = useCallback((cardId: string) => {
+    dispatch({ type: 'CLONE_OBJECT', payload: { id: cardId } });
+  }, [dispatch]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -153,50 +188,89 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
     }
   }, [isResizing]);
 
-  // Action buttons for each card (Flip, To Hand, Mill to Bottom, Mill)
-  const getCardButtons = (card: Card, index: number) => {
+  // Action buttons for each card - based on deck.cardActionButtons
+  const getCardButtons = useCallback((card: Card) => {
+    const actionButtons = deck.cardActionButtons || [];
+
+    // Button configurations
+    const buttonConfigs: Record<ContextAction, { className: string; title: string; icon: JSX.Element; onClick: () => void }> = {
+      flip: {
+        className: 'bg-purple-600 hover:bg-purple-500',
+        title: 'Flip',
+        icon: card.faceUp ? <EyeOff size={12} /> : <Eye size={12} />,
+        onClick: () => handleFlip(card.id)
+      },
+      toHand: {
+        className: 'bg-blue-600 hover:bg-blue-500',
+        title: 'To Hand',
+        icon: <Hand size={12} />,
+        onClick: () => handleToHand(card.id)
+      },
+      moveToHand: {
+        className: 'bg-blue-600 hover:bg-blue-500',
+        title: 'Move to Hand',
+        icon: <Hand size={12} />,
+        onClick: () => handleToHand(card.id)
+      },
+      moveToTopDeck: {
+        className: 'bg-orange-600 hover:bg-orange-500',
+        title: 'Move to Top Deck',
+        icon: <ArrowUp size={12} />,
+        onClick: () => handleMoveToTopDeck(card.id)
+      },
+      moveToBottomDeck: {
+        className: 'bg-yellow-600 hover:bg-yellow-500',
+        title: 'Move to Bottom Deck',
+        icon: <ArrowDown size={12} />,
+        onClick: () => handleMoveToBottomDeck(card.id)
+      },
+      millToBottom: {
+        className: 'bg-green-600 hover:bg-green-500',
+        title: 'Mill to Bottom',
+        icon: <ArrowDown size={12} />,
+        onClick: () => handleMillToBottom(card.id)
+      },
+      clone: {
+        className: 'bg-cyan-600 hover:bg-cyan-500',
+        title: 'Clone',
+        icon: <Copy size={12} />,
+        onClick: () => handleClone(card.id)
+      }
+    };
+
+    // Add mill button only if mill pile exists and action is enabled
+    if (millPile && !buttonConfigs.mill) {
+      buttonConfigs.mill = {
+        className: 'bg-red-600 hover:bg-red-500',
+        title: `Mill to ${millPile.name}`,
+        icon: <Trash2 size={12} />,
+        onClick: () => handleMill(card.id)
+      };
+    }
+
+    // Render buttons based on actionButtons setting (max 4)
+    const buttons = actionButtons
+      .filter(action => action in buttonConfigs)
+      .slice(0, 4)
+      .map(action => buttonConfigs[action]);
+
+    if (buttons.length === 0) return null;
+
     return (
       <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-        {/* Flip */}
-        <button
-          onClick={(e) => { e.stopPropagation(); handleFlip(card.id); }}
-          className="p-1.5 rounded-lg text-white shadow bg-purple-600 hover:bg-purple-500 pointer-events-auto"
-          title="Flip"
-        >
-          {card.faceUp ? <EyeOff size={12} /> : <Eye size={12} />}
-        </button>
-
-        {/* To Hand */}
-        <button
-          onClick={(e) => { e.stopPropagation(); handleToHand(card.id); }}
-          className="p-1.5 rounded-lg text-white shadow bg-blue-600 hover:bg-blue-500 pointer-events-auto"
-          title="To Hand"
-        >
-          <Hand size={12} />
-        </button>
-
-        {/* Mill to Bottom */}
-        <button
-          onClick={(e) => { e.stopPropagation(); handleMillToBottom(card.id); }}
-          className="p-1.5 rounded-lg text-white shadow bg-green-600 hover:bg-green-500 pointer-events-auto"
-          title="Mill to Bottom"
-        >
-          <ArrowDown size={12} />
-        </button>
-
-        {/* Mill - send to mill pile (if exists) */}
-        {millPile && (
+        {buttons.map((btn, idx) => (
           <button
-            onClick={(e) => { e.stopPropagation(); handleMill(card.id); }}
-            className="p-1.5 rounded-lg text-white shadow bg-red-600 hover:bg-red-500 pointer-events-auto"
-            title={`Mill to ${millPile.name}`}
+            key={idx}
+            onClick={(e) => { e.stopPropagation(); btn.onClick(); }}
+            className={`p-1.5 rounded-lg text-white shadow ${btn.className} pointer-events-auto`}
+            title={btn.title}
           >
-            <Trash2 size={12} />
+            {btn.icon}
           </button>
-        )}
+        ))}
       </div>
     );
-  };
+  }, [deck.cardActionButtons, millPile, handleFlip, handleToHand, handleMillToBottom, handleMill, handleMoveToTopDeck, handleMoveToBottomDeck, handleClone]);
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
@@ -266,7 +340,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
                     />
 
                     {/* Custom action buttons for Top Deck */}
-                    {getCardButtons(card, index)}
+                    {getCardButtons(card)}
                   </div>
                 );
               })}

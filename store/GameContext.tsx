@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
-import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer } from '../types';
+import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { Peer } from 'peerjs';
 import { PlayerNameModal } from '../components/PlayerNameModal';
@@ -51,6 +51,15 @@ const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
     allowedActions: ['draw', 'shuffleDeck', 'playTopCard', 'searchDeck', 'returnAll'],
     actionButtons: ['draw', 'playTopCard', 'shuffleDeck', 'searchDeck'],
     cardShape: defaultShape,
+    cardOrientation: CardOrientation.VERTICAL,
+    cardWidth: defaultDims.width,
+    cardHeight: defaultDims.height,
+    cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'toHand', 'delete', 'clone', 'lock', 'layer'],
+    cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'toHand', 'delete', 'clone', 'lock', 'layer'],
+    cardActionButtons: ['moveToHand', 'flip'],
+    cardSingleClickAction: undefined,
+    cardDoubleClickAction: undefined,
+    cardNamePosition: 'none' as const,
     initialCardCount: cardIds.length,
     piles: [
       {
@@ -108,6 +117,8 @@ type Action =
   | { type: 'ADD_CARD_TO_PILE'; payload: { cardId: string; pileId: string; deckId: string } }
   | { type: 'DRAW_FROM_PILE'; payload: { pileId: string; deckId: string; playerId: string } }
   | { type: 'RETURN_ALL_CARDS_TO_DECK'; payload: { deckId: string; fromPile?: boolean; pileId?: string } }
+  | { type: 'RETURN_CARD_TO_DECK_TOP'; payload: { cardId: string; deckId: string } }
+  | { type: 'RETURN_CARD_TO_DECK_BOTTOM'; payload: { cardId: string; deckId: string } }
   | { type: 'TOGGLE_PILE_LOCK'; payload: { deckId: string; pileId: string } }
   | { type: 'UPDATE_PILE_POSITION'; payload: { deckId: string; pileId: string; x: number; y: number } }
   | { type: 'UPDATE_PERMISSIONS'; payload: { id: string; actions: ContextAction[] } }
@@ -580,6 +591,106 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true };
         return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard } };
     }
+    case 'RETURN_CARD_TO_DECK_TOP': {
+        const card = state.objects[action.payload.cardId] as Card;
+        const deck = state.objects[action.payload.deckId] as Deck;
+        if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+        const newObjects = { ...state.objects };
+
+        // Remove card from wherever it currently is (deck.cardIds or any pile's cardIds)
+        const sourceDeckId = card.deckId || deck.id;
+        const sourceDeck = state.objects[sourceDeckId] as Deck;
+
+        if (sourceDeck && sourceDeck.type === ItemType.DECK) {
+            // First, try to find and remove from deck's main cardIds
+            let updatedDeck = { ...sourceDeck };
+            if (updatedDeck.cardIds.includes(card.id)) {
+                updatedDeck.cardIds = updatedDeck.cardIds.filter(id => id !== card.id);
+            }
+
+            // Then check all piles
+            if (updatedDeck.piles) {
+                updatedDeck.piles = updatedDeck.piles.map(pile => {
+                    if (pile.cardIds.includes(card.id)) {
+                        return { ...pile, cardIds: pile.cardIds.filter(id => id !== card.id) };
+                    }
+                    return pile;
+                });
+            }
+
+            newObjects[sourceDeckId] = updatedDeck;
+        }
+
+        // Add card to TOP of target deck (beginning of array)
+        // Get fresh deck cardIds from state (which now has the card removed)
+        const targetDeck = newObjects[deck.id] as Deck;
+        const newCardIds = [card.id, ...targetDeck.cardIds];
+        const updatedDeck: Deck = { ...targetDeck, cardIds: newCardIds };
+        const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true, deckId: deck.id };
+        newObjects[deck.id] = updatedDeck;
+        newObjects[card.id] = updatedCard;
+        return { ...state, objects: newObjects };
+    }
+    case 'RETURN_CARD_TO_DECK_BOTTOM': {
+        const card = state.objects[action.payload.cardId] as Card;
+        const deck = state.objects[action.payload.deckId] as Deck;
+        if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+        const newObjects = { ...state.objects };
+
+        // Remove card from wherever it currently is (deck.cardIds or any pile's cardIds)
+        const sourceDeckId = card.deckId || deck.id;
+        const sourceDeck = state.objects[sourceDeckId] as Deck;
+
+        if (sourceDeck && sourceDeck.type === ItemType.DECK) {
+            // First, try to find and remove from deck's main cardIds
+            let updatedDeck = { ...sourceDeck };
+            if (updatedDeck.cardIds.includes(card.id)) {
+                updatedDeck.cardIds = updatedDeck.cardIds.filter(id => id !== card.id);
+            }
+
+            // Then check all piles
+            if (updatedDeck.piles) {
+                updatedDeck.piles = updatedDeck.piles.map(pile => {
+                    if (pile.cardIds.includes(card.id)) {
+                        return { ...pile, cardIds: pile.cardIds.filter(id => id !== card.id) };
+                    }
+                    return pile;
+                });
+            }
+
+            newObjects[sourceDeckId] = updatedDeck;
+        }
+
+        // Get fresh deck cardIds from state (which now has the card removed)
+        const targetDeck = newObjects[deck.id] as Deck;
+
+        // Find the position of the first hidden card from the end
+        // We want to insert the new card BEFORE hidden cards (so hidden cards stay at the very bottom)
+        let insertIndex = targetDeck.cardIds.length;
+        for (let i = targetDeck.cardIds.length - 1; i >= 0; i--) {
+            const cardId = targetDeck.cardIds[i];
+            const cardObj = state.objects[cardId] as Card;
+            if (cardObj && cardObj.hidden) {
+                insertIndex = i;
+            } else {
+                break; // Found a non-hidden card, stop here
+            }
+        }
+
+        // Insert the card at the calculated position
+        const newCardIds = [
+            ...targetDeck.cardIds.slice(0, insertIndex),
+            card.id,
+            ...targetDeck.cardIds.slice(insertIndex)
+        ];
+        const updatedDeck: Deck = { ...targetDeck, cardIds: newCardIds };
+        const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true, deckId: deck.id };
+        newObjects[deck.id] = updatedDeck;
+        newObjects[card.id] = updatedCard;
+        return { ...state, objects: newObjects };
+    }
     case 'ADD_CARD_TO_TOP_OF_DECK': {
         const card = state.objects[action.payload.cardId] as Card;
         const deck = state.objects[action.payload.deckId] as Deck;
@@ -956,14 +1067,32 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'MILL_CARD_TO_BOTTOM': {
-      // Move card to bottom of deck (last position in cardIds array)
+      // Move card to bottom of deck (before hidden cards)
       const { cardId, deckId } = action.payload;
       const deck = state.objects[deckId] as Deck;
       if (!deck || deck.type !== ItemType.DECK) return state;
       if (!deck.cardIds.includes(cardId)) return state;
 
-      // Remove card from current position and add to end
-      const newCardIds = [...deck.cardIds.filter(id => id !== cardId), cardId];
+      // Find the position of the first hidden card from the end
+      // Insert before hidden cards so they stay at the very bottom
+      let insertIndex = deck.cardIds.length;
+      for (let i = deck.cardIds.length - 1; i >= 0; i--) {
+        const currentCardId = deck.cardIds[i];
+        const cardObj = state.objects[currentCardId] as Card;
+        if (cardObj && cardObj.hidden) {
+          insertIndex = i;
+        } else {
+          break;
+        }
+      }
+
+      // Remove card from current position and insert at calculated position
+      const filteredIds = deck.cardIds.filter(id => id !== cardId);
+      const newCardIds = [
+        ...filteredIds.slice(0, insertIndex),
+        cardId,
+        ...filteredIds.slice(insertIndex)
+      ];
 
       return {
         ...state,
