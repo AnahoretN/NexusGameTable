@@ -2944,7 +2944,7 @@ export const Tabletop: React.FC = () => {
                                     </svg>
                                 </div>
                             )}
-                            <div style={{ transform: `rotate(${-obj.rotation}deg)` }}>
+                            <div>
                               <Card
                                   card={card}
                                   canFlip={cardSettings.actionButtons?.includes('flip') ?? false}
