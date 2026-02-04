@@ -220,6 +220,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       separator: true
     },
     {
+      label: 'Flip',
+      action: 'flip',
+      icon: <Eye size={14} />,
+      visible: object.type === ItemType.CARD && can('flip')
+    },
+    {
       label: object.locked ? 'Unlock' : 'Lock',
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
@@ -231,12 +237,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       icon: <Pin size={14} />,
       visible: can('pin'),
       separator: true
-    },
-    {
-      label: 'Flip',
-      action: 'flip',
-      icon: <Eye size={14} />,
-      visible: object.type === ItemType.CARD && can('flip')
     },
     // Remove the old "To Hand" item since it's now in "Move to.."
     {
