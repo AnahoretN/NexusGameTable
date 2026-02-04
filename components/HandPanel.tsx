@@ -84,9 +84,12 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
     const player = state.players.find(p => p.id === state.activePlayerId);
     const handCardOrder = player?.handCardOrder || [];
 
-    // Get all cards in hand for this player
+    // Get all cards in hand for this player (exclude cards in cursor slot)
     const handCards = Object.values(state.objects).filter(o =>
-      o.type === 'CARD' && (o as Card).location === 'HAND' && (o as Card).ownerId === state.activePlayerId
+      o.type === 'CARD' &&
+      (o as Card).location === 'HAND' &&
+      (o as Card).ownerId === state.activePlayerId &&
+      !(o as Card).inCursorSlot // Don't show cards that are in cursor slot
     ) as Card[];
 
     // Sort by handCardOrder (first in order = top-right position)
