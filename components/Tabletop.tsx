@@ -684,6 +684,31 @@ export const Tabletop: React.FC = () => {
       case 'lock':
         dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } });
         break;
+      case 'pin':
+        // Toggle pin to viewport
+        {
+          const isPinned = (obj as any).isPinnedToViewport || false;
+          if (isPinned) {
+            // Unpin: convert viewport coordinates to world coordinates
+            const worldX = obj.x / zoom + offset.x;
+            const worldY = obj.y / zoom + offset.y;
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: obj.id, x: worldX, y: worldY, isPinnedToViewport: false }
+            });
+          } else {
+            // Pin: use current screen position
+            const worldX = obj.x;
+            const worldY = obj.y;
+            const screenX = (worldX - offset.x) * zoom;
+            const screenY = (worldY - offset.y) * zoom;
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: obj.id, x: screenX, y: screenY, isPinnedToViewport: true }
+            });
+          }
+        }
+        break;
       case 'layerUp':
         dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } });
         break;
@@ -723,6 +748,15 @@ export const Tabletop: React.FC = () => {
               type: 'UPDATE_OBJECT',
               payload: { id: deck.id, cardIds: newCardIds }
             });
+          }
+        }
+        break;
+      case 'millToBottom':
+        // Send card to bottom of its deck
+        if (obj.type === ItemType.CARD) {
+          const card = obj as CardType;
+          if (card.deckId) {
+            dispatch({ type: 'MILL_CARD_TO_BOTTOM', payload: { cardId: obj.id, deckId: card.deckId }});
           }
         }
         break;
@@ -1410,6 +1444,8 @@ export const Tabletop: React.FC = () => {
           startX: e.clientX,
           startY: e.clientY
         };
+        // Set draggingId so click actions work, but we'll clear it if card is added to cursor slot
+        setDraggingId(id);
         return; // Don't proceed with normal drag system
       }
 
@@ -1477,6 +1513,8 @@ export const Tabletop: React.FC = () => {
         console.log('[MOUSEMOVE-DRAG] Adding to cursor slot after 3px movement', { id: longPressItemRef.current.id });
         addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
         longPressItemRef.current = null;
+        // Clear draggingId since the card is now being dragged via cursor slot
+        setDraggingId(null);
       }
     }
 
@@ -1693,12 +1731,74 @@ export const Tabletop: React.FC = () => {
   }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, freeRotatingId, rotateStartAngle, rotateStartMouse, cursorSlot, isPointInRotatedRect]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
-    console.log('[DRAG-SYSTEM-MOUSEUP] Starting', { draggingId, resizingId });
+    console.log('[DRAG-SYSTEM-MOUSEUP] Starting', { draggingId, resizingId, longPressItemRef: longPressItemRef.current });
     // Clear long-press timer if mouse is released before timeout
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+
+    // Check if this was a card/token click without movement (longPressItemRef still set)
+    const wasCardClickWithoutMovement = longPressItemRef.current !== null;
+
+    if (wasCardClickWithoutMovement) {
+      // This was just a click, not a drag - clear draggingId and handle click action
+      const id = longPressItemRef.current.id;
+      longPressItemRef.current = null;
+
+      // Clear draggingId since we're not dragging
+      setDraggingId(null);
+
+      // Now handle the click action
+      const obj = state.objects[id];
+      if (!obj) return;
+
+      const now = Date.now();
+      const DOUBLE_CLICK_DELAY = 300;
+
+      // Get click action from object (for cards, inherit from deck)
+      let singleClickAction = (obj as any)?.singleClickAction;
+      let doubleClickAction = (obj as any)?.doubleClickAction;
+
+      // For cards, use inherited settings from deck
+      if (obj?.type === ItemType.CARD) {
+        const cardSettings = getCardSettings(obj as CardType);
+        singleClickAction = cardSettings.singleClickAction;
+        doubleClickAction = cardSettings.doubleClickAction;
+      }
+
+      // Check if this is a double click
+      const lastClick = clickTrackerRef.current;
+      if (lastClick.objectId === id && now - lastClick.timestamp < DOUBLE_CLICK_DELAY) {
+        // Double click detected
+        const action = doubleClickAction;
+        if (action) {
+          executeClickAction(obj, action);
+        }
+        clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
+        return;
+      }
+
+      // Single click - schedule execution after double click delay
+      clickTrackerRef.current = {
+        objectId: id,
+        timestamp: now,
+        clickCount: lastClick.clickCount + 1
+      };
+
+      setTimeout(() => {
+        const currentTracker = clickTrackerRef.current;
+        if (currentTracker.objectId === id && now === currentTracker.timestamp) {
+          const action = singleClickAction;
+          if (action) {
+            executeClickAction(obj, action);
+          }
+          clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
+        }
+      }, DOUBLE_CLICK_DELAY);
+      return;
+    }
+
     longPressItemRef.current = null;
 
     // Note: Cursor slot drop on mouseup is handled by the global handler above
