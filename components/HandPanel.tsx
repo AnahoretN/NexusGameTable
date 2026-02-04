@@ -138,15 +138,24 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
   }, [dispatch]);
 
   const handleRotate = useCallback((cardId: string) => {
-    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: 90 } });
-  }, [dispatch]);
+    // Use card's rotationStep (or default 45) from settings
+    const obj = state.objects[cardId] as any;
+    const rotationStep = obj?.rotationStep ?? 45;
+    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: rotationStep } });
+  }, [dispatch, state.objects]);
 
   const handleRotateClockwise = useCallback((cardId: string) => {
-    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId } });
-  }, [dispatch]);
+    // Rotate clockwise by rotationStep
+    const obj = state.objects[cardId] as any;
+    const rotationStep = obj?.rotationStep ?? 45;
+    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: rotationStep } });
+  }, [dispatch, state.objects]);
 
   const handleRotateCounterClockwise = useCallback((cardId: string) => {
-    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: -((state.objects[cardId] as any)?.rotationStep ?? 45) } });
+    // Rotate counter-clockwise by rotationStep
+    const obj = state.objects[cardId] as any;
+    const rotationStep = obj?.rotationStep ?? 45;
+    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: -rotationStep } });
   }, [dispatch, state.objects]);
 
   const handleSwingingClockwise = useCallback((cardId: string) => {

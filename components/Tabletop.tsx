@@ -2661,7 +2661,7 @@ export const Tabletop: React.FC = () => {
                                         },
                                         rotate: {
                                             key: 'rotate',
-                                            action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: 90 } }),
+                                            action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
                                             className: 'bg-green-600 hover:bg-green-500',
                                             title: 'Rotate',
                                             icon: <RefreshCw size={14} />
@@ -2778,7 +2778,7 @@ export const Tabletop: React.FC = () => {
                                         },
                                         rotate: {
                                             key: 'rotate',
-                                            action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: 90 } }),
+                                            action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
                                             className: 'bg-green-600 hover:bg-green-500',
                                             title: 'Rotate',
                                             icon: <RefreshCw size={14} />
@@ -2866,7 +2866,7 @@ export const Tabletop: React.FC = () => {
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
                                         rotate: {
                                             key: 'rotate',
-                                            action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: 90 } }),
+                                            action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
                                             className: 'bg-green-600 hover:bg-green-500',
                                             title: 'Rotate',
                                             icon: <RefreshCw size={14} />
@@ -3009,7 +3009,7 @@ export const Tabletop: React.FC = () => {
                                             break;
                                         }
                                         case 'rotate':
-                                            dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: 90 }});
+                                            dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id }});
                                             break;
                                         case 'rotateClockwise':
                                             dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id }});

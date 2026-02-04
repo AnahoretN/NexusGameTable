@@ -115,7 +115,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Rotation',
       action: 'rotate',
       icon: <RotateCw size={14} />,
-      visible: can('rotate'),
+      // Hide rotation in search window and for cards in hand panel (only available in game space)
+      visible: !isSearchWindow && !hideCardActions && can('rotate'),
       hasSubmenu: true,
       separator: true
     },
