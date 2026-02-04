@@ -1449,24 +1449,6 @@ export const Tabletop: React.FC = () => {
 
           offsetX = mouseWorldX - item.x;
           offsetY = mouseWorldY - item.y;
-
-          // For horizontal cards, dimensions are swapped for display, which shifts the visual center
-          if (item.type === ItemType.CARD) {
-            const card = item as CardType;
-            const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
-            if (deck?.cardOrientation === CardOrientation.HORIZONTAL) {
-              const storedWidth = item.width ?? 100;
-              const storedHeight = item.height ?? 100;
-              // Visual dimensions are swapped
-              const visualWidth = storedHeight;
-              const visualHeight = storedWidth;
-              // The visual center is shifted by the difference in dimensions
-              const shiftX = (visualWidth - storedWidth) / 2;
-              const shiftY = (visualHeight - storedHeight) / 2;
-              offsetX += shiftX;
-              offsetY += shiftY;
-            }
-          }
         }
 
         dragOffsetRef.current = {

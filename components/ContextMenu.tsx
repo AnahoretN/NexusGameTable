@@ -16,6 +16,17 @@ interface ContextMenuProps {
   isSearchWindow?: boolean; // Show additional GM actions in search window
 }
 
+interface MenuItem {
+  label: string;
+  action: string;
+  icon?: JSX.Element;
+  visible?: boolean;
+  hasSubmenu?: boolean;
+  separator?: boolean;
+  submenuItems?: MenuItem[];
+  isSeparator?: boolean;
+}
+
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow }) => {
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
@@ -89,7 +100,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const menuItems = [
+  const menuItems: MenuItem[] = [
     {
       label: 'Configure...',
       action: 'configure',

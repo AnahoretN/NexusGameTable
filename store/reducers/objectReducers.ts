@@ -34,11 +34,11 @@ export function addObjectReducer(state: any, action: any): any {
       const newCardHeight = payload.cardHeight ?? oldDeck.cardHeight ?? 168;
 
       if (newCardWidth !== oldCardWidth || newCardHeight !== oldCardHeight) {
-        Object.values(state.objects).forEach(o => {
-          if (o.type === ItemType.CARD && (o as any).deckId === obj.id) {
+        Object.values(state.objects).forEach((o: unknown) => {
+          if ((o as any).type === ItemType.CARD && (o as any).deckId === obj.id) {
             const card = o as any;
             if (card.width === oldCardWidth && card.height === oldCardHeight) {
-              newObjects[o.id] = { ...card, width: newCardWidth, height: newCardHeight };
+              newObjects[(o as any).id] = { ...card, width: newCardWidth, height: newCardHeight };
             }
           }
         });
@@ -189,38 +189,38 @@ export function moveLayerReducer(state: any, action: any): any {
   if (!obj) return state;
 
   const allObjects = Object.values(state.objects)
-    .filter((o: TableObject) => o.zIndex !== undefined)
-    .sort((a: TableObject, b: TableObject) => (a.zIndex || 1000) - (b.zIndex || 1000));
+    .filter((o: unknown) => (o as any).zIndex !== undefined)
+    .sort((a: unknown, b: unknown) => ((a as any).zIndex || 1000) - ((b as any).zIndex || 1000));
 
-  const currentIndex = allObjects.findIndex(o => o.id === action.payload.id);
+  const currentIndex = allObjects.findIndex((o: unknown) => (o as any).id === action.payload.id);
   if (currentIndex === -1) return state;
 
   const targetObj = allObjects[currentIndex];
-  const currentZ = targetObj.zIndex || 1000;
+  const currentZ = (targetObj as any).zIndex || 1000;
 
   if (action.type === 'MOVE_LAYER_UP') {
     const nextObj = allObjects[currentIndex + 1];
     if (nextObj) {
-      const nextZ = nextObj.zIndex || 1000;
+      const nextZ = (nextObj as any).zIndex || 1000;
       return {
         ...state,
         objects: {
           ...state.objects,
-          [action.payload.id]: { ...targetObj, zIndex: nextZ },
-          [nextObj.id]: { ...nextObj, zIndex: currentZ }
+          [action.payload.id]: { ...(targetObj as any), zIndex: nextZ },
+          [(nextObj as any).id]: { ...(nextObj as any), zIndex: currentZ }
         }
       };
     }
   } else {
     const prevObj = allObjects[currentIndex - 1];
     if (prevObj) {
-      const prevZ = prevObj.zIndex || 1000;
+      const prevZ = (prevObj as any).zIndex || 1000;
       return {
         ...state,
         objects: {
           ...state.objects,
-          [action.payload.id]: { ...targetObj, zIndex: prevZ },
-          [prevObj.id]: { ...prevObj, zIndex: currentZ }
+          [action.payload.id]: { ...(targetObj as any), zIndex: prevZ },
+          [(prevObj as any).id]: { ...(prevObj as any), zIndex: currentZ }
         }
       };
     }
