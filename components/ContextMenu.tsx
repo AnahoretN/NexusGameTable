@@ -100,6 +100,57 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // "Move to.." section for cards - defined here to be inserted early
+  const moveToSection: MenuItem[] = object.type === ItemType.CARD ? (() => {
+    const card = object as Card;
+    const deck = card.deckId ? allObjects[card.deckId] as DeckType : null;
+    const piles = deck?.piles || [];
+
+    return [
+      {
+        label: 'Move to..',
+        action: 'moveTo',
+        icon: <CornerDownRight size={14} />,
+        visible: can('moveTo') || can('moveTo') === undefined,
+        hasSubmenu: true,
+        separator: false,
+        submenuItems: [
+          {
+            label: 'Hand',
+            action: 'moveToHand',
+            icon: <Hand size={14} />,
+            visible: true
+          },
+          {
+            label: 'Top Deck',
+            action: 'moveToTopDeck',
+            icon: <ArrowUp size={14} />,
+            visible: !!deck
+          },
+          {
+            label: 'Bottom Deck',
+            action: 'moveToBottomDeck',
+            icon: <ArrowDown size={14} />,
+            visible: !!deck
+          },
+          ...(piles.length > 0 ? [{
+            label: '-',
+            action: 'separator',
+            visible: true,
+            isSeparator: true
+          }] : []),
+          ...piles.map((pile: CardPile) => ({
+            label: pile.name,
+            action: `moveToPile-${pile.id}`,
+            icon: <Layers size={14} />,
+            visible: true,
+            pileId: pile.id
+          }))
+        ]
+      }
+    ];
+  })() : [];
+
   const menuItems: MenuItem[] = [
     {
       label: 'Configure...',
@@ -115,12 +166,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       visible: isSearchWindow && isGM && object.type === ItemType.CARD,
       separator: true
     },
+    // "Move to..." section for cards - before Change Layer
+    ...moveToSection,
     {
       label: 'Change Layer',
       action: 'layer',
       icon: <Layers size={14} />,
       visible: can('layer'),
-      hasSubmenu: true
+      hasSubmenu: true,
+      separator: moveToSection.length > 0
     },
     {
       label: 'Rotation',
@@ -178,56 +232,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       visible: can('pin'),
       separator: true
     },
-    // "Move to.." section for cards
-    ...(object.type === ItemType.CARD ? (() => {
-      const card = object as Card;
-      const deck = card.deckId ? allObjects[card.deckId] as DeckType : null;
-      const piles = deck?.piles || [];
-
-      return [
-        {
-          label: 'Move to..',
-          action: 'moveTo',
-          icon: <CornerDownRight size={14} />,
-          visible: can('toHand') || can('toHand') === undefined,
-          hasSubmenu: true,
-          separator: true,
-          submenuItems: [
-            {
-              label: 'Hand',
-              action: 'moveToHand',
-              icon: <Hand size={14} />,
-              visible: true
-            },
-            {
-              label: 'Top Deck',
-              action: 'moveToTopDeck',
-              icon: <ArrowUp size={14} />,
-              visible: !!deck
-            },
-            {
-              label: 'Bottom Deck',
-              action: 'moveToBottomDeck',
-              icon: <ArrowDown size={14} />,
-              visible: !!deck
-            },
-            ...(piles.length > 0 ? [{
-              label: '-',
-              action: 'separator',
-              visible: true,
-              isSeparator: true
-            }] : []),
-            ...piles.map((pile: CardPile) => ({
-              label: pile.name,
-              action: `moveToPile-${pile.id}`,
-              icon: <Layers size={14} />,
-              visible: true,
-              pileId: pile.id
-            }))
-          ]
-        }
-      ];
-    })() : []),
     {
       label: 'Flip',
       action: 'flip',

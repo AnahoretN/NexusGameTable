@@ -1,5 +1,5 @@
 import React from 'react';
-import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin, ArrowUp, ArrowDown } from 'lucide-react';
+import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin, ArrowUp, ArrowDown, CornerDownRight } from 'lucide-react';
 import { ContextAction } from '../types';
 
 // Re-export ContextAction for convenience
@@ -8,7 +8,6 @@ export type ButtonAction = ContextAction;
 // Base button configuration (styling only)
 export const BUTTON_STYLES: Record<ButtonAction, { className: string; title: string }> = {
   flip: { className: 'bg-purple-600 hover:bg-purple-500', title: 'Flip' },
-  toHand: { className: 'bg-blue-600 hover:bg-blue-500', title: 'To Hand' },
   rotate: { className: 'bg-green-600 hover:bg-green-500', title: 'Rotate' },
   rotateClockwise: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Rotate Clockwise' },
   rotateCounterClockwise: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Rotate Counter-Clockwise' },
@@ -33,7 +32,9 @@ export const BUTTON_STYLES: Record<ButtonAction, { className: string; title: str
   removeFromTable: { className: 'bg-slate-600 hover:bg-slate-500', title: 'Remove From Table' },
   millToBottom: { className: 'bg-teal-600 hover:bg-teal-500', title: 'Mill to Bottom' },
   showTop: { className: 'bg-pink-600 hover:bg-pink-500', title: 'Show Top' },
-  // New "Move to" actions
+  // "Move to..." section
+  moveTo: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Move to...' },
+  // "Move to" actions
   moveToHand: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Move to Hand' },
   moveToTopDeck: { className: 'bg-orange-600 hover:bg-orange-500', title: 'Move to Top Deck' },
   moveToBottomDeck: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Move to Bottom Deck' },
@@ -42,7 +43,6 @@ export const BUTTON_STYLES: Record<ButtonAction, { className: string; title: str
 // Icon factory functions - return appropriate icon based on state
 export const ButtonIcons = {
   flip: (faceUp: boolean) => faceUp ? <EyeOff size={14} /> : <Eye size={14} />,
-  toHand: () => <Hand size={14} />,
   rotate: () => <RefreshCw size={14} />,
   rotateClockwise: () => <RefreshCw size={14} />,
   rotateCounterClockwise: () => <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />,
@@ -67,6 +67,7 @@ export const ButtonIcons = {
   removeFromTable: () => <Trash2 size={14} />,
   millToBottom: () => <Undo size={14} style={{ transform: 'rotate(180deg)' }} />,
   showTop: () => <Eye size={14} />,
+  moveTo: () => <CornerDownRight size={14} />,
   moveToHand: () => <Hand size={14} />,
   moveToTopDeck: () => <ArrowUp size={14} />,
   moveToBottomDeck: () => <ArrowDown size={14} />,
