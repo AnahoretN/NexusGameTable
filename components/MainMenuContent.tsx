@@ -585,7 +585,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
   // Count objects on table that match this category (excluding objects in cursor slot)
   const objectsOnTable = useMemo(() =>
-    Object.values(state.objects).filter(obj => !obj.inCursorSlot && category.matcher(obj)),
+    Object.values(state.objects).filter(obj => !(obj as any).inCursorSlot && category.matcher(obj)),
     [state.objects, category.matcher]
   );
 
@@ -849,7 +849,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
               <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">On Table</div>
               {objectsOnTable.map(obj => {
                 const isLocked = obj.locked || false;
-                const isInSlot = obj.inCursorSlot || false;
+                const isInSlot = (obj as any).inCursorSlot || false;
                 // For UI objects check 'visible', for game objects check 'isOnTable'
                 const isVisible = 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property

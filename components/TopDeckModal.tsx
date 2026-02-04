@@ -193,7 +193,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
     const actionButtons = deck.cardActionButtons || [];
 
     // Button configurations
-    const buttonConfigs: Record<ContextAction, { className: string; title: string; icon: JSX.Element; onClick: () => void }> = {
+    const buttonConfigs: Partial<Record<ContextAction, { className: string; title: string; icon: JSX.Element; onClick: () => void }>> = {
       flip: {
         className: 'bg-purple-600 hover:bg-purple-500',
         title: 'Flip',
@@ -239,8 +239,8 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
     };
 
     // Add mill button only if mill pile exists and action is enabled
-    if (millPile && !buttonConfigs.mill) {
-      buttonConfigs.mill = {
+    if (millPile && !(buttonConfigs as any).mill) {
+      (buttonConfigs as any).mill = {
         className: 'bg-red-600 hover:bg-red-500',
         title: `Mill to ${millPile.name}`,
         icon: <Trash2 size={12} />,
@@ -252,7 +252,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
     const buttons = actionButtons
       .filter(action => action in buttonConfigs)
       .slice(0, 4)
-      .map(action => buttonConfigs[action]);
+      .map(action => buttonConfigs[action]!);
 
     if (buttons.length === 0) return null;
 

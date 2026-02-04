@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType, ItemType, CardShape } from '../types';
+import { Card, Deck as DeckType, ItemType, CardShape, CardLocation } from '../types';
 import { Card as CardComponent } from './Card';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
 import { MAIN_MENU_WIDTH } from '../constants';
@@ -186,7 +186,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
         type: 'UPDATE_OBJECT',
         payload: {
           id: cardId,
-          location: 'HAND',
+          location: CardLocation.HAND,
           ownerId: state.activePlayerId,
           isOnTable: false
         }
