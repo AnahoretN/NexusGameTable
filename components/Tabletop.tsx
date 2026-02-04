@@ -203,7 +203,6 @@ export const Tabletop: React.FC = () => {
   const freeRotatingIdRef = useRef<string | null>(null);
   const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
   const globalMousePosRef = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-  const isDroppingRef = useRef(false);
 
   // Update refs when state changes
   useEffect(() => { draggingIdRef.current = draggingId; }, [draggingId]);
@@ -211,7 +210,10 @@ export const Tabletop: React.FC = () => {
   useEffect(() => { resizingIdRef.current = resizingId; }, [resizingId]);
   useEffect(() => { draggingPileRef.current = draggingPile; }, [draggingPile]);
   useEffect(() => { freeRotatingIdRef.current = freeRotatingId; }, [freeRotatingId]);
-  useEffect(() => { cursorSlotRef.current = cursorSlot; }, [cursorSlot]);
+  // Sync cursorSlotRef - always sync to ensure consistency
+  useEffect(() => {
+    cursorSlotRef.current = cursorSlot;
+  }, [cursorSlot]);
 
   // Track global mouse position for playTopCard and other features
   useEffect(() => {
@@ -723,6 +725,7 @@ export const Tabletop: React.FC = () => {
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift') => {
+    console.log('[ADD-TO-CURSOR-SLOT] Adding item', { id, source, currentLength: cursorSlot.length });
     if (cursorSlot.length >= 100) return; // Max 100 items in slot
 
     // Set source based on how the item was added (only if slot was empty before)
@@ -772,6 +775,8 @@ export const Tabletop: React.FC = () => {
     }
 
     setCursorSlot(prev => [...prev, itemClone]);
+    // Also update ref immediately for consistent state
+    cursorSlotRef.current = [...cursorSlotRef.current, itemClone];
 
     // Mark the item as inCursorSlot (keeps it in objects list but hidden from tabletop)
     dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
@@ -784,7 +789,7 @@ export const Tabletop: React.FC = () => {
 
     // Set cursor position to object center on screen
     setCursorPosition({ x: screenX, y: screenY });
-  }, [cursorSlot.length, dispatch, offset.x, offset.y, zoom]);
+  }, [cursorSlot.length, dispatch, offset.x, offset.y, zoom, cursorSlotRef]);
 
   // Drop all items from cursor slot at specified screen coordinates
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
@@ -865,22 +870,22 @@ export const Tabletop: React.FC = () => {
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
-
-    // Reset drop flag after a short delay to prevent double-drops
-    setTimeout(() => { isDroppingRef.current = false; }, 100);
-  }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, cursorSlotRef, getCardSettings]);
+  }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, getCardSettings]);
 
   // Drop cursor slot items to a specific deck (called from handleGlobalClick when clicking on deck)
   const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType)[]) => {
+    console.log('[DROP-TO-DECK] Starting', { deckId, slotItemsLength: slotItems?.length, cursorSlotLength: cursorSlot.length });
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
 
     if (currentSlot.length === 0) {
+      console.log('[DROP-TO-DECK] Empty slot, returning');
       return;
     }
 
     const deck = state.objects[deckId] as DeckType;
     if (!deck) {
+      console.log('[DROP-TO-DECK] Deck not found');
       return;
     }
 
@@ -929,14 +934,12 @@ export const Tabletop: React.FC = () => {
     }
 
     // Clear the slot - also update ref immediately for mouseup handler
+    console.log('[DROP-TO-DECK/PILE] Clearing cursor slot');
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
-
-    // Reset drop flag after a short delay to prevent double-drops
-    setTimeout(() => { isDroppingRef.current = false; }, 100);
-  }, [cursorSlot, dispatch, state.objects, cursorSlotRef]);
+  }, [cursorSlot, dispatch, state.objects]);
 
   // Drop cursor slot items to a specific pile (called from handleGlobalClick when clicking on pile)
   const dropToPile = useCallback((pileId: string, deckId: string, slotItems?: (CardType | TokenType)[]) => {
@@ -1017,14 +1020,12 @@ export const Tabletop: React.FC = () => {
     }
 
     // Clear the slot - also update ref immediately for mouseup handler
+    console.log('[DROP-TO-DECK/PILE] Clearing cursor slot');
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
-
-    // Reset drop flag after a short delay to prevent double-drops
-    setTimeout(() => { isDroppingRef.current = false; }, 100);
-  }, [cursorSlot, dispatch, state.objects, cursorSlotRef]);
+  }, [cursorSlot, dispatch, state.objects]);
 
   // Global click handler to drop cursor slot items when clicking outside hand panel
   // NOTE: This effect depends on cursorSlot to ensure the handler has fresh data
@@ -1107,7 +1108,7 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('mousedown', handleGlobalClick, { capture: true });
     return () => window.removeEventListener('mousedown', handleGlobalClick, { capture: true } as any);
-  }, [cursorSlot, dropCursorSlot, state.objects, dropToDeck, dropToPile, cursorSlotRef]);
+  }, [cursorSlot, dropCursorSlot, state.objects, dropToDeck, dropToPile]);
 
   // Helper function to check if a point is within a rotated rectangle
   const isPointInRotatedRect = useCallback((
@@ -1225,6 +1226,7 @@ export const Tabletop: React.FC = () => {
       // Use cursorSlotRef.current to get the immediate value (avoid closure stale data)
       // Only process if cursor slot has items with source='hold' (drag, not Shift+click)
       const currentSlot = cursorSlotRef.current;
+      console.log('[MOUSEUP-HOLD] cursorSlotSource:', cursorSlotSource, 'currentSlot.length:', currentSlot.length);
       if (currentSlot.length === 0 || cursorSlotSource !== 'hold') return;
 
       const clientX = e.clientX;
@@ -1267,6 +1269,11 @@ export const Tabletop: React.FC = () => {
                 e.preventDefault();
                 e.stopPropagation();
                 dropToPile(pileId, deck.id, currentSlot);
+                // Ensure slot is cleared after dropping to pile
+                cursorSlotRef.current = [];
+                setCursorSlot([]);
+                setCursorPosition(null);
+                setCursorSlotSource(null);
                 return;
               }
             }
@@ -1283,6 +1290,11 @@ export const Tabletop: React.FC = () => {
           e.preventDefault();
           e.stopPropagation();
           dropToDeck(objectId, currentSlot);
+          // Ensure slot is cleared after dropping to deck
+          cursorSlotRef.current = [];
+          setCursorSlot([]);
+          setCursorPosition(null);
+          setCursorSlotSource(null);
           return;
         }
       }
@@ -1293,7 +1305,7 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-  }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, cursorSlotRef]);
+  }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch]);
 
   const handleMouseDown = (e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
@@ -1364,6 +1376,7 @@ export const Tabletop: React.FC = () => {
       }
 
       // For cards and tokens: start long-press timer (500ms) to add to cursor slot
+      // Cards and tokens NEVER use drag system - only cursor slot system
       if (!e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
         // Store the item and start position for long-press detection
         longPressItemRef.current = {
@@ -1376,6 +1389,8 @@ export const Tabletop: React.FC = () => {
         // Start timer - after 250ms, add to cursor slot
         longPressTimerRef.current = window.setTimeout(() => {
           if (longPressItemRef.current) {
+            console.log('[LONG-PRESS] Adding to cursor slot', { id: longPressItemRef.current.id, source: 'hold' });
+            // Add to cursor slot
             addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
             longPressItemRef.current = null;
             longPressTimerRef.current = null;
@@ -1383,14 +1398,19 @@ export const Tabletop: React.FC = () => {
         }, 250); // 250ms long-press
 
         // Don't return - we need to continue to set dragStartRef for movement detection
+        // But we WON'T set draggingId for cards/tokens - they use cursor slot system only
       }
 
       // Store click start position for click detection
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
-      // Note: Cards and tokens are handled via Shift+click cursor slot only,
-      // they never reach this point since we return early above
+      // Cards and tokens use cursor slot system only - NEVER set draggingId for them
+      if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
+        console.log('[MOUSEDOWN] Card/token - NOT setting draggingId, using cursor slot system', { id, itemType: item.type });
+        return; // Don't proceed with drag system
+      }
 
+      // For other objects (dice, counters, etc.), use normal drag system
       setDraggingId(id);
       if (item) {
         // Note: We don't unpin pinned objects on drag anymore - pinned objects stay pinned while dragging
@@ -1691,6 +1711,7 @@ export const Tabletop: React.FC = () => {
   }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, freeRotatingId, rotateStartAngle, rotateStartMouse, cursorSlot, isPointInRotatedRect]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
+    console.log('[DRAG-SYSTEM-MOUSEUP] Starting', { draggingId, resizingId });
     // Clear long-press timer if mouse is released before timeout
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
