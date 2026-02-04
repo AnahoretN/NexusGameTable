@@ -113,7 +113,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         icon: <CornerDownRight size={14} />,
         visible: can('moveTo') || can('moveTo') === undefined,
         hasSubmenu: true,
-        separator: false,
+        separator: true,
         submenuItems: [
           {
             label: 'Hand',
@@ -174,7 +174,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       icon: <Layers size={14} />,
       visible: can('layer'),
       hasSubmenu: true,
-      separator: moveToSection.length > 0
+      separator: false
     },
     {
       label: 'Rotation',
