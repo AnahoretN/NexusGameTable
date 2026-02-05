@@ -3,7 +3,6 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType, ItemType, CardShape, CardLocation } from '../types';
 import { Card as CardComponent } from './Card';
-import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { Plus, Minus } from 'lucide-react';
@@ -531,6 +530,17 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     setSelectedPlayerId(state.activePlayerId);
   }, [state.activePlayerId]);
 
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setContextMenu(null);
+    };
+    if (contextMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [contextMenu]);
+
   return (
     <div
       ref={containerRef}
@@ -544,6 +554,17 @@ export const HandPanel: React.FC<HandPanelProps> = ({
           {state.players.map(player => {
             const isActive = player.id === selectedPlayerId;
             const isOwnHand = player.id === state.activePlayerId;
+            const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
+            const isCurrentPlayerGM = currentPlayer?.isGM ?? false;
+
+            // Only show GM hand tabs if:
+            // 1. It's the current player's own hand, OR
+            // 2. The current player is a GM
+            const playerIsGM = state.players.find(p => p.id === player.id)?.isGM ?? false;
+            const shouldShowTab = isOwnHand || isCurrentPlayerGM || !playerIsGM;
+
+            if (!shouldShowTab) return null;
+
             const cardCount = Object.values(state.objects).filter(o =>
               o.type === 'CARD' &&
               (o as Card).location === 'HAND' &&
@@ -715,25 +736,28 @@ export const HandPanel: React.FC<HandPanelProps> = ({
         </>
       )}
 
-      {/* Context menu for card scale options */}
+      {/* Simple context menu for card scale options */}
       {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onClose={() => setContextMenu(null)}
-          items={[
-            {
-              label: `Increase Scale (${Math.round(cardScale * 100)}%)`,
-              icon: <Plus size={14} />,
-              onClick: handleIncreaseScale
-            },
-            {
-              label: `Decrease Scale (${Math.round(cardScale * 100)}%)`,
-              icon: <Minus size={14} />,
-              onClick: handleDecreaseScale
-            }
-          ]}
-        />
+        <div
+          className="fixed z-[99999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleIncreaseScale}
+            className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-700 flex items-center gap-2"
+          >
+            <Plus size={14} />
+            Increase Scale ({Math.round(cardScale * 100)}%)
+          </button>
+          <button
+            onClick={handleDecreaseScale}
+            className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-700 flex items-center gap-2"
+          >
+            <Minus size={14} />
+            Decrease Scale ({Math.round(cardScale * 100)}%)
+          </button>
+        </div>
       )}
     </div>
   );
