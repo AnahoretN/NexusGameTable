@@ -80,6 +80,13 @@ export interface CardPile {
 export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'lock' | 'clone' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'removeFromTable' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard';
 export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
+// Alternative card back settings (per-card)
+export interface AlternativeCardBack {
+  url: string; // URL of the alternative back image
+  locations: CardLocation[]; // Where to show the alternative back (TABLE, HAND, DECK, PILE, CURSOR_SLOT)
+  visibleToOthers: boolean; // Whether players who shouldn't see the card face can see the alternative back
+}
+
 export interface Coordinates {
   x: number;
   y: number;
@@ -148,6 +155,9 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
   // Individual card face URLs (override deck defaults)
   frontFaceUrl?: string; // Custom front face image URL
   backFaceUrl?: string; // Custom back face image URL
+
+  // Alternative card back (per-card override)
+  alternativeBack?: AlternativeCardBack; // Alternative card back settings
 
   // Additional card properties
   isHorizontal?: boolean; // Used internally for cursor slot rendering

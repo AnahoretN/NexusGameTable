@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig } from '../types';
+import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation } from '../types';
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye, Grid3x3, Image as ImageIcon } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
@@ -394,7 +394,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/15">
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-center items-center py-2 px-4">
@@ -634,7 +634,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               )}
 
               {/* Tooltip Settings */}
-              <div className="pt-2 space-y-3">
+              <div className="pt-1 space-y-3">
                 <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
                   <Eye size={14} /> Tooltip Settings
                 </h4>
@@ -650,6 +650,101 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
 
               </div>
+
+              {/* Alternative Card Back (for cards only) */}
+              {isCard && (
+                <div className="pt-2 space-y-3">
+                  <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                    <RotateCw size={14} /> Alternative Card Back
+                  </h4>
+
+                  {/* URL Input */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Alternative Back URL</label>
+                    <input
+                      type="text"
+                      value={(data as Card).alternativeBack?.url || ''}
+                      onChange={e => update('alternativeBack', {
+                        ...(data as Card).alternativeBack,
+                        url: e.target.value,
+                        locations: (data as Card).alternativeBack?.locations || [],
+                        visibleToOthers: (data as Card).alternativeBack?.visibleToOthers ?? false
+                      } as any)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      placeholder="https://example.com/alternative-back.png"
+                    />
+                  </div>
+
+                  {/* Preview */}
+                  {(data as Card).alternativeBack?.url && (
+                    <div className="bg-slate-900 rounded p-2 border border-slate-700 flex justify-center">
+                      <img
+                        src={(data as Card).alternativeBack!.url}
+                        alt="Alternative back preview"
+                        className="max-w-24 max-h-32"
+                        onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2275%22%3E%3Crect fill=%22%231e293b%22 width=%2250%22 height=%2275%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2364748b%22 dy=%22.3em%22 font-size=%2210%22%3EN/A%3C/text%3E%3C/svg%3E'; }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Locations checkboxes - 2 columns */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-2">Show in locations:</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { key: 'TABLE', label: 'Tabletop' },
+                        { key: 'HAND', label: 'Hand' },
+                        { key: 'DECK', label: 'Deck' },
+                        { key: 'PILE', label: 'Pile' },
+                      ].map(loc => (
+                        <label key={loc.key} className="flex items-center gap-2 p-2 rounded bg-slate-800 border border-slate-700 cursor-pointer hover:bg-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={(data as Card).alternativeBack?.locations?.includes(loc.key as any) || false}
+                            onChange={e => {
+                              const currentLocations = (data as Card).alternativeBack?.locations || [];
+                              const newLocations = e.target.checked
+                                ? [...currentLocations, loc.key as any]
+                                : currentLocations.filter(l => l !== loc.key);
+                              update('alternativeBack', {
+                                ...(data as Card).alternativeBack,
+                                url: (data as Card).alternativeBack?.url || '',
+                                locations: newLocations,
+                                visibleToOthers: (data as Card).alternativeBack?.visibleToOthers ?? false
+                              } as any);
+                            }}
+                            className="w-4 h-4 rounded border-gray-500 bg-slate-900 text-purple-600 focus:ring-purple-500 flex-shrink-0"
+                          />
+                          <span className="text-gray-200 text-xs">{loc.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Visible to others toggle */}
+                  <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                    <label className="text-xs text-gray-400 flex items-center gap-2">
+                      <Eye size={12} />
+                      Visible to players who cannot see the face of the card
+                    </label>
+                    <button
+                      onClick={() => update('alternativeBack', {
+                        ...(data as Card).alternativeBack,
+                        url: (data as Card).alternativeBack?.url || '',
+                        locations: (data as Card).alternativeBack?.locations || [],
+                        visibleToOthers: !((data as Card).alternativeBack?.visibleToOthers ?? false)
+                      } as any)}
+                      className={`w-10 h-5 rounded-full transition-colors ${
+                        (data as Card).alternativeBack?.visibleToOthers ? 'bg-green-600' : 'bg-slate-700'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        (data as Card).alternativeBack?.visibleToOthers ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

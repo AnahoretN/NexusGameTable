@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition, CardSpriteConfig } from '../types';
+import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition, CardSpriteConfig, CardLocation } from '../types';
 import { Layers, Undo, ChevronRight, ArrowUp, ArrowDown, Hand, Eye, EyeOff } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { getCardButtonConfig, ButtonAction, CardButtonConfig } from '../utils/buttonConfig';
@@ -36,9 +36,11 @@ interface CardProps {
   // Tooltip settings from deck (inherited, can be overridden by card's own settings)
   deckShowTooltipImage?: boolean;
   deckTooltipScale?: number;
+  // Whether the current user should see the card face (for alternative back logic)
+  shouldSeeCardFace?: boolean;
 }
 
-export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig, deckShowTooltipImage, deckTooltipScale }) => {
+export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig, deckShowTooltipImage, deckTooltipScale, shouldSeeCardFace = true }) => {
   const shape = card.shape || CardShape.POKER;
   const orientation = cardOrientation ?? CardOrientation.VERTICAL;
 
@@ -215,6 +217,17 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                       // Use card's spriteUrl, or deck's spriteConfig spriteUrl, or card's content
                       const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl || card.content;
                       return spriteUrl ? `url(${spriteUrl})` : undefined;
+                    }
+                    // Card is face down - check for alternative back first
+                    const altBack = (card as any).alternativeBack;
+                    if (altBack?.url) {
+                      // Check if location matches
+                      const locationMatch = altBack.locations?.includes(card.location as any);
+                      // Check if current user should see it (if visibleToOthers is false, only show to those who can see card face)
+                      const shouldShow = altBack.visibleToOthers || shouldSeeCardFace;
+                      if (locationMatch && shouldShow) {
+                        return `url(${altBack.url})`;
+                      }
                     }
                     // Card is face down - check for custom sprite back
                     if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
