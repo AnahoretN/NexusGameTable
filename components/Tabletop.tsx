@@ -649,7 +649,6 @@ export const Tabletop: React.FC = () => {
           dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: obj.id } });
         }
         break;
-      case 'toHand':
       case 'moveToHand':
         if (obj.type === ItemType.CARD) {
           dispatch({
@@ -843,12 +842,16 @@ export const Tabletop: React.FC = () => {
 
     // Clone the item to store it in the slot - deep copy to preserve all properties
     let itemClone: TableObject;
+    let baseWidth = item.width ?? 50;
+    let baseHeight = item.height ?? 50;
 
     if (item.type === ItemType.CARD) {
       const card = item as CardType;
       // Get deck to check orientation
       const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
       const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
+      baseWidth = card.width ?? deck?.cardWidth ?? 63;
+      baseHeight = card.height ?? deck?.cardHeight ?? 88;
 
       itemClone = {
         id: card.id,
@@ -881,6 +884,10 @@ export const Tabletop: React.FC = () => {
     } else {
       itemClone = { ...item } as TokenType;
     }
+
+    // Store the index of this item in the cursor slot (used for offset calculation)
+    // This ensures consistent offset between slot rendering and dropping
+    (itemClone as any).cursorSlotIndex = cursorSlot.length;
 
     setCursorSlot(prev => [...prev, itemClone]);
     // Also update ref immediately for consistent state
@@ -921,7 +928,7 @@ export const Tabletop: React.FC = () => {
     const worldY = clientY / currentZoom - currentOffset.y;
 
     // Add all items from slot back to the game with same offsets as in cursor display
-    currentSlot.forEach((item, index) => {
+    currentSlot.forEach((item) => {
       const isCard = item.type === ItemType.CARD;
       let baseWidth = item.width ?? (isCard ? 63 : 50);
       let baseHeight = item.height ?? (isCard ? 88 : 50);
@@ -941,14 +948,19 @@ export const Tabletop: React.FC = () => {
         [baseWidth, baseHeight] = [baseHeight, baseWidth];
       }
 
-      // Offset is 10% of object size (same as in cursor display)
-      const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
-      const offsetFromBack = (currentSlot.length - 1 - index) * offsetAmount;
-      // Use high z-index for visibility
-      const zIndex = 10000;
+      // Calculate offset the SAME WAY as cursor slot rendering
+      // Newest element (highest index) has offset 0, older elements are offset down-right
+      const slotIndex = (item as any).cursorSlotIndex ?? 0;
+      const newestIndex = currentSlot.length - 1;
+      const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+      const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
+      const offsetX = offsetFromBack * offsetAmount;
+      const offsetY = offsetFromBack * offsetAmount;
+      // Use high z-index for visibility (newest on top)
+      const zIndex = 10000 + slotIndex;
 
-      const finalX = worldX - baseWidth / 2 + offsetFromBack;
-      const finalY = worldY - baseHeight / 2 + offsetFromBack;
+      const finalX = worldX - baseWidth / 2 + offsetX;
+      const finalY = worldY - baseHeight / 2 + offsetY;
 
       // Use original item.id (not creating new ID) - restore object to tabletop
       // For cards, ensure they go to tabletop (not hand) and preserve faceUp
@@ -1021,11 +1033,18 @@ export const Tabletop: React.FC = () => {
     // For non-card items (tokens), drop them on the tabletop at deck position
     const nonCardsInSlot = currentSlot.filter(item => item.type !== ItemType.CARD);
     if (nonCardsInSlot.length > 0) {
-      nonCardsInSlot.forEach((item, index) => {
+      nonCardsInSlot.forEach((item) => {
         const baseWidth = item.width ?? 50;
         const baseHeight = item.height ?? 50;
-        const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
-        const offsetFromBack = (nonCardsInSlot.length - 1 - index) * offsetAmount;
+
+        // Calculate offset the SAME WAY as cursor slot rendering
+        // Newest element (highest index) has offset 0, older elements are offset down-right
+        const slotIndex = (item as any).cursorSlotIndex ?? 0;
+        const newestIndex = currentSlot.length - 1;
+        const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+        const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
+        const offsetX = offsetFromBack * offsetAmount;
+        const offsetY = offsetFromBack * offsetAmount;
 
         // Use original item.id - restore token to tabletop
         dispatch({
@@ -1033,9 +1052,9 @@ export const Tabletop: React.FC = () => {
           payload: {
             id: item.id,
             inCursorSlot: false,
-            x: deck.x + deck.width / 2 - baseWidth / 2 + offsetFromBack,
-            y: deck.y + deck.height / 2 - baseHeight / 2 + offsetFromBack,
-            zIndex: 10000,
+            x: deck.x + deck.width / 2 - baseWidth / 2 + offsetX,
+            y: deck.y + deck.height / 2 - baseHeight / 2 + offsetY,
+            zIndex: 10000 + slotIndex,
           }
         });
       });
@@ -1107,11 +1126,18 @@ export const Tabletop: React.FC = () => {
         pileY = deck.y;
       }
 
-      nonCardsInSlot.forEach((item, index) => {
+      nonCardsInSlot.forEach((item) => {
         const baseWidth = item.width ?? 50;
         const baseHeight = item.height ?? 50;
-        const offsetAmount = Math.min(baseWidth, baseHeight) * 0.1;
-        const offsetFromBack = (nonCardsInSlot.length - 1 - index) * offsetAmount;
+
+        // Calculate offset the SAME WAY as cursor slot rendering
+        // Newest element (highest index) has offset 0, older elements are offset down-right
+        const slotIndex = (item as any).cursorSlotIndex ?? 0;
+        const newestIndex = currentSlot.length - 1;
+        const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+        const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
+        const offsetX = offsetFromBack * offsetAmount;
+        const offsetY = offsetFromBack * offsetAmount;
 
         // Use original item.id - restore token to tabletop
         dispatch({
@@ -1119,9 +1145,9 @@ export const Tabletop: React.FC = () => {
           payload: {
             id: item.id,
             inCursorSlot: false,
-            x: pileX + deck.width * pileSize / 2 - baseWidth / 2 + offsetFromBack,
-            y: pileY + deck.height * pileSize / 2 - baseHeight / 2 + offsetFromBack,
-            zIndex: 10000,
+            x: pileX + deck.width * pileSize / 2 - baseWidth / 2 + offsetX,
+            y: pileY + deck.height * pileSize / 2 - baseHeight / 2 + offsetY,
+            zIndex: 10000 + ((item as any).cursorSlotIndex ?? 0),
           }
         });
       });
@@ -1773,7 +1799,7 @@ export const Tabletop: React.FC = () => {
 
     if (wasCardClickWithoutMovement) {
       // This was just a click, not a drag - clear draggingId and handle click action
-      const id = longPressItemRef.current.id;
+      const id = longPressItemRef.current!.id;
       longPressItemRef.current = null;
 
       // Clear draggingId since we're not dragging
@@ -3081,7 +3107,6 @@ export const Tabletop: React.FC = () => {
                                         case 'flip':
                                             dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }});
                                             break;
-                                        case 'toHand':
                                         case 'moveToHand':
                                             dispatch({
                                                 type: 'UPDATE_OBJECT',
@@ -3582,9 +3607,15 @@ export const Tabletop: React.FC = () => {
                         [width, height] = [height, width];
                     }
 
-                    // Offset is 10% of object size
-                    const offsetAmount = Math.min(width, height) * 0.1;
-                    const offsetFromBack = (cursorSlot.length - 1 - index) * offsetAmount;
+                    // Calculate offset from the BACK (newest element)
+                    // Newest element (highest index) has offset 0, older elements are offset down-right
+                    // This matches the visual stacking where newest is on top
+                    const slotIndex = (item as any).cursorSlotIndex ?? 0;
+                    const newestIndex = cursorSlot.length - 1;
+                    const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+                    const offsetAmount = Math.min(width, height) * 0.05;
+                    const offsetX = offsetFromBack * offsetAmount;
+                    const offsetY = offsetFromBack * offsetAmount;
                     // Cards at bottom (lower z-index), tokens at top (higher z-index)
                     const zIndex = isCard ? index : index + 1000;
 
@@ -3597,8 +3628,8 @@ export const Tabletop: React.FC = () => {
                                 key={`${card.id}-${index}`}
                                 className="absolute"
                                 style={{
-                                    left: -width / 2 + offsetFromBack,
-                                    top: -height / 2 + offsetFromBack,
+                                    left: -width / 2 + offsetX,
+                                    top: -height / 2 + offsetY,
                                     zIndex,
                                     pointerEvents: 'none',
                                 }}
@@ -3631,8 +3662,8 @@ export const Tabletop: React.FC = () => {
                             key={`${token.id}-${index}`}
                             className="absolute"
                             style={{
-                                left: -width / 2 + offsetFromBack,
-                                top: -height / 2 + offsetFromBack,
+                                left: -width / 2 + offsetX,
+                                top: -height / 2 + offsetY,
                                 width: `${width}px`,
                                 height: `${height}px`,
                                 zIndex,
