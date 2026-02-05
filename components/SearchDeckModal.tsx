@@ -316,6 +316,25 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           // If viewing main deck, cardOrder will sync via useEffect
         }
         break;
+      case 'moveToDiscard':
+        if (card.deckId) {
+          const cardDeck = state.objects[card.deckId] as DeckType | undefined;
+          if (cardDeck?.piles) {
+            const millPile = cardDeck.piles.find(p => p.isMillPile);
+            if (millPile) {
+              dispatch({
+                type: 'ADD_CARD_TO_PILE',
+                payload: { deckId: cardDeck.id, pileId: millPile.id, cardId: card.id }
+              });
+              // Sync cardOrder with updated deck.cardIds after state updates
+              if (isPile && pile) {
+                // Viewing a pile: remove card from pile's cardOrder
+                setCardOrder(cardOrder.filter(id => id !== card.id));
+              }
+            }
+          }
+        }
+        break;
       case 'clone':
         dispatch({ type: 'CLONE_OBJECT', payload: { id: card.id }});
         break;
@@ -430,6 +449,27 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             setCardOrder(cardOrder.filter(id => id !== card.id));
           }
           // If viewing main deck, cardOrder will sync via useEffect
+        }
+        break;
+      }
+      case 'moveToDiscard': {
+        const card = object as Card;
+        if (card.deckId) {
+          const cardDeck = state.objects[card.deckId] as DeckType | undefined;
+          if (cardDeck?.piles) {
+            const millPile = cardDeck.piles.find(p => p.isMillPile);
+            if (millPile) {
+              dispatch({
+                type: 'ADD_CARD_TO_PILE',
+                payload: { deckId: cardDeck.id, pileId: millPile.id, cardId: card.id }
+              });
+              // Sync cardOrder with updated deck.cardIds after state updates
+              if (isPile && pile) {
+                // Viewing a pile: remove card from pile's cardOrder
+                setCardOrder(cardOrder.filter(id => id !== card.id));
+              }
+            }
+          }
         }
         break;
       }

@@ -208,6 +208,22 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
     }
   }, [dispatch, state.objects]);
 
+  const handleMoveToDiscard = useCallback((cardId: string) => {
+    const card = state.objects[cardId] as Card;
+    if (card && card.deckId) {
+      const deck = state.objects[card.deckId] as DeckType | undefined;
+      if (deck?.piles) {
+        const millPile = deck.piles.find(p => p.isMillPile);
+        if (millPile) {
+          dispatch({
+            type: 'ADD_CARD_TO_PILE',
+            payload: { deckId: deck.id, pileId: millPile.id, cardId }
+          });
+        }
+      }
+    }
+  }, [dispatch, state.objects]);
+
   // Handle card mouse down - start reorder drag or add to cursor slot with Shift or long-press
   const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number, _cardElement: HTMLDivElement | null) => {
     // Only left click
@@ -528,7 +544,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                             onClone: () => handleClone(card.id),
                             onMoveToHand: () => handleMoveToHand(card.id),
                             onMoveToTopDeck: () => handleMoveToTopDeck(card.id),
-                            onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id)
+                            onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id),
+                            onMoveToDiscard: () => handleMoveToDiscard(card.id)
                           }
                         );
 

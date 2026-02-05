@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, RefreshCw, Copy, RotateCw, Move3D, ArrowUp, ArrowDown, Hand } from 'lucide-react';
+import { Eye, RefreshCw, Copy, RotateCw, Move3D, ArrowUp, ArrowDown, Hand, Trash2 } from 'lucide-react';
 import { Card, ContextAction, Deck as DeckType, CardOrientation, CardNamePosition, CardShape } from '../types';
 
 /**
@@ -123,6 +123,7 @@ export function getCardButtonConfigs(
     onMoveToHand?: () => void;
     onMoveToTopDeck?: () => void;
     onMoveToBottomDeck?: () => void;
+    onMoveToDiscard?: () => void;
   }
 ): ButtonConfig[] {
   // Exclude rotate and swing buttons from hand panel
@@ -207,6 +208,12 @@ export function getCardButtonConfigs(
       title: 'Move to Bottom Deck',
       icon: <ArrowDown size={14} />,
       onAction: callbacks.onMoveToBottomDeck || (() => {})
+    },
+    moveToDiscard: {
+      className: 'bg-red-600 hover:bg-red-500',
+      title: 'Move to Discard',
+      icon: <Trash2 size={14} />,
+      onAction: callbacks.onMoveToDiscard || (() => {})
     }
   };
 
