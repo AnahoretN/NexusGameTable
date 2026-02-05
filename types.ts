@@ -77,8 +77,8 @@ export interface CardPile {
   showTopCard?: boolean; // Whether to show the top card face on the pile itself
 }
 
-export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'lock' | 'clone' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'removeFromTable' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck';
-export type ClickAction = ContextAction | 'none';
+export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'lock' | 'clone' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'removeFromTable' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard';
+export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
 export interface Coordinates {
   x: number;

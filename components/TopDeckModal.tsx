@@ -145,6 +145,17 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
     // cardOrder will sync via useEffect with deck.cardIds
   }, [dispatch, deck.id]);
 
+  // Move to Discard
+  const handleMoveToDiscard = useCallback((cardId: string) => {
+    if (!millPile) {
+      console.warn('No discard pile found for deck');
+      return;
+    }
+    dispatch({ type: 'MILL_CARD_TO_PILE', payload: { cardId, deckId: deck.id, pileId: millPile.id } });
+    const newCardOrder = cardOrder.filter(id => id !== cardId);
+    setCardOrder(newCardOrder);
+  }, [dispatch, cardOrder, deck.id, millPile]);
+
   // Clone
   const handleClone = useCallback((cardId: string) => {
     dispatch({ type: 'CLONE_OBJECT', payload: { id: cardId } });
@@ -224,6 +235,12 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
         icon: <ArrowDown size={12} />,
         onClick: () => handleMoveToBottomDeck(card.id)
       },
+      moveToDiscard: {
+        className: 'bg-red-600 hover:bg-red-500',
+        title: 'Move to Discard',
+        icon: <Trash2 size={12} />,
+        onClick: () => handleMoveToDiscard(card.id)
+      },
       millToBottom: {
         className: 'bg-green-600 hover:bg-green-500',
         title: 'Mill to Bottom',
@@ -270,7 +287,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
         ))}
       </div>
     );
-  }, [deck.cardActionButtons, millPile, handleFlip, handleToHand, handleMillToBottom, handleMill, handleMoveToTopDeck, handleMoveToBottomDeck, handleClone]);
+  }, [deck.cardActionButtons, millPile, handleFlip, handleToHand, handleMillToBottom, handleMill, handleMoveToTopDeck, handleMoveToBottomDeck, handleMoveToDiscard, handleClone]);
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">

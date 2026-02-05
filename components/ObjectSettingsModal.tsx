@@ -15,8 +15,6 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'playTopCard', label: 'Play Top' },
   { id: 'millTopCard', label: 'Mill' },
   { id: 'toBottom', label: 'To Bottom' },
-  { id: 'millToBottom', label: 'Mill to Bottom' },
-  { id: 'removeFromTable', label: 'Remove From Table' },
   { id: 'showTop', label: 'Show Top' },
   { id: 'topDeck', label: 'Top Deck (section)' },
   { id: 'searchDeck', label: 'Search' },
@@ -36,15 +34,19 @@ const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'rotateCounterClockwise', label: 'Rotate Counter-Clockwise' },
   { id: 'swingClockwise', label: 'Swing Clockwise' },
   { id: 'swingCounterClockwise', label: 'Swing Counter-Clockwise' },
+];
+
+// "Move to" actions are only for Action Buttons for Cards, NOT for Context Menu Actions
+const MOVE_TO_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'moveTo', label: 'Move to... (section)' },
-  // "Move to" individual actions (for action buttons, not context menu)
   { id: 'moveToHand', label: 'Move to Hand' },
   { id: 'moveToTopDeck', label: 'Move to Top Deck' },
   { id: 'moveToBottomDeck', label: 'Move to Bottom Deck' },
+  { id: 'moveToDiscard', label: 'Move to Discard' },
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles', 'millToBottom', 'moveTo'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -79,6 +81,7 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'moveToHand':
     case 'moveToTopDeck':
     case 'moveToBottomDeck':
+    case 'moveToDiscard':
       return [ItemType.CARD];
     default:
       return [];
@@ -89,6 +92,26 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
 const CLICK_ACTIONS = [
   { id: 'none' as const, label: 'None' },
   ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+];
+
+// Card-specific click actions (includes showTooltipImage which is not a ContextAction)
+const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
+  { id: 'none', label: 'None' },
+  { id: 'showTooltipImage' as const, label: 'Card Tooltip Image' },
+  ...AVAILABLE_ACTIONS.map(a => ({ id: a.id as ClickAction, label: a.label }))
+    .filter(action => {
+      // Exclude deck-specific and section actions
+      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+          action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
+          action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
+          action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
+          action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
+        return false;
+      }
+      // Exclude section headers
+      if (action.id === 'moveTo') return false;
+      return true;
+    })
 ];
 
 type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite';
@@ -643,23 +666,21 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     .filter(action => {
                       // Cards should ONLY use "Context Menu Actions for Cards" from deck settings
                       // Skip all card-specific actions in the general Context Menu Actions section
-                      if (isCard && ['flip', 'moveTo', 'layer', 'layerUp', 'layerDown', 'pin'].includes(action.id)) {
+                      if (isCard && ['flip', 'layer', 'layerUp', 'layerDown', 'pin'].includes(action.id)) {
                         return false;
                       }
                       // Deck-specific actions - only for decks, not cards or boards
-                      if ((isCard || isBoard) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'removeFromTable', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if ((isCard || isBoard) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards/tokens
-                      if ((isDeck || isBoard) && ['flip', 'moveTo'].includes(action.id)) {
+                      if ((isDeck || isBoard) && ['flip'].includes(action.id)) {
                         return false;
                       }
-                      // Dice/counter rotation actions - only for dice/counters and boards
-                      if ((isDeck || isCard) && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                      // Rotation/swing actions - only for dice/counters/boards/tokens, not for cards
+                      if (isCard && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
-                      // 'moveTo' section only applies to cards, not decks
-                      if (action.id === 'moveTo' && isDeck) return false;
                       // 'flip' only applies to cards and tokens, not decks
                       if (action.id === 'flip' && isDeck) return false;
                       return true;
@@ -1172,12 +1193,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </h4>
 
                 <div className="grid grid-cols-2 gap-1">
-                  {AVAILABLE_ACTIONS
+                  {[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
                     .filter(action => {
                       // Only show card-applicable actions (exclude deck-specific actions)
                       if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-                          action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
-                          action.id === 'showTop' ||
+                          action.id === 'toBottom' || action.id === 'showTop' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'piles') return false;
                       return true;
@@ -1228,18 +1248,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </h4>
 
                 <div className="grid grid-cols-2 gap-2">
-                  {AVAILABLE_ACTIONS
+                  {[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
                     .filter(action => {
                       // Only card-applicable actions
                       if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' || action.id === 'toBottom' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
-                      // Exclude section headers and individual "Move to" actions
-                      if (action.id === 'moveTo' || action.id === 'moveToHand' || action.id === 'moveToTopDeck' || action.id === 'moveToBottomDeck') return false;
-                      // Exclude general actions - use specific actions instead
-                      if (action.id === 'layer' || action.id === 'rotate' || action.id === 'showTop') return false;
-                      // Exclude actions not applicable to cards
-                      if (action.id === 'millToBottom' || action.id === 'removeFromTable') return false;
+                      // Exclude section headers only
+                      if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate' || action.id === 'showTop') return false;
                       return true;
                     })
                     .map((action) => {
@@ -1285,26 +1301,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={(e) => updateCardSettings('singleClickAction', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      {CLICK_ACTIONS
-                        .filter(action => {
-                          // 'none' is always available
-                          if (action.id === 'none') return true;
-                          // Only show the specific card-applicable actions
-                          // Exclude deck-specific actions and section headers
-                          if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-                              action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
-                              action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
-                              action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-                              action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
-                            return false;
-                          }
-                          // Exclude section headers
-                          if (action.id === 'moveTo') return false;
-                          return true;
-                        })
-                        .map(action => (
-                          <option key={action.id} value={action.id}>{action.label}</option>
-                        ))}
+                      {CARD_CLICK_ACTIONS.map(action => (
+                        <option key={action.id} value={action.id}>{action.label}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -1316,26 +1315,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={(e) => updateCardSettings('doubleClickAction', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      {CLICK_ACTIONS
-                        .filter(action => {
-                          // 'none' is always available
-                          if (action.id === 'none') return true;
-                          // Only show the specific card-applicable actions
-                          // Exclude deck-specific actions and section headers
-                          if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-                              action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
-                              action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
-                              action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-                              action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
-                            return false;
-                          }
-                          // Exclude section headers
-                          if (action.id === 'moveTo') return false;
-                          return true;
-                        })
-                        .map(action => (
-                          <option key={action.id} value={action.id}>{action.label}</option>
-                        ))}
+                      {CARD_CLICK_ACTIONS.map(action => (
+                        <option key={action.id} value={action.id}>{action.label}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

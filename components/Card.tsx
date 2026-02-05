@@ -57,6 +57,13 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   const getCardButtonConfigs = (): CardButtonConfig[] => {
     const buttons = actionButtons || [];
     return buttons
+      .filter(action => {
+        // Don't show "Move to Hand" button when card is already in HAND location
+        if (action === 'moveToHand' && card.location === 'HAND') {
+          return false;
+        }
+        return true;
+      })
       .map(action => getCardButtonConfig(action as ButtonAction, card.faceUp, card.locked))
       .filter((config): config is CardButtonConfig => config !== null)
       .slice(0, 4);
@@ -74,6 +81,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
             <button
               key={btn.action}
               onClick={(e) => { e.stopPropagation(); onActionButtonClick(btn.action); }}
+              onMouseDown={(e) => e.stopPropagation()}
               className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
               title={btn.title}
             >
@@ -93,6 +101,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           {onToHand && (
             <button
               onClick={(e) => { e.stopPropagation(); onToHand(e); }}
+              onMouseDown={(e) => e.stopPropagation()}
               className="pointer-events-auto p-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white shadow"
               title="To Hand"
             >
@@ -102,6 +111,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           {onFlip && (
             <button
               onClick={(e) => { e.stopPropagation(); onFlip(e); }}
+              onMouseDown={(e) => e.stopPropagation()}
               className="pointer-events-auto p-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-white shadow"
               title="Flip"
             >
@@ -111,6 +121,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           {onReturnToDeck && (
             <button
               onClick={(e) => { e.stopPropagation(); onReturnToDeck(e); }}
+              onMouseDown={(e) => e.stopPropagation()}
               className="pointer-events-auto p-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-white shadow"
               title="Return to Deck"
             >
@@ -268,6 +279,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               {canFlip && !showActionButtons && (actionButtons === undefined || actionButtons.includes('flip')) && (
                   <button
                       onClick={(e) => { e.stopPropagation(); onFlip && onFlip(e); }}
+                      onMouseDown={(e) => e.stopPropagation()}
                       className="absolute top-4 left-1/2 -translate-x-1/2 z-20 p-1 bg-black/50 hover:bg-black/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
                       title="Flip Card"
                   >

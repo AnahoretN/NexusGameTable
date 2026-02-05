@@ -106,49 +106,61 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     const deck = card.deckId ? allObjects[card.deckId] as DeckType : null;
     const piles = deck?.piles || [];
 
-    return [
+    const submenuItems: MenuItem[] = [
+      {
+        label: 'Hand',
+        action: 'moveToHand',
+        icon: <Hand size={14} />,
+        visible: can('moveToHand')
+      },
+      {
+        label: 'Top Deck',
+        action: 'moveToTopDeck',
+        icon: <ArrowUp size={14} />,
+        visible: !!deck && can('moveToTopDeck')
+      },
+      {
+        label: 'Bottom Deck',
+        action: 'moveToBottomDeck',
+        icon: <ArrowDown size={14} />,
+        visible: !!deck && can('moveToBottomDeck')
+      },
+      // Move to Discard - only visible if there's a mill pile AND action is allowed
+      ...(piles.some(p => p.isMillPile) && can('moveToDiscard') ? [{
+        label: 'Discard',
+        action: 'moveToDiscard' as const,
+        icon: <Trash2 size={14} />,
+        visible: true
+      }] : []),
+      ...(piles.length > 0 ? [{
+        label: '-',
+        action: 'separator',
+        visible: true,
+        isSeparator: true
+      }] : []),
+      ...piles.map((pile: CardPile) => ({
+        label: pile.name,
+        action: `moveToPile-${pile.id}`,
+        icon: <Layers size={14} />,
+        visible: true,
+        pileId: pile.id
+      }))
+    ];
+
+    // Section is only visible if at least one submenu item is visible
+    const hasVisibleItems = submenuItems.some(item => item.visible);
+
+    return hasVisibleItems ? [
       {
         label: 'Move to..',
         action: 'moveTo',
         icon: <CornerDownRight size={14} />,
-        visible: can('moveTo') || can('moveTo') === undefined,
+        visible: true,
         hasSubmenu: true,
         separator: true,
-        submenuItems: [
-          {
-            label: 'Hand',
-            action: 'moveToHand',
-            icon: <Hand size={14} />,
-            visible: true
-          },
-          {
-            label: 'Top Deck',
-            action: 'moveToTopDeck',
-            icon: <ArrowUp size={14} />,
-            visible: !!deck
-          },
-          {
-            label: 'Bottom Deck',
-            action: 'moveToBottomDeck',
-            icon: <ArrowDown size={14} />,
-            visible: !!deck
-          },
-          ...(piles.length > 0 ? [{
-            label: '-',
-            action: 'separator',
-            visible: true,
-            isSeparator: true
-          }] : []),
-          ...piles.map((pile: CardPile) => ({
-            label: pile.name,
-            action: `moveToPile-${pile.id}`,
-            icon: <Layers size={14} />,
-            visible: true,
-            pileId: pile.id
-          }))
-        ]
+        submenuItems
       }
-    ];
+    ] : [];
   })() : [];
 
   const menuItems: MenuItem[] = [
@@ -172,9 +184,23 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Change Layer',
       action: 'layer',
       icon: <Layers size={14} />,
-      visible: can('layer'),
+      visible: can('layerUp') || can('layerDown'),
       hasSubmenu: true,
-      separator: false
+      separator: false,
+      submenuItems: [
+        {
+          label: 'Layer Up',
+          action: 'layerUp',
+          icon: <ArrowUp size={14} />,
+          visible: can('layerUp')
+        },
+        {
+          label: 'Layer Down',
+          action: 'layerDown',
+          icon: <ArrowDown size={14} />,
+          visible: can('layerDown')
+        }
+      ]
     },
     {
       label: 'Rotation',
@@ -183,7 +209,45 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       // Hide rotation in search window and for cards in hand panel (only available in game space)
       visible: !isSearchWindow && !hideCardActions && can('rotate'),
       hasSubmenu: true,
-      separator: true
+      separator: true,
+      submenuItems: [
+        {
+          label: 'Clockwise',
+          action: 'rotateClockwise',
+          icon: <RefreshCw size={14} />,
+          visible: can('rotateClockwise')
+        },
+        {
+          label: 'Counter-Clockwise',
+          action: 'rotateCounterClockwise',
+          icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />,
+          visible: can('rotateCounterClockwise')
+        },
+        {
+          label: 'Reset',
+          action: 'resetRotation',
+          icon: <Undo size={14} />,
+          visible: can('rotateClockwise') // Using rotateClockwise as proxy for rotate permission
+        },
+        {
+          label: '-',
+          action: 'separator',
+          visible: can('swingClockwise') || can('swingCounterClockwise'),
+          isSeparator: true
+        },
+        {
+          label: 'Swing CW',
+          action: 'swingClockwise',
+          icon: <RefreshCw size={14} />,
+          visible: can('swingClockwise')
+        },
+        {
+          label: 'Swing CCW',
+          action: 'swingCounterClockwise',
+          icon: <RefreshCw size={14} style={{ transform: 'scaleY(-1)' }} />,
+          visible: can('swingCounterClockwise')
+        }
+      ]
     },
     // Deck-specific actions
     {
@@ -359,64 +423,30 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                       className="absolute left-full top-0 ml-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] z-[10000]"
                       onMouseDown={(e) => e.stopPropagation()}
                     >
-                      {isRotateSubmenu ? (
+                      {/* If item has submenuItems defined, use generic renderer */}
+                      {item.submenuItems ? (
                         <>
-                          <button
-                            onClick={() => { onAction('rotateClockwise'); onClose(); }}
-                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                          >
-                            <RefreshCw size={14} />
-                            <span>Clockwise</span>
-                          </button>
-                          <button
-                            onClick={() => { onAction('rotateCounterClockwise'); onClose(); }}
-                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                          >
-                            <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
-                            <span>Counter-Clockwise</span>
-                          </button>
-                          <button
-                            onClick={() => { onAction('freeRotate'); onClose(); }}
-                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                          >
-                            <RotateCw size={14} />
-                            <span>Free Rotate</span>
-                          </button>
-                          <button
-                            onClick={() => { onAction('resetRotation'); onClose(); }}
-                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                          >
-                            <Undo size={14} />
-                            <span>Reset</span>
-                          </button>
-                          <div className="h-px bg-slate-700 my-1 mx-2" />
-                          <button
-                            onClick={() => { onAction('swingClockwise'); onClose(); }}
-                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                          >
-                            <RefreshCw size={14} />
-                            <span>Swing CW</span>
-                          </button>
-                          <button
-                            onClick={() => { onAction('swingCounterClockwise'); onClose(); }}
-                            className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                          >
-                            <RefreshCw size={14} style={{ transform: 'scaleY(-1)' }} />
-                            <span>Swing CCW</span>
-                          </button>
-                        </>
-                      ) : isPilesSubmenu ? (
-                        <>
-                          {deck.piles?.map((pile) => (
-                            <button
-                              key={pile.id}
-                              onClick={() => { onAction(`pile-${pile.id}`); onClose(); }}
-                              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                            >
-                              <Layers size={14} />
-                              <span>{pile.name}</span>
-                            </button>
-                          ))}
+                          {item.submenuItems.filter(subItem => subItem.visible).map((subItem) => {
+                            if (subItem.isSeparator) {
+                              return (
+                                <div key={subItem.action} className="h-px bg-slate-700 my-1 mx-2" />
+                              );
+                            }
+                            const subAction = subItem.action.toString();
+                            return (
+                              <button
+                                key={subItem.action}
+                                onClick={() => {
+                                  onAction(subAction);
+                                  onClose();
+                                }}
+                                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                              >
+                                {subItem.icon}
+                                <span>{subItem.label}</span>
+                              </button>
+                            );
+                          })}
                         </>
                       ) : isTopDeckSubmenu ? (
                         <>
@@ -471,31 +501,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                               <span>{(object as Deck).showTopCard ? 'Hide Top' : 'Show Top'}</span>
                             </button>
                           )}
-                        </>
-                      ) : isMoveSubmenu ? (
-                        <>
-                          {/* Move to submenu items */}
-                          {(item.submenuItems || []).map((subItem) => {
-                            if (subItem.isSeparator) {
-                              return (
-                                <div key={subItem.action} className="h-px bg-slate-700 my-1 mx-2" />
-                              );
-                            }
-                            const subAction = subItem.action.toString();
-                            return (
-                              <button
-                                key={subItem.action}
-                                onClick={() => {
-                                  onAction(subAction);
-                                  onClose();
-                                }}
-                                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
-                              >
-                                {subItem.icon}
-                                <span>{subItem.label}</span>
-                              </button>
-                            );
-                          })}
                         </>
                       ) : (
                         <>

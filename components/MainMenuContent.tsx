@@ -638,16 +638,16 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardOrientation: CardOrientation.VERTICAL,
           cardWidth: DEFAULT_DECK_WIDTH,
           cardHeight: DEFAULT_DECK_HEIGHT,
-          cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'moveTo', 'delete', 'clone', 'lock', 'layer'],
-          cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'moveTo', 'delete', 'clone', 'lock', 'layer'],
-          cardActionButtons: ['moveToHand', 'flip'],
+          cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
+          cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'delete', 'clone', 'lock', 'pin', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
+          cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
           cardSingleClickAction: undefined,
           cardDoubleClickAction: undefined,
           cardNamePosition: 'none' as const,
           // Deck actions (for the deck itself, not cards)
           actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
-          allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll'],
-          allowedActionsForGM: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll'],
+          allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
+          allowedActionsForGM: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
         };
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;
@@ -691,16 +691,16 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardOrientation: CardOrientation.VERTICAL,
           cardWidth: hexWidth,
           cardHeight: hexHeight,
-          cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'moveTo', 'delete', 'clone', 'lock', 'layer'],
-          cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'moveTo', 'delete', 'clone', 'lock', 'layer'],
-          cardActionButtons: ['moveToHand', 'flip'],
+          cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
+          cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'delete', 'clone', 'lock', 'pin', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
+          cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
           cardSingleClickAction: undefined,
           cardDoubleClickAction: undefined,
           cardNamePosition: 'none' as const,
           // Deck actions (for the deck itself, not cards)
           actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
-          allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll'],
-          allowedActionsForGM: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll'],
+          allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
+          allowedActionsForGM: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
         };
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;

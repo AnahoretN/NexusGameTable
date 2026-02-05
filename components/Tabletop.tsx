@@ -159,11 +159,6 @@ export const Tabletop: React.FC = () => {
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
-  // Free rotation state
-  const [freeRotatingId, setFreeRotatingId] = useState<string | null>(null);
-  const [rotateStartAngle, setRotateStartAngle] = useState<number>(0);
-  const [rotateStartMouse, setRotateStartMouse] = useState<{ x: number; y: number } | null>(null);
-
   // Cursor slot state - holds cards and tokens picked up with Shift+click (max 100 items)
   // Stores full object data and removes objects from their original position
   const [cursorSlot, setCursorSlot] = useState<(CardType | TokenType)[]>([]);
@@ -187,6 +182,11 @@ export const Tabletop: React.FC = () => {
   const [topDeckModalDeck, setTopDeckModalDeck] = useState<DeckType | null>(null);
   const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: DeckType } | null>(null);
 
+  // Click-to-show tooltip state for cards
+  const [clickTooltip, setClickTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
+  const clickTooltipTimerRef = useRef<number | null>(null);
+  const clickTooltipBoundsRef = useRef<{ left: number; right: number; top: number; bottom: number } | null>(null);
+
   // Hover state for deck/pile drop targets
   const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
   const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
@@ -200,7 +200,6 @@ export const Tabletop: React.FC = () => {
   const isPanningRef = useRef(false);
   const resizingIdRef = useRef<string | null>(null);
   const draggingPileRef = useRef<{ pile: CardPile; deck: DeckType } | null>(null);
-  const freeRotatingIdRef = useRef<string | null>(null);
   const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
   const globalMousePosRef = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
@@ -209,7 +208,6 @@ export const Tabletop: React.FC = () => {
   useEffect(() => { isPanningRef.current = isPanning; }, [isPanning]);
   useEffect(() => { resizingIdRef.current = resizingId; }, [resizingId]);
   useEffect(() => { draggingPileRef.current = draggingPile; }, [draggingPile]);
-  useEffect(() => { freeRotatingIdRef.current = freeRotatingId; }, [freeRotatingId]);
   // Sync cursorSlotRef - always sync to ensure consistency
   useEffect(() => {
     cursorSlotRef.current = cursorSlot;
@@ -219,10 +217,21 @@ export const Tabletop: React.FC = () => {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       globalMousePosRef.current = { x: e.clientX, y: e.clientY };
+
+      // Check if we should hide click tooltip (mouse left the card)
+      if (clickTooltip && clickTooltipBoundsRef.current) {
+        const bounds = clickTooltipBoundsRef.current;
+        const isInCard = e.clientX >= bounds.left && e.clientX <= bounds.right &&
+                         e.clientY >= bounds.top && e.clientY <= bounds.bottom;
+        if (!isInCard) {
+          setClickTooltip(null);
+          clickTooltipBoundsRef.current = null;
+        }
+      }
     };
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
+  }, [clickTooltip]);
 
   // Listen for add-to-cursor-slot events from other components (e.g., HandPanel)
   useEffect(() => {
@@ -533,9 +542,6 @@ export const Tabletop: React.FC = () => {
       case 'rotateCounterClockwise':
         dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -((obj as any).rotationStep ?? 45) } });
         break;
-      case 'freeRotate':
-        setFreeRotatingId(obj.id);
-        break;
       case 'resetRotation':
         dispatch({ type: 'SET_ROTATION', payload: { id: obj.id, rotation: 0 } });
         break;
@@ -675,6 +681,24 @@ export const Tabletop: React.FC = () => {
         }
         break;
       }
+      case 'moveToDiscard': {
+        if (obj.type === ItemType.CARD) {
+          const card = obj as CardType;
+          if (card.deckId) {
+            const deck = state.objects[card.deckId] as DeckType | undefined;
+            if (deck?.piles) {
+              const millPile = deck.piles.find(p => p.isMillPile);
+              if (millPile) {
+                dispatch({
+                  type: 'ADD_CARD_TO_PILE',
+                  payload: { deckId: deck.id, pileId: millPile.id, cardId: obj.id }
+                });
+              }
+            }
+          }
+        }
+        break;
+      }
       case 'delete':
         dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } });
         break;
@@ -772,6 +796,37 @@ export const Tabletop: React.FC = () => {
         break;
       case 'swingCounterClockwise':
         dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id } });
+        break;
+      case 'showTooltipImage':
+        // Show card tooltip image on click with delay
+        if (obj.type === ItemType.CARD) {
+          // Capture coordinates immediately (use event or fallback to global mouse ref)
+          const clickX = event?.clientX ?? globalMousePosRef.current.x;
+          const clickY = event?.clientY ?? globalMousePosRef.current.y;
+          // Calculate card bounds for mouse leave detection
+          const card = obj as CardType;
+          const cardWidth = card.width ?? 100;
+          const cardHeight = card.height ?? 140;
+          // Clear any existing timer
+          if (clickTooltipTimerRef.current) {
+            clearTimeout(clickTooltipTimerRef.current);
+          }
+          // Set timer to show tooltip after 300ms delay
+          clickTooltipTimerRef.current = window.setTimeout(() => {
+            // Store card bounds - use a generous padding around the card
+            clickTooltipBoundsRef.current = {
+              left: card.x - 20,
+              right: card.x + cardWidth + 20,
+              top: card.y - 20,
+              bottom: card.y + cardHeight + 20
+            };
+            setClickTooltip({
+              cardId: obj.id,
+              x: clickX,
+              y: clickY
+            });
+          }, 300);
+        }
         break;
     }
   }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition]);
@@ -1084,6 +1139,12 @@ export const Tabletop: React.FC = () => {
   // NOTE: This effect depends on cursorSlot to ensure the handler has fresh data
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
+      // Close click tooltip on any click
+      if (clickTooltip) {
+        setClickTooltip(null);
+        clickTooltipBoundsRef.current = null;
+      }
+
       if (cursorSlot.length === 0 || e.button !== 0) {
         return;
       }
@@ -1161,7 +1222,7 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('mousedown', handleGlobalClick, { capture: true });
     return () => window.removeEventListener('mousedown', handleGlobalClick, { capture: true } as any);
-  }, [cursorSlot, dropCursorSlot, state.objects, dropToDeck, dropToPile]);
+  }, [cursorSlot, dropCursorSlot, state.objects, dropToDeck, dropToPile, clickTooltip]);
 
   // Helper function to check if a point is within a rotated rectangle
   const isPointInRotatedRect = useCallback((
@@ -1264,12 +1325,16 @@ export const Tabletop: React.FC = () => {
     }
   }, [cursorSlot.length]);
 
-  // Cleanup long-press timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
       }
+      if (clickTooltipTimerRef.current) {
+        clearTimeout(clickTooltipTimerRef.current);
+      }
+      clickTooltipBoundsRef.current = null;
     };
   }, []);
 
@@ -1400,20 +1465,6 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      // Check if we're in free rotation mode for this object
-      if (freeRotatingId === id && item) {
-        const objCenterX = item.x + (item.width ?? 100) / 2;
-        const objCenterY = item.y + (item.height ?? 100) / 2;
-        const mouseWorldX = e.clientX / zoom - offset.x;
-        const mouseWorldY = e.clientY / zoom - offset.y;
-
-        // Calculate initial angle from object center to mouse
-        const startAngle = Math.atan2(mouseWorldY - objCenterY, mouseWorldX - objCenterX) * 180 / Math.PI;
-        setRotateStartAngle(item.rotation - startAngle);
-        setRotateStartMouse({ x: e.clientX, y: e.clientY });
-        return;
-      }
-
       if (item && item.locked && !isGM) return;
 
       // Cards and tokens: Shift+click immediately adds to cursor slot
@@ -1501,16 +1552,16 @@ export const Tabletop: React.FC = () => {
       setCursorPosition({ x: e.clientX, y: e.clientY });
     }
 
-    // Check for drag movement - if mouse moves 3px while holding on a card/token, add to slot immediately
+    // Check for drag movement - if mouse moves 5px while holding on a card/token, add to slot immediately
     if (longPressItemRef.current) {
-      const moveThreshold = 3; // pixels
+      const moveThreshold = 5; // pixels
       const dx = e.clientX - longPressItemRef.current.startX;
       const dy = e.clientY - longPressItemRef.current.startY;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance >= moveThreshold) {
         // Mouse moved enough - add to cursor slot for drag
-        console.log('[MOUSEMOVE-DRAG] Adding to cursor slot after 3px movement', { id: longPressItemRef.current.id });
+        console.log('[MOUSEMOVE-DRAG] Adding to cursor slot after 5px movement', { id: longPressItemRef.current.id });
         addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
         longPressItemRef.current = null;
         // Clear draggingId since the card is now being dragged via cursor slot
@@ -1525,27 +1576,6 @@ export const Tabletop: React.FC = () => {
       };
 
       setOffset(newOffset);
-      return;
-    }
-
-    // Handle free rotation
-    if (freeRotatingId && rotateStartMouse) {
-      const obj = state.objects[freeRotatingId];
-      if (obj) {
-        const objCenterX = obj.x + (obj.width ?? 100) / 2;
-        const objCenterY = obj.y + (obj.height ?? 100) / 2;
-        const mouseWorldX = e.clientX / zoom - offset.x;
-        const mouseWorldY = e.clientY / zoom - offset.y;
-
-        // Calculate current angle from object center to mouse
-        const currentAngle = Math.atan2(mouseWorldY - objCenterY, mouseWorldX - objCenterX) * 180 / Math.PI;
-        const newRotation = (currentAngle + rotateStartAngle + 360) % 360;
-
-        dispatch({
-          type: 'SET_ROTATION',
-          payload: { id: freeRotatingId, rotation: newRotation }
-        });
-      }
       return;
     }
 
@@ -1728,7 +1758,7 @@ export const Tabletop: React.FC = () => {
         payload: { id: draggingPile.deck.id, piles: updatedPiles }
       });
     }
-  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, freeRotatingId, rotateStartAngle, rotateStartMouse, cursorSlot, isPointInRotatedRect]);
+  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, cursorSlot, isPointInRotatedRect]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
     console.log('[DRAG-SYSTEM-MOUSEUP] Starting', { draggingId, resizingId, longPressItemRef: longPressItemRef.current });
@@ -1773,7 +1803,7 @@ export const Tabletop: React.FC = () => {
         // Double click detected
         const action = doubleClickAction;
         if (action) {
-          executeClickAction(obj, action);
+          executeClickAction(obj, action, e as React.MouseEvent);
         }
         clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
         return;
@@ -1791,7 +1821,7 @@ export const Tabletop: React.FC = () => {
         if (currentTracker.objectId === id && now === currentTracker.timestamp) {
           const action = singleClickAction;
           if (action) {
-            executeClickAction(obj, action);
+            executeClickAction(obj, action, e as React.MouseEvent);
           }
           clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
         }
@@ -1841,7 +1871,7 @@ export const Tabletop: React.FC = () => {
         // Double click detected
         const action = doubleClickAction;
         if (action) {
-          executeClickAction(obj, action);
+          executeClickAction(obj, action, e as React.MouseEvent);
         }
         // Reset click tracker after double click
         clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
@@ -1860,7 +1890,7 @@ export const Tabletop: React.FC = () => {
             // Still the same click, execute single click action
             const action = singleClickAction;
             if (action) {
-              executeClickAction(obj, action);
+              executeClickAction(obj, action, e as React.MouseEvent);
             }
             clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
           }
@@ -2015,15 +2045,10 @@ export const Tabletop: React.FC = () => {
     setResizeStart(null);
     dragOffsetRef.current = null;
 
-    // Clear free rotation state
-    setFreeRotatingId(null);
-    setRotateStartAngle(0);
-    setRotateStartMouse(null);
-
     // Clear pile dragging state
     setDraggingPile(null);
     pileDragStartRef.current = null;
-  }, [draggingId, hoveredDeckId, hoveredPileId, state.objects, dispatch, executeClickAction, freeRotatingId, isPointInRotatedRect]);
+  }, [draggingId, hoveredDeckId, hoveredPileId, state.objects, dispatch, executeClickAction, isPointInRotatedRect]);
 
   // Keep handleMouseUp ref updated
   useEffect(() => {
@@ -2035,7 +2060,7 @@ export const Tabletop: React.FC = () => {
     handleMouseMoveRef.current = handleMouseMove;
   }, [handleMouseMove]);
 
-  // Handle Escape key to cancel free rotation mode, Space for testing pin compensation
+  // Handle Escape key to close click tooltip, Space for testing pin compensation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in an input/textarea
@@ -2044,11 +2069,14 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      if (e.key === 'Escape' && freeRotatingId) {
-        setFreeRotatingId(null);
-        setRotateStartAngle(0);
-        setRotateStartMouse(null);
+      // Close click tooltip on ESC
+      if (e.key === 'Escape') {
+        if (clickTooltip) {
+          setClickTooltip(null);
+          clickTooltipBoundsRef.current = null;
+        }
       }
+
       // TEST: Spacebar manually compensates pinned deck position based on scroll
       if (e.key === ' ' && !e.repeat) {
         e.preventDefault();
@@ -2074,7 +2102,7 @@ export const Tabletop: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [freeRotatingId, state.objects, offset, zoom]);
+  }, [state.objects, offset, zoom, clickTooltip]);
 
   // Global mouseup handler for drag operations - ALWAYS active, checks state internally
   useEffect(() => {
@@ -2088,9 +2116,8 @@ export const Tabletop: React.FC = () => {
       const currentIsPanning = isPanningRef.current;
       const currentResizingId = resizingIdRef.current;
       const currentDraggingPile = draggingPileRef.current;
-      const currentFreeRotatingId = freeRotatingIdRef.current;
 
-      if (currentDraggingId || currentIsPanning || currentResizingId || currentDraggingPile || currentFreeRotatingId) {
+      if (currentDraggingId || currentIsPanning || currentResizingId || currentDraggingPile) {
         handleMouseUpRef.current(e);
       }
     };
@@ -2101,9 +2128,8 @@ export const Tabletop: React.FC = () => {
       const currentIsPanning = isPanningRef.current;
       const currentResizingId = resizingIdRef.current;
       const currentDraggingPile = draggingPileRef.current;
-      const currentFreeRotatingId = freeRotatingIdRef.current;
 
-      if (currentDraggingId || currentIsPanning || currentResizingId || currentDraggingPile || currentFreeRotatingId) {
+      if (currentDraggingId || currentIsPanning || currentResizingId || currentDraggingPile) {
         handleMouseMoveRef.current(e);
       }
     };
@@ -2500,18 +2526,9 @@ export const Tabletop: React.FC = () => {
       }}
       style={{
         backgroundImage: 'radial-gradient(#34495e 1px, transparent 1px)',
-        backgroundSize: '20px 20px',
-        cursor: freeRotatingId ? 'crosshair' : undefined
+        backgroundSize: '20px 20px'
       }}
     >
-      {/* Free rotation mode indicator */}
-      {freeRotatingId && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-lg z-[1000] flex items-center gap-2">
-          <RotateCw size={16} className="animate-spin" />
-          <span className="text-sm font-medium">Free Rotation Mode - Drag to rotate, press ESC to exit</span>
-        </div>
-      )}
-
       <div 
             style={{ 
                 width: worldBounds.width, 
@@ -3090,6 +3107,22 @@ export const Tabletop: React.FC = () => {
                                             }
                                             break;
                                         }
+                                        case 'moveToDiscard': {
+                                            const card = obj as CardType;
+                                            if (card.deckId) {
+                                                const deck = state.objects[card.deckId] as DeckType | undefined;
+                                                if (deck?.piles) {
+                                                    const millPile = deck.piles.find(p => p.isMillPile);
+                                                    if (millPile) {
+                                                        dispatch({
+                                                            type: 'ADD_CARD_TO_PILE',
+                                                            payload: { deckId: deck.id, pileId: millPile.id, cardId: obj.id }
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                            break;
+                                        }
                                         case 'rotate':
                                             dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id }});
                                             break;
@@ -3645,6 +3678,78 @@ export const Tabletop: React.FC = () => {
                 })()}
             </div>
         )}
+
+        {/* Click-to-show tooltip for cards */}
+        {clickTooltip && (() => {
+          const card = state.objects[clickTooltip.cardId] as CardType;
+          if (!card) return null;
+
+          const deck = card.deckId ? (state.objects[card.deckId] as DeckType | undefined) : undefined;
+
+          // Get tooltip image source
+          const getTooltipImageSrc = (): string | undefined => {
+            // For click tooltip, always show image if available (regardless of deck.showTooltipImage setting)
+            if (card.faceUp) {
+              if (card.spriteUrl) return card.spriteUrl;
+              if (card.content) return card.content;
+            }
+            // Card is face down
+            if (deck) {
+              if (deck.spriteConfig?.cardBackSpriteUrl) return deck.spriteConfig.cardBackSpriteUrl;
+              if (deck.spriteConfig?.cardBackUrl) return deck.spriteConfig.cardBackUrl;
+            }
+            return undefined;
+          };
+
+          const imageSrc = getTooltipImageSrc();
+          if (!imageSrc) return null;
+
+          // Calculate dimensions
+          const cardWidth = card.width ?? deck?.cardWidth ?? 100;
+          const cardHeight = card.height ?? deck?.cardHeight ?? 140;
+          const aspectRatio = cardWidth / cardHeight;
+          const tooltipScale = deck?.tooltipScale ?? 125;
+          const baseWidth = cardWidth;
+
+          // Get sprite info
+          const spriteIndex = card.spriteIndex;
+          const spriteColumns = card.spriteColumns ?? deck?.spriteConfig?.columns;
+          const spriteRows = card.spriteRows ?? deck?.spriteConfig?.rows;
+
+          // Calculate background position for sprite
+          let bgPosition = 'center';
+          let bgSize = 'cover';
+          if (spriteIndex !== undefined && spriteColumns && spriteRows) {
+            const col = spriteIndex % spriteColumns;
+            const row = Math.floor(spriteIndex / spriteColumns);
+            const colPercent = spriteColumns > 1 ? (col / (spriteColumns - 1)) * 100 : 0;
+            const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
+            bgPosition = `${colPercent}% ${rowPercent}%`;
+            bgSize = `${spriteColumns * 100}% ${spriteRows * 100}%`;
+          }
+
+          return (
+            <div
+              className="fixed z-[99999] pointer-events-none"
+              style={{
+                left: clickTooltip.x + 5,
+                top: clickTooltip.y + 5,
+              }}
+            >
+              <div
+                className="bg-slate-900/95 border border-slate-600 rounded-lg overflow-hidden shadow-xl"
+                style={{
+                  width: `${baseWidth * (tooltipScale / 100)}px`,
+                  height: `${baseWidth * (tooltipScale / 100) / aspectRatio}px`,
+                  backgroundImage: `url(${imageSrc})`,
+                  backgroundSize: bgSize,
+                  backgroundPosition: bgPosition,
+                  backgroundRepeat: 'no-repeat',
+                }}
+              />
+            </div>
+          );
+        })()}
     </div>
   );
 };

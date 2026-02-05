@@ -38,6 +38,7 @@ export const BUTTON_STYLES: Record<ButtonAction, { className: string; title: str
   moveToHand: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Move to Hand' },
   moveToTopDeck: { className: 'bg-orange-600 hover:bg-orange-500', title: 'Move to Top Deck' },
   moveToBottomDeck: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Move to Bottom Deck' },
+  moveToDiscard: { className: 'bg-red-600 hover:bg-red-500', title: 'Move to Discard' },
 };
 
 // Icon factory functions - return appropriate icon based on state
@@ -71,6 +72,7 @@ export const ButtonIcons = {
   moveToHand: () => <Hand size={14} />,
   moveToTopDeck: () => <ArrowUp size={14} />,
   moveToBottomDeck: () => <ArrowDown size={14} />,
+  moveToDiscard: () => <Trash2 size={14} />,
 } as const;
 
 // Helper to get complete button config for cards
