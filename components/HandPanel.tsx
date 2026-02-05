@@ -1,8 +1,9 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType, ItemType, CardShape, CardLocation } from '../types';
+import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType } from '../types';
 import { Card as CardComponent } from './Card';
+import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { Plus, Minus } from 'lucide-react';
@@ -28,8 +29,14 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   // State for selected player hand tab (whose hand we're viewing)
   const [selectedPlayerId, setSelectedPlayerId] = useState(state.activePlayerId);
 
-  // Context menu state for card scale options
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; cardId: string } | null>(null);
+  // Get current player info
+  const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
+  const isGM = currentPlayer?.isGM ?? false;
+
+  // Context menu state for cards in hand
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
+  // Context menu state for hand scale (right-click on empty space in hand panel)
+  const [scaleMenu, setScaleMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Local drag state for reorder
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -242,12 +249,100 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     }
   }, [dispatch, state.objects]);
 
-  // Context menu handler for cards
-  const handleContextMenu = useCallback((e: React.MouseEvent, cardId: string) => {
+  // Context menu handler for individual cards
+  const handleCardContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, cardId });
+    setContextMenu({ x: e.clientX, y: e.clientY, object: card });
   }, []);
+
+  // Context menu handler for hand panel empty space (shows scale options)
+  const handlePanelContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setScaleMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  // Handle context menu actions for cards
+  const handleContextMenuAction = useCallback((action: string) => {
+    if (!contextMenu) return;
+    const object = contextMenu.object as Card;
+
+    switch (action) {
+      case 'configure':
+        // Dispatch custom event for opening card settings (handled by UIObjectRenderer)
+        window.dispatchEvent(new CustomEvent('open-card-settings', {
+          detail: { cardId: object.id }
+        }));
+        setContextMenu(null);
+        return;
+      case 'rotate':
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: 90 } });
+        break;
+      case 'rotateClockwise':
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: object.rotationStep ?? 45 } });
+        break;
+      case 'rotateCounterClockwise':
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: -(object.rotationStep ?? 45) } });
+        break;
+      case 'swingClockwise':
+        dispatch({ type: 'SWING_CLOCKWISE', payload: { id: object.id } });
+        break;
+      case 'swingCounterClockwise':
+        dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: object.id } });
+        break;
+      case 'layerUp':
+        dispatch({ type: 'MOVE_LAYER_UP', payload: { id: object.id } });
+        break;
+      case 'layerDown':
+        dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: object.id } });
+        break;
+      case 'clone':
+        dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id } });
+        break;
+      case 'moveToHand':
+        // Already in hand, do nothing
+        break;
+      case 'moveToTopDeck':
+        if (object.deckId) {
+          dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId: object.id, deckId: object.deckId } });
+        }
+        break;
+      case 'moveToBottomDeck':
+        if (object.deckId) {
+          dispatch({ type: 'RETURN_CARD_TO_DECK_BOTTOM', payload: { cardId: object.id, deckId: object.deckId } });
+        }
+        break;
+      case 'moveToDiscard': {
+        if (object.deckId) {
+          const deck = state.objects[object.deckId] as DeckType | undefined;
+          if (deck?.piles) {
+            const millPile = deck.piles.find(p => p.isMillPile);
+            if (millPile) {
+              dispatch({ type: 'ADD_CARD_TO_PILE', payload: { deckId: deck.id, pileId: millPile.id, cardId: object.id } });
+            }
+          }
+        }
+        break;
+      }
+      case 'delete':
+        dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id } });
+        break;
+      case 'toggleHide':
+        const isHidden = object.hidden === true;
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: object.id, hidden: !isHidden } });
+        break;
+      default:
+        // Handle pile-specific move actions
+        if (action.startsWith('moveToPile-')) {
+          const pileId = action.replace('moveToPile-', '');
+          if (object.deckId) {
+            dispatch({ type: 'ADD_CARD_TO_PILE', payload: { deckId: object.deckId, pileId, cardId: object.id } });
+          }
+        }
+        break;
+    }
+    setContextMenu(null);
+  }, [contextMenu, dispatch, state.objects]);
 
   // Scale handlers - dispatch custom event for parent component to handle
   const handleIncreaseScale = useCallback(() => {
@@ -256,7 +351,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     if (onCardScaleChange) {
       onCardScaleChange(newScale);
     }
-    setContextMenu(null);
+    setScaleMenu(null);
   }, [cardScale, onCardScaleChange]);
 
   const handleDecreaseScale = useCallback(() => {
@@ -265,7 +360,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     if (onCardScaleChange) {
       onCardScaleChange(newScale);
     }
-    setContextMenu(null);
+    setScaleMenu(null);
   }, [cardScale, onCardScaleChange]);
 
   // Handle card mouse down - start reorder drag or add to cursor slot with Shift or long-press
@@ -530,16 +625,17 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     setSelectedPlayerId(state.activePlayerId);
   }, [state.activePlayerId]);
 
-  // Close context menu when clicking outside
+  // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = () => {
       setContextMenu(null);
+      setScaleMenu(null);
     };
-    if (contextMenu) {
+    if (contextMenu || scaleMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [contextMenu]);
+  }, [contextMenu, scaleMenu]);
 
   return (
     <div
@@ -613,7 +709,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
             <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
           )}
           {/* Inner content container */}
-          <div className="h-full transition-all p-1">
+          <div className="h-full transition-all p-1" onContextMenu={handlePanelContextMenu}>
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
               <p className="text-sm">
@@ -691,7 +787,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                               transform: isDragOver ? 'scale(1.05)' : undefined,
                             }}
                             onMouseDown={(e) => handleCardMouseDown(e, card.id, actualIndex, e.currentTarget as HTMLDivElement)}
-                            onContextMenu={(e) => handleContextMenu(e, card.id)}
+                            onContextMenu={(e) => handleCardContextMenu(e, card)}
                           >
                             <CardComponent
                               card={displayedCard}
@@ -705,6 +801,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                               deckSpriteConfig={deck?.spriteConfig}
                               deckShowTooltipImage={deck?.showTooltipImage}
                               deckTooltipScale={deck?.tooltipScale}
+                              shouldSeeCardFace={!isViewingOpponentHand}
                             />
 
                             {!isViewingOpponentHand && buttons.length > 0 && (
@@ -736,22 +833,43 @@ export const HandPanel: React.FC<HandPanelProps> = ({
         </>
       )}
 
-      {/* Simple context menu for card scale options */}
+      {/* Context menu for cards in hand */}
       {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          object={contextMenu.object}
+          isGM={isGM}
+          onAction={handleContextMenuAction}
+          onClose={() => setContextMenu(null)}
+          allObjects={state.objects}
+          hideCardActions={true}
+          showHandScaleOptions={true}
+          cardScale={cardScale}
+          onScaleIncrease={handleIncreaseScale}
+          onScaleDecrease={handleDecreaseScale}
+        />
+      )}
+
+      {/* Scale menu for hand panel (right-click on empty space) */}
+      {scaleMenu && (
         <div
-          className="fixed z-[99999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
+          className="fixed z-[99999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[200px]"
+          style={{ left: scaleMenu.x, top: scaleMenu.y }}
+          onClick={() => setScaleMenu(null)}
         >
+          <div className="px-3 py-1.5 text-xs text-slate-400 border-b border-slate-700 mb-1">
+            Hand Card Scale (All Cards)
+          </div>
           <button
-            onClick={handleIncreaseScale}
+            onClick={(e) => { e.stopPropagation(); handleIncreaseScale(); }}
             className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-700 flex items-center gap-2"
           >
             <Plus size={14} />
             Increase Scale ({Math.round(cardScale * 100)}%)
           </button>
           <button
-            onClick={handleDecreaseScale}
+            onClick={(e) => { e.stopPropagation(); handleDecreaseScale(); }}
             className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-700 flex items-center gap-2"
           >
             <Minus size={14} />

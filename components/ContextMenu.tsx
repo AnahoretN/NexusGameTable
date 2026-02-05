@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight, Plus, Minus } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -12,8 +12,13 @@ interface ContextMenuProps {
   onAction: (action: string) => void;
   onClose: () => void;
   allObjects: Record<string, TableObject>; // Added to access deck for card inheritance
-  hideCardActions?: boolean; // Hide layer, lock, and rotate for cards
+  hideCardActions?: boolean; // Hide layer, lock, pin, clone, delete, rotate, and "move to hand" for cards
   isSearchWindow?: boolean; // Show additional GM actions in search window
+  // Hand panel scale options
+  showHandScaleOptions?: boolean; // Show scale options at bottom (for cards in hand)
+  cardScale?: number; // Current scale value (0.5 - 2)
+  onScaleIncrease?: () => void; // Handler for scale increase
+  onScaleDecrease?: () => void; // Handler for scale decrease
 }
 
 interface MenuItem {
@@ -27,13 +32,19 @@ interface MenuItem {
   isSeparator?: boolean;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, showHandScaleOptions, cardScale = 1, onScaleIncrease, onScaleDecrease }) => {
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
   const [topDeckSubmenuOpen, setTopDeckSubmenuOpen] = useState(false);
   const [moveSubmenuOpen, setMoveSubmenuOpen] = useState(false);
   const submenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Store computed positions for main menu and submenus
+  const [menuPosition, setMenuPosition] = React.useState({ left: x, top: y });
+  const [submenuPositions, setSubmenuPositions] = React.useState<Record<string, { left: number; top: number; side: 'left' | 'right' }>>({});
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const submenuButtonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
 
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = (card: Card) => {
@@ -94,11 +105,82 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         setPilesSubmenuOpen(false);
         setTopDeckSubmenuOpen(false);
         setMoveSubmenuOpen(false);
+        setSubmenuPositions({});
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Calculate main menu position to keep it on screen
+  React.useEffect(() => {
+    const menuWidth = 200; // approximate min width
+    const menuHeight = 400; // approximate max height
+
+    let left = x;
+    let top = y;
+
+    // Check right edge
+    if (left + menuWidth > window.innerWidth) {
+      left = window.innerWidth - menuWidth - 10;
+    }
+    if (left < 10) left = 10;
+
+    // Check bottom edge
+    if (top + menuHeight > window.innerHeight) {
+      top = window.innerHeight - menuHeight - 10;
+    }
+    if (top < 10) top = 10;
+
+    setMenuPosition({ left, top });
+  }, [x, y]);
+
+  // Calculate submenu positions based on actual button positions
+  React.useEffect(() => {
+    const positions: Record<string, { left: number; top: number; side: 'left' | 'right' }> = {};
+    const submenuWidth = 180;
+    const submenuHeight = 200; // estimated max height
+
+    const openSubmenus: string[] = [];
+    if (layerSubmenuOpen) openSubmenus.push('layer');
+    if (rotateSubmenuOpen) openSubmenus.push('rotate');
+    if (pilesSubmenuOpen) openSubmenus.push('piles');
+    if (topDeckSubmenuOpen) openSubmenus.push('topDeck');
+    if (moveSubmenuOpen) openSubmenus.push('moveTo');
+
+    // Clear positions when all submenus are closed
+    if (openSubmenus.length === 0) {
+      setSubmenuPositions({});
+      return;
+    }
+
+    openSubmenus.forEach(key => {
+      const button = submenuButtonRefs.current[key];
+      if (button) {
+        const rect = button.getBoundingClientRect();
+        let left = rect.right + 5;
+        let top = rect.top;
+        let side: 'left' | 'right' = 'right';
+
+        // Check if submenu would go off right edge
+        if (left + submenuWidth > window.innerWidth) {
+          // Show on left side instead
+          left = rect.left - submenuWidth - 5;
+          side = 'left';
+        }
+
+        // Check if submenu would go off bottom edge
+        if (top + submenuHeight > window.innerHeight) {
+          top = window.innerHeight - submenuHeight - 10;
+        }
+        if (top < 10) top = 10;
+
+        positions[key] = { left, top, side };
+      }
+    });
+
+    setSubmenuPositions(positions);
+  }, [layerSubmenuOpen, rotateSubmenuOpen, pilesSubmenuOpen, topDeckSubmenuOpen, moveSubmenuOpen]);
 
   // "Move to.." section for cards - defined here to be inserted early
   const moveToSection: MenuItem[] = object.type === ItemType.CARD ? (() => {
@@ -111,7 +193,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         label: 'Hand',
         action: 'moveToHand',
         icon: <Hand size={14} />,
-        visible: can('moveToHand')
+        visible: !hideCardActions && can('moveToHand')
       },
       {
         label: 'Top Deck',
@@ -125,9 +207,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         icon: <ArrowDown size={14} />,
         visible: !!deck && can('moveToBottomDeck')
       },
-      // Move to Discard - only visible if there's a mill pile AND action is allowed
+      // Move to Mill - only visible if there's a mill pile AND action is allowed
       ...(piles.some(p => p.isMillPile) && can('moveToDiscard') ? [{
-        label: 'Discard',
+        label: 'Mill',
         action: 'moveToDiscard' as const,
         icon: <Trash2 size={14} />,
         visible: true
@@ -184,7 +266,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Change Layer',
       action: 'layer',
       icon: <Layers size={14} />,
-      visible: can('layerUp') || can('layerDown'),
+      visible: !hideCardActions && (can('layerUp') || can('layerDown')),
       hasSubmenu: true,
       separator: false,
       submenuItems: [
@@ -293,13 +375,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: object.locked ? 'Unlock' : 'Lock',
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
-      visible: can('lock')
+      visible: !hideCardActions && can('lock')
     },
     {
       label: object.isPinnedToViewport ? 'Unpin' : 'Pin',
       action: object.isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
       icon: <Pin size={14} />,
-      visible: can('pin'),
+      visible: !hideCardActions && can('pin'),
       separator: true
     },
     // Remove the old "To Hand" item since it's now in "Move to.."
@@ -313,13 +395,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Clone',
       action: 'clone',
       icon: <Copy size={14} />,
-      visible: can('clone')
+      visible: !hideCardActions && can('clone')
     },
     {
       label: 'Delete',
       action: 'delete',
       icon: <Trash2 size={14} />,
-      visible: can('delete')
+      visible: !hideCardActions && can('delete')
     },
   ];
 
@@ -329,15 +411,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const otherItems = visibleItems.filter(i => i.action !== 'configure');
   const finalItems = configureItem ? [configureItem, ...otherItems] : otherItems;
 
-  // Adjust position to not go off-screen (basic check)
-  const style: React.CSSProperties = {
-    top: y,
-    left: x,
+  const menuStyle: React.CSSProperties = {
+    top: menuPosition.top,
+    left: menuPosition.left,
   };
-
-  // If near right edge, shift left. If near bottom, shift up.
-  if (x > window.innerWidth - 200) style.left = x - 180;
-  if (y > window.innerHeight - 300) style.top = y - 250;
 
   return createPortal(
     <>
@@ -348,8 +425,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         onMouseDown={(e) => e.stopPropagation()}
       />
       <div
+        ref={menuRef}
         className="fixed z-[9999] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100"
-        style={style}
+        style={menuStyle}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="px-3 py-2 border-b border-slate-700 mb-1">
@@ -406,9 +484,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                 }
               };
 
+              const submenuKey = isRotateSubmenu ? 'rotate' : isPilesSubmenu ? 'piles' : isTopDeckSubmenu ? 'topDeck' : isMoveSubmenu ? 'moveTo' : 'layer';
+              const submenuPos = submenuPositions[submenuKey];
+
               return (
                 <div key={item.action || idx} className="relative" ref={submenuRef}>
                   <button
+                    ref={(el) => { submenuButtonRefs.current[submenuKey] = el; }}
                     onClick={(e) => { e.stopPropagation(); toggleSubmenu(); }}
                     className="w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                   >
@@ -418,9 +500,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                     </div>
                     <ChevronRight size={12} />
                   </button>
-                  {isSubmenuOpen && (
+                  {isSubmenuOpen && submenuPos && createPortal(
                     <div
-                      className="absolute left-full top-0 ml-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] z-[10000]"
+                      className="fixed z-[10000] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
+                      style={{ left: submenuPos.left, top: submenuPos.top }}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
                       {/* If item has submenuItems defined, use generic renderer */}
@@ -520,7 +603,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                           </button>
                         </>
                       )}
-                    </div>
+                    </div>,
+                    document.body
                   )}
                   {item.separator && <div className="h-px bg-slate-700 my-1 mx-2" />}
                 </div>
@@ -539,6 +623,30 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                 </React.Fragment>
             );
         })}
+
+        {/* Hand panel scale options */}
+        {showHandScaleOptions && (
+          <>
+            <div className="h-px bg-slate-700 my-1 mx-2" />
+            <div className="px-3 py-1.5 text-xs text-slate-400 flex items-center justify-between">
+              <button
+                onClick={(e) => { e.stopPropagation(); onScaleIncrease?.(); onClose(); }}
+                className="px-2 py-1 flex items-center gap-1 hover:bg-slate-700 rounded transition-colors text-gray-200"
+                title="Increase Scale"
+              >
+                <Plus size={12} />
+              </button>
+              <span>{Math.round(cardScale * 100)}%</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onScaleDecrease?.(); onClose(); }}
+                className="px-2 py-1 flex items-center gap-1 hover:bg-slate-700 rounded transition-colors text-gray-200"
+                title="Decrease Scale"
+              >
+                <Minus size={12} />
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </>,
     document.body
