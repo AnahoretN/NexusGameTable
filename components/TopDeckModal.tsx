@@ -211,12 +211,6 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose }) => 
         icon: card.faceUp ? <EyeOff size={12} /> : <Eye size={12} />,
         onClick: () => handleFlip(card.id)
       },
-      toHand: {
-        className: 'bg-blue-600 hover:bg-blue-500',
-        title: 'To Hand',
-        icon: <Hand size={12} />,
-        onClick: () => handleToHand(card.id)
-      },
       moveToHand: {
         className: 'bg-blue-600 hover:bg-blue-500',
         title: 'Move to Hand',

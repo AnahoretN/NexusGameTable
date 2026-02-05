@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, ItemType } from '../types';
+import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, ItemType, Deck as DeckType } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
@@ -29,11 +29,6 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = []) =
       className: 'bg-purple-600 hover:bg-purple-500',
       title: 'Flip',
       icon: card.faceUp ? <EyeOff size={14} /> : <Eye size={14} />
-    },
-    toHand: {
-      className: 'bg-blue-600 hover:bg-blue-500',
-      title: 'To Hand',
-      icon: <Hand size={14} />
     },
     rotate: {
       className: 'bg-green-600 hover:bg-green-500',
@@ -288,9 +283,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       case 'flip':
         handleFlip(card.id);
         break;
-      case 'toHand':
-        handleToHand(card.id);
-        break;
       case 'moveToHand':
         handleToHand(card.id);
         break;
@@ -381,28 +373,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         break;
       case 'rotate':
         dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: 90 }});
-        break;
-      case 'toHand':
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: {
-            id: object.id,
-            location: 'HAND' as any,
-            ownerId: state.activePlayerId,
-            isOnTable: false,
-            faceUp: true
-          } as any
-        });
-        const newCardOrder = cardOrder.filter(id => id !== object.id);
-        if (isPile && pile) {
-          const updatedPiles = deck.piles?.map(p =>
-            p.id === pile.id ? { ...p, cardIds: newCardOrder } : p
-          );
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
-        } else {
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: newCardOrder } });
-        }
-        setCardOrder(newCardOrder);
         break;
       case 'moveToHand':
         dispatch({
