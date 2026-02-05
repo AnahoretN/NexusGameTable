@@ -17,6 +17,9 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
   const { state, dispatch } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // State for selected player hand tab (whose hand we're viewing)
+  const [selectedPlayerId, setSelectedPlayerId] = useState(state.activePlayerId);
+
   // Local drag state for reorder
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -79,16 +82,16 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
     };
   }, []);
 
-  // Get cards in hand for current player, sorted by handCardOrder
+  // Get cards in hand for selected player (whose hand tab we're viewing), sorted by handCardOrder
   const cards = useMemo(() => {
-    const player = state.players.find(p => p.id === state.activePlayerId);
+    const player = state.players.find(p => p.id === selectedPlayerId);
     const handCardOrder = player?.handCardOrder || [];
 
-    // Get all cards in hand for this player (exclude cards in cursor slot)
+    // Get all cards in hand for selected player (exclude cards in cursor slot)
     const handCards = Object.values(state.objects).filter(o =>
       o.type === 'CARD' &&
       (o as Card).location === 'HAND' &&
-      (o as Card).ownerId === state.activePlayerId &&
+      (o as Card).ownerId === selectedPlayerId &&
       !(o as Card).inCursorSlot // Don't show cards that are in cursor slot
     ) as Card[];
 
@@ -99,7 +102,11 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
       const bIndex = cardOrderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
       return aIndex - bIndex;
     });
-  }, [state.objects, state.activePlayerId, state.players]);
+  }, [state.objects, selectedPlayerId, state.players]);
+
+  // Determine if we're viewing another player's hand (not our own)
+  // In that case, show cards face down (as card backs)
+  const isViewingOpponentHand = selectedPlayerId !== state.activePlayerId;
 
   // Group cards by shape, maintaining order within each group
   const cardsByShape = useMemo(() => {
@@ -187,12 +194,12 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
         payload: {
           id: cardId,
           location: CardLocation.HAND,
-          ownerId: state.activePlayerId,
+          ownerId: selectedPlayerId,
           isOnTable: false
         }
       });
     }
-  }, [dispatch, state.objects, state.activePlayerId]);
+  }, [dispatch, state.objects, selectedPlayerId]);
 
   const handleMoveToTopDeck = useCallback((cardId: string) => {
     const card = state.objects[cardId] as Card;
@@ -225,9 +232,13 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
   }, [dispatch, state.objects]);
 
   // Handle card mouse down - start reorder drag or add to cursor slot with Shift or long-press
+  // Only works for own hand (not when viewing opponent's hand)
   const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number, _cardElement: HTMLDivElement | null) => {
     // Only left click
     if (e.button !== 0) return;
+
+    // Don't allow interactions when viewing opponent's hand
+    if (isViewingOpponentHand) return;
 
     // Don't drag if clicking on action buttons
     const target = e.target as HTMLElement;
@@ -271,7 +282,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
 
     dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     setDragIndex(index);
-  }, []);
+  }, [isViewingOpponentHand]);
 
   // Handle mouse move for reorder preview
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -432,7 +443,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
       // New order: new cards first, then existing cards
       const newCardOrder = [...newCardIds, ...currentHandOrder];
 
-      // Update hand card order
+      // Update hand card order for active player
       dispatch({
         type: 'UPDATE_HAND_CARD_ORDER',
         payload: { playerId: state.activePlayerId, cardOrder: newCardOrder }
@@ -475,7 +486,12 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
 
     window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     return () => window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
-  }, [dispatch, state.objects, state.activePlayerId, state.players]);
+  }, [dispatch, state.objects, state.activePlayerId, state.players, selectedPlayerId]);
+
+  // Reset to own hand when active player changes
+  useEffect(() => {
+    setSelectedPlayerId(state.activePlayerId);
+  }, [state.activePlayerId]);
 
   return (
     <div
@@ -484,6 +500,46 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
       className="h-full flex flex-col transition-all"
       style={{ width }}
     >
+      {/* Player hand tabs - only show when not collapsed and there are multiple players */}
+      {!isCollapsed && state.players.length > 1 && (
+        <div className="flex flex-wrap gap-1 px-1 pt-1 pb-0 border-b border-slate-700">
+          {state.players.map(player => {
+            const isActive = player.id === selectedPlayerId;
+            const isOwnHand = player.id === state.activePlayerId;
+            const cardCount = Object.values(state.objects).filter(o =>
+              o.type === 'CARD' &&
+              (o as Card).location === 'HAND' &&
+              (o as Card).ownerId === player.id &&
+              !(o as Card).inCursorSlot
+            ).length;
+
+            return (
+              <button
+                key={player.id}
+                onClick={() => setSelectedPlayerId(player.id)}
+                className={`px-2 py-1 text-xs font-medium rounded-t transition-colors relative ${
+                  isActive
+                    ? isOwnHand
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-orange-600 text-white'
+                    : isOwnHand
+                      ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                }`}
+              >
+                <span className="flex items-center gap-1">
+                  {isOwnHand ? (
+                    <span>Моя рука ({cardCount})</span>
+                  ) : (
+                    <span>{player.name} ({cardCount})</span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Cards Grid - outer scroll container - hidden when collapsed */}
       {!isCollapsed && (
         <>
@@ -501,8 +557,16 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
           <div className="h-full transition-all p-1">
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
-              <p className="text-sm">No cards in hand</p>
-              <p className="text-xs mt-1">Draw cards from a deck</p>
+              <p className="text-sm">
+                {isViewingOpponentHand
+                  ? `${state.players.find(p => p.id === selectedPlayerId)?.name || 'Игрок'} не имеет карт`
+                  : 'Нет карт в руке'}
+              </p>
+              <p className="text-xs mt-1">
+                {isViewingOpponentHand
+                  ? 'Карты будут видны здесь когда они появятся'
+                  : 'Возьмите карты из колоды'}
+              </p>
             </div>
           ) : (
             <>
@@ -553,6 +617,9 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                         const isDragging = dragIndex === actualIndex;
                         const isDragOver = dragOverIndex === actualIndex;
 
+                        // When viewing opponent's hand, create a modified card that appears face down
+                        const displayedCard = isViewingOpponentHand ? { ...card, faceUp: false } : card;
+
                         return (
                           <div
                             key={card.id}
@@ -567,7 +634,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                             onMouseDown={(e) => handleCardMouseDown(e, card.id, actualIndex, e.currentTarget as HTMLDivElement)}
                           >
                             <CardComponent
-                              card={card}
+                              card={displayedCard}
                               overrideWidth={cardWidth}
                               overrideHeight={cardHeight}
                               cardWidth={cardSettings.cardWidth}
@@ -580,7 +647,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                               deckTooltipScale={deck?.tooltipScale}
                             />
 
-                            {buttons.length > 0 && (
+                            {!isViewingOpponentHand && buttons.length > 0 && (
                               <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
                                 {buttons.map(btn => (
                                   <button
