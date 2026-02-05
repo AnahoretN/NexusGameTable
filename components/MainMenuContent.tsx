@@ -66,6 +66,18 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   // Hand card scale state with localStorage persistence
   const { scale: handCardScale, setHandCardScale } = useHandCardScale();
 
+  // Listen for hand card scale change events from context menu
+  useEffect(() => {
+    const handleScaleChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ newScale: number }>;
+      setHandCardScale(customEvent.detail.newScale);
+      localStorage.setItem('hand-card-scale', String(customEvent.detail.newScale));
+    };
+
+    window.addEventListener('hand-card-scale-change', handleScaleChange);
+    return () => window.removeEventListener('hand-card-scale-change', handleScaleChange);
+  }, [setHandCardScale]);
+
   const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
 
   // Get main menu panel for bounds and minimized state
@@ -352,40 +364,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
         {activeTab === 'hand' && (
           <div className="h-full flex flex-col">
-            {/* Hand Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-1">
-                <Hand size={14} />
-                Your Hand ({Object.values(state.objects).filter(o =>
-                  o.type === ItemType.CARD && (o as Card).location === 'HAND' && (o as Card).ownerId === state.activePlayerId
-                ).length})
-              </h3>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => {
-                    const newScale = Math.max(0.5, handCardScale - 0.03);
-                    setHandCardScale(newScale);
-                    localStorage.setItem('hand-card-scale', String(newScale));
-                  }}
-                  className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
-                  title="Decrease card size"
-                >
-                  <Minus size={12} />
-                </button>
-                <span className="text-xs text-gray-400 w-8 text-center">{Math.round(handCardScale * 100)}%</span>
-                <button
-                  onClick={() => {
-                    const newScale = Math.min(2, handCardScale + 0.03);
-                    setHandCardScale(newScale);
-                    localStorage.setItem('hand-card-scale', String(newScale));
-                  }}
-                  className="p-1 bg-slate-700 hover:bg-slate-600 rounded text-gray-300 hover:text-white transition-colors"
-                  title="Increase card size"
-                >
-                  <Plus size={12} />
-                </button>
-              </div>
-            </div>
             {/* Hand Panel */}
             <div className="flex-1 overflow-hidden">
               <HandPanel width={width} isDragTarget={dragOverHand} cardScale={handCardScale} />

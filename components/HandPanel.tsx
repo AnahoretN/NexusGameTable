@@ -3,22 +3,34 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType, ItemType, CardShape, CardLocation } from '../types';
 import { Card as CardComponent } from './Card';
+import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
 import { MAIN_MENU_WIDTH } from '../constants';
+import { Plus, Minus } from 'lucide-react';
 
 interface HandPanelProps {
   width?: number;
   isDragTarget?: boolean; // When a card from tabletop is being dragged over hand
   isCollapsed?: boolean; // When true, show only header (height 32px)
   cardScale?: number; // Scale for card display (0.5 - 2)
+  onCardScaleChange?: (newScale: number) => void; // Callback for scale changes
 }
 
-export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, isDragTarget = false, isCollapsed = false, cardScale = 1 }) => {
+export const HandPanel: React.FC<HandPanelProps> = ({
+  width = MAIN_MENU_WIDTH,
+  isDragTarget = false,
+  isCollapsed = false,
+  cardScale = 1,
+  onCardScaleChange
+}) => {
   const { state, dispatch } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // State for selected player hand tab (whose hand we're viewing)
   const [selectedPlayerId, setSelectedPlayerId] = useState(state.activePlayerId);
+
+  // Context menu state for card scale options
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; cardId: string } | null>(null);
 
   // Local drag state for reorder
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -230,6 +242,32 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
       }
     }
   }, [dispatch, state.objects]);
+
+  // Context menu handler for cards
+  const handleContextMenu = useCallback((e: React.MouseEvent, cardId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, cardId });
+  }, []);
+
+  // Scale handlers - dispatch custom event for parent component to handle
+  const handleIncreaseScale = useCallback(() => {
+    const newScale = Math.min(2, cardScale + 0.03);
+    window.dispatchEvent(new CustomEvent('hand-card-scale-change', { detail: { newScale } }));
+    if (onCardScaleChange) {
+      onCardScaleChange(newScale);
+    }
+    setContextMenu(null);
+  }, [cardScale, onCardScaleChange]);
+
+  const handleDecreaseScale = useCallback(() => {
+    const newScale = Math.max(0.5, cardScale - 0.03);
+    window.dispatchEvent(new CustomEvent('hand-card-scale-change', { detail: { newScale } }));
+    if (onCardScaleChange) {
+      onCardScaleChange(newScale);
+    }
+    setContextMenu(null);
+  }, [cardScale, onCardScaleChange]);
 
   // Handle card mouse down - start reorder drag or add to cursor slot with Shift or long-press
   // Only works for own hand (not when viewing opponent's hand)
@@ -529,7 +567,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
               >
                 <span className="flex items-center gap-1">
                   {isOwnHand ? (
-                    <span>Моя рука ({cardCount})</span>
+                    <span>My Hand ({cardCount})</span>
                   ) : (
                     <span>{player.name} ({cardCount})</span>
                   )}
@@ -632,6 +670,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
                               transform: isDragOver ? 'scale(1.05)' : undefined,
                             }}
                             onMouseDown={(e) => handleCardMouseDown(e, card.id, actualIndex, e.currentTarget as HTMLDivElement)}
+                            onContextMenu={(e) => handleContextMenu(e, card.id)}
                           >
                             <CardComponent
                               card={displayedCard}
@@ -674,6 +713,27 @@ export const HandPanel: React.FC<HandPanelProps> = ({ width = MAIN_MENU_WIDTH, i
           </div>
         </div>
         </>
+      )}
+
+      {/* Context menu for card scale options */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              label: `Increase Scale (${Math.round(cardScale * 100)}%)`,
+              icon: <Plus size={14} />,
+              onClick: handleIncreaseScale
+            },
+            {
+              label: `Decrease Scale (${Math.round(cardScale * 100)}%)`,
+              icon: <Minus size={14} />,
+              onClick: handleDecreaseScale
+            }
+          ]}
+        />
       )}
     </div>
   );
