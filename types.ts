@@ -1,7 +1,7 @@
 
 export enum ItemType {
   TOKEN = 'TOKEN',
-  TOKEN_ARCHETYPE = 'TOKEN_ARCHETYPE', // Token source/spawner for Tools panel
+  TOKEN_TYPE = 'TOKEN_TYPE', // Token type/template for Tools panel
   CARD = 'CARD',
   DECK = 'DECK',
   DICE_OBJECT = 'DICE_OBJECT',
@@ -275,10 +275,10 @@ export interface Token extends GameItem {
   archetypeId?: string;
 }
 
-// Token Archetype - a template/spawner for tokens
-// Appears in Tools panel, not on the board
-export interface TokenArchetype extends GameItem {
-  type: ItemType.TOKEN_ARCHETYPE;
+// Token Type - a template for creating tokens
+// Appears in Tools panel, acts as a template (not consumed when spawning tokens)
+export interface TokenType extends GameItem {
+  type: ItemType.TOKEN_TYPE;
   shape: TokenShape;
   // Default settings for spawned tokens
   defaultSize?: { width: number; height: number };
@@ -331,7 +331,7 @@ export interface Drawing extends GameItem {
   opacity?: number;
 }
 
-export type TableObject = Card | Deck | Token | TokenArchetype | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing;
+export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing;
 
 export interface Player {
   id: string;

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
-import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenArchetype, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry } from '../types';
+import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { Peer } from 'peerjs';
 import { PlayerNameModal } from '../components/PlayerNameModal';
@@ -291,7 +291,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'ADD_OBJECT': {
       const isBoard = action.payload.type === ItemType.BOARD || (action.payload.type === ItemType.TOKEN && (action.payload as any).shape === TokenShape.RECTANGLE);
       const isDeck = action.payload.type === ItemType.DECK;
-      const isArchetype = action.payload.type === ItemType.TOKEN_ARCHETYPE;
+      const isArchetype = action.payload.type === ItemType.TOKEN_TYPE;
       const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
       const currentMaxZ = allZ.length ? Math.max(...allZ) : 0;
       // Decks get low z-index so they don't interfere with dragging cards
@@ -2181,8 +2181,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'SPAWN_TOKEN_FROM_ARCHETYPE': {
-      const archetype = state.objects[action.payload.archetypeId] as TokenArchetype;
-      if (!archetype || archetype.type !== ItemType.TOKEN_ARCHETYPE) return state;
+      const archetype = state.objects[action.payload.archetypeId] as TokenType;
+      if (!archetype || archetype.type !== ItemType.TOKEN_TYPE) return state;
 
       // Get current spawn count or start at 0
       const currentCount = archetype.spawnCount || 0;
@@ -2670,8 +2670,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
           // Also restore archetype's spawn count
           if (lastEntry.archetypePreviousSpawnCount !== undefined) {
-            const archetype = remainingObjects[lastEntry.archetypeId] as TokenArchetype;
-            if (archetype && archetype.type === ItemType.TOKEN_ARCHETYPE) {
+            const archetype = remainingObjects[lastEntry.archetypeId] as TokenType;
+            if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
               remainingObjects[lastEntry.archetypeId] = {
                 ...archetype,
                 spawnCount: lastEntry.archetypePreviousSpawnCount,
