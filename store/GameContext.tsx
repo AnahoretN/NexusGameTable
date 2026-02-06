@@ -289,7 +289,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'ADD_OBJECT': {
-      const isBoard = action.payload.type === ItemType.BOARD || (action.payload.type === ItemType.TOKEN && (action.payload as any).shape === TokenShape.RECTANGLE);
+      const isBoard = action.payload.type === ItemType.BOARD;
       const isDeck = action.payload.type === ItemType.DECK;
       const isArchetype = action.payload.type === ItemType.TOKEN_TYPE;
       const allZ = Object.values(state.objects).map(o => o.zIndex || 0);

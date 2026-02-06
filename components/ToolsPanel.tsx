@@ -239,8 +239,11 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                             height: '60%',
                             backgroundColor: archetype.defaultColor || archetype.color || '#ffffff',
                             borderRadius: archetype.shape === TokenShape.CIRCLE ? '50%' :
-                                         archetype.shape === TokenShape.HEX ? '30%' :
-                                         archetype.shape === TokenShape.STANDEE ? '4px' : '0',
+                                         archetype.shape === TokenShape.SQUARE ? '5px' :
+                                         '0', // CIRCLE has 50%, SQUARE has 5px, others have 0
+                            clipPath: archetype.shape === TokenShape.HEX ? 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' :
+                                         archetype.shape === TokenShape.TRIANGLE ? 'polygon(50% 0%, 0% 100%, 100% 100%)' :
+                                         undefined,
                           }}
                         />
                       )}

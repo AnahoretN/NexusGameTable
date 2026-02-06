@@ -584,16 +584,31 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               )}
 
-              {/* Color (for tokens) - full width for tokens only */}
+              {/* Color + Shape (for tokens) - side by side, equal width */}
               {isToken && !isBoard && (
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
-                  <input
-                    type="color"
-                    value={data.color || '#ffffff'}
-                    onChange={e => update('color', e.target.value)}
-                    className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
+                    <input
+                      type="color"
+                      value={data.color || '#ffffff'}
+                      onChange={e => update('color', e.target.value)}
+                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Shape</label>
+                    <select
+                      value={(data as Token).shape}
+                      onChange={e => update('shape', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm h-10"
+                    >
+                      <option value={TokenShape.SQUARE}>Square</option>
+                      <option value={TokenShape.CIRCLE}>Circle</option>
+                      <option value={TokenShape.HEX}>Hex</option>
+                      <option value={TokenShape.TRIANGLE}>Triangle</option>
+                    </select>
+                  </div>
                 </div>
               )}
 

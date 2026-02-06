@@ -2394,8 +2394,9 @@ export const Tabletop: React.FC = () => {
           const zB = b.zIndex ?? 0;
           if (zA !== zB) return zA - zB;
 
-          if (a.type === ItemType.TOKEN && (a as TokenType).shape === TokenShape.RECTANGLE) return -1;
-          if (b.type === ItemType.TOKEN && (b as TokenType).shape === TokenShape.RECTANGLE) return 1;
+          // Token types (archetypes) go to the back (for Tools panel)
+          if (a.type === ItemType.TOKEN_TYPE) return -1;
+          if (b.type === ItemType.TOKEN_TYPE) return 1;
 
           if (a.locked && !b.locked) return -1;
           if (!a.locked && b.locked) return 1;
@@ -2670,20 +2671,22 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
-                    const borderRadius = token.shape === TokenShape.CIRCLE ? '50%' 
-                        : token.shape === TokenShape.SQUARE ? '8px' 
-                        : token.shape === TokenShape.RECTANGLE ? '0px'
-                        : '4px';
-                    
+                    const borderRadius = token.shape === TokenShape.CIRCLE ? '50%'
+                        : token.shape === TokenShape.SQUARE ? '5px'
+                        : '0'; // HEX, TRIANGLE, and others have no border radius
+                    const clipPath = token.shape === TokenShape.HEX
+                        ? 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                        : token.shape === TokenShape.TRIANGLE
+                        ? 'polygon(50% 0%, 0% 100%, 100% 100%)'
+                        : undefined;
+
                     const isStandee = token.shape === TokenShape.STANDEE;
-                    
-                    const isBoard = token.shape === TokenShape.RECTANGLE;
-                    const showGrid = isBoard && token.gridType && token.gridType !== GridType.NONE;
+                    const showGrid = token.gridType && token.gridType !== GridType.NONE;
                     const gridSize = token.gridSize || 50;
 
                     const hexR = gridSize;
                     const hexW = hexR * Math.sqrt(3);
-                    const hexPath = 
+                    const hexPath =
                       `M 0 ${hexR/2} ` +
                       `L ${hexW/2} 0 ` +
                       `L ${hexW} ${hexR/2} ` +
@@ -2691,33 +2694,6 @@ export const Tabletop: React.FC = () => {
                       `L ${hexW/2} ${hexR*2} ` +
                       `L 0 ${hexR*1.5} Z ` +
                       `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
-
-                    // Special rendering for boards (RECTANGLE tokens) with resize capability
-                    if (isBoard) {
-                        const isResizing = resizingId === obj.id;
-                        const isDragging = draggingId === obj.id;
-                        const canResize = !obj.locked;
-
-                        return (
-                            <BoardWithResize
-                                key={obj.id}
-                                token={token}
-                                obj={obj}
-                                isOwner={isOwner}
-                                isDragging={isDragging}
-                                isResizing={isResizing}
-                                canResize={canResize}
-                                zoom={zoom}
-                                onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
-                                onContextMenu={(e) => handleContextMenu(e, obj)}
-                                onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
-                                gridSize={gridSize}
-                                hexR={hexR}
-                                hexW={hexW}
-                                hexPath={hexPath}
-                            />
-                        );
-                    }
 
                     return (
                         <Tooltip
@@ -2737,6 +2713,7 @@ export const Tabletop: React.FC = () => {
                                     width: obj.width,
                                     height: obj.height,
                                     borderRadius: borderRadius,
+                                    clipPath: clipPath,
                                     border: isStandee ? 'none' : '2px solid white',
                                     boxShadow: isStandee ? 'none' : '0 4px 6px rgba(0,0,0,0.3)',
                                     transform: `rotate(${obj.rotation}deg)`
@@ -2750,6 +2727,7 @@ export const Tabletop: React.FC = () => {
                                         style={{
                                             inset: 0,
                                             borderRadius: borderRadius,
+                                            clipPath: clipPath,
                                             backgroundColor: obj.color || '#e74c3c',
                                             transform: `translate(${i * 2}px, ${i * 2}px)`,
                                             zIndex: -i,
@@ -2767,6 +2745,7 @@ export const Tabletop: React.FC = () => {
                                         backgroundSize: 'cover',
                                         backgroundPosition: 'center',
                                         borderRadius: borderRadius,
+                                        clipPath: clipPath,
                                     }}
                                 />
                             {(obj as any).isPinnedToViewport && (
@@ -3721,7 +3700,9 @@ export const Tabletop: React.FC = () => {
                                     backgroundSize: 'cover',
                                     backgroundPosition: 'center',
                                     border: '2px solid white',
-                                    borderRadius: token.shape === TokenShape.CIRCLE ? '50%' : '4px',
+                                    borderRadius: token.shape === TokenShape.CIRCLE ? '50%'
+                                        : token.shape === TokenShape.HEX ? '30%'
+                                        : '5px',
                                     boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
                                     opacity: 0.9,
                                 }}
