@@ -145,6 +145,9 @@ export interface GameItem {
   name: string;
   ownerId?: string; // For tokens locked to a player
   color?: string;
+  borderColor?: string; // Border/stroke color for tokens
+  showNameOnToken?: boolean; // Show token name in the center of the token
+  fontColor?: string; // Font color for token name display
 
   // New props for context menu features
   locked: boolean;
