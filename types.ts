@@ -18,6 +18,7 @@ export enum TokenShape {
   CIRCLE = 'CIRCLE',
   SQUARE = 'SQUARE',
   HEX = 'HEX',
+  TRIANGLE = 'TRIANGLE',
   STANDEE = 'STANDEE', // Figurine
   RECTANGLE = 'RECTANGLE' // For Boards
 }

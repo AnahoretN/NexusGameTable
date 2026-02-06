@@ -3,7 +3,7 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Triangle, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -19,6 +19,7 @@ const getTypeIcon = (obj: TableObject): React.ReactElement => {
       const token = obj as Token;
       if (token.shape === TokenShape.CIRCLE) return <CircleDot size={10} />;
       if (token.shape === TokenShape.HEX) return <Hexagon size={10} />;
+      if (token.shape === TokenShape.TRIANGLE) return <Triangle size={10} />;
       if (token.shape === TokenShape.STANDEE) return <User size={10} />;
       return <Square size={10} />;
     case ItemType.TOKEN_TYPE:
@@ -382,8 +383,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       id: 'tokens', label: 'Tokens', icon: <CircleDot size={16}/>,
       items: [
         { name: 'Round Token', type: 'TOKEN', shape: TokenShape.CIRCLE },
+        { name: 'Standard Token', type: 'TOKEN', shape: TokenShape.RECTANGLE },
+        { name: 'Token Type', type: 'TOKEN_TYPE' },
       ],
-      matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.CIRCLE
+      matcher: (obj: TableObject) => obj.type === ItemType.TOKEN || obj.type === ItemType.TOKEN_TYPE
     },
     {
       id: 'figurines', label: 'Figures', icon: <User size={16}/>,
@@ -937,6 +940,32 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         dispatch({ type: 'ADD_OBJECT', payload: token });
         break;
       }
+      case 'TOKEN_TYPE': {
+        const tokenType: TokenType = {
+          id: generateUUID(),
+          type: ItemType.TOKEN_TYPE,
+          name: item.name,
+          x: 0,
+          y: 0,
+          width: TOKEN_SIZE,
+          height: TOKEN_SIZE,
+          rotation: 0,
+          color: '#3498db',
+          isOnTable: false,
+          locked: false,
+          shape: TokenShape.RECTANGLE,
+          content: '',
+          // Token type specific properties
+          defaultSize: { width: TOKEN_SIZE, height: TOKEN_SIZE },
+          defaultColor: '#3498db',
+          defaultContent: '',
+          autoName: false,
+          namePrefix: '',
+          spawnCount: 0,
+        };
+        dispatch({ type: 'ADD_OBJECT', payload: tokenType });
+        break;
+      }
       case 'DICE': {
         const dice: DiceObject = {
           id: generateUUID(),
@@ -1064,6 +1093,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 const isVisible = 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
                 let objColor = 'color' in obj ? obj.color : '#6366f1';
+                // For TOKEN_TYPE, use defaultColor
+                if (obj.type === ItemType.TOKEN_TYPE) {
+                  const tokenType = obj as TokenType;
+                  objColor = tokenType.defaultColor || tokenType.color || '#6366f1';
+                }
                 // For drawings, use their color property or first stroke color
                 if (obj.type === ItemType.DRAWING) {
                   const drawing = obj as Drawing;
