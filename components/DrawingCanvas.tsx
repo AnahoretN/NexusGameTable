@@ -177,10 +177,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     };
   }, [isAltPressed]);
 
-  // Debug: log when currentTool changes
+  // Notify other components about current tool state for Shift+drag behavior
   useEffect(() => {
-    console.log('DrawingCanvas: currentTool =', currentTool);
-    // Notify other components about current tool state for Shift+drag behavior
     window.dispatchEvent(new CustomEvent('current-tool-changed', {
       detail: { tool: currentTool }
     }));
@@ -192,7 +190,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (canvas) {
       canvas.width = width;
       canvas.height = height;
-      console.log('DrawingCanvas: Canvas dimensions set to', width, 'x', height);
     }
   }, [width, height]);
 
@@ -280,7 +277,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     // Draw cursor circle when marker or eraser is active (but not when over panel or ALT is pressed)
     if ((currentTool === 'marker' || currentTool === 'eraser') && cursorPosition && !isOverPanel && !isAltPressed) {
-      console.log('DrawingCanvas: Drawing cursor at', cursorPosition, 'radius', (markerThickness / 2) * zoom, 'color', markerColor);
       ctx.beginPath();
       const cursorRadius = (markerThickness / 2) * zoom;
       ctx.arc(cursorPosition.x, cursorPosition.y, cursorRadius, 0, Math.PI * 2);
@@ -398,7 +394,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (canvas && cursorPosition && (currentTool === 'marker' || currentTool === 'eraser')) {
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        console.log('DrawingCanvas: Redrawing cursor at', cursorPosition, 'canvas size:', canvas.width, 'x', canvas.height);
         redrawCanvas(ctx);
       }
     }
@@ -422,7 +417,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   }, [state.objects, zoom, offsetX, offsetY]); // Only depend on things that affect drawing display
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    console.log('DrawingCanvas: handleMouseDown, currentTool =', currentTool, 'isOverPanel =', isOverPanel);
     if (currentTool !== 'marker' && currentTool !== 'eraser') return;
     if (isOverPanel) return; // Don't draw when over a panel
     if (e.altKey) return; // Don't draw/erase when ALT is pressed (normal cursor mode)
@@ -440,7 +434,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           type: 'DELETE_OBJECT',
           payload: { id: clickedDrawing.id }
         });
-        console.log('DrawingCanvas: Deleted drawing', clickedDrawing.id);
         return;
       }
     }
@@ -456,12 +449,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         setDraggedDrawingId(clickedDrawing.id);
         setDragStartPos(pos);
         setDragStartDrawingPos({ x: clickedDrawing.x, y: clickedDrawing.y });
-        console.log('DrawingCanvas: Started dragging drawing', clickedDrawing.id);
         return;
       }
     }
 
-    console.log('DrawingCanvas: Starting drawing at', pos);
     setIsDrawing(true);
     setCurrentStroke([{ x: pos.x, y: pos.y }]);
   }, [currentTool, getWorldPosition, isOverPanel, state.objects]);
@@ -502,10 +493,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     setIsOverPanel(isOverUI);
 
     if (currentTool === 'marker' || currentTool === 'eraser') {
-      // Only log occasionally to avoid spam
-      if (Math.random() < 0.05) {
-        console.log('DrawingCanvas: handleMouseMove, isDrawing =', isDrawing, 'isOverUI =', isOverUI);
-      }
     }
     // Update cursor position for all tools - use world position so it aligns with strokes
     const canvas = canvasRef.current;
@@ -741,10 +728,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           type: 'ADD_STROKE_TO_DRAWING',
           payload: { drawingId: overlappingDrawing.id, stroke: relativeStroke }
         });
-        console.log('DrawingCanvas: Merged stroke into existing drawing', overlappingDrawing.id);
       } else {
         // Multiple overlapping drawings - merge all of them + new stroke into one drawing
-        console.log('DrawingCanvas: Merging', overlappingDrawings.length, 'drawings + new stroke');
 
         // Calculate bounding box that includes all overlapping drawings and the new stroke
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -815,7 +800,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             opacity: mergedOpacity
           }
         });
-        console.log('DrawingCanvas: Merged', overlappingDrawings.length, 'drawings into one at', { x: mergedX, y: mergedY });
       }
     } else {
       // Create new drawing object
@@ -843,7 +827,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           opacity: markerOpacity
         }
       });
-      console.log('DrawingCanvas: Created new drawing object at', { x, y, width, height });
     }
 
     setIsDrawing(false);
@@ -875,11 +858,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   // Don't render if no tool is selected AND no drawings exist
   if (currentTool === 'none' && !hasDrawings) {
-    console.log('DrawingCanvas: Returning null (tool is none and no drawings)');
     return null;
   }
-
-  console.log('DrawingCanvas: Rendering canvas with tool =', currentTool, 'hasDrawings =', hasDrawings);
 
   // When tool is 'none', disable pointer events so canvas doesn't block other interactions
   const pointerEvents = currentTool === 'none' ? 'none' : 'auto';

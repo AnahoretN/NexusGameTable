@@ -1166,7 +1166,6 @@ interface DrawingToolButtonProps {
 
 const DrawingToolButton: React.FC<DrawingToolButtonProps> = ({ tool, icon, label, selectedTool, setSelectedTool }) => {
   const handleClick = () => {
-    console.log('MainMenuContent: Tool selected:', tool);
     setSelectedTool(tool);
     window.dispatchEvent(new CustomEvent('drawing-tool-changed', { detail: { tool } }));
   };

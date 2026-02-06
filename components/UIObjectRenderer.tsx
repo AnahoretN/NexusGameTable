@@ -14,7 +14,7 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || 'v0.0.8';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || 'v0.0.9t';
 
 interface UIObjectRendererProps {
   uiObject: PanelObject | WindowObject;

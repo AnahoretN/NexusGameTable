@@ -279,13 +279,11 @@ export function useDrawingTool(): DrawingTool {
   useEffect(() => {
     const handleToolChange = (e: Event) => {
       const customEvent = e as CustomEvent<{ tool: DrawingTool }>;
-      console.log('DrawingCanvas: Tool changed to', customEvent.detail.tool);
       setTool(customEvent.detail.tool);
     };
 
     const handleToolSync = (e: Event) => {
       const customEvent = e as CustomEvent<{ tool: DrawingTool }>;
-      console.log('DrawingCanvas: Tool synced to', customEvent.detail.tool);
       setTool(customEvent.detail.tool);
     };
 
@@ -293,7 +291,6 @@ export function useDrawingTool(): DrawingTool {
     window.addEventListener('drawing-tool-sync', handleToolSync);
 
     // Request current tool state on mount
-    console.log('DrawingCanvas: Requesting current tool');
     window.dispatchEvent(new Event('drawing-tool-request'));
 
     return () => {
