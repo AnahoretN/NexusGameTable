@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
-import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation } from '../types';
+import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenArchetype, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { Peer } from 'peerjs';
 import { PlayerNameModal } from '../components/PlayerNameModal';
@@ -92,6 +92,8 @@ export interface GameState {
   diceRolls: DiceRoll[];
   viewTransform: ViewTransform;
   sessionId?: string; // Unique session identifier
+  drawings: DrawingData; // Drawing layers for board and objects
+  undo: UndoState; // Undo/redo history
 }
 
 type Action =
@@ -101,6 +103,8 @@ type Action =
   | { type: 'DELETE_OBJECT'; payload: { id: string } }
   | { type: 'DRAW_CARD'; payload: { deckId: string; playerId: string } }
   | { type: 'PLAY_CARD'; payload: { cardId: string; x: number; y: number } }
+  | { type: 'PLAY_TOP_CARD'; payload: { deckId: string } }
+  | { type: 'DROP_FROM_CURSOR_SLOT'; payload: { objectId: string; x: number; y: number; zIndex?: number } }
   | { type: 'SHUFFLE_DECK'; payload: { deckId: string } }
   | { type: 'FLIP_CARD'; payload: { cardId: string } }
   | { type: 'ROLL_DICE_LOG'; payload: { value: number; playerName: string } }
@@ -146,7 +150,22 @@ type Action =
   | { type: 'CREATE_WINDOW'; payload: { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string } }
   | { type: 'CLOSE_UI_OBJECT'; payload: { id: string } }
   | { type: 'TOGGLE_MINIMIZE'; payload: { id: string } }
-  | { type: 'RESIZE_UI_OBJECT'; payload: { id: string; width: number; height: number } };
+  | { type: 'RESIZE_UI_OBJECT'; payload: { id: string; width: number; height: number } }
+  // Token Archetype actions
+  | { type: 'SPAWN_TOKEN_FROM_ARCHETYPE'; payload: { archetypeId: string; x: number; y: number } }
+  // Drawing actions
+  | { type: 'CREATE_DRAWING_OBJECT'; payload: { strokes: Stroke[]; x: number; y: number; width: number; height: number; name?: string; opacity?: number } }
+  | { type: 'ADD_STROKE_TO_DRAWING'; payload: { drawingId: string; stroke: Stroke } }
+  | { type: 'MERGE_DRAWINGS'; payload: { sourceId: string; targetId: string } }
+  | { type: 'ADD_STROKE'; payload: { stroke: Stroke; layerId: string } }
+  | { type: 'DELETE_STROKE'; payload: { strokeId: string; layerId: string } }
+  | { type: 'CREATE_DRAWING_LAYER'; payload: { layer: Omit<DrawingLayer, 'id'> } }
+  | { type: 'DELETE_DRAWING_LAYER'; payload: { layerId: string } }
+  | { type: 'UPDATE_DRAWING_LAYER'; payload: { layerId: string; updates: Partial<DrawingLayer> } }
+  | { type: 'CLEAR_DRAWING_LAYER'; payload: { layerId: string } }
+  // Undo actions
+  | { type: 'UNDO_MARKER' }
+  | { type: 'UNDO_GENERAL' };
 
 const GM_COLOR = '#8e44ad';
 
@@ -171,6 +190,8 @@ const initialState: GameState = {
   diceRolls: [],
   viewTransform: { offset: { x: 0, y: 0 }, zoom: 1, scroll: { x: 0, y: 0 } },
   sessionId: getSessionId(),
+  drawings: { layers: [] },
+  undo: { markerHistory: [], generalHistory: [], maxMarkerHistory: 10, maxGeneralHistory: 100 },
 };
 
 const GameContext = createContext<{
@@ -207,10 +228,26 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     (deck as any).baseCardIds = [...deck.cardIds];
                 }
             }
+            // Migrate old drawings without opacity - set to 100 (fully opaque)
+            if (obj.type === ItemType.DRAWING) {
+                const drawing = obj as Drawing;
+                if (drawing.opacity === undefined) {
+                    drawing.opacity = 100;
+                }
+            }
         });
+        // Migrate undo state with maxMarkerHistory and maxGeneralHistory if missing
+        const undo = action.payload.undo || { markerHistory: [], generalHistory: [] };
+        if ((undo as any).maxMarkerHistory === undefined) {
+            (undo as any).maxMarkerHistory = 10;
+        }
+        if ((undo as any).maxGeneralHistory === undefined) {
+            (undo as any).maxGeneralHistory = 100;
+        }
         return {
             ...action.payload,
             objects: migratedObjects,
+            undo,
             viewTransform: action.payload.viewTransform || { offset: { x: 0, y: 0 }, zoom: 0.8, scroll: { x: 0, y: 0 } }
         };
     }
@@ -254,11 +291,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'ADD_OBJECT': {
       const isBoard = action.payload.type === ItemType.BOARD || (action.payload.type === ItemType.TOKEN && (action.payload as any).shape === TokenShape.RECTANGLE);
       const isDeck = action.payload.type === ItemType.DECK;
+      const isArchetype = action.payload.type === ItemType.TOKEN_ARCHETYPE;
       const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
       const currentMaxZ = allZ.length ? Math.max(...allZ) : 0;
       // Decks get low z-index so they don't interfere with dragging cards
-      // Boards get -100, decks get 0, other objects get currentMaxZ + 1
-      const defaultZ = isBoard ? -100 : (isDeck ? 0 : (currentMaxZ + 1));
+      // Boards get -100, decks get 0, archetypes get -50 (for Tools panel), other objects get currentMaxZ + 1
+      const defaultZ = isBoard ? -100 : (isDeck ? 0 : (isArchetype ? -50 : (currentMaxZ + 1)));
 
       const newObj = {
           ...action.payload,
@@ -268,7 +306,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (payload.isOnTable !== undefined) {
           newObj.isOnTable = payload.isOnTable;
       } else {
-          newObj.isOnTable = true;
+          // Archetypes are hidden from table by default (shown in Tools panel)
+          newObj.isOnTable = isArchetype ? false : true;
       }
 
       // Migrate old decks without baseCardIds
@@ -360,12 +399,69 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               }
           }
       }
+
+      // Handle drawing updates - when color changes, update all strokes
+      if (updatedObj.type === ItemType.DRAWING) {
+        const drawing = obj as Drawing;
+        const newDrawing = updatedObj as Drawing;
+        // Check if color is being updated
+        if ('color' in action.payload && newDrawing.color !== drawing.color) {
+          const newColor = newDrawing.color || '#ef4444';
+          // Update all strokes with the new color
+          newDrawing.strokes = drawing.strokes.map(stroke => ({
+            ...stroke,
+            color: newColor,
+          }));
+          newObjects[newDrawing.id] = newDrawing;
+        }
+      }
+
       return { ...state, objects: newObjects };
     }
     case 'MOVE_OBJECT': {
       const obj = state.objects[action.payload.id];
       if (!obj || obj.locked) return state;
-      // For pinned objects, also update pinnedScreenPosition to maintain visual position
+
+      // Don't track history for drawings (they use marker history) or objects in cursor slot
+      const isDrawing = obj.type === ItemType.DRAWING;
+      const isInCursorSlot = (obj as any).inCursorSlot;
+      if (!isDrawing && !isInCursorSlot) {
+        // Add to general history (max 100)
+        const historyEntry: GeneralHistoryEntry = {
+          type: 'object-moved',
+          objectId: obj.id,
+          previousX: obj.x,
+          previousY: obj.y,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        // For pinned objects, also update pinnedScreenPosition to maintain visual position
+        if ((obj as any).isPinnedToViewport) {
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [action.payload.id]: {
+                ...obj,
+                x: action.payload.x,
+                y: action.payload.y,
+                pinnedScreenPosition: { x: action.payload.x, y: action.payload.y }
+              } as TableObject,
+            },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+          };
+        }
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
+          },
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
+      }
+
+      // For drawings, don't track history (handled by marker tool actions)
       if ((obj as any).isPinnedToViewport) {
         return {
           ...state,
@@ -394,10 +490,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const newObjects = { ...state.objects };
         delete newObjects[action.payload.id];
 
+        // Collect cascaded deletes for undo
+        const cascadedDeletes: TableObject[] = [];
+
         // If deleting a deck, delete all its cards
         if (objectToDelete.type === ItemType.DECK) {
              const deck = objectToDelete as Deck;
-             if (deck.cardIds) { deck.cardIds.forEach(cid => delete newObjects[cid]); }
+             if (deck.cardIds) {
+                 deck.cardIds.forEach(cid => {
+                     const card = newObjects[cid];
+                     if (card) cascadedDeletes.push(card);
+                     delete newObjects[cid];
+                 });
+             }
         }
 
         // If deleting a card, remove it from deck's cardIds and update initialCardCount
@@ -420,7 +525,33 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             }
         }
 
-        return { ...state, objects: newObjects };
+        // Add to history based on object type
+        let updatedUndo = state.undo;
+        if (objectToDelete.type === ItemType.DRAWING) {
+            // Marker history (max 10)
+            const historyEntry: MarkerHistoryEntry = {
+                type: 'drawing-deleted',
+                drawing: objectToDelete as Drawing,
+            };
+            updatedUndo = {
+                ...state.undo,
+                markerHistory: [...state.undo.markerHistory, historyEntry].slice(-10),
+            };
+        } else {
+            // General history (max 25) - for non-drawing objects
+            const historyEntry: GeneralHistoryEntry = {
+                type: 'object-deleted',
+                objectId: objectToDelete.id,
+                object: objectToDelete,
+                cascadedDeletes: cascadedDeletes.length > 0 ? cascadedDeletes : undefined,
+            };
+            updatedUndo = {
+                ...state.undo,
+                generalHistory: [...state.undo.generalHistory, historyEntry].slice(-100),
+            };
+        }
+
+        return { ...state, objects: newObjects, undo: updatedUndo };
     }
     case 'DRAW_CARD': {
       const deck = state.objects[action.payload.deckId] as Deck;
@@ -430,6 +561,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const newCardIds = deck.cardIds.slice(1);
       if (!drawnCardId) return state;
       const card = state.objects[drawnCardId] as Card;
+
+      // Add to general history (max 25)
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'card-drawn',
+        cardId: drawnCardId,
+        fromDeckId: deck.id,
+        fromIndex: 0, // Top card is at index 0
+        previousLocation: card.location,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
       const updatedCard: Card = {
         ...card,
         location: CardLocation.HAND,
@@ -454,11 +596,24 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ? { ...p, handCardOrder: newHandOrder }
             : p
         ),
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'PLAY_CARD': {
         const card = state.objects[action.payload.cardId] as Card;
         if (!card) return state;
+
+        // Add to general history (max 25)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'card-played',
+            cardId: card.id,
+            previousLocation: card.location,
+            previousX: card.x,
+            previousY: card.y,
+            previousFaceUp: card.faceUp,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
         const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
         const maxZ = allZ.length ? Math.max(...allZ) : 0;
         return {
@@ -474,28 +629,228 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     isOnTable: true,
                     zIndex: maxZ + 1
                 }
+            },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
+    }
+    case 'PLAY_TOP_CARD': {
+        const deck = state.objects[action.payload.deckId] as Deck;
+        if (!deck || deck.type !== ItemType.DECK || deck.cardIds.length === 0) return state;
+
+        const topCardId = deck.cardIds[0];
+        const card = state.objects[topCardId] as Card;
+        if (!card) return state;
+
+        const faceUp = deck.playTopFaceUp ?? true;
+
+        // Capture state for undo - store on card for later use when dropped
+        const pendingPlayTop = {
+            deckId: deck.id,
+            previousCardIds: [...deck.cardIds],
+            previousLocation: card.location,
+            previousFaceUp: card.faceUp,
+        };
+
+        // Remove top card from deck
+        const newCardIds = deck.cardIds.slice(1);
+        const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
+
+        // Update card to cursor slot - store pending data on card (temp field)
+        const updatedCard: Card = {
+            ...card,
+            location: CardLocation.CURSOR_SLOT,
+            faceUp: faceUp,
+            isOnTable: false,
+            // Store pending data for when card is dropped
+            __pendingPlayTop: pendingPlayTop as any,
+        };
+
+        return {
+            ...state,
+            objects: {
+                ...state.objects,
+                [deck.id]: updatedDeck,
+                [topCardId]: updatedCard,
+            },
+        };
+    }
+    case 'DROP_FROM_CURSOR_SLOT': {
+        const obj = state.objects[action.payload.objectId];
+        if (!obj) return state;
+
+        // Only cards and tokens can be in cursor slot
+        if (obj.type !== ItemType.CARD && obj.type !== ItemType.TOKEN && obj.type !== ItemType.DICE_OBJECT && obj.type !== ItemType.COUNTER) return state;
+
+        const card = obj as Card;
+
+        // Check if this card was played via "Play Top" action
+        const pendingPlayTop = card.__pendingPlayTop;
+        if (pendingPlayTop) {
+            // This is a "Play Top" action - record full history when card is dropped
+            const deck = state.objects[pendingPlayTop.deckId] as Deck;
+            if (!deck) return state;
+
+            const updatedCard: Card = {
+                ...card,
+                x: action.payload.x,
+                y: action.payload.y,
+                ...(action.payload.zIndex !== undefined && { zIndex: action.payload.zIndex }),
+                inCursorSlot: false,
+                location: CardLocation.TABLE,
+                isOnTable: true,
+                // Clear the pending data
+                __pendingPlayTop: undefined,
+            };
+
+            // Add to general history as card-played-from-top
+            const historyEntry: GeneralHistoryEntry = {
+                type: 'card-played-from-top',
+                cardId: card.id,
+                deckId: pendingPlayTop.deckId,
+                previousCardIds: pendingPlayTop.previousCardIds,
+                previousLocation: pendingPlayTop.previousLocation,
+                previousFaceUp: pendingPlayTop.previousFaceUp,
+            };
+            const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+            return {
+                ...state,
+                objects: { ...state.objects, [obj.id]: updatedCard },
+                undo: { ...state.undo, generalHistory: newGeneralHistory },
+            };
+        }
+
+        // Normal drop from cursor slot (not Play Top)
+        // Capture detailed state for undo - determine WHERE the card was before going to cursor slot
+        const previousLocation = card.location;
+        const previousX = card.x;
+        const previousY = card.y;
+        const previousZIndex = card.zIndex;
+        const previousInCursorSlot = card.inCursorSlot;
+        const previousFaceUp = card.faceUp;
+
+        // Determine the previous state based on location
+        let previousState: 'cursor_slot' | 'table' | 'hand' | 'deck' | 'pile' = 'cursor_slot';
+        let previousDeckId: string | undefined;
+        let previousOwnerId: string | undefined;
+        let previousDeckCardIds: string[] | undefined;
+        let previousPileId: string | undefined;
+        let previousPileCardIds: string[] | undefined;
+
+        if (previousLocation === CardLocation.TABLE && !previousInCursorSlot) {
+            previousState = 'table';
+        } else if (previousLocation === CardLocation.HAND) {
+            previousState = 'hand';
+            previousOwnerId = card.ownerId;
+        } else if (previousLocation === CardLocation.DECK) {
+            previousState = 'deck';
+            previousDeckId = card.deckId;
+            // Find the deck and capture cardIds before the card was at top
+            if (previousDeckId) {
+                const deck = state.objects[previousDeckId] as Deck;
+                if (deck && deck.cardIds.includes(card.id)) {
+                    previousDeckCardIds = [...deck.cardIds];
+                }
             }
+        } else if (previousLocation === CardLocation.PILE) {
+            previousState = 'pile';
+            previousDeckId = card.deckId;
+            // Find the pile and capture cardIds
+            if (previousDeckId) {
+                const deck = state.objects[previousDeckId] as Deck;
+                if (deck?.piles) {
+                    for (const pile of deck.piles) {
+                        if (pile.cardIds.includes(card.id)) {
+                            previousPileId = pile.id;
+                            previousPileCardIds = [...pile.cardIds];
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        const updatedObj: TableObject = {
+            ...obj,
+            x: action.payload.x,
+            y: action.payload.y,
+            ...(action.payload.zIndex !== undefined && { zIndex: action.payload.zIndex }),
+            inCursorSlot: false,
+        };
+
+        // For cards, also update location to TABLE
+        if (obj.type === ItemType.CARD) {
+            (updatedObj as Card).location = CardLocation.TABLE;
+            (updatedObj as Card).isOnTable = true;
+        }
+
+        // Add to general history (max 100)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'dropped-from-cursor-slot',
+            objectId: obj.id,
+            previousState,
+            previousLocation,
+            previousX,
+            previousY,
+            previousZIndex,
+            previousFaceUp,
+            previousDeckId,
+            previousOwnerId,
+            previousDeckCardIds,
+            previousPileId,
+            previousPileCardIds,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return {
+            ...state,
+            objects: { ...state.objects, [obj.id]: updatedObj },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
     case 'SHUFFLE_DECK': {
         const deck = state.objects[action.payload.deckId] as Deck;
         if (!deck || deck.type !== ItemType.DECK) return state;
+
+        // Capture state for undo before making changes
+        const previousCardOrder = [...deck.cardIds];
+
         const shuffled = [...deck.cardIds];
         for (let i = shuffled.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
+
+        // Add to general history (max 100)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'deck-shuffled',
+            deckId: deck.id,
+            previousCardOrder,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
         return {
             ...state,
-            objects: { ...state.objects, [action.payload.deckId]: { ...deck, cardIds: shuffled } }
+            objects: { ...state.objects, [action.payload.deckId]: { ...deck, cardIds: shuffled } },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
     case 'FLIP_CARD': {
         const card = state.objects[action.payload.cardId] as Card;
         if (!card || card.type !== ItemType.CARD) return state;
+
+        // Add to general history (max 25)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'card-flipped',
+            cardId: card.id,
+            previousFaceUp: card.faceUp,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
         return {
             ...state,
-            objects: { ...state.objects, [action.payload.cardId]: { ...card, faceUp: !card.faceUp } }
+            objects: { ...state.objects, [action.payload.cardId]: { ...card, faceUp: !card.faceUp } },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
     case 'ROLL_DICE_LOG': {
@@ -526,9 +881,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'UPDATE_COUNTER': {
         const counter = state.objects[action.payload.id] as Counter;
         if (!counter || counter.type !== ItemType.COUNTER) return state;
+
+        // Add to general history
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'counter-updated',
+            objectId: counter.id,
+            previousValue: counter.value,
+            delta: action.payload.delta,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
         return {
             ...state,
-            objects: { ...state.objects, [action.payload.id]: { ...counter, value: counter.value + action.payload.delta } }
+            objects: { ...state.objects, [action.payload.id]: { ...counter, value: counter.value + action.payload.delta } },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
     case 'SWITCH_ROLE': {
@@ -537,11 +903,45 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'TOGGLE_LOCK': {
         const obj = state.objects[action.payload.id];
         if (!obj) return state;
+
+        // Don't track history for drawings (they use marker history)
+        if (obj.type !== ItemType.DRAWING) {
+            const historyEntry: GeneralHistoryEntry = {
+                type: 'object-lock-toggled',
+                objectId: obj.id,
+                previousLocked: obj.locked ?? false,
+            };
+            const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+            return {
+                ...state,
+                objects: { ...state.objects, [action.payload.id]: { ...obj, locked: !obj.locked } },
+                undo: { ...state.undo, generalHistory: newGeneralHistory },
+            };
+        }
+
         return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, locked: !obj.locked } } };
     }
     case 'TOGGLE_ON_TABLE': {
         const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
+
+        // Don't track history for drawings
+        if (obj.type !== ItemType.DRAWING) {
+            const historyEntry: GeneralHistoryEntry = {
+                type: 'object-on-table-toggled',
+                objectId: obj.id,
+                previousIsOnTable: obj.isOnTable ?? false,
+            };
+            const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+            return {
+                ...state,
+                objects: { ...state.objects, [action.payload.id]: { ...obj, isOnTable: !obj.isOnTable } },
+                undo: { ...state.undo, generalHistory: newGeneralHistory },
+            };
+        }
+
         return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, isOnTable: !obj.isOnTable } } };
     }
     case 'ROTATE_OBJECT': {
@@ -555,12 +955,40 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             rotationStep = deck?.rotationStep;
         }
         const angle = action.payload.angle ?? rotationStep ?? 45;
-        return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: (obj.rotation + angle) % 360 } } };
+        const previousRotation = obj.rotation;
+
+        // Add to general history (max 100)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'object-rotated',
+            objectId: obj.id,
+            previousRotation,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return {
+            ...state,
+            objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: (obj.rotation + angle) % 360 } },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
     }
     case 'SET_ROTATION': {
         const obj = state.objects[action.payload.id];
         if (!obj) return state;
-        return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: action.payload.rotation } } };
+        const previousRotation = obj.rotation;
+
+        // Add to general history (max 100)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'object-rotated',
+            objectId: obj.id,
+            previousRotation,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return {
+            ...state,
+            objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: action.payload.rotation } },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
     }
     case 'CLONE_OBJECT': {
         const obj = state.objects[action.payload.id] as any;
@@ -582,12 +1010,36 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             clonedObj.cardIds = [];
             clonedObj.initialCardCount = 0;
         }
-        return { ...state, objects: { ...state.objects, [newId]: clonedObj } };
+
+        // Add to general history (max 100)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'object-added',
+            objectId: newId,
+            object: clonedObj,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return {
+            ...state,
+            objects: { ...state.objects, [newId]: clonedObj },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
     }
     case 'RETURN_TO_DECK': {
         const card = state.objects[action.payload.cardId] as Card;
         if (!card || !card.deckId || !state.objects[card.deckId]) return state;
         const deck = state.objects[card.deckId] as Deck;
+
+        // Add to general history (max 25)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'card-returned-to-deck',
+            cardId: card.id,
+            previousLocation: card.location,
+            previousX: card.x,
+            previousY: card.y,
+            deckId: deck.id,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
         // Always return card to the TOP of its main deck (beginning of array)
         // Cards from piles (discard, etc.) return to the main deck, not to piles
@@ -595,12 +1047,36 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
         // Card is face up by default (GM sees actual state, players see based on deck settings)
         const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true };
-        return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard } };
+        return {
+            ...state,
+            objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
     }
     case 'RETURN_CARD_TO_DECK_TOP': {
         const card = state.objects[action.payload.cardId] as Card;
         const deck = state.objects[action.payload.deckId] as Deck;
         if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+        // Capture state for undo before making changes
+        const fromDeckId = card.deckId || deck.id;
+        const fromDeck = state.objects[fromDeckId] as Deck;
+        const fromCardIds = fromDeck?.cardIds ? [...fromDeck.cardIds] : undefined;
+
+        // Find which pile the card was in (if any)
+        let fromPileId: string | undefined;
+        let fromPileCardIds: string[] | undefined;
+        if (fromDeck?.piles) {
+            for (const pile of fromDeck.piles) {
+                if (pile.cardIds.includes(card.id)) {
+                    fromPileId = pile.id;
+                    fromPileCardIds = [...pile.cardIds];
+                    break;
+                }
+            }
+        }
+
+        const toCardIds = [...deck.cardIds];
 
         const newObjects = { ...state.objects };
 
@@ -636,12 +1112,50 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true, deckId: deck.id };
         newObjects[deck.id] = updatedDeck;
         newObjects[card.id] = updatedCard;
-        return { ...state, objects: newObjects };
+
+        // Add to general history (max 25)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'card-returned-to-top',
+            cardId: card.id,
+            previousLocation: card.location,
+            previousX: card.location === CardLocation.TABLE ? card.x : undefined,
+            previousY: card.location === CardLocation.TABLE ? card.y : undefined,
+            previousFaceUp: card.faceUp,
+            fromDeckId,
+            toDeckId: deck.id,
+            fromCardIds,
+            toCardIds,
+            fromPileId,
+            fromPileCardIds,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return { ...state, objects: newObjects, undo: { ...state.undo, generalHistory: newGeneralHistory } };
     }
     case 'RETURN_CARD_TO_DECK_BOTTOM': {
         const card = state.objects[action.payload.cardId] as Card;
         const deck = state.objects[action.payload.deckId] as Deck;
         if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+        // Capture state for undo before making changes
+        const fromDeckId = card.deckId || deck.id;
+        const fromDeck = state.objects[fromDeckId] as Deck;
+        const fromCardIds = fromDeck?.cardIds ? [...fromDeck.cardIds] : undefined;
+
+        // Find which pile the card was in (if any)
+        let fromPileId: string | undefined;
+        let fromPileCardIds: string[] | undefined;
+        if (fromDeck?.piles) {
+            for (const pile of fromDeck.piles) {
+                if (pile.cardIds.includes(card.id)) {
+                    fromPileId = pile.id;
+                    fromPileCardIds = [...pile.cardIds];
+                    break;
+                }
+            }
+        }
+
+        const toCardIds = [...deck.cardIds];
 
         const newObjects = { ...state.objects };
 
@@ -695,7 +1209,25 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true, deckId: deck.id };
         newObjects[deck.id] = updatedDeck;
         newObjects[card.id] = updatedCard;
-        return { ...state, objects: newObjects };
+
+        // Add to general history (max 25)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'card-returned-to-bottom',
+            cardId: card.id,
+            previousLocation: card.location,
+            previousX: card.location === CardLocation.TABLE ? card.x : undefined,
+            previousY: card.location === CardLocation.TABLE ? card.y : undefined,
+            previousFaceUp: card.faceUp,
+            fromDeckId,
+            toDeckId: deck.id,
+            fromCardIds,
+            toCardIds,
+            fromPileId,
+            fromPileCardIds,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return { ...state, objects: newObjects, undo: { ...state.undo, generalHistory: newGeneralHistory } };
     }
     case 'ADD_CARD_TO_TOP_OF_DECK': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -706,16 +1238,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // and we need to handle it differently (it will be added back to objects)
         if (!card) return state;
 
+        // Capture state for undo before making changes
+        let fromDeckId: string | undefined = card.deckId;
+        let fromCardIds: string[] | undefined;
+
         // Remove card from its previous deck's cardIds (if it was in one)
         // Find which deck currently contains this card
-        let previousDeckId: string | undefined = card.deckId;
         // If card doesn't have a deckId yet, check which deck's cardIds contains it
-        if (!previousDeckId) {
+        if (!fromDeckId) {
             Object.values(state.objects).forEach(obj => {
                 if (obj.type === ItemType.DECK) {
                     const d = obj as Deck;
                     if (d.cardIds.includes(card.id)) {
-                        previousDeckId = d.id;
+                        fromDeckId = d.id;
                     }
                 }
             });
@@ -723,16 +1258,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Remove from previous deck's cardIds (but keep deckId unchanged - it belongs to original deck)
         let updatedState = state;
-        if (previousDeckId && previousDeckId !== deck.id) {
-            const previousDeck = state.objects[previousDeckId] as Deck;
+        if (fromDeckId && fromDeckId !== deck.id) {
+            const previousDeck = state.objects[fromDeckId] as Deck;
             if (previousDeck && previousDeck.cardIds.includes(card.id)) {
+                fromCardIds = [...previousDeck.cardIds];
                 const updatedPreviousDeck: Deck = {
                     ...previousDeck,
                     cardIds: previousDeck.cardIds.filter(id => id !== card.id)
                 };
-                updatedState = { ...state, objects: { ...state.objects, [previousDeckId]: updatedPreviousDeck } };
+                updatedState = { ...state, objects: { ...state.objects, [fromDeckId]: updatedPreviousDeck } };
             }
         }
+
+        const toCardIds = [...deck.cardIds];
 
         // Add card to the beginning of the deck (top position)
         // Use updatedState instead of state to include previous deck changes
@@ -752,7 +1290,22 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             isOnTable: true
         };
 
-        return { ...updatedState, objects: { ...updatedState.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard } };
+        // Add to general history (max 25)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'card-added-to-top',
+            cardId: card.id,
+            previousLocation: card.location,
+            previousX: card.location === CardLocation.TABLE ? card.x : undefined,
+            previousY: card.location === CardLocation.TABLE ? card.y : undefined,
+            previousFaceUp: card.faceUp,
+            fromDeckId,
+            toDeckId: deck.id,
+            fromCardIds,
+            toCardIds,
+        };
+        const newGeneralHistory = [...updatedState.undo.generalHistory, historyEntry].slice(-100);
+
+        return { ...updatedState, objects: { ...updatedState.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard }, undo: { ...updatedState.undo, generalHistory: newGeneralHistory } };
     }
     case 'ADD_CARD_TO_PILE': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -762,6 +1315,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Find the pile in the deck's piles array
         const pile = deck.piles?.find(p => p.id === action.payload.pileId);
         if (!pile) return state;
+
+        // Capture state for undo before making changes
+        const previousDeckCardIds = deck.cardIds ? [...deck.cardIds] : undefined;
+        const previousPileCardIds = pile.cardIds ? [...pile.cardIds] : undefined;
 
         // Remove card from its previous deck's cardIds (if it was in one)
         // Find which deck currently contains this card
@@ -827,8 +1384,21 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             isOnTable: true
         };
 
+        // Add to general history (max 25)
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'card-added-to-pile',
+            cardId: action.payload.cardId,
+            previousLocation: card.location,
+            previousX: card.location === CardLocation.TABLE ? card.x : undefined,
+            previousY: card.location === CardLocation.TABLE ? card.y : undefined,
+            deckId: deck.id,
+            pileId: pile.id,
+            previousDeckCardIds: previousDeckCardIds,
+            previousPileCardIds: previousPileCardIds
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard } };
+        return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard }, undo: { ...state.undo, generalHistory: newGeneralHistory } };
     }
     case 'UPDATE_PERMISSIONS': {
         const obj = state.objects[action.payload.id] as any;
@@ -856,7 +1426,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         let newCurrentZ = nextZ;
         let newNextZ = currentZ;
         if (newCurrentZ <= newNextZ) { newCurrentZ = newNextZ + 1; }
-        return { ...state, objects: { ...state.objects, [obj.id]: { ...obj, zIndex: newCurrentZ }, [nextObj.id]: { ...nextObj, zIndex: newNextZ } } };
+
+        // Add to general history
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'object-layer-changed',
+            objectId: obj.id,
+            direction: 'up',
+            previousZIndex: currentZ,
+            otherObjectId: nextObj.id,
+            otherObjectPreviousZIndex: nextZ,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return {
+            ...state,
+            objects: { ...state.objects, [obj.id]: { ...obj, zIndex: newCurrentZ }, [nextObj.id]: { ...nextObj, zIndex: newNextZ } },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
     }
     case 'MOVE_LAYER_DOWN': {
         const obj = state.objects[action.payload.id];
@@ -873,7 +1459,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         let newCurrentZ = prevZ;
         let newPrevZ = currentZ;
         if (newPrevZ >= newCurrentZ) { newPrevZ = newCurrentZ + 1; }
-        return { ...state, objects: { ...state.objects, [obj.id]: { ...obj, zIndex: newCurrentZ }, [prevObj.id]: { ...prevObj, zIndex: newPrevZ } } };
+
+        // Add to general history
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'object-layer-changed',
+            objectId: obj.id,
+            direction: 'down',
+            previousZIndex: currentZ,
+            otherObjectId: prevObj.id,
+            otherObjectPreviousZIndex: prevZ,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return {
+            ...state,
+            objects: { ...state.objects, [obj.id]: { ...obj, zIndex: newCurrentZ }, [prevObj.id]: { ...prevObj, zIndex: newPrevZ } },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
     }
     case 'UPDATE_VIEW_TRANSFORM': {
       return { ...state, viewTransform: action.payload };
@@ -891,6 +1493,18 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (!drawnCardId) return state;
 
       const card = state.objects[drawnCardId] as Card;
+
+      // Add to general history (max 25)
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'card-drawn-from-pile',
+        cardId: drawnCardId,
+        previousLocation: card.location,
+        deckId: deck.id,
+        pileId: pile.id,
+        fromIndex: 0,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
       const updatedCard: Card = {
         ...card,
         location: CardLocation.HAND,
@@ -908,6 +1522,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       return {
         ...state,
         objects: { ...state.objects, [deck.id]: updatedDeck, [drawnCardId]: updatedCard },
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'RETURN_ALL_CARDS_TO_DECK': {
@@ -1079,6 +1694,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (!deck || deck.type !== ItemType.DECK) return state;
       if (!deck.cardIds.includes(cardId)) return state;
 
+      // Capture state for undo before making changes
+      const previousCardIds = [...deck.cardIds];
+
       // Find the position of the first hidden card from the end
       // Insert before hidden cards so they stay at the very bottom
       let insertIndex = deck.cardIds.length;
@@ -1100,12 +1718,22 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         ...filteredIds.slice(insertIndex)
       ];
 
+      // Add to general history (max 25)
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'card-milled-to-bottom',
+        cardId,
+        deckId,
+        previousCardIds,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
       return {
         ...state,
         objects: {
           ...state.objects,
           [deckId]: { ...deck, cardIds: newCardIds }
-        }
+        },
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'MILL_CARD_TO_PILE': {
@@ -1118,6 +1746,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const pile = deck.piles?.find(p => p.id === pileId);
       if (!pile) return state;
 
+      // Capture state for undo before making changes
+      const previousDeckCardIds = [...deck.cardIds];
+      const previousPileCardIds = [...pile.cardIds];
+
       // Remove from deck cardIds
       const newDeckCardIds = deck.cardIds.filter(id => id !== cardId);
       // Add to pile cardIds
@@ -1128,6 +1760,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         p.id === pileId ? { ...p, cardIds: newPileCardIds } : p
       );
 
+      // Add to general history (max 25)
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'card-milled-to-pile',
+        cardId,
+        deckId,
+        pileId,
+        previousDeckCardIds,
+        previousPileCardIds,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
       return {
         ...state,
         objects: {
@@ -1137,7 +1780,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             cardIds: newDeckCardIds,
             piles: updatedPiles
           }
-        }
+        },
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'TOGGLE_SHOW_TOP_CARD': {
@@ -1186,12 +1830,22 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       rotationStep = rotationStep ?? 45;
 
       const baseRotation = obj.baseRotation ?? obj.rotation;
+      const previousRotation = obj.rotation;
 
       // If current rotation is at base, rotate clockwise by rotationStep
       // Otherwise return to base rotation
       const newRotation = obj.rotation === baseRotation
         ? (obj.rotation + rotationStep) % 360
         : baseRotation;
+
+      // Add to general history
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'object-rotated',
+        objectId: obj.id,
+        previousRotation,
+        previousBaseRotation: obj.baseRotation,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
       return {
         ...state,
@@ -1202,7 +1856,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             rotation: newRotation,
             baseRotation: baseRotation
           }
-        }
+        },
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'SWING_COUNTER_CLOCKWISE': {
@@ -1218,12 +1873,22 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       rotationStep = rotationStep ?? 45;
 
       const baseRotation = obj.baseRotation ?? obj.rotation;
+      const previousRotation = obj.rotation;
 
       // If current rotation is at base, rotate counter-clockwise by rotationStep
       // Otherwise return to base rotation
       const newRotation = obj.rotation === baseRotation
         ? (obj.rotation - rotationStep + 360) % 360
         : baseRotation;
+
+      // Add to general history
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'object-rotated',
+        objectId: obj.id,
+        previousRotation,
+        previousBaseRotation: obj.baseRotation,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
       return {
         ...state,
@@ -1234,12 +1899,22 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             rotation: newRotation,
             baseRotation: baseRotation
           }
-        }
+        },
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'PIN_TO_VIEWPORT': {
       const obj = state.objects[action.payload.id];
       if (!obj) return state;
+
+      // Add to general history
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'object-pinned',
+        objectId: obj.id,
+        previousPinnedToViewport: (obj as any).isPinnedToViewport,
+        previousScreenPosition: (obj as any).pinnedScreenPosition,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
       const isMinimized = (obj as any).minimized || false;
       const hasDualPosition = (obj as any).dualPosition || false;
@@ -1275,7 +1950,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           objects: {
             ...state.objects,
             [action.payload.id]: updatedObj
-          }
+          },
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
       }
 
@@ -1289,12 +1965,24 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             isPinnedToViewport: true,
             pinnedScreenPosition: { x: action.payload.screenX, y: action.payload.screenY }
           }
-        }
+        },
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'UNPIN_FROM_VIEWPORT': {
       const obj = state.objects[action.payload.id];
       if (!obj) return state;
+
+      // Add to general history
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'object-unpinned',
+        objectId: obj.id,
+        previousX: obj.x,
+        previousY: obj.y,
+        previousPinnedToViewport: (obj as any).isPinnedToViewport || false,
+        previousScreenPosition: (obj as any).pinnedScreenPosition,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
       return {
         ...state,
@@ -1309,7 +1997,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             expandedPinnedPosition: undefined,
             collapsedPinnedPosition: undefined
           }
-        }
+        },
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'CREATE_PANEL': {
@@ -1490,6 +2179,938 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           } as PanelObject | WindowObject,
         },
       };
+    }
+    case 'SPAWN_TOKEN_FROM_ARCHETYPE': {
+      const archetype = state.objects[action.payload.archetypeId] as TokenArchetype;
+      if (!archetype || archetype.type !== ItemType.TOKEN_ARCHETYPE) return state;
+
+      // Get current spawn count or start at 0
+      const currentCount = archetype.spawnCount || 0;
+
+      // Generate new token based on archetype settings
+      const tokenId = generateUUID();
+      const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
+      const maxZ = allZ.length ? Math.max(...allZ) : 0;
+
+      const newToken: Token = {
+        id: tokenId,
+        type: ItemType.TOKEN,
+        shape: archetype.shape,
+        name: archetype.autoName && archetype.namePrefix
+          ? `${archetype.namePrefix} ${currentCount + 1}`
+          : archetype.name,
+        x: action.payload.x,
+        y: action.payload.y,
+        width: archetype.defaultSize?.width ?? archetype.width,
+        height: archetype.defaultSize?.height ?? archetype.height,
+        rotation: 0,
+        content: archetype.defaultContent ?? archetype.content,
+        color: archetype.defaultColor ?? archetype.color,
+        locked: false,
+        isOnTable: true,
+        zIndex: maxZ + 1,
+        archetypeId: archetype.id,
+      };
+
+      // Increment spawn count on archetype
+      const updatedArchetype = {
+        ...archetype,
+        spawnCount: currentCount + 1
+      };
+
+      // Add to general history
+      const historyEntry: GeneralHistoryEntry = {
+        type: 'token-spawned',
+        objectId: tokenId,
+        archetypeId: archetype.id,
+        archetypePreviousSpawnCount: currentCount,
+      };
+      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [archetype.id]: updatedArchetype,
+          [tokenId]: newToken,
+        },
+        undo: { ...state.undo, generalHistory: newGeneralHistory },
+      };
+    }
+    case 'CREATE_DRAWING_OBJECT': {
+      const { strokes, x, y, width, height, name, opacity } = action.payload;
+
+      // Calculate bounds from strokes
+      const drawingId = `drawing-${Date.now()}`;
+      const drawing: Drawing = {
+        id: drawingId,
+        type: ItemType.DRAWING,
+        x,
+        y,
+        rotation: 0,
+        width,
+        height,
+        content: '',
+        name: name || `Drawing ${Object.keys(state.objects).length + 1}`,
+        locked: false,
+        isOnTable: true,
+        strokes,
+        bounds: { x: 0, y: 0, width, height },
+        opacity,
+      };
+
+      // Add to marker history (max 10)
+      const historyEntry: MarkerHistoryEntry = {
+        type: 'drawing-created',
+        drawingId,
+        drawing,
+      };
+      const newMarkerHistory = [...state.undo.markerHistory, historyEntry].slice(-10);
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [drawingId]: drawing,
+        },
+        undo: {
+          ...state.undo,
+          markerHistory: newMarkerHistory,
+        },
+      };
+    }
+    case 'ADD_STROKE_TO_DRAWING': {
+      const { drawingId, stroke } = action.payload;
+      const drawing = state.objects[drawingId];
+      if (!drawing || drawing.type !== ItemType.DRAWING) return state;
+
+      // Add to marker history (max 10)
+      const historyEntry: MarkerHistoryEntry = {
+        type: 'stroke-added',
+        drawingId,
+        strokeId: stroke.id,
+        stroke,
+      };
+      const newMarkerHistory = [...state.undo.markerHistory, historyEntry].slice(-10);
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [drawingId]: {
+            ...drawing,
+            strokes: [...drawing.strokes, stroke],
+          },
+        },
+        undo: {
+          ...state.undo,
+          markerHistory: newMarkerHistory,
+        },
+      };
+    }
+    case 'MERGE_DRAWINGS': {
+      const { sourceId, targetId } = action.payload;
+      const sourceDrawing = state.objects[sourceId];
+      const targetDrawing = state.objects[targetId];
+
+      if (!sourceDrawing || !targetDrawing ||
+          sourceDrawing.type !== ItemType.DRAWING ||
+          targetDrawing.type !== ItemType.DRAWING) {
+        return state;
+      }
+
+      // Store target before merge for undo
+      const targetBeforeMerge = { ...targetDrawing as Drawing };
+
+      // Merge strokes from source into target
+      const mergedDrawing: Drawing = {
+        ...targetDrawing,
+        strokes: [...targetDrawing.strokes, ...sourceDrawing.strokes],
+      };
+
+      // Remove source drawing
+      const { [sourceId]: removed, ...remainingObjects } = state.objects;
+
+      // Add to marker history (max 10)
+      const historyEntry: MarkerHistoryEntry = {
+        type: 'drawings-merged',
+        mergedIntoId: targetId,
+        sourceDrawings: [sourceDrawing as Drawing],
+        targetDrawingBeforeMerge: targetBeforeMerge,
+      };
+      const newMarkerHistory = [...state.undo.markerHistory, historyEntry].slice(-10);
+
+      return {
+        ...state,
+        objects: {
+          ...remainingObjects,
+          [targetId]: mergedDrawing,
+        },
+        undo: {
+          ...state.undo,
+          markerHistory: newMarkerHistory,
+        },
+      };
+    }
+    case 'ADD_STROKE': {
+      const { stroke, layerId } = action.payload;
+      const layer = state.drawings.layers.find(l => l.id === layerId);
+      if (!layer) return state;
+
+      return {
+        ...state,
+        drawings: {
+          ...state.drawings,
+          layers: state.drawings.layers.map(l =>
+            l.id === layerId
+              ? { ...l, strokes: [...l.strokes, stroke] }
+              : l
+          )
+        }
+      };
+    }
+    case 'DELETE_STROKE': {
+      const { strokeId, layerId } = action.payload;
+      return {
+        ...state,
+        drawings: {
+          ...state.drawings,
+          layers: state.drawings.layers.map(l =>
+            l.id === layerId
+              ? { ...l, strokes: l.strokes.filter(s => s.id !== strokeId) }
+              : l
+          )
+        }
+      };
+    }
+    case 'CREATE_DRAWING_LAYER': {
+      const newLayer: DrawingLayer = {
+        id: generateUUID(),
+        ...action.payload.layer
+      };
+
+      return {
+        ...state,
+        drawings: {
+          ...state.drawings,
+          layers: [...state.drawings.layers, newLayer]
+        }
+      };
+    }
+    case 'DELETE_DRAWING_LAYER': {
+      return {
+        ...state,
+        drawings: {
+          ...state.drawings,
+          layers: state.drawings.layers.filter(l => l.id !== action.payload.layerId)
+        }
+      };
+    }
+    case 'UPDATE_DRAWING_LAYER': {
+      const { layerId, updates } = action.payload;
+
+      return {
+        ...state,
+        drawings: {
+          ...state.drawings,
+          layers: state.drawings.layers.map(l =>
+            l.id === layerId ? { ...l, ...updates } : l
+          )
+        }
+      };
+    }
+    case 'CLEAR_DRAWING_LAYER': {
+      return {
+        ...state,
+        drawings: {
+          ...state.drawings,
+          layers: state.drawings.layers.map(l =>
+            l.id === action.payload.layerId
+              ? { ...l, strokes: [] }
+              : l
+          )
+        }
+      };
+    }
+    case 'UNDO_MARKER': {
+      if (state.undo.markerHistory.length === 0) return state;
+
+      const lastEntry = state.undo.markerHistory[state.undo.markerHistory.length - 1];
+      const newHistory = state.undo.markerHistory.slice(0, -1);
+
+      switch (lastEntry.type) {
+        case 'drawing-created': {
+          // Delete the drawing
+          const { [lastEntry.drawingId]: removed, ...remainingObjects } = state.objects;
+          return {
+            ...state,
+            objects: remainingObjects,
+            undo: { ...state.undo, markerHistory: newHistory },
+          };
+        }
+        case 'stroke-added': {
+          // Remove the stroke from the drawing
+          const drawing = state.objects[lastEntry.drawingId];
+          if (!drawing || drawing.type !== ItemType.DRAWING) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.drawingId]: {
+                ...drawing,
+                strokes: drawing.strokes.filter(s => s.id !== lastEntry.strokeId),
+              },
+            },
+            undo: { ...state.undo, markerHistory: newHistory },
+          };
+        }
+        case 'drawing-deleted': {
+          // Restore the drawing
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.drawing.id]: lastEntry.drawing,
+            },
+            undo: { ...state.undo, markerHistory: newHistory },
+          };
+        }
+        case 'drawings-merged': {
+          // Unmerge: delete the merged drawing, restore all source drawings and restore target to previous state
+          const { [lastEntry.mergedIntoId]: mergedRemoved, ...remainingObjects } = state.objects;
+          let restoredObjects = { ...remainingObjects };
+
+          // Restore all source drawings
+          for (const drawing of lastEntry.sourceDrawings) {
+            restoredObjects[drawing.id] = drawing;
+          }
+
+          // Restore target to previous state
+          restoredObjects[lastEntry.targetDrawingBeforeMerge.id] = lastEntry.targetDrawingBeforeMerge;
+
+          return {
+            ...state,
+            objects: restoredObjects,
+            undo: { ...state.undo, markerHistory: newHistory },
+          };
+        }
+        default:
+          return state;
+      }
+    }
+    case 'UNDO_GENERAL': {
+      if (state.undo.generalHistory.length === 0) return state;
+
+      const lastEntry = state.undo.generalHistory[state.undo.generalHistory.length - 1];
+      const newHistory = state.undo.generalHistory.slice(0, -1);
+
+      switch (lastEntry.type) {
+        case 'object-added': {
+          // Delete the object
+          const { [lastEntry.objectId]: removed, ...remainingObjects } = state.objects;
+          return {
+            ...state,
+            objects: remainingObjects,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-deleted': {
+          // Restore the object and any cascaded deletes
+          const restoredObjects = { ...state.objects, [lastEntry.objectId]: lastEntry.object };
+          if (lastEntry.cascadedDeletes) {
+            for (const obj of lastEntry.cascadedDeletes) {
+              restoredObjects[obj.id] = obj;
+            }
+          }
+          return {
+            ...state,
+            objects: restoredObjects,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-moved': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: { ...obj, x: lastEntry.previousX, y: lastEntry.previousY },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-updated': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: { ...obj, ...lastEntry.previousValues },
+            } as Record<string, TableObject>,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-rotated': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: { ...obj, rotation: lastEntry.previousRotation },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-lock-toggled': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: { ...obj, locked: lastEntry.previousLocked },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-on-table-toggled': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: { ...obj, isOnTable: lastEntry.previousIsOnTable },
+            } as Record<string, TableObject>,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-layer-changed': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+
+          // Restore previous zIndex values for both objects
+          const updatedObjects: Record<string, TableObject> = {
+            ...state.objects,
+            [lastEntry.objectId]: { ...obj, zIndex: lastEntry.previousZIndex ?? obj.zIndex },
+          };
+
+          if (lastEntry.otherObjectId && lastEntry.otherObjectPreviousZIndex !== undefined) {
+            const otherObj = state.objects[lastEntry.otherObjectId];
+            if (otherObj) {
+              updatedObjects[lastEntry.otherObjectId] = { ...otherObj, zIndex: lastEntry.otherObjectPreviousZIndex };
+            }
+          }
+
+          return {
+            ...state,
+            objects: updatedObjects,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'counter-updated': {
+          const counter = state.objects[lastEntry.objectId] as Counter;
+          if (!counter || counter.type !== ItemType.COUNTER) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: { ...counter, value: lastEntry.previousValue },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-pinned': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+          const updatedObj: any = { ...obj };
+          if (lastEntry.previousPinnedToViewport !== undefined) {
+            updatedObj.isPinnedToViewport = lastEntry.previousPinnedToViewport;
+          } else {
+            delete updatedObj.isPinnedToViewport;
+          }
+          if (lastEntry.previousScreenPosition !== undefined) {
+            updatedObj.pinnedScreenPosition = lastEntry.previousScreenPosition;
+          } else {
+            delete updatedObj.pinnedScreenPosition;
+          }
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: updatedObj,
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'object-unpinned': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: {
+                ...obj,
+                x: lastEntry.previousX,
+                y: lastEntry.previousY,
+                isPinnedToViewport: lastEntry.previousPinnedToViewport,
+                ...(lastEntry.previousScreenPosition && { pinnedScreenPosition: lastEntry.previousScreenPosition }),
+              } as any,
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'token-spawned': {
+          // Delete the spawned token
+          const { [lastEntry.objectId]: removed, ...remainingObjects } = state.objects;
+
+          // Also restore archetype's spawn count
+          if (lastEntry.archetypePreviousSpawnCount !== undefined) {
+            const archetype = remainingObjects[lastEntry.archetypeId] as TokenArchetype;
+            if (archetype && archetype.type === ItemType.TOKEN_ARCHETYPE) {
+              remainingObjects[lastEntry.archetypeId] = {
+                ...archetype,
+                spawnCount: lastEntry.archetypePreviousSpawnCount,
+              };
+            }
+          }
+
+          return {
+            ...state,
+            objects: remainingObjects,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-flipped': {
+          const card = state.objects[lastEntry.cardId];
+          if (!card || card.type !== ItemType.CARD) return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.cardId]: { ...card, faceUp: lastEntry.previousFaceUp },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-drawn': {
+          const card = state.objects[lastEntry.cardId];
+          const deck = state.objects[lastEntry.fromDeckId];
+          if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+          // Remove card from deck's cardIds and insert at previous position
+          const newCardIds = [...deck.cardIds];
+          newCardIds.splice(lastEntry.fromIndex, 0, lastEntry.cardId);
+
+          // Update card location and position
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.cardId]: {
+                ...card,
+                location: lastEntry.previousLocation,
+              },
+              [lastEntry.fromDeckId]: {
+                ...deck,
+                cardIds: newCardIds,
+              },
+            } as Record<string, TableObject>,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-played': {
+          const card = state.objects[lastEntry.cardId];
+          if (!card || card.type !== ItemType.CARD) return state;
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.cardId]: {
+                ...card,
+                location: lastEntry.previousLocation,
+                x: lastEntry.previousX ?? card.x,
+                y: lastEntry.previousY ?? card.y,
+                faceUp: lastEntry.previousFaceUp ?? card.faceUp,
+              },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-played-from-top': {
+          const card = state.objects[lastEntry.cardId] as Card;
+          const deck = state.objects[lastEntry.deckId] as Deck;
+          if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.deckId]: {
+                ...deck,
+                cardIds: lastEntry.previousCardIds,
+              },
+              [lastEntry.cardId]: {
+                ...card,
+                location: lastEntry.previousLocation,
+                faceUp: lastEntry.previousFaceUp,
+                isOnTable: lastEntry.previousLocation !== CardLocation.CURSOR_SLOT,
+              },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'dropped-from-cursor-slot': {
+          const obj = state.objects[lastEntry.objectId];
+          if (!obj) return state;
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.objectId]: {
+                ...obj,
+                x: lastEntry.previousX ?? obj.x,
+                y: lastEntry.previousY ?? obj.y,
+                ...(lastEntry.previousZIndex !== undefined && { zIndex: lastEntry.previousZIndex }),
+                ...(lastEntry.previousInCursorSlot !== undefined && { inCursorSlot: lastEntry.previousInCursorSlot }),
+                // For cards, restore previous location
+                ...(obj.type === ItemType.CARD && {
+                  location: lastEntry.previousLocation,
+                  isOnTable: lastEntry.previousLocation === CardLocation.TABLE,
+                }),
+              },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-returned-to-deck': {
+          const card = state.objects[lastEntry.cardId];
+          const deck = state.objects[lastEntry.deckId];
+          if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+          // Remove from deck's cardIds
+          const newCardIds = deck.cardIds.filter(id => id !== lastEntry.cardId);
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.cardId]: {
+                ...card,
+                location: lastEntry.previousLocation,
+                x: lastEntry.previousX ?? card.x,
+                y: lastEntry.previousY ?? card.y,
+              },
+              [lastEntry.deckId]: {
+                ...deck,
+                cardIds: newCardIds,
+              },
+            } as Record<string, TableObject>,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'deck-shuffled': {
+          const deck = state.objects[lastEntry.deckId];
+          if (!deck || deck.type !== ItemType.DECK) return state;
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.deckId]: {
+                ...deck,
+                cardIds: lastEntry.previousCardOrder,
+              },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-added-to-pile': {
+          const card = state.objects[lastEntry.cardId] as Card;
+          const deck = state.objects[lastEntry.deckId] as Deck;
+          if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+          // Restore card's location and deck/pile state
+          const updatedCard: Card = {
+            ...card,
+            location: lastEntry.previousLocation,
+            ...(lastEntry.previousX !== undefined && { x: lastEntry.previousX }),
+            ...(lastEntry.previousY !== undefined && { y: lastEntry.previousY }),
+          };
+
+          const newObjects: Record<string, TableObject> = {
+            ...state.objects,
+            [lastEntry.cardId]: updatedCard,
+          };
+
+          // Restore deck cardIds if they were changed
+          if (lastEntry.previousDeckCardIds) {
+            newObjects[lastEntry.deckId] = {
+              ...deck,
+              cardIds: lastEntry.previousDeckCardIds,
+            };
+          }
+
+          // Restore pile cardIds
+          if (lastEntry.previousPileCardIds) {
+            const updatedPiles = deck.piles?.map(p =>
+              p.id === lastEntry.pileId
+                ? { ...p, cardIds: lastEntry.previousPileCardIds }
+                : p
+            ) as CardPile[] | undefined;
+            newObjects[lastEntry.deckId] = {
+              ...(newObjects[lastEntry.deckId] as Deck),
+              piles: updatedPiles || deck.piles,
+            } as TableObject;
+          }
+
+          return {
+            ...state,
+            objects: newObjects as Record<string, TableObject>,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-drawn-from-pile': {
+          const card = state.objects[lastEntry.cardId] as Card;
+          const deck = state.objects[lastEntry.deckId] as Deck;
+          if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+          // Find the pile
+          const pile = deck.piles?.find(p => p.id === lastEntry.pileId);
+          if (!pile) return state;
+
+          // Restore card to pile
+          const restoredPileCardIds = [...pile.cardIds];
+          restoredPileCardIds.splice(lastEntry.fromIndex, 0, lastEntry.cardId);
+
+          const updatedPiles = deck.piles?.map(p =>
+            p.id === lastEntry.pileId
+              ? { ...p, cardIds: restoredPileCardIds }
+              : p
+          ) as CardPile[] | undefined;
+
+          // Update card location
+          const updatedCard: Card = {
+            ...card,
+            location: lastEntry.previousLocation,
+          };
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.deckId]: { ...deck, piles: updatedPiles } as TableObject,
+              [lastEntry.cardId]: updatedCard,
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-returned-to-top': {
+          const card = state.objects[lastEntry.cardId] as Card;
+          const toDeck = state.objects[lastEntry.toDeckId] as Deck;
+          if (!card || !toDeck || toDeck.type !== ItemType.DECK) return state;
+
+          const newObjects: Record<string, TableObject> = { ...state.objects };
+
+          // Restore card's location and properties
+          const updatedCard: Card = {
+            ...card,
+            location: lastEntry.previousLocation,
+            ...(lastEntry.previousX !== undefined && { x: lastEntry.previousX }),
+            ...(lastEntry.previousY !== undefined && { y: lastEntry.previousY }),
+            ...(lastEntry.previousFaceUp !== undefined && { faceUp: lastEntry.previousFaceUp }),
+          };
+          newObjects[lastEntry.cardId] = updatedCard;
+
+          // Restore toDeck cardIds
+          if (lastEntry.toCardIds) {
+            newObjects[lastEntry.toDeckId] = {
+              ...toDeck,
+              cardIds: lastEntry.toCardIds,
+            };
+          }
+
+          // Restore fromDeck cardIds if different from toDeck
+          if (lastEntry.fromDeckId && lastEntry.fromDeckId !== lastEntry.toDeckId && lastEntry.fromCardIds) {
+            const fromDeck = state.objects[lastEntry.fromDeckId] as Deck;
+            if (fromDeck) {
+              newObjects[lastEntry.fromDeckId] = {
+                ...fromDeck,
+                cardIds: lastEntry.fromCardIds,
+              };
+            }
+          }
+
+          // Restore fromPile cardIds
+          if (lastEntry.fromPileId && lastEntry.fromPileCardIds) {
+            const fromDeck = state.objects[lastEntry.fromDeckId] as Deck;
+            if (fromDeck?.piles) {
+              const updatedPiles = fromDeck.piles.map(p =>
+                p.id === lastEntry.fromPileId
+                  ? { ...p, cardIds: lastEntry.fromPileCardIds }
+                  : p
+              ) as CardPile[];
+              newObjects[lastEntry.fromDeckId] = {
+                ...fromDeck,
+                piles: updatedPiles,
+              };
+            }
+          }
+
+          return {
+            ...state,
+            objects: newObjects,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-returned-to-bottom': {
+          const card = state.objects[lastEntry.cardId] as Card;
+          const toDeck = state.objects[lastEntry.toDeckId] as Deck;
+          if (!card || !toDeck || toDeck.type !== ItemType.DECK) return state;
+
+          const newObjects: Record<string, TableObject> = { ...state.objects };
+
+          // Restore card's location and properties
+          const updatedCard: Card = {
+            ...card,
+            location: lastEntry.previousLocation,
+            ...(lastEntry.previousX !== undefined && { x: lastEntry.previousX }),
+            ...(lastEntry.previousY !== undefined && { y: lastEntry.previousY }),
+            ...(lastEntry.previousFaceUp !== undefined && { faceUp: lastEntry.previousFaceUp }),
+          };
+          newObjects[lastEntry.cardId] = updatedCard;
+
+          // Restore toDeck cardIds
+          if (lastEntry.toCardIds) {
+            newObjects[lastEntry.toDeckId] = {
+              ...toDeck,
+              cardIds: lastEntry.toCardIds,
+            };
+          }
+
+          // Restore fromDeck cardIds if different from toDeck
+          if (lastEntry.fromDeckId && lastEntry.fromDeckId !== lastEntry.toDeckId && lastEntry.fromCardIds) {
+            const fromDeck = state.objects[lastEntry.fromDeckId] as Deck;
+            if (fromDeck) {
+              newObjects[lastEntry.fromDeckId] = {
+                ...fromDeck,
+                cardIds: lastEntry.fromCardIds,
+              };
+            }
+          }
+
+          // Restore fromPile cardIds
+          if (lastEntry.fromPileId && lastEntry.fromPileCardIds) {
+            const fromDeck = state.objects[lastEntry.fromDeckId] as Deck;
+            if (fromDeck?.piles) {
+              const updatedPiles = fromDeck.piles.map(p =>
+                p.id === lastEntry.fromPileId
+                  ? { ...p, cardIds: lastEntry.fromPileCardIds }
+                  : p
+              ) as CardPile[];
+              newObjects[lastEntry.fromDeckId] = {
+                ...fromDeck,
+                piles: updatedPiles,
+              };
+            }
+          }
+
+          return {
+            ...state,
+            objects: newObjects,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-added-to-top': {
+          const card = state.objects[lastEntry.cardId] as Card;
+          const toDeck = state.objects[lastEntry.toDeckId] as Deck;
+          if (!card || !toDeck || toDeck.type !== ItemType.DECK) return state;
+
+          const newObjects: Record<string, TableObject> = { ...state.objects };
+
+          // Restore card's location and properties
+          const updatedCard: Card = {
+            ...card,
+            location: lastEntry.previousLocation,
+            ...(lastEntry.previousX !== undefined && { x: lastEntry.previousX }),
+            ...(lastEntry.previousY !== undefined && { y: lastEntry.previousY }),
+            ...(lastEntry.previousFaceUp !== undefined && { faceUp: lastEntry.previousFaceUp }),
+          };
+          newObjects[lastEntry.cardId] = updatedCard;
+
+          // Restore toDeck cardIds
+          if (lastEntry.toCardIds) {
+            newObjects[lastEntry.toDeckId] = {
+              ...toDeck,
+              cardIds: lastEntry.toCardIds,
+            };
+          }
+
+          // Restore fromDeck cardIds if different from toDeck
+          if (lastEntry.fromDeckId && lastEntry.fromDeckId !== lastEntry.toDeckId && lastEntry.fromCardIds) {
+            const fromDeck = state.objects[lastEntry.fromDeckId] as Deck;
+            if (fromDeck) {
+              newObjects[lastEntry.fromDeckId] = {
+                ...fromDeck,
+                cardIds: lastEntry.fromCardIds,
+              };
+            }
+          }
+
+          return {
+            ...state,
+            objects: newObjects,
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-milled-to-bottom': {
+          const deck = state.objects[lastEntry.deckId] as Deck;
+          if (!deck || deck.type !== ItemType.DECK) return state;
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.deckId]: {
+                ...deck,
+                cardIds: lastEntry.previousCardIds,
+              },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        case 'card-milled-to-pile': {
+          const deck = state.objects[lastEntry.deckId] as Deck;
+          if (!deck || deck.type !== ItemType.DECK) return state;
+
+          const updatedPiles = deck.piles?.map(p =>
+            p.id === lastEntry.pileId
+              ? { ...p, cardIds: lastEntry.previousPileCardIds }
+              : p
+          );
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [lastEntry.deckId]: {
+                ...deck,
+                cardIds: lastEntry.previousDeckCardIds,
+                piles: updatedPiles,
+              },
+            },
+            undo: { ...state.undo, generalHistory: newHistory },
+          };
+        }
+        default:
+          return state;
+      }
     }
     default:
       return state;

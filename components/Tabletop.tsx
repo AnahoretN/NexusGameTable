@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -12,6 +12,8 @@ import { TopDeckModal } from './TopDeckModal';
 import { DeckComponent } from './DeckComponent';
 import { UIObjectRenderer } from './UIObjectRenderer';
 import { Tooltip } from './Tooltip';
+import { DrawingCanvas } from './DrawingCanvas';
+import { ObjectDrawingCanvas } from './ObjectDrawingCanvas';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
 import { CARD_SHAPE_DIMS } from '../constants';
 
@@ -150,6 +152,7 @@ export const Tabletop: React.FC = () => {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
+  const [currentTool, setCurrentTool] = useState<string>('none');
 
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -299,6 +302,16 @@ export const Tabletop: React.FC = () => {
     window.addEventListener('add-to-cursor-slot', handleAddToSlot);
     return () => window.removeEventListener('add-to-cursor-slot', handleAddToSlot);
   }, [cursorSlot.length, dispatch, state.objects]);
+
+  // Listen for current tool changes from DrawingCanvas
+  useEffect(() => {
+    const handleToolChanged = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tool: string }>;
+      setCurrentTool(customEvent.detail.tool);
+    };
+    window.addEventListener('current-tool-changed', handleToolChanged);
+    return () => window.removeEventListener('current-tool-changed', handleToolChanged);
+  }, []);
 
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = useCallback((card: CardType) => {
@@ -587,26 +600,8 @@ export const Tabletop: React.FC = () => {
               setCursorSlotSource('shift');
             }
 
-            // Remove card from deck and update in state
-            const newCardIds = deck.cardIds.slice(1);
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: { id: deck.id, cardIds: newCardIds }
-            });
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: {
-                id: topCardId,
-                location: CardLocation.CURSOR_SLOT,
-                faceUp: faceUp,
-                isOnTable: false,
-                // Preserve sprite properties
-                spriteUrl: card.spriteUrl,
-                spriteIndex: card.spriteIndex,
-                spriteColumns: card.spriteColumns,
-                spriteRows: card.spriteRows,
-              }
-            });
+            // Use new PLAY_TOP_CARD action with undo tracking
+            dispatch({ type: 'PLAY_TOP_CARD', payload: { deckId: deck.id } });
           }
         }
         break;
@@ -962,26 +957,15 @@ export const Tabletop: React.FC = () => {
       const finalX = worldX - baseWidth / 2 + offsetX;
       const finalY = worldY - baseHeight / 2 + offsetY;
 
-      // Use original item.id (not creating new ID) - restore object to tabletop
-      // For cards, ensure they go to tabletop (not hand) and preserve faceUp
-      const updatePayload: any = {
-        id: item.id,
-        inCursorSlot: false,
-        x: finalX,
-        y: finalY,
-        zIndex,
-      };
-
-      if (isCard) {
-        updatePayload.location = CardLocation.TABLE;
-        updatePayload.isOnTable = true;
-        // Preserve faceUp value from the slot item
-        updatePayload.faceUp = item.faceUp;
-      }
-
+      // Use DROP_FROM_CURSOR_SLOT action with undo tracking
       dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: updatePayload
+        type: 'DROP_FROM_CURSOR_SLOT',
+        payload: {
+          objectId: item.id,
+          x: finalX,
+          y: finalY,
+          zIndex,
+        },
       });
     });
 
@@ -1046,12 +1030,11 @@ export const Tabletop: React.FC = () => {
         const offsetX = offsetFromBack * offsetAmount;
         const offsetY = offsetFromBack * offsetAmount;
 
-        // Use original item.id - restore token to tabletop
+        // Use DROP_FROM_CURSOR_SLOT action with undo tracking
         dispatch({
-          type: 'UPDATE_OBJECT',
+          type: 'DROP_FROM_CURSOR_SLOT',
           payload: {
-            id: item.id,
-            inCursorSlot: false,
+            objectId: item.id,
             x: deck.x + deck.width / 2 - baseWidth / 2 + offsetX,
             y: deck.y + deck.height / 2 - baseHeight / 2 + offsetY,
             zIndex: 10000 + slotIndex,
@@ -1457,7 +1440,7 @@ export const Tabletop: React.FC = () => {
     // Check if clicking on a UI object - if it has an id, process normally
     // If no id (background), check for panning or dropping cursor slot
     if (!id) {
-      if (e.button === 0 && e.shiftKey) {
+      if (e.button === 0 && e.shiftKey && currentTool !== 'marker') {
         setIsPanning(true);
         dragStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
         return;
@@ -2086,7 +2069,7 @@ export const Tabletop: React.FC = () => {
     handleMouseMoveRef.current = handleMouseMove;
   }, [handleMouseMove]);
 
-  // Handle Escape key to close click tooltip, Space for testing pin compensation
+  // Handle Escape key to close click tooltip, Space for testing pin compensation, Ctrl+Z for undo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in an input/textarea
@@ -2101,6 +2084,20 @@ export const Tabletop: React.FC = () => {
           setClickTooltip(null);
           clickTooltipBoundsRef.current = null;
         }
+      }
+
+      // Ctrl+Z / Cmd+Z for undo (use 'code' to work with any keyboard layout)
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey) {
+        e.preventDefault();
+        // Check if marker tool is active
+        if (currentTool === 'marker') {
+          // Undo marker action
+          dispatch({ type: 'UNDO_MARKER' });
+        } else {
+          // Undo general action
+          dispatch({ type: 'UNDO_GENERAL' });
+        }
+        return;
       }
 
       // TEST: Spacebar manually compensates pinned deck position based on scroll
@@ -2128,7 +2125,7 @@ export const Tabletop: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state.objects, offset, zoom, clickTooltip]);
+  }, [state.objects, offset, zoom, clickTooltip, currentTool, dispatch]);
 
   // Global mouseup handler for drag operations - ALWAYS active, checks state internally
   useEffect(() => {
@@ -2522,9 +2519,40 @@ export const Tabletop: React.FC = () => {
         e.dataTransfer.dropEffect = 'move';
       }}
       onDrop={(e) => {
-        // Handle drop from hand panel (when dropped outside the transformed area)
+        // Handle drop from hand panel or tools panel
         e.preventDefault();
         e.stopPropagation();
+
+        // Try to get token archetype data first
+        const archetypeData = e.dataTransfer.getData('application/json');
+        if (archetypeData) {
+          try {
+            const data = JSON.parse(archetypeData);
+            if (data.type === 'token-archetype' && data.archetypeId) {
+              const archetype = state.objects[data.archetypeId] as TokenArchetype;
+              if (archetype && archetype.type === ItemType.TOKEN_ARCHETYPE) {
+                // Calculate world position for the new token
+                const worldX = e.clientX / zoom - offset.x;
+                const worldY = e.clientY / zoom - offset.y;
+
+                // Spawn token from archetype
+                dispatch({
+                  type: 'SPAWN_TOKEN_FROM_ARCHETYPE',
+                  payload: {
+                    archetypeId: archetype.id,
+                    x: worldX,
+                    y: worldY
+                  }
+                });
+                return;
+              }
+            }
+          } catch (err) {
+            // Not JSON data, continue with card handling
+          }
+        }
+
+        // Handle drop from hand panel (when dropped outside the transformed area)
         const cardId = e.dataTransfer.getData('text/plain');
         if (cardId && state.objects[cardId]) {
             const card = state.objects[cardId] as CardType;
@@ -2555,15 +2583,24 @@ export const Tabletop: React.FC = () => {
         backgroundSize: '20px 20px'
       }}
     >
-      <div 
-            style={{ 
-                width: worldBounds.width, 
-                height: worldBounds.height, 
-                position: 'absolute', 
-                top: 0, left: 0, 
+      <div
+            style={{
+                width: worldBounds.width,
+                height: worldBounds.height,
+                position: 'absolute',
+                top: 0, left: 0,
                 pointerEvents: 'none',
-                zIndex: -1 
-            }} 
+                zIndex: -1
+            }}
+        />
+
+        {/* Drawing Canvas - overlays the board for marker/eraser tools */}
+        <DrawingCanvas
+          width={window.innerWidth}
+          height={window.innerHeight}
+          zoom={zoom}
+          offsetX={offset.x}
+          offsetY={offset.y}
         />
 
         <div
@@ -2838,6 +2875,9 @@ export const Tabletop: React.FC = () => {
                                     ));
                                 })()}
                             </div>
+
+                            {/* Object Drawing Canvas - for drawing directly on tokens */}
+                            <ObjectDrawingCanvas obj={obj} width={obj.width} height={obj.height} />
                         </div>
                         </Tooltip>
                     );
@@ -3176,6 +3216,9 @@ export const Tabletop: React.FC = () => {
                                 }}
                             />
                             </div>
+
+                            {/* Object Drawing Canvas - for drawing directly on cards */}
+                            <ObjectDrawingCanvas obj={obj} width={displayWidth} height={displayHeight} faceUp={card.faceUp} />
                         </div>
                     )
                 }

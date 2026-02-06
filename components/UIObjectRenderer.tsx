@@ -336,6 +336,19 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     ? 'border-purple-400'
     : 'border-slate-600';
 
+  // Special handling for OBJECT_SETTINGS windows - render without frame since modal uses portal
+  const isObjectSettingsWindow = uiObject.type === ItemType.WINDOW &&
+    (uiObject as WindowObject).windowType === WindowType.OBJECT_SETTINGS;
+  if (isObjectSettingsWindow) {
+    const windowObj = uiObject as WindowObject;
+    const targetObj = windowObj.targetObjectId ? state.objects[windowObj.targetObjectId] : null;
+    const targetPanel = targetObj?.type === ItemType.PANEL ? targetObj as PanelObject : null;
+    // For non-panel objects, don't render the window frame - the modal renders via portal
+    if (!targetPanel || targetPanel.panelType === PanelType.HAND) {
+      return <WindowContent window={windowObj} />;
+    }
+  }
+
   return (
     <div
       ref={containerRef}
@@ -725,6 +738,8 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
           </div>
         );
       }
+      // ObjectSettingsModal uses createPortal to document.body, so render it without window frame
+      // Return the modal directly - it will render via portal to document.body
       return (
         <ObjectSettingsModal
           object={targetObj}
