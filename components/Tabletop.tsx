@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -2529,8 +2529,8 @@ export const Tabletop: React.FC = () => {
           try {
             const data = JSON.parse(archetypeData);
             if (data.type === 'token-archetype' && data.archetypeId) {
-              const archetype = state.objects[data.archetypeId] as TokenArchetype;
-              if (archetype && archetype.type === ItemType.TOKEN_ARCHETYPE) {
+              const archetype = state.objects[data.archetypeId] as TokenType;
+              if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
                 // Calculate world position for the new token
                 const worldX = e.clientX / zoom - offset.x;
                 const worldY = e.clientY / zoom - offset.y;

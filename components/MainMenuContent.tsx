@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
-import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenArchetype, Drawing } from '../types';
+import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing } from '../types';
 import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -20,6 +20,8 @@ const getTypeIcon = (obj: TableObject): React.ReactElement => {
       if (token.shape === TokenShape.CIRCLE) return <CircleDot size={10} />;
       if (token.shape === TokenShape.HEX) return <Hexagon size={10} />;
       if (token.shape === TokenShape.STANDEE) return <User size={10} />;
+      return <Square size={10} />;
+    case ItemType.TOKEN_TYPE:
       return <Square size={10} />;
     case ItemType.CARD:
       return <CreditCard size={10} />;
@@ -573,9 +575,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">Tokens</h4>
               <div className="grid grid-cols-3 gap-2">
                 {Object.values(state.objects)
-                  .filter((obj): obj is TokenArchetype => obj.type === ItemType.TOKEN_ARCHETYPE)
+                  .filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE)
                   .map((archetype) => (
-                    <TokenArchetypeCard
+                    <TokenTypeCard
                       key={archetype.id}
                       archetype={archetype}
                       onSettings={() => dispatch({
@@ -1186,13 +1188,13 @@ const DrawingToolButton: React.FC<DrawingToolButtonProps> = ({ tool, icon, label
   );
 };
 
-// Token archetype card component
-interface TokenArchetypeCardProps {
-  archetype: TokenArchetype;
+// Token type card component
+interface TokenTypeCardProps {
+  archetype: TokenType;
   onSettings: () => void;
 }
 
-const TokenArchetypeCard: React.FC<TokenArchetypeCardProps> = ({ archetype, onSettings }) => {
+const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, onSettings }) => {
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('application/json', JSON.stringify({
       type: 'token-archetype',

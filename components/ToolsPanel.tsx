@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, TableObject, TokenArchetype, TokenShape, WindowType } from '../types';
+import { ItemType, TableObject, TokenType, TokenShape, WindowType } from '../types';
 import { Pen, Eraser, Ruler, Compass, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 
 // Drawing tools
@@ -67,7 +67,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
 
   // Get all token archetypes
   const archetypes = Object.values(state.objects)
-    .filter((obj): obj is TokenArchetype => obj.type === ItemType.TOKEN_ARCHETYPE);
+    .filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE);
 
   // Handle tool selection
   const handleToolSelect = useCallback((tool: DrawingTool) => {
@@ -77,7 +77,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   }, []);
 
   // Handle archetype drag start
-  const handleArchetypeDragStart = useCallback((e: React.DragEvent, archetype: TokenArchetype) => {
+  const handleArchetypeDragStart = useCallback((e: React.DragEvent, archetype: TokenType) => {
     e.dataTransfer.setData('application/json', JSON.stringify({
       type: 'token-archetype',
       archetypeId: archetype.id
@@ -86,7 +86,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   }, []);
 
   // Handle archetype settings
-  const handleArchetypeSettings = useCallback((archetype: TokenArchetype) => {
+  const handleArchetypeSettings = useCallback((archetype: TokenType) => {
     dispatch({
       type: 'CREATE_WINDOW',
       payload: {

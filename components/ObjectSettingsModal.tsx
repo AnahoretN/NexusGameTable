@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenArchetype, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation, Drawing } from '../types';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation, Drawing } from '../types';
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye, Grid3x3, Image as ImageIcon } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
@@ -217,9 +217,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       // Initialize sprite config
       setSpriteConfig(deckObj.spriteConfig || null);
     }
-    // Initialize archetype settings for token archetypes
-    if (object.type === ItemType.TOKEN_ARCHETYPE) {
-      const archetype = object as TokenArchetype;
+    // Initialize archetype settings for token types
+    if (object.type === ItemType.TOKEN_TYPE) {
+      const archetype = object as TokenType;
       setArchetypeSettings({
         autoName: archetype.autoName,
         namePrefix: archetype.namePrefix,
@@ -362,20 +362,20 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       (toSave as Deck).searchWindowVisibility = cardSettings.searchWindowVisibility;
       (toSave as Deck).spriteConfig = spriteConfig || undefined;
     }
-    // Add archetype settings for token archetypes
-    if (toSave.type === ItemType.TOKEN_ARCHETYPE) {
-      (toSave as TokenArchetype).autoName = archetypeSettings.autoName;
-      (toSave as TokenArchetype).namePrefix = archetypeSettings.namePrefix;
-      (toSave as TokenArchetype).defaultSize = archetypeSettings.defaultSize;
-      (toSave as TokenArchetype).defaultColor = archetypeSettings.defaultColor;
-      (toSave as TokenArchetype).defaultContent = archetypeSettings.defaultContent;
+    // Add archetype settings for token types
+    if (toSave.type === ItemType.TOKEN_TYPE) {
+      (toSave as TokenType).autoName = archetypeSettings.autoName;
+      (toSave as TokenType).namePrefix = archetypeSettings.namePrefix;
+      (toSave as TokenType).defaultSize = archetypeSettings.defaultSize;
+      (toSave as TokenType).defaultColor = archetypeSettings.defaultColor;
+      (toSave as TokenType).defaultContent = archetypeSettings.defaultContent;
     }
     onSave(toSave);
     onClose();
   };
 
   const isToken = data.type === ItemType.TOKEN;
-  const isArchetype = data.type === ItemType.TOKEN_ARCHETYPE;
+  const isArchetype = data.type === ItemType.TOKEN_TYPE;
   const isBoard = data.type === ItemType.BOARD;
   const isDeck = data.type === ItemType.DECK;
   const isCard = data.type === ItemType.CARD; // Cards don't have their own settings
@@ -391,8 +391,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   }
 
   const [archetypeSettings, setArchetypeSettings] = useState<ArchetypeSettings>(() => {
-    if (data.type === ItemType.TOKEN_ARCHETYPE) {
-      const archetype = data as TokenArchetype;
+    if (data.type === ItemType.TOKEN_TYPE) {
+      const archetype = data as TokenType;
       return {
         autoName: archetype.autoName,
         namePrefix: archetype.namePrefix,
