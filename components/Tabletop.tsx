@@ -17,6 +17,7 @@ import { ObjectDrawingCanvas } from './ObjectDrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
 import { CARD_SHAPE_DIMS } from '../constants';
+import { generateUUID } from '../utils/uuid';
 
 // Board component with resize handle (corner only, like panels)
 interface BoardWithResizeProps {
@@ -167,10 +168,16 @@ export const Tabletop: React.FC = () => {
   // Stores full object data and removes objects from their original position
   const [cursorSlot, setCursorSlot] = useState<(CardType | TokenType)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
+  // Ref for immediate cursor position updates (synchronous, for rendering slot items)
+  const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
   // Track how items were added to cursor slot:
-  // - 'shift' = Shift+click (drop only on click, not on mouseup)
+  // - 'shift' = Shift+click on board (drop only on click, not on mouseup)
   // - 'hold' = Long press or drag (drop on mouseup)
-  const [cursorSlotSource, setCursorSlotSource] = useState<'shift' | 'hold' | null>(null);
+  // - 'archetype' = Click on token archetype in ToolsPanel (don't drop on normal click)
+  const [cursorSlotSource, setCursorSlotSource] = useState<'shift' | 'hold' | 'archetype' | null>(null);
+
+  // Ref to track when we're adding a token (prevent slot from being dropped during add)
+  const isAddingTokenRef = useRef(false);
 
   // Local state to handle the visual "rapid change" animation of dice
   const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
@@ -296,12 +303,91 @@ export const Tabletop: React.FC = () => {
 
         setCursorSlot(prev => [...prev, itemClone]);
         dispatch({ type: 'UPDATE_OBJECT', payload: { id: cardId, inCursorSlot: true } });
-        setCursorPosition({ x: clientX, y: clientY });
+        const pos = { x: clientX, y: clientY };
+        setCursorPosition(pos);
+        cursorPositionRef.current = pos;
       }
     };
 
     window.addEventListener('add-to-cursor-slot', handleAddToSlot);
     return () => window.removeEventListener('add-to-cursor-slot', handleAddToSlot);
+  }, [cursorSlot.length, dispatch, state.objects]);
+
+  // Listen for add-token-to-cursor-slot events from ToolsPanel
+  useEffect(() => {
+    const handleAddTokenToSlot = (e: Event) => {
+      // Set flag to prevent slot from being dropped during this operation
+      isAddingTokenRef.current = true;
+
+      // Prevent event from propagating to avoid clearing the slot
+      e.preventDefault();
+      e.stopPropagation();
+
+      const customEvent = e as CustomEvent<{ archetypeId: string; clientX?: number; clientY?: number }>;
+      const { archetypeId, clientX, clientY } = customEvent.detail;
+      const archetype = state.objects[archetypeId] as TokenArchetype;
+
+      if (!archetype || archetype.type !== ItemType.TOKEN_TYPE) {
+        isAddingTokenRef.current = false;
+        return;
+      }
+      if (cursorSlot.length >= 100) {
+        isAddingTokenRef.current = false;
+        return;
+      } // Max 100 items in slot
+
+      // Create new token from archetype
+      const newTokenId = generateUUID();
+      const defaultSize = archetype.defaultSize || { width: 50, height: 50 };
+      const newToken: TokenType = {
+        id: newTokenId,
+        type: ItemType.TOKEN,
+        name: archetype.name, // Use archetype name for token-copy
+        x: 0,
+        y: 0,
+        width: defaultSize.width,
+        height: defaultSize.height,
+        rotation: 0,
+        color: archetype.color,
+        borderColor: (archetype as any).borderColor,
+        content: archetype.content,
+        shape: archetype.shape,
+        isOnTable: false,
+        locked: false,
+        archetypeId: archetype.id,
+        inCursorSlot: true,
+        // Store showName setting from archetype
+        showName: (archetype as any).showName || false,
+      };
+
+      // Add token to objects list
+      dispatch({ type: 'ADD_OBJECT', payload: newToken });
+
+      // Create clone for cursor slot
+      const tokenClone: TokenType = { ...newToken };
+      (tokenClone as any).cursorSlotIndex = cursorSlot.length;
+
+      // Add to cursor slot
+      setCursorSlot(prev => [...prev, tokenClone]);
+      cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
+
+      // Set cursor position to show token immediately (use provided coords or current mouse position)
+      if (clientX !== undefined && clientY !== undefined) {
+        const pos = { x: clientX, y: clientY };
+        setCursorPosition(pos);
+        cursorPositionRef.current = pos;
+      } else if (cursorPosition) {
+        // Use existing cursor position
+        cursorPositionRef.current = cursorPosition;
+      }
+      // If no position available, token will appear on first mouse move
+
+      // Set source to 'archetype' when adding from token type click
+      setCursorSlotSource('archetype');
+    };
+
+    window.addEventListener('add-token-to-cursor-slot', handleAddTokenToSlot, { passive: false });
+    return () => window.removeEventListener('add-token-to-cursor-slot', handleAddTokenToSlot);
   }, [cursorSlot.length, dispatch, state.objects]);
 
   // Listen for current tool changes from DrawingCanvas
@@ -313,6 +399,23 @@ export const Tabletop: React.FC = () => {
     window.addEventListener('current-tool-changed', handleToolChanged);
     return () => window.removeEventListener('current-tool-changed', handleToolChanged);
   }, []);
+
+  // Listen for token-copy updates from archetype settings changes
+  useEffect(() => {
+    const handleUpdateTokenCopy = (e: Event) => {
+      const customEvent = e as CustomEvent<{ copyId: string; updates: Partial<TokenType> }>;
+      const { copyId, updates } = customEvent.detail;
+
+      // Update the token-copy with new values from archetype
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: copyId, ...updates }
+      });
+    };
+
+    window.addEventListener('update-token-copy-from-archetype', handleUpdateTokenCopy);
+    return () => window.removeEventListener('update-token-copy-from-archetype', handleUpdateTokenCopy);
+  }, [dispatch]);
 
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = useCallback((card: CardType) => {
@@ -403,13 +506,12 @@ export const Tabletop: React.FC = () => {
       }
 
       const boards = Object.values(objects).filter(obj =>
-          obj.type === ItemType.TOKEN &&
-          (obj as TokenType).shape === TokenShape.RECTANGLE &&
-          (obj as TokenType).snapToGrid &&
-          (obj as TokenType).gridType !== GridType.NONE &&
+          obj.type === ItemType.BOARD &&
+          (obj as any).snapToGrid &&
+          (obj as any).gridType !== GridType.NONE &&
           obj.isOnTable &&
           obj.id !== currentDraggingId
-      ) as TokenType[];
+      ) as BoardType[];
 
       for (const board of boards) {
           const relativeX = cursorX - board.x;
@@ -827,8 +929,7 @@ export const Tabletop: React.FC = () => {
   }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition]);
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
-  const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift') => {
-    console.log('[ADD-TO-CURSOR-SLOT] Adding item', { id, source, currentLength: cursorSlot.length });
+  const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
     if (cursorSlot.length >= 100) return; // Max 100 items in slot
 
     // Set source based on how the item was added (only if slot was empty before)
@@ -885,21 +986,31 @@ export const Tabletop: React.FC = () => {
     // This ensures consistent offset between slot rendering and dropping
     (itemClone as any).cursorSlotIndex = cursorSlot.length;
 
+    // IMPORTANT: Set cursor position FIRST, before any state changes that trigger re-render
+    // This ensures cursorPositionRef.current is updated synchronously before the render happens
+    if (mousePosition) {
+      // Use the current mouse position when dragging
+      const newPos = { x: mousePosition.x, y: mousePosition.y };
+      cursorPositionRef.current = newPos;
+      setCursorPosition(newPos);
+    } else {
+      // Calculate screen position of object center (world -> screen) for Shift+click
+      const itemCenterX = item.x + (item.width ?? 63) / 2;
+      const itemCenterY = item.y + (item.height ?? 88) / 2;
+      const screenX = itemCenterX * zoom + offset.x;
+      const screenY = itemCenterY * zoom + offset.y;
+      // Set cursor position to object center on screen
+      cursorPositionRef.current = { x: screenX, y: screenY };
+      setCursorPosition({ x: screenX, y: screenY });
+    }
+
+    // NOW update cursor slot state (triggers re-render)
     setCursorSlot(prev => [...prev, itemClone]);
     // Also update ref immediately for consistent state
     cursorSlotRef.current = [...cursorSlotRef.current, itemClone];
 
     // Mark the item as inCursorSlot (keeps it in objects list but hidden from tabletop)
     dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
-
-    // Calculate screen position of object center (world -> screen)
-    const itemCenterX = item.x + (item.width ?? 63) / 2;
-    const itemCenterY = item.y + (item.height ?? 88) / 2;
-    const screenX = itemCenterX * zoom + offset.x;
-    const screenY = itemCenterY * zoom + offset.y;
-
-    // Set cursor position to object center on screen
-    setCursorPosition({ x: screenX, y: screenY });
   }, [cursorSlot.length, dispatch, offset.x, offset.y, zoom, cursorSlotRef]);
 
   // Drop all items from cursor slot at specified screen coordinates
@@ -977,20 +1088,33 @@ export const Tabletop: React.FC = () => {
     setCursorSlotSource(null);
   }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, getCardSettings]);
 
+  // Listen for drop-cursor-slot-at-position events (from drag-to-place in ToolsPanel)
+  useEffect(() => {
+    const handleDropAtPosition = (e: Event) => {
+      const customEvent = e as CustomEvent<{ clientX: number; clientY: number }>;
+      const { clientX, clientY } = customEvent.detail;
+
+      // Drop the cursor slot at the specified position
+      if (cursorSlot.length > 0) {
+        dropCursorSlot(clientX, clientY);
+      }
+    };
+
+    window.addEventListener('drop-cursor-slot-at-position', handleDropAtPosition);
+    return () => window.removeEventListener('drop-cursor-slot-at-position', handleDropAtPosition);
+  }, [cursorSlot.length, dropCursorSlot]);
+
   // Drop cursor slot items to a specific deck (called from handleGlobalClick when clicking on deck)
   const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType)[]) => {
-    console.log('[DROP-TO-DECK] Starting', { deckId, slotItemsLength: slotItems?.length, cursorSlotLength: cursorSlot.length });
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
 
     if (currentSlot.length === 0) {
-      console.log('[DROP-TO-DECK] Empty slot, returning');
       return;
     }
 
     const deck = state.objects[deckId] as DeckType;
     if (!deck) {
-      console.log('[DROP-TO-DECK] Deck not found');
       return;
     }
 
@@ -1045,7 +1169,6 @@ export const Tabletop: React.FC = () => {
     }
 
     // Clear the slot - also update ref immediately for mouseup handler
-    console.log('[DROP-TO-DECK/PILE] Clearing cursor slot');
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
@@ -1138,7 +1261,6 @@ export const Tabletop: React.FC = () => {
     }
 
     // Clear the slot - also update ref immediately for mouseup handler
-    console.log('[DROP-TO-DECK/PILE] Clearing cursor slot');
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
@@ -1159,10 +1281,22 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
+      const target = e.target as HTMLElement;
+
+      // Check if clicking on an archetype card (token type in ToolsPanel or MainMenu)
+      const archetypeCard = target.closest('[data-archetype-card]');
+      if (archetypeCard) {
+        return; // Don't drop cursor slot when clicking on archetype cards
+      }
+
       // Check if Shift is pressed
       if (e.shiftKey) return;
 
-      const target = e.target as HTMLElement;
+      // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
+      const toolsPanel = target.closest('[data-tools-panel]');
+      if (toolsPanel) {
+        return;
+      }
 
       // Check if clicking inside hand panel - dispatch event to add cards to hand
       const handPanel = target.closest('[data-hand-panel]');
@@ -1349,12 +1483,33 @@ export const Tabletop: React.FC = () => {
   }, []);
 
   // Global mouseup handler for cursor slot drop (when source='hold' for drag)
+  // Also handles adding cards/tokens to cursor slot on click without drag
   useEffect(() => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
+      // FIRST: Check if a card/token was pressed but not dragged (longPressItemRef still set)
+      // This handles the case where user clicks on a card/token without Shift and without dragging 5px
+      if (longPressItemRef.current) {
+        const itemRef = longPressItemRef.current;
+        // Clear the ref first to prevent double-processing
+        longPressItemRef.current = null;
+
+        // Calculate distance to check if this was a drag or a click
+        const dx = e.clientX - itemRef.startX;
+        const dy = e.clientY - itemRef.startY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // If moved less than 5px, treat as click and add to cursor slot (same as Shift+click)
+        if (distance < 5) {
+          // Add to cursor slot WITHOUT mousePosition - this uses card center like Shift+click
+          addToCursorSlot(itemRef.id, itemRef.item, 'hold');
+          return;
+        }
+        // If moved 5px or more, the card was already added to slot in mousemove, nothing to do
+      }
+
       // Use cursorSlotRef.current to get the immediate value (avoid closure stale data)
       // Only process if cursor slot has items with source='hold' (drag, not Shift+click)
       const currentSlot = cursorSlotRef.current;
-      console.log('[MOUSEUP-HOLD] cursorSlotSource:', cursorSlotSource, 'currentSlot.length:', currentSlot.length);
       if (currentSlot.length === 0 || cursorSlotSource !== 'hold') return;
 
       const clientX = e.clientX;
@@ -1433,7 +1588,7 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-  }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch]);
+  }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, addToCursorSlot]);
 
   const handleMouseDown = (e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
@@ -1448,7 +1603,8 @@ export const Tabletop: React.FC = () => {
       }
 
       // If cursor slot has items and we click without shift, drop all items
-      if (e.button === 0 && !e.shiftKey && cursorSlot.length > 0) {
+      // Exception: if source is 'archetype' (tokens from archetype click), don't drop - treat like Shift is held
+      if (e.button === 0 && !e.shiftKey && cursorSlot.length > 0 && cursorSlotSource !== 'archetype') {
         e.stopPropagation();
         dropCursorSlot(e.clientX, e.clientY);
         return;
@@ -1484,7 +1640,8 @@ export const Tabletop: React.FC = () => {
       }
 
       // If cursor slot has items and we click without shift, drop all items first
-      if (!e.shiftKey && cursorSlot.length > 0) {
+      // Exception: if source is 'archetype' (tokens from archetype click), don't drop
+      if (!e.shiftKey && cursorSlot.length > 0 && cursorSlotSource !== 'archetype') {
         dropCursorSlot(e.clientX, e.clientY);
         return; // Don't proceed with normal drag handling
       }
@@ -1495,9 +1652,8 @@ export const Tabletop: React.FC = () => {
       // Store click start position for click detection
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
-      // Cards and tokens use cursor slot drag system
+      // Cards and tokens use cursor slot drag system ONLY (no normal drag)
       if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
-        console.log('[MOUSEDOWN] Card/token - tracking for drag-to-slot', { id, itemType: item.type });
         // Store item info for drag threshold detection (no timer, just movement)
         longPressItemRef.current = {
           id,
@@ -1505,8 +1661,7 @@ export const Tabletop: React.FC = () => {
           startX: e.clientX,
           startY: e.clientY
         };
-        // Set draggingId so click actions work, but we'll clear it if card is added to cursor slot
-        setDraggingId(id);
+        // DO NOT set draggingId - cards/tokens use cursor slot system only
         return; // Don't proceed with normal drag system
       }
 
@@ -1557,10 +1712,11 @@ export const Tabletop: React.FC = () => {
   };
 
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
-    // Update cursor position for slot visualization
-    if (cursorSlot.length > 0) {
-      setCursorPosition({ x: e.clientX, y: e.clientY });
-    }
+    // Always update cursor position for slot visualization (needed when adding token to slot)
+    const newCursorPosition = { x: e.clientX, y: e.clientY };
+    setCursorPosition(newCursorPosition);
+    // Also update ref immediately for synchronous access during render
+    cursorPositionRef.current = newCursorPosition;
 
     // Check for drag movement - if mouse moves 5px while holding on a card/token, add to slot immediately
     if (longPressItemRef.current) {
@@ -1571,11 +1727,14 @@ export const Tabletop: React.FC = () => {
 
       if (distance >= moveThreshold) {
         // Mouse moved enough - add to cursor slot for drag
-        console.log('[MOUSEMOVE-DRAG] Adding to cursor slot after 5px movement', { id: longPressItemRef.current.id });
+        // Use same positioning logic as Shift+click (WITHOUT mousePosition) to avoid jump
+        // The cursor will be positioned at card center, then follow mouse movement
         addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
+        // IMPORTANT: Update cursor position to current mouse position AFTER adding to slot
+        // This ensures the card center is at the mouse position from the start
+        cursorPositionRef.current = { x: e.clientX, y: e.clientY };
+        setCursorPosition({ x: e.clientX, y: e.clientY });
         longPressItemRef.current = null;
-        // Clear draggingId since the card is now being dragged via cursor slot
-        setDraggingId(null);
       }
     }
 
@@ -1613,6 +1772,7 @@ export const Tabletop: React.FC = () => {
     }
 
     // Handle dragging
+    // Note: Cards and tokens don't set draggingId, they use cursor slot system only
     if (draggingId) {
       const draggingObj = state.objects[draggingId];
       if (!draggingObj) return;
@@ -1771,7 +1931,6 @@ export const Tabletop: React.FC = () => {
   }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, cursorSlot, isPointInRotatedRect]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
-    console.log('[DRAG-SYSTEM-MOUSEUP] Starting', { draggingId, resizingId, longPressItemRef: longPressItemRef.current });
     // Clear long-press timer if mouse is released before timeout
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
@@ -2216,10 +2375,19 @@ export const Tabletop: React.FC = () => {
       switch(action) {
           case 'configure':
               setContextMenu(null);
+              // Token-copies don't have individual settings
+              if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
+                  return; // Don't open settings for token-copies
+              }
               setSettingsModalObj(object);
               return;
           case 'delete':
               setContextMenu(null);
+              // Token-copies are deleted immediately without confirmation
+              if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
+                  dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
+                  return;
+              }
               setDeleteCandidateId(object.id);
               return;
           case 'pinToViewport':
@@ -2533,19 +2701,10 @@ export const Tabletop: React.FC = () => {
             if (data.type === 'token-archetype' && data.archetypeId) {
               const archetype = state.objects[data.archetypeId] as TokenArchetype;
               if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
-                // Calculate world position for the new token
-                const worldX = e.clientX / zoom - offset.x;
-                const worldY = e.clientY / zoom - offset.y;
-
-                // Spawn token from archetype
-                dispatch({
-                  type: 'SPAWN_TOKEN_FROM_ARCHETYPE',
-                  payload: {
-                    archetypeId: archetype.id,
-                    x: worldX,
-                    y: worldY
-                  }
-                });
+                // Add token to cursor slot instead of spawning directly on board
+                window.dispatchEvent(new CustomEvent('add-token-to-cursor-slot', {
+                  detail: { archetypeId: archetype.id, clientX: e.clientX, clientY: e.clientY }
+                }));
                 return;
               }
             }
@@ -2672,7 +2831,6 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
-                    const isStandee = token.shape === TokenShape.STANDEE;
                     const showGrid = token.gridType && token.gridType !== GridType.NONE;
                     const gridSize = token.gridSize || 50;
 
@@ -2698,7 +2856,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute flex items-center justify-center text-white font-bold select-none ${draggingClass} ${isStandee ? 'origin-bottom' : ''} group`}
+                                className={`absolute flex items-center justify-center text-white font-bold select-none ${draggingClass} group`}
                                 style={{
                                     left: obj.x,
                                     top: obj.y,
@@ -2707,27 +2865,20 @@ export const Tabletop: React.FC = () => {
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
-                                {/* Render SVG token for all non-standee tokens */}
-                                {!isStandee && (
-                                    <SvgTokenShape
-                                        shape={token.shape}
-                                        width={obj.width}
-                                        height={obj.height}
-                                        color={obj.color || '#e74c3c'}
-                                        content={obj.content}
-                                        rotation={0}
-                                        borderWidth={2}
-                                        borderColor={(obj as any).borderColor || 'white'}
-                                        showThickness={true}
-                                        tokenName={(obj as any).showNameOnToken ? obj.name : undefined}
-                                        fontColor={(obj as any).fontColor || 'white'}
-                                    />
-                                )}
-
-                                {isStandee && (
-                                    <div className="w-full h-full border-2 border-white bg-cover bg-center"
-                                         style={{backgroundImage: `url(${obj.content || 'https://via.placeholder.com/150'})`}} />
-                                )}
+                                {/* Render SVG token for all tokens */}
+                                <SvgTokenShape
+                                    shape={token.shape}
+                                    width={obj.width}
+                                    height={obj.height}
+                                    color={obj.color || '#e74c3c'}
+                                    content={obj.content}
+                                    rotation={0}
+                                    borderWidth={2}
+                                    borderColor={(obj as any).borderColor || 'white'}
+                                    showThickness={true}
+                                    tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                    fontColor={(obj as any).fontColor || 'white'}
+                                />
 
                             {(obj as any).isPinnedToViewport && (
                                 <div
@@ -2757,14 +2908,6 @@ export const Tabletop: React.FC = () => {
                                     </defs>
                                     <rect width="100%" height="100%" fill={`url(#grid-${token.gridType === GridType.SQUARE ? 'square' : 'hex'}-${obj.id})`} />
                                 </svg>
-                            )}
-
-                            {isStandee && (
-                                <div className="absolute bottom-0 w-full h-4 bg-black/50 rounded-full blur-sm translate-y-2 scale-x-75"/>
-                            )}
-                            {isStandee && (
-                                <div className="w-full h-full border-2 border-white bg-cover bg-center"
-                                     style={{backgroundImage: `url(${obj.content || 'https://via.placeholder.com/150'})`}} />
                             )}
 
                             {/* No letter display needed - SvgTokenShape handles all token rendering */}
@@ -3398,6 +3541,7 @@ export const Tabletop: React.FC = () => {
         {settingsModalObj && (
             <ObjectSettingsModal
                 object={settingsModalObj}
+                allObjects={state.objects}
                 onClose={() => setSettingsModalObj(null)}
                 onSave={(updatedObj) => {
                     // If updating a deck with sprite config, generate cards from sprite
@@ -3577,12 +3721,12 @@ export const Tabletop: React.FC = () => {
         )}
 
         {/* Cursor Slot Visualization - renders items following cursor */}
-        {cursorSlot.length > 0 && cursorPosition && (
+        {cursorSlot.length > 0 && (cursorPosition || cursorPositionRef.current) && (
             <div
                 className="fixed pointer-events-none z-[100001]"
                 style={{
-                    left: cursorPosition.x,
-                    top: cursorPosition.y,
+                    left: (cursorSlot.length > 0 ? (cursorPositionRef.current ?? cursorPosition) : cursorPosition)!.x,
+                    top: (cursorSlot.length > 0 ? (cursorPositionRef.current ?? cursorPosition) : cursorPosition)!.y,
                 }}
             >
                 {/* Render stacked items - newest in front, older items offset */}
@@ -3631,8 +3775,11 @@ export const Tabletop: React.FC = () => {
                                 key={`${card.id}-${index}`}
                                 className="absolute"
                                 style={{
-                                    left: -width / 2 + offsetX,
-                                    top: -height / 2 + offsetY,
+                                    left: 0,
+                                    top: 0,
+                                    width: `${width}px`,
+                                    height: `${height}px`,
+                                    transform: `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`,
                                     zIndex,
                                     pointerEvents: 'none',
                                 }}
@@ -3666,8 +3813,9 @@ export const Tabletop: React.FC = () => {
                             key={`${token.id}-${index}`}
                             className="absolute"
                             style={{
-                                left: -width / 2 + offsetX,
-                                top: -height / 2 + offsetY,
+                                left: 0,
+                                top: 0,
+                                transform: `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`,
                                 width: `${width}px`,
                                 height: `${height}px`,
                                 zIndex,
@@ -3684,7 +3832,7 @@ export const Tabletop: React.FC = () => {
                                 borderWidth={3}
                                 borderColor={(token as any).borderColor || 'white'}
                                 showThickness={true}
-                                tokenName={(token as any).showNameOnToken ? token.name : undefined}
+                                tokenName={(token as any).showName || ((token as any).archetypeId && (state.objects[(token as any).archetypeId] as any)?.showName) ? token.name : undefined}
                             />
                         </div>
                     );

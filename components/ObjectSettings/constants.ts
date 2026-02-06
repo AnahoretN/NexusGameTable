@@ -2,16 +2,6 @@ import { ContextAction, ClickAction, ItemType } from '../../types';
 
 // All available actions for Context Menu (ordered same as deck context menu)
 export const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
-  { id: 'draw', label: 'Draw Card' },
-  { id: 'playTopCard', label: 'Play Top' },
-  { id: 'millTopCard', label: 'Mill' },
-  { id: 'toBottom', label: 'To Bottom' },
-  { id: 'showTop', label: 'Show Top' },
-  { id: 'topDeck', label: 'Top Deck (section)' },
-  { id: 'searchDeck', label: 'Search' },
-  { id: 'shuffleDeck', label: 'Shuffle' },
-  { id: 'piles', label: 'Piles' },
-  { id: 'returnAll', label: 'Return All' },
   { id: 'clone', label: 'Clone Object' },
   { id: 'delete', label: 'Delete Object' },
   { id: 'flip', label: 'Flip Card' },
@@ -37,7 +27,7 @@ export const MOVE_TO_ACTIONS: { id: ContextAction; label: string }[] = [
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles'];
+export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'rotate'];
 
 // Check if an action can be shown as an action button
 export function isActionButtonAllowed(action: ContextAction): boolean {
@@ -50,30 +40,18 @@ export function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   if (!isActionButtonAllowed(action)) return [];
 
   switch (action) {
-    case 'draw':
-    case 'playTopCard':
-    case 'shuffleDeck':
-    case 'searchDeck':
-    case 'millTopCard':
-    case 'toBottom':
-      return [ItemType.DECK];
+    case 'layerUp':
+    case 'layerDown':
+      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
     case 'rotateClockwise':
     case 'rotateCounterClockwise':
     case 'swingClockwise':
     case 'swingCounterClockwise':
-    case 'layerUp':
-    case 'layerDown':
       return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
     case 'flip':
-      return [ItemType.CARD, ItemType.TOKEN];
+      return [ItemType.CARD];
     case 'rotate':
       return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
-    // "Move to" actions for cards
-    case 'moveToHand':
-    case 'moveToTopDeck':
-    case 'moveToBottomDeck':
-    case 'moveToDiscard':
-      return [ItemType.CARD];
     default:
       return [];
   }
@@ -89,5 +67,5 @@ export const CLICK_ACTIONS = [
 export const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
   { id: 'none', label: 'None' },
   { id: 'showTooltipImage' as const, label: 'Card Tooltip Image' },
-  ...AVAILABLE_ACTIONS.filter(a => a.id !== 'showTop').map(a => ({ id: a.id, label: a.label }))
+  ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
 ];

@@ -681,12 +681,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Only cards and tokens can be in cursor slot
         if (obj.type !== ItemType.CARD && obj.type !== ItemType.TOKEN && obj.type !== ItemType.DICE_OBJECT && obj.type !== ItemType.COUNTER) return state;
 
-        const card = obj as Card;
-
         // Check if this card was played via "Play Top" action
-        const pendingPlayTop = card.__pendingPlayTop;
+        const pendingPlayTop = (obj as Card).__pendingPlayTop;
         if (pendingPlayTop) {
             // This is a "Play Top" action - record full history when card is dropped
+            const card = obj as Card;
             const deck = state.objects[pendingPlayTop.deckId] as Deck;
             if (!deck) return state;
 
@@ -720,8 +719,26 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             };
         }
 
-        // Normal drop from cursor slot (not Play Top)
+        // Handle token drop (simpler than cards - no location/deck tracking)
+        if (obj.type === ItemType.TOKEN || obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER) {
+            const updatedObj: TableObject = {
+                ...obj,
+                x: action.payload.x,
+                y: action.payload.y,
+                ...(action.payload.zIndex !== undefined && { zIndex: action.payload.zIndex }),
+                inCursorSlot: false,
+                isOnTable: true,
+            };
+
+            return {
+                ...state,
+                objects: { ...state.objects, [obj.id]: updatedObj },
+            };
+        }
+
+        // Normal drop from cursor slot for cards (not Play Top)
         // Capture detailed state for undo - determine WHERE the card was before going to cursor slot
+        const card = obj as Card;
         const previousLocation = card.location;
         const previousX = card.x;
         const previousY = card.y;
@@ -1451,8 +1468,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const index = sortedObjects.findIndex(o => o.id === obj.id);
         if (index <= 0) return state;
         const prevObj = sortedObjects[index - 1];
-        const isPrevBoard = prevObj.type === ItemType.BOARD || (prevObj.type === ItemType.TOKEN && (prevObj as Token).shape === TokenShape.RECTANGLE);
-        const isCurrentBoard = obj.type === ItemType.BOARD || (obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.RECTANGLE);
+        const isPrevBoard = prevObj.type === ItemType.BOARD;
+        const isCurrentBoard = obj.type === ItemType.BOARD;
         if (isPrevBoard && !isCurrentBoard) return state;
         const currentZ = obj.zIndex || 0;
         const prevZ = prevObj.zIndex || 0;
@@ -2204,8 +2221,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         width: archetype.defaultSize?.width ?? archetype.width,
         height: archetype.defaultSize?.height ?? archetype.height,
         rotation: 0,
-        content: archetype.defaultContent ?? archetype.content,
-        color: archetype.defaultColor ?? archetype.color,
+        content: archetype.content,
+        color: archetype.color,
         locked: false,
         isOnTable: true,
         zIndex: maxZ + 1,
@@ -3146,7 +3163,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const board: Board = {
              id: boardId,
              type: ItemType.BOARD,
-             shape: TokenShape.RECTANGLE,
+             shape: TokenShape.SQUARE,
              x: 100, y: 100,
              width: 800, height: 600,
              rotation: 0,

@@ -13,14 +13,12 @@ export enum ItemType {
   DRAWING = 'DRAWING',    // Drawings created with marker tool
 }
 
-// Visual subtypes for tokens to handle Chips, Figurines, Badges, Boards
+// Visual subtypes for tokens to handle Chips, Figurines, Badges
 export enum TokenShape {
   CIRCLE = 'CIRCLE',
   SQUARE = 'SQUARE',
   HEX = 'HEX',
-  TRIANGLE = 'TRIANGLE',
-  STANDEE = 'STANDEE', // Figurine
-  RECTANGLE = 'RECTANGLE' // For Boards
+  TRIANGLE = 'TRIANGLE'
 }
 
 export enum CardShape {
@@ -277,6 +275,8 @@ export interface Token extends GameItem {
   snapToGrid?: boolean; // If true, other objects snap to this
   // Reference to archetype if spawned from one
   archetypeId?: string;
+  // Show name on token (inherited from archetype for token-copies)
+  showName?: boolean;
 }
 
 // Token Type - a template for creating tokens
@@ -284,14 +284,14 @@ export interface Token extends GameItem {
 export interface TokenType extends GameItem {
   type: ItemType.TOKEN_TYPE;
   shape: TokenShape;
-  // Default settings for spawned tokens
+  // Default size for spawned tokens (if different from archetype's own size)
   defaultSize?: { width: number; height: number };
-  defaultColor?: string;
-  defaultContent?: string; // Image URL
   // Spawn settings
   autoName?: boolean; // Auto-generate names like "Goblin 1", "Goblin 2", etc.
   namePrefix?: string; // Prefix for auto-naming
   spawnCount?: number; // Track how many have been spawned for naming
+  // Display settings
+  showName?: boolean; // Show the token name on the token itself
 }
 
 export interface DiceObject extends GameItem {
@@ -307,7 +307,7 @@ export interface Counter extends GameItem {
 
 export interface Board extends GameItem {
   type: ItemType.BOARD;
-  shape: TokenShape.RECTANGLE;
+  shape: TokenShape.SQUARE;
   gridType: GridType;
   gridSize: number;
   snapToGrid: boolean;

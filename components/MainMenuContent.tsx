@@ -11,6 +11,7 @@ import { HandPanel } from './HandPanel';
 import { PlayerNameModal } from './PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
 import { useDrawingTool } from './ToolsPanel';
+import { SvgTokenShape } from './SvgTokenShape';
 
 // Get icon component for object type
 const getTypeIcon = (obj: TableObject): React.ReactElement => {
@@ -377,19 +378,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     {
       id: 'tokens', label: 'Tokens', icon: <CircleDot size={16}/>,
       items: [
-        { name: 'Round Token', type: 'TOKEN', shape: TokenShape.CIRCLE },
-        { name: 'Standard Token', type: 'TOKEN', shape: TokenShape.RECTANGLE },
+        { name: 'Standard Token', type: 'TOKEN', shape: TokenShape.CIRCLE },
         { name: 'Token Type', type: 'TOKEN_TYPE' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.TOKEN || obj.type === ItemType.TOKEN_TYPE
-    },
-    {
-      id: 'figurines', label: 'Figures', icon: <User size={16}/>,
-      items: [
-        { name: 'Character Standee', type: 'TOKEN', shape: TokenShape.STANDEE, disabled: true },
-      ],
-      matcher: (obj: TableObject) => obj.type === ItemType.TOKEN && (obj as Token).shape === TokenShape.STANDEE,
-      disabled: true
     },
     {
       id: 'randomizers', label: 'Randomizers & Dice', icon: <Dices size={16}/>,
@@ -574,20 +566,27 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               <div className="grid grid-cols-3 gap-2">
                 {Object.values(state.objects)
                   .filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE)
-                  .map((archetype) => (
-                    <TokenTypeCard
-                      key={archetype.id}
-                      archetype={archetype}
-                      onSettings={() => dispatch({
-                        type: 'CREATE_WINDOW',
-                        payload: {
-                          windowType: WindowType.OBJECT_SETTINGS,
-                          title: 'Settings: ' + archetype.name,
-                          targetObjectId: archetype.id
-                        }
-                      })}
-                    />
-                  ))}
+                  .map((archetype) => {
+                    // Count token copies for this archetype
+                    const copyCount = Object.values(state.objects).filter(
+                      obj => obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetype.id
+                    ).length;
+                    return (
+                      <TokenTypeCard
+                        key={archetype.id}
+                        archetype={archetype}
+                        copyCount={copyCount}
+                        onSettings={() => dispatch({
+                          type: 'CREATE_WINDOW',
+                          payload: {
+                            windowType: WindowType.OBJECT_SETTINGS,
+                            title: 'Settings: ' + archetype.name,
+                            targetObjectId: archetype.id
+                          }
+                        })}
+                      />
+                    );
+                  })}
               </div>
             </div>
           </div>
@@ -793,7 +792,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
   // Count objects on table that match this category
   const objectsOnTable = useMemo(() =>
-    Object.values(state.objects).filter(obj => category.matcher(obj)),
+    Object.values(state.objects).filter(obj =>
+      category.matcher(obj) &&
+      !(obj as any).inCursorSlot &&
+      !(obj as any).archetypeId  // Exclude token copies (tokens created from archetypes)
+    ),
     [state.objects, category.matcher]
   );
 
@@ -948,12 +951,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           color: '#3498db',
           isOnTable: false,
           locked: false,
-          shape: TokenShape.RECTANGLE,
+          shape: TokenShape.SQUARE,
           content: '',
           // Token type specific properties
           defaultSize: { width: TOKEN_SIZE, height: TOKEN_SIZE },
-          defaultColor: '#3498db',
-          defaultContent: '',
           autoName: false,
           namePrefix: '',
           spawnCount: 0,
@@ -1014,7 +1015,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           content: '',
           isOnTable: true,
           locked: false,
-          shape: TokenShape.RECTANGLE,
+          shape: TokenShape.SQUARE,
           gridType: item.gridType || GridType.SQUARE,
           gridSize: 50,
           snapToGrid: true,
@@ -1087,11 +1088,6 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 const isVisible = 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
                 let objColor = 'color' in obj ? obj.color : '#6366f1';
-                // For TOKEN_TYPE, use defaultColor
-                if (obj.type === ItemType.TOKEN_TYPE) {
-                  const tokenType = obj as TokenType;
-                  objColor = tokenType.defaultColor || tokenType.color || '#6366f1';
-                }
                 // For drawings, use their color property or first stroke color
                 if (obj.type === ItemType.DRAWING) {
                   const drawing = obj as Drawing;
@@ -1101,7 +1097,15 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 const getDisplayName = () => {
                   if (obj.type === ItemType.PANEL) return (obj as PanelObject).title;
                   if (obj.type === ItemType.WINDOW) return (obj as any).title || 'Window';
-                  return 'name' in obj ? obj.name : 'Object';
+                  const baseName = 'name' in obj ? obj.name : 'Object';
+                  // For token types (archetypes), show copy count in parentheses
+                  if (obj.type === ItemType.TOKEN_TYPE) {
+                    const copyCount = Object.values(state.objects).filter(
+                      o => o.type === ItemType.TOKEN && (o as any).archetypeId === obj.id
+                    ).length;
+                    return copyCount > 0 ? `${baseName} (${copyCount})` : baseName;
+                  }
+                  return baseName;
                 };
                 return (
                   <div
@@ -1111,7 +1115,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     <span className="text-gray-500 flex-shrink-0">{getTypeIcon(obj)}</span>
                     <div
                       className="w-3 h-3 rounded flex-shrink-0"
-                      style={{ backgroundColor: isVisible ? objColor : '#4a5568' }}
+                      style={{ backgroundColor: obj.type === ItemType.TOKEN_TYPE ? objColor : (isVisible ? objColor : '#4a5568') }}
                     />
                     <span className="flex-1 truncate text-xs">{getDisplayName()}</span>
                     <button
@@ -1143,7 +1147,14 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                       <Settings size={10} />
                     </button>
                     <button
-                      onClick={() => setDeleteCandidateId(obj.id)}
+                      onClick={() => {
+                        // Token copies (tokens with archetypeId) are deleted immediately without confirmation
+                        if (obj.type === ItemType.TOKEN && (obj as any).archetypeId) {
+                          dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } });
+                        } else {
+                          setDeleteCandidateId(obj.id);
+                        }
+                      }}
                       className="p-1 hover:bg-red-600 rounded text-red-400 hover:text-white opacity-0 group-hover:opacity-100"
                       title="Delete"
                     >
@@ -1214,92 +1225,95 @@ const DrawingToolButton: React.FC<DrawingToolButtonProps> = ({ tool, icon, label
 // Token type card component
 interface TokenTypeCardProps {
   archetype: TokenType;
+  copyCount: number;
   onSettings: () => void;
 }
 
-const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, onSettings }) => {
-  const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData('application/json', JSON.stringify({
-      type: 'token-archetype',
-      archetypeId: archetype.id
+const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onSettings }) => {
+  // Track drag state to distinguish click from drag
+  const dragStartTimeRef = useRef<number>(0);
+  const dragStartPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Handle archetype click - add to cursor slot
+  const handleArchetypeClick = (clientX: number, clientY: number) => {
+    window.dispatchEvent(new CustomEvent('add-token-to-cursor-slot', {
+      detail: { archetypeId: archetype.id, clientX, clientY }
     }));
-    e.dataTransfer.effectAllowed = 'copy';
   };
+
+  // Set up capture phase listener for mousedown to set flag BEFORE Tabletop's handleGlobalClick
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+
+    const handleMouseDownCapture = (e: MouseEvent) => {
+      (card as HTMLElement).dataset.isAddingToken = 'true';
+      dragStartTimeRef.current = Date.now();
+      dragStartPositionRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseUpCapture = (e: MouseEvent) => {
+      if (card.dataset.isAddingToken) {
+        const dragDuration = Date.now() - dragStartTimeRef.current;
+        const dragDistance = dragStartPositionRef.current
+          ? Math.sqrt(
+              Math.pow(e.clientX - dragStartPositionRef.current.x, 2) +
+              Math.pow(e.clientY - dragStartPositionRef.current.y, 2)
+            )
+          : 0;
+
+        // Clear the adding token flag
+        delete card.dataset.isAddingToken;
+
+        // If it was a quick click with minimal movement, treat as click
+        if (dragDuration < 200 && dragDistance < 10) {
+          handleArchetypeClick(e.clientX, e.clientY);
+        }
+      }
+    };
+
+    // Use capture phase to ensure this runs before Tabletop's handleGlobalClick
+    card.addEventListener('mousedown', handleMouseDownCapture, { capture: true });
+    card.addEventListener('mouseup', handleMouseUpCapture, { capture: true });
+
+    return () => {
+      card.removeEventListener('mousedown', handleMouseDownCapture, { capture: true } as any);
+      card.removeEventListener('mouseup', handleMouseUpCapture, { capture: true } as any);
+    };
+  }, [handleArchetypeClick]);
+
+  // Calculate aspect ratio based on defaultSize or fall back to 1:1
+  const aspectRatio = archetype.defaultSize
+    ? archetype.defaultSize.width / archetype.defaultSize.height
+    : 1;
+
+  // Calculate size to fit within the card while maintaining aspect ratio
+  const baseSize = 70; // Base percentage
+  const tokenWidth = aspectRatio >= 1 ? baseSize : baseSize * aspectRatio;
+  const tokenHeight = aspectRatio <= 1 ? baseSize : baseSize / aspectRatio;
 
   return (
     <div
-      draggable
-      onDragStart={handleDragStart}
-      className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-grab active:cursor-grabbing transition-colors"
-      title={`${archetype.name}\nDrag to board to spawn a token`}
+      ref={cardRef}
+      data-archetype-card
+      data-archetype-id={archetype.id}
+      className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-pointer transition-colors"
+      title={`${archetype.name}\nClick to add to cursor slot`}
     >
-      {/* Preview of the token */}
-      <div
-        className="w-full h-full flex items-center justify-center overflow-hidden rounded"
-        style={{
-          backgroundColor: archetype.defaultColor || archetype.color || '#ffffff',
-        }}
-      >
-        {archetype.defaultContent || archetype.content ? (
-          <img
-            src={archetype.defaultContent || archetype.content}
-            alt={archetype.name}
-            className="max-w-full max-h-full object-contain"
-            draggable={false}
-          />
-        ) : (
-          // SVG token preview for proper shape rendering with rounded corners
-          <svg
-            width="60%"
-            height="60%"
-            viewBox={archetype.shape === TokenShape.HEX ? '0 0 60 64' : '0 0 60 60'}
-            preserveAspectRatio="none"
-            className="drop-shadow-md"
-          >
-            {archetype.shape === TokenShape.HEX && (
-              <path
-                d="M 30 0 L 60 16 L 60 48 L 30 64 L 0 48 L 0 16 Z"
-                fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                stroke="white"
-                strokeWidth="3"
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-              />
-            )}
-            {archetype.shape === TokenShape.TRIANGLE && (
-              <path
-                d="M 30 0 L 60 60 L 0 60 Z"
-                fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                stroke="white"
-                strokeWidth="3"
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-              />
-            )}
-            {archetype.shape === TokenShape.CIRCLE && (
-              <circle
-                cx="30"
-                cy="30"
-                r="30"
-                fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                stroke="white"
-                strokeWidth="2"
-              />
-            )}
-            {(archetype.shape === TokenShape.SQUARE || archetype.shape === TokenShape.STANDEE || archetype.shape === TokenShape.RECTANGLE || !archetype.shape) && (
-              <rect
-                x="1"
-                y="1"
-                width="58"
-                height="58"
-                rx="2"
-                fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                stroke="white"
-                strokeWidth="2"
-              />
-            )}
-          </svg>
-        )}
+      {/* Preview of the token using SvgTokenShape */}
+      <div className="w-full h-full flex items-center justify-center overflow-hidden rounded">
+        <SvgTokenShape
+          shape={archetype.shape || TokenShape.SQUARE}
+          width={tokenWidth}
+          height={tokenHeight}
+          color={archetype.color || '#ffffff'}
+          content={archetype.content}
+          borderColor={(archetype as any).borderColor || '#ffffff'}
+          borderWidth={(archetype as any).borderWidth ?? 2}
+          className="drop-shadow-md"
+          style={{ width: `${tokenWidth}%`, height: `${tokenHeight}%` }}
+        />
       </div>
 
       {/* Settings button */}
@@ -1315,7 +1329,7 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, onSettings }) 
 
       {/* Name label */}
       <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] truncate px-1 py-0.5 rounded-b">
-        {archetype.name}
+        {archetype.name} {copyCount > 0 && `(${copyCount})`}
       </div>
     </div>
   );
