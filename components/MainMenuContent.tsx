@@ -2,14 +2,15 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
-import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings, Pencil } from 'lucide-react';
+import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenArchetype, Drawing } from '../types';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanel } from './HandPanel';
 import { PlayerNameModal } from './PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
+import { useDrawingTool } from './ToolsPanel';
 
 // Get icon component for object type
 const getTypeIcon = (obj: TableObject): React.ReactElement => {
@@ -36,6 +37,8 @@ const getTypeIcon = (obj: TableObject): React.ReactElement => {
       return <PanelLeft size={10} />;
     case ItemType.WINDOW:
       return <Box size={10} />;
+    case ItemType.DRAWING:
+      return <Brush size={10} />;
     default:
       return <Component size={10} />;
   }
@@ -47,7 +50,7 @@ interface MainMenuContentProps {
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const { state, dispatch, peerId } = useGame();
-  const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<{ sender: string; text: string }[]>([]);
   const [inviteCopied, setInviteCopied] = useState(false);
@@ -57,10 +60,16 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [topDeckModalDeck, setTopDeckModalDeck] = useState<Deck | null>(null);
   const [pilesButtonMenu, setPilesButtonMenu] = useState<{ deck: Deck; x: number; y: number } | null>(null);
   const [dragOverHand, setDragOverHand] = useState(false);
-  const [previousTab, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players'>('create');
+  const [previousTab, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
+  const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass'>('none');
+  // Drawing settings (shared via events with drawing components)
+  const [markerColor, setMarkerColor] = useState('#ff0000');
+  const [markerThickness, setMarkerThickness] = useState(10);
+  const [markerOpacity, setMarkerOpacity] = useState(100);
   const mainMenuRef = useRef<HTMLDivElement>(null);
+  const currentDrawingTool = useDrawingTool();
 
   // Hand card scale state with localStorage persistence
   const { scale: handCardScale, setHandCardScale } = useHandCardScale();
@@ -76,6 +85,52 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     window.addEventListener('hand-card-scale-change', handleScaleChange);
     return () => window.removeEventListener('hand-card-scale-change', handleScaleChange);
   }, [setHandCardScale]);
+
+  // Sync marker settings with drawing components via events
+  useEffect(() => {
+    const handleMarkerSettingsRequest = () => {
+      window.dispatchEvent(new CustomEvent('marker-settings-sync', {
+        detail: { color: markerColor, thickness: markerThickness, opacity: markerOpacity }
+      }));
+    };
+
+    window.addEventListener('marker-settings-request', handleMarkerSettingsRequest);
+    return () => window.removeEventListener('marker-settings-request', handleMarkerSettingsRequest);
+  }, [markerColor, markerThickness, markerOpacity]);
+
+  // Sync drawing tool state with drawing components
+  useEffect(() => {
+    const handleToolRequest = () => {
+      window.dispatchEvent(new CustomEvent('drawing-tool-sync', {
+        detail: { tool: selectedTool }
+      }));
+    };
+
+    window.addEventListener('drawing-tool-request', handleToolRequest);
+    return () => window.removeEventListener('drawing-tool-request', handleToolRequest);
+  }, [selectedTool]);
+
+  // Update marker settings and notify drawing components
+  const updateMarkerColor = (color: string) => {
+    setMarkerColor(color);
+    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
+      detail: { color, thickness: markerThickness, opacity: markerOpacity }
+    }));
+  };
+
+  const updateMarkerThickness = (thickness: number) => {
+    setMarkerThickness(thickness);
+    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
+      detail: { color: markerColor, thickness, opacity: markerOpacity }
+    }));
+  };
+
+  const updateMarkerOpacity = (opacity: number) => {
+    setMarkerOpacity(opacity);
+    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
+      detail: { color: markerColor, thickness: markerThickness, opacity }
+    }));
+  };
 
   const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
 
@@ -365,6 +420,11 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.PANEL && (obj as any).panelType !== PanelType.MAIN_MENU
     },
+    {
+      id: 'drawings', label: 'Drawings', icon: <Brush size={16}/>,
+      items: [], // Drawings are created with marker tool, not via menu
+      matcher: (obj: TableObject) => obj.type === ItemType.DRAWING
+    },
   ];
 
   return (
@@ -378,6 +438,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             </button>
             <button onClick={() => { setActiveTab('hand'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'hand' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
               <Hand size={20} />
+            </button>
+            <button onClick={() => { setActiveTab('tools'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'tools' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+              <Pen size={20} />
             </button>
             <button onClick={() => { setActiveTab('chat'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'chat' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
               <MessageSquare size={20} />
@@ -408,6 +471,124 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             {/* Hand Panel */}
             <div className="flex-1 overflow-hidden">
               <HandPanel width={width} isDragTarget={dragOverHand} cardScale={handCardScale} />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'tools' && (
+          <div className="p-3 space-y-3">
+            {/* Drawing Tools Section */}
+            <div>
+              <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">Drawing Tools</h4>
+              <div className="grid grid-cols-4 gap-2">
+                <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label="Cursor" selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="marker" icon={<Pen size={20} />} label="Marker" selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label="Eraser" selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label="Ruler" selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+              </div>
+            </div>
+
+            {/* Marker Settings (shown when marker or eraser is selected) */}
+            {(selectedTool === 'marker' || selectedTool === 'eraser') && (
+              <div className="p-3 bg-slate-800 rounded-lg space-y-3">
+                <h4 className="text-xs font-bold text-gray-400 uppercase">
+                  {selectedTool === 'marker' ? 'Marker Settings' : 'Eraser Settings'}
+                </h4>
+
+                {/* Color picker */}
+                {selectedTool === 'marker' && (
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-2">Color</label>
+                    <div className="grid grid-cols-8 gap-1">
+                      {[
+                        // Basic colors (first row)
+                        '#ff0000', '#ff8000', '#ffff00', '#80ff00',
+                        '#00ff00', '#00ff80', '#00ffff', '#0080ff',
+                        '#0000ff', '#8000ff', '#ff00ff', '#ff0080',
+                        // Light/Dark variants
+                        '#ffffff', '#c0c0c0', '#808080', '#404040',
+                        '#000000', '#800000', '#008000', '#000080',
+                        '#808000', '#008080', '#800080', '#ff8080',
+                      ].map((color) => (
+                        <button
+                          key={color}
+                          onClick={() => updateMarkerColor(color)}
+                          className={`w-6 h-6 rounded border transition-all ${
+                            markerColor === color ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'
+                          }`}
+                          style={{ backgroundColor: color }}
+                          title={color}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Thickness slider */}
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-2">
+                    Size: {markerThickness}px
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={markerThickness}
+                    onChange={(e) => updateMarkerThickness(Number(e.target.value))}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                    <span>1px</span>
+                    <span>50px</span>
+                    <span>100px</span>
+                  </div>
+                </div>
+
+                {/* Opacity slider - only for marker, not eraser */}
+                {currentDrawingTool === 'marker' && (
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-2">
+                    Opacity: {markerOpacity}%
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={markerOpacity}
+                    onChange={(e) => updateMarkerOpacity(Number(e.target.value))}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                    <span>1%</span>
+                    <span>50%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+                )}
+              </div>
+            )}
+
+            {/* Token Archetypes Section */}
+            <div>
+              <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">Tokens</h4>
+              <div className="grid grid-cols-3 gap-2">
+                {Object.values(state.objects)
+                  .filter((obj): obj is TokenArchetype => obj.type === ItemType.TOKEN_ARCHETYPE)
+                  .map((archetype) => (
+                    <TokenArchetypeCard
+                      key={archetype.id}
+                      archetype={archetype}
+                      onSettings={() => dispatch({
+                        type: 'CREATE_WINDOW',
+                        payload: {
+                          windowType: WindowType.OBJECT_SETTINGS,
+                          title: 'Settings: ' + archetype.name,
+                          targetObjectId: archetype.id
+                        }
+                      })}
+                    />
+                  ))}
+              </div>
             </div>
           </div>
         )}
@@ -880,7 +1061,12 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 // For UI objects check 'visible', for game objects check 'isOnTable'
                 const isVisible = 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
-                const objColor = 'color' in obj ? obj.color : '#6366f1';
+                let objColor = 'color' in obj ? obj.color : '#6366f1';
+                // For drawings, use their color property or first stroke color
+                if (obj.type === ItemType.DRAWING) {
+                  const drawing = obj as Drawing;
+                  objColor = drawing.color || (drawing.strokes.length > 0 ? drawing.strokes[0].color : '#ef4444');
+                }
                 // Get name - handle different object types
                 const getDisplayName = () => {
                   if (obj.type === ItemType.PANEL) return (obj as PanelObject).title;
@@ -962,6 +1148,111 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           onCancel={() => setDeleteCandidateId(null)}
         />
       )}
+    </div>
+  );
+};
+
+// Drawing tool types
+type DrawingTool = 'none' | 'marker' | 'eraser' | 'compass';
+
+// Drawing tool button component
+interface DrawingToolButtonProps {
+  tool: DrawingTool;
+  icon: React.ReactNode;
+  label: string;
+  selectedTool: DrawingTool;
+  setSelectedTool: (tool: DrawingTool) => void;
+}
+
+const DrawingToolButton: React.FC<DrawingToolButtonProps> = ({ tool, icon, label, selectedTool, setSelectedTool }) => {
+  const handleClick = () => {
+    console.log('MainMenuContent: Tool selected:', tool);
+    setSelectedTool(tool);
+    window.dispatchEvent(new CustomEvent('drawing-tool-changed', { detail: { tool } }));
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${
+        selectedTool === tool
+          ? 'bg-purple-600 text-white'
+          : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
+      }`}
+      title={label}
+    >
+      {icon}
+      <span className="text-[10px] mt-1">{label}</span>
+    </button>
+  );
+};
+
+// Token archetype card component
+interface TokenArchetypeCardProps {
+  archetype: TokenArchetype;
+  onSettings: () => void;
+}
+
+const TokenArchetypeCard: React.FC<TokenArchetypeCardProps> = ({ archetype, onSettings }) => {
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({
+      type: 'token-archetype',
+      archetypeId: archetype.id
+    }));
+    e.dataTransfer.effectAllowed = 'copy';
+  };
+
+  return (
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-grab active:cursor-grabbing transition-colors"
+      title={`${archetype.name}\nDrag to board to spawn a token`}
+    >
+      {/* Preview of the token */}
+      <div
+        className="w-full h-full flex items-center justify-center overflow-hidden rounded"
+        style={{
+          backgroundColor: archetype.defaultColor || archetype.color || '#ffffff',
+        }}
+      >
+        {archetype.defaultContent || archetype.content ? (
+          <img
+            src={archetype.defaultContent || archetype.content}
+            alt={archetype.name}
+            className="max-w-full max-h-full object-contain"
+            draggable={false}
+          />
+        ) : (
+          <div
+            className="flex items-center justify-center"
+            style={{
+              width: '60%',
+              height: '60%',
+              backgroundColor: archetype.defaultColor || archetype.color || '#ffffff',
+              borderRadius: archetype.shape === TokenShape.CIRCLE ? '50%' :
+                           archetype.shape === TokenShape.HEX ? '30%' :
+                           archetype.shape === TokenShape.STANDEE ? '4px' : '0',
+            }}
+          />
+        )}
+      </div>
+
+      {/* Settings button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onSettings();
+        }}
+        className="absolute top-0.5 right-0.5 p-1 bg-slate-800 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <Settings size={10} className="text-gray-400" />
+      </button>
+
+      {/* Name label */}
+      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] truncate px-1 py-0.5 rounded-b">
+        {archetype.name}
+      </div>
     </div>
   );
 };

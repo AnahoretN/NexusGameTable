@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation } from '../types';
+import { TableObject, ItemType, Token, TokenArchetype, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation, Drawing } from '../types';
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Box, Eye, Grid3x3, Image as ImageIcon } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
@@ -217,6 +217,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       // Initialize sprite config
       setSpriteConfig(deckObj.spriteConfig || null);
     }
+    // Initialize archetype settings for token archetypes
+    if (object.type === ItemType.TOKEN_ARCHETYPE) {
+      const archetype = object as TokenArchetype;
+      setArchetypeSettings({
+        autoName: archetype.autoName,
+        namePrefix: archetype.namePrefix,
+        defaultSize: archetype.defaultSize,
+        defaultColor: archetype.defaultColor,
+        defaultContent: archetype.defaultContent,
+      });
+    }
   }, [object]);
 
   const update = (field: string, value: any) => {
@@ -351,14 +362,52 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       (toSave as Deck).searchWindowVisibility = cardSettings.searchWindowVisibility;
       (toSave as Deck).spriteConfig = spriteConfig || undefined;
     }
+    // Add archetype settings for token archetypes
+    if (toSave.type === ItemType.TOKEN_ARCHETYPE) {
+      (toSave as TokenArchetype).autoName = archetypeSettings.autoName;
+      (toSave as TokenArchetype).namePrefix = archetypeSettings.namePrefix;
+      (toSave as TokenArchetype).defaultSize = archetypeSettings.defaultSize;
+      (toSave as TokenArchetype).defaultColor = archetypeSettings.defaultColor;
+      (toSave as TokenArchetype).defaultContent = archetypeSettings.defaultContent;
+    }
     onSave(toSave);
     onClose();
   };
 
   const isToken = data.type === ItemType.TOKEN;
+  const isArchetype = data.type === ItemType.TOKEN_ARCHETYPE;
   const isBoard = data.type === ItemType.BOARD;
   const isDeck = data.type === ItemType.DECK;
   const isCard = data.type === ItemType.CARD; // Cards don't have their own settings
+  const isDrawing = data.type === ItemType.DRAWING;
+
+  // Archetype settings for token archetypes (settings that apply to spawned tokens)
+  interface ArchetypeSettings {
+    autoName?: boolean;
+    namePrefix?: string;
+    defaultSize?: { width: number; height: number };
+    defaultColor?: string;
+    defaultContent?: string;
+  }
+
+  const [archetypeSettings, setArchetypeSettings] = useState<ArchetypeSettings>(() => {
+    if (data.type === ItemType.TOKEN_ARCHETYPE) {
+      const archetype = data as TokenArchetype;
+      return {
+        autoName: archetype.autoName,
+        namePrefix: archetype.namePrefix,
+        defaultSize: archetype.defaultSize,
+        defaultColor: archetype.defaultColor,
+        defaultContent: archetype.defaultContent,
+      };
+    }
+    return {};
+  });
+
+  // Update archetype settings helper
+  const updateArchetypeSettings = (field: keyof ArchetypeSettings, value: any) => {
+    setArchetypeSettings(prev => ({ ...prev, [field]: value }));
+  };
 
   // Pile management functions
   const addPile = () => {
@@ -585,6 +634,147 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               )}
 
+              {/* Color (for drawings) */}
+              {isDrawing && (
+                <>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Drawing Color</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={(data as Drawing).color || ((data as Drawing).strokes.length > 0 ? (data as Drawing).strokes[0].color : '#ef4444')}
+                      onChange={e => update('color', e.target.value)}
+                      className="w-12 h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer flex-shrink-0"
+                    />
+                    <input
+                      type="text"
+                      value={(data as Drawing).color || ((data as Drawing).strokes.length > 0 ? (data as Drawing).strokes[0].color : '#ef4444')}
+                      onChange={e => update('color', e.target.value)}
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      placeholder="#ef4444"
+                    />
+                  </div>
+                </div>
+
+                {/* Opacity */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Opacity: {Math.round((data as Drawing).opacity || 100)}%</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={(data as Drawing).opacity || 100}
+                      onChange={e => update('opacity', parseInt(e.target.value))}
+                      className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={(data as Drawing).opacity || 100}
+                      onChange={e => update('opacity', Math.max(1, Math.min(100, parseInt(e.target.value) || 100)))}
+                      className="w-16 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm text-center"
+                    />
+                  </div>
+                </div>
+                </>
+              )}
+
+              {/* Archetype Settings (for token archetypes) */}
+              {isArchetype && (
+                <div className="pt-4 space-y-3">
+                  <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                    <Box size={14} /> Spawner Settings
+                  </h4>
+
+                  {/* Auto Name Toggle */}
+                  <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                    <label className="text-xs text-gray-400 flex items-center gap-2">
+                      <span>Auto-generate names</span>
+                      <span className="text-gray-500">(e.g., "Goblin 1", "Goblin 2")</span>
+                    </label>
+                    <button
+                      onClick={() => updateArchetypeSettings('autoName', !archetypeSettings.autoName)}
+                      className={`w-10 h-5 rounded-full transition-colors ${
+                        archetypeSettings.autoName ? 'bg-green-600' : 'bg-slate-700'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        archetypeSettings.autoName ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+
+                  {/* Name Prefix */}
+                  {archetypeSettings.autoName && (
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">Name Prefix</label>
+                      <input
+                        type="text"
+                        value={archetypeSettings.namePrefix || data.name || ''}
+                        onChange={e => updateArchetypeSettings('namePrefix', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                        placeholder="e.g., Goblin"
+                      />
+                    </div>
+                  )}
+
+                  {/* Default Size for Spawned Tokens */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">Default Width</label>
+                      <input
+                        type="number"
+                        value={archetypeSettings.defaultSize?.width ?? data.width}
+                        onChange={e => updateArchetypeSettings('defaultSize', {
+                          ...archetypeSettings.defaultSize,
+                          width: Number(e.target.value),
+                          height: archetypeSettings.defaultSize?.height ?? data.height
+                        })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">Default Height</label>
+                      <input
+                        type="number"
+                        value={archetypeSettings.defaultSize?.height ?? data.height}
+                        onChange={e => updateArchetypeSettings('defaultSize', {
+                          ...archetypeSettings.defaultSize,
+                          width: archetypeSettings.defaultSize?.width ?? data.width,
+                          height: Number(e.target.value)
+                        })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Default Color for Spawned Tokens */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Default Color</label>
+                    <input
+                      type="color"
+                      value={archetypeSettings.defaultColor ?? data.color ?? '#ffffff'}
+                      onChange={e => updateArchetypeSettings('defaultColor', e.target.value)}
+                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Default Image URL for Spawned Tokens */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Default Image URL</label>
+                    <input
+                      type="text"
+                      value={archetypeSettings.defaultContent ?? data.content ?? ''}
+                      onChange={e => updateArchetypeSettings('defaultContent', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      placeholder="https://..."
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Grid Settings (for boards) */}
               {isBoard && (
                 <div className="pt-4 space-y-3">
@@ -633,7 +823,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               )}
 
-              {/* Tooltip Settings */}
+              {/* Tooltip Settings - not for drawings */}
+              {!isDrawing && (
               <div className="pt-1 space-y-3">
                 <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
                   <Eye size={14} /> Tooltip Settings
@@ -650,6 +841,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
 
               </div>
+              )}
 
               {/* Alternative Card Back (for cards only) */}
               {isCard && (
@@ -750,7 +942,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
           {activeTab === 'actions' && (
             <div className="space-y-4">
-              {/* Context Menu Actions - with PL and GM toggle buttons */}
+              {/* Context Menu Actions - with PL and GM toggle buttons - not for drawings */}
+              {!isDrawing && (
               <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Shield size={14} /> Context Menu Actions
@@ -759,6 +952,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-1">
                   {AVAILABLE_ACTIONS
                     .filter(action => {
+                      // Drawings have no context menu actions
+                      if (isDrawing) return false;
                       // Cards should ONLY use "Context Menu Actions for Cards" from deck settings
                       // Skip all card-specific actions in the general Context Menu Actions section
                       if (isCard && ['flip', 'layer', 'layerUp', 'layerDown', 'pin'].includes(action.id)) {
@@ -853,6 +1048,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   })}
                 </div>
               </div>
+              )}
 
               {/* Action Buttons - 2 columns, max 4 selected */}
               <div className="pt-4">
@@ -865,7 +1061,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   {AVAILABLE_ACTIONS.map((action) => {
                     const applicableTypes = getButtonApplicableTypes(action.id);
                     const isApplicable = applicableTypes.includes(data.type);
-                    if (!isApplicable) return null;
+                    if (!isApplicable || isDrawing) return null;
 
                     const isSelected = ((data as any).actionButtons || []).includes(action.id);
                     const selectedCount = ((data as any).actionButtons || []).length;
@@ -894,7 +1090,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               </div>
 
-              {/* Click Actions */}
+              {/* Click Actions - not for drawings */}
+              {!isDrawing && (
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <MousePointer size={14} /> Mouse Click Actions
@@ -974,6 +1171,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 </div>
               </div>
+              )}
             </div>
           )}
 

@@ -1,6 +1,7 @@
 
 export enum ItemType {
   TOKEN = 'TOKEN',
+  TOKEN_ARCHETYPE = 'TOKEN_ARCHETYPE', // Token source/spawner for Tools panel
   CARD = 'CARD',
   DECK = 'DECK',
   DICE_OBJECT = 'DICE_OBJECT',
@@ -9,6 +10,7 @@ export enum ItemType {
   RANDOMIZER = 'RANDOMIZER', // Randomizers (spinners, etc.)
   PANEL = 'PANEL',        // UI panels (hand, deck search, etc.)
   WINDOW = 'WINDOW',      // Modal windows
+  DRAWING = 'DRAWING',    // Drawings created with marker tool
 }
 
 // Visual subtypes for tokens to handle Chips, Figurines, Badges, Boards
@@ -92,6 +94,43 @@ export interface Coordinates {
   y: number;
 }
 
+// Drawing system types
+export interface StrokePoint {
+  x: number;
+  y: number;
+  pressure?: number; // For pressure-sensitive drawing
+}
+
+export interface Stroke {
+  id: string;
+  points: StrokePoint[];
+  color: string;
+  thickness: number;
+  timestamp: number;
+  author?: string; // Player ID who created the stroke
+}
+
+export interface DrawingLayer {
+  id: string;
+  // Binding to object (if null, drawing is on the board)
+  boundObjectId?: string; // ID of the object this drawing is bound to
+  // For cards, can specify which side the drawing is on
+  boundCardSide?: 'front' | 'back';
+  // Strokes in this layer
+  strokes: Stroke[];
+  // Layer visibility
+  visible: boolean;
+  // Layer opacity
+  opacity?: number;
+  // Z-index within drawing layers
+  zIndex?: number;
+}
+
+// Drawing data stored per board or globally
+export interface DrawingData {
+  layers: DrawingLayer[];
+}
+
 export interface GameItem {
   id: string;
   type: ItemType;
@@ -161,6 +200,12 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
 
   // Additional card properties
   isHorizontal?: boolean; // Used internally for cursor slot rendering
+  __pendingPlayTop?: { // Internal: stores pending play-top data for undo when card is dropped
+    deckId: string;
+    previousCardIds: string[];
+    previousLocation: CardLocation;
+    previousFaceUp: boolean;
+  };
 }
 
 // Sprite sheet configuration for cards
@@ -226,6 +271,23 @@ export interface Token extends GameItem {
   gridType?: GridType;
   gridSize?: number; // Size of a cell in pixels
   snapToGrid?: boolean; // If true, other objects snap to this
+  // Reference to archetype if spawned from one
+  archetypeId?: string;
+}
+
+// Token Archetype - a template/spawner for tokens
+// Appears in Tools panel, not on the board
+export interface TokenArchetype extends GameItem {
+  type: ItemType.TOKEN_ARCHETYPE;
+  shape: TokenShape;
+  // Default settings for spawned tokens
+  defaultSize?: { width: number; height: number };
+  defaultColor?: string;
+  defaultContent?: string; // Image URL
+  // Spawn settings
+  autoName?: boolean; // Auto-generate names like "Goblin 1", "Goblin 2", etc.
+  namePrefix?: string; // Prefix for auto-naming
+  spawnCount?: number; // Track how many have been spawned for naming
 }
 
 export interface DiceObject extends GameItem {
@@ -254,7 +316,22 @@ export interface Randomizer extends GameItem {
   options?: string[]; // For custom randomizers
 }
 
-export type TableObject = Card | Deck | Token | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject;
+// Drawing object - contains strokes created with marker tool
+export interface Drawing extends GameItem {
+  type: ItemType.DRAWING;
+  // Drawing data
+  strokes: Stroke[];
+  // Drawing bounds (calculated from strokes)
+  bounds: { x: number; y: number; width: number; height: number };
+  // Background color (optional, transparent by default)
+  backgroundColor?: string;
+  // Drawing color (used for new strokes, defaults to first stroke color or red)
+  color?: string;
+  // Drawing opacity (1-100, default 100)
+  opacity?: number;
+}
+
+export type TableObject = Card | Deck | Token | TokenArchetype | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing;
 
 export interface Player {
   id: string;
@@ -352,4 +429,49 @@ export interface WindowObject extends UIObject {
   title: string;
   // Optional: target object ID this window operates on
   targetObjectId?: string;
+}
+
+// Undo/History system types
+
+// Marker history entries (max 10)
+export type MarkerHistoryEntry =
+  | { type: 'drawing-created'; drawingId: string; drawing: Drawing }
+  | { type: 'stroke-added'; drawingId: string; strokeId: string; stroke: Stroke }
+  | { type: 'drawing-deleted'; drawing: Drawing }
+  | { type: 'drawings-merged'; mergedIntoId: string; sourceDrawings: Drawing[]; targetDrawingBeforeMerge: Drawing };
+
+// General history entries (max 100)
+export type GeneralHistoryEntry =
+  | { type: 'object-added'; objectId: string; object: TableObject }
+  | { type: 'object-deleted'; objectId: string; object: TableObject; cascadedDeletes?: TableObject[] }
+  | { type: 'object-moved'; objectId: string; previousX: number; previousY: number }
+  | { type: 'object-updated'; objectId: string; previousValues: Partial<TableObject> }
+  | { type: 'object-rotated'; objectId: string; previousRotation: number; previousBaseRotation?: number }
+  | { type: 'object-lock-toggled'; objectId: string; previousLocked: boolean }
+  | { type: 'object-on-table-toggled'; objectId: string; previousIsOnTable: boolean }
+  | { type: 'object-layer-changed'; objectId: string; direction: 'up' | 'down'; previousZIndex?: number; otherObjectId?: string; otherObjectPreviousZIndex?: number }
+  | { type: 'object-pinned'; objectId: string; previousPinnedToViewport?: boolean; previousScreenPosition?: { x: number; y: number } }
+  | { type: 'object-unpinned'; objectId: string; previousX: number; previousY: number; previousPinnedToViewport: boolean; previousScreenPosition?: { x: number; y: number } }
+  | { type: 'counter-updated'; objectId: string; previousValue: number; delta: number }
+  | { type: 'token-spawned'; objectId: string; archetypeId: string; archetypePreviousSpawnCount?: number }
+  | { type: 'card-flipped'; cardId: string; previousFaceUp: boolean }
+  | { type: 'card-drawn'; cardId: string; fromDeckId: string; fromIndex: number; previousLocation: CardLocation }
+  | { type: 'card-played'; cardId: string; previousLocation: CardLocation; previousX?: number; previousY?: number; previousFaceUp?: boolean }
+  | { type: 'card-played-from-top'; cardId: string; deckId: string; previousCardIds: string[]; previousLocation: CardLocation; previousFaceUp: boolean }
+  | { type: 'dropped-from-cursor-slot'; objectId: string; previousState: 'cursor_slot' | 'table' | 'hand' | 'deck' | 'pile'; previousLocation: CardLocation; previousX?: number; previousY?: number; previousZIndex?: number; previousFaceUp?: boolean; previousDeckId?: string; previousOwnerId?: string; previousDeckCardIds?: string[]; previousPileId?: string; previousPileCardIds?: string[]; previousInCursorSlot?: boolean }
+  | { type: 'card-returned-to-deck'; cardId: string; previousLocation: CardLocation; previousX?: number; previousY?: number; deckId: string }
+  | { type: 'card-added-to-pile'; cardId: string; previousLocation: CardLocation; previousX?: number; previousY?: number; deckId: string; pileId: string; previousDeckCardIds?: string[]; previousPileCardIds?: string[] }
+  | { type: 'card-drawn-from-pile'; cardId: string; previousLocation: CardLocation; deckId: string; pileId: string; fromIndex: number }
+  | { type: 'card-returned-to-top'; cardId: string; previousLocation: CardLocation; previousX?: number; previousY?: number; previousFaceUp?: boolean; fromDeckId: string; toDeckId: string; fromCardIds?: string[]; toCardIds?: string[]; fromPileId?: string; fromPileCardIds?: string[] }
+  | { type: 'card-returned-to-bottom'; cardId: string; previousLocation: CardLocation; previousX?: number; previousY?: number; previousFaceUp?: boolean; fromDeckId: string; toDeckId: string; fromCardIds?: string[]; toCardIds?: string[]; fromPileId?: string; fromPileCardIds?: string[] }
+  | { type: 'card-added-to-top'; cardId: string; previousLocation: CardLocation; previousX?: number; previousY?: number; previousFaceUp?: boolean; fromDeckId?: string; toDeckId: string; fromCardIds?: string[]; toCardIds?: string[] }
+  | { type: 'card-milled-to-bottom'; cardId: string; deckId: string; previousCardIds: string[] }
+  | { type: 'card-milled-to-pile'; cardId: string; deckId: string; pileId: string; previousDeckCardIds: string[]; previousPileCardIds: string[] }
+  | { type: 'deck-shuffled'; deckId: string; previousCardOrder: string[] };
+
+export interface UndoState {
+  markerHistory: MarkerHistoryEntry[]; // Max 10 entries
+  generalHistory: GeneralHistoryEntry[]; // Max 100 entries
+  readonly maxMarkerHistory: 10;
+  readonly maxGeneralHistory: 100;
 }
