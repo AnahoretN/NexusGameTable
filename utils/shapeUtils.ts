@@ -85,13 +85,6 @@ export function getTokenShapeStyles(shape: TokenShape): ShapeStyles {
     case TokenShape.SQUARE:
       return { borderRadius: '5px' };
 
-    case TokenShape.RECTANGLE:
-      return { borderRadius: '5px' };
-
-    case TokenShape.STANDEE:
-      // Standee (figurine) - no special shaping
-      return { borderRadius: '5px' };
-
     default:
       return { borderRadius: '5px' };
   }

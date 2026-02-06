@@ -250,7 +250,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: 'Configure...',
       action: 'configure',
       icon: <Settings size={14} />,
-      visible: isGM,
+      // Hide for token-copies (tokens with archetypeId)
+      visible: isGM && !(object.type === ItemType.TOKEN && (object as any).archetypeId),
       separator: false
     },
     {

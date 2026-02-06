@@ -20,16 +20,6 @@ const SHAPE_PATHS: Record<TokenShape, { path: string; viewBox: string; useRect?:
     path: '',
     viewBox: '0 0 60 60',
     useRect: true
-  },
-  [TokenShape.RECTANGLE]: {
-    path: '',
-    viewBox: '0 0 60 60',
-    useRect: true
-  },
-  [TokenShape.STANDEE]: {
-    path: '',
-    viewBox: '0 0 60 60',
-    useRect: true
   }
 };
 

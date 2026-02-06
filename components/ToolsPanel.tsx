@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { ItemType, TableObject, TokenType, TokenShape, WindowType } from '../types';
 import { Pen, Eraser, Ruler, Compass, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import { SvgTokenShape } from './SvgTokenShape';
 
 // Drawing tools
 export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'compass';
@@ -76,14 +77,130 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     window.dispatchEvent(new CustomEvent('drawing-tool-changed', { detail: { tool } }));
   }, []);
 
-  // Handle archetype drag start
-  const handleArchetypeDragStart = useCallback((e: React.DragEvent, archetype: TokenType) => {
-    e.dataTransfer.setData('application/json', JSON.stringify({
-      type: 'token-archetype',
-      archetypeId: archetype.id
+  // Track drag state to distinguish click from drag
+  const dragStartTimeRef = useRef<number>(0);
+  const dragStartPositionRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Handle archetype click - add to cursor slot
+  const handleArchetypeClick = useCallback((archetype: TokenType, clientX: number, clientY: number) => {
+    // Dispatch event to Tabletop to handle adding token to cursor slot
+    window.dispatchEvent(new CustomEvent('add-token-to-cursor-slot', {
+      detail: { archetypeId: archetype.id, clientX, clientY }
     }));
-    e.dataTransfer.effectAllowed = 'copy';
   }, []);
+
+  // Track if we're currently dragging a token type to place it
+  const isDraggingTokenRef = useRef<boolean>(false);
+  const dragArchetypeIdRef = useRef<string | null>(null);
+  const dragArchetypeCardRef = useRef<HTMLElement | null>(null);
+
+  // Set up capture phase listener for mousedown to set flag BEFORE Tabletop's handleGlobalClick
+  useEffect(() => {
+    const handleMouseDownCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Find if we're clicking on a token archetype card
+      const archetypeCard = target.closest('[data-archetype-card]') as HTMLElement;
+      if (archetypeCard) {
+        archetypeCard.dataset.isAddingToken = 'true';
+        dragStartTimeRef.current = Date.now();
+        dragStartPositionRef.current = { x: e.clientX, y: e.clientY };
+        // Store reference to the card that was clicked
+        dragArchetypeCardRef.current = archetypeCard;
+      }
+    };
+
+    const handleMouseMoveCapture = (e: MouseEvent) => {
+      // Check if we're dragging (moved more than 3px)
+      if (dragStartTimeRef.current > 0 && dragStartPositionRef.current && !isDraggingTokenRef.current) {
+        const dragDistance = Math.sqrt(
+          Math.pow(e.clientX - dragStartPositionRef.current.x, 2) +
+          Math.pow(e.clientY - dragStartPositionRef.current.y, 2)
+        );
+        // If moved more than 3px, consider it a drag and add token to cursor slot
+        if (dragDistance > 3) {
+          // Use the stored card reference instead of looking it up again
+          const archetypeCard = dragArchetypeCardRef.current;
+          if (archetypeCard) {
+            const archetypeId = archetypeCard.dataset.archetypeId;
+            if (archetypeId) {
+              const archetype = state.objects[archetypeId] as TokenType;
+              if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+                isDraggingTokenRef.current = true;
+                dragArchetypeIdRef.current = archetypeId;
+                // Add token to cursor slot immediately
+                handleArchetypeClick(archetype, e.clientX, e.clientY);
+              }
+            }
+          }
+        }
+      }
+    };
+
+    const handleMouseUpCapture = (e: MouseEvent) => {
+      // Check if we were dragging a token
+      if (isDraggingTokenRef.current) {
+        // Drop the token at current position
+        isDraggingTokenRef.current = false;
+        const archetypeId = dragArchetypeIdRef.current;
+        dragArchetypeIdRef.current = null;
+        // Dispatch event to drop cursor slot at this position
+        window.dispatchEvent(new CustomEvent('drop-cursor-slot-at-position', {
+          detail: { clientX: e.clientX, clientY: e.clientY }
+        }));
+        // Clear any adding token flags
+        const card = dragArchetypeCardRef.current;
+        if (card) {
+          delete card.dataset.isAddingToken;
+        }
+        dragStartTimeRef.current = 0;
+        dragStartPositionRef.current = null;
+        dragArchetypeCardRef.current = null;
+        return;
+      }
+
+      // Normal click handling (not a drag)
+      const archetypeCard = dragArchetypeCardRef.current;
+      if (archetypeCard && archetypeCard.dataset.isAddingToken) {
+        const dragDuration = Date.now() - dragStartTimeRef.current;
+        const dragDistance = dragStartPositionRef.current
+          ? Math.sqrt(
+              Math.pow(e.clientX - dragStartPositionRef.current.x, 2) +
+              Math.pow(e.clientY - dragStartPositionRef.current.y, 2)
+            )
+          : 0;
+
+        // Clear the adding token flag
+        delete archetypeCard.dataset.isAddingToken;
+
+        // If it was a quick click with minimal movement, treat as click (add to slot without dropping)
+        if (dragDuration < 200 && dragDistance < 3) {
+          const archetypeId = archetypeCard.dataset.archetypeId;
+          if (archetypeId) {
+            const archetype = state.objects[archetypeId] as TokenType;
+            if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+              handleArchetypeClick(archetype, e.clientX, e.clientY);
+            }
+          }
+        }
+      }
+
+      // Reset drag tracking
+      dragStartTimeRef.current = 0;
+      dragStartPositionRef.current = null;
+      dragArchetypeCardRef.current = null;
+    };
+
+    // Use capture phase to ensure this runs before Tabletop's handleGlobalClick
+    document.addEventListener('mousedown', handleMouseDownCapture, { capture: true });
+    document.addEventListener('mousemove', handleMouseMoveCapture, { capture: true });
+    document.addEventListener('mouseup', handleMouseUpCapture, { capture: true });
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDownCapture, { capture: true } as any);
+      document.removeEventListener('mousemove', handleMouseMoveCapture, { capture: true } as any);
+      document.removeEventListener('mouseup', handleMouseUpCapture, { capture: true } as any);
+    };
+  }, [state.objects, handleArchetypeClick]);
 
   // Handle archetype settings
   const handleArchetypeSettings = useCallback((archetype: TokenType) => {
@@ -101,6 +218,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     return (
       <div
         ref={containerRef}
+        data-tools-panel
         className="fixed left-0 top-1/2 -translate-y-1/2 bg-slate-800 border border-slate-600 rounded-r-lg shadow-xl z-[9997]"
         style={{ width: '40px' }}
       >
@@ -118,6 +236,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   return (
     <div
       ref={containerRef}
+      data-tools-panel
       className="fixed left-0 top-1/2 -translate-y-1/2 bg-slate-800 border border-slate-600 rounded-r-lg shadow-xl z-[9997] flex flex-col"
       style={{ width, maxHeight: '80vh' }}
     >
@@ -209,93 +328,38 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                   Add them from the main menu.
                 </div>
               ) : (
-                archetypes.map((archetype) => (
+                archetypes.map((archetype) => {
+                  // Calculate aspect ratio based on defaultSize or fall back to 1:1
+                  const aspectRatio = archetype.defaultSize
+                    ? archetype.defaultSize.width / archetype.defaultSize.height
+                    : 1;
+
+                  // Calculate size to fit within the card while maintaining aspect ratio
+                  const baseSize = 70; // Base percentage
+                  const tokenWidth = aspectRatio >= 1 ? baseSize : baseSize * aspectRatio;
+                  const tokenHeight = aspectRatio <= 1 ? baseSize : baseSize / aspectRatio;
+
+                  return (
                   <div
                     key={archetype.id}
-                    draggable
-                    onDragStart={(e) => handleArchetypeDragStart(e, archetype)}
-                    className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-grab active:cursor-grabbing transition-colors"
-                    title={`${archetype.name}\nDrag to board to spawn a token`}
+                    data-archetype-card
+                    data-archetype-id={archetype.id}
+                    className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-pointer transition-colors"
+                    title={`${archetype.name}\nClick to add to cursor slot`}
                   >
-                    {/* Preview of the token */}
-                    <div
-                      className="w-full h-full flex items-center justify-center overflow-hidden rounded"
-                      style={{
-                        backgroundColor: archetype.defaultColor || archetype.color || '#ffffff',
-                      }}
-                    >
-                      {archetype.defaultContent || archetype.content ? (
-                        <img
-                          src={archetype.defaultContent || archetype.content}
-                          alt={archetype.name}
-                          className="max-w-full max-h-full object-contain"
-                          draggable={false}
-                        />
-                      ) : (
-                        // SVG token preview for proper shape rendering with rounded corners
-                        <svg
-                          width="60%"
-                          height="60%"
-                          viewBox={archetype.shape === TokenShape.HEX ? '0 0 60 64' : '0 0 60 60'}
-                          preserveAspectRatio="none"
-                          className="drop-shadow-md"
-                        >
-                          {archetype.shape === TokenShape.HEX && (
-                            <path
-                              d="M 30 0 L 60 16 L 60 48 L 30 64 L 0 48 L 0 16 Z"
-                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                              stroke="white"
-                              strokeWidth="3"
-                              strokeLinejoin="round"
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          )}
-                          {archetype.shape === TokenShape.TRIANGLE && (
-                            <path
-                              d="M 30 0 L 60 60 L 0 60 Z"
-                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                              stroke="white"
-                              strokeWidth="3"
-                              strokeLinejoin="round"
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          )}
-                          {archetype.shape === TokenShape.CIRCLE && (
-                            <circle
-                              cx="30"
-                              cy="30"
-                              r="30"
-                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                              stroke="white"
-                              strokeWidth="2"
-                            />
-                          )}
-                          {archetype.shape === TokenShape.SQUARE && (
-                            <rect
-                              x="1"
-                              y="1"
-                              width="58"
-                              height="58"
-                              rx="2"
-                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                              stroke="white"
-                              strokeWidth="2"
-                            />
-                          )}
-                          {!archetype.shape || archetype.shape === TokenShape.STANDEE || archetype.shape === TokenShape.RECTANGLE ? (
-                            <rect
-                              x="1"
-                              y="1"
-                              width="58"
-                              height="58"
-                              rx="2"
-                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
-                              stroke="white"
-                              strokeWidth="2"
-                            />
-                          ) : null}
-                        </svg>
-                      )}
+                    {/* Preview of the token using SvgTokenShape */}
+                    <div className="w-full h-full flex items-center justify-center overflow-hidden rounded">
+                      <SvgTokenShape
+                        shape={archetype.shape || TokenShape.SQUARE}
+                        width={tokenWidth}
+                        height={tokenHeight}
+                        color={archetype.color || '#ffffff'}
+                        content={archetype.content}
+                        borderColor={(archetype as any).borderColor || '#ffffff'}
+                        borderWidth={(archetype as any).borderWidth ?? 2}
+                        className="drop-shadow-md"
+                        style={{ width: `${tokenWidth}%`, height: `${tokenHeight}%` }}
+                      />
                     </div>
 
                     {/* Settings button */}
@@ -314,7 +378,8 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                       {archetype.name}
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
