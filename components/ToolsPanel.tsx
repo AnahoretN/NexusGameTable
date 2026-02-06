@@ -232,20 +232,69 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                           draggable={false}
                         />
                       ) : (
-                        <div
-                          className="flex items-center justify-center"
-                          style={{
-                            width: '60%',
-                            height: '60%',
-                            backgroundColor: archetype.defaultColor || archetype.color || '#ffffff',
-                            borderRadius: archetype.shape === TokenShape.CIRCLE ? '50%' :
-                                         archetype.shape === TokenShape.SQUARE ? '5px' :
-                                         '0', // CIRCLE has 50%, SQUARE has 5px, others have 0
-                            clipPath: archetype.shape === TokenShape.HEX ? 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' :
-                                         archetype.shape === TokenShape.TRIANGLE ? 'polygon(50% 0%, 0% 100%, 100% 100%)' :
-                                         undefined,
-                          }}
-                        />
+                        // SVG token preview for proper shape rendering with rounded corners
+                        <svg
+                          width="60%"
+                          height="60%"
+                          viewBox={archetype.shape === TokenShape.HEX ? '0 0 60 64' : '0 0 60 60'}
+                          preserveAspectRatio="none"
+                          className="drop-shadow-md"
+                        >
+                          {archetype.shape === TokenShape.HEX && (
+                            <path
+                              d="M 30 0 L 60 16 L 60 48 L 30 64 L 0 48 L 0 16 Z"
+                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                              stroke="white"
+                              strokeWidth="3"
+                              strokeLinejoin="round"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          )}
+                          {archetype.shape === TokenShape.TRIANGLE && (
+                            <path
+                              d="M 30 0 L 60 60 L 0 60 Z"
+                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                              stroke="white"
+                              strokeWidth="3"
+                              strokeLinejoin="round"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          )}
+                          {archetype.shape === TokenShape.CIRCLE && (
+                            <circle
+                              cx="30"
+                              cy="30"
+                              r="30"
+                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                              stroke="white"
+                              strokeWidth="2"
+                            />
+                          )}
+                          {archetype.shape === TokenShape.SQUARE && (
+                            <rect
+                              x="1"
+                              y="1"
+                              width="58"
+                              height="58"
+                              rx="2"
+                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                              stroke="white"
+                              strokeWidth="2"
+                            />
+                          )}
+                          {!archetype.shape || archetype.shape === TokenShape.STANDEE || archetype.shape === TokenShape.RECTANGLE ? (
+                            <rect
+                              x="1"
+                              y="1"
+                              width="58"
+                              height="58"
+                              rx="2"
+                              fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                              stroke="white"
+                              strokeWidth="2"
+                            />
+                          ) : null}
+                        </svg>
                       )}
                     </div>
 

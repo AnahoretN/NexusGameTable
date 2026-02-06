@@ -4,6 +4,7 @@ import { useGame } from '../store/GameContext';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation } from '../types';
 import { DECK_OFFSET } from '../constants';
 import { Tooltip } from './Tooltip';
+import { getCardShapeStyles, isGeometricCardShape } from '../utils/shapeUtils';
 
 interface DeckComponentProps {
   deck: DeckType;
@@ -63,7 +64,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   // For geometric shapes with horizontal orientation, swap width/height
   const cardShape = deck.cardShape ?? CardShape.POKER;
   const cardOrientation = deck.cardOrientation ?? CardOrientation.VERTICAL;
-  const isGeometricShape = cardShape === CardShape.HEX || cardShape === CardShape.TRIANGLE || cardShape === CardShape.CIRCLE;
+  const isGeometricShape = isGeometricCardShape(cardShape);
 
   const effectiveWidth = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
     ? deck.height
@@ -171,32 +172,9 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   }, [deck.id, setPilesButtonMenu]);
 
   // Get shape styles based on deck's cardShape setting
-  const getShapeStyles = useMemo(() => {
-    const shape = deck.cardShape ?? CardShape.POKER;
-    const orientation = deck.cardOrientation ?? CardOrientation.VERTICAL;
-
-    switch (shape) {
-      case CardShape.CIRCLE:
-        return { borderRadius: '50%', clipPath: undefined };
-      case CardShape.HEX:
-        // Vertical: vertices at top/bottom, Horizontal: vertices at left/right
-        if (orientation === CardOrientation.HORIZONTAL) {
-          return { borderRadius: '0', clipPath: 'polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)' };
-        }
-        return { borderRadius: '0', clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' };
-      case CardShape.TRIANGLE:
-        return { borderRadius: '0', clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' };
-      case CardShape.SQUARE:
-      case CardShape.MINI_US:
-      case CardShape.MINI_EURO:
-      case CardShape.BRIDGE:
-      case CardShape.POKER:
-      default:
-        return { borderRadius: '8px', clipPath: undefined };
-    }
+  const shapeStyles = useMemo(() => {
+    return getCardShapeStyles(deck.cardShape ?? CardShape.POKER, deck.cardOrientation ?? CardOrientation.VERTICAL);
   }, [deck.cardShape, deck.cardOrientation]);
-
-  const shapeStyles = getShapeStyles;
 
   return (
     <Tooltip
@@ -567,3 +545,18 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
     </Tooltip>
   );
 };
+
+// Memoize DeckComponent to prevent unnecessary re-renders
+export default React.memo(DeckComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.deck.id === nextProps.deck.id &&
+    prevProps.deck.cardIds === nextProps.deck.cardIds &&
+    prevProps.deck.piles === nextProps.deck.piles &&
+    prevProps.deck.rotation === nextProps.deck.rotation &&
+    prevProps.deck.locked === nextProps.deck.locked &&
+    prevProps.draggingId === nextProps.draggingId &&
+    prevProps.hoveredDeckId === nextProps.hoveredDeckId &&
+    prevProps.hoveredPileId === nextProps.hoveredPileId &&
+    prevProps.cursorSlotHasCards === nextProps.cursorSlotHasCards
+  );
+});

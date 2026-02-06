@@ -4,6 +4,7 @@ import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePo
 import { Layers, Undo, ChevronRight, ArrowUp, ArrowDown, Hand, Eye, EyeOff } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { getCardButtonConfig, ButtonAction, CardButtonConfig } from '../utils/buttonConfig';
+import { getCardShapeStyles, isGeometricCardShape } from '../utils/shapeUtils';
 
 interface CardProps {
   card: CardType;
@@ -137,30 +138,12 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     return null;
   };
 
-  const getShapeStyles = () => {
-    switch (shape) {
-      case CardShape.CIRCLE:
-        return { borderRadius: '50%' };
-      case CardShape.HEX:
-        // Vertical: vertices at top/bottom, Horizontal: vertices at left/right
-        if (orientation === CardOrientation.HORIZONTAL) {
-          return { clipPath: 'polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)' };
-        }
-        return { clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' };
-      case CardShape.TRIANGLE:
-        return { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' };
-      default:
-        return { borderRadius: '8px' }; // Default rounded corners for rectangles/squares
-    }
-  };
-
-  const styles = getShapeStyles();
-  const isGeometric = shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
+  const styles = getCardShapeStyles(shape, orientation);
+  const isGeometric = isGeometricCardShape(shape);
 
   // Calculate transform for card rotation
   const getCardTransform = (orientation: CardOrientation, disableRotation: boolean | undefined, cardRotation: number) => {
     const transforms: string[] = [];
-    const isGeometricShape = shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
 
     // Apply card's rotation property (custom rotation from rotate actions)
     if (!disableRotation && cardRotation) {
@@ -170,7 +153,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     // Apply horizontal orientation (90 degrees clockwise = -90deg CSS)
     // For geometric shapes (HEX, TRIANGLE, CIRCLE), orientation affects dimensions but NOT shape rotation
     // For other shapes, only rotate if dimensions indicate the card isn't already in horizontal orientation
-    if (orientation === CardOrientation.HORIZONTAL && !isGeometricShape) {
+    if (orientation === CardOrientation.HORIZONTAL && !isGeometric) {
       // If width > height, card is already landscape - don't rotate
       // Otherwise (portrait card being displayed horizontally), apply -90deg rotation
       if (displayWidth <= displayHeight) {

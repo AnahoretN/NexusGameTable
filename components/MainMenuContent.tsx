@@ -3,7 +3,7 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Hexagon, Triangle, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Signal, Hand, Eye, EyeOff, Layers, Maximize2, CreditCard, Rows, Asterisk, PanelLeft, Minus, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Rows, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -16,12 +16,7 @@ import { useDrawingTool } from './ToolsPanel';
 const getTypeIcon = (obj: TableObject): React.ReactElement => {
   switch (obj.type) {
     case ItemType.TOKEN:
-      const token = obj as Token;
-      if (token.shape === TokenShape.CIRCLE) return <CircleDot size={10} />;
-      if (token.shape === TokenShape.HEX) return <Hexagon size={10} />;
-      if (token.shape === TokenShape.TRIANGLE) return <Triangle size={10} />;
-      if (token.shape === TokenShape.STANDEE) return <User size={10} />;
-      return <Square size={10} />;
+      return <CircleDot size={10} />;
     case ItemType.TOKEN_TYPE:
       return <Square size={10} />;
     case ItemType.CARD:
@@ -796,9 +791,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     }
   };
 
-  // Count objects on table that match this category (excluding objects in cursor slot)
+  // Count objects on table that match this category
   const objectsOnTable = useMemo(() =>
-    Object.values(state.objects).filter(obj => !(obj as any).inCursorSlot && category.matcher(obj)),
+    Object.values(state.objects).filter(obj => category.matcher(obj)),
     [state.objects, category.matcher]
   );
 
@@ -1088,7 +1083,6 @@ const CategorySection: React.FC<CategorySectionProps> = ({
               <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">On Table</div>
               {objectsOnTable.map(obj => {
                 const isLocked = obj.locked || false;
-                const isInSlot = (obj as any).inCursorSlot || false;
                 // For UI objects check 'visible', for game objects check 'isOnTable'
                 const isVisible = 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
@@ -1112,28 +1106,25 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 return (
                   <div
                     key={obj.id}
-                    className={`flex items-center gap-1 py-1 px-2 rounded text-sm group ${isInSlot ? 'text-yellow-600 bg-yellow-900/20' : isVisible ? 'text-gray-300 hover:bg-slate-800' : 'text-gray-600 hover:bg-slate-800/50'}`}
+                    className={`flex items-center gap-1 py-1 px-2 rounded text-sm group ${isVisible ? 'text-gray-300 hover:bg-slate-800' : 'text-gray-600 hover:bg-slate-800/50'}`}
                   >
                     <span className="text-gray-500 flex-shrink-0">{getTypeIcon(obj)}</span>
                     <div
                       className="w-3 h-3 rounded flex-shrink-0"
-                      style={{ backgroundColor: isInSlot ? '#fbbf24' : isVisible ? objColor : '#4a5568' }}
+                      style={{ backgroundColor: isVisible ? objColor : '#4a5568' }}
                     />
                     <span className="flex-1 truncate text-xs">{getDisplayName()}</span>
-                    {isInSlot && <span className="text-[9px] text-yellow-500">(in slot)</span>}
                     <button
                       onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
-                      disabled={isInSlot}
-                      className={`p-1 rounded ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} ${isInSlot ? 'opacity-30 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'}`}
-                      title={isInSlot ? 'Locked in cursor slot' : (isLocked ? 'Unlock' : 'Lock')}
+                      className={`p-1 rounded ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} opacity-0 group-hover:opacity-100`}
+                      title={isLocked ? 'Unlock' : 'Lock'}
                     >
                       {isLocked ? <Lock size={10} /> : <Unlock size={10} />}
                     </button>
                     <button
                       onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } })}
-                      disabled={isInSlot}
-                      className={`p-1 hover:bg-slate-700 rounded ${isInSlot ? 'opacity-30 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'}`}
-                      title={isInSlot ? 'Locked in cursor slot' : (isVisible ? 'Hide' : 'Show')}
+                      className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100"
+                      title={isVisible ? 'Hide' : 'Show'}
                     >
                       {isVisible ? <Eye size={10} /> : <EyeOff size={10} />}
                     </button>
@@ -1146,17 +1137,15 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                           title: 'Settings'
                         }
                       })}
-                      disabled={isInSlot}
-                      className={`p-1 hover:bg-slate-700 rounded ${isInSlot ? 'opacity-30 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'}`}
-                      title={isInSlot ? 'Locked in cursor slot' : 'Settings'}
+                      className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100"
+                      title="Settings"
                     >
                       <Settings size={10} />
                     </button>
                     <button
                       onClick={() => setDeleteCandidateId(obj.id)}
-                      disabled={isInSlot}
-                      className={`p-1 hover:bg-red-600 rounded text-red-400 hover:text-white ${isInSlot ? 'opacity-30 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'}`}
-                      title={isInSlot ? 'Locked in cursor slot' : 'Delete'}
+                      className="p-1 hover:bg-red-600 rounded text-red-400 hover:text-white opacity-0 group-hover:opacity-100"
+                      title="Delete"
                     >
                       <Trash2 size={10} />
                     </button>
@@ -1259,17 +1248,57 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, onSettings }) 
             draggable={false}
           />
         ) : (
-          <div
-            className="flex items-center justify-center"
-            style={{
-              width: '60%',
-              height: '60%',
-              backgroundColor: archetype.defaultColor || archetype.color || '#ffffff',
-              borderRadius: archetype.shape === TokenShape.CIRCLE ? '50%' :
-                           archetype.shape === TokenShape.HEX ? '30%' :
-                           archetype.shape === TokenShape.STANDEE ? '4px' : '0',
-            }}
-          />
+          // SVG token preview for proper shape rendering with rounded corners
+          <svg
+            width="60%"
+            height="60%"
+            viewBox={archetype.shape === TokenShape.HEX ? '0 0 60 64' : '0 0 60 60'}
+            preserveAspectRatio="none"
+            className="drop-shadow-md"
+          >
+            {archetype.shape === TokenShape.HEX && (
+              <path
+                d="M 30 0 L 60 16 L 60 48 L 30 64 L 0 48 L 0 16 Z"
+                fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                stroke="white"
+                strokeWidth="3"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
+            {archetype.shape === TokenShape.TRIANGLE && (
+              <path
+                d="M 30 0 L 60 60 L 0 60 Z"
+                fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                stroke="white"
+                strokeWidth="3"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
+            {archetype.shape === TokenShape.CIRCLE && (
+              <circle
+                cx="30"
+                cy="30"
+                r="30"
+                fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                stroke="white"
+                strokeWidth="2"
+              />
+            )}
+            {(archetype.shape === TokenShape.SQUARE || archetype.shape === TokenShape.STANDEE || archetype.shape === TokenShape.RECTANGLE || !archetype.shape) && (
+              <rect
+                x="1"
+                y="1"
+                width="58"
+                height="58"
+                rx="2"
+                fill={archetype.defaultColor || archetype.color || '#ffffff'}
+                stroke="white"
+                strokeWidth="2"
+              />
+            )}
+          </svg>
         )}
       </div>
 

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -14,6 +14,7 @@ import { UIObjectRenderer } from './UIObjectRenderer';
 import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';
 import { ObjectDrawingCanvas } from './ObjectDrawingCanvas';
+import { SvgTokenShape } from './SvgTokenShape';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
 import { CARD_SHAPE_DIMS } from '../constants';
 
@@ -91,7 +92,7 @@ const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             onMouseLeave={handleMouseLeave}
             onMouseDown={onMouseDown}
             onContextMenu={onContextMenu}
-            className="absolute flex items-center justify-center text-white font-bold select-none hover:ring-2 ring-yellow-400"
+            className="absolute flex items-center justify-center text-white font-bold select-none"
             style={{
                 left: obj.x,
                 top: obj.y,
@@ -2530,7 +2531,7 @@ export const Tabletop: React.FC = () => {
           try {
             const data = JSON.parse(archetypeData);
             if (data.type === 'token-archetype' && data.archetypeId) {
-              const archetype = state.objects[data.archetypeId] as TokenType;
+              const archetype = state.objects[data.archetypeId] as TokenArchetype;
               if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
                 // Calculate world position for the new token
                 const worldX = e.clientX / zoom - offset.x;
@@ -2671,15 +2672,6 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
-                    const borderRadius = token.shape === TokenShape.CIRCLE ? '50%'
-                        : token.shape === TokenShape.SQUARE ? '5px'
-                        : '0'; // HEX, TRIANGLE, and others have no border radius
-                    const clipPath = token.shape === TokenShape.HEX
-                        ? 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
-                        : token.shape === TokenShape.TRIANGLE
-                        ? 'polygon(50% 0%, 0% 100%, 100% 100%)'
-                        : undefined;
-
                     const isStandee = token.shape === TokenShape.STANDEE;
                     const showGrid = token.gridType && token.gridType !== GridType.NONE;
                     const gridSize = token.gridSize || 50;
@@ -2706,48 +2698,37 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute flex items-center justify-center text-white font-bold select-none hover:ring-2 ring-yellow-400 ${draggingClass} ${isStandee ? 'origin-bottom' : ''} group`}
+                                className={`absolute flex items-center justify-center text-white font-bold select-none ${draggingClass} ${isStandee ? 'origin-bottom' : ''} group`}
                                 style={{
                                     left: obj.x,
                                     top: obj.y,
                                     width: obj.width,
                                     height: obj.height,
-                                    borderRadius: borderRadius,
-                                    clipPath: clipPath,
-                                    border: isStandee ? 'none' : '2px solid white',
-                                    boxShadow: isStandee ? 'none' : '0 4px 6px rgba(0,0,0,0.3)',
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
-                                {/* Token thickness effect layers */}
-                                {!isStandee && [2, 1].map(i => (
-                                    <div
-                                        key={i}
-                                        className="absolute rounded pointer-events-none"
-                                        style={{
-                                            inset: 0,
-                                            borderRadius: borderRadius,
-                                            clipPath: clipPath,
-                                            backgroundColor: obj.color || '#e74c3c',
-                                            transform: `translate(${i * 2}px, ${i * 2}px)`,
-                                            zIndex: -i,
-                                            opacity: 0.4
-                                        }}
+                                {/* Render SVG token for all non-standee tokens */}
+                                {!isStandee && (
+                                    <SvgTokenShape
+                                        shape={token.shape}
+                                        width={obj.width}
+                                        height={obj.height}
+                                        color={obj.color || '#e74c3c'}
+                                        content={obj.content}
+                                        rotation={0}
+                                        borderWidth={2}
+                                        borderColor={(obj as any).borderColor || 'white'}
+                                        showThickness={true}
+                                        tokenName={(obj as any).showNameOnToken ? obj.name : undefined}
+                                        fontColor={(obj as any).fontColor || 'white'}
                                     />
-                                ))}
+                                )}
 
-                                {/* Main token content */}
-                                <div
-                                    className="absolute inset-0 rounded"
-                                    style={{
-                                        backgroundColor: obj.content ? 'transparent' : (obj.color || '#e74c3c'),
-                                        backgroundImage: obj.content ? `url(${obj.content})` : undefined,
-                                        backgroundSize: 'cover',
-                                        backgroundPosition: 'center',
-                                        borderRadius: borderRadius,
-                                        clipPath: clipPath,
-                                    }}
-                                />
+                                {isStandee && (
+                                    <div className="w-full h-full border-2 border-white bg-cover bg-center"
+                                         style={{backgroundImage: `url(${obj.content || 'https://via.placeholder.com/150'})`}} />
+                                )}
+
                             {(obj as any).isPinnedToViewport && (
                                 <div
                                     className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
@@ -2786,7 +2767,7 @@ export const Tabletop: React.FC = () => {
                                      style={{backgroundImage: `url(${obj.content || 'https://via.placeholder.com/150'})`}} />
                             )}
 
-                            {!obj.content && !isStandee && obj.name.charAt(0)}
+                            {/* No letter display needed - SvgTokenShape handles all token rendering */}
 
                             {/* Action buttons */}
                             <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
@@ -3677,8 +3658,9 @@ export const Tabletop: React.FC = () => {
                         );
                     }
 
-                    // Token rendering
+                    // Token rendering - use SvgTokenShape for consistent appearance
                     const token = item as TokenType;
+
                     return (
                         <div
                             key={`${token.id}-${index}`}
@@ -3692,20 +3674,17 @@ export const Tabletop: React.FC = () => {
                                 pointerEvents: 'none', // Ensure cursor slot tokens don't block mouse events to decks/piles
                             }}
                         >
-                            <div
-                                className="w-full h-full flex items-center justify-center text-white font-bold select-none"
-                                style={{
-                                    backgroundColor: token.color || '#34495e',
-                                    backgroundImage: token.content ? `url(${token.content})` : undefined,
-                                    backgroundSize: 'cover',
-                                    backgroundPosition: 'center',
-                                    border: '2px solid white',
-                                    borderRadius: token.shape === TokenShape.CIRCLE ? '50%'
-                                        : token.shape === TokenShape.HEX ? '30%'
-                                        : '5px',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                                    opacity: 0.9,
-                                }}
+                            <SvgTokenShape
+                                shape={token.shape}
+                                width={width}
+                                height={height}
+                                color={token.color || '#34495e'}
+                                content={token.content}
+                                rotation={0}
+                                borderWidth={3}
+                                borderColor={(token as any).borderColor || 'white'}
+                                showThickness={true}
+                                tokenName={(token as any).showNameOnToken ? token.name : undefined}
                             />
                         </div>
                     );

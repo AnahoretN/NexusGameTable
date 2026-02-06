@@ -27,7 +27,8 @@
       "Bash(npm run)",
       "Bash(git pull:*)",
       "Bash(git stash:*)",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

@@ -519,14 +519,47 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Basic Properties - Name, Size, Rotation */}
               <div className="space-y-2">
                 {/* Name */}
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
-                  <input
-                    value={data.name}
-                    onChange={e => update('name', e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                  />
-                </div>
+                {isToken ? (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={data.name}
+                        onChange={e => update('name', e.target.value)}
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                      {/* Font Color Picker */}
+                      <input
+                        type="color"
+                        value={(data as any).fontColor || '#ffffff'}
+                        onChange={e => update('fontColor', e.target.value)}
+                        className="w-9 h-9 rounded cursor-pointer border-0 p-0 bg-slate-900"
+                        title="Font Color"
+                      />
+                      {/* Show on Token Toggle */}
+                      <button
+                        onClick={() => update('showNameOnToken', !(data as any).showNameOnToken)}
+                        className={`w-9 h-5 rounded-full transition-colors ${
+                          (data as any).showNameOnToken ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                        title="Show on Token"
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as any).showNameOnToken ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
+                    <input
+                      value={data.name}
+                      onChange={e => update('name', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    />
+                  </div>
+                )}
 
                 {/* Size */}
                 <div className="grid grid-cols-2 gap-2">
@@ -584,15 +617,24 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               )}
 
-              {/* Color + Shape (for tokens) - side by side, equal width */}
+              {/* Color + Border Color + Shape (for tokens) - side by side, equal width */}
               {isToken && !isBoard && (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
                     <input
                       type="color"
                       value={data.color || '#ffffff'}
                       onChange={e => update('color', e.target.value)}
+                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Border</label>
+                    <input
+                      type="color"
+                      value={(data as any).borderColor || '#ffffff'}
+                      onChange={e => update('borderColor', e.target.value)}
                       className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
                     />
                   </div>
