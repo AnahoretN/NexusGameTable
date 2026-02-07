@@ -23,8 +23,8 @@ export default defineConfig({
   plugins: [react(), serverPlugin()],
   define: {
     'process.env': {},
-    // Expose package.json version as env variable (with 't' suffix for tunnels)
-    'import.meta.env.PACKAGE_VERSION': JSON.stringify(`v${pkg.version}t`),
+    // Expose package.json version as env variable
+    'import.meta.env.PACKAGE_VERSION': JSON.stringify(pkg.version),
     'import.meta.env.APP_NAME': JSON.stringify(pkg.name.replace(/^nexus-/, 'Nexus ').replace(/-/, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())),
   },
   base: './',

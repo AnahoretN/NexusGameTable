@@ -596,7 +596,7 @@ export const Tabletop: React.FC = () => {
   const animateDiceRoll = (dice: DiceObject) => {
     let steps = 0;
     const maxSteps = 10; // Change 10 times
-    const duration = 500; // 0.5 seconds
+    const duration = 1000; // 1 second
     const intervalTime = duration / maxSteps;
 
     const interval = setInterval(() => {
@@ -824,9 +824,17 @@ export const Tabletop: React.FC = () => {
             const worldY = obj.y;
             const screenX = (worldX - offset.x) * zoom;
             const screenY = (worldY - offset.y) * zoom;
+            // For dice and counters, also store pinnedScreenPosition
+            const isDiceOrCounter = obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER;
             dispatch({
               type: 'UPDATE_OBJECT',
-              payload: { id: obj.id, x: screenX, y: screenY, isPinnedToViewport: true }
+              payload: {
+                id: obj.id,
+                x: screenX,
+                y: screenY,
+                isPinnedToViewport: true,
+                ...(isDiceOrCounter && { pinnedScreenPosition: { x: screenX, y: screenY } })
+              }
             });
           }
         }
@@ -2988,6 +2996,10 @@ export const Tabletop: React.FC = () => {
                 }
 
                 if (obj.type === ItemType.COUNTER) {
+                    // Skip pinned counters - they are rendered separately in fixed container
+                    if ((obj as any).isPinnedToViewport === true) {
+                        return null;
+                    }
                     const counter = obj as Counter;
                     return (
                         <Tooltip
@@ -3024,7 +3036,12 @@ export const Tabletop: React.FC = () => {
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
                             <span className="text-xl font-bold">{counter.value}</span>
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
-                            <div className="absolute -bottom-4 w-full text-center text-[10px] text-gray-400 truncate">{obj.name}</div>
+                            {/* Name on top - shown when showNameOnToken is enabled */}
+                            {(obj as any).showNameOnToken && (
+                              <div className="absolute -top-5 left-0 right-0 text-center text-[12px] truncate px-1" style={{ color: (obj as any).fontColor || '#ffffff' }}>
+                                {obj.name}
+                              </div>
+                            )}
 
                             {/* Action buttons */}
                             <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
@@ -3091,7 +3108,12 @@ export const Tabletop: React.FC = () => {
                 }
 
                 if (obj.type === ItemType.DICE_OBJECT) {
+                    // Skip pinned dice - they are rendered separately in fixed container
+                    if ((obj as any).isPinnedToViewport === true) {
+                        return null;
+                    }
                     const dice = obj as DiceObject;
+                    const diceShape = dice.shape || TokenShape.SQUARE;
 
                     return (
                         <Tooltip
@@ -3104,15 +3126,57 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute bg-indigo-600 text-white flex flex-col items-center justify-center rounded-lg shadow-xl border-2 border-indigo-400 group ${draggingClass}`}
+                                onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
+                                className={`absolute flex items-center justify-center group select-none ${draggingClass}`}
                                 style={{
                                     left: obj.x,
                                     top: obj.y,
-                                    width: 60,
-                                    height: 60,
+                                    width: dice.width || 60,
+                                    height: dice.height || 60,
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
+                                <SvgTokenShape
+                                    shape={diceShape}
+                                    width={dice.width || 60}
+                                    height={dice.height || 60}
+                                    color={obj.color || '#6366f1'}
+                                    content={''}
+                                    borderColor="#4f46e5"
+                                    borderWidth={3}
+                                />
+                                {/* Dice value - always centered */}
+                                <div
+                                    className="absolute flex items-center justify-center pointer-events-none"
+                                    style={{
+                                        top: diceShape === TokenShape.TRIANGLE ? '56%' : '45%',
+                                        left: '50%',
+                                        transform: 'translate(-50%, -50%)'
+                                    }}
+                                >
+                                    <span
+                                        className="font-bold text-white drop-shadow-md"
+                                        style={{
+                                            fontSize: `${Math.min(24 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.7)}px`
+                                        }}
+                                    >{rollingDice[dice.id] ?? dice.currentValue}</span>
+                                </div>
+                                {/* Dice sides indicator - midpoint between value center and bottom */}
+                                <div
+                                    className="absolute flex items-center justify-center pointer-events-none"
+                                    style={{
+                                        top: diceShape === TokenShape.TRIANGLE ? '78%' : '72.5%',
+                                        left: '50%',
+                                        transform: 'translate(-50%, -50%)'
+                                    }}
+                                >
+                                    <span
+                                        className="opacity-75 text-white drop-shadow-md"
+                                        style={{
+                                            fontSize: `${Math.min(9 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.25)}px`
+                                        }}
+                                    >d{dice.sides}</span>
+                                </div>
                                 {(obj as any).isPinnedToViewport && (
                                     <div
                                         className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
@@ -3125,8 +3189,6 @@ export const Tabletop: React.FC = () => {
                                         </svg>
                                     </div>
                                 )}
-                                <span className="text-2xl font-bold">{rollingDice[dice.id] ?? dice.currentValue}</span>
-                                <span className="text-[8px] opacity-75">d{dice.sides}</span>
 
                             {/* Action buttons */}
                             <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
@@ -3524,6 +3586,118 @@ export const Tabletop: React.FC = () => {
                         </div>
                     </div>
                 );
+            })}
+
+            {/* Pinned Dice and Counters - rendered in fixed container */}
+            {Object.values(state.objects).filter(obj =>
+              (obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER) && (obj as any).isPinnedToViewport === true
+            ).map((obj) => {
+                const pinnedPosition = (obj as any).pinnedScreenPosition;
+                if (!pinnedPosition) return null;
+
+                const isDragging = draggingId === obj.id;
+                const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
+
+                // Render dice
+                if (obj.type === ItemType.DICE_OBJECT) {
+                    const dice = obj as DiceObject;
+                    const diceShape = dice.shape || TokenShape.SQUARE;
+                    return (
+                        <div
+                            key={obj.id}
+                            className="pointer-events-auto absolute"
+                            style={{ left: pinnedPosition.x, top: pinnedPosition.y }}
+                        >
+                            <div
+                                onMouseDown={(e) => handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
+                                className={`flex items-center justify-center group select-none ${draggingClass}`}
+                                style={{
+                                    width: dice.width || 60,
+                                    height: dice.height || 60,
+                                    transform: `rotate(${obj.rotation}deg)`
+                                }}
+                            >
+                                <SvgTokenShape
+                                    shape={diceShape}
+                                    width={dice.width || 60}
+                                    height={dice.height || 60}
+                                    color={obj.color || '#6366f1'}
+                                    content={''}
+                                    borderColor="#4f46e5"
+                                    borderWidth={3}
+                                />
+                                {/* Dice value - always centered */}
+                                <div
+                                    className="absolute flex items-center justify-center pointer-events-none"
+                                    style={{
+                                        top: diceShape === TokenShape.TRIANGLE ? '71%' : '50%',
+                                        left: '50%',
+                                        transform: 'translate(-50%, -50%)'
+                                    }}
+                                >
+                                    <span
+                                        className="font-bold text-white drop-shadow-md"
+                                        style={{
+                                            fontSize: `${Math.min(24 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.7)}px`
+                                        }}
+                                    >{rollingDice[dice.id] ?? dice.currentValue}</span>
+                                </div>
+                                {/* Dice sides indicator - midpoint between value center and bottom */}
+                                <div
+                                    className="absolute flex items-center justify-center pointer-events-none"
+                                    style={{
+                                        top: diceShape === TokenShape.TRIANGLE ? '78%' : '72.5%',
+                                        left: '50%',
+                                        transform: 'translate(-50%, -50%)'
+                                    }}
+                                >
+                                    <span
+                                        className="opacity-75 text-white drop-shadow-md"
+                                        style={{
+                                            fontSize: `${Math.min(9 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.25)}px`
+                                        }}
+                                    >d{dice.sides}</span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                // Render counter
+                if (obj.type === ItemType.COUNTER) {
+                    const counter = obj as Counter;
+                    return (
+                        <div
+                            key={obj.id}
+                            className="pointer-events-auto absolute"
+                            style={{ left: pinnedPosition.x, top: pinnedPosition.y }}
+                        >
+                            <div
+                                onMouseDown={(e) => handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                className={`bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${draggingClass}`}
+                                style={{
+                                    width: Math.max(obj.width, 100),
+                                    height: 50,
+                                    transform: `rotate(${obj.rotation}deg)`
+                                }}
+                            >
+                                <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
+                                <span className="text-xl font-bold">{counter.value}</span>
+                                <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
+                                {(obj as any).showNameOnToken && (
+                                  <div className="absolute -top-5 left-0 right-0 text-center text-[12px] truncate px-1" style={{ color: (obj as any).fontColor || '#ffffff' }}>
+                                    {obj.name}
+                                  </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                }
+
+                return null;
             })}
         </div>
 

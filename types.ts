@@ -11,6 +11,7 @@ export enum ItemType {
   PANEL = 'PANEL',        // UI panels (hand, deck search, etc.)
   WINDOW = 'WINDOW',      // Modal windows
   DRAWING = 'DRAWING',    // Drawings created with marker tool
+  PAGE = 'PAGE',          // Pages
 }
 
 // Visual subtypes for tokens to handle Chips, Figurines, Badges
@@ -298,11 +299,15 @@ export interface DiceObject extends GameItem {
   type: ItemType.DICE_OBJECT;
   sides: number;
   currentValue: number;
+  shape?: TokenShape;
 }
 
 export interface Counter extends GameItem {
   type: ItemType.COUNTER;
   value: number;
+  baseValue?: number;
+  maxValue?: number;
+  allowNegative?: boolean;
 }
 
 export interface Board extends GameItem {
