@@ -218,37 +218,230 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'LOAD_GAME': {
-        // Migrate old decks without baseCardIds - initialize from cardIds
-        const migratedObjects = { ...action.payload.objects };
-        Object.values(migratedObjects).forEach(obj => {
+        // Deep clone objects to avoid mutating the original payload
+        const migratedObjects: Record<string, TableObject> = {};
+        Object.entries(action.payload.objects || {}).forEach(([id, obj]) => {
+            const cloned = { ...obj } as any;
+            migratedObjects[id] = cloned;
+
+            // === GameItem base properties migration (only for types that have them) ===
+            const hasGameItemProps = [
+                ItemType.TOKEN, ItemType.TOKEN_TYPE, ItemType.DICE_OBJECT,
+                ItemType.COUNTER, ItemType.BOARD, ItemType.RANDOMIZER, ItemType.DRAWING,
+                ItemType.DECK, ItemType.WINDOW
+            ].includes(obj.type);
+
+            if (hasGameItemProps) {
+                if (cloned.rotationStep === undefined) cloned.rotationStep = undefined;
+                if (cloned.baseRotation === undefined) cloned.baseRotation = undefined;
+                if (cloned.allowedActions === undefined) cloned.allowedActions = undefined;
+                if (cloned.allowedActionsForGM === undefined) cloned.allowedActionsForGM = undefined;
+                if (cloned.actionButtons === undefined) cloned.actionButtons = undefined;
+                if (cloned.singleClickAction === undefined) cloned.singleClickAction = undefined;
+                if (cloned.doubleClickAction === undefined) cloned.doubleClickAction = undefined;
+                if (cloned.zIndex === undefined) cloned.zIndex = undefined;
+                if (cloned.tooltipText === undefined) cloned.tooltipText = undefined;
+                if (cloned.showTooltipImage === undefined) cloned.showTooltipImage = undefined;
+                if (cloned.tooltipScale === undefined) cloned.tooltipScale = undefined;
+                if (cloned.ownerId === undefined) cloned.ownerId = undefined;
+                if (cloned.isPinnedToViewport === undefined) cloned.isPinnedToViewport = false;
+                if (cloned.pinnedScreenPosition === undefined) cloned.pinnedScreenPosition = undefined;
+                if (cloned.expandedPinnedPosition === undefined) cloned.expandedPinnedPosition = undefined;
+                if (cloned.collapsedPinnedPosition === undefined) cloned.collapsedPinnedPosition = undefined;
+                if (cloned.inCursorSlot === undefined) cloned.inCursorSlot = false;
+            }
+
+            // === DECK specific migrations ===
             if (obj.type === ItemType.DECK) {
-                const deck = obj as Deck;
+                const deck = cloned as Deck;
                 if (!deck.baseCardIds || deck.baseCardIds.length === 0) {
-                    // Migrate: set baseCardIds from current cardIds
-                    (deck as any).baseCardIds = [...deck.cardIds];
+                    deck.baseCardIds = [...deck.cardIds];
+                }
+                if (deck.cardShape === undefined) deck.cardShape = CardShape.POKER;
+                if (deck.cardOrientation === undefined) deck.cardOrientation = CardOrientation.VERTICAL;
+                if (deck.showTopCard === undefined) deck.showTopCard = false;
+                if (deck.piles === undefined || deck.piles.length === 0) {
+                    deck.piles = [{
+                        id: `${deck.id}-discard`,
+                        name: 'Discard',
+                        deckId: deck.id,
+                        position: 'right',
+                        cardIds: [],
+                        faceUp: false,
+                        visible: false,
+                        size: 1,
+                        isMillPile: true
+                    }];
+                }
+                // Migrate piles missing properties
+                deck.piles?.forEach(pile => {
+                    if (pile.isMillPile === undefined) pile.isMillPile = false;
+                    if (pile.showTopCard === undefined) pile.showTopCard = false;
+                    if (pile.locked === undefined) pile.locked = false;
+                });
+                if (deck.cardAllowedActions === undefined) deck.cardAllowedActions = undefined;
+                if (deck.cardAllowedActionsForGM === undefined) deck.cardAllowedActionsForGM = undefined;
+                if (deck.cardActionButtons === undefined) deck.cardActionButtons = undefined;
+                if (deck.cardSingleClickAction === undefined) deck.cardSingleClickAction = undefined;
+                if (deck.cardDoubleClickAction === undefined) deck.cardDoubleClickAction = undefined;
+                if (deck.cardWidth === undefined) deck.cardWidth = DEFAULT_DECK_WIDTH;
+                if (deck.cardHeight === undefined) deck.cardHeight = DEFAULT_DECK_HEIGHT;
+                if (deck.cardNamePosition === undefined) deck.cardNamePosition = 'none';
+                if (deck.playTopFaceUp === undefined) deck.playTopFaceUp = true;
+                if (deck.searchWindowVisibility === undefined) deck.searchWindowVisibility = undefined;
+                if (deck.perPlayerSearchFaceUp === undefined) deck.perPlayerSearchFaceUp = {};
+                if (deck.gmSearchFaceUp === undefined) deck.gmSearchFaceUp = {};
+                if (deck.spriteConfig === undefined) deck.spriteConfig = undefined;
+            }
+
+            // === CARD specific migrations ===
+            if (obj.type === ItemType.CARD) {
+                const card = cloned as Card;
+                if (card.shape === undefined) card.shape = CardShape.POKER;
+                if (card.width === undefined) card.width = DEFAULT_DECK_WIDTH;
+                if (card.height === undefined) card.height = DEFAULT_DECK_HEIGHT;
+                if (card.hidden === undefined) card.hidden = false;
+                if (card.spriteIndex === undefined) card.spriteIndex = undefined;
+                if (card.spriteUrl === undefined) card.spriteUrl = undefined;
+                if (card.spriteColumns === undefined) card.spriteColumns = undefined;
+                if (card.spriteRows === undefined) card.spriteRows = undefined;
+                if (card.frontFaceUrl === undefined) card.frontFaceUrl = undefined;
+                if (card.backFaceUrl === undefined) card.backFaceUrl = undefined;
+                if (card.alternativeBack === undefined) card.alternativeBack = undefined;
+            }
+
+            // === TOKEN specific migrations ===
+            if (obj.type === ItemType.TOKEN) {
+                const token = cloned as Token;
+                if (token.shape === undefined) token.shape = TokenShape.CIRCLE;
+                if (token.gridType === undefined) token.gridType = GridType.NONE;
+                if (token.gridSize === undefined) token.gridSize = 50;
+                if (token.snapToGrid === undefined) token.snapToGrid = false;
+                if (token.archetypeId === undefined) token.archetypeId = undefined;
+                if (token.showName === undefined) token.showName = undefined;
+                if (token.showNameOnToken === undefined) token.showNameOnToken = undefined;
+                if (token.fontColor === undefined) token.fontColor = undefined;
+            }
+
+            // === TOKEN_TYPE (archetype) specific migrations ===
+            if (obj.type === ItemType.TOKEN_TYPE) {
+                const tokenType = cloned as TokenType;
+                if (tokenType.shape === undefined) tokenType.shape = TokenShape.SQUARE;
+                if (tokenType.defaultSize === undefined) tokenType.defaultSize = undefined;
+                if (tokenType.autoName === undefined) tokenType.autoName = false;
+                if (tokenType.namePrefix === undefined) tokenType.namePrefix = '';
+                if (tokenType.spawnCount === undefined) tokenType.spawnCount = 0;
+                if (tokenType.showName === undefined) tokenType.showName = undefined;
+            }
+
+            // === DICE_OBJECT specific migrations ===
+            if (obj.type === ItemType.DICE_OBJECT) {
+                const dice = cloned as DiceObject;
+                if (dice.sides === undefined) dice.sides = 6;
+                if (dice.currentValue === undefined) dice.currentValue = 1;
+            }
+
+            // === COUNTER specific migrations ===
+            if (obj.type === ItemType.COUNTER) {
+                const counter = cloned as Counter;
+                if (counter.value === undefined) counter.value = 0;
+            }
+
+            // === BOARD specific migrations ===
+            if (obj.type === ItemType.BOARD) {
+                const board = cloned as Board;
+                if (board.shape === undefined) board.shape = TokenShape.SQUARE;
+                if (board.gridType === undefined) board.gridType = GridType.SQUARE;
+                if (board.gridSize === undefined) board.gridSize = 50;
+                if (board.snapToGrid === undefined) board.snapToGrid = true;
+            }
+
+            // === RANDOMIZER specific migrations ===
+            if (obj.type === ItemType.RANDOMIZER) {
+                const randomizer = cloned as Randomizer;
+                if (randomizer.randomizerType === undefined) randomizer.randomizerType = 'spinner';
+                if (randomizer.currentValue === undefined) randomizer.currentValue = undefined;
+                if (randomizer.options === undefined) randomizer.options = undefined;
+            }
+
+            // === DRAWING specific migrations ===
+            if (obj.type === ItemType.DRAWING) {
+                const drawing = cloned as Drawing;
+                if (drawing.opacity === undefined) drawing.opacity = 100;
+                if (drawing.backgroundColor === undefined) drawing.backgroundColor = undefined;
+                if (drawing.color === undefined) drawing.color = undefined;
+                if (drawing.bounds === undefined) {
+                    drawing.bounds = { x: 0, y: 0, width: drawing.width, height: drawing.height };
                 }
             }
-            // Migrate old drawings without opacity - set to 100 (fully opaque)
-            if (obj.type === ItemType.DRAWING) {
-                const drawing = obj as Drawing;
-                if (drawing.opacity === undefined) {
-                    drawing.opacity = 100;
-                }
+
+            // === PANEL specific migrations ===
+            if (obj.type === ItemType.PANEL) {
+                const panel = cloned as PanelObject;
+                if (panel.minimized === undefined) panel.minimized = false;
+                if (panel.collapsedState === undefined) panel.collapsedState = undefined;
+                if (panel.expandedState === undefined) panel.expandedState = undefined;
+                if (panel.dualPosition === undefined) panel.dualPosition = undefined;
+                if (panel.isPinnedToViewport === undefined) panel.isPinnedToViewport = true; // Panels are pinned by default
+            }
+
+            // === WINDOW specific migrations ===
+            if (obj.type === ItemType.WINDOW) {
+                const window = cloned as WindowObject;
+                if (window.minimized === undefined) window.minimized = false;
+                if (window.isPinnedToViewport === undefined) window.isPinnedToViewport = true;
             }
         });
+
         // Migrate undo state with maxMarkerHistory and maxGeneralHistory if missing
-        const undo = action.payload.undo || { markerHistory: [], generalHistory: [] };
+        const payloadUndo = action.payload.undo;
+        const undo: UndoState = payloadUndo || {
+            markerHistory: [],
+            generalHistory: [],
+            maxMarkerHistory: 10,
+            maxGeneralHistory: 100
+        };
         if ((undo as any).maxMarkerHistory === undefined) {
             (undo as any).maxMarkerHistory = 10;
         }
         if ((undo as any).maxGeneralHistory === undefined) {
             (undo as any).maxGeneralHistory = 100;
         }
+
+        // Migrate drawings state (DrawingData with layers)
+        const drawings = action.payload.drawings || { layers: [] };
+
+        // Migrate viewTransform
+        const payloadViewTransform = action.payload.viewTransform;
+        const viewTransform: ViewTransform = payloadViewTransform || {
+            offset: { x: 0, y: 0 },
+            zoom: 0.8,
+            scroll: { x: 0, y: 0 }
+        };
+
+        // Ensure players array has required properties
+        const players = (action.payload.players || []).map(p => ({
+            ...p,
+            handCardOrder: p.handCardOrder || undefined
+        }));
+
+        // Ensure diceRolls array exists
+        const diceRolls = action.payload.diceRolls || [];
+
+        // activePlayerId will use the current one from SYNC_STATE logic, not from save
+        // This prevents accidentally becoming someone else after loading
+        // sessionId from save is preserved (don't generate new one)
+
         return {
             ...action.payload,
             objects: migratedObjects,
+            players,
             undo,
-            viewTransform: action.payload.viewTransform || { offset: { x: 0, y: 0 }, zoom: 0.8, scroll: { x: 0, y: 0 } }
+            drawings,
+            viewTransform,
+            diceRolls,
+            // Keep current activePlayerId from state, not from save (handled by spread above)
+            // sessionId from save is preserved if exists
         };
     }
     case 'SET_ACTIVE_ID': {

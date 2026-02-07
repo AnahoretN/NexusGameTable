@@ -336,16 +336,40 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        if (e.target?.result) {
-          const json = JSON.parse(e.target.result as string);
-          if (json.objects && json.players) {
-            dispatch({ type: 'LOAD_GAME', payload: json as GameState });
-          } else {
-            alert("Invalid save file format.");
-          }
+        if (!e.target?.result) {
+          alert("Error reading file.");
+          return;
+        }
+
+        const json = JSON.parse(e.target.result as string);
+
+        // Validate save file structure
+        if (!json.objects || typeof json.objects !== 'object') {
+          alert("Invalid save file: missing or invalid 'objects' field.");
+          return;
+        }
+        if (!json.players || !Array.isArray(json.players)) {
+          alert("Invalid save file: missing or invalid 'players' field.");
+          return;
+        }
+
+        // Count objects by type for validation summary
+        const objectCount = Object.keys(json.objects).length;
+        const playerCount = json.players.length;
+
+        // Dispatch load action
+        dispatch({ type: 'LOAD_GAME', payload: json as GameState });
+
+        // Success message with summary
+        console.log(`Game loaded successfully: ${objectCount} objects, ${playerCount} players`);
+
+        // Reset file input to allow loading the same file again if needed
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
         }
       } catch (err) {
-        alert("Error loading save file.");
+        console.error('Error loading save file:', err);
+        alert("Error loading save file. Make sure it's a valid JSON file saved from Nexus Game Table.");
       }
     };
     reader.readAsText(file);
