@@ -442,7 +442,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             </button>
           </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar relative">
+      <div className="flex-1 overflow-y-auto custom-scrollbar relative select-none">
         {activeTab === 'create' && (
           <div className="p-2">
             {categories.map(category => (
