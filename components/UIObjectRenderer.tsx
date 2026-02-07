@@ -643,7 +643,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       {/* Support Modal */}
       {isMainMenu && showSupportModal && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
-          <div className="bg-slate-800 rounded-lg shadow-xl w-[400px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[420px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
               <h3 className="text-base font-bold text-white">Support this project</h3>
             </div>
@@ -658,13 +658,15 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     href={link.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex flex-col items-center gap-2 p-4 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors group"
+                    className="flex flex-col items-center gap-3 p-4 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors group"
                   >
-                    <img
-                      src={link.icon}
-                      alt={link.name}
-                      className="w-12 h-12 object-contain group-hover:scale-110 transition-transform"
-                    />
+                    <div className="w-16 h-16 flex items-center justify-center overflow-visible">
+                      <img
+                        src={link.icon}
+                        alt={link.name}
+                        className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform"
+                      />
+                    </div>
                     <span className="text-sm text-white font-medium">{link.name}</span>
                   </a>
                 ))}
