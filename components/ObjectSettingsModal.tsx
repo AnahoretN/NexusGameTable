@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation, Drawing } from '../types';
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Eye, Grid3x3, Image as ImageIcon } from 'lucide-react';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
   object: TableObject;
@@ -403,6 +403,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   const isBoard = data.type === ItemType.BOARD;
   const isDeck = data.type === ItemType.DECK;
   const isCard = data.type === ItemType.CARD; // Cards don't have their own settings
+  const isDice = data.type === ItemType.DICE_OBJECT;
+  const isCounter = data.type === ItemType.COUNTER;
   const isDrawing = data.type === ItemType.DRAWING;
 
   // Pile management functions
@@ -458,7 +460,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
           >
             <Settings size={16} /> General
           </button>
-          {!isCard && (
+          {!isCard && !isDice && !isCounter && (
             <button
               onClick={() => setActiveTab('actions')}
               className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
@@ -515,7 +517,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Basic Properties - Name, Size, Rotation */}
               <div className="space-y-2">
                 {/* Name */}
-                {isToken || isArchetype ? (
+                {isToken || isArchetype || isCounter ? (
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
                     <div className="flex items-center gap-2">
@@ -532,17 +534,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         className="w-9 h-9 rounded cursor-pointer border-0 p-0 bg-slate-900"
                         title="Font Color"
                       />
-                      {/* Show on Token Toggle - only for token types */}
-                      {isArchetype && (
+                      {/* Show Name Toggle - for token types and counters */}
+                      {(isArchetype || isCounter) && (
                         <button
-                          onClick={() => update('showName', !(data as any).showName)}
+                          onClick={() => update('showNameOnToken', !(data as any).showNameOnToken)}
                           className={`w-9 h-5 rounded-full transition-colors ${
-                            (data as any).showName ? 'bg-green-600' : 'bg-slate-700'
+                            (data as any).showNameOnToken ? 'bg-green-600' : 'bg-slate-700'
                           }`}
-                          title="Show name on token"
+                          title="Show name on object"
                         >
                           <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                            (data as any).showName ? 'translate-x-5' : 'translate-x-0.5'
+                            (data as any).showNameOnToken ? 'translate-x-2.5' : 'translate-x-0.5'
                           }`} />
                         </button>
                       )}
@@ -610,6 +612,47 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   />
                 </div>
               </div>
+
+              {/* Counter Settings */}
+              {isCounter && (
+                <div className="pt-4 space-y-3">
+                  <h4 className="text-sm font-bold text-gray-300">Counter Limits</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">Base Value</label>
+                      <input
+                        type="number"
+                        value={(data as Counter).baseValue ?? 0}
+                        onChange={e => update('baseValue', Number(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">Max Value (optional)</label>
+                      <input
+                        type="number"
+                        value={(data as Counter).maxValue ?? ''}
+                        onChange={e => update('maxValue', e.target.value ? Number(e.target.value) : undefined)}
+                        placeholder="No limit"
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                    <label className="text-xs text-gray-400">Allow Negative Values</label>
+                    <button
+                      onClick={() => update('allowNegative', !(data as Counter).allowNegative)}
+                      className={`w-10 h-5 rounded-full transition-colors ${
+                        (data as Counter).allowNegative ? 'bg-green-600' : 'bg-slate-700'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        (data as Counter).allowNegative ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Show Top Card (for decks) */}
               {isDeck && (
@@ -750,6 +793,80 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 </div>
                 </>
+              )}
+
+              {/* Dice Settings (for dice objects) */}
+              {isDice && (
+                <div className="pt-4 space-y-3">
+                  <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                    <Dices size={14} /> Dice Settings
+                  </h4>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">Number of Sides: {(data as DiceObject).sides || 6}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="2"
+                        max="20"
+                        value={(data as DiceObject).sides || 6}
+                        onChange={e => { const sides = parseInt(e.target.value); update('sides', sides); }}
+                        className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <input
+                        type="number"
+                        min="2"
+                        max="20"
+                        value={(data as DiceObject).sides || 6}
+                        onChange={e => update('sides', Math.max(2, Math.min(20, parseInt(e.target.value) || 6)))}
+                        className="w-16 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm text-center"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-2">Shape</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => { update('shape', TokenShape.TRIANGLE); update('height', Math.round((data.width || 60) / 1.155)); }}
+                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
+                          (data as DiceObject).shape === TokenShape.TRIANGLE
+                            ? 'border-purple-500 bg-purple-500/20 text-white'
+                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
+                        }`}
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                          <polygon points="12,2 22,20 2,20" />
+                        </svg>
+                        <span className="text-xs">Triangle</span>
+                      </button>
+                      <button
+                        onClick={() => { update('shape', TokenShape.SQUARE); update('height', data.width); }}
+                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
+                          ((data as DiceObject).shape === TokenShape.SQUARE || !(data as DiceObject).shape)
+                            ? 'border-purple-500 bg-purple-500/20 text-white'
+                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
+                        }`}
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                          <rect x="3" y="3" width="18" height="18" />
+                        </svg>
+                        <span className="text-xs">Square</span>
+                      </button>
+                      <button
+                        onClick={() => { update('shape', TokenShape.HEX); update('width', Math.round((data.height || 60) / 1.155)); }}
+                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
+                          (data as DiceObject).shape === TokenShape.HEX
+                            ? 'border-purple-500 bg-purple-500/20 text-white'
+                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
+                        }`}
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                          <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" />
+                        </svg>
+                        <span className="text-xs">Hex</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Grid Settings (for boards) */}

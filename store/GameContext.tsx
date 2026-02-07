@@ -1092,6 +1092,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const counter = state.objects[action.payload.id] as Counter;
         if (!counter || counter.type !== ItemType.COUNTER) return state;
 
+        const newValue = counter.value + action.payload.delta;
+
+        // Check minimum value (0 or baseValue if allowNegative is false)
+        const minAllowed = counter.allowNegative ? -Infinity : (counter.baseValue ?? 0);
+        if (newValue < minAllowed) return state;
+
+        // Check maximum value if set
+        if (counter.maxValue !== undefined && newValue > counter.maxValue) return state;
+
         // Add to general history
         const historyEntry: GeneralHistoryEntry = {
             type: 'counter-updated',
@@ -1103,7 +1112,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         return {
             ...state,
-            objects: { ...state.objects, [action.payload.id]: { ...counter, value: counter.value + action.payload.delta } },
+            objects: { ...state.objects, [action.payload.id]: { ...counter, value: newValue } },
             undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }

@@ -33,7 +33,7 @@ const SUPPORT_LINKS = [
   {
     name: 'Boosty',
     url: 'https://boosty.to/anahoret',
-    icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1770474466/png-klev-club-g50z-p-znachok-busti-png-7_ayshj3.png',
+    icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1770475932/Boosty_mwnvrh.png',
     color: 'bg-pink-500'
   },
   {
@@ -414,7 +414,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                   e.stopPropagation();
                   setShowSupportModal(true);
                 }}
-                className="text-xs text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
+                className="text-sm text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
               >
                 [Support this project]
               </button>
@@ -624,7 +624,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             <div className="p-4 space-y-4">
               <div className="text-sm text-gray-400">
                 <p>{APP_NAME} v{APP_VERSION}</p>
-                <p className="mt-2">Game settings will be available here.</p>
+                <p className="mt-2 text-xs text-gray-500">P2P multiplayer via WebRTC • No server required</p>
               </div>
             </div>
             <div className="flex justify-end p-4 border-t border-slate-700">
@@ -660,11 +660,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     rel="noopener noreferrer"
                     className="flex flex-col items-center gap-3 p-4 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors group"
                   >
-                    <div className="w-16 h-16 flex items-center justify-center overflow-visible">
+                    <div className={`${link.name === 'Boosty' ? 'w-[70px] h-[70px]' : 'w-16 h-16'} flex items-center justify-center overflow-visible`}>
                       <img
                         src={link.icon}
                         alt={link.name}
-                        className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform"
+                        className={`max-w-full max-h-full object-contain group-hover:scale-110 transition-transform ${link.name === 'Boosty' ? 'scale-125' : ''}`}
                       />
                     </div>
                     <span className="text-sm text-white font-medium">{link.name}</span>

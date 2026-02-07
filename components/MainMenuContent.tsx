@@ -3,7 +3,7 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Rows, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Rows, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -410,12 +410,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     {
       id: 'randomizers', label: 'Randomizers & Dice', icon: <Dices size={16}/>,
       items: [
-        { name: 'd4', type: 'DICE', sides: 4 },
-        { name: 'd6', type: 'DICE', sides: 6 },
-        { name: 'd8', type: 'DICE', sides: 8 },
-        { name: 'd10', type: 'DICE', sides: 10 },
-        { name: 'd12', type: 'DICE', sides: 12 },
-        { name: 'd20', type: 'DICE', sides: 20 },
+        { name: 'Standard Dice', type: 'DICE' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.RANDOMIZER
     },
@@ -431,8 +426,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       id: 'panels', label: 'Panels', icon: <Layers size={16}/>,
       items: [
         { name: 'Hand Panel', type: 'PANEL', panelType: PanelType.HAND },
-        { name: 'Tableau Panel', type: 'PANEL', panelType: PanelType.TABLEAU },
-        { name: 'Pull Panel', type: 'PANEL', panelType: PanelType.PULL },
+        { name: 'Tableau Panel', type: 'PANEL', panelType: PanelType.TABLEAU, disabled: true },
+        { name: 'Pull Panel', type: 'PANEL', panelType: PanelType.PULL, disabled: true },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.PANEL && (obj as any).panelType !== PanelType.MAIN_MENU
     },
@@ -440,6 +435,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       id: 'drawings', label: 'Drawings', icon: <Brush size={16}/>,
       items: [], // Drawings are created with marker tool, not via menu
       matcher: (obj: TableObject) => obj.type === ItemType.DRAWING
+    },
+    {
+      id: 'pages', label: 'Pages', icon: <FileText size={16}/>,
+      items: [
+        { name: 'Page', type: 'PAGE', disabled: true },
+      ],
+      matcher: (obj: TableObject) => obj.type === ItemType.PAGE
     },
   ];
 
@@ -987,26 +989,50 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         break;
       }
       case 'DICE': {
+        const sides = item.sides || 6;
+        // Determine shape based on number of sides
+        let shape: TokenShape;
+        let width = DEFAULT_DICE_SIZE;
+        let height = DEFAULT_DICE_SIZE;
+
+        if (sides < 5) {
+          shape = TokenShape.TRIANGLE;
+          // Adjust dimensions for equilateral triangle
+          width = DEFAULT_DICE_SIZE;
+          height = Math.round(DEFAULT_DICE_SIZE / 1.155);
+        } else if (sides <= 12) {
+          shape = TokenShape.SQUARE;
+          width = DEFAULT_DICE_SIZE;
+          height = DEFAULT_DICE_SIZE;
+        } else {
+          shape = TokenShape.HEX;
+          // Adjust dimensions for hexagon - width becomes smaller
+          width = Math.round(DEFAULT_DICE_SIZE / 1.155);
+          height = DEFAULT_DICE_SIZE;
+        }
+
         const dice: DiceObject = {
           id: generateUUID(),
           type: ItemType.DICE_OBJECT,
           name: item.name,
           x: worldX,
           y: worldY,
-          width: DEFAULT_DICE_SIZE,
-          height: DEFAULT_DICE_SIZE,
+          width,
+          height,
           rotation: 0,
           color: '#6366f1',
           content: '',
           isOnTable: true,
           locked: false,
-          sides: item.sides || 6,
+          sides,
           currentValue: 1,
+          shape,
         };
         dispatch({ type: 'ADD_OBJECT', payload: dice });
         break;
       }
       case 'COUNTER': {
+        const isLifeCounter = item.name === 'Life Counter';
         const counter: Counter = {
           id: generateUUID(),
           type: ItemType.COUNTER,
@@ -1020,7 +1046,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           content: '',
           isOnTable: true,
           locked: false,
-          value: 20,
+          value: isLifeCounter ? 20 : 0,
+          baseValue: isLifeCounter ? 20 : 0,
+          maxValue: isLifeCounter ? undefined : 30,
+          allowNegative: !isLifeCounter,
         };
         dispatch({ type: 'ADD_OBJECT', payload: counter });
         break;
