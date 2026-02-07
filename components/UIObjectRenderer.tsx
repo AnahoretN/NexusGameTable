@@ -14,7 +14,35 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || 'v0.0.9t';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.1 WebRTC';
+
+// Support links
+const SUPPORT_LINKS = [
+  {
+    name: 'Telegram',
+    url: 'https://t.me/NeurohoretApp',
+    icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764190409/Telegram_logo.svg_rnhkud.webp',
+    color: 'bg-blue-500'
+  },
+  {
+    name: 'Discord',
+    url: 'https://discord.gg/U5zKADsZZY',
+    icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764190408/discord-icon_nhgjyx.svg',
+    color: 'bg-indigo-500'
+  },
+  {
+    name: 'Boosty',
+    url: 'https://boosty.to/anahoret',
+    icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1770474466/png-klev-club-g50z-p-znachok-busti-png-7_ayshj3.png',
+    color: 'bg-pink-500'
+  },
+  {
+    name: 'Patreon',
+    url: 'https://www.patreon.com/c/AnchoriteComics',
+    icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764190408/Patreon_logo.svg_ala7gn.png',
+    color: 'bg-red-600'
+  }
+];
 
 interface UIObjectRendererProps {
   uiObject: PanelObject | WindowObject;
@@ -45,6 +73,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   // Main menu specific state
   const [showGameSettings, setShowGameSettings] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
 
   const minimized = uiObject.minimized || false;
   const visible = uiObject.visible !== false;
@@ -368,7 +397,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
           className={`${headerBg} px-2 py-1 flex items-center select-none flex-shrink-0`}
           style={{ height: 32, position: 'relative' }}
         >
-          {/* Left side - Game name and version */}
+          {/* Left side - Game name and support button */}
           <div
             className="flex items-center gap-2 truncate cursor-move"
             style={{ flex: 1, minWidth: 0, pointerEvents: 'auto' }}
@@ -380,7 +409,15 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
           >
             <span className="text-sm font-bold text-white truncate">{APP_NAME}</span>
             {!minimized && (
-              <span className="text-xs text-gray-500 flex-shrink-0">{APP_VERSION}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowSupportModal(true);
+                }}
+                className="text-xs text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
+              >
+                [Support this project]
+              </button>
             )}
           </div>
           {/* Right side - Control buttons */}
@@ -586,7 +623,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             </div>
             <div className="p-4 space-y-4">
               <div className="text-sm text-gray-400">
-                <p>{APP_NAME} {APP_VERSION}</p>
+                <p>{APP_NAME} v{APP_VERSION}</p>
                 <p className="mt-2">Game settings will be available here.</p>
               </div>
             </div>
@@ -594,6 +631,49 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               <button
                 onClick={() => setShowGameSettings(false)}
                 className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Support Modal */}
+      {isMainMenu && showSupportModal && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[400px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
+              <h3 className="text-base font-bold text-white">Support this project</h3>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-400 text-center mb-6">
+                Follow me on social media or support my work through donations!
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                {SUPPORT_LINKS.map((link) => (
+                  <a
+                    key={link.name}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center gap-2 p-4 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors group"
+                  >
+                    <img
+                      src={link.icon}
+                      alt={link.name}
+                      className="w-12 h-12 object-contain group-hover:scale-110 transition-transform"
+                    />
+                    <span className="text-sm text-white font-medium">{link.name}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end p-4 border-t border-slate-700">
+              <button
+                onClick={() => setShowSupportModal(false)}
+                className="px-4 py-2 text-sm bg-slate-600 hover:bg-slate-500 text-white rounded"
               >
                 Close
               </button>
