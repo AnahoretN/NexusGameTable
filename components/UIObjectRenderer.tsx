@@ -743,6 +743,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
       return (
         <ObjectSettingsModal
           object={targetObj}
+          allObjects={state.objects}
           onClose={handleClose}
           onSave={(updatedObj) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
