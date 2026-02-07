@@ -356,8 +356,9 @@ export const Tabletop: React.FC = () => {
         locked: false,
         archetypeId: archetype.id,
         inCursorSlot: true,
-        // Store showName setting from archetype
+        // Store settings from archetype
         showName: (archetype as any).showName || false,
+        fontColor: (archetype as any).fontColor,
       };
 
       // Add token to objects list
