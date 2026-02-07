@@ -363,7 +363,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       // Properties to copy from archetype to token-copies
       const propsToUpdate = [
         'width', 'height', 'color', 'shape', 'content',
-        'borderColor', 'borderWidth', 'showName', 'name'
+        'borderColor', 'borderWidth', 'showName', 'name', 'fontColor'
       ] as const;
 
       tokenCopies.forEach(copy => {
