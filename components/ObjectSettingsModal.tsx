@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation, Drawing } from '../types';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation, Drawing, AppLanguage } from '../types';
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
@@ -8,6 +8,7 @@ interface ObjectSettingsModalProps {
   onSave: (obj: TableObject) => void;
   onClose: () => void;
   allObjects?: Record<string, TableObject>; // All objects in the game
+  language?: AppLanguage; // Language for translations
 }
 
 // All available actions for Context Menu (ordered same as deck context menu)
@@ -117,9 +118,12 @@ const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
 
 type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite';
 
-export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {} }) => {
+export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en' }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
+
+  // Translation helper
+  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   // Initialize piles for decks
   const deck = data as Deck;
@@ -458,7 +462,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
             }`}
           >
-            <Settings size={16} /> General
+            <Settings size={16} /> {t({ en: 'General', ru: 'Основное' })}
           </button>
           {!isCard && !isDice && !isCounter && (
             <button
@@ -469,7 +473,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
-              <Shield size={16} /> Actions
+              <Shield size={16} /> {t({ en: 'Actions', ru: 'Действия' })}
             </button>
           )}
           {isDeck && (
@@ -481,7 +485,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
-              <Layers size={16} /> Piles
+              <Layers size={16} /> {t({ en: 'Piles', ru: 'Стопки' })}
             </button>
           )}
           {isDeck && (
@@ -493,7 +497,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
-              <Square size={16} /> Cards
+              <Square size={16} /> {t({ en: 'Cards', ru: 'Карты' })}
             </button>
           )}
           {isDeck && (
@@ -505,7 +509,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
-              <ImageIcon size={16} /> Import
+              <ImageIcon size={16} /> {t({ en: 'Import', ru: 'Импорт' })}
             </button>
           )}
         </div>
@@ -519,7 +523,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 {/* Name */}
                 {isToken || isArchetype || isCounter ? (
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Name', ru: 'Название' })}</label>
                     <div className="flex items-center gap-2">
                       <input
                         value={data.name}
@@ -552,7 +556,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Name', ru: 'Название' })}</label>
                     <input
                       value={data.name}
                       onChange={e => update('name', e.target.value)}
@@ -1839,12 +1843,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
         {/* Footer */}
         <div className="flex justify-end gap-2 p-4">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded">{t({ en: 'Cancel', ru: 'Отмена' })}</button>
           <button
             onClick={handleSave}
             className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
           >
-            <Check size={16} /> Save Changes
+            <Check size={16} /> {t({ en: 'Save Changes', ru: 'Сохранить изменения' })}
           </button>
         </div>
       </div>

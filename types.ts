@@ -112,10 +112,6 @@ export interface Stroke {
 
 export interface DrawingLayer {
   id: string;
-  // Binding to object (if null, drawing is on the board)
-  boundObjectId?: string; // ID of the object this drawing is bound to
-  // For cards, can specify which side the drawing is on
-  boundCardSide?: 'front' | 'back';
   // Strokes in this layer
   strokes: Stroke[];
   // Layer visibility
@@ -342,6 +338,17 @@ export interface Drawing extends GameItem {
 
 export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing;
 
+// Language settings
+export type AppLanguage = 'en' | 'ru';
+
+// Player permissions for object management in main menu
+export interface PlayerPermissions {
+  createObjects: boolean;  // Can create objects via Create tab
+  configureObjects: boolean;  // Can open object settings
+  deleteObjects: boolean;  // Can delete objects via Delete button
+  hideObjects: boolean;  // Can show/hide objects via eye icon
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -416,6 +423,9 @@ export interface UIObject {
   // Permission actions (for panels/windows that can have actions)
   allowedActions?: ContextAction[];
   allowedActionsForGM?: ContextAction[];
+  // Owner ID - if set, this UI object is only visible to the player with this ID
+  // Used for settings windows that should be local to the player who opened them
+  ownerId?: string;
 }
 
 // Panel object - persistent UI panels on the game board

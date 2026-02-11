@@ -17,6 +17,7 @@ interface BoardWithResizeProps {
     hexR: number;
     hexW: number;
     hexPath: string;
+    currentTool?: string;
 }
 
 export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
@@ -34,6 +35,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     hexR,
     hexW,
     hexPath,
+    currentTool = 'none',
 }) => {
     const showGrid = token.gridType && token.gridType !== 'NONE';
     const isHexGrid = token.gridType === 'HEX';
@@ -95,7 +97,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         <div
             onMouseDown={onMouseDown}
             onContextMenu={onContextMenu}
-            className={`absolute group ${isDragging ? 'cursor-grabbing opacity-80' : isOwner ? 'cursor-grab' : ''} ${obj.locked ? 'ring-2 ring-red-500' : ''}`}
+            className={`absolute group ${currentTool !== 'none' ? 'cursor-default' : isDragging ? 'cursor-grabbing opacity-80' : isOwner ? 'cursor-grab' : ''} ${obj.locked ? 'ring-2 ring-red-500' : ''}`}
             style={{
                 left: token.x,
                 top: token.y,
@@ -118,7 +120,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             {canResize && !obj.locked && (
                 <div
                     onMouseDown={onResizeStart}
-                    className={`absolute bottom-0 right-0 w-4 h-4 cursor-se-resize ${isResizing ? 'bg-blue-500' : 'bg-gray-400 hover:bg-blue-400'} opacity-0 group-hover:opacity-100 transition-opacity`}
+                    className={`absolute bottom-0 right-0 w-4 h-4 cursor-se-resize ${isResizing ? 'bg-blue-500' : 'bg-gray-400 hover:bg-blue-400'} ${currentTool === 'none' ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'} transition-opacity`}
                     style={{
                         transform: `scale(${1 / zoom})`,
                         transformOrigin: 'bottom right',
@@ -134,7 +136,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             )}
 
             {/* Board name label */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap ${currentTool === 'none' ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'} transition-opacity`}>
                 {token.name}
             </div>
         </div>

@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType } from '../types';
+import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType, AppLanguage } from '../types';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
@@ -14,6 +14,7 @@ interface HandPanelProps {
   isCollapsed?: boolean; // When true, show only header (height 32px)
   cardScale?: number; // Scale for card display (0.5 - 2)
   onCardScaleChange?: (newScale: number) => void; // Callback for scale changes
+  language?: AppLanguage;
 }
 
 export const HandPanel: React.FC<HandPanelProps> = ({
@@ -21,10 +22,13 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   isDragTarget = false,
   isCollapsed = false,
   cardScale = 1,
-  onCardScaleChange
+  onCardScaleChange,
+  language = 'en'
 }) => {
   const { state, dispatch } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   // State for selected player hand tab (whose hand we're viewing)
   const [selectedPlayerId, setSelectedPlayerId] = useState(state.activePlayerId);
@@ -684,7 +688,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
               >
                 <span className="flex items-center gap-1">
                   {isOwnHand ? (
-                    <span>My Hand ({cardCount})</span>
+                    <span>{t({ en: 'My Hand', ru: 'Моя рука' })} ({cardCount})</span>
                   ) : (
                     <span>{player.name} ({cardCount})</span>
                   )}
@@ -714,13 +718,13 @@ export const HandPanel: React.FC<HandPanelProps> = ({
             <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
               <p className="text-sm">
                 {isViewingOpponentHand
-                  ? `${state.players.find(p => p.id === selectedPlayerId)?.name || 'Игрок'} не имеет карт`
-                  : 'Нет карт в руке'}
+                  ? `${state.players.find(p => p.id === selectedPlayerId)?.name || t({ en: 'Player', ru: 'Игрок' })} ${t({ en: 'has no cards', ru: 'не имеет карт' })}`
+                  : t({ en: 'No cards in hand', ru: 'Нет карт в руке' })}
               </p>
               <p className="text-xs mt-1">
                 {isViewingOpponentHand
-                  ? 'Карты будут видны здесь когда они появятся'
-                  : 'Возьмите карты из колоды'}
+                  ? t({ en: 'Cards will be shown here when they appear', ru: 'Карты будут видны здесь когда они появятся' })
+                  : t({ en: 'Draw cards from a deck', ru: 'Возьмите карты из колоды' })}
               </p>
             </div>
           ) : (
@@ -848,6 +852,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
           cardScale={cardScale}
           onScaleIncrease={handleIncreaseScale}
           onScaleDecrease={handleDecreaseScale}
+          language={language}
         />
       )}
 
@@ -859,21 +864,21 @@ export const HandPanel: React.FC<HandPanelProps> = ({
           onClick={() => setScaleMenu(null)}
         >
           <div className="px-3 py-1.5 text-xs text-slate-400 border-b border-slate-700 mb-1">
-            Hand Card Scale (All Cards)
+            {t({ en: 'Hand Card Scale (All Cards)', ru: 'Масштаб карт в руке (все карты)' })}
           </div>
           <button
             onClick={(e) => { e.stopPropagation(); handleIncreaseScale(); }}
             className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-700 flex items-center gap-2"
           >
             <Plus size={14} />
-            Increase Scale ({Math.round(cardScale * 100)}%)
+            {t({ en: 'Increase Scale', ru: 'Увеличить масштаб' })} ({Math.round(cardScale * 100)}%)
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); handleDecreaseScale(); }}
             className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-700 flex items-center gap-2"
           >
             <Minus size={14} />
-            Decrease Scale ({Math.round(cardScale * 100)}%)
+            {t({ en: 'Decrease Scale', ru: 'Уменьшить масштаб' })} ({Math.round(cardScale * 100)}%)
           </button>
         </div>
       )}

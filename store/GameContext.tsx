@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
-import { GameItem, Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry } from '../types';
+import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { Peer } from 'peerjs';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
+import { saveGameState, loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 
 // Helper function to create a Standard Deck with 54 cards
 const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
@@ -94,78 +95,101 @@ export interface GameState {
   sessionId?: string; // Unique session identifier
   drawings: DrawingData; // Drawing layers for board and objects
   undo: UndoState; // Undo/redo history
+  playerPermissions: PlayerPermissions; // Permissions for non-GM players
+  language: AppLanguage; // Application language
 }
 
+// Base action type with optional local-only flag
+type BaseAction<T extends string, P = any> = {
+  type: T;
+  payload: P;
+  _localOnly?: boolean; // If true, action is NOT sent over network (guest only)
+  _excludeFromHistory?: boolean; // If true, action is NOT added to undo history
+};
+
+// Actions without payload
+type ActionWithoutPayload<T extends string> = {
+  type: T;
+  _localOnly?: boolean;
+  _excludeFromHistory?: boolean;
+};
+
 type Action =
-  | { type: 'ADD_OBJECT'; payload: TableObject }
-  | { type: 'UPDATE_OBJECT'; payload: Partial<TableObject> & { id: string } }
-  | { type: 'MOVE_OBJECT'; payload: { id: string; x: number; y: number } }
-  | { type: 'DELETE_OBJECT'; payload: { id: string } }
-  | { type: 'DRAW_CARD'; payload: { deckId: string; playerId: string } }
-  | { type: 'PLAY_CARD'; payload: { cardId: string; x: number; y: number } }
-  | { type: 'PLAY_TOP_CARD'; payload: { deckId: string } }
-  | { type: 'DROP_FROM_CURSOR_SLOT'; payload: { objectId: string; x: number; y: number; zIndex?: number } }
-  | { type: 'SHUFFLE_DECK'; payload: { deckId: string } }
-  | { type: 'FLIP_CARD'; payload: { cardId: string } }
-  | { type: 'ROLL_DICE_LOG'; payload: { value: number; playerName: string } }
-  | { type: 'ROLL_PHYSICAL_DICE'; payload: { id: string } }
-  | { type: 'UPDATE_COUNTER'; payload: { id: string; delta: number } }
-  | { type: 'SWITCH_ROLE'; payload: { playerId: string } }
-  | { type: 'TOGGLE_LOCK'; payload: { id: string } }
-  | { type: 'TOGGLE_ON_TABLE'; payload: { id: string } }
-  | { type: 'ROTATE_OBJECT'; payload: { id: string; angle?: number } }
-  | { type: 'SET_ROTATION'; payload: { id: string; rotation: number } }
-  | { type: 'CLONE_OBJECT'; payload: { id: string } }
-  | { type: 'RETURN_TO_DECK'; payload: { cardId: string } }
-  | { type: 'ADD_CARD_TO_TOP_OF_DECK'; payload: { cardId: string; deckId: string } }
-  | { type: 'ADD_CARD_TO_PILE'; payload: { cardId: string; pileId: string; deckId: string } }
-  | { type: 'DRAW_FROM_PILE'; payload: { pileId: string; deckId: string; playerId: string } }
-  | { type: 'RETURN_ALL_CARDS_TO_DECK'; payload: { deckId: string; fromPile?: boolean; pileId?: string } }
-  | { type: 'RETURN_CARD_TO_DECK_TOP'; payload: { cardId: string; deckId: string } }
-  | { type: 'RETURN_CARD_TO_DECK_BOTTOM'; payload: { cardId: string; deckId: string } }
-  | { type: 'TOGGLE_PILE_LOCK'; payload: { deckId: string; pileId: string } }
-  | { type: 'UPDATE_PILE_POSITION'; payload: { deckId: string; pileId: string; x: number; y: number } }
-  | { type: 'UPDATE_PERMISSIONS'; payload: { id: string; actions: ContextAction[] } }
-  | { type: 'UPDATE_ACTION_BUTTONS'; payload: { id: string; actions: ContextAction[] } }
-  | { type: 'MOVE_LAYER_UP'; payload: { id: string } }
-  | { type: 'MOVE_LAYER_DOWN'; payload: { id: string } }
-  | { type: 'LOAD_GAME'; payload: GameState }
-  | { type: 'ADD_PLAYER'; payload: Player }
-  | { type: 'REMOVE_PLAYER'; payload: { id: string } }
-  | { type: 'UPDATE_PLAYER_NAME'; payload: { playerId: string; name: string } }
-  | { type: 'SET_ACTIVE_ID'; payload: string }
-  | { type: 'SYNC_STATE'; payload: GameState } // Network sync
-  | { type: 'UPDATE_VIEW_TRANSFORM'; payload: ViewTransform }
-  | { type: 'UPDATE_HAND_CARD_ORDER'; payload: { playerId: string; cardOrder: string[] } }
-  | { type: 'UPDATE_DECK_CARD_DIMENSIONS'; payload: { deckId: string; cardWidth?: number; cardHeight?: number } }
-  | { type: 'MILL_CARD_TO_BOTTOM'; payload: { cardId: string; deckId: string } }
-  | { type: 'MILL_CARD_TO_PILE'; payload: { cardId: string; deckId: string; pileId: string } }
-  | { type: 'TOGGLE_SHOW_TOP_CARD'; payload: { deckId: string; pileId?: string } }
-  | { type: 'SWING_CLOCKWISE'; payload: { id: string } }
-  | { type: 'SWING_COUNTER_CLOCKWISE'; payload: { id: string } }
-  | { type: 'PIN_TO_VIEWPORT'; payload: { id: string; screenX: number; screenY: number } }
-  | { type: 'UNPIN_FROM_VIEWPORT'; payload: { id: string; worldX: number; worldY: number } }
+  | BaseAction<'ADD_OBJECT', TableObject>
+  | BaseAction<'UPDATE_OBJECT', Partial<TableObject> & { id: string }>
+  | BaseAction<'MOVE_OBJECT', { id: string; x: number; y: number }>
+  | BaseAction<'MOVE_OBJECT_COMMIT', { id: string; x: number; y: number; previousX: number; previousY: number }> // Sent on drag end
+  | BaseAction<'DELETE_OBJECT', { id: string }>
+  | BaseAction<'DRAW_CARD', { deckId: string; playerId: string }>
+  | BaseAction<'PLAY_CARD', { cardId: string; x: number; y: number }>
+  | BaseAction<'PLAY_TOP_CARD', { deckId: string }>
+  | BaseAction<'DROP_FROM_CURSOR_SLOT', { objectId: string; x: number; y: number; zIndex?: number }>
+  | BaseAction<'SHUFFLE_DECK', { deckId: string }>
+  | BaseAction<'FLIP_CARD', { cardId: string }>
+  | BaseAction<'ROLL_DICE_LOG', { value: number; playerName: string }>
+  | BaseAction<'ROLL_PHYSICAL_DICE', { id: string }>
+  | BaseAction<'UPDATE_COUNTER', { id: string; delta: number }>
+  | BaseAction<'SWITCH_ROLE', { playerId: string }>
+  | BaseAction<'TOGGLE_LOCK', { id: string }>
+  | BaseAction<'TOGGLE_ON_TABLE', { id: string }>
+  | BaseAction<'ROTATE_OBJECT', { id: string; angle?: number }>
+  | BaseAction<'SET_ROTATION', { id: string; rotation: number }>
+  | BaseAction<'CLONE_OBJECT', { id: string }>
+  | BaseAction<'RETURN_TO_DECK', { cardId: string }>
+  | BaseAction<'ADD_CARD_TO_TOP_OF_DECK', { cardId: string; deckId: string }>
+  | BaseAction<'ADD_CARD_TO_PILE', { cardId: string; pileId: string; deckId: string }>
+  | BaseAction<'DRAW_FROM_PILE', { pileId: string; deckId: string; playerId: string }>
+  | BaseAction<'RETURN_ALL_CARDS_TO_DECK', { deckId: string; fromPile?: boolean; pileId?: string }>
+  | BaseAction<'RETURN_CARD_TO_DECK_TOP', { cardId: string; deckId: string }>
+  | BaseAction<'RETURN_CARD_TO_DECK_BOTTOM', { cardId: string; deckId: string }>
+  | BaseAction<'TOGGLE_PILE_LOCK', { deckId: string; pileId: string }>
+  | BaseAction<'UPDATE_PILE_POSITION', { deckId: string; pileId: string; x: number; y: number }>
+  | BaseAction<'UPDATE_PERMISSIONS', { id: string; actions: ContextAction[] }>
+  | BaseAction<'UPDATE_ACTION_BUTTONS', { id: string; actions: ContextAction[] }>
+  | BaseAction<'MOVE_LAYER_UP', { id: string }>
+  | BaseAction<'MOVE_LAYER_DOWN', { id: string }>
+  | BaseAction<'LOAD_GAME', GameState>
+  | BaseAction<'ADD_PLAYER', Player>
+  | BaseAction<'REMOVE_PLAYER', { id: string }>
+  | BaseAction<'UPDATE_PLAYER_NAME', { playerId: string; name: string }>
+  | BaseAction<'UPDATE_PLAYER_PERMISSIONS', PlayerPermissions>
+  | BaseAction<'UPDATE_LANGUAGE', AppLanguage>
+  | BaseAction<'SET_ACTIVE_ID', string>
+  | BaseAction<'SYNC_STATE', GameState> // Network sync
+  | BaseAction<'UPDATE_VIEW_TRANSFORM', ViewTransform>
+  | BaseAction<'UPDATE_HAND_CARD_ORDER', { playerId: string; cardOrder: string[] }>
+  | BaseAction<'UPDATE_DECK_CARD_DIMENSIONS', { deckId: string; cardWidth?: number; cardHeight?: number }>
+  | BaseAction<'MILL_CARD_TO_BOTTOM', { cardId: string; deckId: string }>
+  | BaseAction<'MILL_CARD_TO_PILE', { cardId: string; deckId: string; pileId: string }>
+  | BaseAction<'TOGGLE_SHOW_TOP_CARD', { deckId: string; pileId?: string }>
+  | BaseAction<'SWING_CLOCKWISE', { id: string }>
+  | BaseAction<'SWING_COUNTER_CLOCKWISE', { id: string }>
+  | BaseAction<'PIN_TO_VIEWPORT', { id: string; screenX: number; screenY: number }>
+  | BaseAction<'UNPIN_FROM_VIEWPORT', { id: string; worldX: number; worldY: number }>
   // UI Object actions
-  | { type: 'CREATE_PANEL'; payload: { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string } }
-  | { type: 'CREATE_WINDOW'; payload: { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string } }
-  | { type: 'CLOSE_UI_OBJECT'; payload: { id: string } }
-  | { type: 'TOGGLE_MINIMIZE'; payload: { id: string } }
-  | { type: 'RESIZE_UI_OBJECT'; payload: { id: string; width: number; height: number } }
+  | BaseAction<'CREATE_PANEL', { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string }>
+  | BaseAction<'CREATE_WINDOW', { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string }>
+  | BaseAction<'CLOSE_UI_OBJECT', { id: string }>
+  | BaseAction<'TOGGLE_MINIMIZE', { id: string }>
+  | BaseAction<'RESIZE_UI_OBJECT', { id: string; width: number; height: number }>
   // Token Archetype actions
-  | { type: 'SPAWN_TOKEN_FROM_ARCHETYPE'; payload: { archetypeId: string; x: number; y: number } }
+  | BaseAction<'SPAWN_TOKEN_FROM_ARCHETYPE', { archetypeId: string; x: number; y: number }>
   // Drawing actions
-  | { type: 'CREATE_DRAWING_OBJECT'; payload: { strokes: Stroke[]; x: number; y: number; width: number; height: number; name?: string; opacity?: number } }
-  | { type: 'ADD_STROKE_TO_DRAWING'; payload: { drawingId: string; stroke: Stroke } }
-  | { type: 'MERGE_DRAWINGS'; payload: { sourceId: string; targetId: string } }
-  | { type: 'ADD_STROKE'; payload: { stroke: Stroke; layerId: string } }
-  | { type: 'DELETE_STROKE'; payload: { strokeId: string; layerId: string } }
-  | { type: 'CREATE_DRAWING_LAYER'; payload: { layer: Omit<DrawingLayer, 'id'> } }
-  | { type: 'DELETE_DRAWING_LAYER'; payload: { layerId: string } }
-  | { type: 'UPDATE_DRAWING_LAYER'; payload: { layerId: string; updates: Partial<DrawingLayer> } }
-  | { type: 'CLEAR_DRAWING_LAYER'; payload: { layerId: string } }
+  | BaseAction<'CREATE_DRAWING_OBJECT', { strokes: Stroke[]; x: number; y: number; width: number; height: number; name?: string; opacity?: number }>
+  | BaseAction<'ADD_STROKE_TO_DRAWING', { drawingId: string; stroke: Stroke }>
+  | BaseAction<'FINISH_DRAWING_STROKE', { drawingId?: string; stroke: Stroke; bounds: { x: number; y: number; width: number; height: number }; opacity?: number }> // Sent on stroke end
+  | BaseAction<'MERGE_DRAWINGS', { sourceId: string; targetId: string }>
+  | BaseAction<'ADD_STROKE', { stroke: Stroke; layerId: string }>
+  | BaseAction<'DELETE_STROKE', { strokeId: string; layerId: string }>
+  | BaseAction<'CREATE_DRAWING_LAYER', Omit<DrawingLayer, 'id'>>
+  | BaseAction<'DELETE_DRAWING_LAYER', { layerId: string }>
+  | BaseAction<'UPDATE_DRAWING_LAYER', { layerId: string; updates: Partial<DrawingLayer> }>
+  | BaseAction<'CLEAR_DRAWING_LAYER', { layerId: string }>
   // Undo actions
-  | { type: 'UNDO_MARKER' }
-  | { type: 'UNDO_GENERAL' };
+  | ActionWithoutPayload<'UNDO_MARKER'>
+  | ActionWithoutPayload<'UNDO_GENERAL'>
+  // Local storage actions
+  | ActionWithoutPayload<'CLEAR_SAVED_STATE'>;
 
 const GM_COLOR = '#8e44ad';
 
@@ -192,6 +216,15 @@ const initialState: GameState = {
   sessionId: getSessionId(),
   drawings: { layers: [] },
   undo: { markerHistory: [], generalHistory: [], maxMarkerHistory: 10, maxGeneralHistory: 100 },
+  // Default permissions: only GM can create, configure, delete, hide objects
+  playerPermissions: {
+    createObjects: false,
+    configureObjects: false,
+    deleteObjects: false,
+    hideObjects: false,
+  },
+  // Load language from localStorage or default to 'en'
+  language: (typeof localStorage !== 'undefined' && (localStorage.getItem('app-language') as AppLanguage)) || 'en' as AppLanguage,
 };
 
 const GameContext = createContext<{
@@ -471,6 +504,18 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             )
         };
     }
+    case 'UPDATE_PLAYER_PERMISSIONS': {
+        return {
+            ...state,
+            playerPermissions: action.payload
+        };
+    }
+    case 'UPDATE_LANGUAGE': {
+        return {
+            ...state,
+            language: action.payload
+        };
+    }
     case 'UPDATE_HAND_CARD_ORDER': {
         return {
             ...state,
@@ -615,10 +660,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj || obj.locked) return state;
 
-      // Don't track history for drawings (they use marker history) or objects in cursor slot
+      // Don't track history for drawings (they use marker history), objects in cursor slot, or local-only moves
       const isDrawing = obj.type === ItemType.DRAWING;
       const isInCursorSlot = (obj as any).inCursorSlot;
-      if (!isDrawing && !isInCursorSlot) {
+      const isLocalOnly = action._localOnly || action._excludeFromHistory;
+
+      if (!isDrawing && !isInCursorSlot && !isLocalOnly) {
         // Add to general history (max 100)
         const historyEntry: GeneralHistoryEntry = {
           type: 'object-moved',
@@ -677,6 +724,129 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         },
       };
     }
+    case 'MOVE_OBJECT_COMMIT': {
+      // Sent by guest when drag ends - includes previous position for undo
+      const { id, x, y, previousX, previousY } = action.payload;
+      const obj = state.objects[id];
+      if (!obj || obj.locked) return state;
+
+      const isDrawing = obj.type === ItemType.DRAWING;
+      const isInCursorSlot = (obj as any).inCursorSlot;
+
+      // Only add to history if not a drawing and not in cursor slot
+      if (!isDrawing && !isInCursorSlot) {
+        const historyEntry: GeneralHistoryEntry = {
+          type: 'object-moved',
+          objectId: id,
+          previousX,
+          previousY,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        if ((obj as any).isPinnedToViewport) {
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [id]: {
+                ...obj,
+                x,
+                y,
+                pinnedScreenPosition: { x, y }
+              } as TableObject,
+            },
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+          };
+        }
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [id]: { ...obj, x, y },
+          },
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
+      }
+
+      // For drawings, don't track history
+      if ((obj as any).isPinnedToViewport) {
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [id]: {
+              ...obj,
+              x,
+              y,
+              pinnedScreenPosition: { x, y }
+            } as TableObject,
+          },
+        };
+      }
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [id]: { ...obj, x, y },
+        },
+      };
+    }
+    case 'FINISH_DRAWING_STROKE': {
+      // Sent by guest when drawing stroke ends - creates the final drawing object
+      const { stroke, bounds, opacity, drawingId } = action.payload;
+
+      if (drawingId) {
+        // Adding stroke to existing drawing
+        const existingDrawing = state.objects[drawingId] as Drawing;
+        if (existingDrawing) {
+          const updatedDrawing: Drawing = {
+            ...existingDrawing,
+            strokes: [...existingDrawing.strokes, stroke],
+            // Update bounds to include new stroke
+            bounds: {
+              x: Math.min(existingDrawing.bounds.x, bounds.x),
+              y: Math.min(existingDrawing.bounds.y, bounds.y),
+              width: Math.max(existingDrawing.bounds.x + existingDrawing.bounds.width, bounds.x + bounds.width) - Math.min(existingDrawing.bounds.x, bounds.x),
+              height: Math.max(existingDrawing.bounds.y + existingDrawing.bounds.height, bounds.y + bounds.height) - Math.min(existingDrawing.bounds.y, bounds.y),
+            }
+          };
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [drawingId]: updatedDrawing,
+            },
+          };
+        }
+      } else {
+        // Creating new drawing object
+        const newDrawing: Drawing = {
+          id: generateUUID(),
+          type: ItemType.DRAWING,
+          name: 'Drawing',
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          rotation: 0,
+          color: stroke.color,
+          content: '',
+          isOnTable: true,
+          locked: false,
+          strokes: [stroke],
+          bounds: { x: 0, y: 0, width: bounds.width, height: bounds.height },
+          opacity: opacity ?? 100,
+        };
+        return {
+          ...state,
+          objects: {
+            ...state.objects,
+            [newDrawing.id]: newDrawing,
+          },
+        };
+      }
+      return state;
+    }
     case 'DELETE_OBJECT': {
         const objectToDelete = state.objects[action.payload.id];
         if (!objectToDelete) return state;
@@ -696,6 +866,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                      delete newObjects[cid];
                  });
              }
+        }
+
+        // If deleting a token type (archetype), delete all its token copies
+        if (objectToDelete.type === ItemType.TOKEN_TYPE) {
+            const archetypeId = objectToDelete.id;
+            // Find all tokens that have this archetypeId
+            Object.keys(newObjects).forEach(tokenId => {
+                const token = newObjects[tokenId];
+                if (token.type === ItemType.TOKEN && (token as Token).archetypeId === archetypeId) {
+                    cascadedDeletes.push(token);
+                    delete newObjects[tokenId];
+                }
+            });
         }
 
         // If deleting a card, remove it from deck's cardIds and update initialCardCount
@@ -2280,6 +2463,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         minimized: false,
         visible: true,
         targetObjectId,
+        // Settings windows are local to the player who created them
+        ownerId: windowType === WindowType.OBJECT_SETTINGS ? state.activePlayerId : undefined,
       };
 
       return {
@@ -2605,7 +2790,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'CREATE_DRAWING_LAYER': {
       const newLayer: DrawingLayer = {
         id: generateUUID(),
-        ...action.payload.layer
+        ...action.payload
       };
 
       return {
@@ -3331,6 +3516,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           return state;
       }
     }
+    case 'CLEAR_SAVED_STATE': {
+      // Clear the saved state from localStorage
+      clearStorageGameState();
+      return state;
+    }
     default:
       return state;
   }
@@ -3355,11 +3545,80 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       stateRef.current = state;
   }, [state]);
 
-  // Initialize Default Board and Standard Deck
+  // Auto-save game state to localStorage (debounced)
   useEffect(() => {
+    // Don't save if we're a guest (state comes from host)
+    if (!isHost) return;
+
+    const timeoutId = setTimeout(() => {
+      saveGameState(state);
+    }, 500); // Debounce: save 500ms after last state change
+
+    return () => clearTimeout(timeoutId);
+  }, [state, isHost]);
+
+  // Initialize Default Board and Standard Deck (or load from storage)
+  useEffect(() => {
+    // Only initialize once we're sure about host status and haven't initialized yet
     if (!initializedRef.current && isHost && Object.keys(state.objects).length === 0) {
         initializedRef.current = true;
 
+        // Try to load saved game state from localStorage
+        const savedState = loadGameState();
+        if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
+          console.log('Restoring game state from localStorage');
+
+          // Create a batch of updates to restore all state
+          const updates: any[] = [];
+
+          // Load all saved objects
+          Object.values(savedState.objects).forEach(obj => {
+            updates.push({ type: 'ADD_OBJECT', payload: obj });
+          });
+
+          // Restore drawings
+          if (savedState.drawings) {
+            updates.push({ type: 'SYNC_STATE', payload: { drawings: savedState.drawings } });
+          }
+
+          // Restore player permissions
+          if (savedState.playerPermissions) {
+            updates.push({ type: 'UPDATE_PLAYER_PERMISSIONS', payload: savedState.playerPermissions });
+          }
+
+          // Restore language
+          if (savedState.language) {
+            updates.push({ type: 'UPDATE_LANGUAGE', payload: savedState.language });
+          }
+
+          // Restore active player ID if different
+          if (savedState.activePlayerId && savedState.activePlayerId !== state.activePlayerId) {
+            updates.push({ type: 'SET_ACTIVE_ID', payload: savedState.activePlayerId });
+          }
+
+          // Restore view transform (zoom/pan)
+          if (savedState.viewTransform) {
+            updates.push({ type: 'UPDATE_VIEW_TRANSFORM', payload: savedState.viewTransform });
+          }
+
+          // Restore players (merge with default players)
+          if (savedState.players && savedState.players.length > 0) {
+            savedState.players.forEach(player => {
+              // Only add players that don't already exist (don't overwrite GM)
+              if (player.id !== 'gm' && player.id !== 'gm-player' &&
+                  !state.players.find(p => p.id === player.id)) {
+                updates.push({ type: 'ADD_PLAYER', payload: player });
+              }
+            });
+          }
+
+          // Apply all updates in a single batch
+          updates.forEach(update => localDispatch(update));
+
+          return;
+        }
+
+        // No saved state or empty saved state, create default game board
         // Create game board
         const boardId = 'demo-board';
         const board: Board = {
@@ -3415,7 +3674,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         });
     }
-  }, [isHost]);
+  }, [isHost, connectionStatus]); // Add connectionStatus to ensure peer is ready
 
   // PEERJS SETUP
   useEffect(() => {
@@ -3579,6 +3838,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Middleware Dispatcher - memoized with useCallback to prevent infinite loops
   const dispatch = useCallback((action: Action) => {
+      // Local-only actions are executed locally but never sent over network
+      if (action._localOnly) {
+          localDispatch(action);
+          return;
+      }
+
       if (isHost) {
           // Host executes locally
           localDispatch(action);
@@ -3591,10 +3856,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   hostConnectionRef.current.send({ type: 'UPDATE_PLAYER_NAME', payload: action });
                   // Optimistic update for immediate feedback
                   localDispatch(action);
-              } else if (action.type === 'MOVE_OBJECT') {
+              } else if (action.type === 'MOVE_OBJECT_COMMIT' || action.type === 'FINISH_DRAWING_STROKE') {
+                  // Commit actions are sent to host, applied locally after host broadcasts
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
-                  // Optimistic update for responsiveness
-                  localDispatch(action);
+              } else if (action.type === 'CREATE_DRAWING_OBJECT' || action.type === 'ADD_STROKE_TO_DRAWING' || action.type === 'MERGE_DRAWINGS') {
+                  // Drawing actions are sent to host
+                  hostConnectionRef.current.send({ type: 'ACTION', payload: action });
+                  // Wait for sync to avoid desync
               } else {
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
                   // Wait for sync to avoid desync
@@ -3607,10 +3875,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // We use a debounce or throttle in a real app, here we just check if meaningful change occurred
   useEffect(() => {
       if (isHost && connectionsRef.current.length > 0) {
+          // Filter out local windows before broadcasting
+          const stateForBroadcast = (() => {
+              const filteredObjects: Record<string, TableObject> = {};
+              Object.entries(state.objects).forEach(([id, obj]) => {
+                  // Skip windows with ownerId (they are local to the owner)
+                  if (obj.type === ItemType.WINDOW && (obj as WindowObject).ownerId) {
+                      return;
+                  }
+                  filteredObjects[id] = obj;
+              });
+              return { ...state, objects: filteredObjects };
+          })();
+
           // Broadcast new state
           connectionsRef.current.forEach(conn => {
               if (conn.open) {
-                  conn.send({ type: 'SYNC_STATE', payload: state });
+                  conn.send({ type: 'SYNC_STATE', payload: stateForBroadcast });
               }
           });
       }

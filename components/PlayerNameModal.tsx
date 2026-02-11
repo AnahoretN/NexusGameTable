@@ -1,20 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { User, Check } from 'lucide-react';
+import { AppLanguage } from '../types';
 
 interface PlayerNameModalProps {
   isOpen: boolean;
   onSubmit: (name: string) => void;
   defaultName?: string;
   title?: string;
+  language?: AppLanguage;
 }
 
 export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
   isOpen,
   onSubmit,
   defaultName = 'Player',
-  title = 'Join Game'
+  title = 'Join Game',
+  language = 'en'
 }) => {
+  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
+
   const [name, setName] = useState(defaultName);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -54,7 +59,7 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
           </div>
 
           <p className="text-slate-300 text-sm">
-            Enter your name to join the game session:
+            {t({ en: 'Enter your name to join the game session:', ru: 'Введите ваше имя для присоединения к игре:' })}
           </p>
 
           <form onSubmit={handleSubmit}>
@@ -63,7 +68,7 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your name..."
+              placeholder={t({ en: 'Your name...', ru: 'Ваше имя...' })}
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
               maxLength={20}
             />
@@ -75,7 +80,7 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
             className="w-full px-4 py-3 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
           >
             <Check size={18} />
-            Join Game
+            {t({ en: 'Join Game', ru: 'Присоединиться' })}
           </button>
         </div>
       </div>
