@@ -245,7 +245,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const currentActiveId = state.activePlayerId;
         const currentViewTransform = state.viewTransform;
         return {
-            ...action.payload,
+            ...state, // Keep existing state as base
+            ...action.payload, // Merge with payload (only override provided properties)
             activePlayerId: currentActiveId,
             viewTransform: currentViewTransform
         };

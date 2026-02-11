@@ -2578,7 +2578,7 @@ export const Tabletop: React.FC = () => {
   // Memoize table objects to prevent unnecessary re-renders
   // Note: DECK objects are filtered out here and rendered separately (pinned/unpinned)
   const tableObjects = useMemo(() => {
-    return (Object.values(state.objects) as TableObject[])
+    return (Object.values(state.objects || {}) as TableObject[])
       .filter(obj => {
           // Exclude UI objects (panels and windows) - they have their own rendering
           if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
