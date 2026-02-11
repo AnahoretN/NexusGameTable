@@ -34,6 +34,7 @@ interface BoardWithResizeProps {
     hexR: number;
     hexW: number;
     hexPath: string;
+    currentTool?: string;
 }
 
 const BoardWithResize: React.FC<BoardWithResizeProps> = ({

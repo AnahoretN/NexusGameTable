@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { ViteDevServer } from 'vite';
+// @ts-ignore - vite.config runs in Node.js context
 import { readFileSync } from 'fs';
 
 // Read package.json for version

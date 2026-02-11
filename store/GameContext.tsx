@@ -3605,7 +3605,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Restore players (merge with default players)
           if (savedState.players && savedState.players.length > 0) {
             const currentPlayers = state.players || [];
-            savedState.players.forEach(player => {
+            savedState.players.forEach((player: Player) => {
               // Only add players that don't already exist (don't overwrite GM)
               if (player.id !== 'gm' && player.id !== 'gm-player' &&
                   !currentPlayers.find(p => p.id === player.id)) {
