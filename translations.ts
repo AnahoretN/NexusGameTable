@@ -47,7 +47,6 @@ const translations = {
 
     // Actions
     delete: 'Delete',
-    settings: 'Settings',
     lock: 'Lock',
     unlock: 'Unlock',
     hide: 'Hide',
@@ -128,7 +127,6 @@ const translations = {
 
     // Actions
     delete: 'Удалить',
-    settings: 'Настройки',
     lock: 'Заблокировать',
     unlock: 'Разблокировать',
     hide: 'Скрыть',
@@ -173,7 +171,7 @@ export const getTranslation = (language: AppLanguage, key: TranslationKey, param
 
   if (params) {
     Object.entries(params).forEach(([param, value]) => {
-      text = text.replace(`{${param}}`, String(value));
+      text = text.replace(`{${param}}`, String(value)) as any;
     });
   }
 

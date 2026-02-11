@@ -1,4 +1,5 @@
-import { GameState, ViewTransform } from '../types';
+import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage } from '../types';
+import type { GameState, ViewTransform } from '../store/GameContext';
 
 const STORAGE_KEY = 'nexus-game-state';
 const STORAGE_VERSION = 1;
