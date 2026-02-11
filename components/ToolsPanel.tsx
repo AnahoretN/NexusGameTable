@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, TableObject, TokenType, TokenShape, WindowType } from '../types';
+import { ItemType, TableObject, TokenType, TokenShape, WindowType, AppLanguage } from '../types';
 import { Pen, Eraser, Ruler, Compass, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { SvgTokenShape } from './SvgTokenShape';
 
@@ -10,16 +10,18 @@ export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'compass';
 interface DrawingToolConfig {
   id: DrawingTool;
   label: string;
+  labelRu: string;
   icon: React.ReactNode;
   description: string;
+  descriptionRu: string;
 }
 
 const DRAWING_TOOLS: DrawingToolConfig[] = [
-  { id: 'none', label: 'Cursor', icon: null, description: 'Normal cursor mode' },
-  { id: 'marker', label: 'Marker', icon: <Pen size={20} />, description: 'Draw on the board or objects' },
-  { id: 'eraser', label: 'Eraser', icon: <Eraser size={20} />, description: 'Erase drawings' },
-  { id: 'ruler', label: 'Ruler', icon: <Ruler size={20} />, description: 'Measure distances' },
-  { id: 'compass', label: 'Compass', icon: <Compass size={20} />, description: 'Draw circles/arcs' },
+  { id: 'none', label: 'Cursor', labelRu: 'Курсор', icon: null, description: 'Normal cursor mode', descriptionRu: 'Обычный режим курсора' },
+  { id: 'marker', label: 'Marker', labelRu: 'Маркер', icon: <Pen size={20} />, description: 'Draw on the board or objects', descriptionRu: 'Рисовать на доске или объектах' },
+  { id: 'eraser', label: 'Eraser', labelRu: 'Ластик', icon: <Eraser size={20} />, description: 'Erase drawings', descriptionRu: 'Стирать рисунки' },
+  { id: 'ruler', label: 'Ruler', labelRu: 'Линейка', icon: <Ruler size={20} />, description: 'Measure distances', descriptionRu: 'Измерять расстояния' },
+  { id: 'compass', label: 'Compass', labelRu: 'Циркуль', icon: <Compass size={20} />, description: 'Draw circles/arcs', descriptionRu: 'Рисовать окружности/дуги' },
 ];
 
 interface ToolsPanelProps {
@@ -27,16 +29,20 @@ interface ToolsPanelProps {
   height?: number;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  language?: AppLanguage;
 }
 
 export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   width = 280,
   height = 400,
   isCollapsed = false,
-  onToggleCollapse
+  onToggleCollapse,
+  language = 'en'
 }) => {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, isHost } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   // Current selected tool
   const [selectedTool, setSelectedTool] = useState<DrawingTool>('none');
@@ -100,7 +106,9 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
       const target = e.target as HTMLElement;
       // Find if we're clicking on a token archetype card
       const archetypeCard = target.closest('[data-archetype-card]') as HTMLElement;
-      if (archetypeCard) {
+      // Check if clicking on settings button - don't add token in that case
+      const settingsButton = target.closest('[data-archetype-settings]') as HTMLElement;
+      if (archetypeCard && !settingsButton) {
         archetypeCard.dataset.isAddingToken = 'true';
         dragStartTimeRef.current = Date.now();
         dragStartPositionRef.current = { x: e.clientX, y: e.clientY };
@@ -204,6 +212,10 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
 
   // Handle archetype settings
   const handleArchetypeSettings = useCallback((archetype: TokenType) => {
+    // Check permissions - GM always has access, non-GM needs configureObjects permission
+    const canConfigure = isHost || state.playerPermissions.configureObjects;
+    if (!canConfigure) return; // Silently do nothing if no permission
+
     dispatch({
       type: 'CREATE_WINDOW',
       payload: {
@@ -212,7 +224,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
         targetObjectId: archetype.id
       }
     });
-  }, [dispatch]);
+  }, [dispatch, isHost, state.playerPermissions.configureObjects]);
 
   if (isCollapsed) {
     return (
@@ -225,7 +237,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
         <button
           onClick={onToggleCollapse}
           className="w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-slate-700 transition-colors rounded-r-lg"
-          title="Expand Tools"
+          title={t({ en: 'Expand Tools', ru: 'Развернуть инструменты' })}
         >
           <ChevronUp size={20} className="rotate-90" />
         </button>
@@ -242,11 +254,11 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-        <h3 className="text-sm font-bold text-white">Tools</h3>
+        <h3 className="text-sm font-bold text-white">{t({ en: 'Tools', ru: 'Инструменты' })}</h3>
         <button
           onClick={onToggleCollapse}
           className="p-1 text-gray-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-          title="Collapse"
+          title={t({ en: 'Collapse', ru: 'Свернуть' })}
         >
           <ChevronDown size={16} className="rotate-90" />
         </button>
@@ -255,7 +267,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {/* Drawing Tools Section */}
         <div className="p-3 border-b border-slate-700">
-          <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">Drawing</h4>
+          <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{t({ en: 'Drawing', ru: 'Рисование' })}</h4>
           <div className="grid grid-cols-4 gap-2 mb-3">
             {DRAWING_TOOLS.map((tool) => (
               <button
@@ -266,10 +278,10 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                     ? 'bg-purple-600 text-white'
                     : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
                 }`}
-                title={tool.description}
+                title={language === 'ru' ? tool.descriptionRu : tool.description}
               >
                 {tool.icon}
-                <span className="text-[10px] mt-1">{tool.label}</span>
+                <span className="text-[10px] mt-1">{language === 'ru' ? tool.labelRu : tool.label}</span>
               </button>
             ))}
           </div>
@@ -278,7 +290,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
           {selectedTool === 'marker' && (
             <div className="space-y-2 mt-3 p-2 bg-slate-900 rounded">
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">Color</label>
+                <label className="block text-[10px] text-gray-400 mb-1">{t({ en: 'Color', ru: 'Цвет' })}</label>
                 <div className="flex gap-1">
                   {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ffffff', '#000000'].map((color) => (
                     <button
@@ -294,7 +306,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">Thickness: {markerThickness}px</label>
+                <label className="block text-[10px] text-gray-400 mb-1">{t({ en: 'Thickness', ru: 'Толщина' })}: {markerThickness}px</label>
                 <input
                   type="range"
                   min="1"
@@ -311,7 +323,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
         {/* Token Archetypes Section */}
         <div className="p-3">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-bold text-gray-400 uppercase">Tokens</h4>
+            <h4 className="text-xs font-bold text-gray-400 uppercase">{t({ en: 'Tokens', ru: 'Фишки' })}</h4>
             <button
               onClick={() => setArchetypesExpanded(!archetypesExpanded)}
               className="p-1 text-gray-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
@@ -324,8 +336,8 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
             <div className="grid grid-cols-3 gap-2">
               {archetypes.length === 0 ? (
                 <div className="col-span-3 text-center py-4 text-gray-500 text-xs">
-                  No token archetypes.<br />
-                  Add them from the main menu.
+                  {t({ en: 'No token archetypes.', ru: 'Нет архетипов фишек.' })}<br />
+                  {t({ en: 'Add them from the main menu.', ru: 'Добавьте их из главного меню.' })}
                 </div>
               ) : (
                 archetypes.map((archetype) => {
@@ -345,7 +357,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                     data-archetype-card
                     data-archetype-id={archetype.id}
                     className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-pointer transition-colors"
-                    title={`${archetype.name}\nClick to add to cursor slot`}
+                    title={`${archetype.name}\n${t({ en: 'Click to add to cursor slot', ru: 'Нажмите, чтобы добавить в слот курсора' })}`}
                   >
                     {/* Preview of the token using SvgTokenShape */}
                     <div className="w-full h-full flex items-center justify-center overflow-hidden rounded">
@@ -364,6 +376,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
 
                     {/* Settings button */}
                     <button
+                      data-archetype-settings
                       onClick={(e) => {
                         e.stopPropagation();
                         handleArchetypeSettings(archetype);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { CardPile, Deck } from '../types';
+import { CardPile, Deck, AppLanguage } from '../types';
 import { Search, Hand, Undo, Lock, Unlock, Eye } from 'lucide-react';
 
 interface PileContextMenuProps {
@@ -10,36 +10,39 @@ interface PileContextMenuProps {
   deck: Deck;
   onAction: (action: string) => void;
   onClose: () => void;
+  language?: AppLanguage;
 }
 
-export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, deck, onAction, onClose }) => {
+export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, deck, onAction, onClose, language = 'en' }) => {
+  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
+
   const menuItems = [
     {
-      label: pile.locked ? 'Unlock' : 'Lock',
+      label: pile.locked ? t({ en: 'Unlock', ru: 'Разблокировать' }) : t({ en: 'Lock', ru: 'Заблокировать' }),
       action: 'lock',
       icon: pile.locked ? <Unlock size={14} /> : <Lock size={14} />,
       visible: pile.position === 'free'
     },
     {
-      label: pile.showTopCard ? 'Hide top' : 'Show top',
+      label: pile.showTopCard ? t({ en: 'Hide top', ru: 'Скрыть верхнюю' }) : t({ en: 'Show top', ru: 'Показать верхнюю' }),
       action: 'showTop',
       icon: <Eye size={14} />,
       visible: true
     },
     {
-      label: 'Search',
+      label: t({ en: 'Search', ru: 'Поиск' }),
       action: 'searchDeck',
       icon: <Search size={14} />,
       visible: true
     },
     {
-      label: 'Draw',
+      label: t({ en: 'Draw', ru: 'Взять' }),
       action: 'draw',
       icon: <Hand size={14} />,
       visible: pile.cardIds.length > 0
     },
     {
-      label: 'Return All',
+      label: t({ en: 'Return All', ru: 'Вернуть все' }),
       action: 'returnAll',
       icon: <Undo size={14} />,
       visible: true

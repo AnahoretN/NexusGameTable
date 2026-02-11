@@ -140,7 +140,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   offsetX,
   offsetY,
 }) => {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, isHost } = useGame();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<StrokePoint[]>([]);
@@ -155,6 +155,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
   const [dragStartDrawingPos, setDragStartDrawingPos] = useState<{ x: number; y: number } | null>(null);
   const [isOverDrawing, setIsOverDrawing] = useState(false); // For cursor change when Shift+marker
+
+  // Track initial stroke data for network commit on drawing end (guests only)
+  const strokeStartDataRef = useRef<{ color: string; thickness: number } | null>(null);
 
   // Track ALT key for normal cursor mode
   useEffect(() => {
@@ -455,7 +458,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     setIsDrawing(true);
     setCurrentStroke([{ x: pos.x, y: pos.y }]);
-  }, [currentTool, getWorldPosition, isOverPanel, state.objects]);
+    // Store stroke start data for network commit (guests only)
+    strokeStartDataRef.current = { color: markerColor, thickness: markerThickness };
+  }, [currentTool, getWorldPosition, isOverPanel, state.objects, markerColor, markerThickness]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     // Check if cursor is over a panel or any UI element via DOM
@@ -514,7 +519,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           id: draggedDrawingId,
           x: dragStartDrawingPos.x + dx,
           y: dragStartDrawingPos.y + dy
-        }
+        },
+        _localOnly: true, // Don't send over network during drag
       });
       return;
     }
@@ -668,6 +674,22 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const handleMouseUp = useCallback(() => {
     // Handle drawing drag end
     if (isDraggingDrawing) {
+      // For guests, send final position via MOVE_OBJECT_COMMIT
+      if (!isHost && draggedDrawingId && dragStartDrawingPos) {
+        const drawing = state.objects[draggedDrawingId] as Drawing;
+        if (drawing) {
+          dispatch({
+            type: 'MOVE_OBJECT_COMMIT',
+            payload: {
+              id: draggedDrawingId,
+              x: drawing.x,
+              y: drawing.y,
+              previousX: dragStartDrawingPos.x,
+              previousY: dragStartDrawingPos.y,
+            },
+          });
+        }
+      }
       setIsDraggingDrawing(false);
       setDraggedDrawingId(null);
       setDragStartPos(null);
@@ -710,6 +732,42 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       author: state.activePlayerId
     };
 
+    // For guests, send FINISH_DRAWING_STROKE instead of CREATE_DRAWING_OBJECT
+    if (!isHost) {
+      // Calculate stroke bounds
+      const strokeBounds = getStrokeBounds(stroke);
+      const padding = markerThickness + 10;
+      const bounds = {
+        x: strokeBounds.minX - padding,
+        y: strokeBounds.minY - padding,
+        width: strokeBounds.maxX - strokeBounds.minX + padding * 2,
+        height: strokeBounds.maxY - strokeBounds.minY + padding * 2,
+      };
+
+      // Check if stroke overlaps with existing drawings (find ALL overlapping drawings of same color)
+      const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING);
+      const overlappingDrawings = findOverlappingDrawings(stroke, drawings);
+
+      dispatch({
+        type: 'FINISH_DRAWING_STROKE',
+        payload: {
+          stroke,
+          bounds,
+          opacity: markerOpacity,
+          drawingId: overlappingDrawings.length === 1 ? overlappingDrawings[0].id : undefined,
+        },
+      });
+
+      setIsDrawing(false);
+      setCurrentStroke([]);
+      strokeStartDataRef.current = null;
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (ctx) redrawCanvas(ctx);
+      return;
+    }
+
+    // Host creates drawing object immediately (existing logic)
     // Check if stroke overlaps with existing drawings (find ALL overlapping drawings of same color)
     const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING);
     const overlappingDrawings = findOverlappingDrawings(stroke, drawings);
@@ -831,11 +889,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     setIsDrawing(false);
     setCurrentStroke([]);
+    strokeStartDataRef.current = null;
     // Redraw to show cursor
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (ctx) redrawCanvas(ctx);
-  }, [isDrawing, isDraggingDrawing, currentStroke, currentTool, markerColor, markerThickness, state.activePlayerId, state.objects, dispatch, redrawCanvas]);
+  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartDrawingPos, currentStroke, currentTool, markerColor, markerThickness, markerOpacity, state.activePlayerId, state.objects, dispatch, redrawCanvas, findOverlappingDrawings, getStrokeBounds, isHost]);
 
   // Handler for mouse leave (must be before conditional return)
   const handleMouseLeave = useCallback(() => {

@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo } from 'react';
-import { Layers, Lock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw } from 'lucide-react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import { Layers, Lock, Unlock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react';
 import { useGame } from '../store/GameContext';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation } from '../types';
 import { DECK_OFFSET } from '../constants';
@@ -29,6 +29,7 @@ interface DeckComponentProps {
   executeClickAction: (obj: any, action: string, event?: React.MouseEvent) => void;
   cursorSlotHasCards: boolean;
   allObjects: Record<string, any>;
+  currentTool?: string;
 }
 
 export const DeckComponent: React.FC<DeckComponentProps> = ({
@@ -54,6 +55,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   executeClickAction,
   cursorSlotHasCards = false,
   allObjects,
+  currentTool = 'none',
 }) => {
   const { state } = useGame();
 
@@ -80,6 +82,12 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
       return card && !card.hidden;
     }).length;
   }, [deck.cardIds, allObjects]);
+
+  // Shuffle animation state (initialized after visibleCardCount is available)
+  const [isShuffling, setIsShuffling] = useState(false);
+  const [animatedCurrentCount, setAnimatedCurrentCount] = useState(visibleCardCount);
+  const [animatedBaseCount, setAnimatedBaseCount] = useState((deck.baseCardIds || deck.cardIds).length);
+  const shuffleEndTimeRef = useRef<number | null>(null);
 
   // Memoize top card calculation
   const topCard = useMemo(() => {
@@ -176,6 +184,64 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
     return getCardShapeStyles(deck.cardShape ?? CardShape.POKER, deck.cardOrientation ?? CardOrientation.VERTICAL);
   }, [deck.cardShape, deck.cardOrientation]);
 
+  // Shuffle animation effect
+  useEffect(() => {
+    const handleShuffleStart = (e: Event) => {
+      const customEvent = e as CustomEvent<{ deckId: string }>;
+      if (customEvent.detail.deckId === deck.id) {
+        setIsShuffling(true);
+        shuffleEndTimeRef.current = Date.now() + 1000; // Animate for 1 second
+      }
+    };
+
+    window.addEventListener('deck-shuffle-start', handleShuffleStart);
+    return () => window.removeEventListener('deck-shuffle-start', handleShuffleStart);
+  }, [deck.id]);
+
+  // Random number animation during shuffle
+  useEffect(() => {
+    if (!isShuffling) {
+      // Reset to actual values when not shuffling
+      setAnimatedCurrentCount(visibleCardCount);
+      setAnimatedBaseCount((deck.baseCardIds || deck.cardIds).length);
+      return;
+    }
+
+    const animationInterval = setInterval(() => {
+      // Generate random numbers for animation effect
+      const baseCount = (deck.baseCardIds || deck.cardIds).length;
+      // Random numbers between 0 and baseCount + some extra for visual effect
+      setAnimatedCurrentCount(Math.floor(Math.random() * (baseCount + 5)));
+      setAnimatedBaseCount(Math.floor(Math.random() * (baseCount + 5)));
+    }, 100); // 10 times per second
+
+    return () => clearInterval(animationInterval);
+  }, [isShuffling, deck.cardIds, deck.baseCardIds]);
+
+  // End shuffle animation after timeout
+  useEffect(() => {
+    if (!isShuffling || !shuffleEndTimeRef.current) return;
+
+    const remainingTime = shuffleEndTimeRef.current - Date.now();
+    if (remainingTime <= 0) {
+      setIsShuffling(false);
+      shuffleEndTimeRef.current = null;
+      // Reset to actual values
+      setAnimatedCurrentCount(visibleCardCount);
+      setAnimatedBaseCount((deck.baseCardIds || deck.cardIds).length);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setIsShuffling(false);
+      shuffleEndTimeRef.current = null;
+      setAnimatedCurrentCount(visibleCardCount);
+      setAnimatedBaseCount((deck.baseCardIds || deck.cardIds).length);
+    }, remainingTime);
+
+    return () => clearTimeout(timeout);
+  }, [isShuffling, visibleCardCount, deck.cardIds, deck.baseCardIds]);
+
   return (
     <Tooltip
       text={deck.tooltipText}
@@ -226,7 +292,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                   setHoveredPileId(null);
                 }
               }}
-              className={`absolute group ${draggingPile?.pile.id === pile.id ? 'opacity-50 scale-95 cursor-grabbing' : ''}`}
+              className={`absolute group ${currentTool !== 'none' ? 'cursor-default' : draggingPile?.pile.id === pile.id ? 'opacity-50 scale-95 cursor-grabbing' : ''}`}
               style={{
                 left: pilePos.x,
                 top: pilePos.y,
@@ -238,13 +304,15 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               {/* Pile visual representation */}
               <div
                 className={`absolute inset-0 bg-slate-800 border-2 flex flex-col items-center justify-center transition-colors ${
-                  pile.position === 'free'
-                    ? pile.locked
-                      ? 'border-red-600 cursor-pointer'
-                      : draggingPile?.pile.id === pile.id
-                        ? 'border-yellow-400 cursor-grabbing'
-                        : 'border-slate-600 cursor-move hover:border-slate-500'
-                    : 'border-slate-600 cursor-pointer'
+                  currentTool !== 'none'
+                    ? 'cursor-default'
+                    : pile.position === 'free'
+                      ? pile.locked
+                        ? 'border-red-600 cursor-pointer'
+                        : draggingPile?.pile.id === pile.id
+                          ? 'border-yellow-400 cursor-grabbing'
+                          : 'border-slate-600 cursor-move hover:border-slate-500'
+                      : 'border-slate-600 cursor-pointer'
                 }`}
                 style={shapeStyles}
                 onContextMenu={(e) => handlePileContextMenu(e, pile, deck)}
@@ -340,7 +408,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               setHoveredDeckId(null);
             }
           }}
-          className={`absolute group ${draggingClass}`}
+          className={`absolute group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
           style={{
             left: 0,
             top: 0,
@@ -383,13 +451,15 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           <div className="absolute inset-0 bg-slate-900 border-2 border-slate-500 flex flex-col items-center justify-center cursor-pointer transition-colors" style={shapeStyles}>
             <Layers className="text-slate-400 mb-2" />
             <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{deck.name}</span>
-            <span className="text-xs text-slate-500 select-none">{visibleCardCount} / {(deck.baseCardIds || deck.cardIds).length}</span>
+            <span className={`text-xs select-none ${isShuffling ? 'text-green-400' : 'text-slate-500'}`}>
+              {isShuffling ? animatedCurrentCount : visibleCardCount} / {isShuffling ? animatedBaseCount : (deck.baseCardIds || deck.cardIds).length}
+            </span>
           </div>
         )}
 
         {/* Action buttons on bottom edge - like cards */}
-        {/* Hide buttons when cursor slot has cards */}
-        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 transition-opacity z-30 pointer-events-none ${cursorSlotHasCards ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}>
+        {/* Hide buttons when cursor slot has cards or when drawing tool is active */}
+        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 transition-opacity z-30 pointer-events-none ${cursorSlotHasCards || currentTool !== 'none' ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}>
           {(() => {
             // Define all possible buttons based on actionButtons setting
             const actionButtons = deck.actionButtons || [];
@@ -407,7 +477,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                 action: (e?: React.MouseEvent) => executeClickAction(deck, 'playTopCard', e),
                 className: 'bg-green-600 hover:bg-green-500',
                 title: 'Play Top',
-                icon: <Eye size={14} />
+                icon: <ArrowUp size={14} />
               },
               shuffleDeck: {
                 key: 'shuffleDeck',
@@ -433,7 +503,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                 },
                 className: 'bg-orange-600 hover:bg-orange-500',
                 title: 'Top Deck',
-                icon: <Search size={14} />
+                icon: <ArrowUp size={14} />
               },
               piles: {
                 key: 'piles',
@@ -468,7 +538,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                 action: () => executeClickAction(deck, 'lock'),
                 className: 'bg-yellow-600 hover:bg-yellow-500',
                 title: deck.locked ? 'Unlock' : 'Lock',
-                icon: <Lock size={14} />
+                icon: deck.locked ? <Unlock size={14} /> : <Lock size={14} />
               },
               layer: {
                 key: 'layer',
@@ -517,7 +587,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                 action: () => executeClickAction(deck, 'toBottom'),
                 className: 'bg-yellow-500 hover:bg-yellow-400',
                 title: 'To Bottom',
-                icon: <RefreshCw size={14} style={{ transform: 'rotate(180deg)' }} />
+                icon: <ArrowDown size={14} />
               },
             };
 
@@ -557,6 +627,7 @@ export default React.memo(DeckComponent, (prevProps, nextProps) => {
     prevProps.draggingId === nextProps.draggingId &&
     prevProps.hoveredDeckId === nextProps.hoveredDeckId &&
     prevProps.hoveredPileId === nextProps.hoveredPileId &&
-    prevProps.cursorSlotHasCards === nextProps.cursorSlotHasCards
+    prevProps.cursorSlotHasCards === nextProps.cursorSlotHasCards &&
+    prevProps.currentTool === nextProps.currentTool
   );
 });

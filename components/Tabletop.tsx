@@ -13,7 +13,6 @@ import { DeckComponent } from './DeckComponent';
 import { UIObjectRenderer } from './UIObjectRenderer';
 import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';
-import { ObjectDrawingCanvas } from './ObjectDrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
 import { CARD_SHAPE_DIMS } from '../constants';
@@ -148,7 +147,7 @@ const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 };
 
 export const Tabletop: React.FC = () => {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, isHost } = useGame();
 
   // Viewport state
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -206,6 +205,7 @@ export const Tabletop: React.FC = () => {
   const longPressTimerRef = useRef<number | null>(null);
   const longPressItemRef = useRef<{ id: string; item: TableObject; startX: number; startY: number } | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  const dragStartPositionRef = useRef<{ id: string; x: number; y: number } | null>(null); // Track initial position for network commit
   const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const draggingIdRef = useRef<string | null>(null);
   const isPanningRef = useRef(false);
@@ -391,14 +391,14 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('add-token-to-cursor-slot', handleAddTokenToSlot);
   }, [cursorSlot.length, dispatch, state.objects]);
 
-  // Listen for current tool changes from DrawingCanvas
+  // Listen for current tool changes from ToolsPanel
   useEffect(() => {
     const handleToolChanged = (e: Event) => {
       const customEvent = e as CustomEvent<{ tool: string }>;
       setCurrentTool(customEvent.detail.tool);
     };
-    window.addEventListener('current-tool-changed', handleToolChanged);
-    return () => window.removeEventListener('current-tool-changed', handleToolChanged);
+    window.addEventListener('drawing-tool-changed', handleToolChanged);
+    return () => window.removeEventListener('drawing-tool-changed', handleToolChanged);
   }, []);
 
   // Listen for token-copy updates from archetype settings changes
@@ -711,6 +711,10 @@ export const Tabletop: React.FC = () => {
         break;
       case 'shuffleDeck':
         if (obj.type === ItemType.DECK) {
+          // Dispatch event for shuffle animation
+          window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
+            detail: { deckId: obj.id }
+          }));
           dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id } });
         }
         break;
@@ -1637,6 +1641,8 @@ export const Tabletop: React.FC = () => {
           x: e.clientX - item.x,
           y: e.clientY - item.y
         };
+        // Store initial position for network commit on drag end
+        dragStartPositionRef.current = { id, x: item.x, y: item.y };
         return;
       }
 
@@ -1716,6 +1722,8 @@ export const Tabletop: React.FC = () => {
           x: offsetX,
           y: offsetY
         };
+        // Store initial position for network commit on drag end
+        dragStartPositionRef.current = { id, x: item.x, y: item.y };
       }
     }
   };
@@ -1799,6 +1807,7 @@ export const Tabletop: React.FC = () => {
             x: targetX,
             y: targetY,
           },
+          _localOnly: true, // Don't send over network during drag
         });
         return;
       }
@@ -1842,6 +1851,7 @@ export const Tabletop: React.FC = () => {
           x: snapped.x,
           y: snapped.y,
         },
+        _localOnly: true, // Don't send over network during drag
       });
 
       // Check if cursor is over a deck (for card-to-deck drop)
@@ -2217,6 +2227,27 @@ export const Tabletop: React.FC = () => {
     // Clear hover state
     setHoveredDeckId(null);
     setHoveredPileId(null);
+
+    // Send MOVE_OBJECT_COMMIT for guests when drag ends (non-local drag)
+    if (!isHost && dragStartPositionRef.current && draggingId) {
+      const startPos = dragStartPositionRef.current;
+      const obj = state.objects[draggingId];
+      if (obj && startPos.id === draggingId) {
+        // Object was dragged, send final position to host
+        dispatch({
+          type: 'MOVE_OBJECT_COMMIT',
+          payload: {
+            id: draggingId,
+            x: obj.x,
+            y: obj.y,
+            previousX: startPos.x,
+            previousY: startPos.y,
+          },
+        });
+      }
+    }
+    dragStartPositionRef.current = null;
+
     setDraggingId(null);
     setIsPanning(false);
     setResizingId(null);
@@ -2226,7 +2257,7 @@ export const Tabletop: React.FC = () => {
     // Clear pile dragging state
     setDraggingPile(null);
     pileDragStartRef.current = null;
-  }, [draggingId, hoveredDeckId, hoveredPileId, state.objects, dispatch, executeClickAction, isPointInRotatedRect]);
+  }, [draggingId, hoveredDeckId, hoveredPileId, state.objects, dispatch, executeClickAction, isPointInRotatedRect, isHost]);
 
   // Keep handleMouseUp ref updated
   useEffect(() => {
@@ -2588,16 +2619,22 @@ export const Tabletop: React.FC = () => {
     return (Object.values(state.objects) as TableObject[])
       .filter(obj => obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW)
       .filter(obj => {
+        // For windows with ownerId, only show to the owner
+        if (obj.type === ItemType.WINDOW) {
+          const windowObj = obj as WindowObject;
+          // Filter out windows owned by other players
+          if (windowObj.ownerId && windowObj.ownerId !== state.activePlayerId) {
+            return false;
+          }
+          return windowObj.visible !== false;
+        }
         if (obj.type === ItemType.PANEL) {
           return (obj as PanelObject).visible !== false;
-        }
-        if (obj.type === ItemType.WINDOW) {
-          return (obj as WindowObject).visible !== false;
         }
         return true;
       })
       .sort((a, b) => (a.zIndex || 1000) - (b.zIndex || 1000));
-  }, [state.objects]);
+  }, [state.objects, state.activePlayerId]);
 
   // Split UI objects into pinned and unpinned for separate rendering
   const pinnedUIObjects = useMemo(() => {
@@ -2635,7 +2672,7 @@ export const Tabletop: React.FC = () => {
     <div
       ref={scrollContainerRef}
       data-tabletop="true"
-      className={`w-full h-full bg-table overflow-auto relative ${cursorSlot.length > 0 ? 'cursor-grabbing' : 'cursor-grab'} active:cursor-grabbing`}
+      className={`w-full h-full bg-table overflow-auto relative ${cursorSlot.length > 0 ? 'cursor-grabbing' : 'cursor-default'}`}
       onMouseDown={(e) => handleMouseDown(e)}
       onMouseMove={handleMouseMove}
       onWheel={handleWheel}
@@ -2785,7 +2822,9 @@ export const Tabletop: React.FC = () => {
             {/* All objects in unified space */}
             {tableObjects.map((obj) => {
                 const isOwner = !(obj as any).ownerId || (obj as any).ownerId === state.activePlayerId || isGM;
-                const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
+                // Only show grab cursor for unlocked objects that can be dragged
+                const canDrag = !obj.locked;
+                const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 if (obj.type === ItemType.BOARD) {
                     // Skip pinned boards - they are rendered separately in fixed container
@@ -2833,6 +2872,7 @@ export const Tabletop: React.FC = () => {
                                 hexR={hexR}
                                 hexW={hexW}
                                 hexPath={hexPath}
+                                currentTool={currentTool}
                             />
                         </Tooltip>
                     );
@@ -2865,7 +2905,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute flex items-center justify-center text-white font-bold select-none ${draggingClass} group`}
+                                className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     left: obj.x,
                                     top: obj.y,
@@ -2922,7 +2962,7 @@ export const Tabletop: React.FC = () => {
                             {/* No letter display needed - SvgTokenShape handles all token rendering */}
 
                             {/* Action buttons */}
-                            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100' : ''}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -2987,9 +3027,6 @@ export const Tabletop: React.FC = () => {
                                     ));
                                 })()}
                             </div>
-
-                            {/* Object Drawing Canvas - for drawing directly on tokens */}
-                            <ObjectDrawingCanvas obj={obj} width={obj.width} height={obj.height} />
                         </div>
                         </Tooltip>
                     );
@@ -3012,7 +3049,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${draggingClass} group`}
+                                className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     left: obj.x,
                                     top: obj.y,
@@ -3044,7 +3081,7 @@ export const Tabletop: React.FC = () => {
                             )}
 
                             {/* Action buttons */}
-                            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100' : ''}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -3191,7 +3228,7 @@ export const Tabletop: React.FC = () => {
                                 )}
 
                             {/* Action buttons */}
-                            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-none">
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100' : ''}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -3279,7 +3316,7 @@ export const Tabletop: React.FC = () => {
                             }}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}
-                            className={`${draggingClass} rounded-lg`}
+                            className={`rounded-lg ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                         >
                             {(obj as any).isPinnedToViewport && (
                                 <div
@@ -3298,7 +3335,7 @@ export const Tabletop: React.FC = () => {
                                   card={card}
                                   canFlip={cardSettings.actionButtons?.includes('flip') ?? false}
                                   onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
-                                  showActionButtons={true}
+                                  showActionButtons={currentTool === 'none'}
                                   actionButtons={cardSettings.actionButtons}
                                   overrideWidth={displayWidth}
                                   overrideHeight={displayHeight}
@@ -3382,9 +3419,6 @@ export const Tabletop: React.FC = () => {
                                 }}
                             />
                             </div>
-
-                            {/* Object Drawing Canvas - for drawing directly on cards */}
-                            <ObjectDrawingCanvas obj={obj} width={displayWidth} height={displayHeight} faceUp={card.faceUp} />
                         </div>
                     )
                 }
@@ -3394,7 +3428,8 @@ export const Tabletop: React.FC = () => {
             {/* Unpinned Decks - rendered in the transform container with other game objects */}
             {unpinnedDecks.map((deck) => {
                 const deckObj = deck as DeckType;
-                const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
+                const canDrag = !deckObj.locked;
+                const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 return (
                     <div key={deckObj.id} style={{ position: 'absolute', left: deckObj.x, top: deckObj.y }}>
@@ -3421,6 +3456,7 @@ export const Tabletop: React.FC = () => {
                             executeClickAction={executeClickAction}
                             cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
                             allObjects={state.objects}
+                            currentTool={currentTool}
                         />
                     </div>
                 );
@@ -3466,7 +3502,8 @@ export const Tabletop: React.FC = () => {
                 const pinnedPosition = (deckObj as any).pinnedScreenPosition;
                 if (!pinnedPosition) return null;
 
-                const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
+                const canDrag = !deckObj.locked;
+                const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 return (
                     <div
@@ -3512,6 +3549,7 @@ export const Tabletop: React.FC = () => {
                             executeClickAction={executeClickAction}
                             cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
                             allObjects={state.objects}
+                            currentTool={currentTool}
                         />
                     </div>
                 );
@@ -3596,7 +3634,8 @@ export const Tabletop: React.FC = () => {
                 if (!pinnedPosition) return null;
 
                 const isDragging = draggingId === obj.id;
-                const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : 'cursor-grab';
+                const canDrag = !obj.locked;
+                const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 // Render dice
                 if (obj.type === ItemType.DICE_OBJECT) {
@@ -3612,7 +3651,7 @@ export const Tabletop: React.FC = () => {
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
-                                className={`flex items-center justify-center group select-none ${draggingClass}`}
+                                className={`flex items-center justify-center group select-none ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     width: dice.width || 60,
                                     height: dice.height || 60,
@@ -3710,6 +3749,7 @@ export const Tabletop: React.FC = () => {
                 onAction={executeMenuAction}
                 onClose={() => setContextMenu(null)}
                 allObjects={state.objects}
+                language={state.language}
             />
         )}
 
@@ -3824,6 +3864,7 @@ export const Tabletop: React.FC = () => {
                 deck={pileContextMenu.deck}
                 onAction={executePileMenuAction}
                 onClose={() => setPileContextMenu(null)}
+                language={state.language}
             />
         )}
 
@@ -3885,6 +3926,7 @@ export const Tabletop: React.FC = () => {
                     setSearchModalDeck(null);
                     setSearchModalPile(undefined);
                 }}
+                language={state.language}
             />
         )}
 
@@ -3892,6 +3934,7 @@ export const Tabletop: React.FC = () => {
             <TopDeckModal
                 deck={topDeckModalDeck}
                 onClose={() => setTopDeckModalDeck(null)}
+                language={state.language}
             />
         )}
 

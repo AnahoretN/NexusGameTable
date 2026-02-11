@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { PanelObject, PanelType } from '../types';
+import { PanelObject, PanelType, AppLanguage } from '../types';
 import { useGame } from '../store/GameContext';
 import { Settings, Maximize2, Check } from 'lucide-react';
 import { useHandCardScale } from '../hooks/useHandCardScale';
@@ -10,14 +10,17 @@ type PanelSettingsTab = 'general';
 interface PanelSettingsModalProps {
   panel: PanelObject;
   onClose: () => void;
+  language?: AppLanguage;
 }
 
 /**
  * Modal for editing panel settings (position, size, rotation, etc.)
  * Used in both UIObjectRenderer and MainMenuContent
  */
-export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, onClose }) => {
+export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, onClose, language = 'en' }) => {
   const { dispatch } = useGame();
+  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
+
   const [activeTab, setActiveTab] = React.useState<PanelSettingsTab>('general');
   const [title, setTitle] = React.useState(panel.title);
   const [x, setX] = React.useState(panel.x);
@@ -64,7 +67,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
-          <h3 className="text-base font-bold text-white">Settings: {panel.title}</h3>
+          <h3 className="text-base font-bold text-white">{t({ en: `Settings: ${panel.title}`, ru: `Настройки: ${panel.title}` })}</h3>
         </div>
 
         {/* Tabs */}
@@ -77,7 +80,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                 : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
             }`}
           >
-            <Settings size={16} /> General
+            <Settings size={16} /> {t({ en: 'General', ru: 'Основное' })}
           </button>
         </div>
 
@@ -85,7 +88,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
           {/* Name */}
           <div>
-            <label className="block text-xs font-bold text-gray-400 mb-1">Name</label>
+            <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Name', ru: 'Название' })}</label>
             <input
               type="text"
               value={title}
@@ -97,7 +100,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
           {/* Position */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">X Position</label>
+              <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'X Position', ru: 'Позиция X' })}</label>
               <input
                 type="number"
                 value={Math.round(x)}
@@ -106,7 +109,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">Y Position</label>
+              <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Y Position', ru: 'Позиция Y' })}</label>
               <input
                 type="number"
                 value={Math.round(y)}
@@ -119,7 +122,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
           {/* Size */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">Width</label>
+              <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Width', ru: 'Ширина' })}</label>
               <input
                 type="number"
                 value={width}
@@ -128,7 +131,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">Height</label>
+              <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Height', ru: 'Высота' })}</label>
               <input
                 type="number"
                 value={height}
@@ -140,7 +143,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
 
           {/* Rotation */}
           <div>
-            <label className="block text-xs font-bold text-gray-400 mb-1">Rotation (degrees)</label>
+            <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Rotation (degrees)', ru: 'Вращение (градусы)' })}</label>
             <input
               type="number"
               value={rotation}
@@ -153,7 +156,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
           {isHandPanel ? (
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Card Scale (%)</label>
+                <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Card Scale (%)', ru: 'Масштаб карт (%)' })}</label>
                 <input
                   type="number"
                   value={Math.round(handCardScale * 100)}
@@ -180,7 +183,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
             </div>
           ) : (
             <div>
-              <label className="block text-xs font-bold text-gray-400 mb-1">Z-Index (layer order)</label>
+              <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Z-Index (layer order)', ru: 'Z-Index (порядок слоёв)' })}</label>
               <input
                 type="number"
                 value={zIndex}
@@ -194,7 +197,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
           <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 border border-slate-700">
             <label className="text-xs text-gray-300 flex items-center gap-2">
               <Maximize2 size={12} />
-              Dual Position Mode
+              {t({ en: 'Dual Position Mode', ru: 'Двойная позиция' })}
             </label>
             <button
               onClick={() => setDualPosition(!dualPosition)}
@@ -208,7 +211,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
             </button>
           </div>
           <p className="text-[10px] text-gray-500 -mt-2">
-            When enabled, panel remembers separate positions for collapsed and expanded states
+            {t({ en: 'When enabled, panel remembers separate positions for collapsed and expanded states', ru: 'Когда включено, панель запоминает отдельные позиции для свёрнутого и развёрнутого состояния' })}
           </p>
         </div>
 
@@ -218,13 +221,13 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
             onClick={onClose}
             className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded"
           >
-            Cancel
+            {t({ en: 'Cancel', ru: 'Отмена' })}
           </button>
           <button
             onClick={handleSave}
             className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
           >
-            <Check size={16} /> Save Changes
+            <Check size={16} /> {t({ en: 'Save Changes', ru: 'Сохранить изменения' })}
           </button>
         </div>
       </div>

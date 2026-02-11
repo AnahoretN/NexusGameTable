@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
+import { AppLanguage } from '../types';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing } from '../types';
 import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Rows, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
@@ -49,6 +50,11 @@ interface MainMenuContentProps {
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const { state, dispatch, peerId } = useGame();
+  const lang: AppLanguage = state.language || 'en';
+
+  // Translation helper
+  const t = (key: { en: string; ru: string }): string => key[lang] || key.en;
+
   const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<{ sender: string; text: string }[]>([]);
@@ -385,63 +391,63 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   // Create categories with proper order and labels
   const categories = [
     {
-      id: 'boards', label: 'Game Boards', icon: <LayoutGrid size={16}/>,
+      id: 'boards', label: t({ en: 'Game Boards', ru: 'Игровые доски' }), icon: <LayoutGrid size={16}/>,
       items: [
-        { name: 'Standard Board', type: 'BOARD', gridType: GridType.SQUARE },
+        { name: t({ en: 'Standard Board', ru: 'Стандартная доска' }), type: 'BOARD', gridType: GridType.SQUARE },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.BOARD
     },
     {
-      id: 'decks', label: 'Decks', icon: <Library size={16}/>,
+      id: 'decks', label: t({ en: 'Decks', ru: 'Колоды' }), icon: <Library size={16}/>,
       items: [
-        { name: 'Standard Deck', type: 'DECK' },
-        { name: 'Hex Deck', type: 'HEX_DECK' },
+        { name: t({ en: 'Standard Deck', ru: 'Стандартная колода' }), type: 'DECK' },
+        { name: t({ en: 'Hex Deck', ru: 'Гекс-колода' }), type: 'HEX_DECK' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.DECK
     },
     {
-      id: 'tokens', label: 'Tokens', icon: <CircleDot size={16}/>,
+      id: 'tokens', label: t({ en: 'Tokens', ru: 'Токены' }), icon: <CircleDot size={16}/>,
       items: [
-        { name: 'Standard Token', type: 'TOKEN', shape: TokenShape.CIRCLE },
-        { name: 'Token Type', type: 'TOKEN_TYPE' },
+        { name: t({ en: 'Standard Token', ru: 'Стандартный токен' }), type: 'TOKEN', shape: TokenShape.CIRCLE },
+        { name: t({ en: 'Token Type', ru: 'Тип токена' }), type: 'TOKEN_TYPE' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.TOKEN || obj.type === ItemType.TOKEN_TYPE
     },
     {
-      id: 'randomizers', label: 'Randomizers & Dice', icon: <Dices size={16}/>,
+      id: 'randomizers', label: t({ en: 'Randomizers & Dice', ru: 'Рандомайзеры и кости' }), icon: <Dices size={16}/>,
       items: [
-        { name: 'Standard Dice', type: 'DICE' },
+        { name: t({ en: 'Standard Dice', ru: 'Стандартные кости' }), type: 'DICE' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.RANDOMIZER
     },
     {
-      id: 'counters', label: 'Counters', icon: <Box size={16}/>,
+      id: 'counters', label: t({ en: 'Counters', ru: 'Счётчики' }), icon: <Box size={16}/>,
       items: [
-        { name: 'Life Counter', type: 'COUNTER' },
-        { name: 'Score Tracker', type: 'COUNTER' },
+        { name: t({ en: 'Life Counter', ru: 'Счётчик жизней' }), type: 'COUNTER' },
+        { name: t({ en: 'Score Tracker', ru: 'Трекер очков' }), type: 'COUNTER' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.COUNTER
     },
     {
-      id: 'panels', label: 'Panels', icon: <Layers size={16}/>,
+      id: 'panels', label: t({ en: 'Panels', ru: 'Панели' }), icon: <Layers size={16}/>,
       items: [
-        { name: 'Hand Panel', type: 'PANEL', panelType: PanelType.HAND },
-        { name: 'Tableau Panel', type: 'PANEL', panelType: PanelType.TABLEAU, disabled: true },
-        { name: 'Pull Panel', type: 'PANEL', panelType: PanelType.PULL, disabled: true },
+        { name: t({ en: 'Hand Panel', ru: 'Панель руки' }), type: 'PANEL', panelType: PanelType.HAND },
+        { name: t({ en: 'Tableau Panel', ru: 'Панель таблицы' }), type: 'PANEL', panelType: PanelType.TABLEAU, disabled: true },
+        { name: t({ en: 'Pull Panel', ru: 'Pull панель' }), type: 'PANEL', panelType: PanelType.PULL, disabled: true },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.PANEL && (obj as any).panelType !== PanelType.MAIN_MENU
     },
     {
-      id: 'drawings', label: 'Drawings', icon: <Brush size={16}/>,
+      id: 'drawings', label: t({ en: 'Drawings', ru: 'Рисунки' }), icon: <Brush size={16}/>,
       items: [], // Drawings are created with marker tool, not via menu
       matcher: (obj: TableObject) => obj.type === ItemType.DRAWING
     },
     {
-      id: 'pages', label: 'Pages', icon: <FileText size={16}/>,
+      id: 'pages', label: t({ en: 'Pages', ru: 'Страницы' }), icon: <FileText size={16}/>,
       items: [
-        { name: 'Page', type: 'PAGE', disabled: true },
+        { name: t({ en: 'Page', ru: 'Страница' }), type: 'PAGE', disabled: true },
       ],
-      matcher: (obj: TableObject) => obj.type === ItemType.PAGE
+      matcher: (obj: TableObject) => false // Pages not implemented yet
     },
   ];
 
@@ -479,6 +485,12 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 dispatch={dispatch}
                 deleteCandidateId={deleteCandidateId}
                 setDeleteCandidateId={setDeleteCandidateId}
+                isGM={isGM}
+                canCreateObjects={isGM || state.playerPermissions.createObjects}
+                canConfigureObjects={isGM || state.playerPermissions.configureObjects}
+                canDeleteObjects={isGM || state.playerPermissions.deleteObjects}
+                canHideObjects={isGM || state.playerPermissions.hideObjects}
+                language={state.language}
               />
             ))}
           </div>
@@ -488,7 +500,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           <div className="h-full flex flex-col">
             {/* Hand Panel */}
             <div className="flex-1 overflow-hidden">
-              <HandPanel width={width} isDragTarget={dragOverHand} cardScale={handCardScale} />
+              <HandPanel width={width} isDragTarget={dragOverHand} cardScale={handCardScale} language={lang} />
             </div>
           </div>
         )}
@@ -497,12 +509,12 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           <div className="p-3 space-y-3">
             {/* Drawing Tools Section */}
             <div>
-              <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">Drawing Tools</h4>
+              <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{t({ en: 'Drawing Tools', ru: 'Инструменты рисования' })}</h4>
               <div className="grid grid-cols-4 gap-2">
-                <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label="Cursor" selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="marker" icon={<Pen size={20} />} label="Marker" selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label="Eraser" selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label="Ruler" selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label={t({ en: 'Cursor', ru: 'Курсор' })} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="marker" icon={<Pen size={20} />} label={t({ en: 'Marker', ru: 'Маркер' })} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label={t({ en: 'Eraser', ru: 'Ластик' })} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label={t({ en: 'Ruler', ru: 'Линейка' })} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
               </div>
             </div>
 
@@ -510,13 +522,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             {(selectedTool === 'marker' || selectedTool === 'eraser') && (
               <div className="p-3 bg-slate-800 rounded-lg space-y-3">
                 <h4 className="text-xs font-bold text-gray-400 uppercase">
-                  {selectedTool === 'marker' ? 'Marker Settings' : 'Eraser Settings'}
+                  {selectedTool === 'marker' ? t({ en: 'Marker Settings', ru: 'Настройки маркера' }) : t({ en: 'Eraser Settings', ru: 'Настройки ластика' })}
                 </h4>
 
                 {/* Color picker */}
                 {selectedTool === 'marker' && (
                   <div>
-                    <label className="block text-[10px] text-gray-400 mb-2">Color</label>
+                    <label className="block text-[10px] text-gray-400 mb-2">{t({ en: 'Color', ru: 'Цвет' })}</label>
                     <div className="grid grid-cols-8 gap-1">
                       {[
                         // Basic colors (first row)
@@ -545,7 +557,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 {/* Thickness slider */}
                 <div>
                   <label className="block text-[10px] text-gray-400 mb-2">
-                    Size: {markerThickness}px
+                    {t({ en: 'Size', ru: 'Размер' })}: {markerThickness}px
                   </label>
                   <input
                     type="range"
@@ -566,7 +578,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 {currentDrawingTool === 'marker' && (
                 <div>
                   <label className="block text-[10px] text-gray-400 mb-2">
-                    Opacity: {markerOpacity}%
+                    {t({ en: 'Opacity', ru: 'Прозрачность' })}: {markerOpacity}%
                   </label>
                   <input
                     type="range"
@@ -621,10 +633,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         {activeTab === 'players' && (
           <div className="p-4 space-y-6">
             <div>
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Session Tools</h3>
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">{t({ en: 'Session Tools', ru: 'Инструменты сессии' })}</h3>
               {/* Session ID Display */}
               <div className="mb-2 p-2 bg-slate-800 rounded border border-slate-700">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Session ID</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{t({ en: 'Session ID', ru: 'ID сессии' })}</div>
                 <div className="text-sm text-gray-300 font-mono break-all">{state.sessionId || 'Generating...'}</div>
               </div>
               <div className="grid grid-cols-1 gap-2">
@@ -633,22 +645,24 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   className={`w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold transition-all ${inviteCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
                 >
                   {inviteCopied ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
-                  {inviteCopied ? 'Link Copied!' : 'Invite Player'}
+                  {inviteCopied ? t({ en: 'Link Copied!', ru: 'Ссылка скопирована!' }) : t({ en: 'Invite Player', ru: 'Пригласить игрока' })}
                 </button>
                 <button
                   onClick={handleSaveGame}
                   className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
                 >
                   <Save size={16} />
-                  Save Session
+                  {t({ en: 'Save Session', ru: 'Сохранить сессию' })}
                 </button>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
-                >
-                  <Upload size={16} />
-                  Load Session
-                </button>
+                {isGM && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                  >
+                    <Upload size={16} />
+                    {t({ en: 'Load Session', ru: 'Загрузить сессию' })}
+                  </button>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -660,7 +674,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Active Players</h3>
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{t({ en: 'Active Players', ru: 'Активные игроки' })}</h3>
               {state.players
                 .map(p => {
                   const isCurrentPlayer = p.id === state.activePlayerId;
@@ -695,7 +709,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{backgroundColor: p.color}} />
                       <span className="font-medium text-white truncate">{p.name}</span>
                       {p.isGM && <span className="text-xs bg-yellow-600 px-1 rounded text-white">GM</span>}
-                      {isCurrentPlayer && <span className="text-xs bg-slate-600 px-1 rounded text-gray-300">You</span>}
+                      {isCurrentPlayer && <span className="text-xs bg-slate-600 px-1 rounded text-gray-300">{t({ en: 'You', ru: 'Вы' })}</span>}
 
                       {/* GM Mode Switch Button - shown for both Game Master and GM Player when current user is host */}
                       {showSwitchButton && (
@@ -710,7 +724,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                             }
                           }}
                           className="ml-auto p-1 bg-purple-600/20 hover:bg-purple-600/40 rounded text-purple-400 hover:text-purple-300 transition-colors"
-                          title={isGMView ? "Switch to Player Mode" : "Switch to GM Mode"}
+                          title={isGMView ? t({ en: "Switch to Player Mode", ru: "Переключиться в режим игрока" }) : t({ en: "Switch to GM Mode", ru: "Переключиться в режим ГМ" })}
                         >
                           <User size={14} />
                         </button>
@@ -721,7 +735,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                         <button
                           onClick={() => setRenamePlayerId(p.id)}
                           className="ml-auto p-1 hover:bg-slate-700 rounded text-gray-400 hover:text-white transition-colors"
-                          title="Edit name"
+                          title={t({ en: "Edit name", ru: "Изменить имя" })}
                         >
                           <Pencil size={14} />
                         </button>
@@ -786,6 +800,12 @@ interface CategorySectionProps {
   dispatch: React.Dispatch<any>;
   deleteCandidateId: string | null;
   setDeleteCandidateId: (id: string | null) => void;
+  isGM: boolean;
+  canCreateObjects: boolean;
+  canConfigureObjects: boolean;
+  canDeleteObjects: boolean;
+  canHideObjects: boolean;
+  language: AppLanguage;
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({
@@ -794,6 +814,12 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   dispatch,
   deleteCandidateId,
   setDeleteCandidateId,
+  isGM,
+  canCreateObjects,
+  canConfigureObjects,
+  canDeleteObjects,
+  canHideObjects,
+  language,
 }) => {
   // Load expanded state from localStorage, default to false (collapsed)
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -1112,7 +1138,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       {isExpanded && (
         <div className="mt-2 space-y-1 pl-4">
           {/* Create items */}
-          {category.items.map((item, idx) => {
+          {canCreateObjects && category.items.map((item, idx) => {
             const isItemDisabled = category.disabled || item.disabled;
             return (
               <button
@@ -1171,48 +1197,56 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                       style={{ backgroundColor: obj.type === ItemType.TOKEN_TYPE ? objColor : (isVisible ? objColor : '#4a5568') }}
                     />
                     <span className="flex-1 truncate text-xs">{getDisplayName()}</span>
-                    <button
-                      onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
-                      className={`p-1 rounded ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} opacity-0 group-hover:opacity-100`}
-                      title={isLocked ? 'Unlock' : 'Lock'}
-                    >
-                      {isLocked ? <Lock size={10} /> : <Unlock size={10} />}
-                    </button>
-                    <button
-                      onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } })}
-                      className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100"
-                      title={isVisible ? 'Hide' : 'Show'}
-                    >
-                      {isVisible ? <Eye size={10} /> : <EyeOff size={10} />}
-                    </button>
-                    <button
-                      onClick={() => dispatch({
-                        type: 'CREATE_WINDOW',
-                        payload: {
-                          windowType: WindowType.OBJECT_SETTINGS,
-                          targetObjectId: obj.id,
-                          title: 'Settings'
-                        }
-                      })}
-                      className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100"
-                      title="Settings"
-                    >
-                      <Settings size={10} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        // Token copies (tokens with archetypeId) are deleted immediately without confirmation
-                        if (obj.type === ItemType.TOKEN && (obj as any).archetypeId) {
-                          dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } });
-                        } else {
-                          setDeleteCandidateId(obj.id);
-                        }
-                      }}
-                      className="p-1 hover:bg-red-600 rounded text-red-400 hover:text-white opacity-0 group-hover:opacity-100"
-                      title="Delete"
-                    >
-                      <Trash2 size={10} />
-                    </button>
+                    {canHideObjects && (
+                      <button
+                        onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
+                        className={`p-1 rounded ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} opacity-0 group-hover:opacity-100`}
+                        title={isLocked ? 'Unlock' : 'Lock'}
+                      >
+                        {isLocked ? <Lock size={10} /> : <Unlock size={10} />}
+                      </button>
+                    )}
+                    {canHideObjects && (
+                      <button
+                        onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } })}
+                        className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100"
+                        title={isVisible ? 'Hide' : 'Show'}
+                      >
+                        {isVisible ? <Eye size={10} /> : <EyeOff size={10} />}
+                      </button>
+                    )}
+                    {canConfigureObjects && (
+                      <button
+                        onClick={() => dispatch({
+                          type: 'CREATE_WINDOW',
+                          payload: {
+                            windowType: WindowType.OBJECT_SETTINGS,
+                            targetObjectId: obj.id,
+                            title: 'Settings'
+                          }
+                        })}
+                        className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100"
+                        title="Settings"
+                      >
+                        <Settings size={10} />
+                      </button>
+                    )}
+                    {canDeleteObjects && (
+                      <button
+                        onClick={() => {
+                          // Token copies (tokens with archetypeId) are deleted immediately without confirmation
+                          if (obj.type === ItemType.TOKEN && (obj as any).archetypeId) {
+                            dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } });
+                          } else {
+                            setDeleteCandidateId(obj.id);
+                          }
+                        }}
+                        className="p-1 hover:bg-red-600 rounded text-red-400 hover:text-white opacity-0 group-hover:opacity-100"
+                        title="Delete"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -1230,6 +1264,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 ? (state.objects[deleteCandidateId] as any).title || 'Window'
                 : state.objects[deleteCandidateId]?.name || 'Object'
           }
+          language={language}
           onConfirm={() => {
             dispatch({ type: 'DELETE_OBJECT', payload: { id: deleteCandidateId }});
             setDeleteCandidateId(null);
@@ -1301,6 +1336,11 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onS
     if (!card) return;
 
     const handleMouseDownCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Check if clicking on settings button - don't add token in that case
+      const settingsButton = target.closest('[data-archetype-settings]') as HTMLElement;
+      if (settingsButton) return;
+
       (card as HTMLElement).dataset.isAddingToken = 'true';
       dragStartTimeRef.current = Date.now();
       dragStartPositionRef.current = { x: e.clientX, y: e.clientY };
@@ -1371,6 +1411,7 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onS
 
       {/* Settings button */}
       <button
+        data-archetype-settings
         onClick={(e) => {
           e.stopPropagation();
           onSettings();

@@ -1,0 +1,185 @@
+import { AppLanguage } from './types';
+
+export type TranslationKey = keyof typeof translations.en;
+
+const translations = {
+  en: {
+    // App
+    appName: 'Nexus Game Table',
+    version: 'v{version}',
+
+    // Game Settings
+    gameSettings: 'Game Settings',
+    language: 'Language',
+    playerPermissions: 'Player Permissions',
+    playerPermissionsDesc: 'Configure what non-GM players can do',
+    createObjects: 'Create Objects',
+    configureObjects: 'Configure Objects (Settings)',
+    deleteObjects: 'Delete Objects',
+    showHideObjects: 'Show/Hide Objects',
+    close: 'Close',
+    p2pInfo: 'P2P multiplayer via WebRTC • No server required',
+
+    // Main Menu Tabs
+    objects: 'Objects',
+    hand: 'Hand',
+    players: 'Players',
+    settings: 'Settings',
+
+    // Categories
+    tokens: 'Tokens',
+    cards: 'Cards',
+    dice: 'Dice',
+    counters: 'Counters',
+    boards: 'Boards',
+    drawings: 'Drawings',
+    pages: 'Pages',
+
+    // Objects
+    token: 'Token',
+    card: 'Card',
+    deck: 'Deck',
+    diceObject: 'Dice',
+    counter: 'Counter',
+    board: 'Board',
+    drawing: 'Drawing',
+    page: 'Page',
+
+    // Actions
+    delete: 'Delete',
+    settings: 'Settings',
+    lock: 'Lock',
+    unlock: 'Unlock',
+    hide: 'Hide',
+    show: 'Show',
+    pin: 'Pin',
+    unpin: 'Unpin',
+    minimize: 'Minimize',
+    expand: 'Expand',
+    save: 'Save',
+    load: 'Load',
+    saveSession: 'Save Session',
+    loadSession: 'Load Session',
+    supportProject: 'Support this project',
+
+    // Player actions
+    switchToGMMode: 'Switch to GM Mode',
+    switchToPlayerMode: 'Switch to Player Mode',
+    kickPlayer: 'Kick Player',
+
+    // Confirmation
+    confirmDelete: 'Are you sure you want to delete {name}?',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+
+    // Messages
+    sessionSaved: 'Session saved successfully!',
+    sessionLoaded: 'Session loaded successfully!',
+    loadError: 'Error loading session',
+
+    // Other
+    gm: 'GM',
+    search: 'Search',
+    shuffle: 'Shuffle',
+    draw: 'Draw',
+    play: 'Play',
+  },
+  ru: {
+    // App
+    appName: 'Nexus Game Table',
+    version: 'в{version}',
+
+    // Game Settings
+    gameSettings: 'Настройки игры',
+    language: 'Язык',
+    playerPermissions: 'Права игроков',
+    playerPermissionsDesc: 'Настройте, что могут делать игроки, не являющиеся ГМ',
+    createObjects: 'Создавать объекты',
+    configureObjects: 'Настраивать объекты',
+    deleteObjects: 'Удалять объекты',
+    showHideObjects: 'Показывать/Скрывать объекты',
+    close: 'Закрыть',
+    p2pInfo: 'P2P мультиплеер через WebRTC • Без сервера',
+
+    // Main Menu Tabs
+    objects: 'Объекты',
+    hand: 'Рука',
+    players: 'Игроки',
+    settings: 'Настройки',
+
+    // Categories
+    tokens: 'Токены',
+    cards: 'Карты',
+    dice: 'Кости',
+    counters: 'Счётчики',
+    boards: 'Доски',
+    drawings: 'Рисунки',
+    pages: 'Страницы',
+
+    // Objects
+    token: 'Токен',
+    card: 'Карта',
+    deck: 'Колоды',
+    diceObject: 'Кость',
+    counter: 'Счётчик',
+    board: 'Доска',
+    drawing: 'Рисунок',
+    page: 'Страница',
+
+    // Actions
+    delete: 'Удалить',
+    settings: 'Настройки',
+    lock: 'Заблокировать',
+    unlock: 'Разблокировать',
+    hide: 'Скрыть',
+    show: 'Показать',
+    pin: 'Прикрепить',
+    unpin: 'Открепить',
+    minimize: 'Свернуть',
+    expand: 'Развернуть',
+    save: 'Сохранить',
+    load: 'Загрузить',
+    saveSession: 'Сохранить сессию',
+    loadSession: 'Загрузить сессию',
+    supportProject: 'Поддержать проект',
+
+    // Player actions
+    switchToGMMode: 'Переключиться в режим ГМ',
+    switchToPlayerMode: 'Переключиться в режим игрока',
+    kickPlayer: 'Выгнать игрока',
+
+    // Confirmation
+    confirmDelete: 'Вы уверены, что хотите удалить {name}?',
+    cancel: 'Отмена',
+    confirm: 'Подтвердить',
+
+    // Messages
+    sessionSaved: 'Сессия успешно сохранена!',
+    sessionLoaded: 'Сессия успешно загружена!',
+    loadError: 'Ошибка загрузки сессии',
+
+    // Other
+    gm: 'ГМ',
+    search: 'Поиск',
+    shuffle: 'Перемешать',
+    draw: 'Взять',
+    play: 'Выложить',
+  },
+} as const;
+
+export const getTranslation = (language: AppLanguage, key: TranslationKey, params?: Record<string, string | number>): string => {
+  const lang = translations[language] || translations.en;
+  let text = lang[key] || translations.en[key] || key;
+
+  if (params) {
+    Object.entries(params).forEach(([param, value]) => {
+      text = text.replace(`{${param}}`, String(value));
+    });
+  }
+
+  return text;
+};
+
+export const useTranslation = (language: AppLanguage) => {
+  return (key: TranslationKey, params?: Record<string, string | number>) => getTranslation(language, key, params);
+};

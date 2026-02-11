@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { PanelObject, WindowObject, ItemType, PanelType, WindowType } from '../types';
-import { X, Minus, Plus, Eye, EyeOff, Pin, Settings } from 'lucide-react';
+import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
+import { X, Minus, Plus, Eye, EyeOff, Pin, Settings, Trash2, Clock } from 'lucide-react';
 import { HandPanel } from './HandPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -11,6 +11,7 @@ import { PanelSettingsModal } from './PanelSettingsModal';
 import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { useHandCardScale } from '../hooks/useHandCardScale';
+import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
@@ -61,12 +62,15 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   zoom = 1,
   isPinnedMode = false
 }) => {
-  const { dispatch, state } = useGame();
+  const { dispatch, state, isHost } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Check if this is a main menu panel (must be before useState that uses it)
   const isMainMenu = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.MAIN_MENU;
+
+  // Check if current user is GM
+  const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
 
   // Track if this panel is currently being resized
   const [isResizing, setIsResizing] = useState(false);
@@ -192,6 +196,10 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   }, [dispatch, uiObject.id]);
 
   const handleOpenSettings = useCallback(() => {
+    // Check permissions - GM always has access, non-GM needs configureObjects permission
+    const canConfigure = isHost || state.playerPermissions.configureObjects;
+    if (!canConfigure) return; // Silently do nothing if no permission
+
     // Check if this is a HAND panel - if so, dispatch event for MainMenuContent to handle
     const panelObj = state.objects[uiObject.id] as PanelObject | undefined;
     if (panelObj?.panelType === PanelType.HAND) {
@@ -222,7 +230,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         y: uiObject.y + 50,
       }
     });
-  }, [dispatch, uiObject, state.objects]);
+  }, [dispatch, uiObject, state.objects, isHost, state.playerPermissions.configureObjects]);
 
   const handleBringToFront = useCallback(() => {
     // Bring to front by setting high z-index
@@ -416,7 +424,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 }}
                 className="text-sm text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
               >
-                [Support this project]
+                [{state.language === 'ru' ? 'Поддержать проект' : 'Support this project'}]
               </button>
             )}
           </div>
@@ -424,45 +432,48 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
           <div className="flex items-center gap-0.5 flex-shrink-0 ml-1" style={{ pointerEvents: 'auto' }}>
             {!minimized && (
               <>
-                {/* Settings button */}
+                {/* Settings button - visible to all */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowGameSettings(true);
                   }}
                   className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                  title="Settings"
+                  title={state.language === 'ru' ? 'Настройки' : 'Settings'}
                 >
                   <Settings size={14} className="text-white" />
                 </button>
-                {/* Pin to screen button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleTogglePin();
-                  }}
-                  className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
-                  title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
-                >
-                  <Pin size={14} className="text-white" />
-                </button>
+                {/* Pin to screen button - GM only */}
+                {isGM && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTogglePin();
+                    }}
+                    className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
+                    title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
+                  >
+                    <Pin size={14} className="text-white" />
+                  </button>
+                )}
               </>
             )}
-            {/* Minimize/Expand button */}
-            {minimized ? (
-              <>
-                {/* Pin button for collapsed state */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleTogglePin();
-                  }}
-                  className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
-                  title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
-                >
-                  <Pin size={14} className="text-white" />
-                </button>
-                {/* Expand button */}
+            {/* Pin button for collapsed state - GM only */}
+            {minimized && isGM && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleTogglePin();
+                }}
+                className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
+                title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
+              >
+                <Pin size={14} className="text-white" />
+              </button>
+            )}
+            {/* Minimize/Expand button - GM only */}
+            {isGM && (
+              minimized ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -473,18 +484,18 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 >
                   <Plus size={14} className="text-white" />
                 </button>
-              </>
-            ) : (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleToggleCollapse();
-                }}
-                className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                title="Minimize"
-              >
-                <Minus size={14} className="text-white" />
-              </button>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleCollapse();
+                  }}
+                  className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                  title="Minimize"
+                >
+                  <Minus size={14} className="text-white" />
+                </button>
+              )
             )}
           </div>
         </div>
@@ -616,23 +627,174 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
       {/* Game Settings Modal for Main Menu */}
       {isMainMenu && showGameSettings && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowGameSettings(false)}>
-          <div className="bg-slate-800 rounded-lg shadow-xl w-[400px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
-              <h3 className="text-base font-bold text-white">Game Settings</h3>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/15" onClick={() => setShowGameSettings(false)}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex justify-center items-center py-2 px-4">
+              <h3 className="text-base font-bold text-white">{state.language === 'ru' ? 'Настройки игры' : 'Game Settings'}</h3>
             </div>
-            <div className="p-4 space-y-4">
-              <div className="text-sm text-gray-400">
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Version Info */}
+              <div className="text-sm text-gray-400 pb-3 border-b border-slate-700">
                 <p>{APP_NAME} v{APP_VERSION}</p>
                 <p className="mt-2 text-xs text-gray-500">P2P multiplayer via WebRTC • No server required</p>
               </div>
+
+              {/* Language Settings */}
+              <div className="pt-2">
+                <h4 className="text-sm font-bold text-gray-300 mb-3">{state.language === 'ru' ? 'Язык' : 'Language'}</h4>
+                <div className="relative">
+                  <select
+                    value={localStorage.getItem('app-language') || 'en'}
+                    onChange={(e) => {
+                      const newLang = e.target.value as AppLanguage;
+                      localStorage.setItem('app-language', newLang);
+                      dispatch({ type: 'UPDATE_LANGUAGE', payload: newLang });
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm appearance-none cursor-pointer hover:bg-slate-700/50 transition-colors"
+                  >
+                    <option value="en">English</option>
+                    <option value="ru">Русский</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Player Permissions */}
+              {isGM && (
+                <div className="pt-4 pb-2 border-t border-slate-700">
+                  <h4 className="text-sm font-bold text-gray-300 mb-3">{state.language === 'ru' ? 'Права игроков' : 'Player Permissions'}</h4>
+                  <p className="text-xs text-gray-400 mb-3">{state.language === 'ru' ? 'Настройте, что могут делать игроки, не являющиеся ГМ' : 'Configure what non-GM players can do'}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
+                      <span className="text-xs text-gray-300">{state.language === 'ru' ? 'Создавать объекты' : 'Create Objects'}</span>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          dispatch({
+                            type: 'UPDATE_PLAYER_PERMISSIONS',
+                            payload: { ...state.playerPermissions, createObjects: !state.playerPermissions.createObjects }
+                          });
+                        }}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          state.playerPermissions.createObjects ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          state.playerPermissions.createObjects ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </label>
+                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
+                      <span className="text-xs text-gray-300">{state.language === 'ru' ? 'Настраивать объекты' : 'Configure Objects'}</span>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          dispatch({
+                            type: 'UPDATE_PLAYER_PERMISSIONS',
+                            payload: { ...state.playerPermissions, configureObjects: !state.playerPermissions.configureObjects }
+                          });
+                        }}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          state.playerPermissions.configureObjects ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          state.playerPermissions.configureObjects ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </label>
+                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
+                      <span className="text-xs text-gray-300">{state.language === 'ru' ? 'Удалять объекты' : 'Delete Objects'}</span>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          dispatch({
+                            type: 'UPDATE_PLAYER_PERMISSIONS',
+                            payload: { ...state.playerPermissions, deleteObjects: !state.playerPermissions.deleteObjects }
+                          });
+                        }}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          state.playerPermissions.deleteObjects ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          state.playerPermissions.deleteObjects ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </label>
+                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
+                      <span className="text-xs text-gray-300">{state.language === 'ru' ? 'Показывать/Скрывать' : 'Show/Hide Objects'}</span>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          dispatch({
+                            type: 'UPDATE_PLAYER_PERMISSIONS',
+                            payload: { ...state.playerPermissions, hideObjects: !state.playerPermissions.hideObjects }
+                          });
+                        }}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          state.playerPermissions.hideObjects ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          state.playerPermissions.hideObjects ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Storage & Cache Section */}
+              <div className="pt-4 pb-2 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-3">{state.language === 'ru' ? 'Сохранение и кэш' : 'Storage & Cache'}</h4>
+                <p className="text-xs text-gray-400 mb-3">{state.language === 'ru' ? 'Игра автоматически сохраняется в браузере и восстанавливается при перезагрузке страницы' : 'Game auto-saves to browser and restores on page reload'}</p>
+
+                {hasSavedGameState() && (
+                  <div className="bg-slate-900 rounded px-3 py-2 mb-3">
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <Clock size={12} />
+                      <span>{state.language === 'ru' ? 'Последнее сохранение: ' : 'Last save: '}{formatTimestamp(getSavedGameTimestamp() || 0)}</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => {
+                    if (state.language === 'ru' ? confirm('Вы уверены, что хотите удалить все сохранённые данные игры? Это действие нельзя отменить.') : confirm('Are you sure you want to clear all saved game data? This action cannot be undone.')) {
+                      dispatch({ type: 'CLEAR_SAVED_STATE' });
+                      // Also clear session ID to force generation of new one
+                      localStorage.removeItem('nexus-session-id');
+                      // Reload page to start fresh
+                      window.location.reload();
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded transition-colors text-sm"
+                >
+                  <Trash2 size={14} />
+                  <span>{state.language === 'ru' ? 'Очистить кэш' : 'Clear Cache'}</span>
+                </button>
+              </div>
             </div>
-            <div className="flex justify-end p-4 border-t border-slate-700">
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-700">
               <button
                 onClick={() => setShowGameSettings(false)}
-                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded"
+                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded font-medium"
               >
-                Close
+                {state.language === 'ru' ? 'Закрыть' : 'Close'}
               </button>
             </div>
           </div>
@@ -645,11 +807,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[420px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
-              <h3 className="text-base font-bold text-white">Support this project</h3>
+              <h3 className="text-base font-bold text-white">{state.language === 'ru' ? 'Поддержать проект' : 'Support this project'}</h3>
             </div>
             <div className="p-6">
               <p className="text-sm text-gray-400 text-center mb-6">
-                Follow me on social media or support my work through donations!
+                {state.language === 'ru' ? 'Подпишитесь на меня в соцсетях или поддержите работу через донаты!' : 'Follow me on social media or support my work through donations!'}
               </p>
               <div className="grid grid-cols-2 gap-4">
                 {SUPPORT_LINKS.map((link) => (
@@ -720,6 +882,7 @@ const PanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
 const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   const [isDragTarget, setIsDragTarget] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const { state } = useGame();
 
   // Get card scale from localStorage with custom hook
   const { scale: cardScale } = useHandCardScale();
@@ -763,7 +926,7 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
 
   return (
     <div ref={containerRef} className="h-full">
-      <HandPanel width={panel.width} isDragTarget={isDragTarget} isCollapsed={isCollapsed} cardScale={cardScale} />
+      <HandPanel width={panel.width} isDragTarget={isDragTarget} isCollapsed={isCollapsed} cardScale={cardScale} language={state.language} />
     </div>
   );
 };
@@ -808,7 +971,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
 
       if (targetPanel && targetPanel.panelType !== PanelType.HAND) {
         // Show panel settings for panels (except HAND panels which use MainMenuContent settings)
-        return <PanelSettingsModal panel={targetPanel} onClose={handleClose} />;
+        return <PanelSettingsModal panel={targetPanel} onClose={handleClose} language={state.language} />;
       }
 
       if (!targetObj) {
@@ -826,6 +989,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
         <ObjectSettingsModal
           object={targetObj}
           allObjects={state.objects}
+          language={state.language}
           onClose={handleClose}
           onSave={(updatedObj) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
@@ -851,6 +1015,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
         <TopDeckModal
           deck={deck}
           onClose={handleClose}
+          language={state.language}
         />
       ) : null;
     default:
