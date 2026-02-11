@@ -486,7 +486,7 @@ export const Tabletop: React.FC = () => {
     clickCount: 0
   });
 
-  const activePlayer = state.players.find(p => p.id === state.activePlayerId);
+  const activePlayer = (state.players || []).find(p => p.id === state.activePlayerId);
   const isGM = !!activePlayer?.isGM;
 
   // --- Grid Snapping Logic ---
