@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, Board as BoardType } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -14,138 +14,10 @@ import { UIObjectRenderer } from './UIObjectRenderer';
 import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
+import { BoardWithResizeMemo } from './BoardWithResize';
 import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
 import { CARD_SHAPE_DIMS } from '../constants';
 import { generateUUID } from '../utils/uuid';
-
-// Board component with resize handle (corner only, like panels)
-interface BoardWithResizeProps {
-    token: TokenType | BoardType;
-    obj: TableObject;
-    isOwner: boolean;
-    isDragging: boolean;
-    isResizing: boolean;
-    canResize: boolean;
-    zoom: number;
-    onMouseDown: (e: React.MouseEvent) => void;
-    onContextMenu: (e: React.MouseEvent) => void;
-    onResizeStart: (e: React.MouseEvent) => void;
-    gridSize: number;
-    hexR: number;
-    hexW: number;
-    hexPath: string;
-    currentTool?: string;
-}
-
-const BoardWithResize: React.FC<BoardWithResizeProps> = ({
-    token,
-    obj,
-    isOwner,
-    isDragging,
-    isResizing,
-    canResize,
-    zoom,
-    onMouseDown,
-    onContextMenu,
-    onResizeStart,
-    gridSize,
-    hexR,
-    hexW,
-    hexPath,
-}) => {
-    const [isHoveringCorner, setIsHoveringCorner] = useState(false);
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    const handleMouseMove = useCallback((e: React.MouseEvent) => {
-        if (!containerRef.current || !canResize) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        const handleSize = 20;
-
-        // Check if hovering near bottom-right corner
-        const nearCorner = e.clientX >= rect.right - handleSize &&
-                          e.clientY >= rect.bottom - handleSize &&
-                          e.clientX <= rect.right + 10 &&
-                          e.clientY <= rect.bottom + 10;
-
-        setIsHoveringCorner(nearCorner);
-    }, [canResize]);
-
-    const handleMouseLeave = useCallback(() => {
-        setIsHoveringCorner(false);
-    }, []);
-
-    const showGrid = token.gridType && token.gridType !== GridType.NONE;
-
-    // Determine cursor based on hover state and action state
-    const getCursor = useCallback(() => {
-        if (isResizing) return 'nwse-resize';
-        if (isDragging) return 'grabbing';
-        if (isHoveringCorner && canResize) return 'nwse-resize';
-        return 'grab';
-    }, [isHoveringCorner, canResize, isDragging, isResizing]);
-
-    const cursor = getCursor();
-
-    return (
-        <div
-            ref={containerRef}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
-            onMouseDown={onMouseDown}
-            onContextMenu={onContextMenu}
-            className="absolute flex items-center justify-center text-white font-bold select-none"
-            style={{
-                left: obj.x,
-                top: obj.y,
-                width: obj.width,
-                height: obj.height,
-                backgroundColor: (obj as any).content ? 'transparent' : ((obj as any).color || '#34495e'),
-                backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                border: '2px solid white',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-                transform: `rotate(${obj.rotation}deg)`,
-                cursor: cursor,
-            }}
-        >
-            {/* Grid overlay */}
-            {showGrid && (
-                <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
-                    <defs>
-                        {token.gridType === GridType.SQUARE && (
-                            <pattern id={`grid-square-${obj.id}`} width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                                <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="black" strokeWidth="1"/>
-                            </pattern>
-                        )}
-                        {token.gridType === GridType.HEX && (
-                            <pattern id={`grid-hex-${obj.id}`} width={hexW} height={gridSize * 3} patternUnits="userSpaceOnUse">
-                                <path d={hexPath} fill="none" stroke="black" strokeWidth="1"/>
-                            </pattern>
-                        )}
-                    </defs>
-                    <rect width="100%" height="100%" fill={`url(#grid-${token.gridType === GridType.SQUARE ? 'square' : 'hex'}-${obj.id})`} />
-                </svg>
-            )}
-
-            {/* Resize handle - bottom-right corner */}
-            {canResize && !isDragging && (
-                <div
-                    onMouseDown={onResizeStart}
-                    className={`absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize transition-opacity ${
-                        isHoveringCorner || isResizing ? 'opacity-100' : 'opacity-75'
-                    }`}
-                    style={{
-                        background: 'linear-gradient(135deg, transparent 50%, rgba(147, 51, 234, 0.8) 50%)',
-                        borderTopLeftRadius: '4px',
-                        pointerEvents: 'auto',
-                    }}
-                />
-            )}
-
-        </div>
-    );
-};
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
@@ -1604,7 +1476,7 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, addToCursorSlot]);
 
-  const handleMouseDown = (e: React.MouseEvent, id?: string) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
 
     // Check if clicking on a UI object - if it has an id, process normally
@@ -1727,7 +1599,7 @@ export const Tabletop: React.FC = () => {
         dragStartPositionRef.current = { id, x: item.x, y: item.y };
       }
     }
-  };
+  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, dispatch, addToCursorSlot, offset, zoom, setDraggingId, setIsPanning]);
 
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     // Always update cursor position for slot visualization (needed when adding token to slot)
@@ -2368,9 +2240,9 @@ export const Tabletop: React.FC = () => {
     };
   }, []); // Empty deps - handlers check refs for current state
 
-  const handleWheel = (e: React.WheelEvent) => {
+  const handleWheel = useCallback((e: React.WheelEvent) => {
     // Zoom disabled - keeping scale at 1
-  };
+  }, []);
 
   // Sync local state from global state when it changes externally (e.g., loading saved games)
   // Only update if values are significantly different to avoid overwriting user interactions
@@ -2858,7 +2730,7 @@ export const Tabletop: React.FC = () => {
                             imageSrc={obj.content}
                             scale={obj.tooltipScale}
                         >
-                            <BoardWithResize
+                            <BoardWithResizeMemo
                                 token={board}
                                 obj={obj}
                                 isOwner={isOwner}
@@ -3596,7 +3468,7 @@ export const Tabletop: React.FC = () => {
                             zIndex: board.zIndex || 1000,
                         }}
                     >
-                        <BoardWithResize
+                        <BoardWithResizeMemo
                             token={board}
                             obj={pinnedBoardObj}
                             isOwner={true}

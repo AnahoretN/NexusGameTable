@@ -1,5 +1,5 @@
 import { Coordinates } from '../types';
-import { GridType, TableObject, ItemType } from '../types';
+import { GridType, TableObject } from '../types';
 
 export interface GridSnapResult {
   x: number;
@@ -64,9 +64,3 @@ export function getSnappedCenter(
   return snapToGrid(centerX, centerY, options);
 }
 
-/**
- * Check if an object is on table (for filtering)
- */
-export function isObjectOnTable(obj: TableObject): boolean {
-  return 'isOnTable' in obj ? (obj as any).isOnTable : true;
-}
