@@ -6,99 +6,8 @@ import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
 import { saveGameState, loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 import { logger } from '../utils/logger';
-
-// Helper function to create a Standard Deck with 54 cards
-const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
-  const deckId = generateUUID();
-  const cardIds: string[] = [];
-  const cards: Card[] = [];
-  const defaultShape = CardShape.POKER;
-  const defaultDims = CARD_SHAPE_DIMS[defaultShape];
-
-  for (let i = 0; i < 54; i++) {
-    const cid = generateUUID();
-    cardIds.push(cid);
-    const card: Card = {
-      id: cid,
-      type: ItemType.CARD,
-      x: 0, y: 0,
-      width: defaultDims.width,
-      height: defaultDims.height,
-      rotation: 0,
-      name: `Card ${i + 1}`,
-      content: `https://picsum.photos/seed/${cid}/${defaultDims.width}/${defaultDims.height}`,
-      location: CardLocation.DECK,
-      faceUp: false,
-      deckId: deckId,
-      locked: false,
-      isOnTable: true,
-      shape: defaultShape
-    };
-    cards.push(card);
-  }
-
-  const deck: Deck = {
-    id: deckId,
-    type: ItemType.DECK,
-    x: 0, y: 0, // Will be set by caller
-    width: defaultDims.width,
-    height: defaultDims.height,
-    rotation: 0,
-    name: 'Standard Deck',
-    content: '',
-    baseCardIds: [...cardIds], // Base list - starts same as cardIds
-    cardIds,
-    locked: false,
-    isOnTable: true,
-    allowedActions: ['draw', 'shuffleDeck', 'playTopCard', 'searchDeck', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
-    actionButtons: ['draw', 'playTopCard', 'shuffleDeck', 'searchDeck'],
-    cardShape: defaultShape,
-    cardOrientation: CardOrientation.VERTICAL,
-    cardWidth: defaultDims.width,
-    cardHeight: defaultDims.height,
-    cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
-    cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'delete', 'clone', 'lock', 'pin', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
-    cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
-    cardSingleClickAction: undefined,
-    cardDoubleClickAction: undefined,
-    cardNamePosition: 'none' as const,
-    initialCardCount: cardIds.length,
-    piles: [
-      {
-        id: `${deckId}-discard`,
-        name: 'Discard',
-        deckId: deckId,
-        position: 'right',
-        cardIds: [],
-        faceUp: false,
-        visible: false,
-        size: 1,
-        isMillPile: true
-      }
-    ]
-  };
-
-  return { deck, cards };
-};
-
-export interface ViewTransform {
-  offset: { x: number; y: number };
-  zoom: number;
-  scroll: { x: number; y: number };
-}
-
-export interface GameState {
-  objects: Record<string, TableObject>;
-  players: Player[];
-  activePlayerId: string; // The user's current identity
-  diceRolls: DiceRoll[];
-  viewTransform: ViewTransform;
-  sessionId?: string; // Unique session identifier
-  drawings: DrawingData; // Drawing layers for board and objects
-  undo: UndoState; // Undo/redo history
-  playerPermissions: PlayerPermissions; // Permissions for non-GM players
-  language: AppLanguage; // Application language
-}
+import { createStandardDeck } from './gameConstants';
+import { GameState, ViewTransform, initialState } from './gameState';
 
 // Base action type with optional local-only flag
 type BaseAction<T extends string, P = any> = {
@@ -191,42 +100,6 @@ type Action =
   | ActionWithoutPayload<'UNDO_GENERAL'>
   // Local storage actions
   | ActionWithoutPayload<'CLEAR_SAVED_STATE'>;
-
-const GM_COLOR = '#8e44ad';
-
-// Generate or get session ID from localStorage
-const getSessionId = () => {
-  if (typeof window === 'undefined') return 'unknown';
-  let sessionId = localStorage.getItem('nexus-session-id');
-  if (!sessionId) {
-    sessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    localStorage.setItem('nexus-session-id', sessionId);
-  }
-  return sessionId;
-};
-
-const initialState: GameState = {
-  objects: {},
-  players: [
-    { id: 'gm', name: 'Game Master', color: GM_COLOR, isGM: true },
-    { id: 'gm-player', name: 'GM Player', color: GM_COLOR, isGM: false },
-  ],
-  activePlayerId: 'gm',
-  diceRolls: [],
-  viewTransform: { offset: { x: 0, y: 0 }, zoom: 1, scroll: { x: 0, y: 0 } },
-  sessionId: getSessionId(),
-  drawings: { layers: [] },
-  undo: { markerHistory: [], generalHistory: [], maxMarkerHistory: 10, maxGeneralHistory: 100 },
-  // Default permissions: only GM can create, configure, delete, hide objects
-  playerPermissions: {
-    createObjects: false,
-    configureObjects: false,
-    deleteObjects: false,
-    hideObjects: false,
-  },
-  // Load language from localStorage or default to 'en'
-  language: (typeof localStorage !== 'undefined' && (localStorage.getItem('app-language') as AppLanguage)) || 'en' as AppLanguage,
-};
 
 const GameContext = createContext<{
   state: GameState;
