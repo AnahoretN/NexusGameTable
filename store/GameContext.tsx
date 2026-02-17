@@ -1,14 +1,15 @@
-import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
 import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
-import { Peer } from 'peerjs';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
-import { saveGameState, loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
+import { loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 import { logger } from '../utils/logger';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
 import { Action } from './gameActions';
+import { useAutoSave } from './useAutoSave';
+import { usePeerConnection } from './usePeerConnection';
 
 const GameContext = createContext<{
   state: GameState;
@@ -3312,14 +3313,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, localDispatch] = useReducer(gameReducer, initialState);
-  const [isHost, setIsHost] = useState(true);
-  const [peerId, setPeerId] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
-  const [waitingForPlayerName, setWaitingForPlayerName] = useState<{ hostId: string } | null>(null);
-
-  const peerRef = useRef<Peer | null>(null);
-  const connectionsRef = useRef<any[]>([]); // For Host: list of guest connections
-  const hostConnectionRef = useRef<any>(null); // For Guest: connection to host
 
   // Ref to track latest state for event listeners
   const stateRef = useRef(state);
@@ -3329,17 +3322,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       stateRef.current = state;
   }, [state]);
 
+  // Peer.js connection management
+  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, hostConnectionRef, connectionsRef } = usePeerConnection(localDispatch, stateRef);
+
   // Auto-save game state to localStorage (debounced)
-  useEffect(() => {
-    // Don't save if we're a guest (state comes from host)
-    if (!isHost) return;
-
-    const timeoutId = setTimeout(() => {
-      saveGameState(state);
-    }, 500); // Debounce: save 500ms after last state change
-
-    return () => clearTimeout(timeoutId);
-  }, [state, isHost]);
+  useAutoSave(state, isHost);
 
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
@@ -3461,166 +3448,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [isHost, connectionStatus]); // Add connectionStatus to ensure peer is ready
 
-  // PEERJS SETUP
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hostIdToJoin = params.get('hostId');
-
-    // Cleanup previous peer if exists (React StrictMode double render handling)
-    if (peerRef.current) return;
-
-    // If we have a hostId in URL, show modal for player name first
-    // Don't create peer yet - wait for player name
-    if (hostIdToJoin) {
-      setWaitingForPlayerName({ hostId: hostIdToJoin });
-      return;
-    }
-
-    // No hostId - we are host, create peer immediately
-    const peer = new Peer();
-    peerRef.current = peer;
-
-    peer.on('open', (id) => {
-      setPeerId(id);
-      setIsHost(true);
-      setConnectionStatus('connected');
-    });
-
-    // Handle incoming connections (If we are Host)
-    peer.on('connection', (conn) => {
-      conn.on('open', () => {
-        connectionsRef.current.push(conn);
-
-        // Send current state to new player, using REF to get latest state
-        conn.send({ type: 'SYNC_STATE', payload: stateRef.current });
-
-        // Listen for data from this guest
-        conn.on('data', (data: any) => {
-          handleNetworkData(data, conn);
-        });
-
-        // Handle Disconnection
-        conn.on('close', () => {
-          connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
-          localDispatch({ type: 'REMOVE_PLAYER', payload: { id: conn.peer } });
-        });
-
-        conn.on('error', (err) => {
-          logger.error('Connection error with guest:', err);
-          connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
-          localDispatch({ type: 'REMOVE_PLAYER', payload: { id: conn.peer } });
-        });
-      });
-    });
-
-    peer.on('error', (err) => {
-      logger.error('Peer error:', err);
-      setConnectionStatus('disconnected');
-    });
-
-    // Cleanup logic to destroy peer on window close/reload to notify others
-    const handleUnload = () => {
-      if (peerRef.current) {
-        peerRef.current.destroy();
-      }
-    };
-    window.addEventListener('beforeunload', handleUnload);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleUnload);
-    };
-  }, []);
-
-  // Connect to Host Logic (Guest Side) - called after player enters name
-  const connectToHost = (hostId: string, playerName: string) => {
-    const peer = new Peer();
-    peerRef.current = peer;
-
-    peer.on('open', (id) => {
-      setPeerId(id);
-      setIsHost(false);
-      setConnectionStatus('connecting');
-
-      const conn = peer.connect(hostId);
-      hostConnectionRef.current = conn;
-
-      conn.on('open', () => {
-        setConnectionStatus('connected');
-
-        const myPlayer: Player = {
-          id: peer.id,
-          name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
-          color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-          isGM: false
-        };
-
-        // Add ourselves locally
-        localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
-        localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
-
-        // Tell Host we are here
-        conn.send({ type: 'HELO', payload: myPlayer });
-      });
-
-      conn.on('data', (data: any) => {
-        handleNetworkData(data, null);
-      });
-
-      conn.on('close', () => {
-        alert("Connection to Host lost");
-        setConnectionStatus('disconnected');
-        setWaitingForPlayerName(null);
-      });
-
-      conn.on('error', (err) => {
-        logger.error("Connection error to host:", err);
-        alert("Failed to connect to host");
-        setConnectionStatus('disconnected');
-        setWaitingForPlayerName(null);
-      });
-    });
-
-    peer.on('error', (err) => {
-      logger.error('Peer error:', err);
-      alert("Failed to connect to peer server");
-      setConnectionStatus('disconnected');
-      setWaitingForPlayerName(null);
-    });
-  };
-
-  // Handler for when player submits their name via modal (joining a game)
-  const setPlayerName = useCallback((name: string) => {
-    if (!waitingForPlayerName) return;
-
-    const { hostId } = waitingForPlayerName;
-    setWaitingForPlayerName(null);
-    connectToHost(hostId, name.trim() || `Player ${Math.floor(Math.random() * 100)}`);
-  }, [waitingForPlayerName]);
-
-  // Central Network Data Handler
-  const handleNetworkData = (data: any, senderConn: any) => {
-      if (data.type === 'SYNC_STATE') {
-          // Received full state update (Guest receives from Host)
-          // We apply it, but ensure we don't lose our local identity perspective
-          localDispatch({ type: 'SYNC_STATE', payload: data.payload });
-      }
-      else if (data.type === 'HELO') {
-          // Host received new player info
-          const newPlayer = data.payload;
-          localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
-      }
-      else if (data.type === 'UPDATE_PLAYER_NAME') {
-          // Host received player name update request
-          localDispatch(data.payload); // Execute locally on Host
-          // The useEffect below will trigger broadcast of resulting state
-      }
-      else if (data.type === 'ACTION') {
-          // Host received action request from Guest
-          localDispatch(data.payload); // Execute locally on Host
-          // The useEffect below will trigger broadcast of resulting state
-      }
-  };
-
   // Middleware Dispatcher - memoized with useCallback to prevent infinite loops
   const dispatch = useCallback((action: Action) => {
       // Local-only actions are executed locally but never sent over network
@@ -3654,7 +3481,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
           }
       }
-  }, [isHost, connectionStatus]);
+  }, [isHost, connectionStatus, hostConnectionRef]);
 
   // Host Broadcast Loop: whenever state changes, send to all guests
   // We use a debounce or throttle in a real app, here we just check if meaningful change occurred
