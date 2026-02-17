@@ -3,6 +3,7 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
+import { logger } from '../utils/logger';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing } from '../types';
 import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Rows, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
@@ -367,14 +368,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         dispatch({ type: 'LOAD_GAME', payload: json as GameState });
 
         // Success message with summary
-        console.log(`Game loaded successfully: ${objectCount} objects, ${playerCount} players`);
+        logger.log(`Game loaded successfully: ${objectCount} objects, ${playerCount} players`);
 
         // Reset file input to allow loading the same file again if needed
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
       } catch (err) {
-        console.error('Error loading save file:', err);
+        logger.error('Error loading save file:', err);
         alert("Error loading save file. Make sure it's a valid JSON file saved from Nexus Game Table.");
       }
     };

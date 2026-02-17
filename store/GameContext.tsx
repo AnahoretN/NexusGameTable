@@ -5,6 +5,7 @@ import { Peer } from 'peerjs';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
 import { saveGameState, loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
+import { logger } from '../utils/logger';
 
 // Helper function to create a Standard Deck with 54 cards
 const createStandardDeck = (): { deck: Deck; cards: Card[] } => {
@@ -3567,7 +3568,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Try to load saved game state from localStorage
         const savedState = loadGameState();
         if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
-          console.log('Restoring game state from localStorage');
+          logger.log('Restoring game state from localStorage');
 
           // Create a batch of updates to restore all state
           const updates: any[] = [];
@@ -3723,7 +3724,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         conn.on('error', (err) => {
-          console.error('Connection error with guest:', err);
+          logger.error('Connection error with guest:', err);
           connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
           localDispatch({ type: 'REMOVE_PLAYER', payload: { id: conn.peer } });
         });
@@ -3731,7 +3732,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     peer.on('error', (err) => {
-      console.error('Peer error:', err);
+      logger.error('Peer error:', err);
       setConnectionStatus('disconnected');
     });
 
@@ -3790,7 +3791,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       conn.on('error', (err) => {
-        console.error("Connection error to host:", err);
+        logger.error("Connection error to host:", err);
         alert("Failed to connect to host");
         setConnectionStatus('disconnected');
         setWaitingForPlayerName(null);
@@ -3798,7 +3799,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     peer.on('error', (err) => {
-      console.error('Peer error:', err);
+      logger.error('Peer error:', err);
       alert("Failed to connect to peer server");
       setConnectionStatus('disconnected');
       setWaitingForPlayerName(null);

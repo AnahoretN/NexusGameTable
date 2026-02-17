@@ -4,7 +4,8 @@ import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType, AppLanguage } from '../types';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
-import { getCardSettings, getCardDimensions, getCardButtonConfigs } from '../utils/cardUtils';
+import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
+import { getCardButtonConfigsWithActions } from '../utils/buttonConfig';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { Plus, Minus } from 'lucide-react';
 
@@ -752,12 +753,10 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                         const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
                         const deck = card.deckId ? (state.objects[card.deckId] as DeckType | undefined) : undefined;
 
-                        const buttons = getCardButtonConfigs(
-                          card,
+                        const buttons = getCardButtonConfigsWithActions(
                           cardActionButtons,
                           {
                             onFlip: () => handleFlip(card.id),
-                            onRotate: () => handleRotate(card.id),
                             onRotateClockwise: () => handleRotateClockwise(card.id),
                             onRotateCounterClockwise: () => handleRotateCounterClockwise(card.id),
                             onSwingingClockwise: () => handleSwingingClockwise(card.id),
@@ -769,7 +768,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                             onMoveToTopDeck: () => handleMoveToTopDeck(card.id),
                             onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id),
                             onMoveToDiscard: () => handleMoveToDiscard(card.id)
-                          }
+                          },
+                          card.faceUp ?? true
                         );
 
                         const actualIndex = groupOffset + index;

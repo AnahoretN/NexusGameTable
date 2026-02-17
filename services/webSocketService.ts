@@ -3,6 +3,8 @@
  * Handles communication with the game server for room management and state sync
  */
 
+import { logger } from '../utils/logger';
+
 type WebSocketMessage = {
   type: string;
   [key: string]: any;
@@ -25,7 +27,7 @@ class WebSocketService {
         this.isManualClose = false;
 
         this.ws.onopen = () => {
-          console.log('WebSocket connected to', url);
+          logger.log('WebSocket connected to', url);
           this.reconnectAttempts = 0;
           resolve();
         };
@@ -35,23 +37,23 @@ class WebSocketService {
             const message: WebSocketMessage = JSON.parse(event.data);
             this.handleMessage(message);
           } catch (err) {
-            console.error('Failed to parse WebSocket message:', err);
+            logger.error('Failed to parse WebSocket message:', err);
           }
         };
 
         this.ws.onclose = (event) => {
-          console.log('WebSocket closed:', event.code, event.reason);
+          logger.log('WebSocket closed:', event.code, event.reason);
           if (!this.isManualClose && this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts++;
-            console.log(`Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+            logger.log(`Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
             setTimeout(() => {
-              this.connect(url).catch(console.error);
+              this.connect(url).catch((err) => logger.error('Reconnect failed:', err));
             }, this.reconnectDelay);
           }
         };
 
         this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
+          logger.error('WebSocket error:', error);
           reject(error);
         };
       } catch (err) {
@@ -72,7 +74,7 @@ class WebSocketService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
-      console.warn('WebSocket is not connected. Message not sent:', message);
+      logger.warn('WebSocket is not connected. Message not sent:', message);
     }
   }
 

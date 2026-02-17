@@ -1,5 +1,6 @@
 import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage } from '../types';
 import type { GameState, ViewTransform } from '../store/GameContext';
+import { logger } from './logger';
 
 const STORAGE_KEY = 'nexus-game-state';
 const STORAGE_VERSION = 1;
@@ -45,7 +46,7 @@ export const saveGameState = (state: GameState): void => {
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToStore));
   } catch (error) {
-    console.error('Failed to save game state:', error);
+    logger.error('Failed to save game state:', error);
   }
 };
 
@@ -64,7 +65,7 @@ export const loadGameState = (): Partial<GameState> | null => {
 
     // Check version compatibility
     if (data.version !== STORAGE_VERSION) {
-      console.warn('Game state version mismatch, clearing saved state');
+      logger.warn('Game state version mismatch, clearing saved state');
       clearGameState();
       return null;
     }
@@ -72,14 +73,14 @@ export const loadGameState = (): Partial<GameState> | null => {
     // Check if state is too old (more than 7 days)
     const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     if (data.timestamp < weekAgo) {
-      console.warn('Saved game state is too old, clearing');
+      logger.warn('Saved game state is too old, clearing');
       clearGameState();
       return null;
     }
 
     return data.state;
   } catch (error) {
-    console.error('Failed to load game state:', error);
+    logger.error('Failed to load game state:', error);
     return null;
   }
 };
@@ -93,7 +94,7 @@ export const clearGameState = (): void => {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (error) {
-    console.error('Failed to clear game state:', error);
+    logger.error('Failed to clear game state:', error);
   }
 };
 

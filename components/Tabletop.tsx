@@ -10,7 +10,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { SearchDeckModal } from './SearchDeckModal';
 import { TopDeckModal } from './TopDeckModal';
 import { DeckComponent } from './DeckComponent';
-import { UIObjectRenderer } from './UIObjectRenderer';
+import { UIObjectRendererMemo } from './UIObjectRenderer';
 import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
@@ -3339,7 +3339,7 @@ export const Tabletop: React.FC = () => {
         {/* Unpinned UI Objects Container - rendered outside transform, always above game objects */}
         <div className="fixed inset-0 pointer-events-none z-[9800]">
             {unpinnedUIObjects.map((uiObj) => (
-                <UIObjectRenderer
+                <UIObjectRendererMemo
                     key={uiObj.id}
                     uiObject={uiObj as PanelObject | WindowObject}
                     isDragging={draggingId === uiObj.id}
@@ -3355,7 +3355,7 @@ export const Tabletop: React.FC = () => {
         {/* Panels are always above game objects, even when pinned */}
         <div className="fixed inset-0 pointer-events-none z-[9900]">
             {pinnedUIObjects.map((uiObj) => (
-                <UIObjectRenderer
+                <UIObjectRendererMemo
                     key={uiObj.id}
                     uiObject={uiObj as PanelObject | WindowObject}
                     isDragging={draggingId === uiObj.id}
