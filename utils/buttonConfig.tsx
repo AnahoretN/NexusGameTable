@@ -110,3 +110,102 @@ export function getCardButtonConfig(
     icon,
   };
 }
+
+// Extended config with callbacks for hand panels and similar components
+export interface CardButtonConfigWithAction extends CardButtonConfig {
+  onAction: () => void;
+}
+
+export interface CardButtonCallbacks {
+  onFlip?: () => void;
+  onRotate?: () => void;
+  onRotateClockwise?: () => void;
+  onRotateCounterClockwise?: () => void;
+  onSwingingClockwise?: () => void;
+  onSwingingCounterClockwise?: () => void;
+  onLayerUp?: () => void;
+  onLayerDown?: () => void;
+  onClone?: () => void;
+  onMoveToHand?: () => void;
+  onMoveToTopDeck?: () => void;
+  onMoveToBottomDeck?: () => void;
+  onMoveToDiscard?: () => void;
+}
+
+/**
+ * Get button configs with callbacks for components like HandPanel
+ * Excludes rotate/swing actions for hand panels
+ */
+export function getCardButtonConfigsWithActions(
+  actions: ButtonAction[],
+  callbacks: CardButtonCallbacks,
+  faceUp: boolean = true,
+  locked: boolean = false
+): CardButtonConfigWithAction[] {
+  // Exclude rotate and swing buttons from hand panel
+  const filteredActions = actions.filter(action =>
+    action !== 'rotate' &&
+    action !== 'rotateClockwise' &&
+    action !== 'rotateCounterClockwise' &&
+    action !== 'swingClockwise' &&
+    action !== 'swingCounterClockwise'
+  );
+
+  return filteredActions
+    .map(action => {
+      const config = getCardButtonConfig(action, faceUp, locked);
+      if (!config) return null;
+
+      let onAction: (() => void) | undefined;
+
+      switch (action) {
+        case 'flip':
+          onAction = callbacks.onFlip;
+          break;
+        case 'rotate':
+        case 'rotateClockwise':
+          onAction = callbacks.onRotateClockwise;
+          break;
+        case 'rotateCounterClockwise':
+          onAction = callbacks.onRotateCounterClockwise;
+          break;
+        case 'swingClockwise':
+          onAction = callbacks.onSwingingClockwise;
+          break;
+        case 'swingCounterClockwise':
+          onAction = callbacks.onSwingingCounterClockwise;
+          break;
+        case 'layerUp':
+          onAction = callbacks.onLayerUp;
+          break;
+        case 'layerDown':
+          onAction = callbacks.onLayerDown;
+          break;
+        case 'clone':
+          onAction = callbacks.onClone;
+          break;
+        case 'moveToHand':
+          onAction = callbacks.onMoveToHand;
+          break;
+        case 'moveToTopDeck':
+          onAction = callbacks.onMoveToTopDeck;
+          break;
+        case 'moveToBottomDeck':
+          onAction = callbacks.onMoveToBottomDeck;
+          break;
+        case 'moveToDiscard':
+          onAction = callbacks.onMoveToDiscard;
+          break;
+        default:
+          return null;
+      }
+
+      if (!onAction) return null;
+
+      return {
+        ...config,
+        onAction,
+      };
+    })
+    .filter((config): config is CardButtonConfigWithAction => config !== null);
+}

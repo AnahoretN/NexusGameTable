@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { Deck, Card, CardPile, ContextAction, AppLanguage } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
+import { logger } from '../utils/logger';
 import { Card as CardComponent } from './Card';
 import { CardOrientation } from '../types';
 import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
@@ -127,7 +128,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   // Mill - send card to mill pile
   const handleMill = useCallback((cardId: string) => {
     if (!millPile) {
-      console.warn('No mill pile found for deck');
+      logger.warn('No mill pile found for deck');
       return;
     }
 
@@ -151,7 +152,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   // Move to Discard
   const handleMoveToDiscard = useCallback((cardId: string) => {
     if (!millPile) {
-      console.warn('No discard pile found for deck');
+      logger.warn('No discard pile found for deck');
       return;
     }
     dispatch({ type: 'MILL_CARD_TO_PILE', payload: { cardId, deckId: deck.id, pileId: millPile.id } });

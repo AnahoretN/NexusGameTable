@@ -1026,3 +1026,19 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
       );
   }
 };
+
+export const UIObjectRendererMemo = React.memo(UIObjectRenderer, (prevProps, nextProps) => {
+  // Custom comparison for better performance
+  return (
+    prevProps.uiObject.id === nextProps.uiObject.id &&
+    prevProps.uiObject.x === nextProps.uiObject.x &&
+    prevProps.uiObject.y === nextProps.uiObject.y &&
+    prevProps.uiObject.width === nextProps.uiObject.width &&
+    prevProps.uiObject.height === nextProps.uiObject.height &&
+    prevProps.uiObject.minimized === nextProps.uiObject.minimized &&
+    prevProps.isDragging === nextProps.isDragging &&
+    prevProps.zoom === nextProps.zoom &&
+    prevProps.isPinnedMode === nextProps.isPinnedMode
+  );
+});
+

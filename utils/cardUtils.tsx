@@ -1,6 +1,5 @@
-import React from 'react';
-import { Eye, RefreshCw, Copy, RotateCw, Move3D, ArrowUp, ArrowDown, Hand, Trash2 } from 'lucide-react';
-import { Card, ContextAction, Deck as DeckType, CardOrientation, CardNamePosition, CardShape } from '../types';
+import { Card, Deck as DeckType, CardOrientation, CardShape } from '../types';
+import { isGeometricCardShape } from './shapeUtils';
 
 /**
  * Get card dimensions based on deck settings and display scale
@@ -18,10 +17,8 @@ export function getCardDimensions(
   const cardShape = deck?.cardShape ?? card.shape ?? CardShape.POKER;
   const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
 
-  // For geometric shapes (HEX, TRIANGLE, CIRCLE) with horizontal orientation,
-  // dimensions are swapped (like in DeckComponent) but NOT through rotation
-  // For other shapes, horizontal orientation means rotation by -90deg
-  const isGeometricShape = cardShape === CardShape.HEX || cardShape === CardShape.TRIANGLE || cardShape === CardShape.CIRCLE;
+  // Check if this is a geometric shape
+  const isGeometricShape = isGeometricCardShape(cardShape);
 
   let baseCardWidth = cardWidth;
   let baseCardHeight = cardHeight;
@@ -95,127 +92,4 @@ export function getCardSettings(
     allowedActionsForGM: deck?.cardAllowedActionsForGM,
     rotationStep: deck?.rotationStep ?? 45
   };
-}
-
-/**
- * Get card button configurations for action buttons
- */
-export interface ButtonConfig {
-  className: string;
-  title: string;
-  icon: JSX.Element;
-  onAction: () => void;
-}
-
-export function getCardButtonConfigs(
-  card: Card,
-  actionButtons: ContextAction[] = [],
-  callbacks: {
-    onFlip?: () => void;
-    onRotate?: () => void;
-    onRotateClockwise?: () => void;
-    onRotateCounterClockwise?: () => void;
-    onSwingingClockwise?: () => void;
-    onSwingingCounterClockwise?: () => void;
-    onLayerUp?: () => void;
-    onLayerDown?: () => void;
-    onClone?: () => void;
-    onMoveToHand?: () => void;
-    onMoveToTopDeck?: () => void;
-    onMoveToBottomDeck?: () => void;
-    onMoveToDiscard?: () => void;
-  }
-): ButtonConfig[] {
-  // Exclude rotate and swing buttons from hand panel
-  const filteredActions = actionButtons.filter(action =>
-    action !== 'rotate' &&
-    action !== 'rotateClockwise' &&
-    action !== 'rotateCounterClockwise' &&
-    action !== 'swingClockwise' &&
-    action !== 'swingCounterClockwise'
-  );
-
-  const configs: Record<string, ButtonConfig> = {
-    flip: {
-      className: 'bg-purple-600 hover:bg-purple-500',
-      title: 'Flip',
-      icon: <Eye size={14} />,
-      onAction: callbacks.onFlip || (() => {})
-    },
-    rotate: {
-      className: 'bg-green-600 hover:bg-green-500',
-      title: 'Rotate',
-      icon: <RefreshCw size={14} />,
-      onAction: callbacks.onRotate || (() => {})
-    },
-    rotateClockwise: {
-      className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: 'Rotate Clockwise',
-      icon: <RotateCw size={14} />,
-      onAction: callbacks.onRotateClockwise || (() => {})
-    },
-    rotateCounterClockwise: {
-      className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: 'Rotate Counter-Clockwise',
-      icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />,
-      onAction: callbacks.onRotateCounterClockwise || (() => {})
-    },
-    swingClockwise: {
-      className: 'bg-green-600 hover:bg-green-500',
-      title: 'Swing Clockwise',
-      icon: <Move3D size={14} />,
-      onAction: callbacks.onSwingingClockwise || (() => {})
-    },
-    swingCounterClockwise: {
-      className: 'bg-green-600 hover:bg-green-500',
-      title: 'Swing Counter-Clockwise',
-      icon: <Move3D size={14} style={{ transform: 'scaleX(-1)' }} />,
-      onAction: callbacks.onSwingingCounterClockwise || (() => {})
-    },
-    layerUp: {
-      className: 'bg-blue-600 hover:bg-blue-500',
-      title: 'Layer Up',
-      icon: <ArrowUp size={14} />,
-      onAction: callbacks.onLayerUp || (() => {})
-    },
-    layerDown: {
-      className: 'bg-blue-600 hover:bg-blue-500',
-      title: 'Layer Down',
-      icon: <ArrowDown size={14} />,
-      onAction: callbacks.onLayerDown || (() => {})
-    },
-    clone: {
-      className: 'bg-cyan-600 hover:bg-cyan-500',
-      title: 'Clone',
-      icon: <Copy size={14} />,
-      onAction: callbacks.onClone || (() => {})
-    },
-    // "Move to" actions
-    moveToHand: {
-      className: 'bg-blue-600 hover:bg-blue-500',
-      title: 'Move to Hand',
-      icon: <Hand size={14} />,
-      onAction: callbacks.onMoveToHand || (() => {})
-    },
-    moveToTopDeck: {
-      className: 'bg-orange-600 hover:bg-orange-500',
-      title: 'Move to Top Deck',
-      icon: <ArrowUp size={14} />,
-      onAction: callbacks.onMoveToTopDeck || (() => {})
-    },
-    moveToBottomDeck: {
-      className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: 'Move to Bottom Deck',
-      icon: <ArrowDown size={14} />,
-      onAction: callbacks.onMoveToBottomDeck || (() => {})
-    },
-    moveToDiscard: {
-      className: 'bg-red-600 hover:bg-red-500',
-      title: 'Move to Discard',
-      icon: <Trash2 size={14} />,
-      onAction: callbacks.onMoveToDiscard || (() => {})
-    }
-  };
-
-  return filteredActions.map(action => configs[action]).filter(Boolean);
 }
