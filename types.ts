@@ -7,6 +7,7 @@ export enum ItemType {
   DICE_OBJECT = 'DICE_OBJECT',
   COUNTER = 'COUNTER',
   BOARD = 'BOARD',        // Game boards/tables with grids
+  BATTLEFIELD_CELL = 'BATTLEFIELD_CELL', // Single battlefield cell (square, hex, circle, triangle)
   RANDOMIZER = 'RANDOMIZER', // Randomizers (spinners, etc.)
   PANEL = 'PANEL',        // UI panels (hand, deck search, etc.)
   WINDOW = 'WINDOW',      // Modal windows
@@ -141,6 +142,9 @@ export interface GameItem {
   ownerId?: string; // For tokens locked to a player
   color?: string;
   borderColor?: string; // Border/stroke color for tokens
+  borderWidth?: number; // Border width in pixels
+  opacity?: number; // Fill opacity (0-100, default 100)
+  borderOpacity?: number; // Border opacity (0-100, default 100)
   showNameOnToken?: boolean; // Show token name in the center of the token
   fontColor?: string; // Font color for token name display
 
@@ -291,6 +295,16 @@ export interface TokenType extends GameItem {
   showName?: boolean; // Show the token name on the token itself
 }
 
+// Battlefield Cell - single cell for battlefields/tactical maps
+// Can have different shapes (circle, square, hex, triangle) like tokens
+// Designed for creating tactical game areas
+export interface BattlefieldCell extends GameItem {
+  type: ItemType.BATTLEFIELD_CELL;
+  shape: TokenShape; // CIRCLE, SQUARE, HEX, or TRIANGLE
+  snapToGrid?: boolean; // When enabled, other objects snap to this cell's position
+  gridSize?: number; // Grid size for snapping (default 50)
+}
+
 export interface DiceObject extends GameItem {
   type: ItemType.DICE_OBJECT;
   sides: number;
@@ -308,7 +322,7 @@ export interface Counter extends GameItem {
 
 export interface Board extends GameItem {
   type: ItemType.BOARD;
-  shape: TokenShape.SQUARE;
+  shape: TokenShape;
   gridType: GridType;
   gridSize: number;
   snapToGrid: boolean;
@@ -336,7 +350,7 @@ export interface Drawing extends GameItem {
   opacity?: number;
 }
 
-export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing;
+export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell;
 
 // Language settings
 export type AppLanguage = 'en' | 'ru';

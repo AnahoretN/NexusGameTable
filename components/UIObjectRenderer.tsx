@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
-import { X, Minus, Plus, Eye, EyeOff, Pin, Settings, Trash2, Clock } from 'lucide-react';
+import { X, Minus, Plus, Eye, EyeOff, Pin, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
 import { HandPanel } from './HandPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -640,7 +640,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               {/* Version Info */}
               <div className="text-sm text-gray-400 pb-3 border-b border-slate-700">
                 <p>{APP_NAME} v{APP_VERSION}</p>
-                <p className="mt-2 text-xs text-gray-500">P2P multiplayer via WebRTC • No server required</p>
               </div>
 
               {/* Language Settings */}
@@ -671,7 +670,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               {isGM && (
                 <div className="pt-4 pb-2 border-t border-slate-700">
                   <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'playerPermissions')}</h4>
-                  <p className="text-xs text-gray-400 mb-3">{getTranslation(state.language, 'playerPermissionsDesc')}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
                       <span className="text-xs text-gray-300">{getTranslation(state.language, 'createObjects')}</span>
@@ -757,10 +755,48 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 </div>
               )}
 
+              {/* Hotkeys Section */}
+              <div className="pt-4 pb-2 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
+                  <Keyboard size={14} />
+                  {getTranslation(state.language, 'hotkeys')}
+                </h4>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-900 rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkUndo')}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Z</kbd>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkEscape')}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Esc</kbd>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2">
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkShiftClick')}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Click</kbd>
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkShiftPan')}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Drag</kbd>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkShiftMarker')}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Marker</kbd>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2">
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkShiftEraser')}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Eraser</kbd>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Storage & Cache Section */}
               <div className="pt-4 pb-2 border-t border-slate-700">
                 <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'storage')}</h4>
-                <p className="text-xs text-gray-400 mb-3">{getTranslation(state.language, 'storageDesc')}</p>
 
                 {hasSavedGameState() && (
                   <div className="bg-slate-900 rounded px-3 py-2 mb-3">

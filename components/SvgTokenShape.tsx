@@ -34,6 +34,8 @@ interface SvgTokenShapeProps {
   content?: string;
   borderWidth?: number;
   borderColor?: string;
+  opacity?: number;
+  borderOpacity?: number;
   rotation?: number;
   showThickness?: boolean;
   className?: string;
@@ -66,6 +68,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   content,
   borderWidth = 2,
   borderColor = 'white',
+  opacity = 100,
+  borderOpacity = 100,
   rotation = 0,
   showThickness = true,
   className = '',
@@ -81,9 +85,13 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   const uniqueId = React.useId();
 
   // Consistent 3px stroke width for all shapes
-  const strokeWidth = 3;
+  const strokeWidth = borderWidth;
   // Thicker stroke in fill color creates rounded corners for path shapes
   const cornerRadiusStroke = useRect ? 0 : 6;
+
+  // Convert opacity (0-100) to (0-1)
+  const fillOpacity = opacity / 100;
+  const strokeOpacityVal = borderOpacity / 100;
 
   // Common SVG props
   const svgProps = {
@@ -148,9 +156,9 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
           // With image content - use clipPath
           <>
             {useRect ? (
-              <rect {...rectProps} fill={color} />
+              <rect {...rectProps} fill={color} fillOpacity={fillOpacity} />
             ) : (
-              <path d={path} fill={color} />
+              <path d={path} fill={color} fillOpacity={fillOpacity} />
             )}
             <image
               href={content}
@@ -166,6 +174,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
                 {...rectProps}
                 fill="none"
                 stroke={borderColor}
+                strokeOpacity={strokeOpacityVal}
                 strokeWidth={strokeWidth}
                 vectorEffect="non-scaling-stroke"
               />
@@ -177,16 +186,18 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
                     d={path}
                     fill="none"
                     stroke={color}
+                    strokeOpacity={fillOpacity}
                     strokeWidth={cornerRadiusStroke}
                     strokeLinejoin="round"
                     strokeLinecap="round"
                   />
                 )}
-                {/* 2px border stroke on top */}
+                {/* Border stroke on top */}
                 <path
                   d={path}
                   fill="none"
                   stroke={borderColor}
+                  strokeOpacity={strokeOpacityVal}
                   strokeWidth={strokeWidth}
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -201,7 +212,9 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
             <rect
               {...rectProps}
               fill={color}
+              fillOpacity={fillOpacity}
               stroke={borderColor}
+              strokeOpacity={strokeOpacityVal}
               strokeWidth={strokeWidth}
               vectorEffect="non-scaling-stroke"
             />
@@ -212,17 +225,21 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
                 <path
                   d={path}
                   fill={color}
+                  fillOpacity={fillOpacity}
                   stroke={color}
+                  strokeOpacity={fillOpacity}
                   strokeWidth={cornerRadiusStroke}
                   strokeLinejoin="round"
                   strokeLinecap="round"
                 />
               )}
-              {/* 2px border stroke on top */}
+              {/* Border stroke on top */}
               <path
                 d={path}
-                fill={cornerRadiusStroke > 0 ? 'none' : color}
+                fill={fillOpacity > 0 ? color : 'none'}
+                fillOpacity={fillOpacity}
                 stroke={borderColor}
+                strokeOpacity={strokeOpacityVal}
                 strokeWidth={strokeWidth}
                 strokeLinejoin="round"
                 strokeLinecap="round"

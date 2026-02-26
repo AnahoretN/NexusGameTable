@@ -4,8 +4,8 @@ import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
-import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Rows, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText } from 'lucide-react';
+import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell } from '../types';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -395,8 +395,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       id: 'boards', label: t({ en: 'Game Boards', ru: 'Игровые доски' }), icon: <LayoutGrid size={16}/>,
       items: [
         { name: t({ en: 'Standard Board', ru: 'Стандартная доска' }), type: 'BOARD', gridType: GridType.SQUARE },
+        { name: t({ en: 'Cell', ru: 'Ячейка' }), type: 'BATTLEFIELD_CELL' },
       ],
-      matcher: (obj: TableObject) => obj.type === ItemType.BOARD
+      matcher: (obj: TableObject) => obj.type === ItemType.BOARD || obj.type === ItemType.BATTLEFIELD_CELL
     },
     {
       id: 'decks', label: t({ en: 'Decks', ru: 'Колоды' }), icon: <Library size={16}/>,
@@ -845,9 +846,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
   // Count objects on table that match this category
   const objectsOnTable = useMemo(() =>
-    Object.values(state.objects).filter(obj =>
+    Object.values(state.objects).filter((obj): obj is TableObject =>
       category.matcher(obj) &&
-      !(obj as any).inCursorSlot &&
+      // Keep standard tokens (without archetypeId) in the list even when in cursor slot
+      ((obj.type === ItemType.TOKEN && !(obj as any).archetypeId) || !(obj as any).inCursorSlot) &&
       !(obj as any).archetypeId  // Exclude token copies (tokens created from archetypes)
     ),
     [state.objects, category.matcher]
@@ -987,6 +989,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           snapToGrid: false,
           gridType: GridType.NONE,
           gridSize: 50,
+          zIndex: 10, // Tokens above cells by default
         };
         dispatch({ type: 'ADD_OBJECT', payload: token });
         break;
@@ -1086,21 +1089,47 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: generateUUID(),
           type: ItemType.BOARD,
           name: item.name,
-          x: worldX - 200,
-          y: worldY - 200,
-          width: 400,
-          height: 400,
+          x: worldX - 400,
+          y: worldY - 300,
+          width: 800,
+          height: 600,
           rotation: 0,
-          color: '#1a1a2e',
+          color: '#34495e',
           content: '',
           isOnTable: true,
           locked: false,
-          shape: TokenShape.SQUARE,
-          gridType: item.gridType || GridType.SQUARE,
-          gridSize: 50,
+          shape: TokenShape.HEX,
+          gridType: GridType.HEX,
+          gridSize: 65,
           snapToGrid: true,
         };
         dispatch({ type: 'ADD_OBJECT', payload: board });
+        break;
+      }
+      case 'BATTLEFIELD_CELL': {
+        const cell: BattlefieldCell = {
+          id: generateUUID(),
+          type: ItemType.BATTLEFIELD_CELL,
+          shape: TokenShape.SQUARE, // Default shape, can be changed in settings
+          x: screenX - 50,
+          y: screenY - 50,
+          rotation: 0,
+          width: 100,
+          height: 100,
+          content: '',
+          name: item.name || 'Cell',
+          isOnTable: true,
+          locked: false,
+          color: '#496179',
+          borderColor: '#212f3c',
+          borderWidth: 3,
+          opacity: 100,
+          borderOpacity: 100,
+          snapToGrid: false,
+          gridSize: 50,
+          zIndex: 0, // Cells at bottom layer by default
+        };
+        dispatch({ type: 'ADD_OBJECT', payload: cell });
         break;
       }
       case 'PANEL': {
@@ -1405,6 +1434,8 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onS
           content={archetype.content}
           borderColor={(archetype as any).borderColor || '#ffffff'}
           borderWidth={(archetype as any).borderWidth ?? 2}
+          opacity={archetype.opacity ?? 100}
+          borderOpacity={archetype.borderOpacity ?? 100}
           className="drop-shadow-md"
           style={{ width: `${tokenWidth}%`, height: `${tokenHeight}%` }}
         />

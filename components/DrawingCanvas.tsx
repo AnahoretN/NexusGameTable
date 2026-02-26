@@ -148,27 +148,33 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [isOverPanel, setIsOverPanel] = useState(false);
   const currentTool = useDrawingTool();
   const [isAltPressed, setIsAltPressed] = useState(false); // Track ALT key for normal cursor mode
+  const [isShiftPressed, setIsShiftPressed] = useState(false); // Track Shift key for move cursor mode
 
   // Drawing drag state
   const [isDraggingDrawing, setIsDraggingDrawing] = useState(false);
   const [draggedDrawingId, setDraggedDrawingId] = useState<string | null>(null);
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
   const [dragStartDrawingPos, setDragStartDrawingPos] = useState<{ x: number; y: number } | null>(null);
-  const [isOverDrawing, setIsOverDrawing] = useState(false); // For cursor change when Shift+marker
 
   // Track initial stroke data for network commit on drawing end (guests only)
   const strokeStartDataRef = useRef<{ color: string; thickness: number } | null>(null);
 
-  // Track ALT key for normal cursor mode
+  // Track ALT and Shift keys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && !isAltPressed) {
         setIsAltPressed(true);
       }
+      if (e.shiftKey && !isShiftPressed) {
+        setIsShiftPressed(true);
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (!e.altKey && isAltPressed) {
         setIsAltPressed(false);
+      }
+      if (!e.shiftKey && isShiftPressed) {
+        setIsShiftPressed(false);
       }
     };
 
@@ -178,7 +184,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isAltPressed]);
+  }, [isAltPressed, isShiftPressed]);
 
   // Notify other components about current tool state for Shift+drag behavior
   useEffect(() => {
@@ -279,7 +285,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     });
 
     // Draw cursor circle when marker or eraser is active (but not when over panel or ALT is pressed)
-    if ((currentTool === 'marker' || currentTool === 'eraser') && cursorPosition && !isOverPanel && !isAltPressed) {
+    // Don't draw custom cursor when Shift is pressed (move mode)
+    if ((currentTool === 'marker' || currentTool === 'eraser') && cursorPosition && !isOverPanel && !isAltPressed && !isShiftPressed) {
       ctx.beginPath();
       const cursorRadius = (markerThickness / 2) * zoom;
       ctx.arc(cursorPosition.x, cursorPosition.y, cursorRadius, 0, Math.PI * 2);
@@ -375,23 +382,13 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       const screenX = (pos.x + offsetX) * zoom;
       const screenY = (pos.y + offsetY) * zoom;
       setCursorPosition({ x: screenX, y: screenY });
-
-      // Check if cursor is over a drawing (for Shift+marker drag mode)
-      const isShiftPressed = e.shiftKey;
-      if (isShiftPressed && currentTool === 'marker' && !isOverUI) {
-        const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING && obj.isOnTable);
-        const drawingUnderCursor = findDrawingAtPosition(pos.x, pos.y, drawings);
-        setIsOverDrawing(!!drawingUnderCursor);
-      } else {
-        setIsOverDrawing(false);
-      }
     };
 
     window.addEventListener('mousemove', handleGlobalMouseMove);
     return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
-  }, [currentTool, zoom, offsetX, offsetY, getWorldPosition]);
+  }, [currentTool, zoom, offsetX, offsetY, getWorldPosition, isAltPressed, isOverPanel]);
 
-  // Redraw canvas when cursor position changes (for cursor rendering)
+  // Redraw canvas when cursor position or shift state changes (for cursor rendering)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas && cursorPosition && (currentTool === 'marker' || currentTool === 'eraser')) {
@@ -400,7 +397,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         redrawCanvas(ctx);
       }
     }
-  }, [cursorPosition, currentTool, redrawCanvas]);
+  }, [cursorPosition, currentTool, redrawCanvas, isShiftPressed]); // Add isShiftPressed to trigger redraw when cursor mode changes
 
   // Keep redrawCanvas in a ref to avoid stale closures
   const redrawCanvasRef = useRef(redrawCanvas);
@@ -454,6 +451,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         setDragStartDrawingPos({ x: clickedDrawing.x, y: clickedDrawing.y });
         return;
       }
+      // If Shift is pressed but not over a drawing, don't draw anything (just return)
+      return;
     }
 
     setIsDrawing(true);
@@ -922,11 +921,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   // When tool is 'none', disable pointer events so canvas doesn't block other interactions
   const pointerEvents = currentTool === 'none' ? 'none' : 'auto';
-  // Show move cursor when over drawing with Shift+marker, hide custom marker cursor otherwise
+  // Show move cursor when Shift+marker, hide custom marker cursor otherwise
   // When ALT is pressed, always show default cursor (normal cursor mode)
   const canvasCursor = isAltPressed || isOverPanel || !(currentTool === 'marker' || currentTool === 'eraser')
     ? 'default'
-    : isOverDrawing
+    : isShiftPressed
       ? 'move'
       : 'none';
   // Also disable pointer events when over UI or when ALT is pressed (normal cursor mode)

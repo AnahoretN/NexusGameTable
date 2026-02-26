@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, BattlefieldCell, Board as BoardType } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -15,7 +15,7 @@ import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
-import { Layers, Lock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw } from 'lucide-react';
+import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown } from 'lucide-react';
 import { CARD_SHAPE_DIMS } from '../constants';
 import { generateUUID } from '../utils/uuid';
 
@@ -363,22 +363,27 @@ export const Tabletop: React.FC = () => {
   const isGM = !!activePlayer?.isGM;
 
   // --- Grid Snapping Logic ---
+  // Snaps ONLY tokens to the center of nearest grid cell
+  // Snap radius = token size (half width or half height, whichever is larger)
   const getSnappedCoordinates = (cursorX: number, cursorY: number, objects: Record<string, TableObject>, currentDraggingId: string | null): { x: number, y: number } => {
       const draggingObj = objects[currentDraggingId || ''];
-      let objHalfW = draggingObj ? (draggingObj.width ?? 100) / 2 : 0;
-      let objHalfH = draggingObj ? (draggingObj.height ?? 100) / 2 : 0;
 
-      // For horizontal cards, dimensions are swapped for display
-      // We need to use visual dimensions for the calculation
-      if (draggingObj && draggingObj.type === ItemType.CARD) {
-        const card = draggingObj as CardType;
-        const deck = card.deckId ? objects[card.deckId] as DeckType | undefined : undefined;
-        if (deck?.cardOrientation === CardOrientation.HORIZONTAL) {
-          // For horizontal cards, visual dimensions are swapped
-          [objHalfW, objHalfH] = [objHalfH, objHalfW];
-        }
+      // Only tokens snap to grid
+      if (!draggingObj || draggingObj.type !== ItemType.TOKEN) {
+          const objHalfW = draggingObj ? (draggingObj.width ?? 100) / 2 : 0;
+          const objHalfH = draggingObj ? (draggingObj.height ?? 100) / 2 : 0;
+          return { x: cursorX - objHalfW, y: cursorY - objHalfH };
       }
 
+      const objW = draggingObj.width ?? 100;
+      const objH = draggingObj.height ?? 100;
+      const objHalfW = objW / 2;
+      const objHalfH = objH / 2;
+
+      // Snap radius = token size (using max dimension)
+      const snapRadius = Math.max(objW, objH);
+
+      // Get all boards with snapToGrid enabled
       const boards = Object.values(objects).filter(obj =>
           obj.type === ItemType.BOARD &&
           (obj as any).snapToGrid &&
@@ -387,82 +392,133 @@ export const Tabletop: React.FC = () => {
           obj.id !== currentDraggingId
       ) as BoardType[];
 
+      // Get all individual battlefield cells with snapToGrid enabled
+      const cells = Object.values(objects).filter(obj =>
+          obj.type === ItemType.BATTLEFIELD_CELL &&
+          (obj as any).snapToGrid &&
+          obj.isOnTable &&
+          obj.id !== currentDraggingId
+      ) as BattlefieldCell[];
+
+      // Find nearest cell center within snap radius
+      let nearestCell: { x: number; y: number; distance: number } | null = null;
+
+      // Check boards first
       for (const board of boards) {
-          const relativeX = cursorX - board.x;
-          const relativeY = cursorY - board.y;
-          
-          if (relativeX >= 0 && relativeX <= board.width && relativeY >= 0 && relativeY <= board.height) {
-              const size = board.gridSize || 50;
-              let targetCenterX = 0;
-              let targetCenterY = 0;
+          const size = board.gridSize || 50;
+          const boardCols = Math.floor(board.width / size);
+          const boardRows = Math.floor(board.height / size);
 
-              if (board.gridType === GridType.SQUARE) {
-                  targetCenterX = board.x + (Math.floor(relativeX / size) * size) + (size / 2);
-                  targetCenterY = board.y + (Math.floor(relativeY / size) * size) + (size / 2);
-              } else if (board.gridType === GridType.HEX) {
-                  const hexR = size;
-                  const hexW = hexR * Math.sqrt(3);
-                  const originOffsetX = hexW / 2;
-                  const originOffsetY = hexR; 
-                  
-                  const dx = relativeX - originOffsetX;
-                  const dy = relativeY - originOffsetY;
+          if (board.gridType === GridType.SQUARE) {
+              // Find the cell under cursor
+              const relativeX = cursorX - board.x;
+              const relativeY = cursorY - board.y;
+              const col = Math.floor(relativeX / size);
+              const row = Math.floor(relativeY / size);
 
-                  const q_raw = (Math.sqrt(3)/3 * dx - 1/3 * dy) / hexR;
-                  const r_raw = (2/3 * dy) / hexR;
-                  
-                  let rx = Math.round(q_raw);
-                  let ry = Math.round(r_raw);
-                  let rz = Math.round(-q_raw - r_raw);
-
-                  const x_diff = Math.abs(rx - q_raw);
-                  const y_diff = Math.abs(ry - r_raw);
-                  const z_diff = Math.abs(rz - (-q_raw - r_raw));
-
-                  if (x_diff > y_diff && x_diff > z_diff) {
-                      rx = -ry - rz;
-                  } else if (y_diff > z_diff) {
-                      ry = -rx - rz;
-                  } else {
-                      rz = -rx - ry;
-                  }
-
-                  const q = rx;
-                  const r = ry;
-
-                  const centerDx = hexR * Math.sqrt(3) * (q + r/2);
-                  const centerDy = hexR * 3/2 * r;
-
-                  targetCenterX = board.x + originOffsetX + centerDx;
-                  targetCenterY = board.y + originOffsetY + centerDy;
+              // Check if cell is within board bounds
+              if (col < 0 || col >= boardCols || row < 0 || row >= boardRows) {
+                  continue;
               }
 
-              const collisionThreshold = size * 0.4;
-              const existingItems = Object.values(objects).filter(o => {
-                  if (o.id === currentDraggingId || !(o as any).isOnTable || o.locked) return false;
-                  const oWidth = o.width ?? 100;
-                  const oHeight = o.height ?? 100;
-                  const oCenterX = o.x + (oWidth / 2);
-                  const oCenterY = o.y + (oHeight / 2);
-                  return Math.abs(oCenterX - targetCenterX) < collisionThreshold &&
-                         Math.abs(oCenterY - targetCenterY) < collisionThreshold;
-              });
+              // Calculate cell center
+              const cellCenterX = board.x + (col * size) + (size / 2);
+              const cellCenterY = board.y + (row * size) + (size / 2);
 
-              if (existingItems.length > 0) {
-                  const offsetSize = 10 + (existingItems.length * 2);
-                  targetCenterX += offsetSize;
-                  targetCenterY += offsetSize;
+              // Check if within snap radius
+              const distance = Math.sqrt(
+                  Math.pow(cursorX - cellCenterX, 2) +
+                  Math.pow(cursorY - cellCenterY, 2)
+              );
+
+              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
+                  nearestCell = { x: cellCenterX, y: cellCenterY, distance };
+              }
+          } else if (board.gridType === GridType.HEX) {
+              // Hex grid snapping
+              const hexR = size;
+              const hexW = hexR * Math.sqrt(3);
+              const originOffsetX = hexW / 2;
+              const originOffsetY = hexR;
+
+              const relativeX = cursorX - board.x - originOffsetX;
+              const relativeY = cursorY - board.y - originOffsetY;
+
+              // Convert to hex coordinates
+              const q_raw = (Math.sqrt(3)/3 * relativeX - 1/3 * relativeY) / hexR;
+              const r_raw = (2/3 * relativeY) / hexR;
+
+              let rx = Math.round(q_raw);
+              let ry = Math.round(r_raw);
+              let rz = Math.round(-q_raw - r_raw);
+
+              // Round to nearest hex
+              const x_diff = Math.abs(rx - q_raw);
+              const y_diff = Math.abs(ry - r_raw);
+              const z_diff = Math.abs(rz - (-q_raw - r_raw));
+
+              if (x_diff > y_diff && x_diff > z_diff) {
+                  rx = -ry - rz;
+              } else if (y_diff > z_diff) {
+                  ry = -rx - rz;
+              } else {
+                  rz = -rx - ry;
               }
 
-              return {
-                  x: targetCenterX - objHalfW,
-                  y: targetCenterY - objHalfH
-              };
+              const q = rx;
+              const r = ry;
+
+              // Calculate hex center
+              const centerDx = hexR * Math.sqrt(3) * (q + r/2);
+              const centerDy = hexR * 3/2 * r;
+
+              const hexCenterX = board.x + originOffsetX + centerDx;
+              const hexCenterY = board.y + originOffsetY + centerDy;
+
+              // Check if hex center is within board bounds
+              const hexX = hexCenterX - board.x;
+              const hexY = hexCenterY - board.y;
+              if (hexX < -hexW/2 || hexX > board.width + hexW/2 ||
+                  hexY < -hexR || hexY > board.height + hexR) {
+                  continue;
+              }
+
+              // Check if within snap radius
+              const distance = Math.sqrt(
+                  Math.pow(cursorX - hexCenterX, 2) +
+                  Math.pow(cursorY - hexCenterY, 2)
+              );
+
+              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
+                  nearestCell = { x: hexCenterX, y: hexCenterY, distance };
+              }
           }
       }
 
-      // No board snap - return top-left coordinates directly
-      // cursorX and cursorY are the center position, so convert to top-left
+      // Check individual battlefield cells - snap center-to-center
+      for (const cell of cells) {
+          const cellCenterX = cell.x + (cell.width ?? 100) / 2;
+          const cellCenterY = cell.y + (cell.height ?? 100) / 2;
+
+          const distance = Math.sqrt(
+              Math.pow(cursorX - cellCenterX, 2) +
+              Math.pow(cursorY - cellCenterY, 2)
+          );
+
+          if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
+              nearestCell = { x: cellCenterX, y: cellCenterY, distance };
+          }
+      }
+
+      // If we found a cell to snap to, return coordinates centered on that cell
+      if (nearestCell) {
+          return {
+              x: nearestCell.x - objHalfW,
+              y: nearestCell.y - objHalfH
+          };
+      }
+
+      // No snap - return top-left coordinates directly
       return { x: cursorX - objHalfW, y: cursorY - objHalfH };
   };
 
@@ -872,6 +928,13 @@ export const Tabletop: React.FC = () => {
     // This ensures consistent offset between slot rendering and dropping
     (itemClone as any).cursorSlotIndex = cursorSlot.length;
 
+    // IMPORTANT: Store original zIndex for proper restoration when dropping
+    // For shift mode: use new stack zIndex (10000+), for hold mode: preserve original
+    (itemClone as any).originalZIndex = item.zIndex ?? 0;
+
+    // Store source in each item so we can determine the mode even when slotItems is passed
+    (itemClone as any).source = source;
+
     // IMPORTANT: Set cursor position FIRST, before any state changes that trigger re-render
     // This ensures cursorPositionRef.current is updated synchronously before the render happens
     if (mousePosition) {
@@ -904,6 +967,13 @@ export const Tabletop: React.FC = () => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
     if (currentSlot.length === 0) return;
+
+    // Determine if we should preserve original zIndex or use stack zIndex
+    // Read source from the first item in slot (stored when adding to slot)
+    // Shift mode: use stack zIndex (10000+), Hold/Archetype mode: preserve original
+    const itemSource = currentSlot.length > 0 ? (currentSlot[0] as any).source : null;
+    const source = itemSource || cursorSlotSource;
+    const useOriginalZIndex = source === 'hold' || source === 'archetype';
 
     // NOTE: Dropping on decks is handled by handleGlobalMouseUp -> dropToDeck
     // This function only handles dropping on the tabletop (not on decks)
@@ -949,11 +1019,27 @@ export const Tabletop: React.FC = () => {
       const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
       const offsetX = offsetFromBack * offsetAmount;
       const offsetY = offsetFromBack * offsetAmount;
-      // Use high z-index for visibility (newest on top)
-      const zIndex = 10000 + slotIndex;
 
-      const finalX = worldX - baseWidth / 2 + offsetX;
-      const finalY = worldY - baseHeight / 2 + offsetY;
+      // Use original zIndex if preserving, otherwise use stack zIndex
+      const zIndex = useOriginalZIndex
+        ? ((item as any).originalZIndex ?? 0)
+        : 10000 + slotIndex;
+
+      // Find snap target based on cursor position (worldX, worldY = cursor center)
+      let snapTargetX: number, snapTargetY: number;
+      if (item.type === ItemType.TOKEN) {
+        const snappedPos = getSnappedCoordinates(worldX, worldY, state.objects, item.id);
+        // snappedPos contains top-left coordinates, add half dimensions to get center
+        snapTargetX = snappedPos.x + baseWidth / 2;
+        snapTargetY = snappedPos.y + baseHeight / 2;
+      } else {
+        snapTargetX = worldX;
+        snapTargetY = worldY;
+      }
+
+      // Apply stacking offset to the snapped center position
+      const finalX = snapTargetX - baseWidth / 2 + offsetX;
+      const finalY = snapTargetY - baseHeight / 2 + offsetY;
 
       // Use DROP_FROM_CURSOR_SLOT action with undo tracking
       dispatch({
@@ -972,7 +1058,7 @@ export const Tabletop: React.FC = () => {
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
-  }, [cursorSlot, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, getCardSettings]);
+  }, [cursorSlot, cursorSlotSource, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, getCardSettings]);
 
   // Listen for drop-cursor-slot-at-position events (from drag-to-place in ToolsPanel)
   useEffect(() => {
@@ -1095,6 +1181,9 @@ export const Tabletop: React.FC = () => {
     const pile = deck?.piles?.find(p => p.id === pileId);
     const nonCardsInSlot = currentSlot.filter(item => item.type !== ItemType.CARD);
     if (nonCardsInSlot.length > 0 && deck && pile) {
+      // Determine if we should preserve original zIndex
+      const useOriginalZIndex = cursorSlotSource === 'hold' || cursorSlotSource === 'archetype';
+
       // Calculate pile position (same logic as in render)
       const pileSize = pile.size ?? 1;
       let pileX: number, pileY: number;
@@ -1132,15 +1221,36 @@ export const Tabletop: React.FC = () => {
         const offsetX = offsetFromBack * offsetAmount;
         const offsetY = offsetFromBack * offsetAmount;
 
+        // Use original zIndex if preserving, otherwise use stack zIndex
+        const zIndex = useOriginalZIndex
+          ? ((item as any).originalZIndex ?? 0)
+          : 10000 + slotIndex;
+
+        // Calculate center position (without offset for snapping)
+        const pileCenterX = pileX + deck.width * pileSize / 2;
+        const pileCenterY = pileY + deck.height * pileSize / 2;
+
+        // Apply grid snapping for tokens only (find snap from center, then add offset)
+        let finalX, finalY;
+        if (item.type === ItemType.TOKEN) {
+          const snappedPos = getSnappedCoordinates(pileCenterX, pileCenterY, state.objects, item.id);
+          // snappedPos is top-left, convert to center, add offset, convert back to top-left
+          finalX = snappedPos.x + baseWidth / 2 + offsetX - baseWidth / 2;
+          finalY = snappedPos.y + baseHeight / 2 + offsetY - baseHeight / 2;
+        } else {
+          finalX = pileCenterX - baseWidth / 2 + offsetX;
+          finalY = pileCenterY - baseHeight / 2 + offsetY;
+        }
+
         // Use original item.id - restore token to tabletop
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: {
             id: item.id,
             inCursorSlot: false,
-            x: pileX + deck.width * pileSize / 2 - baseWidth / 2 + offsetX,
-            y: pileY + deck.height * pileSize / 2 - baseHeight / 2 + offsetY,
-            zIndex: 10000 + ((item as any).cursorSlotIndex ?? 0),
+            x: finalX,
+            y: finalY,
+            zIndex,
           }
         });
       });
@@ -1151,7 +1261,7 @@ export const Tabletop: React.FC = () => {
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
-  }, [cursorSlot, dispatch, state.objects]);
+  }, [cursorSlot, cursorSlotSource, dispatch, state.objects]);
 
   // Global click handler to drop cursor slot items when clicking outside hand panel
   // NOTE: This effect depends on cursorSlot to ensure the handler has fresh data
@@ -2795,8 +2905,10 @@ export const Tabletop: React.FC = () => {
                                     color={obj.color || '#e74c3c'}
                                     content={obj.content}
                                     rotation={0}
-                                    borderWidth={2}
+                                    borderWidth={obj.borderWidth ?? 2}
                                     borderColor={(obj as any).borderColor || 'white'}
+                                    opacity={obj.opacity ?? 100}
+                                    borderOpacity={obj.borderOpacity ?? 100}
                                     showThickness={true}
                                     tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
                                     fontColor={(obj as any).fontColor || 'white'}
@@ -2901,6 +3013,125 @@ export const Tabletop: React.FC = () => {
                                 })()}
                             </div>
                         </div>
+                        </Tooltip>
+                    );
+                }
+
+                if (obj.type === ItemType.BATTLEFIELD_CELL) {
+                    const cell = obj as BattlefieldCell;
+                    return (
+                        <Tooltip
+                            key={obj.id}
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
+                        >
+                            <div
+                                onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                                style={{
+                                    left: obj.x,
+                                    top: obj.y,
+                                    width: obj.width,
+                                    height: obj.height,
+                                    transform: `rotate(${obj.rotation}deg)`
+                                }}
+                            >
+                                <SvgTokenShape
+                                    shape={cell.shape}
+                                    width={obj.width}
+                                    height={obj.height}
+                                    color={obj.color || '#4ade80'}
+                                    borderWidth={obj.borderWidth ?? 2}
+                                    borderColor={obj.borderColor || '#166534'}
+                                    opacity={obj.opacity ?? 100}
+                                    borderOpacity={obj.borderOpacity ?? 100}
+                                    rotation={0}
+                                    showThickness={false}
+                                />
+
+                                {(obj as any).isPinnedToViewport && (
+                                    <div
+                                        className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                                        title="Pinned to screen"
+                                        style={{ transform: `scale(${1/zoom})` }}
+                                    >
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                            <line x1="12" y1="17" x2="12" y2="22"></line>
+                                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                        </svg>
+                                    </div>
+                                )}
+
+                                {/* Action buttons */}
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100' : ''}`}>
+                                    {(() => {
+                                        const actionButtons = obj.actionButtons || [];
+                                        const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+                                            rotate: {
+                                                key: 'rotate',
+                                                action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-green-600 hover:bg-green-500',
+                                                title: 'Rotate',
+                                                icon: <RefreshCw size={14} />
+                                            },
+                                            delete: {
+                                                key: 'delete',
+                                                action: () => dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-red-600 hover:bg-red-500',
+                                                title: 'Delete',
+                                                icon: <Trash2 size={14} />
+                                            },
+                                            clone: {
+                                                key: 'clone',
+                                                action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-cyan-600 hover:bg-cyan-500',
+                                                title: 'Clone',
+                                                icon: <Copy size={14} />
+                                            },
+                                            layerUp: {
+                                                key: 'layerUp',
+                                                action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+                                                className: 'bg-blue-600 hover:bg-blue-500',
+                                                title: 'Layer Up',
+                                                icon: <ChevronsUpDown size={14} />
+                                            },
+                                            layerDown: {
+                                                key: 'layerDown',
+                                                action: () => dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } }),
+                                                className: 'bg-blue-600 hover:bg-blue-500',
+                                                title: 'Layer Down',
+                                                icon: <ChevronsUpDown size={14} />
+                                            },
+                                            lock: {
+                                                key: 'lock',
+                                                action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
+                                                className: obj.locked ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-yellow-600 hover:bg-yellow-500',
+                                                title: obj.locked ? 'Unlock' : 'Lock',
+                                                icon: obj.locked ? <Unlock size={14} /> : <Lock size={14} />
+                                            },
+                                        };
+
+                                        return actionButtons.map((action) => {
+                                            const config = buttonConfigs[action];
+                                            if (!config) return null;
+                                            return (
+                                                <button
+                                                    key={config.key}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    onClick={(e) => { e.stopPropagation(); config.action(); }}
+                                                    className={`p-1.5 rounded shadow ${config.className} pointer-events-auto`}
+                                                    title={config.title}
+                                                >
+                                                    {config.icon}
+                                                </button>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </div>
                         </Tooltip>
                     );
                 }
@@ -3920,8 +4151,10 @@ export const Tabletop: React.FC = () => {
                                 color={token.color || '#34495e'}
                                 content={token.content}
                                 rotation={0}
-                                borderWidth={3}
+                                borderWidth={token.borderWidth ?? 3}
                                 borderColor={(token as any).borderColor || 'white'}
+                                opacity={token.opacity ?? 100}
+                                borderOpacity={token.borderOpacity ?? 100}
                                 showThickness={true}
                                 tokenName={(token as any).showName || ((token as any).archetypeId && (state.objects[(token as any).archetypeId] as any)?.showName) ? token.name : undefined}
                             />
