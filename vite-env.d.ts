@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly PROD: boolean;
   readonly SSR: boolean;
   readonly VITE_DEBUG?: string;
+  readonly PACKAGE_VERSION: string;
+  readonly APP_NAME: string;
 }
 
 interface ImportMeta {
