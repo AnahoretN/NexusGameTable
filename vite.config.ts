@@ -1,27 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import type { ViteDevServer } from 'vite';
 // @ts-ignore - vite.config runs in Node.js context
 import { readFileSync } from 'fs';
 
 // Read package.json for version
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
-// Plugin to run the WebSocket server alongside Vite
-function serverPlugin() {
-  return {
-    name: 'websocket-server',
-    configureServer(server: ViteDevServer) {
-      // Import and start the WebSocket server
-      import('./server/index.js' as any).then(({ createWebSocketServer }: any) => {
-        createWebSocketServer(server.httpServer!);
-      });
-    },
-  };
-}
-
 export default defineConfig({
-  plugins: [react(), serverPlugin()],
+  plugins: [react()],
   define: {
     'process.env': {},
     // Expose package.json version as env variable
