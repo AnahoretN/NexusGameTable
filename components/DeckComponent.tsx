@@ -5,6 +5,7 @@ import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, Card
 import { DECK_OFFSET } from '../constants';
 import { Tooltip } from './Tooltip';
 import { getCardShapeStyles, isGeometricCardShape } from '../utils/shapeUtils';
+import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 
 interface DeckComponentProps {
   deck: DeckType;
@@ -264,18 +265,42 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
           <React.Fragment key={pile.id}>
             {/* Highlight overlay - rendered separately with high z-index */}
             {isHoveringPile && (
-              <div
-                className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none"
-                style={{
-                  left: pilePos.x,
-                  top: pilePos.y,
-                  width: effectiveWidth * pileSize,
-                  height: effectiveHeight * pileSize,
-                  transform: `rotate(${deck.rotation}deg)`,
-                  zIndex: 100,
-                  ...(!isGeometricShape ? shapeStyles : {})
-                }}
-              />
+              shouldUseSvgForDeck(cardShape) ? (
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: pilePos.x,
+                    top: pilePos.y,
+                    width: effectiveWidth * pileSize,
+                    height: effectiveHeight * pileSize,
+                    transform: `rotate(${deck.rotation}deg)`,
+                    zIndex: 100,
+                  }}
+                >
+                  <SvgDeckShape
+                    shape={cardShape}
+                    width={effectiveWidth * pileSize}
+                    height={effectiveHeight * pileSize}
+                    backgroundColor="transparent"
+                    borderColor="rgb(168 85 247)"
+                    borderWidth={2}
+                    orientation={cardOrientation}
+                  />
+                </div>
+              ) : (
+                <div
+                  className="absolute ring-2 ring-purple-500 ring-opacity-75 pointer-events-none"
+                  style={{
+                    left: pilePos.x,
+                    top: pilePos.y,
+                    width: effectiveWidth * pileSize,
+                    height: effectiveHeight * pileSize,
+                    transform: `rotate(${deck.rotation}deg)`,
+                    zIndex: 100,
+                    ...shapeStyles
+                  }}
+                />
+              )
             )}
             {/* Pile container - keeps normal z-index */}
             <div
@@ -302,73 +327,160 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               }}
             >
               {/* Pile visual representation */}
-              <div
-                className={`absolute inset-0 bg-slate-800 border-2 flex flex-col items-center justify-center transition-colors ${
-                  currentTool !== 'none'
-                    ? 'cursor-default'
-                    : pile.position === 'free'
-                      ? pile.locked
-                        ? 'border-red-600 cursor-pointer'
-                        : draggingPile?.pile.id === pile.id
-                          ? 'border-yellow-400 cursor-grabbing'
-                          : 'border-slate-600 cursor-move hover:border-slate-500'
-                      : 'border-slate-600 cursor-pointer'
-                }`}
-                style={shapeStyles}
-                onContextMenu={(e) => handlePileContextMenu(e, pile, deck)}
-                onMouseDown={(e) => {
-                  if (pile.position === 'free' && !pile.locked && e.button === 0) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDraggingPile({ pile, deck });
-                    pileDragStartRef.current = {
-                      x: e.clientX - (pile.x ?? 0),
-                      y: e.clientY - (pile.y ?? 0)
-                    };
-                  }
-                }}
-              >
-                {pile.showTopCard && topCard ? (
-                  // Show top card face without text overlay
-                  <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
-                    <div
-                      className="w-full h-full"
-                      style={{
-                        backgroundColor: 'white',
-                        backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
-                      }}
-                    />
-                  </div>
-                ) : topCard ? (
-                  // Normal pile appearance with optional face up display
-                  <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
-                    <div
-                      className="w-full h-full"
-                      style={{
-                        backgroundColor: pile.faceUp ? 'white' : '#1e293b',
-                        backgroundImage: pile.faceUp && topCard.content ? `url(${topCard.content})` : undefined,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
-                      }}
-                    />
-                    {/* Pile name overlay with count */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
-                      <span className="text-xs text-white font-bold px-2 text-center select-none drop-shadow-md">
-                        {pile.name}
-                      </span>
-                      <span className="text-xs text-slate-300 select-none drop-shadow-md">{pileCards.length}</span>
+              {shouldUseSvgForDeck(cardShape) ? (
+                // SVG rendering for geometric shapes
+                <div
+                  className="absolute inset-0 flex flex-col items-center justify-center transition-colors cursor-pointer"
+                  onContextMenu={(e) => handlePileContextMenu(e, pile, deck)}
+                  onMouseDown={(e) => {
+                    if (pile.position === 'free' && !pile.locked && e.button === 0) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDraggingPile({ pile, deck });
+                      pileDragStartRef.current = {
+                        x: e.clientX - (pile.x ?? 0),
+                        y: e.clientY - (pile.y ?? 0)
+                      };
+                    }
+                  }}
+                >
+                  <SvgDeckShape
+                    shape={cardShape}
+                    width={effectiveWidth * pileSize}
+                    height={effectiveHeight * pileSize}
+                    backgroundColor="#1e293b"
+                    borderColor={
+                      pile.position === 'free'
+                        ? pile.locked
+                          ? '#dc2626'
+                          : draggingPile?.pile.id === pile.id
+                            ? '#facc15'
+                            : '#475569'
+                        : '#475569'
+                    }
+                    borderWidth={2}
+                    orientation={cardOrientation}
+                  >
+                    <foreignObject x="0" y="0" width="100" height="100">
+                      <div className="w-full h-full flex flex-col items-center justify-center">
+                        {pile.showTopCard && topCard ? (
+                          // Show top card face without text overlay
+                          <div className="w-full h-full relative overflow-hidden">
+                            <div
+                              className="w-full h-full"
+                              style={{
+                                backgroundColor: 'white',
+                                backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center'
+                              }}
+                            />
+                          </div>
+                        ) : topCard ? (
+                          // Normal pile appearance with optional face up display
+                          <div className="w-full h-full relative overflow-hidden">
+                            <div
+                              className="w-full h-full"
+                              style={{
+                                backgroundColor: pile.faceUp ? 'white' : '#1e293b',
+                                backgroundImage: pile.faceUp && topCard.content ? `url(${topCard.content})` : undefined,
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center'
+                              }}
+                            />
+                            {/* Pile name overlay with count */}
+                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
+                              <DeckLabel
+                                name={pile.name}
+                                count={pileCards.length}
+                                totalCount={pileCards.length}
+                                shape={cardShape}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          // Empty pile
+                          <DeckLabel
+                            name={pile.name}
+                            count={pileCards.length}
+                            totalCount={pileCards.length}
+                            shape={cardShape}
+                          />
+                        )}
+                      </div>
+                    </foreignObject>
+                  </SvgDeckShape>
+                </div>
+              ) : (
+                // CSS rendering for standard shapes
+                <div
+                  className={`absolute inset-0 bg-slate-800 border-2 flex flex-col items-center justify-center transition-colors ${
+                    currentTool !== 'none'
+                      ? 'cursor-default'
+                      : pile.position === 'free'
+                        ? pile.locked
+                          ? 'border-red-600 cursor-pointer'
+                          : draggingPile?.pile.id === pile.id
+                            ? 'border-yellow-400 cursor-grabbing'
+                            : 'border-slate-600 cursor-move hover:border-slate-500'
+                        : 'border-slate-600 cursor-pointer'
+                  }`}
+                  style={shapeStyles}
+                  onContextMenu={(e) => handlePileContextMenu(e, pile, deck)}
+                  onMouseDown={(e) => {
+                    if (pile.position === 'free' && !pile.locked && e.button === 0) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDraggingPile({ pile, deck });
+                      pileDragStartRef.current = {
+                        x: e.clientX - (pile.x ?? 0),
+                        y: e.clientY - (pile.y ?? 0)
+                      };
+                    }
+                  }}
+                >
+                  {pile.showTopCard && topCard ? (
+                    // Show top card face without text overlay
+                    <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
+                      <div
+                        className="w-full h-full"
+                        style={{
+                          backgroundColor: 'white',
+                          backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center'
+                        }}
+                      />
                     </div>
-                  </div>
-                ) : (
-                  // Empty pile
-                  <div className="flex flex-col items-center justify-center">
-                    <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{pile.name}</span>
-                    <span className="text-xs text-slate-500 select-none">{pileCards.length}</span>
-                  </div>
-                )}
-              </div>
+                  ) : topCard ? (
+                    // Normal pile appearance with optional face up display
+                    <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
+                      <div
+                        className="w-full h-full"
+                        style={{
+                          backgroundColor: pile.faceUp ? 'white' : '#1e293b',
+                          backgroundImage: pile.faceUp && topCard.content ? `url(${topCard.content})` : undefined,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center'
+                        }}
+                      />
+                      {/* Pile name overlay with count */}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
+                        <span className="text-xs text-white font-bold px-2 text-center select-none drop-shadow-md">
+                          {pile.name}
+                        </span>
+                        <span className="text-xs text-slate-300 select-none drop-shadow-md">{pileCards.length}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    // Empty pile
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{pile.name}</span>
+                      <span className="text-xs text-slate-500 select-none">{pileCards.length}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </React.Fragment>
         );
@@ -378,18 +490,42 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
       <React.Fragment>
         {/* Highlight overlay - rendered separately with high z-index */}
         {canDropCard && (
-          <div
-            className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none"
-            style={{
-              left: 0,
-              top: 0,
-              width: effectiveWidth,
-              height: effectiveHeight,
-              transform: `rotate(${deck.rotation}deg)`,
-              zIndex: 100,
-              ...(!isGeometricShape ? shapeStyles : {})
-            }}
-          />
+          shouldUseSvgForDeck(cardShape) ? (
+            <div
+              className="absolute pointer-events-none"
+              style={{
+                left: 0,
+                top: 0,
+                width: effectiveWidth,
+                height: effectiveHeight,
+                transform: `rotate(${deck.rotation}deg)`,
+                zIndex: 100,
+              }}
+            >
+              <SvgDeckShape
+                shape={cardShape}
+                width={effectiveWidth}
+                height={effectiveHeight}
+                backgroundColor="transparent"
+                borderColor="rgb(168 85 247)"
+                borderWidth={2}
+                orientation={cardOrientation}
+              />
+            </div>
+          ) : (
+            <div
+              className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none"
+              style={{
+                left: 0,
+                top: 0,
+                width: effectiveWidth,
+                height: effectiveHeight,
+                transform: `rotate(${deck.rotation}deg)`,
+                zIndex: 100,
+                ...shapeStyles
+              }}
+            />
+          )
         )}
         {/* Deck container - keeps normal z-index */}
         <div
@@ -417,44 +553,128 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
             transform: `rotate(${deck.rotation}deg)`
           }}
         >
-        {[2, 1, 0].map(i => (
-          <div
-            key={i}
-            className="absolute bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
-            style={{
-              width: '100%',
-              height: '100%',
-              top: 0,
-              left: 0,
-              transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
-              zIndex: -i,
-              ...shapeStyles
-            }}
-          />
-        ))}
+        {shouldUseSvgForDeck(cardShape) ? (
+          // SVG rendering for geometric shapes (HEX, TRIANGLE, CIRCLE)
+          <>
+            {[2, 1, 0].map(i => (
+              <div
+                key={i}
+                className="absolute pointer-events-none"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  top: 0,
+                  left: 0,
+                  transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
+                  zIndex: -i,
+                }}
+              >
+                <SvgDeckShape
+                  shape={cardShape}
+                  width={effectiveWidth}
+                  height={effectiveHeight}
+                  backgroundColor="#1e293b"
+                  borderColor="#475569"
+                  borderWidth={2}
+                  orientation={cardOrientation}
+                />
+              </div>
+            ))}
 
-        {deck.showTopCard && topCard ? (
-          // Show top card face
-          <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
-            <div
-              className="w-full h-full"
-              style={{
-                backgroundColor: 'white',
-                backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center'
-              }}
-            />
-          </div>
+            {deck.showTopCard && topCard ? (
+              // Show top card face
+              <div className="absolute inset-0 overflow-hidden">
+                <SvgDeckShape
+                  shape={cardShape}
+                  width={effectiveWidth}
+                  height={effectiveHeight}
+                  backgroundColor="white"
+                  borderColor="#64748b"
+                  borderWidth={2}
+                  orientation={cardOrientation}
+                >
+                  <foreignObject x="0" y="0" width="100" height="100">
+                    <div
+                      className="w-full h-full"
+                      style={{
+                        backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }}
+                    />
+                  </foreignObject>
+                </SvgDeckShape>
+              </div>
+            ) : (
+              // Normal deck appearance with SVG shape
+              <div className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer">
+                <SvgDeckShape
+                  shape={cardShape}
+                  width={effectiveWidth}
+                  height={effectiveHeight}
+                  backgroundColor="#0f172a"
+                  borderColor={deck.locked ? "#dc2626" : "#64748b"}
+                  borderWidth={2}
+                  orientation={cardOrientation}
+                >
+                  <foreignObject x="0" y="0" width="100" height="100">
+                    <div className="w-full h-full flex flex-col items-center justify-center">
+                      <Layers className="text-slate-400 mb-1" size={16} />
+                      <DeckLabel
+                        name={deck.name}
+                        count={isShuffling ? animatedCurrentCount : visibleCardCount}
+                        totalCount={isShuffling ? animatedBaseCount : (deck.baseCardIds || deck.cardIds).length}
+                        shape={cardShape}
+                      />
+                    </div>
+                  </foreignObject>
+                </SvgDeckShape>
+              </div>
+            )}
+          </>
         ) : (
-          // Normal deck appearance
-          <div className="absolute inset-0 bg-slate-900 border-2 border-slate-500 flex flex-col items-center justify-center cursor-pointer transition-colors" style={shapeStyles}>
-            <Layers className="text-slate-400 mb-2" />
-            <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{deck.name}</span>
-            <span className={`text-xs select-none ${isShuffling ? 'text-green-400' : 'text-slate-500'}`}>
-              {isShuffling ? animatedCurrentCount : visibleCardCount} / {isShuffling ? animatedBaseCount : (deck.baseCardIds || deck.cardIds).length}
-            </span>
-          </div>
+          // CSS rendering for standard shapes (POKER, BRIDGE, etc.)
+          <>
+            {[2, 1, 0].map(i => (
+              <div
+                key={i}
+                className="absolute bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  top: 0,
+                  left: 0,
+                  transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
+                  zIndex: -i,
+                  ...shapeStyles
+                }}
+              />
+            ))}
+
+            {deck.showTopCard && topCard ? (
+              // Show top card face
+              <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
+                <div
+                  className="w-full h-full"
+                  style={{
+                    backgroundColor: 'white',
+                    backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }}
+                />
+              </div>
+            ) : (
+              // Normal deck appearance
+              <div className="absolute inset-0 bg-slate-900 border-2 border-slate-500 flex flex-col items-center justify-center cursor-pointer transition-colors" style={shapeStyles}>
+                <Layers className="text-slate-400 mb-2" />
+                <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{deck.name}</span>
+                <span className={`text-xs select-none ${isShuffling ? 'text-green-400' : 'text-slate-500'}`}>
+                  {isShuffling ? animatedCurrentCount : visibleCardCount} / {isShuffling ? animatedBaseCount : (deck.baseCardIds || deck.cardIds).length}
+                </span>
+              </div>
+            )}
+          </>
         )}
 
         {/* Action buttons on bottom edge - like cards */}
