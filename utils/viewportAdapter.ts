@@ -12,10 +12,10 @@ interface StoredGameState {
   state: any;
 }
 
-const STORAGE_VERSION = 2; // Увеличиваем версию для новой структуры сохранения
+const STORAGE_VERSION = 2; // Increased version for new save structure
 
 /**
- * Преобразует состояние для сохранения с информацией о вьюпорте
+ * Transform state for saving with viewport info
  */
 export function prepareStateForStorage(state: any, viewportWidth: number, viewportHeight: number): string {
   const storedState: StoredGameState = {
@@ -27,22 +27,22 @@ export function prepareStateForStorage(state: any, viewportWidth: number, viewpo
 }
 
 /**
- * Загружает состояние и адаптирует координаты объектов под текущий размер экрана
+ * Load state and adapt object coordinates to current screen size
  */
 export function loadAndAdaptState(storedData: string, currentViewportWidth: number, currentViewportHeight: number): any | null {
   try {
     const parsed = JSON.parse(storedData);
 
-    // Если старая версия формата
+    // If old version format
     if (!parsed.version || parsed.version < 2) {
-      return parsed; // Старый формат, возвращаем как есть
+      return parsed; // Old format, return as is
     }
 
     const stored: StoredGameState = parsed;
     const oldViewport = stored.viewport;
     const newState = { ...stored.state };
 
-    // Проверяем, нужно ли адаптировать
+    // Check if adaptation is needed
     const needsAdaptation =
       oldViewport.width !== currentViewportWidth ||
       oldViewport.height !== currentViewportHeight;
@@ -51,11 +51,11 @@ export function loadAndAdaptState(storedData: string, currentViewportWidth: numb
       return newState;
     }
 
-    // Адаптируем координаты объектов
+    // Adapt object coordinates
     const scaleX = currentViewportWidth / oldViewport.width;
     const scaleY = currentViewportHeight / oldViewport.height;
 
-    // Используем средний масштаб для сохранения пропорций
+    // Use average scale to preserve proportions
     const avgScale = (scaleX + scaleY) / 2;
 
     if (newState.objects) {
@@ -64,15 +64,15 @@ export function loadAndAdaptState(storedData: string, currentViewportWidth: numb
       Object.entries(newState.objects).forEach(([id, obj]: [string, any]) => {
         const adaptedObj = { ...obj };
 
-        // Для "плавающих" элементов (закреплённых на вьюпорте) - не адаптируем
+        // For "floating" elements (pinned to viewport) - don't adapt
         if (obj.isPinnedToViewport) {
           adaptedObjects[id] = obj;
         } else {
-          // Адаптируем позицию к новому размеру экрана
+          // Adapt position to new screen size
           adaptedObj.x = obj.x * scaleX;
           adaptedObj.y = obj.y * scaleY;
 
-          // Также можно адаптировать размер объектов опционально
+          // Optionally can also adapt object size
           // adaptedObj.width = obj.width * avgScale;
           // adaptedObj.height = obj.height * avgScale;
         }
@@ -83,7 +83,7 @@ export function loadAndAdaptState(storedData: string, currentViewportWidth: numb
       newState.objects = adaptedObjects;
     }
 
-    // Адаптируем viewTransform (pan/zoom)
+    // Adapt viewTransform (pan/zoom)
     if (newState.viewTransform) {
       const vt: ViewTransform = newState.viewTransform;
       vt.scroll.x = vt.scroll.x * scaleX;
@@ -98,7 +98,7 @@ export function loadAndAdaptState(storedData: string, currentViewportWidth: numb
 }
 
 /**
- * Получить информацию о вьюпорте
+ * Get viewport information
  */
 export function getViewportInfo(): ViewportInfo {
   return {

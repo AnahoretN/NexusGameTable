@@ -440,12 +440,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       }
 
-      // Сохраняем локальные настройки для главного меню
+      // Save local settings for main menu
       if (updatedObj.type === ItemType.PANEL && (updatedObj as PanelObject).panelType === PanelType.MAIN_MENU) {
         const oldPos = obj;
         const newPos = updatedObj;
 
-        // Устанавливаем флаг isPositionSet только если позиция изменилась (пользователь переместил меню)
+        // Set isPositionSet flag only if position changed (user moved the menu)
         const positionChanged = ('x' in action.payload || 'y' in action.payload) &&
                               (oldPos.x !== newPos.x || oldPos.y !== newPos.y);
 
@@ -453,7 +453,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         localSettings.mainMenuPosition = { x: newPos.x, y: newPos.y };
         localSettings.mainMenuSize = { width: newPos.width || MAIN_MENU_WIDTH, height: newPos.height || 400 };
 
-        // Только если пользователь ПЕРЕМЕСТИЛ меню, помечаем что позиция установлена
+        // Only if user MOVED the menu, mark position as set
         if (positionChanged) {
           localSettings.isPositionSet = true;
         }
@@ -3368,7 +3368,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Load all saved objects (except MAIN_MENU - it's handled separately)
           Object.values(savedState.objects).forEach(obj => {
-            // Пропускаем главное меню - оно будет создано из локальных настроек
+            // Skip main menu - it will be created from local settings
             if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
               return;
             }
@@ -3415,7 +3415,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Apply all updates in a single batch
           updates.forEach(update => localDispatch(update));
 
-          // Создаём главное меню из локальных настроек
+          // Create main menu from local settings
           createMainMenu(localDispatch);
           return;
         }
@@ -3462,41 +3462,41 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localDispatch({ type: 'ADD_OBJECT', payload: deck });
         }
 
-        // Создаём главное меню (для всех)
+        // Create main menu (for everyone)
         createMainMenu(localDispatch);
     }
   }, [isHost, connectionStatus]); // Add connectionStatus to ensure peer is ready
 
-  // Функция для создания главного меню из локальных настроек
+  // Function to create main menu from local settings
   const createMainMenu = useCallback((dispatch: React.Dispatch<Action>) => {
-    // Всегда вычисляем X позицию (правая сторона прижата к скроллбару)
+    // Always calculate X position (right side flush with scrollbar)
     const calculatedPosition = calculateMainMenuPosition();
 
-    // Проверяем, есть ли сохранённые локальные настройки
+    // Check if there are saved local settings
     const hasSettings = hasLocalSettings();
 
-    // X всегда пересчитывается - правая сторона прижата к скроллбару
+    // X is always recalculated - right side flush with scrollbar
     const menuX = calculatedPosition.x;
     const menuWidth = calculatedPosition.width;
 
     let menuY, menuHeight;
 
     if (hasSettings) {
-      // Загружаем сохранённые Y и высоту
+      // Load saved Y and height
       const localSettings = loadLocalSettings();
       menuY = localSettings.mainMenuPosition.y;
       menuHeight = localSettings.mainMenuSize.height;
 
-      // Обновляем сохранённую X координату
+      // Update saved X coordinate
       localSettings.mainMenuPosition.x = menuX;
       localSettings.mainMenuSize.width = menuWidth;
       saveLocalSettings(localSettings);
     } else {
-      // Первая загрузка - используем вычисленные значения
+      // First load - use calculated values
       menuY = calculatedPosition.y;
       menuHeight = calculatedPosition.height;
 
-      // Сохраняем начальную позицию
+      // Save initial position
       const initialSettings: LocalSettings = {
         mainMenuPosition: { x: menuX, y: menuY },
         mainMenuSize: { width: menuWidth, height: menuHeight },
@@ -3506,7 +3506,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       saveLocalSettings(initialSettings);
     }
 
-    // Создаём главное меню
+    // Create main menu
     dispatch({
       type: 'CREATE_PANEL',
       payload: {
@@ -3520,20 +3520,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
-  // При изменении размера окна обновляем главное меню
+  // Update main menu on window resize
   useEffect(() => {
     const handleResize = () => {
-      // Находим главное меню в объектах
+      // Find main menu in objects
       const mainMenu = Object.values(state.objects).find(
         obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
       ) as PanelObject | undefined;
 
       if (mainMenu) {
-        // Обновляем размер чтобы он вписался в новый экран
+        // Update size to fit new screen
         const newHeight = window.innerHeight - SCROLLBAR_WIDTH;
 
-        // Позицию не меняем если пользователь её двигал
-        // Но убеждаемся что меню не выходит за пределы экрана
+        // Don't change position if user moved it
+        // But ensure menu doesn't go beyond screen boundaries
         let newX = mainMenu.x;
         let newY = mainMenu.y;
 
@@ -3546,7 +3546,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           newY = window.innerHeight - SCROLLBAR_WIDTH - newHeight;
         }
 
-        // Обновляем меню
+        // Update menu
         localDispatch({
           type: 'UPDATE_OBJECT',
           payload: {
@@ -3557,11 +3557,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
 
-        // Сохраняем новую позицию в локальные настройки (без изменения флага isPositionSet)
+        // Save new position to local settings (without changing isPositionSet flag)
         const localSettings = loadLocalSettings();
         localSettings.mainMenuPosition = { x: newX, y: newY };
         localSettings.mainMenuSize = { width: mainMenu.width, height: newHeight };
-        // НЕ устанавливаем isPositionSet = true - это автоматическое изменение размера, а не пользовательское перемещение
+        // DON'T set isPositionSet = true - this is automatic resize, not user move
         saveLocalSettings(localSettings);
       }
     };
