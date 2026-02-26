@@ -12,6 +12,7 @@ import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { useHandCardScale } from '../hooks/useHandCardScale';
 import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
+import { getTranslation } from '../translations';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
@@ -424,7 +425,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 }}
                 className="text-sm text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
               >
-                [{state.language === 'ru' ? 'Поддержать проект' : 'Support this project'}]
+                [{getTranslation(state.language, 'supportProject')}]
               </button>
             )}
           </div>
@@ -439,7 +440,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     setShowGameSettings(true);
                   }}
                   className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                  title={state.language === 'ru' ? 'Настройки' : 'Settings'}
+                  title={getTranslation(state.language, 'settings')}
                 >
                   <Settings size={14} className="text-white" />
                 </button>
@@ -631,7 +632,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
-              <h3 className="text-base font-bold text-white">{state.language === 'ru' ? 'Настройки игры' : 'Game Settings'}</h3>
+              <h3 className="text-base font-bold text-white">{getTranslation(state.language, 'gameSettings')}</h3>
             </div>
 
             {/* Content */}
@@ -644,7 +645,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
               {/* Language Settings */}
               <div className="pt-2">
-                <h4 className="text-sm font-bold text-gray-300 mb-3">{state.language === 'ru' ? 'Язык' : 'Language'}</h4>
+                <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'language')}</h4>
                 <div className="relative">
                   <select
                     value={localStorage.getItem('app-language') || 'en'}
@@ -669,11 +670,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               {/* Player Permissions */}
               {isGM && (
                 <div className="pt-4 pb-2 border-t border-slate-700">
-                  <h4 className="text-sm font-bold text-gray-300 mb-3">{state.language === 'ru' ? 'Права игроков' : 'Player Permissions'}</h4>
-                  <p className="text-xs text-gray-400 mb-3">{state.language === 'ru' ? 'Настройте, что могут делать игроки, не являющиеся ГМ' : 'Configure what non-GM players can do'}</p>
+                  <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'playerPermissions')}</h4>
+                  <p className="text-xs text-gray-400 mb-3">{getTranslation(state.language, 'playerPermissionsDesc')}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
-                      <span className="text-xs text-gray-300">{state.language === 'ru' ? 'Создавать объекты' : 'Create Objects'}</span>
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'createObjects')}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -693,7 +694,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
-                      <span className="text-xs text-gray-300">{state.language === 'ru' ? 'Настраивать объекты' : 'Configure Objects'}</span>
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'configureObjects')}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -713,7 +714,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
-                      <span className="text-xs text-gray-300">{state.language === 'ru' ? 'Удалять объекты' : 'Delete Objects'}</span>
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'deleteObjects')}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -733,7 +734,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
-                      <span className="text-xs text-gray-300">{state.language === 'ru' ? 'Показывать/Скрывать' : 'Show/Hide Objects'}</span>
+                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'showHideObjects')}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -758,21 +759,21 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
               {/* Storage & Cache Section */}
               <div className="pt-4 pb-2 border-t border-slate-700">
-                <h4 className="text-sm font-bold text-gray-300 mb-3">{state.language === 'ru' ? 'Сохранение и кэш' : 'Storage & Cache'}</h4>
-                <p className="text-xs text-gray-400 mb-3">{state.language === 'ru' ? 'Игра автоматически сохраняется в браузере и восстанавливается при перезагрузке страницы' : 'Game auto-saves to browser and restores on page reload'}</p>
+                <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'storage')}</h4>
+                <p className="text-xs text-gray-400 mb-3">{getTranslation(state.language, 'storageDesc')}</p>
 
                 {hasSavedGameState() && (
                   <div className="bg-slate-900 rounded px-3 py-2 mb-3">
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                       <Clock size={12} />
-                      <span>{state.language === 'ru' ? 'Последнее сохранение: ' : 'Last save: '}{formatTimestamp(getSavedGameTimestamp() || 0)}</span>
+                      <span>{getTranslation(state.language, 'lastSave')}{formatTimestamp(getSavedGameTimestamp() || 0)}</span>
                     </div>
                   </div>
                 )}
 
                 <button
                   onClick={() => {
-                    if (state.language === 'ru' ? confirm('Вы уверены, что хотите удалить все сохранённые данные игры? Это действие нельзя отменить.') : confirm('Are you sure you want to clear all saved game data? This action cannot be undone.')) {
+                    if (confirm(getTranslation(state.language, 'clearCacheConfirm'))) {
                       dispatch({ type: 'CLEAR_SAVED_STATE' });
                       // Also clear session ID to force generation of new one
                       localStorage.removeItem('nexus-session-id');
@@ -783,7 +784,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded transition-colors text-sm"
                 >
                   <Trash2 size={14} />
-                  <span>{state.language === 'ru' ? 'Очистить кэш' : 'Clear Cache'}</span>
+                  <span>{getTranslation(state.language, 'clearCache')}</span>
                 </button>
               </div>
             </div>
@@ -794,7 +795,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 onClick={() => setShowGameSettings(false)}
                 className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded font-medium"
               >
-                {state.language === 'ru' ? 'Закрыть' : 'Close'}
+                {getTranslation(state.language, 'close')}
               </button>
             </div>
           </div>
@@ -807,11 +808,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[420px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
-              <h3 className="text-base font-bold text-white">{state.language === 'ru' ? 'Поддержать проект' : 'Support this project'}</h3>
+              <h3 className="text-base font-bold text-white">{getTranslation(state.language, 'supportProject')}</h3>
             </div>
             <div className="p-6">
               <p className="text-sm text-gray-400 text-center mb-6">
-                {state.language === 'ru' ? 'Подпишитесь на меня в соцсетях или поддержите работу через донаты!' : 'Follow me on social media or support my work through donations!'}
+                {getTranslation(state.language, 'supportProjectDesc')}
               </p>
               <div className="grid grid-cols-2 gap-4">
                 {SUPPORT_LINKS.map((link) => (

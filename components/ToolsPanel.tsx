@@ -3,25 +3,24 @@ import { useGame } from '../store/GameContext';
 import { ItemType, TableObject, TokenType, TokenShape, WindowType, AppLanguage } from '../types';
 import { Pen, Eraser, Ruler, Compass, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { SvgTokenShape } from './SvgTokenShape';
+import { getTranslation } from '../translations';
 
 // Drawing tools
 export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'compass';
 
 interface DrawingToolConfig {
   id: DrawingTool;
-  label: string;
-  labelRu: string;
+  labelKey: string;
+  descKey: string;
   icon: React.ReactNode;
-  description: string;
-  descriptionRu: string;
 }
 
 const DRAWING_TOOLS: DrawingToolConfig[] = [
-  { id: 'none', label: 'Cursor', labelRu: 'Курсор', icon: null, description: 'Normal cursor mode', descriptionRu: 'Обычный режим курсора' },
-  { id: 'marker', label: 'Marker', labelRu: 'Маркер', icon: <Pen size={20} />, description: 'Draw on the board or objects', descriptionRu: 'Рисовать на доске или объектах' },
-  { id: 'eraser', label: 'Eraser', labelRu: 'Ластик', icon: <Eraser size={20} />, description: 'Erase drawings', descriptionRu: 'Стирать рисунки' },
-  { id: 'ruler', label: 'Ruler', labelRu: 'Линейка', icon: <Ruler size={20} />, description: 'Measure distances', descriptionRu: 'Измерять расстояния' },
-  { id: 'compass', label: 'Compass', labelRu: 'Циркуль', icon: <Compass size={20} />, description: 'Draw circles/arcs', descriptionRu: 'Рисовать окружности/дуги' },
+  { id: 'none', labelKey: 'toolCursor', descKey: 'toolCursorDesc', icon: null },
+  { id: 'marker', labelKey: 'toolMarker', descKey: 'toolMarkerDesc', icon: <Pen size={20} /> },
+  { id: 'eraser', labelKey: 'toolEraser', descKey: 'toolEraserDesc', icon: <Eraser size={20} /> },
+  { id: 'ruler', labelKey: 'toolRuler', descKey: 'toolRulerDesc', icon: <Ruler size={20} /> },
+  { id: 'compass', labelKey: 'toolCompass', descKey: 'toolCompassDesc', icon: <Compass size={20} /> },
 ];
 
 interface ToolsPanelProps {
@@ -278,10 +277,10 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                     ? 'bg-purple-600 text-white'
                     : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
                 }`}
-                title={language === 'ru' ? tool.descriptionRu : tool.description}
+                title={getTranslation(language, tool.descKey)}
               >
                 {tool.icon}
-                <span className="text-[10px] mt-1">{language === 'ru' ? tool.labelRu : tool.label}</span>
+                <span className="text-[10px] mt-1">{getTranslation(language, tool.labelKey)}</span>
               </button>
             ))}
           </div>
