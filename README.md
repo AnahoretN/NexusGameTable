@@ -1,40 +1,166 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <h1>Nexus Game Table</h1>
+  <p>Виртуальный игровой стол для настольных игр с поддержкой мультиплеера</p>
+  <img width="1200" height="686" alt="Nexus Game Table" src="https://res.cloudinary.com/dxxh6meej/image/upload/v1772083073/NEXSUS_cfte8v.webp" />
 </div>
 
-# Nexus Game Table v0.0.5 - Virtual Tabletop for Board Games
+## О проекте
 
-A virtual tabletop platform for playing board games online with friends.
+**Nexus Game Table** — это бесплатный виртуальный игровой стол, позволяющий играть в настольные игры онлайн с друзьями. Приложение работает прямо в браузере и использует P2P-соединение для мультиплеера — без необходимости в выделенном сервере.
 
-## Run Locally
+### Возможности
 
-**Prerequisites:** Node.js
+| 🎴 Карты и колоды | Создание колод, перетасовка, сдача карт, разные формы и размеры |
+|------------------|----------------------------------------------------------------|
+| 🎲 Кубики | d4, d6, d8, d10, d12, d20 с логированием бросков |
+| 🪙 Токены | Произвольные фишки с разными формами и цветами |
+| 🔢 Счётчики | Для очков, ресурсов и других числовых значений |
+| 🎨 Рисование | Маркер, ластик, линейка, циркуль для рисования на столе |
+| 📋 Доски | Игровые поля с квадратной или шестиугольной сеткой |
+| 🎰 Рулетки | Случайный выбор из опций |
+| 💬 Чат | Внутриигровое общение между игроками |
+| 💾 Автосохранение | Состояние игры сохраняется автоматически |
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+## Быстрый старт
 
-2. Run the app (server + client start together on one port):
-   ```bash
-   npm run dev
-   ```
+### Требования
 
-3. Open your browser:
-   - Local: http://localhost:5173
-   - Network: use the network URL shown in terminal to play with friends on the same network
+- Node.js 18+ и npm
 
-## Features
+### Установка
 
-- **Virtual tabletop** with drag-and-drop tokens, cards, and dice
-- **Multiplayer** - create rooms and invite friends
-- **Real-time sync** - all players see the same game state
-- **Card decks** - shuffle, draw, and play cards
-- **Dice rolling** - physical dice objects with random results
-- **Custom content** - add your own tokens and images
+```bash
+# Клонировать репозиторий
+git clone https://github.com/your-repo/nexus-game-table.git
+cd nexus-game-table
 
-## How to Play
+# Установить зависимости
+npm install
 
-1. **Host a game:** Open the app and create a room. Share the room ID with friends.
-2. **Join a game:** Enter the room ID to join an existing game.
-3. **Game master tools:** Lock objects, control visibility, manage players.
+# Запустить приложение
+npm run dev
+```
+
+Приложение откроется по адресу: **http://localhost:5177**
+
+### Сборка для продакшена
+
+```bash
+npm run build
+npm run preview
+```
+
+## Как играть
+
+### Создание игры
+
+1. Откройте приложение — локальная игра создаётся автоматически
+2. Нажмите кнопку **Share** в правом меню, чтобы получить ссылку
+3. Отправьте ссылку друзьям
+
+### Подключение к игре
+
+1. Перейдите по ссылке вида: `https://example.com?hostId=...`
+2. Введите ваше имя
+3. Нажмите **Join**
+
+### Основные управления
+
+| Действие | Управление |
+|----------|-----------|
+| Переместить объект | Перетащить мышью |
+| Взять объект в курсор | Shift + клик |
+| Положить объект | Shift + клик на цели |
+| Контекстное меню | Правый клик |
+| Масштаб | Колёсико мыши |
+| Панорама | Space + Drag или средняя кнопка мыши |
+| Отменить действие | Ctrl + Z |
+
+### Инструменты рисования
+
+| Клавиша | Инструмент |
+|---------|-----------|
+| M | Маркер |
+| E | Ластик |
+| R | Линейка |
+| C | Циркуль |
+| N | Без инструмента |
+
+## Структура проекта
+
+```
+NexusGameTable/
+├── components/          # React компоненты
+│   ├── Tabletop.tsx    # Главный игровой стол
+│   ├── MainMenuContent.tsx   # Главное меню
+│   ├── HandPanel.tsx   # Панель руки игрока
+│   ├── ToolsPanel.tsx  # Панель инструментов
+│   └── ...
+├── store/              # Управление состоянием
+│   ├── GameContext.tsx # Главный контекст
+│   ├── gameState.ts    # Типы состояния
+│   ├── gameActions.ts  # Типы действий
+│   └── usePeerConnection.ts # P2P соединение
+├── utils/              # Утилиты
+├── hooks/              # Custom React hooks
+├── types.ts            # TypeScript типы
+├── constants.ts        # Константы
+└── translations.ts     # Переводы (EN/RU)
+```
+
+## Технологии
+
+- **React 18** — UI фреймворк
+- **TypeScript** — Типизация
+- **Vite** — Сборщик
+- **PeerJS** — WebRTC мультиплеер
+- **Lucide React** — Иконки
+
+## Документация
+
+- 📖 [Полная документация](./DOCUMENTATION.md) — подробное описание всех механик
+- 🚀 [Быстрый старт](./QUICK_START.md) — краткое руководство для игроков
+- 👨‍💻 [Руководство разработчика](./DEVELOPER_GUIDE.md) — для контрибьюторов
+
+## Мультиплеер
+
+Приложение использует **Peer.js** для P2P соединения напрямую между игроками:
+
+- **Host** — создаёт комнату, хранит состояние игры, транслирует изменения
+- **Guest** — подключается к хосту, получает состояние, отправляет действия
+
+Выделенный сервер **не требуется**.
+
+## Языки
+
+- 🇬🇧 English
+- 🇷🇺 Русский
+
+Переключение языка: **Settings** → **Language**
+
+## Roadmap
+
+- [ ] Поддержка аудио для игроков
+- [ ] Больше шаблонов игровых объектов
+- [ ] Импорт/экспорт состояния игры в файл
+- [ ] Редактор колод с визуальным интерфейсом
+- [ ] Поддержка 3D-объектов
+- [ ] Запись и воспроизведение партий
+
+## Лицензия
+
+MIT License — см. файл [LICENSE](./LICENSE)
+
+## Благодарности
+
+- [PeerJS](https://peerjs.com/) — P2P библиотека для WebRTC
+- [Lucide](https://lucide.dev/) — Библиотека иконок
+- [Vite](https://vitejs.dev/) — Сборщик фронтенда
+
+---
+
+<div align="center">
+  <p>Сделано с ❤️ для любителей настольных игр</p>
+  <a href="https://github.com/your-repo/nexus-game-table/issues">Сообщить о проблеме</a> •
+  <a href="https://github.com/your-repo/nexus-game-table/discussions">Обсуждения</a>
+</div>
