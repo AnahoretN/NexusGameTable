@@ -4,19 +4,19 @@ import { logger } from './logger';
 const LOCAL_SETTINGS_KEY = 'nexus-local-settings';
 
 export interface LocalSettings {
-  // Позиция главного меню (локальная для каждого игрока)
+  // Main menu position (local for each player)
   mainMenuPosition: {
     x: number;
     y: number;
   };
-  // Размеры главного меню (локальная для каждого игрока)
+  // Main menu size (local for each player)
   mainMenuSize: {
     width: number;
     height: number;
   };
-  // Был ли уже основной экран показан (для первого запуска)
+  // Whether the initial screen has been shown (for first launch)
   hasSeenInitialScreen: boolean;
-  // Была ли позиция меню установлена пользователем (или загружена из сохранения)
+  // Whether the menu position was set by the user (or loaded from save)
   isPositionSet: boolean;
 }
 
@@ -34,7 +34,7 @@ const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
 };
 
 /**
- * Сохранить локальные настройки игрока
+ * Save player's local settings
  */
 export const saveLocalSettings = (settings: LocalSettings): void => {
   if (typeof window === 'undefined') return;
@@ -47,7 +47,7 @@ export const saveLocalSettings = (settings: LocalSettings): void => {
 };
 
 /**
- * Загрузить локальные настройки игрока
+ * Load player's local settings
  */
 export const loadLocalSettings = (): LocalSettings => {
   if (typeof window === 'undefined') {
@@ -72,7 +72,7 @@ export const loadLocalSettings = (): LocalSettings => {
 };
 
 /**
- * Проверить, есть ли сохранённые локальные настройки
+ * Check if there are saved local settings
  */
 export const hasLocalSettings = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -86,9 +86,9 @@ export const hasLocalSettings = (): boolean => {
 };
 
 /**
- * Вычислить позицию главного меню для текущего размера экрана
- * Правая сторона меню вплотную к левой стороне вертикального скроллбара
- * Нижний край меню вплотную к верхнему краю горизонтального скроллбара
+ * Calculate main menu position for current screen size
+ * Right side of menu flush with left side of vertical scrollbar
+ * Bottom edge of menu flush with top edge of horizontal scrollbar
  */
 export const calculateMainMenuPosition = (): { x: number; y: number; width: number; height: number } => {
   const screenWidth = window.innerWidth;
@@ -103,7 +103,7 @@ export const calculateMainMenuPosition = (): { x: number; y: number; width: numb
 };
 
 /**
- * Очистить локальные настройки
+ * Clear local settings
  */
 export const clearLocalSettings = (): void => {
   if (typeof window === 'undefined') return;

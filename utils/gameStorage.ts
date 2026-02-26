@@ -4,7 +4,7 @@ import { SCROLLBAR_WIDTH } from '../constants';
 import { logger } from './logger';
 
 const STORAGE_KEY = 'nexus-game-state';
-const STORAGE_VERSION = 4; // Версия с правильной адаптацией
+const STORAGE_VERSION = 4; // Version with proper adaptation
 
 interface ViewportInfo {
   width: number;
@@ -62,7 +62,7 @@ export const saveGameState = (state: GameState): void => {
 
 /**
  * Load the game state from localStorage
- * Адаптирует объекты только если пользователь ХОСТ или играет ОДИН
+ * Adapts objects only if user is HOST or playing SOLO
  */
 export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
   if (typeof window === 'undefined') return null;
@@ -73,20 +73,20 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
 
     const parsed = JSON.parse(stored);
 
-    // Миграция старых форматов
+    // Migrate old formats
     if (!parsed.version || parsed.version < 3) {
       logger.log('Old save format detected, migrating...');
       return migrateOldFormat(parsed);
     }
 
     if (parsed.version === 3) {
-      // Версия 3 имела проблему с адаптацией - перейдём на версию 4
+      // Version 3 had adaptation issues - migrate to version 4
       return migrateVersion3(parsed);
     }
 
     const data: StoredGameState = parsed;
 
-    // Проверяем версию
+    // Check version
     if (data.version !== STORAGE_VERSION) {
       logger.warn('Game state version mismatch, clearing saved state');
       clearGameState();
@@ -101,8 +101,8 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
       return null;
     }
 
-    // Если мы гость - НЕ адаптируем объекты (хост контролирует их позицию)
-    // Если хост или одиночная игра - адаптируем объекты под новый размер экрана
+    // If guest - DON'T adapt objects (host controls their position)
+    // If host or solo game - adapt objects to new screen size
     const shouldAdapt = !isGuest;
     const adaptedState = shouldAdapt
       ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
@@ -116,11 +116,11 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
 };
 
 /**
- * Миграция старого формата (версии < 3)
+ * Migrate old format (versions < 3)
  */
 function migrateOldFormat(parsed: any): Partial<GameState> | null {
   try {
-    // Старый формат мог быть обёрнут в viewportAdapter структуру
+    // Old format might be wrapped in viewportAdapter structure
     if (parsed.state && parsed.state.state) {
       return parsed.state.state;
     }
@@ -135,11 +135,11 @@ function migrateOldFormat(parsed: any): Partial<GameState> | null {
 }
 
 /**
- * Миграция с версии 3 (которая адаптировала все объекты включая закреплённые)
+ * Migrate from version 3 (which adapted all objects including pinned ones)
  */
 function migrateVersion3(parsed: any): Partial<GameState> | null {
-  // Версия 3 уже адаптировала состояние, просто возвращаем его как есть
-  // Но обновим версию при следующем сохранении
+  // Version 3 already adapted state, just return it as is
+  // But will update version on next save
   if (parsed.state) {
     return parsed.state;
   }
@@ -147,11 +147,11 @@ function migrateVersion3(parsed: any): Partial<GameState> | null {
 }
 
 /**
- * Адаптирует состояние игры под новый размер экрана
- * Масштабирует позиции объектов и pan/zoom чтобы визуально всё оставалось на тех же местах
+ * Adapt game state to new screen size
+ * Scales object positions and pan/zoom to visually keep everything in place
  *
- * ВАЖНО: Эта функция вызывается ТОЛЬКО для хоста или одиночной игры
- * Гости не адаптируют объекты - их положение контролирует хост
+ * IMPORTANT: This function is ONLY called for host or solo game
+ * Guests don't adapt objects - their position is controlled by host
  */
 function adaptStateToViewport(
   savedState: Partial<GameState>,
@@ -161,7 +161,7 @@ function adaptStateToViewport(
 ): Partial<GameState> {
   const newState = { ...savedState };
 
-  // Проверяем, нужно ли адаптировать
+  // Check if adaptation is needed
   const needsAdaptation =
     savedViewport.width !== currentWidth ||
     savedViewport.height !== currentHeight;
@@ -172,11 +172,11 @@ function adaptStateToViewport(
 
   logger.log(`Adapting game state from ${savedViewport.width}x${savedViewport.height} to ${currentWidth}x${currentHeight}`);
 
-  // Вычисляем коэффициенты масштабирования
+  // Calculate scaling factors
   const scaleX = currentWidth / savedViewport.width;
   const scaleY = currentHeight / savedViewport.height;
 
-  // Адаптируем объекты
+  // Adapt objects
   if (newState.objects) {
     const adaptedObjects: Record<string, TableObject> = {};
 
@@ -184,16 +184,16 @@ function adaptStateToViewport(
       const adaptedObj = { ...obj };
 
       if (obj.isPinnedToViewport) {
-        // Закреплённые объекты - проверяем что они не выходят за пределы экрана
-        // Правая сторона должна быть в пределах экрана
+        // Pinned objects - check they don't go beyond screen boundaries
+        // Right side should be within screen
         let newX = obj.x;
         let newY = obj.y;
 
-        // Если объект за правым краем, сдвигаем
+        // If object is beyond right edge, shift it
         if (newX + (obj.width || 100) > currentWidth) {
           newX = currentWidth - (obj.width || 100) - SCROLLBAR_WIDTH;
         }
-        // Если ниже нижнего края, сдвигаем вверх
+        // If below bottom edge, shift up
         if (newY + (obj.height || 100) > currentHeight - SCROLLBAR_WIDTH) {
           newY = currentHeight - (obj.height || 100) - SCROLLBAR_WIDTH;
         }
@@ -201,7 +201,7 @@ function adaptStateToViewport(
         adaptedObj.x = newX;
         adaptedObj.y = newY;
 
-        // Адаптируем pinnedScreenPosition если есть
+        // Adapt pinnedScreenPosition if present
         if (obj.pinnedScreenPosition) {
           adaptedObj.pinnedScreenPosition = {
             x: newX,
@@ -209,8 +209,8 @@ function adaptStateToViewport(
           };
         }
       } else {
-        // Обычные объекты - масштабируем координаты
-        // Это сохраняет их визуальное положение относительно экрана
+        // Regular objects - scale coordinates
+        // This preserves their visual position relative to screen
         adaptedObj.x = obj.x * scaleX;
         adaptedObj.y = obj.y * scaleY;
       }
@@ -221,7 +221,7 @@ function adaptStateToViewport(
     newState.objects = adaptedObjects;
   }
 
-  // Адаптируем viewTransform (pan/zoom) чтобы камера осталась на том же месте
+  // Adapt viewTransform (pan/zoom) so camera stays in place
   if (newState.viewTransform) {
     const vt: ViewTransform = { ...newState.viewTransform };
     if (vt.scroll) {
