@@ -1,4 +1,4 @@
-import { TableObject, ItemType, Card, Deck, Drawing } from '../../types';
+import { TableObject, ItemType, Card, Deck, Drawing, GeneralHistoryEntry } from '../../types';
 import { CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../../constants';
 import { CardShape } from '../../types';
 
@@ -15,7 +15,10 @@ export function calculateDefaultZIndex(
   isDeck: boolean,
   isArchetype: boolean
 ): number {
-  const currentMaxZ = Object.values(objects).reduce((max, obj) => Math.max(max, obj.zIndex || 0), 0);
+  const currentMaxZ = Object.values(objects).reduce((max, obj) => {
+    const z = ('zIndex' in obj && obj.zIndex !== undefined) ? obj.zIndex : 0;
+    return Math.max(max, z);
+  }, 0);
   // Boards get -100, decks get 0, archetypes get -50, other objects get currentMaxZ + 1
   return isBoard ? -100 : (isDeck ? 0 : (isArchetype ? -50 : currentMaxZ + 1));
 }
@@ -34,7 +37,9 @@ export function createNewObject(
   } as TableObject;
 
   if (payload.isOnTable !== undefined) {
-    newObj.isOnTable = payload.isOnTable;
+    (newObj as any).isOnTable = payload.isOnTable;
+  } else if ('isOnTable' in newObj) {
+    // Keep existing isOnTable value
   } else {
     // Archetypes are hidden from table by default (shown in Tools panel)
     (newObj as any).isOnTable = isArchetype ? false : true;
@@ -82,7 +87,7 @@ export function updateObject(
         ...stroke,
         color: newColor,
       }));
-      newObjects[newDrawing.id] = newDrawing;
+      (newObjects as Record<string, TableObject>)[newDrawing.id] = newDrawing;
     }
   }
 
@@ -188,8 +193,7 @@ export function moveObject(
 
   // Don't track history for drawings, cursor slot objects, or local-only moves
   if (!isDrawing && !isInCursorSlot && !isLocalOnlyMove) {
-    const { GeneralHistoryEntry } = require('../../types');
-    const historyEntry: any = {
+    const historyEntry: GeneralHistoryEntry = {
       type: 'object-moved',
       objectId: obj.id,
       previousX: obj.x,

@@ -49,6 +49,7 @@ const translations = {
     diceObject: 'Dice',
     counter: 'Counter',
     board: 'Board',
+    cell: 'Cell',
     drawing: 'Drawing',
     page: 'Page',
 
@@ -114,6 +115,21 @@ const translations = {
     toolEraserDesc: 'Erase drawings',
     toolRulerDesc: 'Measure distances',
     toolCompassDesc: 'Draw circles/arcs',
+
+    // Object appearance settings
+    opacity: 'Opacity',
+    borderWidth: 'Border Width',
+    borderOpacity: 'Border Opacity',
+
+    // Hotkeys
+    hotkeys: 'Hotkeys',
+    hotkeysDesc: 'Keyboard shortcuts for quick actions',
+    hkUndo: 'Undo',
+    hkEscape: 'Close tooltip/menu',
+    hkShiftClick: 'Add to cursor slot',
+    hkShiftPan: 'Pan view (hold + drag)',
+    hkShiftMarker: 'Move the drawing',
+    hkShiftEraser: 'Delete entire drawing',
   },
   ru: {
     // App
@@ -161,6 +177,7 @@ const translations = {
     diceObject: 'Кость',
     counter: 'Счётчик',
     board: 'Доска',
+    cell: 'Ячейка',
     drawing: 'Рисунок',
     page: 'Страница',
 
@@ -226,6 +243,21 @@ const translations = {
     toolEraserDesc: 'Стирать рисунки',
     toolRulerDesc: 'Измерять расстояния',
     toolCompassDesc: 'Рисовать окружности/дуги',
+
+    // Object appearance settings
+    opacity: 'Прозрачность',
+    borderWidth: 'Толщина обводки',
+    borderOpacity: 'Прозрачность обводки',
+
+    // Hotkeys
+    hotkeys: 'Горячие клавиши',
+    hotkeysDesc: 'Клавиатурные сокращения для быстрых действий',
+    hkUndo: 'Отменить',
+    hkEscape: 'Закрыть подсказку/меню',
+    hkShiftClick: 'Добавить в слот курсора',
+    hkShiftPan: 'Панорама (удерживать + перетаскивать)',
+    hkShiftMarker: 'Переместить рисунок',
+    hkShiftEraser: 'Удалить весь рисунок',
   },
 } as const;
 

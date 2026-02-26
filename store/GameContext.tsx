@@ -4,6 +4,7 @@ import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WI
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
 import { loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
+import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, LocalSettings } from '../utils/localSettings';
 import { logger } from '../utils/logger';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
@@ -437,6 +438,27 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }));
           newObjects[newDrawing.id] = newDrawing;
         }
+      }
+
+      // Сохраняем локальные настройки для главного меню
+      if (updatedObj.type === ItemType.PANEL && (updatedObj as PanelObject).panelType === PanelType.MAIN_MENU) {
+        const oldPos = obj;
+        const newPos = updatedObj;
+
+        // Устанавливаем флаг isPositionSet только если позиция изменилась (пользователь переместил меню)
+        const positionChanged = ('x' in action.payload || 'y' in action.payload) &&
+                              (oldPos.x !== newPos.x || oldPos.y !== newPos.y);
+
+        const localSettings = loadLocalSettings();
+        localSettings.mainMenuPosition = { x: newPos.x, y: newPos.y };
+        localSettings.mainMenuSize = { width: newPos.width || MAIN_MENU_WIDTH, height: newPos.height || 400 };
+
+        // Только если пользователь ПЕРЕМЕСТИЛ меню, помечаем что позиция установлена
+        if (positionChanged) {
+          localSettings.isPositionSet = true;
+        }
+
+        saveLocalSettings(localSettings);
       }
 
       return { ...state, objects: newObjects };
@@ -3331,19 +3353,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
     // Only initialize once we're sure about host status and haven't initialized yet
-    if (!initializedRef.current && isHost && Object.keys(state.objects).length === 0) {
+    if (!initializedRef.current && Object.keys(state.objects).length === 0) {
         initializedRef.current = true;
 
+        const isGuest = !isHost;
+
         // Try to load saved game state from localStorage
-        const savedState = loadGameState();
+        const savedState = loadGameState(isGuest);
         if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
           logger.log('Restoring game state from localStorage');
 
           // Create a batch of updates to restore all state
           const updates: any[] = [];
 
-          // Load all saved objects
+          // Load all saved objects (except MAIN_MENU - it's handled separately)
           Object.values(savedState.objects).forEach(obj => {
+            // Пропускаем главное меню - оно будет создано из локальных настроек
+            if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+              return;
+            }
             updates.push({ type: 'ADD_OBJECT', payload: obj });
           });
 
@@ -3367,8 +3395,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             updates.push({ type: 'SET_ACTIVE_ID', payload: savedState.activePlayerId });
           }
 
-          // Restore view transform (zoom/pan)
-          if (savedState.viewTransform) {
+          // Restore view transform (zoom/pan) - only for host or single player
+          if (savedState.viewTransform && !isGuest) {
             updates.push({ type: 'UPDATE_VIEW_TRANSFORM', payload: savedState.viewTransform });
           }
 
@@ -3387,66 +3415,160 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Apply all updates in a single batch
           updates.forEach(update => localDispatch(update));
 
+          // Создаём главное меню из локальных настроек
+          createMainMenu(localDispatch);
           return;
         }
 
-        // No saved state or empty saved state, create default game board
-        // Create game board
-        const boardId = 'demo-board';
-        const board: Board = {
-             id: boardId,
-             type: ItemType.BOARD,
-             shape: TokenShape.SQUARE,
-             x: 100, y: 100,
-             width: 800, height: 600,
-             rotation: 0,
-             name: 'Game Board',
-             content: '',
-             color: '#34495e',
-             locked: true,
-             isOnTable: true,
-             gridType: GridType.HEX,
-             gridSize: 60,
-             snapToGrid: true,
-        };
-        localDispatch({ type: 'ADD_OBJECT', payload: board });
+        // No saved state or empty saved state, create default game board (only for host)
+        if (isHost) {
+          // Create game board
+          const boardId = 'demo-board';
+          const board: Board = {
+               id: boardId,
+               type: ItemType.BOARD,
+               shape: TokenShape.SQUARE,
+               x: 100, y: 100,
+               width: 800, height: 600,
+               rotation: 0,
+               name: 'Game Board',
+               content: '',
+               color: '#34495e',
+               locked: true,
+               isOnTable: true,
+               gridType: GridType.HEX,
+               gridSize: 60,
+               snapToGrid: true,
+          };
+          localDispatch({ type: 'ADD_OBJECT', payload: board });
 
-        // Create Standard Deck positioned offset from center of screen
-        // Calculate world coordinates based on default viewport settings
-        const screenX = window.innerWidth - 460;
-        const screenY = 15;
-        const zoom = 1; // Default zoom (no scaling)
-        const offsetX = 0; // Default offset
-        const offsetY = 0; // Default offset
-        const worldX = (screenX - offsetX) / zoom;
-        const worldY = (screenY - offsetY) / zoom;
-        const { deck, cards } = createStandardDeck();
+          // Create Standard Deck positioned offset from center of screen
+          // Calculate world coordinates based on default viewport settings
+          const screenX = window.innerWidth - 460;
+          const screenY = 15;
+          const zoom = 1; // Default zoom (no scaling)
+          const offsetX = 0; // Default offset
+          const offsetY = 0; // Default offset
+          const worldX = (screenX - offsetX) / zoom;
+          const worldY = (screenY - offsetY) / zoom;
+          const { deck, cards } = createStandardDeck();
 
-        deck.x = worldX;
-        deck.y = worldY;
+          deck.x = worldX;
+          deck.y = worldY;
 
-        // Add all cards first
-        cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
-        // Then add the deck
-        localDispatch({ type: 'ADD_OBJECT', payload: deck });
+          // Add all cards first
+          cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
+          // Then add the deck
+          localDispatch({ type: 'ADD_OBJECT', payload: deck });
+        }
 
-        // Create Main Menu panel in the unified space
-        // Position slightly to the left to account for scrollbar
-        const mainMenuX = window.innerWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH;
-        const mainMenuY = 0;
-        localDispatch({
-            type: 'CREATE_PANEL',
-            payload: {
-                panelType: PanelType.MAIN_MENU,
-                x: mainMenuX,
-                y: mainMenuY,
-                width: MAIN_MENU_WIDTH,
-                height: window.innerHeight - SCROLLBAR_WIDTH,
-                title: 'Main Menu'
-            }
-        });
+        // Создаём главное меню (для всех)
+        createMainMenu(localDispatch);
     }
   }, [isHost, connectionStatus]); // Add connectionStatus to ensure peer is ready
+
+  // Функция для создания главного меню из локальных настроек
+  const createMainMenu = useCallback((dispatch: React.Dispatch<Action>) => {
+    // Всегда вычисляем X позицию (правая сторона прижата к скроллбару)
+    const calculatedPosition = calculateMainMenuPosition();
+
+    // Проверяем, есть ли сохранённые локальные настройки
+    const hasSettings = hasLocalSettings();
+
+    // X всегда пересчитывается - правая сторона прижата к скроллбару
+    const menuX = calculatedPosition.x;
+    const menuWidth = calculatedPosition.width;
+
+    let menuY, menuHeight;
+
+    if (hasSettings) {
+      // Загружаем сохранённые Y и высоту
+      const localSettings = loadLocalSettings();
+      menuY = localSettings.mainMenuPosition.y;
+      menuHeight = localSettings.mainMenuSize.height;
+
+      // Обновляем сохранённую X координату
+      localSettings.mainMenuPosition.x = menuX;
+      localSettings.mainMenuSize.width = menuWidth;
+      saveLocalSettings(localSettings);
+    } else {
+      // Первая загрузка - используем вычисленные значения
+      menuY = calculatedPosition.y;
+      menuHeight = calculatedPosition.height;
+
+      // Сохраняем начальную позицию
+      const initialSettings: LocalSettings = {
+        mainMenuPosition: { x: menuX, y: menuY },
+        mainMenuSize: { width: menuWidth, height: menuHeight },
+        hasSeenInitialScreen: false,
+        isPositionSet: false,
+      };
+      saveLocalSettings(initialSettings);
+    }
+
+    // Создаём главное меню
+    dispatch({
+      type: 'CREATE_PANEL',
+      payload: {
+        panelType: PanelType.MAIN_MENU,
+        x: menuX,
+        y: menuY,
+        width: menuWidth,
+        height: menuHeight,
+        title: 'Main Menu'
+      }
+    });
+  }, []);
+
+  // При изменении размера окна обновляем главное меню
+  useEffect(() => {
+    const handleResize = () => {
+      // Находим главное меню в объектах
+      const mainMenu = Object.values(state.objects).find(
+        obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
+      ) as PanelObject | undefined;
+
+      if (mainMenu) {
+        // Обновляем размер чтобы он вписался в новый экран
+        const newHeight = window.innerHeight - SCROLLBAR_WIDTH;
+
+        // Позицию не меняем если пользователь её двигал
+        // Но убеждаемся что меню не выходит за пределы экрана
+        let newX = mainMenu.x;
+        let newY = mainMenu.y;
+
+        const maxRight = window.innerWidth - SCROLLBAR_WIDTH;
+        if (newX + mainMenu.width > maxRight) {
+          newX = maxRight - mainMenu.width;
+        }
+        if (newY < 0) newY = 0;
+        if (newY + newHeight > window.innerHeight - SCROLLBAR_WIDTH) {
+          newY = window.innerHeight - SCROLLBAR_WIDTH - newHeight;
+        }
+
+        // Обновляем меню
+        localDispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: mainMenu.id,
+            x: newX,
+            y: newY,
+            height: newHeight
+          }
+        });
+
+        // Сохраняем новую позицию в локальные настройки (без изменения флага isPositionSet)
+        const localSettings = loadLocalSettings();
+        localSettings.mainMenuPosition = { x: newX, y: newY };
+        localSettings.mainMenuSize = { width: mainMenu.width, height: newHeight };
+        // НЕ устанавливаем isPositionSet = true - это автоматическое изменение размера, а не пользовательское перемещение
+        saveLocalSettings(localSettings);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [state.objects, localDispatch]);
 
   // Middleware Dispatcher - memoized with useCallback to prevent infinite loops
   const dispatch = useCallback((action: Action) => {
@@ -3486,7 +3608,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Host Broadcast Loop: whenever state changes, send to all guests
   // We use a debounce or throttle in a real app, here we just check if meaningful change occurred
   useEffect(() => {
-      if (isHost && connectionsRef.current.length > 0) {
+      if (isHost && connectionsRef.current && connectionsRef.current.length > 0) {
           // Filter out local windows before broadcasting
           const stateForBroadcast = (() => {
               const filteredObjects: Record<string, TableObject> = {};
@@ -3521,6 +3643,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </GameContext.Provider>
   );
 };
+
+// Re-export types for convenience
+export type { GameState, ViewTransform } from './gameState';
 
 export const useGame = () => {
   const context = useContext(GameContext);

@@ -5,6 +5,11 @@ import { Pen, Eraser, Ruler, Compass, ChevronDown, ChevronUp, Settings } from 'l
 import { SvgTokenShape } from './SvgTokenShape';
 import { getTranslation } from '../translations';
 
+// Helper function to get translation for tool keys
+function getToolTranslation(language: AppLanguage, key: string): string {
+  return getTranslation(language, key as any);
+}
+
 // Drawing tools
 export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'compass';
 
@@ -277,10 +282,10 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                     ? 'bg-purple-600 text-white'
                     : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
                 }`}
-                title={getTranslation(language, tool.descKey)}
+                title={getToolTranslation(language, tool.descKey)}
               >
                 {tool.icon}
-                <span className="text-[10px] mt-1">{getTranslation(language, tool.labelKey)}</span>
+                <span className="text-[10px] mt-1">{getToolTranslation(language, tool.labelKey)}</span>
               </button>
             ))}
           </div>
@@ -368,6 +373,8 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                         content={archetype.content}
                         borderColor={(archetype as any).borderColor || '#ffffff'}
                         borderWidth={(archetype as any).borderWidth ?? 2}
+                        opacity={archetype.opacity ?? 100}
+                        borderOpacity={archetype.borderOpacity ?? 100}
                         className="drop-shadow-md"
                         style={{ width: `${tokenWidth}%`, height: `${tokenHeight}%` }}
                       />

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, CardLocation, Drawing, AppLanguage } from '../types';
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, Maximize2, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices } from 'lucide-react';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell } from '../types';
+import { getTranslation } from '../translations';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices } from 'lucide-react';
 
 interface ObjectSettingsModalProps {
   object: TableObject;
@@ -74,11 +75,11 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'swingCounterClockwise':
     case 'layerUp':
     case 'layerDown':
-      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
     case 'flip':
       return [ItemType.CARD, ItemType.TOKEN];
     case 'rotate':
-      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
     // "Move to" actions for cards
     case 'moveToHand':
     case 'moveToTopDeck':
@@ -410,6 +411,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   const isDice = data.type === ItemType.DICE_OBJECT;
   const isCounter = data.type === ItemType.COUNTER;
   const isDrawing = data.type === ItemType.DRAWING;
+  const isBattlefieldCell = data.type === ItemType.BATTLEFIELD_CELL;
 
   // Pile management functions
   const addPile = () => {
@@ -464,7 +466,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
           >
             <Settings size={16} /> {t({ en: 'General', ru: 'Основное' })}
           </button>
-          {!isCard && !isDice && !isCounter && (
+          {!isCard && !isDice && !isCounter && !isBattlefieldCell && (
             <button
               onClick={() => setActiveTab('actions')}
               className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
@@ -678,8 +680,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               )}
 
-              {/* Color + Border Color + Shape (for tokens) - side by side, equal width */}
-              {(isToken || isArchetype) && !isBoard && (
+              {/* Color + Border Color + Shape (for tokens and battlefield cells) - side by side, equal width */}
+              {(isToken || isArchetype || isBattlefieldCell) && !isBoard && (
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
@@ -702,7 +704,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">Shape</label>
                     <select
-                      value={(data as Token).shape}
+                      value={(data as Token | BattlefieldCell).shape}
                       onChange={e => update('shape', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm h-10"
                     >
@@ -712,6 +714,74 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       <option value={TokenShape.TRIANGLE}>Triangle</option>
                     </select>
                   </div>
+                </div>
+              )}
+
+              {/* Opacity and Border settings (for tokens, token types, and battlefield cells) */}
+              {(isToken || isArchetype || isBattlefieldCell) && (
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'opacity')}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={(data as any).opacity ?? 100}
+                        onChange={e => update('opacity', parseInt(e.target.value))}
+                        className="flex-1 accent-purple-500"
+                      />
+                      <span className="text-xs text-gray-400 w-8 text-right">{(data as any).opacity ?? 100}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'borderOpacity')}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={(data as any).borderOpacity ?? 100}
+                        onChange={e => update('borderOpacity', parseInt(e.target.value))}
+                        className="flex-1 accent-purple-500"
+                      />
+                      <span className="text-xs text-gray-400 w-8 text-right">{(data as any).borderOpacity ?? 100}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'borderWidth')}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max="20"
+                        value={(data as any).borderWidth ?? 2}
+                        onChange={e => update('borderWidth', parseInt(e.target.value))}
+                        className="flex-1 accent-purple-500"
+                      />
+                      <span className="text-xs text-gray-400 w-8 text-right">{(data as any).borderWidth ?? 2}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Snap to Grid setting (for battlefield cells) */}
+              {isBattlefieldCell && (
+                <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 mb-4">
+                  <label className="text-xs text-gray-400 flex items-center gap-2">
+                    <Grid3x3 size={12} />
+                    Snap Objects to Grid
+                  </label>
+                  <button
+                    onClick={() => update('snapToGrid', !(data as any).snapToGrid)}
+                    className={`w-10 h-5 rounded-full transition-colors ${
+                      (data as any).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                      (data as any).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                    }`} />
+                  </button>
                 </div>
               )}
 
@@ -1057,20 +1127,20 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       if (isCard && ['flip', 'layer', 'layerUp', 'layerDown', 'pin'].includes(action.id)) {
                         return false;
                       }
-                      // Deck-specific actions - only for decks, not cards, tokens, or boards
-                      if ((isCard || isBoard || isToken) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      // Deck-specific actions - only for decks, not cards, tokens, boards, or battlefield cells
+                      if ((isCard || isBoard || isToken || isBattlefieldCell) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                         return false;
                       }
-                      // Card-specific actions - only for cards (not tokens, decks, or boards)
-                      if ((isDeck || isBoard || isToken) && ['flip'].includes(action.id)) {
+                      // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
+                      if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip'].includes(action.id)) {
                         return false;
                       }
-                      // Rotation/swing actions - only for dice/counters/boards/tokens, not for cards
+                      // Rotation/swing actions - only for dice/counters/boards/tokens/battlefield cells, not for cards
                       if (isCard && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
-                      // 'flip' only applies to cards (not tokens or decks)
-                      if (action.id === 'flip' && (isDeck || isToken)) return false;
+                      // 'flip' only applies to cards (not tokens, decks, or battlefield cells)
+                      if (action.id === 'flip' && (isDeck || isToken || isBattlefieldCell)) return false;
                       return true;
                     })
                     .map((action) => {
@@ -1209,16 +1279,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           // 'none' is always available
                           if (action.id === 'none') return true;
 
-                          // Deck-specific actions - only for decks, not cards or boards
-                          if ((isCard || isBoard) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                          // Deck-specific actions - only for decks, not cards, boards, or battlefield cells
+                          if ((isCard || isBoard || isBattlefieldCell) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
                           }
-                          // Card-specific actions - only for cards (not tokens, decks, or boards)
-                          if ((isDeck || isBoard || isToken) && ['flip', 'moveTo'].includes(action.id)) {
+                          // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
+                          if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip', 'moveTo'].includes(action.id)) {
                             return false;
                           }
-                          // For boards, only allow rotate/swing/layer actions
-                          if (isBoard) {
+                          // For boards and battlefield cells, only allow rotate/swing/layer actions
+                          if (isBoard || isBattlefieldCell) {
                             const boardAllowedActions = ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layerUp', 'layerDown'];
                             if (!boardAllowedActions.includes(action.id)) {
                               return false;
@@ -1245,16 +1315,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           // 'none' is always available
                           if (action.id === 'none') return true;
 
-                          // Deck-specific actions - only for decks, not cards or boards
-                          if ((isCard || isBoard) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                          // Deck-specific actions - only for decks, not cards, boards, or battlefield cells
+                          if ((isCard || isBoard || isBattlefieldCell) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
                           }
-                          // Card-specific actions - only for cards (not tokens, decks, or boards)
-                          if ((isDeck || isBoard || isToken) && ['flip', 'moveTo'].includes(action.id)) {
+                          // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
+                          if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip', 'moveTo'].includes(action.id)) {
                             return false;
                           }
-                          // For boards, only allow rotate/swing/layer actions
-                          if (isBoard) {
+                          // For boards and battlefield cells, only allow rotate/swing/layer actions
+                          if (isBoard || isBattlefieldCell) {
                             const boardAllowedActions = ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layerUp', 'layerDown'];
                             if (!boardAllowedActions.includes(action.id)) {
                               return false;

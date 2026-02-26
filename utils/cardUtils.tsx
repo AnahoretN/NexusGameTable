@@ -1,4 +1,4 @@
-import { Card, Deck as DeckType, CardOrientation, CardShape } from '../types';
+import { Card, Deck as DeckType, CardOrientation, CardShape, CardNamePosition, ContextAction } from '../types';
 import { isGeometricCardShape } from './shapeUtils';
 
 /**

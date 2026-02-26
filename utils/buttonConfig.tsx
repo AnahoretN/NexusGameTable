@@ -6,9 +6,9 @@ import { ContextAction } from '../types';
 export type ButtonAction = ContextAction;
 
 // Base button configuration (styling only)
-export const BUTTON_STYLES: Record<ButtonAction, { className: string; title: string }> = {
+// Note: Not all ContextAction values have buttons (e.g., 'rotate', 'layer', 'moveTo' are abstract)
+export const BUTTON_STYLES: Partial<Record<ButtonAction, { className: string; title: string }>> = {
   flip: { className: 'bg-purple-600 hover:bg-purple-500', title: 'Flip' },
-  rotate: { className: 'bg-green-600 hover:bg-green-500', title: 'Rotate' },
   rotateClockwise: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Rotate Clockwise' },
   rotateCounterClockwise: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Rotate Counter-Clockwise' },
   swingClockwise: { className: 'bg-orange-600 hover:bg-orange-500', title: 'Swing Clockwise' },
@@ -17,7 +17,6 @@ export const BUTTON_STYLES: Record<ButtonAction, { className: string; title: str
   delete: { className: 'bg-red-600 hover:bg-red-500', title: 'Delete' },
   lock: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Lock' },
   pin: { className: 'bg-pink-600 hover:bg-pink-500', title: 'Pin/Unpin' },
-  layer: { className: 'bg-indigo-600 hover:bg-indigo-500', title: 'Layer Up' },
   layerUp: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Layer Up' },
   layerDown: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Layer Down' },
   draw: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Draw' },
@@ -32,8 +31,6 @@ export const BUTTON_STYLES: Record<ButtonAction, { className: string; title: str
   removeFromTable: { className: 'bg-slate-600 hover:bg-slate-500', title: 'Remove From Table' },
   millToBottom: { className: 'bg-teal-600 hover:bg-teal-500', title: 'Mill to Bottom' },
   showTop: { className: 'bg-pink-600 hover:bg-pink-500', title: 'Show Top' },
-  // "Move to..." section
-  moveTo: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Move to...' },
   // "Move to" actions
   moveToHand: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Move to Hand' },
   moveToTopDeck: { className: 'bg-orange-600 hover:bg-orange-500', title: 'Move to Top Deck' },
@@ -88,10 +85,10 @@ export function getCardButtonConfig(
   faceUp: boolean,
   locked: boolean
 ): CardButtonConfig | null {
-  const style = BUTTON_STYLES[action];
+  const style = BUTTON_STYLES[action as ButtonAction];
   if (!style) return null;
 
-  const iconGetter = ButtonIcons[action];
+  const iconGetter = ButtonIcons[action as ButtonAction];
   let icon: React.ReactNode;
 
   // Call icon factory with appropriate state
@@ -161,19 +158,6 @@ export function getCardButtonConfigsWithActions(
       switch (action) {
         case 'flip':
           onAction = callbacks.onFlip;
-          break;
-        case 'rotate':
-        case 'rotateClockwise':
-          onAction = callbacks.onRotateClockwise;
-          break;
-        case 'rotateCounterClockwise':
-          onAction = callbacks.onRotateCounterClockwise;
-          break;
-        case 'swingClockwise':
-          onAction = callbacks.onSwingingClockwise;
-          break;
-        case 'swingCounterClockwise':
-          onAction = callbacks.onSwingingCounterClockwise;
           break;
         case 'layerUp':
           onAction = callbacks.onLayerUp;
