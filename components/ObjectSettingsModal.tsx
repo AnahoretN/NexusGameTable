@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell } from '../types';
 import { getTranslation } from '../translations';
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices } from 'lucide-react';
+import { FilePickerInput } from './FilePickerInput';
 
 interface ObjectSettingsModalProps {
   object: TableObject;
@@ -787,15 +788,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
               {/* Image URL (for tokens and token types) */}
               {(isToken || isArchetype) && !isBoard && (
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Image URL</label>
-                  <input
-                    value={data.content || ''}
-                    onChange={e => update('content', e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                    placeholder="https://..."
-                  />
-                </div>
+                <FilePickerInput
+                  value={data.content || ''}
+                  onChange={value => update('content', value)}
+                  label="Image URL"
+                  className="w-full"
+                />
               )}
 
               {/* Color + Image URL (for boards) - side by side, Color is smaller */}
@@ -810,13 +808,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
                     />
                   </div>
-                  <div>
+                  <div className="relative">
                     <label className="block text-xs font-bold text-gray-400 mb-1">Background Image URL</label>
-                    <input
+                    <FilePickerInput
                       value={data.content || ''}
-                      onChange={e => update('content', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm h-10"
-                      placeholder="https://..."
+                      onChange={value => update('content', value)}
+                      className="w-full !h-10"
                     />
                   </div>
                 </div>
@@ -1019,21 +1016,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </h4>
 
                   {/* URL Input */}
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Alternative Back URL</label>
-                    <input
-                      type="text"
-                      value={(data as Card).alternativeBack?.url || ''}
-                      onChange={e => update('alternativeBack', {
-                        ...(data as Card).alternativeBack,
-                        url: e.target.value,
-                        locations: (data as Card).alternativeBack?.locations || [],
-                        visibleToOthers: (data as Card).alternativeBack?.visibleToOthers ?? false
-                      } as any)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                      placeholder="https://example.com/alternative-back.png"
-                    />
-                  </div>
+                  <FilePickerInput
+                    value={(data as Card).alternativeBack?.url || ''}
+                    onChange={value => update('alternativeBack', {
+                      ...(data as Card).alternativeBack,
+                      url: value,
+                      locations: (data as Card).alternativeBack?.locations || [],
+                      visibleToOthers: (data as Card).alternativeBack?.visibleToOthers ?? false
+                    } as any)}
+                    label="Alternative Back URL"
+                    placeholder="https://example.com/alternative-back.png"
+                    className="w-full"
+                  />
 
                   {/* Preview */}
                   {(data as Card).alternativeBack?.url && (
@@ -1793,12 +1787,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
                   <ImageIcon size={14} /> Sprite Sheet URL
                 </h4>
-                <input
-                  type="text"
+                <FilePickerInput
                   value={spriteConfig?.spriteUrl || ''}
-                  onChange={(e) => setSpriteConfig(prev => ({ ...prev, spriteUrl: e.target.value, cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  onChange={(value) => setSpriteConfig(prev => ({ ...prev, spriteUrl: value, cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
                   placeholder="https://example.com/cards.png"
+                  className="w-full"
                 />
               </div>
 
@@ -1807,12 +1800,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
                   <RotateCw size={14} /> Card Back URL
                 </h4>
-                <input
-                  type="text"
+                <FilePickerInput
                   value={spriteConfig?.cardBackUrl || ''}
-                  onChange={(e) => setSpriteConfig(prev => ({ ...prev, cardBackUrl: e.target.value, spriteUrl: prev?.spriteUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  onChange={(value) => setSpriteConfig(prev => ({ ...prev, cardBackUrl: value, spriteUrl: prev?.spriteUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
                   placeholder="https://example.com/card-back.png"
+                  className="w-full"
                 />
                 {spriteConfig?.cardBackUrl && (
                   <div className="bg-slate-900 rounded p-2 border border-slate-700 flex justify-center">

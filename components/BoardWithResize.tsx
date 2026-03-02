@@ -85,7 +85,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
-                border: '2px solid white',
+                border: '2px solid #212f3c',
                 boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
                 transform: `rotate(${obj.rotation}deg)`,
                 cursor: cursor,
