@@ -305,3 +305,22 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
 export function shouldUseSvgForToken(shape: TokenShape): boolean {
   return true;
 }
+
+// Memoize SvgTokenShape to prevent unnecessary re-renders
+export const SvgTokenShapeMemo = React.memo(SvgTokenShape, (prevProps, nextProps) => {
+  return (
+    prevProps.shape === nextProps.shape &&
+    prevProps.width === nextProps.width &&
+    prevProps.height === nextProps.height &&
+    prevProps.color === nextProps.color &&
+    prevProps.content === nextProps.content &&
+    prevProps.borderWidth === nextProps.borderWidth &&
+    prevProps.borderColor === nextProps.borderColor &&
+    prevProps.opacity === nextProps.opacity &&
+    prevProps.borderOpacity === nextProps.borderOpacity &&
+    prevProps.rotation === nextProps.rotation &&
+    prevProps.showThickness === nextProps.showThickness &&
+    prevProps.tokenName === nextProps.tokenName &&
+    prevProps.fontColor === nextProps.fontColor
+  );
+});

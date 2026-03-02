@@ -164,3 +164,4 @@ MIT License — see [LICENSE](./LICENSE) file
   <a href="https://github.com/your-repo/nexus-game-table/issues">Report Issue</a> •
   <a href="https://github.com/your-repo/nexus-game-table/discussions">Discussions</a>
 </div>
+о
