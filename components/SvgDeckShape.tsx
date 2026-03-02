@@ -207,3 +207,26 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
 export function shouldUseSvgForDeck(shape: CardShape): boolean {
   return shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
 }
+
+// Memoize SvgDeckShape to prevent unnecessary re-renders
+export const SvgDeckShapeMemo = React.memo(SvgDeckShape, (prevProps, nextProps) => {
+  return (
+    prevProps.shape === nextProps.shape &&
+    prevProps.width === nextProps.width &&
+    prevProps.height === nextProps.height &&
+    prevProps.backgroundColor === nextProps.backgroundColor &&
+    prevProps.borderColor === nextProps.borderColor &&
+    prevProps.borderWidth === nextProps.borderWidth &&
+    prevProps.orientation === nextProps.orientation
+  );
+});
+
+// Memoize DeckLabel to prevent unnecessary re-renders
+export const DeckLabelMemo = React.memo(DeckLabel, (prevProps, nextProps) => {
+  return (
+    prevProps.name === nextProps.name &&
+    prevProps.count === nextProps.count &&
+    prevProps.totalCount === nextProps.totalCount &&
+    prevProps.shape === nextProps.shape
+  );
+});

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
 import { useDrawingTool } from './ToolsPanel';
 import { ItemType, TableObject, Card as CardType, TokenShape, Stroke, StrokePoint, Drawing } from '../types';
@@ -9,6 +9,7 @@ interface DrawingCanvasProps {
   zoom: number;
   offsetX: number;
   offsetY: number;
+  cursorSlotLength: number; // Number of items in cursor slot
 }
 
 // Helper to check if a point is near a stroke
@@ -69,13 +70,42 @@ const findOverlappingDrawing = (stroke: Stroke, drawings: Drawing[]): Drawing | 
 
 // Find ALL drawings that overlap with the given stroke (same color only)
 // Returns array of overlapping drawings (empty array if none)
+// Optimized with early exit based on bounding box check before point-by-point comparison
 const findOverlappingDrawings = (stroke: Stroke, drawings: Drawing[]): Drawing[] => {
   const strokeRadius = stroke.thickness / 2;
   const margin = strokeRadius + 5; // Small margin for near-touching strokes
   const overlapping: Drawing[] = [];
+  const overlappingSet = new Set<Drawing>(); // For O(1) lookup
+
+  // Calculate stroke bounding box for quick rejection
+  let strokeMinX = Infinity, strokeMinY = Infinity, strokeMaxX = -Infinity, strokeMaxY = -Infinity;
+  for (const point of stroke.points) {
+    strokeMinX = Math.min(strokeMinX, point.x);
+    strokeMinY = Math.min(strokeMinY, point.y);
+    strokeMaxX = Math.max(strokeMaxX, point.x);
+    strokeMaxY = Math.max(strokeMaxY, point.y);
+  }
+  // Add margin to stroke bounds
+  strokeMinX -= margin;
+  strokeMinY -= margin;
+  strokeMaxX += margin;
+  strokeMaxY += margin;
 
   for (const drawing of drawings) {
     if (drawing.type !== ItemType.DRAWING) continue;
+
+    // Quick bounding box check: skip if drawing is far from stroke
+    const drawingBounds = getStrokesBounds(drawing.strokes);
+    const drawingWorldMinX = drawingBounds.minX + drawing.x;
+    const drawingWorldMinY = drawingBounds.minY + drawing.y;
+    const drawingWorldMaxX = drawingBounds.maxX + drawing.x;
+    const drawingWorldMaxY = drawingBounds.maxY + drawing.y;
+
+    // Skip if bounding boxes don't overlap
+    if (strokeMaxX < drawingWorldMinX || strokeMinX > drawingWorldMaxX ||
+        strokeMaxY < drawingWorldMinY || strokeMinY > drawingWorldMaxY) {
+      continue;
+    }
 
     // Check if this drawing has strokes of the same color
     const sameColorStrokes = drawing.strokes.filter(s => s.color === stroke.color);
@@ -85,6 +115,7 @@ const findOverlappingDrawings = (stroke: Stroke, drawings: Drawing[]): Drawing[]
     for (const existingStroke of sameColorStrokes) {
       const existingRadius = existingStroke.thickness / 2;
       const combinedRadius = strokeRadius + existingRadius + margin;
+      const combinedRadiusSq = combinedRadius * combinedRadius; // Compare squared distances to avoid sqrt
 
       // Check each point in new stroke against each point in existing stroke
       for (const newPoint of stroke.points) {
@@ -95,18 +126,19 @@ const findOverlappingDrawings = (stroke: Stroke, drawings: Drawing[]): Drawing[]
         for (const existingPoint of existingStroke.points) {
           const dx = localX - existingPoint.x;
           const dy = localY - existingPoint.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+          const distanceSq = dx * dx + dy * dy;
 
-          if (distance <= combinedRadius) {
+          if (distanceSq <= combinedRadiusSq) {
             // Found actual overlap between strokes of same color
-            if (!overlapping.includes(drawing)) {
+            if (!overlappingSet.has(drawing)) {
+              overlappingSet.add(drawing);
               overlapping.push(drawing);
             }
             break; // Found overlap with this drawing, move to next
           }
         }
       }
-      if (overlapping.includes(drawing)) break; // Already found overlap, no need to check more strokes
+      if (overlappingSet.has(drawing)) break; // Already found overlap, no need to check more strokes
     }
   }
   return overlapping;
@@ -139,6 +171,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   zoom,
   offsetX,
   offsetY,
+  cursorSlotLength = 0
 }) => {
   const { state, dispatch, isHost } = useGame();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -158,6 +191,13 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   // Track initial stroke data for network commit on drawing end (guests only)
   const strokeStartDataRef = useRef<{ color: string; thickness: number } | null>(null);
+
+  // Memoize filtered drawings to avoid repeated Object.values().filter() calls
+  const drawings = useMemo(() => {
+    return Object.values(state.objects).filter((obj): obj is Drawing =>
+      obj.type === ItemType.DRAWING && obj.isOnTable
+    );
+  }, [state.objects]);
 
   // Track ALT and Shift keys
   useEffect(() => {
@@ -246,12 +286,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     // Clear canvas
     ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
-    // Draw all Drawing objects
-    const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING);
-
+    // Draw all Drawing objects (uses memoized drawings from outer scope)
     drawings.forEach(drawing => {
-      if (!drawing.isOnTable) return;
-
       // Apply drawing opacity (convert 1-100 to 0-1)
       const opacity = (drawing.opacity ?? 100) / 100;
       ctx.globalAlpha = opacity;
@@ -323,7 +359,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
       ctx.stroke();
     }
-  }, [state.objects, zoom, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, isDrawing, currentStroke]);
+  }, [drawings, zoom, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
 
   const getWorldPosition = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -425,7 +461,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     // Check if Shift is pressed with eraser - delete entire drawing
     if (currentTool === 'eraser' && e.shiftKey) {
-      const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING && obj.isOnTable);
       const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawings);
 
       if (clickedDrawing && !clickedDrawing.locked) {
@@ -438,9 +473,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       }
     }
 
-    // Check if Shift is pressed for drawing drag mode
-    if (currentTool === 'marker' && e.shiftKey) {
-      const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING && obj.isOnTable);
+    // Check if Shift is pressed for drawing drag mode (only when cursor slot has items)
+    // If cursor slot is empty, allow Shift+drag to move drawings instead
+    if (currentTool === 'marker' && e.shiftKey && cursorSlotLength > 0) {
       const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawings);
 
       if (clickedDrawing && !clickedDrawing.locked) {
@@ -451,15 +486,30 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         setDragStartDrawingPos({ x: clickedDrawing.x, y: clickedDrawing.y });
         return;
       }
-      // If Shift is pressed but not over a drawing, don't draw anything (just return)
+      // If Shift is pressed with items in cursor slot but not over a drawing, don't draw
       return;
+    }
+
+    // Shift with empty cursor slot: allow drawing AND allow moving drawings
+    if (e.shiftKey && currentTool === 'marker' && cursorSlotLength === 0) {
+      const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawings);
+
+      if (clickedDrawing && !clickedDrawing.locked) {
+        // Start dragging the drawing instead of drawing
+        setIsDraggingDrawing(true);
+        setDraggedDrawingId(clickedDrawing.id);
+        setDragStartPos(pos);
+        setDragStartDrawingPos({ x: clickedDrawing.x, y: clickedDrawing.y });
+        return;
+      }
+      // Not over a drawing, proceed with drawing
     }
 
     setIsDrawing(true);
     setCurrentStroke([{ x: pos.x, y: pos.y }]);
     // Store stroke start data for network commit (guests only)
     strokeStartDataRef.current = { color: markerColor, thickness: markerThickness };
-  }, [currentTool, getWorldPosition, isOverPanel, state.objects, markerColor, markerThickness]);
+  }, [currentTool, getWorldPosition, isOverPanel, drawings, markerColor, markerThickness, cursorSlotLength]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     // Check if cursor is over a panel or any UI element via DOM
@@ -554,8 +604,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Partial eraser: remove only touched points from strokes
-      const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING && obj.isOnTable);
+      // Partial eraser: remove only touched points from strokes (uses memoized drawings)
       const eraserRadius = markerThickness / 2;
 
       drawings.forEach(drawing => {
@@ -744,7 +793,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       };
 
       // Check if stroke overlaps with existing drawings (find ALL overlapping drawings of same color)
-      const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING);
       const overlappingDrawings = findOverlappingDrawings(stroke, drawings);
 
       dispatch({
@@ -768,7 +816,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     // Host creates drawing object immediately (existing logic)
     // Check if stroke overlaps with existing drawings (find ALL overlapping drawings of same color)
-    const drawings = Object.values(state.objects).filter((obj): obj is Drawing => obj.type === ItemType.DRAWING);
     const overlappingDrawings = findOverlappingDrawings(stroke, drawings);
 
     if (overlappingDrawings.length > 0) {
@@ -893,7 +940,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (ctx) redrawCanvas(ctx);
-  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartDrawingPos, currentStroke, currentTool, markerColor, markerThickness, markerOpacity, state.activePlayerId, state.objects, dispatch, redrawCanvas, findOverlappingDrawings, getStrokeBounds, isHost]);
+  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartDrawingPos, currentStroke, currentTool, markerColor, markerThickness, markerOpacity, state.activePlayerId, drawings, dispatch, redrawCanvas, findOverlappingDrawings, getStrokeBounds, isHost]);
 
   // Handler for mouse leave (must be before conditional return)
   const handleMouseLeave = useCallback(() => {
@@ -909,10 +956,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
   }, [isDraggingDrawing]);
 
-  // Check if there are any drawings to display
-  const hasDrawings = Object.values(state.objects).some(
-    (obj): obj is Drawing => obj.type === ItemType.DRAWING && obj.isOnTable
-  );
+  // Check if there are any drawings to display (uses memoized drawings)
+  const hasDrawings = drawings.length > 0;
 
   // Don't render if no tool is selected AND no drawings exist
   if (currentTool === 'none' && !hasDrawings) {
@@ -921,11 +966,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   // When tool is 'none', disable pointer events so canvas doesn't block other interactions
   const pointerEvents = currentTool === 'none' ? 'none' : 'auto';
-  // Show move cursor when Shift+marker, hide custom marker cursor otherwise
+  // Show move cursor when Shift+marker AND cursor slot has items, hide custom marker cursor otherwise
   // When ALT is pressed, always show default cursor (normal cursor mode)
   const canvasCursor = isAltPressed || isOverPanel || !(currentTool === 'marker' || currentTool === 'eraser')
     ? 'default'
-    : isShiftPressed
+    : isShiftPressed && cursorSlotLength > 0
       ? 'move'
       : 'none';
   // Also disable pointer events when over UI or when ALT is pressed (normal cursor mode)
@@ -938,7 +983,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       height={height}
       className="absolute top-0 left-0"
       style={{
-        zIndex: 1000,
+        zIndex: 100, // Below panels (1000) and windows (10000), above most game objects
         cursor: canvasCursor,
         pointerEvents: finalPointerEvents,
       }}

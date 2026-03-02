@@ -18,6 +18,9 @@ import { BoardWithResizeMemo } from './BoardWithResize';
 import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown } from 'lucide-react';
 import { CARD_SHAPE_DIMS } from '../constants';
 import { generateUUID } from '../utils/uuid';
+import { CursorSlotVisualization } from './CursorSlotVisualization';
+import { PinnedIndicator } from './PinnedIndicator';
+import { ObjectActionButtons } from './ObjectActionButtons';
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
@@ -86,6 +89,9 @@ export const Tabletop: React.FC = () => {
   const draggingPileRef = useRef<{ pile: CardPile; deck: DeckType } | null>(null);
   const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
   const globalMousePosRef = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  // Track when items were just dropped from cursor slot to prevent immediate re-pickup
+  const justDroppedRef = useRef(false);
+  const lastDropTimeRef = useRef(0);
 
   // Update refs when state changes
   useEffect(() => { draggingIdRef.current = draggingId; }, [draggingId]);
@@ -116,6 +122,26 @@ export const Tabletop: React.FC = () => {
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [clickTooltip]);
+
+  // Prevent native browser drag-and-drop on the tabletop
+  useEffect(() => {
+    const handleDragStart = (e: Event) => {
+      e.preventDefault();
+    };
+    const handleSelectStart = (e: Event) => {
+      e.preventDefault();
+    };
+
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.addEventListener('dragstart', handleDragStart);
+      container.addEventListener('selectstart', handleSelectStart);
+      return () => {
+        container.removeEventListener('dragstart', handleDragStart);
+        container.removeEventListener('selectstart', handleSelectStart);
+      };
+    }
+  }, []);
 
   // Listen for add-to-cursor-slot events from other components (e.g., HandPanel)
   useEffect(() => {
@@ -872,6 +898,7 @@ export const Tabletop: React.FC = () => {
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
+    console.log(`[DRAG SYSTEM] addToCursorSlot - source: ${source}, item: ${item.name} (${item.type}), slot size before: ${cursorSlot.length}`);
     if (cursorSlot.length >= 100) return; // Max 100 items in slot
 
     // Set source based on how the item was added (only if slot was empty before)
@@ -966,6 +993,7 @@ export const Tabletop: React.FC = () => {
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
+    console.log(`[DRAG SYSTEM] dropCursorSlot - dropping ${currentSlot.length} items`);
     if (currentSlot.length === 0) return;
 
     // Determine if we should preserve original zIndex or use stack zIndex
@@ -1054,10 +1082,14 @@ export const Tabletop: React.FC = () => {
     });
 
     // Clear the slot - also update ref immediately for mouseup handler
+    console.log(`[DRAG SYSTEM] Clearing cursor slot - dropped ${currentSlot.length} items`);
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
     setCursorSlotSource(null);
+    // Set flag to prevent immediate re-pickup
+    justDroppedRef.current = true;
+    lastDropTimeRef.current = Date.now();
   }, [cursorSlot, cursorSlotSource, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, getCardSettings]);
 
   // Listen for drop-cursor-slot-at-position events (from drag-to-place in ToolsPanel)
@@ -1357,6 +1389,7 @@ export const Tabletop: React.FC = () => {
       // Drop items at cursor position on tabletop - pass cursorSlot from closure
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation(); // Prevent handleMouseDown from being called
       dropCursorSlot(e.clientX, e.clientY, cursorSlot);
     };
 
@@ -1494,12 +1527,21 @@ export const Tabletop: React.FC = () => {
         const dy = e.clientY - itemRef.startY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
+        // Check if we just dropped items - prevent immediate re-pickup
+        const timeSinceDrop = Date.now() - lastDropTimeRef.current;
+        if (justDroppedRef.current && timeSinceDrop < 200) {
+          console.log(`[DRAG SYSTEM] Ignoring CLICK in mouseup ${timeSinceDrop}ms after drop - preventing re-pickup`);
+          return;
+        }
+
         // If moved less than 5px, treat as click and add to cursor slot (same as Shift+click)
         if (distance < 5) {
           // Add to cursor slot WITHOUT mousePosition - this uses card center like Shift+click
+          console.log(`[DRAG SYSTEM] CLICK without drag (${distance.toFixed(1)}px < 5px) - activating HOLD mode for item: ${itemRef.item.name}`);
           addToCursorSlot(itemRef.id, itemRef.item, 'hold');
           return;
         }
+        console.log(`[DRAG SYSTEM] Mouse up after drag completed (${distance.toFixed(1)}px >= 5px) - tracking already cleared`);
         // If moved 5px or more, the card was already added to slot in mousemove, nothing to do
       }
 
@@ -1547,6 +1589,7 @@ export const Tabletop: React.FC = () => {
               if (pile) {
                 e.preventDefault();
                 e.stopPropagation();
+                console.log(`[DRAG SYSTEM] Dropping ${currentSlot.length} items to pile: ${pile.name}`);
                 dropToPile(pileId, deck.id, currentSlot);
                 // Ensure slot is cleared after dropping to pile
                 cursorSlotRef.current = [];
@@ -1568,6 +1611,7 @@ export const Tabletop: React.FC = () => {
         if (obj && obj.type === ItemType.DECK && objectId) {
           e.preventDefault();
           e.stopPropagation();
+          console.log(`[DRAG SYSTEM] Dropping ${currentSlot.length} items to deck: ${obj.name}`);
           dropToDeck(objectId, currentSlot);
           // Ensure slot is cleared after dropping to deck
           cursorSlotRef.current = [];
@@ -1600,7 +1644,9 @@ export const Tabletop: React.FC = () => {
 
       // If cursor slot has items and we click without shift, drop all items
       // Exception: if source is 'archetype' (tokens from archetype click), don't drop - treat like Shift is held
-      if (e.button === 0 && !e.shiftKey && cursorSlot.length > 0 && cursorSlotSource !== 'archetype') {
+      // Use cursorSlotRef.current to check synchronously (state update is async)
+      if (e.button === 0 && !e.shiftKey && cursorSlotRef.current.length > 0 && cursorSlotSource !== 'archetype') {
+        e.preventDefault(); // Prevent native browser drag-and-drop
         e.stopPropagation();
         dropCursorSlot(e.clientX, e.clientY);
         return;
@@ -1633,19 +1679,33 @@ export const Tabletop: React.FC = () => {
 
       // Cards and tokens: Shift+click immediately adds to cursor slot
       if (e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
+        console.log(`[DRAG SYSTEM] SHIFT+CLICK - activating SHIFT mode for item: ${item.name} (${item.type})`);
         addToCursorSlot(id, item);
         return;
       }
 
       // If cursor slot has items and we click without shift, drop all items first
       // Exception: if source is 'archetype' (tokens from archetype click), don't drop
-      if (!e.shiftKey && cursorSlot.length > 0 && cursorSlotSource !== 'archetype') {
+      // Use cursorSlotRef.current to check synchronously (state update is async)
+      if (!e.shiftKey && cursorSlotRef.current.length > 0 && cursorSlotSource !== 'archetype') {
         dropCursorSlot(e.clientX, e.clientY);
         return; // Don't proceed with normal drag handling
       }
 
+      // Prevent immediate re-pickup after dropping items (within 200ms)
+      const timeSinceDrop = Date.now() - lastDropTimeRef.current;
+      if (justDroppedRef.current && timeSinceDrop < 200) {
+        console.log(`[DRAG SYSTEM] Ignoring click ${timeSinceDrop}ms after drop - preventing re-pickup`);
+        return;
+      }
+
+      // Clear the just-dropped flag if enough time has passed
+      if (justDroppedRef.current && timeSinceDrop >= 200) {
+        justDroppedRef.current = false;
+      }
+
       // For cards and tokens: Shift+click immediately adds to cursor slot
-      // Without Shift: track mouse movement, add to slot after 3px drag threshold
+      // Without Shift: track mouse movement, add to slot after 5px drag threshold
 
       // Store click start position for click detection
       dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -1653,6 +1713,7 @@ export const Tabletop: React.FC = () => {
       // Cards and tokens use cursor slot drag system ONLY (no normal drag)
       if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
         // Store item info for drag threshold detection (no timer, just movement)
+        console.log(`[DRAG SYSTEM] Starting HOLD mode tracking - item: ${item.name} (${item.type})`);
         longPressItemRef.current = {
           id,
           item,
@@ -1729,6 +1790,7 @@ export const Tabletop: React.FC = () => {
         // Mouse moved enough - add to cursor slot for drag
         // Use same positioning logic as Shift+click (WITHOUT mousePosition) to avoid jump
         // The cursor will be positioned at card center, then follow mouse movement
+        console.log(`[DRAG SYSTEM] Drag threshold reached (${distance.toFixed(1)}px) - switching to HOLD mode`);
         addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
         // IMPORTANT: Update cursor position to current mouse position AFTER adding to slot
         // This ensures the card center is at the mouse position from the start
@@ -2656,6 +2718,7 @@ export const Tabletop: React.FC = () => {
       ref={scrollContainerRef}
       data-tabletop="true"
       className={`w-full h-full bg-table overflow-auto relative ${cursorSlot.length > 0 ? 'cursor-grabbing' : 'cursor-default'}`}
+      style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
       onMouseDown={(e) => handleMouseDown(e)}
       onMouseMove={handleMouseMove}
       onWheel={handleWheel}
@@ -2768,11 +2831,21 @@ export const Tabletop: React.FC = () => {
             }
         }
       }}
-      style={{
-        backgroundImage: 'radial-gradient(#34495e 1px, transparent 1px)',
-        backgroundSize: '20px 20px'
-      }}
     >
+      {/* Board background with grid pattern */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundImage: 'radial-gradient(#34495e 1px, transparent 1px)',
+          backgroundSize: '20px 20px',
+          pointerEvents: 'none',
+          zIndex: -1
+        }}
+      />
       <div
             style={{
                 width: worldBounds.width,
@@ -2791,6 +2864,7 @@ export const Tabletop: React.FC = () => {
           zoom={zoom}
           offsetX={offset.x}
           offsetY={offset.y}
+          cursorSlotLength={cursorSlot.length}
         />
 
         <div
@@ -2914,18 +2988,7 @@ export const Tabletop: React.FC = () => {
                                     fontColor={(obj as any).fontColor || 'white'}
                                 />
 
-                            {(obj as any).isPinnedToViewport && (
-                                <div
-                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
-                                    title="Pinned to screen"
-                                    style={{ transform: `scale(${1/zoom})` }}
-                                >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                                        <line x1="12" y1="17" x2="12" y2="22"></line>
-                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                                    </svg>
-                                </div>
-                            )}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
                             {showGrid && (
                                 <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
                                     <defs>
@@ -3162,18 +3225,7 @@ export const Tabletop: React.FC = () => {
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
-                            {(obj as any).isPinnedToViewport && (
-                                <div
-                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
-                                    title="Pinned to screen"
-                                    style={{ transform: `scale(${1/zoom})` }}
-                                >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                                        <line x1="12" y1="17" x2="12" y2="22"></line>
-                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                                    </svg>
-                                </div>
-                            )}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
                             <span className="text-xl font-bold">{counter.value}</span>
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
@@ -3422,18 +3474,7 @@ export const Tabletop: React.FC = () => {
                             onContextMenu={(e) => handleContextMenu(e, obj)}
                             className={`rounded-lg ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                         >
-                            {(obj as any).isPinnedToViewport && (
-                                <div
-                                    className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
-                                    title="Pinned to screen"
-                                    style={{ transform: `scale(${1/zoom})` }}
-                                >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                                        <line x1="12" y1="17" x2="12" y2="22"></line>
-                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                                    </svg>
-                                </div>
-                            )}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
                             <div>
                               <Card
                                   card={card}
@@ -4043,147 +4084,14 @@ export const Tabletop: React.FC = () => {
         )}
 
         {/* Cursor Slot Visualization - renders items following cursor */}
-        {cursorSlot.length > 0 && (cursorPosition || cursorPositionRef.current) && (
-            <div
-                className="fixed pointer-events-none z-[100001]"
-                style={{
-                    left: (cursorSlot.length > 0 ? (cursorPositionRef.current ?? cursorPosition) : cursorPosition)!.x,
-                    top: (cursorSlot.length > 0 ? (cursorPositionRef.current ?? cursorPosition) : cursorPosition)!.y,
-                }}
-            >
-                {/* Render stacked items - newest in front, older items offset */}
-                {cursorSlot.map((item, index) => {
-                    const isCard = item.type === ItemType.CARD;
-
-                    // For cards, get settings from deck for proper dimensions (same as in rendering)
-                    let baseWidth = item.width ?? (isCard ? 63 : 50);
-                    let baseHeight = item.height ?? (isCard ? 88 : 50);
-                    let isHorizontal = (item as any).isHorizontal;
-
-                    if (isCard) {
-                        const cardSettings = getCardSettings(item as CardType);
-                        baseWidth = item.width ?? cardSettings.cardWidth ?? 63;
-                        baseHeight = item.height ?? cardSettings.cardHeight ?? 88;
-                        isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
-                    }
-
-                    // Scale by zoom to match in-game size
-                    let width = baseWidth * zoom;
-                    let height = baseHeight * zoom;
-
-                    // For horizontal cards, swap dimensions for display
-                    if (isHorizontal) {
-                        [width, height] = [height, width];
-                    }
-
-                    // Calculate offset from the BACK (newest element)
-                    // Newest element (highest index) has offset 0, older elements are offset down-right
-                    // This matches the visual stacking where newest is on top
-                    const slotIndex = (item as any).cursorSlotIndex ?? 0;
-                    const newestIndex = cursorSlot.length - 1;
-                    const offsetFromBack = Math.max(0, newestIndex - slotIndex);
-                    const offsetAmount = Math.min(width, height) * 0.05;
-                    const offsetX = offsetFromBack * offsetAmount;
-                    const offsetY = offsetFromBack * offsetAmount;
-                    // Cards at bottom (lower z-index), tokens at top (higher z-index)
-                    const zIndex = isCard ? index : index + 1000;
-
-                    if (isCard) {
-                        const card = item as CardType;
-                        const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
-
-                        return (
-                            <div
-                                key={`${card.id}-${index}`}
-                                className="absolute"
-                                style={{
-                                    left: 0,
-                                    top: 0,
-                                    width: `${width}px`,
-                                    height: `${height}px`,
-                                    transform: `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`,
-                                    zIndex,
-                                    pointerEvents: 'none',
-                                }}
-                            >
-                                {/* Use the same Card component as on table for identical appearance */}
-                                <Card
-                                    card={card}
-                                    overrideWidth={width}
-                                    overrideHeight={height}
-                                    cardWidth={deck?.cardWidth}
-                                    cardHeight={deck?.cardHeight}
-                                    cardOrientation={deck?.cardOrientation}
-                                    cardNamePosition={deck?.cardNamePosition}
-                                    disableRotationTransform={true}
-                                    disablePointerEvents={true}
-                                    showActionButtons={false}
-                                    skipTooltip={true}
-                                    deckSpriteConfig={deck?.spriteConfig}
-                                    deckShowTooltipImage={deck?.showTooltipImage}
-                                    deckTooltipScale={deck?.tooltipScale}
-                                />
-                            </div>
-                        );
-                    }
-
-                    // Token rendering - use SvgTokenShape for consistent appearance
-                    const token = item as TokenType;
-
-                    return (
-                        <div
-                            key={`${token.id}-${index}`}
-                            className="absolute"
-                            style={{
-                                left: 0,
-                                top: 0,
-                                transform: `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`,
-                                width: `${width}px`,
-                                height: `${height}px`,
-                                zIndex,
-                                pointerEvents: 'none', // Ensure cursor slot tokens don't block mouse events to decks/piles
-                            }}
-                        >
-                            <SvgTokenShape
-                                shape={token.shape}
-                                width={width}
-                                height={height}
-                                color={token.color || '#34495e'}
-                                content={token.content}
-                                rotation={0}
-                                borderWidth={token.borderWidth ?? 3}
-                                borderColor={(token as any).borderColor || 'white'}
-                                opacity={token.opacity ?? 100}
-                                borderOpacity={token.borderOpacity ?? 100}
-                                showThickness={true}
-                                tokenName={(token as any).showName || ((token as any).archetypeId && (state.objects[(token as any).archetypeId] as any)?.showName) ? token.name : undefined}
-                            />
-                        </div>
-                    );
-                })}
-
-                {/* Stack counter badge - only show if more than 1 item */}
-                {cursorSlot.length > 1 && (() => {
-                    const firstItem = cursorSlot[0];
-                    let badgeWidth = firstItem?.width ?? 63;
-                    let badgeHeight = firstItem?.height ?? 88;
-                    // For horizontal cards, swap dimensions to match visual card size
-                    if (firstItem?.type === ItemType.CARD && (firstItem as any).isHorizontal) {
-                        [badgeWidth, badgeHeight] = [badgeHeight, badgeWidth];
-                    }
-                    return (
-                        <div className="absolute" style={{
-                            left: `${(badgeWidth * zoom) / 2 + 4}px`,
-                            top: `${-(badgeHeight * zoom) / 2 - 4}px`,
-                        }}>
-                            <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
-                                {cursorSlot.length}
-                            </div>
-                        </div>
-                    );
-                })()}
-            </div>
-        )}
+        <CursorSlotVisualization
+            cursorSlot={cursorSlot}
+            cursorPosition={cursorPosition}
+            cursorPositionRef={cursorPositionRef}
+            zoom={zoom}
+            state={state}
+            getCardSettings={getCardSettings}
+        />
 
         {/* Click-to-show tooltip for cards */}
         {clickTooltip && (() => {
