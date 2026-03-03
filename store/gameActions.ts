@@ -58,6 +58,7 @@ export type Action =
   | BaseAction<'UPDATE_LANGUAGE', AppLanguage>
   | BaseAction<'SET_ACTIVE_ID', string>
   | BaseAction<'SYNC_STATE', GameState> // Network sync
+  | BaseAction<'RESTORE_IMAGES', Record<string, string>> // Restore images from cache (guest)
   | BaseAction<'UPDATE_VIEW_TRANSFORM', ViewTransform>
   | BaseAction<'UPDATE_HAND_CARD_ORDER', { playerId: string; cardOrder: string[] }>
   | BaseAction<'UPDATE_DECK_CARD_DIMENSIONS', { deckId: string; cardWidth?: number; cardHeight?: number }>
