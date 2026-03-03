@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition, CardSpriteConfig, CardLocation } from '../types';
+import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition, CardSpriteConfig, CardLocation, AppLanguage } from '../types';
 import { Layers, Undo, ChevronRight, ArrowUp, ArrowDown, Hand, Eye, EyeOff } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { getCardButtonConfig, ButtonAction, CardButtonConfig } from '../utils/buttonConfig';
@@ -40,9 +40,11 @@ interface CardProps {
   deckTooltipScale?: number;
   // Whether the current user should see the card face (for alternative back logic)
   shouldSeeCardFace?: boolean;
+  // Language for translations
+  language?: AppLanguage;
 }
 
-export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig, deckShowTooltipImage, deckTooltipScale, shouldSeeCardFace = true }) => {
+export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig, deckShowTooltipImage, deckTooltipScale, shouldSeeCardFace = true, language = 'en' }) => {
   const shape = card.shape || CardShape.POKER;
   const orientation = cardOrientation ?? CardOrientation.VERTICAL;
 
@@ -68,7 +70,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
         }
         return true;
       })
-      .map(action => getCardButtonConfig(action as ButtonAction, card.faceUp, card.locked))
+      .map(action => getCardButtonConfig(action as ButtonAction, card.faceUp, card.locked, language))
       .filter((config): config is CardButtonConfig => config !== null)
       .slice(0, 4);
   };
@@ -215,8 +217,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                       // Card is face down - check for alternative back first
                       const altBack = (card as any).alternativeBack;
                       if (altBack?.url) {
-                        // Check if location matches
-                        const locationMatch = altBack.locations?.includes(card.location as any);
+                        // Check if location matches (if locations array is empty or undefined, show everywhere)
+                        const locationMatch = !altBack.locations || altBack.locations.length === 0 || altBack.locations?.includes(card.location as any);
                         // Check if current user should see it (if visibleToOthers is false, only show to those who can see card face)
                         const shouldShow = altBack.visibleToOthers || shouldSeeCardFace;
                         if (locationMatch && shouldShow) {
@@ -314,8 +316,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                     // Card is face down - check for alternative back first
                     const altBack = (card as any).alternativeBack;
                     if (altBack?.url) {
-                      // Check if location matches
-                      const locationMatch = altBack.locations?.includes(card.location as any);
+                      // Check if location matches (if locations array is empty or undefined, show everywhere)
+                      const locationMatch = !altBack.locations || altBack.locations.length === 0 || altBack.locations?.includes(card.location as any);
                       // Check if current user should see it (if visibleToOthers is false, only show to those who can see card face)
                       const shouldShow = altBack.visibleToOthers || shouldSeeCardFace;
                       if (locationMatch && shouldShow) {

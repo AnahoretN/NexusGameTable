@@ -2,6 +2,117 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Range slider styling - cross-browser */
+input[type="range"].slider-input,
+input[type="range"] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background: transparent !important;
+  cursor: pointer;
+  /* Firefox: constrain width properly */
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Webkit slider track (Chrome, Safari, Opera) */
+input[type="range"]::-webkit-slider-runnable-track,
+input[type="range"].slider-input::-webkit-slider-runnable-track {
+  height: 9px !important;
+  background: #4a5568 !important;
+  border-radius: 4px;
+  border: 1px solid #2d3748;
+}
+
+/* Webkit slider thumb (Chrome, Safari, Opera) */
+input[type="range"]::-webkit-slider-thumb,
+input[type="range"].slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 18px !important;
+  height: 18px !important;
+  background: #a78bfa !important;
+  border-radius: 50%;
+  margin-top: -5px;
+  border: 2px solid #7c3aed;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover,
+input[type="range"].slider-input::-webkit-slider-thumb:hover {
+  background: #c4b5fd !important;
+  border-color: #8b5cf6;
+}
+
+input[type="range"]:focus::-webkit-slider-thumb,
+input[type="range"].slider-input:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.3);
+}
+
+/* Firefox slider track */
+input[type="range"]::-moz-range-track,
+input[type="range"].slider-input::-moz-range-track {
+  height: 9px !important;
+  background: #4a5568 !important;
+  border-radius: 4px;
+  border: 1px solid #2d3748;
+  /* Firefox: prevent extra width */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Firefox slider thumb */
+input[type="range"]::-moz-range-thumb,
+input[type="range"].slider-input::-moz-range-thumb {
+  width: 18px !important;
+  height: 18px !important;
+  background: #a78bfa !important;
+  border-radius: 50%;
+  border: 2px solid #7c3aed;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  /* Firefox: prevent extra spacing */
+  box-sizing: border-box;
+}
+
+input[type="range"]::-moz-range-thumb:hover,
+input[type="range"].slider-input::-moz-range-thumb:hover {
+  background: #c4b5fd !important;
+  border-color: #8b5cf6;
+}
+
+input[type="range"]:focus::-moz-range-thumb,
+input[type="range"].slider-input:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.3);
+}
+
+/* Firefox: remove default border and padding */
+input[type="range"]::-moz-focus-outer {
+  border: 0;
+}
+
+/* Edge slider track */
+input[type="range"]::-ms-track {
+  height: 10px;
+  background: #4a5568;
+  border-radius: 4px;
+  border: 1px solid #2d3748;
+}
+
+/* Edge slider thumb */
+input[type="range"]::-ms-thumb {
+  width: 18px;
+  height: 18px;
+  background: #a78bfa;
+  border-radius: 50%;
+  border: 2px solid #7c3aed;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]::-ms-thumb:hover {
+  background: #c4b5fd;
+  border-color: #8b5cf6;
+}
+
 /* Always visible scrollbar styling for webkit browsers */
 ::-webkit-scrollbar {
   width: 16px;

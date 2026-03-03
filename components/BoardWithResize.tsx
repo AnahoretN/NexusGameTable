@@ -81,7 +81,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 top: obj.y,
                 width: obj.width,
                 height: obj.height,
-                backgroundColor: (obj as any).content ? 'transparent' : ((obj as any).color || '#34495e'),
+                backgroundColor: (obj as any).color || '#34495e',
                 backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',

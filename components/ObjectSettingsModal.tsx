@@ -13,41 +13,47 @@ interface ObjectSettingsModalProps {
   language?: AppLanguage; // Language for translations
 }
 
-// All available actions for Context Menu (ordered same as deck context menu)
-const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
-  { id: 'draw', label: 'Draw Card' },
-  { id: 'playTopCard', label: 'Play Top' },
-  { id: 'millTopCard', label: 'Mill' },
-  { id: 'toBottom', label: 'To Bottom' },
-  { id: 'showTop', label: 'Show Top' },
-  { id: 'topDeck', label: 'Top Deck (section)' },
-  { id: 'searchDeck', label: 'Search' },
-  { id: 'shuffleDeck', label: 'Shuffle' },
-  { id: 'piles', label: 'Piles' },
-  { id: 'returnAll', label: 'Return All' },
-  { id: 'clone', label: 'Clone Object' },
-  { id: 'delete', label: 'Delete Object' },
-  { id: 'flip', label: 'Flip Card' },
-  { id: 'layer', label: 'Change Layer (section)' },
-  { id: 'layerUp', label: 'Layer Up' },
-  { id: 'layerDown', label: 'Layer Down' },
-  { id: 'lock', label: 'Lock/Unlock Position' },
-  { id: 'pin', label: 'Pin/Unpin to Screen' },
-  { id: 'rotate', label: 'Rotation (section)' },
-  { id: 'rotateClockwise', label: 'Rotate Clockwise' },
-  { id: 'rotateCounterClockwise', label: 'Rotate Counter-Clockwise' },
-  { id: 'swingClockwise', label: 'Swing Clockwise' },
-  { id: 'swingCounterClockwise', label: 'Swing Counter-Clockwise' },
-];
+// Get available actions with translated labels
+function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
+  return [
+    { id: 'draw', label: getTranslation(language, 'drawCard') },
+    { id: 'playTopCard', label: getTranslation(language, 'playTop') },
+    { id: 'millTopCard', label: getTranslation(language, 'mill') },
+    { id: 'millToBottom', label: getTranslation(language, 'millToBottom') },
+    { id: 'toBottom', label: getTranslation(language, 'toBottom') },
+    { id: 'showTop', label: getTranslation(language, 'showTop') },
+    { id: 'topDeck', label: getTranslation(language, 'topDeckSection') },
+    { id: 'searchDeck', label: getTranslation(language, 'searchDeck') },
+    { id: 'shuffleDeck', label: getTranslation(language, 'shuffleDeck') },
+    { id: 'piles', label: getTranslation(language, 'piles') },
+    { id: 'returnAll', label: getTranslation(language, 'returnAll') },
+    { id: 'removeFromTable', label: getTranslation(language, 'removeFromTable') },
+    { id: 'clone', label: getTranslation(language, 'cloneObject') },
+    { id: 'delete', label: getTranslation(language, 'deleteObject') },
+    { id: 'flip', label: getTranslation(language, 'flipCard') },
+    { id: 'layer', label: getTranslation(language, 'changeLayerSection') },
+    { id: 'layerUp', label: getTranslation(language, 'layerUp') },
+    { id: 'layerDown', label: getTranslation(language, 'layerDown') },
+    { id: 'lock', label: getTranslation(language, 'lockUnlock') },
+    { id: 'pin', label: getTranslation(language, 'pinUnpin') },
+    { id: 'rotate', label: getTranslation(language, 'rotationSection') },
+    { id: 'rotateClockwise', label: getTranslation(language, 'rotateClockwise') },
+    { id: 'rotateCounterClockwise', label: getTranslation(language, 'rotateCounterClockwise') },
+    { id: 'swingClockwise', label: getTranslation(language, 'swingClockwise') },
+    { id: 'swingCounterClockwise', label: getTranslation(language, 'swingCounterClockwise') },
+  ];
+}
 
-// "Move to" actions are only for Action Buttons for Cards, NOT for Context Menu Actions
-const MOVE_TO_ACTIONS: { id: ContextAction; label: string }[] = [
-  { id: 'moveTo', label: 'Move to... (section)' },
-  { id: 'moveToHand', label: 'Move to Hand' },
-  { id: 'moveToTopDeck', label: 'Move to Top Deck' },
-  { id: 'moveToBottomDeck', label: 'Move to Bottom Deck' },
-  { id: 'moveToDiscard', label: 'Move to Discard' },
-];
+// Get move to actions with translated labels
+function getMoveToActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
+  return [
+    { id: 'moveTo', label: getTranslation(language, 'moveToSection') },
+    { id: 'moveToHand', label: getTranslation(language, 'moveToHand') },
+    { id: 'moveToTopDeck', label: getTranslation(language, 'moveToTopDeck') },
+    { id: 'moveToBottomDeck', label: getTranslation(language, 'moveToBottomDeck') },
+    { id: 'moveToDiscard', label: getTranslation(language, 'moveToDiscard') },
+  ];
+}
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
 const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles'];
@@ -92,32 +98,6 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   }
 }
 
-// Available click actions (all actions from AVAILABLE_ACTIONS + none)
-const CLICK_ACTIONS = [
-  { id: 'none' as const, label: 'None' },
-  ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
-];
-
-// Card-specific click actions (includes showTooltipImage which is not a ContextAction)
-const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
-  { id: 'none', label: 'None' },
-  { id: 'showTooltipImage' as const, label: 'Card Tooltip Image' },
-  ...AVAILABLE_ACTIONS.map(a => ({ id: a.id as ClickAction, label: a.label }))
-    .filter(action => {
-      // Exclude deck-specific and section actions
-      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-          action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
-          action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
-          action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-          action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
-        return false;
-      }
-      // Exclude section headers
-      if (action.id === 'moveTo') return false;
-      return true;
-    })
-];
-
 type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite';
 
 export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en' }) => {
@@ -126,6 +106,32 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
   // Translation helper
   const t = (key: { en: string; ru: string }): string => key[language] || key.en;
+
+  // Get translated action labels
+  const AVAILABLE_ACTIONS = getAvailableActions(language);
+  const MOVE_TO_ACTIONS = getMoveToActions(language);
+  const CLICK_ACTIONS = [
+    { id: 'none' as const, label: getTranslation(language, 'none') },
+    ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+  ];
+  const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
+    { id: 'none' as const, label: getTranslation(language, 'none') },
+    { id: 'showTooltipImage' as const, label: getTranslation(language, 'cardTooltipImage') },
+    ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+      .filter(action => {
+        // Exclude deck-specific and section actions
+        if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+            action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
+            action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
+            action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
+            action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
+          return false;
+        }
+        // Exclude section headers
+        if (action.id === 'moveTo') return false;
+        return true;
+      })
+  ];
 
   // Initialize piles for decks
   const deck = data as Deck;
@@ -527,7 +533,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 {isToken || isArchetype || isCounter ? (
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Name', ru: 'Название' })}</label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center">
                       <input
                         value={data.name}
                         onChange={e => update('name', e.target.value)}
@@ -539,7 +545,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         value={(data as any).fontColor || '#ffffff'}
                         onChange={e => update('fontColor', e.target.value)}
                         className="w-9 h-9 rounded cursor-pointer border-0 p-0 bg-slate-900"
-                        title="Font Color"
+                        title={getTranslation(language, 'fontColor')}
                       />
                       {/* Show Name Toggle - for token types and counters */}
                       {(isArchetype || isCounter) && (
@@ -548,7 +554,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           className={`w-9 h-5 rounded-full transition-colors ${
                             (data as any).showNameOnToken ? 'bg-green-600' : 'bg-slate-700'
                           }`}
-                          title="Show name on object"
+                          title={getTranslation(language, 'showNameOnObject')}
                         >
                           <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
                             (data as any).showNameOnToken ? 'translate-x-2.5' : 'translate-x-0.5'
@@ -571,7 +577,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 {/* Size */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Width</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'width')}</label>
                     <input
                       type="number"
                       value={isArchetype ? (data as any).defaultSize?.width || data.width : data.width}
@@ -588,7 +594,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Height</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'height')}</label>
                     <input
                       type="number"
                       value={isArchetype ? (data as any).defaultSize?.height || data.height : data.height}
@@ -608,7 +614,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
                 {/* Rotation Step */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Rotation Step (degrees)</label>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'rotationStep')}</label>
                   <input
                     type="number"
                     value={(data as any).rotationStep ?? 45}
@@ -623,10 +629,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Counter Settings */}
               {isCounter && (
                 <div className="pt-4 space-y-3">
-                  <h4 className="text-sm font-bold text-gray-300">Counter Limits</h4>
+                  <h4 className="text-sm font-bold text-gray-300">{getTranslation(language, 'counterLimits')}</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">Base Value</label>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'baseValue')}</label>
                       <input
                         type="number"
                         value={(data as Counter).baseValue ?? 0}
@@ -635,18 +641,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">Max Value (optional)</label>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'maxValue')}</label>
                       <input
                         type="number"
                         value={(data as Counter).maxValue ?? ''}
                         onChange={e => update('maxValue', e.target.value ? Number(e.target.value) : undefined)}
-                        placeholder="No limit"
+                        placeholder={getTranslation(language, 'noLimit')}
                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       />
                     </div>
                   </div>
                   <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
-                    <label className="text-xs text-gray-400">Allow Negative Values</label>
+                    <label className="text-xs text-gray-400">{getTranslation(language, 'allowNegative')}</label>
                     <button
                       onClick={() => update('allowNegative', !(data as Counter).allowNegative)}
                       className={`w-10 h-5 rounded-full transition-colors ${
@@ -666,7 +672,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 mt-5 mb-5">
                   <label className="text-xs text-gray-400 flex items-center gap-2">
                     <Eye size={12} />
-                    Show Top Card on Deck
+                    {getTranslation(language, 'showTopCardOnDeck')}
                   </label>
                   <button
                     onClick={() => update('showTopCard', !(data as Deck).showTopCard)}
@@ -683,47 +689,46 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
               {/* Color + Border Color + Shape (for tokens and battlefield cells) - side by side, equal width */}
               {(isToken || isArchetype || isBattlefieldCell) && !isBoard && (
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
-                    <input
-                      type="color"
-                      value={data.color || '#ffffff'}
-                      onChange={e => update('color', e.target.value)}
-                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
-                    />
+                <div className="rounded p-2 mb-1">
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'color')}</label>
+                      <input
+                        type="color"
+                        value={data.color || '#ffffff'}
+                        onChange={e => update('color', e.target.value)}
+                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'borderColor')}</label>
+                      <input
+                        type="color"
+                        value={(data as any).borderColor || '#ffffff'}
+                        onChange={e => update('borderColor', e.target.value)}
+                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'shape')}</label>
+                      <select
+                        value={(data as Token | BattlefieldCell).shape}
+                        onChange={e => update('shape', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm h-10"
+                      >
+                        <option value={TokenShape.SQUARE}>{getTranslation(language, 'square')}</option>
+                        <option value={TokenShape.CIRCLE}>{getTranslation(language, 'circle')}</option>
+                        <option value={TokenShape.HEX}>{getTranslation(language, 'hex')}</option>
+                        <option value={TokenShape.TRIANGLE}>{getTranslation(language, 'triangle')}</option>
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Border</label>
-                    <input
-                      type="color"
-                      value={(data as any).borderColor || '#ffffff'}
-                      onChange={e => update('borderColor', e.target.value)}
-                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Shape</label>
-                    <select
-                      value={(data as Token | BattlefieldCell).shape}
-                      onChange={e => update('shape', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm h-10"
-                    >
-                      <option value={TokenShape.SQUARE}>Square</option>
-                      <option value={TokenShape.CIRCLE}>Circle</option>
-                      <option value={TokenShape.HEX}>Hex</option>
-                      <option value={TokenShape.TRIANGLE}>Triangle</option>
-                    </select>
-                  </div>
-                </div>
-              )}
 
-              {/* Opacity and Border settings (for tokens, token types, and battlefield cells) */}
-              {(isToken || isArchetype || isBattlefieldCell) && (
-                <div className="grid grid-cols-3 gap-2 mb-4">
+                  {/* Opacity and Border settings (for tokens, token types, and battlefield cells) */}
+                  <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'opacity')}</label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center">
                       <input
                         type="range"
                         min="0"
@@ -732,12 +737,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         onChange={e => update('opacity', parseInt(e.target.value))}
                         className="flex-1 accent-purple-500"
                       />
-                      <span className="text-xs text-gray-400 w-8 text-right">{(data as any).opacity ?? 100}</span>
+                      <span className="text-xs text-gray-400 w-6 text-right">{(data as any).opacity ?? 100}</span>
                     </div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'borderOpacity')}</label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center">
                       <input
                         type="range"
                         min="0"
@@ -746,12 +751,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         onChange={e => update('borderOpacity', parseInt(e.target.value))}
                         className="flex-1 accent-purple-500"
                       />
-                      <span className="text-xs text-gray-400 w-8 text-right">{(data as any).borderOpacity ?? 100}</span>
+                      <span className="text-xs text-gray-400 w-6 text-right">{(data as any).borderOpacity ?? 100}</span>
                     </div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'borderWidth')}</label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center">
                       <input
                         type="range"
                         min="0"
@@ -760,8 +765,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         onChange={e => update('borderWidth', parseInt(e.target.value))}
                         className="flex-1 accent-purple-500"
                       />
-                      <span className="text-xs text-gray-400 w-8 text-right">{(data as any).borderWidth ?? 2}</span>
+                      <span className="text-xs text-gray-400 w-6 text-right">{(data as any).borderWidth ?? 2}</span>
                     </div>
+                  </div>
                   </div>
                 </div>
               )}
@@ -771,7 +777,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 mb-4">
                   <label className="text-xs text-gray-400 flex items-center gap-2">
                     <Grid3x3 size={12} />
-                    Snap Objects to Grid
+                    {getTranslation(language, 'snapToGrid')}
                   </label>
                   <button
                     onClick={() => update('snapToGrid', !(data as any).snapToGrid)}
@@ -791,7 +797,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <FilePickerInput
                   value={data.content || ''}
                   onChange={value => update('content', value)}
-                  label="Image URL"
+                  label={getTranslation(language, 'content')}
                   className="w-full"
                 />
               )}
@@ -800,7 +806,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {isBoard && (
                 <div className="grid grid-cols-[80px_1fr] gap-2">
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Color</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'color')}</label>
                     <input
                       type="color"
                       value={data.color || '#ffffff'}
@@ -809,7 +815,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     />
                   </div>
                   <div className="relative">
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Background Image URL</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'backgroundImage')}</label>
                     <FilePickerInput
                       value={data.content || ''}
                       onChange={value => update('content', value)}
@@ -823,8 +829,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {isDrawing && (
                 <>
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Drawing Color</label>
-                  <div className="flex items-center gap-2">
+                  <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'drawingColor')}</label>
+                  <div className="flex items-center">
                     <input
                       type="color"
                       value={(data as Drawing).color || ((data as Drawing).strokes.length > 0 ? (data as Drawing).strokes[0].color : '#ef4444')}
@@ -843,15 +849,15 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
                 {/* Opacity */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Opacity: {Math.round((data as Drawing).opacity || 100)}%</label>
-                  <div className="flex items-center gap-2">
+                  <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'opacity')}: {Math.round((data as Drawing).opacity || 100)}%</label>
+                  <div className="flex items-center">
                     <input
                       type="range"
                       min="1"
                       max="100"
                       value={(data as Drawing).opacity || 100}
                       onChange={e => update('opacity', parseInt(e.target.value))}
-                      className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                      className="flex-1 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-input"
                     />
                     <input
                       type="number"
@@ -870,31 +876,31 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {isDice && (
                 <div className="pt-4 space-y-3">
                   <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                    <Dices size={14} /> Dice Settings
+                    <Dices size={14} /> {getTranslation(language, 'diceSettings')}
                   </h4>
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Number of Sides: {(data as DiceObject).sides || 6}</label>
-                    <div className="flex items-center gap-2">
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'numberOfSides')}: {(data as DiceObject).sides || 6}</label>
+                    <div className="flex items-center">
                       <input
                         type="range"
                         min="2"
-                        max="20"
+                        max="100"
                         value={(data as DiceObject).sides || 6}
                         onChange={e => { const sides = parseInt(e.target.value); update('sides', sides); }}
-                        className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                        className="flex-1 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-input"
                       />
                       <input
                         type="number"
                         min="2"
-                        max="20"
+                        max="100"
                         value={(data as DiceObject).sides || 6}
-                        onChange={e => update('sides', Math.max(2, Math.min(20, parseInt(e.target.value) || 6)))}
-                        className="w-16 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm text-center"
+                        onChange={e => update('sides', Math.max(2, Math.min(100, parseInt(e.target.value) || 6)))}
+                        className="ml-2 w-16 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm text-center"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-2">Shape</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-2">{getTranslation(language, 'shape')}</label>
                     <div className="grid grid-cols-3 gap-2">
                       <button
                         onClick={() => { update('shape', TokenShape.TRIANGLE); update('height', Math.round((data.width || 60) / 1.155)); }}
@@ -907,7 +913,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                           <polygon points="12,2 22,20 2,20" />
                         </svg>
-                        <span className="text-xs">Triangle</span>
+                        <span className="text-xs">{getTranslation(language, 'triangle')}</span>
                       </button>
                       <button
                         onClick={() => { update('shape', TokenShape.SQUARE); update('height', data.width); }}
@@ -920,7 +926,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                           <rect x="3" y="3" width="18" height="18" />
                         </svg>
-                        <span className="text-xs">Square</span>
+                        <span className="text-xs">{getTranslation(language, 'square')}</span>
                       </button>
                       <button
                         onClick={() => { update('shape', TokenShape.HEX); update('width', Math.round((data.height || 60) / 1.155)); }}
@@ -933,7 +939,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                           <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" />
                         </svg>
-                        <span className="text-xs">Hex</span>
+                        <span className="text-xs">{getTranslation(language, 'hex')}</span>
                       </button>
                     </div>
                   </div>
@@ -944,11 +950,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {isBoard && (
                 <div className="pt-4 space-y-3">
                   <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                    <Grid3x3 size={14} /> Grid Settings
+                    <Grid3x3 size={14} /> {getTranslation(language, 'gridSettings')}
                   </h4>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">Grid Type</label>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'gridType')}</label>
                       <select
                         value={(data as Board).gridType || GridType.NONE}
                         onChange={e => update('gridType', e.target.value)}
@@ -960,7 +966,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">Grid Size (px)</label>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'gridSize')}</label>
                       <input
                         type="number"
                         value={(data as Board).gridSize || 50}
@@ -972,7 +978,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                     <label className="text-xs text-gray-400 flex items-center gap-2">
                       <Grid3x3 size={12} />
-                      Snap Objects to Grid
+                      {getTranslation(language, 'snapToGrid')}
                     </label>
                     <button
                       onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
@@ -992,19 +998,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {!isDrawing && (
               <div className="pt-1 space-y-3">
                 <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                  <Eye size={14} /> Tooltip Settings
+                  <Eye size={14} /> {getTranslation(language, 'tooltipSettings')}
                 </h4>
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Tooltip Text</label>
                   <textarea
                     value={(data as any).tooltipText || ''}
                     onChange={e => update('tooltipText', e.target.value)}
-                    placeholder="Text shown on hover..."
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm resize-none"
                     rows={5}
                   />
                 </div>
-
               </div>
               )}
 
@@ -1012,7 +1015,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {isCard && (
                 <div className="pt-2 space-y-3">
                   <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                    <RotateCw size={14} /> Alternative Card Back
+                    <RotateCw size={14} /> {getTranslation(language, 'alternativeCardBack')}
                   </h4>
 
                   {/* URL Input */}
@@ -1024,7 +1027,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       locations: (data as Card).alternativeBack?.locations || [],
                       visibleToOthers: (data as Card).alternativeBack?.visibleToOthers ?? false
                     } as any)}
-                    label="Alternative Back URL"
+                    label={getTranslation(language, 'alternativeBackURL')}
                     placeholder="https://example.com/alternative-back.png"
                     className="w-full"
                   />
@@ -1034,7 +1037,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     <div className="bg-slate-900 rounded p-2 border border-slate-700 flex justify-center">
                       <img
                         src={(data as Card).alternativeBack!.url}
-                        alt="Alternative back preview"
+                        alt={`${getTranslation(language, 'alternativeCardBack')} - ${getTranslation(language, 'preview')}`}
                         className="max-w-24 max-h-32"
                         onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2275%22%3E%3Crect fill=%22%231e293b%22 width=%2250%22 height=%2275%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2364748b%22 dy=%22.3em%22 font-size=%2210%22%3EN/A%3C/text%3E%3C/svg%3E'; }}
                       />
@@ -1043,13 +1046,13 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
                   {/* Locations checkboxes - 2 columns */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-2">Show in locations:</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-2">{getTranslation(language, 'showInLocations')}</label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        { key: 'TABLE', label: 'Tabletop' },
-                        { key: 'HAND', label: 'Hand' },
-                        { key: 'DECK', label: 'Deck' },
-                        { key: 'PILE', label: 'Pile' },
+                        { key: 'TABLE', label: getTranslation(language, 'tabletop') },
+                        { key: 'HAND', label: getTranslation(language, 'hand') },
+                        { key: 'DECK', label: getTranslation(language, 'deck') },
+                        { key: 'PILE', label: getTranslation(language, 'pile') },
                       ].map(loc => (
                         <label key={loc.key} className="flex items-center gap-2 p-2 rounded bg-slate-800 border border-slate-700 cursor-pointer hover:bg-slate-700">
                           <input
@@ -1079,7 +1082,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                     <label className="text-xs text-gray-400 flex items-center gap-2">
                       <Eye size={12} />
-                      Visible to players who cannot see the face of the card
+                      {getTranslation(language, 'visibleToOthers')}
                     </label>
                     <button
                       onClick={() => update('alternativeBack', {
@@ -1108,7 +1111,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {!isDrawing && (
               <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <Shield size={14} /> Context Menu Actions
+                  <Shield size={14} /> {getTranslation(language, 'contextMenuActions')}
                 </h4>
 
                 <div className="grid grid-cols-2 gap-1">
@@ -1190,7 +1193,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                               ? 'bg-blue-600 text-white'
                               : 'bg-slate-900 text-gray-400 hover:text-gray-200'
                           }`}
-                          title="Player"
+                          title={getTranslation(language, 'player')}
                         >
                           PL
                         </button>
@@ -1201,7 +1204,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                               ? 'bg-purple-600 text-white'
                               : 'bg-slate-900 text-gray-400 hover:text-gray-200'
                           }`}
-                          title="Game Master"
+                          title={getTranslation(language, 'gameMaster')}
                         >
                           GM
                         </button>
@@ -1215,8 +1218,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Action Buttons - 2 columns, max 4 selected */}
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <Settings size={14} /> Action Buttons
-                  <span className="text-xs text-gray-500 font-normal">(max 4)</span>
+                  <Settings size={14} /> {getTranslation(language, 'actionButtons')}
+                  <span className="text-xs text-gray-500 font-normal">({getTranslation(language, 'max4')})</span>
                 </h4>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -1256,13 +1259,13 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {!isDrawing && (
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <MousePointer size={14} /> Mouse Click Actions
+                  <MousePointer size={14} /> {getTranslation(language, 'mouseClickActions')}
                 </h4>
 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Single Click */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Single Click</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'singleClick')}</label>
                     <select
                       value={(data as any).singleClickAction || 'none'}
                       onChange={e => update('singleClickAction', e.target.value)}
@@ -1298,7 +1301,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
                   {/* Double Click */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Double Click</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'doubleClick')}</label>
                     <select
                       value={(data as any).doubleClickAction || 'none'}
                       onChange={e => update('doubleClickAction', e.target.value)}
@@ -1365,12 +1368,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           value={pile.name}
                           onChange={(e) => updatePile(index, 'name', e.target.value)}
                           className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-white text-sm font-medium flex-1 mr-2"
-                          placeholder="Pile name"
+                          placeholder={getTranslation(language, 'pileName')}
                         />
                         <button
                           onClick={() => removePile(index)}
                           className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors"
-                          title="Remove pile"
+                          title={getTranslation(language, 'removePile')}
                         >
                           <Trash2 size={16} />
                         </button>
@@ -1379,7 +1382,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       <div className="grid grid-cols-2 gap-3">
                         {/* Visible toggle */}
                         <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
-                          <label className="text-xs text-gray-400">Visible</label>
+                          <label className="text-xs text-gray-400">{getTranslation(language, 'visible')}</label>
                           <button
                             onClick={() => updatePile(index, 'visible', !pile.visible)}
                             className={`w-10 h-5 rounded-full transition-colors ${
@@ -1396,7 +1399,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                           <label className="text-xs text-gray-400 flex items-center gap-2">
                             <Eye size={12} />
-                            Show Top Card
+                            {getTranslation(language, 'showTopCard')}
                           </label>
                           <button
                             onClick={() => updatePile(index, 'showTopCard', !pile.showTopCard)}
@@ -1413,30 +1416,30 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
                       {/* Size dropdown */}
                       <div>
-                        <label className="block text-xs font-bold text-gray-400 mb-1">Size</label>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'size')}</label>
                         <select
                           value={pile.size ?? 1}
                           onChange={(e) => updatePile(index, 'size', Number(e.target.value) as PileSize)}
                           className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
                         >
-                          <option value={1}>Full size</option>
-                          <option value={0.5}>Half size</option>
+                          <option value={1}>{getTranslation(language, 'fullSize')}</option>
+                          <option value={0.5}>{getTranslation(language, 'halfSize')}</option>
                         </select>
                       </div>
 
                       {/* Position dropdown */}
                       <div>
-                        <label className="block text-xs font-bold text-gray-400 mb-1">Position</label>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'position')}</label>
                         <select
                           value={pile.position}
                           onChange={(e) => updatePile(index, 'position', e.target.value as PilePosition)}
                           className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
                         >
-                          <option value="left">Left of deck</option>
-                          <option value="right">Right of deck</option>
-                          <option value="top">Above deck</option>
-                          <option value="bottom">Below deck</option>
-                          <option value="free">Free position</option>
+                          <option value="left">{getTranslation(language, 'leftOfDeck')}</option>
+                          <option value="right">{getTranslation(language, 'rightOfDeck')}</option>
+                          <option value="top">{getTranslation(language, 'aboveDeck')}</option>
+                          <option value="bottom">{getTranslation(language, 'belowDeck')}</option>
+                          <option value="free">{getTranslation(language, 'freePosition')}</option>
                         </select>
                       </div>
 
@@ -1444,7 +1447,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       {pile.position === 'free' && (
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs font-bold text-gray-400 mb-1">X Position</label>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'xPos')}</label>
                             <input
                               type="number"
                               value={pile.x ?? 0}
@@ -1453,7 +1456,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                             />
                           </div>
                           <div>
-                            <label className="block text-xs font-bold text-gray-400 mb-1">Y Position</label>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'yPos')}</label>
                             <input
                               type="number"
                               value={pile.y ?? 0}
@@ -1468,7 +1471,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                         <label className="text-xs text-gray-400 flex items-center gap-2">
                           <Trash2 size={12} />
-                          Mill Pile
+                          {getTranslation(language, 'millPile')}
                         </label>
                         <button
                           onClick={() => updatePile(index, 'isMillPile', !pile.isMillPile)}
@@ -1498,13 +1501,13 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Basic Settings - Card dimensions and name position */}
               <div>
                 <h4 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
-                  <Square size={14} /> Basic Settings
+                  <Square size={14} /> {getTranslation(language, 'basicSettings')}
                 </h4>
 
                 <div className="grid grid-cols-2 gap-3 mb-2">
                   {/* Card Shape */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Card Shape</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'cardShape')}</label>
                     <select
                       value={cardSettings.cardShape ?? CardShape.POKER}
                       onChange={(e) => updateCardSettings('cardShape', e.target.value as CardShape)}
@@ -1518,7 +1521,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
                   {/* Card Orientation - disabled for SQUARE and CIRCLE shapes */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Card Orientation</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'cardOrientation')}</label>
                     <select
                       value={cardSettings.cardOrientation ?? CardOrientation.VERTICAL}
                       onChange={(e) => updateCardSettings('cardOrientation', e.target.value as CardOrientation)}
@@ -1529,8 +1532,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           : ''
                       }`}
                     >
-                      <option value={CardOrientation.VERTICAL}>Vertical</option>
-                      <option value={CardOrientation.HORIZONTAL}>Horizontal</option>
+                      <option value={CardOrientation.VERTICAL}>{getTranslation(language, 'vertical')}</option>
+                      <option value={CardOrientation.HORIZONTAL}>{getTranslation(language, 'horizontal')}</option>
                     </select>
                   </div>
                 </div>
@@ -1538,25 +1541,25 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-3 mb-2">
                   {/* Card Width */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Card Width (px)</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'cardWidth')}</label>
                     <input
                       type="number"
                       value={cardSettings.cardWidth ?? deck.width}
                       onChange={(e) => updateCardSettings('cardWidth', e.target.value ? parseInt(e.target.value) : undefined)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                      placeholder="Default"
+                      placeholder={getTranslation(language, 'default')}
                     />
                   </div>
 
                   {/* Card Height */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Card Height (px)</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'cardHeight')}</label>
                     <input
                       type="number"
                       value={cardSettings.cardHeight ?? deck.height}
                       onChange={(e) => updateCardSettings('cardHeight', e.target.value ? parseInt(e.target.value) : undefined)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                      placeholder="Default"
+                      placeholder={getTranslation(language, 'default')}
                     />
                   </div>
                 </div>
@@ -1564,44 +1567,44 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 {/* Search Window and Play Top Card Settings */}
                 <div className="grid grid-cols-2 gap-3 mb-2">
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">In Search Window (Players)</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'inSearchWindow')}</label>
                     <select
                       value={cardSettings.searchWindowVisibility ?? SearchWindowVisibility.FACE_UP}
                       onChange={(e) => updateCardSettings('searchWindowVisibility', e.target.value as SearchWindowVisibility)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      <option value={SearchWindowVisibility.FACE_UP}>Face Up</option>
-                      <option value={SearchWindowVisibility.FACE_DOWN}>Face Down</option>
-                      <option value={SearchWindowVisibility.AS_GM}>As GM Sees</option>
-                      <option value={SearchWindowVisibility.LAST_STATE}>Last State (per player)</option>
-                      <option value={SearchWindowVisibility.SHARED_DECK}>Shared Deck (all players)</option>
+                      <option value={SearchWindowVisibility.FACE_UP}>{getTranslation(language, 'faceUp')}</option>
+                      <option value={SearchWindowVisibility.FACE_DOWN}>{getTranslation(language, 'faceDown')}</option>
+                      <option value={SearchWindowVisibility.AS_GM}>{getTranslation(language, 'asGMSees')}</option>
+                      <option value={SearchWindowVisibility.LAST_STATE}>{getTranslation(language, 'lastState')}</option>
+                      <option value={SearchWindowVisibility.SHARED_DECK}>{getTranslation(language, 'sharedDeck')}</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Play Top Card</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'playTopCard')}</label>
                     <select
                       value={(cardSettings.playTopFaceUp ?? true) ? 'faceUp' : 'faceDown'}
                       onChange={(e) => updateCardSettings('playTopFaceUp', e.target.value === 'faceUp')}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      <option value="faceUp">Face Up</option>
-                      <option value="faceDown">Face Down</option>
+                      <option value="faceUp">{getTranslation(language, 'faceUp')}</option>
+                      <option value="faceDown">{getTranslation(language, 'faceDown')}</option>
                     </select>
                   </div>
                 </div>
 
                 {/* Card Name Position */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">Show Card Name</label>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'showCardName')}</label>
                   <select
                     value={cardSettings.cardNamePosition ?? 'bottom'}
                     onChange={(e) => updateCardSettings('cardNamePosition', e.target.value as CardNamePosition)}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                   >
-                    <option value="bottom">Bottom</option>
-                    <option value="top">Top</option>
-                    <option value="none">None</option>
+                    <option value="bottom">{getTranslation(language, 'bottom')}</option>
+                    <option value="top">{getTranslation(language, 'top')}</option>
+                    <option value="none">{getTranslation(language, 'none')}</option>
                   </select>
                 </div>
 
@@ -1610,14 +1613,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div className="flex items-center justify-between">
                     <label className="text-xs text-gray-400 flex items-center gap-2">
                       <Eye size={12} />
-                      Card Tooltip Image
+                      {getTranslation(language, 'cardTooltipImage')}
                     </label>
                     <button
                       onClick={() => update('showTooltipImage', !(data as any).showTooltipImage)}
                       className={`w-10 h-5 rounded-full transition-colors ${
                         (data as any).showTooltipImage ? 'bg-green-600' : 'bg-slate-700'
                       }`}
-                      title={(data as any).showTooltipImage ? 'Hide tooltip image' : 'Show tooltip image'}
+                      title={(data as any).showTooltipImage ? getTranslation(language, 'hideTooltipImage') : getTranslation(language, 'showTooltipImage')}
                     >
                       <div
                         className={`w-4 h-4 bg-white rounded-full transition-transform ${
@@ -1626,12 +1629,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       />
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center">
                     <input
                       type="range"
                       value={(data as any).tooltipScale ?? 125}
                       onChange={e => update('tooltipScale', Number(e.target.value))}
-                      className="flex-1 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                      className="flex-1 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-input"
                       min="50"
                       max="300"
                       step="5"
@@ -1644,7 +1647,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Context Menu Actions - with PL and GM toggle buttons */}
               <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <Shield size={14} /> Context Menu Actions for Cards
+                  <Shield size={14} /> {getTranslation(language, 'contextMenuActionsForCards')}
                 </h4>
 
                 <div className="grid grid-cols-2 gap-1">
@@ -1674,7 +1677,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                               ? 'bg-blue-600 text-white'
                               : 'bg-slate-900 text-gray-400 hover:text-gray-200'
                           }`}
-                          title="Player"
+                          title={getTranslation(language, 'player')}
                         >
                           PL
                         </button>
@@ -1685,7 +1688,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                               ? 'bg-purple-600 text-white'
                               : 'bg-slate-900 text-gray-400 hover:text-gray-200'
                           }`}
-                          title="Game Master"
+                          title={getTranslation(language, 'gameMaster')}
                         >
                           GM
                         </button>
@@ -1698,8 +1701,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Action Buttons - 2 columns, max 4 selected */}
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <Settings size={14} /> Action Buttons for Cards
-                  <span className="text-xs text-gray-500 font-normal">(max 4)</span>
+                  <Settings size={14} /> {getTranslation(language, 'actionButtonsForCards')}
+                  <span className="text-xs text-gray-500 font-normal">({getTranslation(language, 'max4')})</span>
                 </h4>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -1744,13 +1747,13 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Click Actions */}
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <MousePointer size={14} /> Mouse Click Actions for Cards
+                  <MousePointer size={14} /> {getTranslation(language, 'mouseClickActionsForCards')}
                 </h4>
 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Single Click */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Single Click</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'singleClick')}</label>
                     <select
                       value={cardSettings.singleClickAction || 'none'}
                       onChange={(e) => updateCardSettings('singleClickAction', e.target.value)}
@@ -1764,7 +1767,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
                   {/* Double Click */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Double Click</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'doubleClick')}</label>
                     <select
                       value={cardSettings.doubleClickAction || 'none'}
                       onChange={(e) => updateCardSettings('doubleClickAction', e.target.value)}
@@ -1785,7 +1788,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Sprite Sheet URL */}
               <div className="pt-4 space-y-3">
                 <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                  <ImageIcon size={14} /> Sprite Sheet URL
+                  <ImageIcon size={14} /> {getTranslation(language, 'spriteSheetURL')}
                 </h4>
                 <FilePickerInput
                   value={spriteConfig?.spriteUrl || ''}
@@ -1798,7 +1801,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Card Back URL */}
               <div className="pt-4 space-y-3">
                 <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                  <RotateCw size={14} /> Card Back URL
+                  <RotateCw size={14} /> {getTranslation(language, 'cardBackURL')}
                 </h4>
                 <FilePickerInput
                   value={spriteConfig?.cardBackUrl || ''}
@@ -1810,7 +1813,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div className="bg-slate-900 rounded p-2 border border-slate-700 flex justify-center">
                     <img
                       src={spriteConfig.cardBackUrl}
-                      alt="Card back preview"
+                      alt={`${getTranslation(language, 'cardBackURL')} - ${getTranslation(language, 'preview')}`}
                       className="max-w-24 max-h-32"
                       onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2275%22%3E%3Crect fill=%22%231e293b%22 width=%2250%22 height=%2275%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2364748b%22 dy=%22.3em%22 font-size=%2210%22%3EN/A%3C/text%3E%3C/svg%3E'; }}
                     />
@@ -1821,11 +1824,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Grid Settings */}
               <div className="pt-4 space-y-3">
                 <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                  <Grid3x3 size={14} /> Grid Settings
+                  <Grid3x3 size={14} /> {getTranslation(language, 'gridSettings')}
                 </h4>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Columns</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'columns')}</label>
                     <input
                       type="number"
                       min="1"
@@ -1835,7 +1838,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Rows</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'rows')}</label>
                     <input
                       type="number"
                       min="1"
@@ -1845,14 +1848,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">Total Cards</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{getTranslation(language, 'totalCards')}</label>
                     <input
                       type="number"
                       min="1"
                       value={spriteConfig?.totalCards || (spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : '')}
                       onChange={(e) => setSpriteConfig(prev => ({ ...prev, totalCards: e.target.value ? parseInt(e.target.value) : undefined, spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, rows: prev?.rows || 1 }))}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                      placeholder={`Auto: ${spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : 'N/A'}`}
+                      placeholder={`${getTranslation(language, 'auto')}: ${spriteConfig?.columns && spriteConfig?.rows ? spriteConfig.columns * spriteConfig.rows : getTranslation(language, 'na')}`}
                     />
                   </div>
                 </div>
@@ -1862,7 +1865,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {spriteConfig?.columns && spriteConfig?.rows && spriteConfig?.spriteUrl && (
                 <div className="pt-4 space-y-3">
                   <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-                    <Eye size={14} /> Grid Preview
+                    <Eye size={14} /> {getTranslation(language, 'gridPreview')}
                   </h4>
                   <div
                     className="bg-slate-900 rounded p-2 border border-slate-700 overflow-auto"
@@ -1870,7 +1873,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   >
                     <img
                       src={spriteConfig.spriteUrl}
-                      alt="Sprite Sheet Preview"
+                      alt={getTranslation(language, 'spriteSheetPreview')}
                       className="mx-auto border border-slate-600"
                       style={{
                         maxWidth: '100%',
@@ -1895,7 +1898,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     }}
                     className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                   >
-                    <Plus size={16} /> Generate Cards from Sprite
+                    <Plus size={16} /> {getTranslation(language, 'generateCardsFromSprite')}
                   </button>
                 </div>
               )}

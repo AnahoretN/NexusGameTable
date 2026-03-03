@@ -7,7 +7,7 @@ export const TOKEN_SIZE = 80;
 export const DECK_OFFSET = 3;
 
 // UI Panel dimensions
-export const MAIN_MENU_WIDTH = 310;
+export const MAIN_MENU_WIDTH = 313;
 export const SCROLLBAR_WIDTH = 16;
 
 // Default object dimensions

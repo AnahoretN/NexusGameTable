@@ -317,7 +317,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                   max="20"
                   value={markerThickness}
                   onChange={(e) => setMarkerThickness(Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer slider-input"
                 />
               </div>
             </div>

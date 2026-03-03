@@ -4,7 +4,7 @@ import { SCROLLBAR_WIDTH } from '../constants';
 import { logger } from './logger';
 
 const STORAGE_KEY = 'nexus-game-state';
-const STORAGE_VERSION = 4; // Version with proper adaptation
+const STORAGE_VERSION = 5; // Version with blob URL to base64 conversion
 
 interface ViewportInfo {
   width: number;
@@ -19,12 +19,75 @@ export interface StoredGameState {
 }
 
 /**
+ * Convert blob URL to base64 data URL
+ */
+const convertBlobToBase64 = async (blobUrl: string): Promise<string> => {
+  if (!blobUrl.startsWith('blob:')) {
+    return blobUrl; // Not a blob URL, return as is
+  }
+
+  try {
+    const response = await fetch(blobUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    logger.warn('Failed to convert blob to base64:', error);
+    return blobUrl; // Return original on error
+  }
+};
+
+/**
+ * Convert all blob URLs in objects to base64 data URLs
+ */
+const convertBlobsInObjects = async (objects: Record<string, TableObject>): Promise<Record<string, TableObject>> => {
+  const convertedObjects: Record<string, TableObject> = {};
+
+  for (const [id, obj] of Object.entries(objects)) {
+    const convertedObj = { ...obj };
+
+    // Convert content (image URL) if it's a blob URL
+    if (convertedObj.content && convertedObj.content.startsWith('blob:')) {
+      convertedObj.content = await convertBlobToBase64(convertedObj.content);
+    }
+
+    // Convert alternativeBack URL if present
+    if ((convertedObj as any).alternativeBack?.url?.startsWith('blob:')) {
+      (convertedObj as any).alternativeBack.url = await convertBlobToBase64((convertedObj as any).alternativeBack.url);
+    }
+
+    // Convert spriteConfig URLs if present
+    if ((convertedObj as any).spriteConfig) {
+      const spriteConfig = { ...(convertedObj as any).spriteConfig };
+      if (spriteConfig.spriteUrl?.startsWith('blob:')) {
+        spriteConfig.spriteUrl = await convertBlobToBase64(spriteConfig.spriteUrl);
+      }
+      if (spriteConfig.cardBackUrl?.startsWith('blob:')) {
+        spriteConfig.cardBackUrl = await convertBlobToBase64(spriteConfig.cardBackUrl);
+      }
+      (convertedObj as any).spriteConfig = spriteConfig;
+    }
+
+    convertedObjects[id] = convertedObj;
+  }
+
+  return convertedObjects;
+};
+
+/**
  * Save the current game state to localStorage with viewport info
  */
-export const saveGameState = (state: GameState): void => {
+export const saveGameState = async (state: GameState): Promise<void> => {
   if (typeof window === 'undefined') return;
 
   try {
+    // Convert blob URLs to base64 before saving
+    const convertedObjects = await convertBlobsInObjects(state.objects);
+
     const storedData: StoredGameState = {
       version: STORAGE_VERSION,
       timestamp: Date.now(),
@@ -34,7 +97,7 @@ export const saveGameState = (state: GameState): void => {
       },
       state: {
         // Save objects (the main game data)
-        objects: state.objects,
+        objects: convertedObjects,
         // Save players
         players: state.players,
         // Save active player ID (so user stays as same role)
@@ -84,9 +147,25 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
       return migrateVersion3(parsed);
     }
 
+    // Version 4 can be loaded directly (will be converted to v5 on next save)
+    if (parsed.version === 4) {
+      const data: StoredGameState = parsed;
+      // Check if state is too old (more than 7 days)
+      const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      if (data.timestamp < weekAgo) {
+        logger.warn('Saved game state is too old, clearing');
+        clearGameState();
+        return null;
+      }
+      const shouldAdapt = !isGuest;
+      return shouldAdapt
+        ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
+        : data.state;
+    }
+
     const data: StoredGameState = parsed;
 
-    // Check version
+    // Check version (now using version 5)
     if (data.version !== STORAGE_VERSION) {
       logger.warn('Game state version mismatch, clearing saved state');
       clearGameState();

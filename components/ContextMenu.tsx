@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight, Plus, Minus } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -11,14 +11,9 @@ interface ContextMenuProps {
   isGM: boolean;
   onAction: (action: string) => void;
   onClose: () => void;
-  allObjects: Record<string, TableObject>; // Added to access deck for card inheritance
-  hideCardActions?: boolean; // Hide layer, lock, pin, clone, delete, rotate, and "move to hand" for cards
-  isSearchWindow?: boolean; // Show additional GM actions in search window
-  // Hand panel scale options
-  showHandScaleOptions?: boolean; // Show scale options at bottom (for cards in hand)
-  cardScale?: number; // Current scale value (0.5 - 2)
-  onScaleIncrease?: () => void; // Handler for scale increase
-  onScaleDecrease?: () => void; // Handler for scale decrease
+  allObjects: Record<string, TableObject>;
+  hideCardActions?: boolean;
+  isSearchWindow?: boolean;
   language?: AppLanguage;
 }
 
@@ -33,7 +28,7 @@ interface MenuItem {
   isSeparator?: boolean;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, showHandScaleOptions, cardScale = 1, onScaleIncrease, onScaleDecrease, language = 'en' }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en' }) => {
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
@@ -360,7 +355,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: 'piles',
       icon: <Layers size={14} />,
       visible: object.type === ItemType.DECK && can('piles') && (object as Deck).piles && (object as Deck).piles!.length > 0,
-      hasSubmenu: true
+      hasSubmenu: true,
+      submenuItems: (object as Deck).piles?.map((pile) => ({
+        label: `${pile.name} (${pile.cardIds.length})`,
+        action: `pile-${pile.id}`,
+        icon: <Layers size={14} />,
+        visible: true
+      })) || []
     },
     {
       label: t({ en: 'Return All', ru: 'Вернуть все' }),
@@ -627,30 +628,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                 </React.Fragment>
             );
         })}
-
-        {/* Hand panel scale options */}
-        {showHandScaleOptions && (
-          <>
-            <div className="h-px bg-slate-700 my-1 mx-2" />
-            <div className="px-3 py-1.5 text-xs text-slate-400 flex items-center justify-between">
-              <button
-                onClick={(e) => { e.stopPropagation(); onScaleIncrease?.(); onClose(); }}
-                className="px-2 py-1 flex items-center gap-1 hover:bg-slate-700 rounded transition-colors text-gray-200"
-                title={t({ en: 'Increase Scale', ru: 'Увеличить масштаб' })}
-              >
-                <Plus size={12} />
-              </button>
-              <span>{Math.round(cardScale * 100)}%</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); onScaleDecrease?.(); onClose(); }}
-                className="px-2 py-1 flex items-center gap-1 hover:bg-slate-700 rounded transition-colors text-gray-200"
-                title={t({ en: 'Decrease Scale', ru: 'Уменьшить масштаб' })}
-              >
-                <Minus size={12} />
-              </button>
-            </div>
-          </>
-        )}
       </div>
     </>,
     document.body

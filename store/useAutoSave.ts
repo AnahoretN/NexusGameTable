@@ -17,8 +17,8 @@ export function useAutoSave(state: GameState, isHost: boolean, debounceMs: numbe
     // Don't save if we're a guest (state comes from host)
     if (!isHost) return;
 
-    const timeoutId = setTimeout(() => {
-      saveGameState(state);
+    const timeoutId = setTimeout(async () => {
+      await saveGameState(state);
       logger.debug('Game state auto-saved');
     }, debounceMs);
 

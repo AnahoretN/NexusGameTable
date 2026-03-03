@@ -30,7 +30,13 @@
       "Bash(npx eslint:*)",
       "Bash(git checkout:*)",
       "Bash(wc:*)",
-      "Bash(grep -rn \"language === ''ru''\" components/*.tsx)"
+      "Bash(grep -rn \"language === ''ru''\" components/*.tsx)",
+      "Bash(grep -o \"input\\\\[type=range\\\\]\" index-*.css)",
+      "Bash(grep -A5 \"input\\\\[type=range\\\\]\" index-*.css)",
+      "Bash(npm run typecheck)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Anahoret\\Documents\\NexusGameTable"
     ]
   }
 }
