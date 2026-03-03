@@ -20,9 +20,9 @@ interface SearchDeckModalProps {
 }
 
 const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = [], language: AppLanguage = 'en') => {
-  // Exclude rotate section button from deck window (but keep individual actions)
+  // Exclude rotate and swing actions from deck window
   const filteredActions = actionButtons.filter(action =>
-    action !== 'rotate'
+    !['rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action)
   );
 
   const t = (key: { en: string; ru: string }): string => key[language] || key.en;
@@ -689,7 +689,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
               <Eye size={14} />
             </button>
           </div>
-          <span className="text-xs text-slate-600">{t({ en: 'Search', ru: 'Поиск' })}</span>
         </div>
       </div>
 

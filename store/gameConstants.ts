@@ -21,7 +21,8 @@ export function getSessionId(): string {
 }
 
 /**
- * Helper function to create a Standard Deck with 54 cards
+ * Helper function to create a Standard Deck with 54 cards using sprite sheet
+ * Sprite sheet: 13 columns x 5 rows = 65 cards, last 10 removed, 55th card is the back
  */
 export function createStandardDeck(): { deck: Deck; cards: Card[] } {
   const deckId = generateUUID();
@@ -30,6 +31,14 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
   const defaultShape = CardShape.POKER;
   const defaultDims = CARD_SHAPE_DIMS[defaultShape];
 
+  // Sprite sheet configuration
+  const spriteUrl = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1768356401/%D0%9C%D0%BE%D0%BD%D1%82%D0%B0%D0%B6%D0%BD%D0%B0%D1%8F_%D0%BE%D0%B1%D0%BB%D0%B0%D1%81%D1%82%D1%8C_1Poker_fdvt8z.png';
+  const columns = 13;
+  const rows = 5;
+  const totalCards = 55; // 65 - 10 (empty cards removed)
+  const cardBackSpriteIndex = 54; // 55th card (0-based index) is the card back
+
+  // Create 54 playing cards (standard deck)
   for (let i = 0; i < 54; i++) {
     const cid = generateUUID();
     cardIds.push(cid);
@@ -41,13 +50,18 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
       height: defaultDims.height,
       rotation: 0,
       name: `Card ${i + 1}`,
-      content: `https://picsum.photos/seed/${cid}/${defaultDims.width}/${defaultDims.height}`,
+      content: '', // Content determined by sprite sheet
       location: CardLocation.DECK,
       faceUp: false,
       deckId: deckId,
       locked: false,
       isOnTable: true,
-      shape: defaultShape
+      shape: defaultShape,
+      // Sprite sheet info
+      spriteIndex: i,
+      spriteUrl,
+      spriteColumns: columns,
+      spriteRows: rows,
     };
     cards.push(card);
   }
@@ -78,6 +92,20 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
     cardDoubleClickAction: undefined,
     cardNamePosition: 'none' as const,
     initialCardCount: cardIds.length,
+    // Sprite sheet configuration
+    spriteConfig: {
+      spriteUrl,
+      cardBackUrl: '', // Card back is in the sprite sheet
+      columns,
+      rows,
+      totalCards,
+      spriteIndex: 0,
+      // Card back from sprite sheet (55th card)
+      cardBackSpriteUrl: spriteUrl,
+      cardBackSpriteIndex: cardBackSpriteIndex,
+      cardBackSpriteColumns: columns,
+      cardBackSpriteRows: rows,
+    },
     piles: [
       {
         id: `${deckId}-discard`,

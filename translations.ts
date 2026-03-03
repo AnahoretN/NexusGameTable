@@ -226,10 +226,11 @@ const translations = {
     hkShiftMarker: 'Move the drawing',
     hkShiftEraser: 'Delete entire drawing',
 
-    // Action Labels
+    // Action Labels (ordered to match AVAILABLE_ACTIONS in ObjectSettingsModal.tsx)
     drawCard: 'Draw Card',
     playTop: 'Play Top',
     mill: 'Mill',
+    millToBottom: 'Move Top to Bottom',
     toBottom: 'To Bottom',
     showTop: 'Show Top',
     topDeckSection: 'Top Deck (section)',
@@ -237,6 +238,7 @@ const translations = {
     shuffleDeck: 'Shuffle',
     piles: 'Piles',
     returnAll: 'Return All',
+    removeFromTable: 'Hide/Show',
     cloneObject: 'Clone Object',
     deleteObject: 'Delete Object',
     flipCard: 'Flip Card',
@@ -250,14 +252,14 @@ const translations = {
     rotateCounterClockwise: 'Rotate Counter-Clockwise',
     swingClockwise: 'Swing Clockwise',
     swingCounterClockwise: 'Swing Counter-Clockwise',
+    // Move To section
     moveToSection: 'Move to... (section)',
     moveToHand: 'Move to Hand',
     moveToTopDeck: 'Move to Top Deck',
     moveToBottomDeck: 'Move to Bottom Deck',
     moveToDiscard: 'Move to Discard',
+    // Other
     showTopCardOnDeck: 'Show Top Card on Deck',
-    removeFromTable: 'Remove from Table',
-    millToBottom: 'Mill to Bottom',
   },
   ru: {
     // App
@@ -410,7 +412,7 @@ const translations = {
     faceUp: 'Лицевой стороной',
     faceDown: 'Рубашкой вверх',
     asGMSees: 'Как видит ГМ',
-    playTopCard: 'Выложить верхнюю карту',
+    playTopCard: 'Сыграть верхнюю',
     showCardName: 'Показать название карты',
     bottom: 'Внизу',
     top: 'Вверху',
@@ -482,10 +484,11 @@ const translations = {
     hkShiftMarker: 'Переместить рисунок',
     hkShiftEraser: 'Удалить весь рисунок',
 
-    // Action Labels
+    // Action Labels (ordered to match AVAILABLE_ACTIONS in ObjectSettingsModal.tsx)
     drawCard: 'Взять карту',
-    playTop: 'Выложить сверху',
+    playTop: 'Сыграть верхнюю',
     mill: 'В сброс',
+    millToBottom: 'Нижнюю в Сброс',
     toBottom: 'Вниз колоды',
     showTop: 'Показать верхнюю',
     topDeckSection: 'Верх колоды (секция)',
@@ -493,6 +496,7 @@ const translations = {
     shuffleDeck: 'Перемешать',
     piles: 'Стопки',
     returnAll: 'Вернуть все',
+    removeFromTable: 'Скрыть/Показать',
     cloneObject: 'Клонировать объект',
     deleteObject: 'Удалить объект',
     flipCard: 'Перевернуть карту',
@@ -501,19 +505,19 @@ const translations = {
     layerDown: 'Слой ниже',
     lockUnlock: 'Заблокировать/Разблокировать',
     pinUnpin: 'Прикрепить/Открепить',
-    rotationSection: 'Вращение (секция)',
-    rotateClockwise: 'Вращать по часовой',
-    rotateCounterClockwise: 'Вращать против часовой',
-    swingClockwise: 'Поворот по часовой',
-    swingCounterClockwise: 'Поворот против часовой',
+    rotationSection: 'Поворот (секция)',
+    rotateClockwise: 'Поворот по часовой',
+    rotateCounterClockwise: 'Поворот против часовой',
+    swingClockwise: 'Качать по часовой',
+    swingCounterClockwise: 'Качать против часовой',
+    // Move To section
     moveToSection: 'Переместить в... (секция)',
     moveToHand: 'В руку',
     moveToTopDeck: 'Наверх колоды',
     moveToBottomDeck: 'Вниз колоды',
     moveToDiscard: 'В сброс',
+    // Other
     showTopCardOnDeck: 'Показывать верхнюю карту на колоде',
-    removeFromTable: 'Удалить со стола',
-    millToBottom: 'В сброс вниз',
   },
 } as const;
 

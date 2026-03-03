@@ -815,15 +815,16 @@ export const HandPanel: React.FC<HandPanelProps> = ({
               width: 16px !important;
             }
           `}</style>
-          <div className="flex-1 hand-panel-scrollbar relative">
-          {/* Purple ring overlay - rendered separately with high z-index */}
-          {(isDragTarget || isCursorOverHand) && (
-            <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
-          )}
-          {/* Inner content container */}
-          <div className="h-full transition-all p-1" onContextMenu={handlePanelContextMenu}>
+          {/* Scroll container with purple ring inside - ring stays fixed at viewport */}
+          <div className="flex-1 hand-panel-scrollbar overflow-y-auto relative">
+            {/* Purple ring overlay - absolute positioned relative to scroll container viewport */}
+            {(isDragTarget || isCursorOverHand) && (
+              <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
+            )}
+            {/* Inner content container */}
+            <div className="p-1" onContextMenu={handlePanelContextMenu}>
           {cards.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500 py-10">
+            <div className="flex flex-col items-center justify-center min-h-[200px] text-slate-500">
               <p className="text-sm">
                 {isViewingOpponentHand
                   ? `${state.players.find(p => p.id === selectedPlayerId)?.name || t({ en: 'Player', ru: 'Игрок' })} ${t({ en: 'has no cards', ru: 'не имеет карт' })}`
