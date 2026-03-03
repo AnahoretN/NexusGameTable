@@ -10,7 +10,6 @@ import { TopDeckModal } from './TopDeckModal';
 import { PanelSettingsModal } from './PanelSettingsModal';
 import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
-import { useHandCardScale } from '../hooks/useHandCardScale';
 import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 import { getTranslation } from '../translations';
 
@@ -645,25 +644,18 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               {/* Language Settings */}
               <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'language')}</h4>
-                <div className="relative">
-                  <select
-                    value={localStorage.getItem('app-language') || 'en'}
-                    onChange={(e) => {
-                      const newLang = e.target.value as AppLanguage;
-                      localStorage.setItem('app-language', newLang);
-                      dispatch({ type: 'UPDATE_LANGUAGE', payload: newLang });
-                    }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm appearance-none cursor-pointer hover:bg-slate-700/50 transition-colors"
-                  >
-                    <option value="en">English</option>
-                    <option value="ru">Русский</option>
-                  </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </div>
+                <select
+                  value={localStorage.getItem('app-language') || 'en'}
+                  onChange={(e) => {
+                    const newLang = e.target.value as AppLanguage;
+                    localStorage.setItem('app-language', newLang);
+                    dispatch({ type: 'UPDATE_LANGUAGE', payload: newLang });
+                  }}
+                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
+                >
+                  <option value="en">English</option>
+                  <option value="ru">Русский</option>
+                </select>
               </div>
 
               {/* Player Permissions */}
@@ -919,9 +911,6 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
 
-  // Get card scale from localStorage with custom hook
-  const { scale: cardScale } = useHandCardScale();
-
   React.useEffect(() => {
     const handleDragMove = (e: Event) => {
       const customEvent = e as CustomEvent<{
@@ -961,7 +950,7 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
 
   return (
     <div ref={containerRef} className="h-full">
-      <HandPanel width={panel.width} isDragTarget={isDragTarget} isCollapsed={isCollapsed} cardScale={cardScale} language={state.language} />
+      <HandPanel width={panel.width} isDragTarget={isDragTarget} isCollapsed={isCollapsed} language={state.language} />
     </div>
   );
 };

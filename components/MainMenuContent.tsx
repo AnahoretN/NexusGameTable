@@ -47,8 +47,8 @@ const convertBlobsInObjects = async (objects: Record<string, TableObject>): Prom
   for (const [id, obj] of Object.entries(objects)) {
     const convertedObj = { ...obj };
 
-    // Convert content (image URL) if it's a blob URL
-    if (convertedObj.content && convertedObj.content.startsWith('blob:')) {
+    // Convert content (image URL) if it's a blob URL (only for objects that have content property)
+    if ('content' in convertedObj && convertedObj.content && convertedObj.content.startsWith('blob:')) {
       convertedObj.content = await convertBlobToBase64(convertedObj.content);
     }
 
@@ -566,7 +566,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           <div className="h-full flex flex-col">
             {/* Hand Panel */}
             <div className="flex-1 overflow-hidden">
-              <HandPanel width={width} isDragTarget={dragOverHand} cardScale={handCardScale} language={lang} />
+              <HandPanel width={width} isDragTarget={dragOverHand} language={lang} />
             </div>
           </div>
         )}

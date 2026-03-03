@@ -27,7 +27,7 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
     { id: 'shuffleDeck', label: getTranslation(language, 'shuffleDeck') },
     { id: 'piles', label: getTranslation(language, 'piles') },
     { id: 'returnAll', label: getTranslation(language, 'returnAll') },
-    { id: 'removeFromTable', label: getTranslation(language, 'removeFromTable') },
+    { id: 'hide', label: getTranslation(language, 'hide') },
     { id: 'clone', label: getTranslation(language, 'cloneObject') },
     { id: 'delete', label: getTranslation(language, 'deleteObject') },
     { id: 'flip', label: getTranslation(language, 'flipCard') },
@@ -121,7 +121,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       .filter(action => {
         // Exclude deck-specific and section actions
         if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-            action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'removeFromTable' ||
+            action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'hide' ||
             action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
             action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
             action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
@@ -334,7 +334,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     if (toSave.type === ItemType.DECK) {
       (toSave as Deck).piles = piles;
       // Normalize card settings - cards can only use card-specific actions, not deck-specific ones
-      const deckOnlyActions = ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'removeFromTable', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'];
+      const deckOnlyActions = ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'hide', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'];
       const cardOnlyActions = allActionIds.filter(id => !deckOnlyActions.includes(id));
 
       let normalizedCardAllowedActions: ContextAction[] | undefined = cardSettings.allowedActions;
@@ -1124,8 +1124,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       if (isCard && ['flip', 'layer', 'layerUp', 'layerDown', 'pin'].includes(action.id)) {
                         return false;
                       }
-                      // Deck-specific actions - only for decks, not cards, tokens, boards, or battlefield cells
-                      if ((isCard || isBoard || isToken || isBattlefieldCell) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      // Deck-specific actions - only for decks, not cards, tokens, or battlefield cells
+                      if ((isCard || isToken || isBattlefieldCell) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'hide', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                        return false;
+                      }
+                      // Board-specific actions - only decks, not boards
+                      if (isBoard && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
@@ -1136,8 +1140,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       if (isCard && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
-                      // 'flip' only applies to cards (not tokens, decks, or battlefield cells)
-                      if (action.id === 'flip' && (isDeck || isToken || isBattlefieldCell)) return false;
+                      // 'flip' only applies to cards (not tokens, decks, boards, or battlefield cells)
+                      if (action.id === 'flip' && (isDeck || isBoard || isToken || isBattlefieldCell)) return false;
                       return true;
                     })
                     .map((action) => {
@@ -1655,7 +1659,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     .filter(action => {
                       // Only show card-applicable actions (exclude deck-specific actions)
                       if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-                          action.id === 'toBottom' || action.id === 'showTop' ||
+                          action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'hide' ||
+                          action.id === 'showTop' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'piles') return false;
                       return true;
@@ -1710,6 +1715,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     .filter(action => {
                       // Only card-applicable actions
                       if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' || action.id === 'toBottom' ||
+                          action.id === 'millToBottom' || action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
                       // Exclude section headers only

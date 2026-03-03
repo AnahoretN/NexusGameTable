@@ -28,7 +28,7 @@ const ACTION_TRANSLATION_KEYS: Record<ButtonAction, string> = {
   topDeck: 'topDeckSection',
   piles: 'piles',
   returnAll: 'returnAll',
-  removeFromTable: 'removeFromTable',
+  hide: 'removeFromTable',
   millToBottom: 'millToBottom',
   showTop: 'showTop',
   // "Move to" actions
@@ -40,8 +40,6 @@ const ACTION_TRANSLATION_KEYS: Record<ButtonAction, string> = {
   rotate: 'rotate',
   layer: 'layer',
   moveTo: 'moveToSection',
-  configure: 'settings',
-  toggleHide: 'hide',
 };
 
 // Base button configuration (styling only)
@@ -67,7 +65,7 @@ export const BUTTON_STYLES: Partial<Record<ButtonAction, { className: string }>>
   topDeck: { className: 'bg-orange-600 hover:bg-orange-500' },
   piles: { className: 'bg-indigo-600 hover:bg-indigo-500' },
   returnAll: { className: 'bg-red-600 hover:bg-red-500' },
-  removeFromTable: { className: 'bg-slate-600 hover:bg-slate-500' },
+  hide: { className: 'bg-slate-600 hover:bg-slate-500' },
   millToBottom: { className: 'bg-teal-600 hover:bg-teal-500' },
   showTop: { className: 'bg-pink-600 hover:bg-pink-500' },
   // "Move to" actions
@@ -101,7 +99,7 @@ export const ButtonIcons = {
   topDeck: () => <Search size={14} />,
   piles: () => <Layers size={14} />,
   returnAll: () => <Undo size={14} />,
-  removeFromTable: () => <Trash2 size={14} />,
+  hide: () => <Trash2 size={14} />,
   millToBottom: () => <Undo size={14} style={{ transform: 'rotate(180deg)' }} />,
   showTop: () => <Eye size={14} />,
   moveTo: () => <CornerDownRight size={14} />,
@@ -184,7 +182,7 @@ export interface CardButtonCallbacks {
 
 /**
  * Get button configs with callbacks for components like HandPanel
- * Excludes rotate/swing actions from hand panel
+ * Excludes rotate/swing actions and "Move to Hand" from hand panel (cards already in hand)
  */
 export function getCardButtonConfigsWithActions(
   actions: ButtonAction[],
@@ -193,13 +191,14 @@ export function getCardButtonConfigsWithActions(
   locked: boolean = false,
   language: AppLanguage = 'en'
 ): CardButtonConfigWithAction[] {
-  // Exclude rotate and swing buttons from hand panel
+  // Exclude rotate, swing, and "Move to Hand" buttons from hand panel
   const filteredActions = actions.filter(action =>
     action !== 'rotate' &&
     action !== 'rotateClockwise' &&
     action !== 'rotateCounterClockwise' &&
     action !== 'swingClockwise' &&
-    action !== 'swingCounterClockwise'
+    action !== 'swingCounterClockwise' &&
+    action !== 'moveToHand'
   );
 
   return filteredActions
@@ -221,9 +220,6 @@ export function getCardButtonConfigsWithActions(
           break;
         case 'clone':
           onAction = callbacks.onClone;
-          break;
-        case 'moveToHand':
-          onAction = callbacks.onMoveToHand;
           break;
         case 'moveToTopDeck':
           onAction = callbacks.onMoveToTopDeck;

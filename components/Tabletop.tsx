@@ -849,11 +849,18 @@ export const Tabletop: React.FC = () => {
           }
         }
         break;
-      case 'removeFromTable':
+      case 'hide':
         // Remove object from table (hide it)
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: { id: obj.id, isOnTable: false }
+        });
+        break;
+      case 'show':
+        // Show hidden object on table
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: obj.id, isOnTable: true }
         });
         break;
       case 'swingClockwise':

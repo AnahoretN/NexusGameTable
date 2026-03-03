@@ -371,6 +371,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       separator: true
     },
     {
+      label: (object as any).isOnTable === false ? t({ en: 'Show', ru: 'Показать' }) : t({ en: 'Hide', ru: 'Скрыть' }),
+      action: (object as any).isOnTable === false ? 'show' : 'hide',
+      icon: (object as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />,
+      visible: can('hide')
+    },
+    {
       label: t({ en: 'Flip', ru: 'Перевернуть' }),
       action: 'flip',
       icon: <Eye size={14} />,
