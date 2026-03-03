@@ -5,6 +5,7 @@ import { Player } from '../types';
 import { logger } from '../utils/logger';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+export type ImageCache = Record<string, string>; // imageId -> base64 data
 
 export interface WaitingForPlayerName {
   hostId: string;
@@ -18,6 +19,7 @@ export interface UsePeerConnectionReturn {
   setPlayerName: (name: string) => void;
   hostConnectionRef: React.RefObject<any>;
   connectionsRef: React.RefObject<any[]>;
+  imageCachesRef: React.RefObject<Map<string, ImageCache>>; // Map<peerId, ImageCache>
 }
 
 /**
@@ -39,12 +41,21 @@ export function usePeerConnection(
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<any[]>([]); // For Host: list of guest connections
   const hostConnectionRef = useRef<any>(null); // For Guest: connection to host
+  const imageCachesRef = useRef<Map<string, ImageCache>>(new Map()); // Track sent images per guest
+  const localImageCacheRef = useRef<ImageCache>({}); // Guest's local image cache
 
   // Central Network Data Handler
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
     if (data.type === 'SYNC_STATE') {
       // Received full state update (Guest receives from Host)
+      // Images in state are now references, will be restored via IMAGE_CACHE
       localDispatch({ type: 'SYNC_STATE', payload: data.payload });
+    } else if (data.type === 'IMAGE_CACHE') {
+      // Received image cache from host (Guest only)
+      const newImages = data.payload;
+      localImageCacheRef.current = { ...localImageCacheRef.current, ...newImages };
+      // Re-dispatch to update state with restored images
+      localDispatch({ type: 'RESTORE_IMAGES', payload: newImages });
     } else if (data.type === 'HELO') {
       // Host received new player info
       const newPlayer = data.payload;
@@ -201,5 +212,6 @@ export function usePeerConnection(
     setPlayerName,
     hostConnectionRef,
     connectionsRef,
+    imageCachesRef,
   };
 }

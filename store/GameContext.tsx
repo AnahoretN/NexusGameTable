@@ -11,6 +11,7 @@ import { GameState, ViewTransform, initialState } from './gameState';
 import { Action } from './gameActions';
 import { useAutoSave } from './useAutoSave';
 import { usePeerConnection } from './usePeerConnection';
+import { restoreImagesFromCache, extractImagesFromState, getNewImages } from '../utils/imageCache';
 
 const GameContext = createContext<{
   state: GameState;
@@ -34,6 +35,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...action.payload, // Merge with payload (only override provided properties)
             activePlayerId: currentActiveId,
             viewTransform: currentViewTransform
+        };
+    }
+    case 'RESTORE_IMAGES': {
+        // Restore images from cache - replace image references with base64 data
+        const newImages = action.payload;
+
+        const restoredObjects: Record<string, TableObject> = {};
+        Object.entries(state.objects).forEach(([id, obj]) => {
+            restoredObjects[id] = restoreImagesFromCache(obj, newImages);
+        });
+
+        return {
+            ...state,
+            objects: restoredObjects
         };
     }
     case 'LOAD_GAME': {
@@ -3352,7 +3367,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [state]);
 
   // Peer.js connection management
-  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, hostConnectionRef, connectionsRef } = usePeerConnection(localDispatch, stateRef);
+  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, hostConnectionRef, connectionsRef, imageCachesRef } = usePeerConnection(localDispatch, stateRef);
 
   // Auto-save game state to localStorage (debounced)
   useAutoSave(state, isHost);
@@ -3629,7 +3644,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Host Broadcast Loop: whenever state changes, send to all guests
   // We use a debounce or throttle in a real app, here we just check if meaningful change occurred
   useEffect(() => {
-      if (isHost && connectionsRef.current && connectionsRef.current.length > 0) {
+      if (isHost && connectionsRef.current && connectionsRef.current.length > 0 && imageCachesRef.current) {
           // Filter out local windows before broadcasting
           const stateForBroadcast = (() => {
               const filteredObjects: Record<string, TableObject> = {};
@@ -3643,10 +3658,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return { ...state, objects: filteredObjects };
           })();
 
-          // Broadcast new state
+          // Extract images and replace with references for each connection
           connectionsRef.current.forEach(conn => {
               if (conn.open) {
-                  conn.send({ type: 'SYNC_STATE', payload: stateForBroadcast });
+                  const peerId = conn.peer;
+                  const existingCache = imageCachesRef.current!.get(peerId) || {};
+
+                  // Extract images to cache and get state with references
+                  const { state: stateWithRefs, imageCache: newCache } = extractImagesFromState(stateForBroadcast, existingCache);
+
+                  // Get only new images (not already sent to this guest)
+                  const newImages = getNewImages(newCache, existingCache);
+
+                  // Send state with image references
+                  conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+
+                  // Send new images separately (only if there are any)
+                  if (Object.keys(newImages).length > 0) {
+                      conn.send({ type: 'IMAGE_CACHE', payload: newImages });
+                      // Update the cache for this guest
+                      imageCachesRef.current!.set(peerId, newCache);
+                  }
               }
           });
       }
