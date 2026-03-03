@@ -3,6 +3,7 @@ import { Peer } from 'peerjs';
 import { Action } from './gameActions';
 import { Player } from '../types';
 import { logger } from '../utils/logger';
+import { extractImagesFromState } from '../utils/imageCache';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type ImageCache = Record<string, string>; // imageId -> base64 data
@@ -164,8 +165,17 @@ export function usePeerConnection(
       conn.on('open', () => {
         connectionsRef.current.push(conn);
 
-        // Send current state to new player
-        conn.send({ type: 'SYNC_STATE', payload: stateRef.current });
+        // Send current state to new player with image references
+        // Also send all images in cache
+        const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
+
+        conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+        if (Object.keys(imageCache).length > 0) {
+          conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+        }
+
+        // Initialize cache for this guest
+        imageCachesRef.current.set(conn.peer, imageCache);
 
         // Listen for data from this guest
         conn.on('data', (data: any) => {

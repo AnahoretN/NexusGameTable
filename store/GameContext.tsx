@@ -3662,20 +3662,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           connectionsRef.current.forEach(conn => {
               if (conn.open) {
                   const peerId = conn.peer;
-                  const existingCache = imageCachesRef.current!.get(peerId) || {};
+                  const existingCache = imageCachesRef.current!.get(peerId);
+                  const isFirstConnection = !existingCache || Object.keys(existingCache).length === 0;
 
                   // Extract images to cache and get state with references
-                  const { state: stateWithRefs, imageCache: newCache } = extractImagesFromState(stateForBroadcast, existingCache);
+                  const { state: stateWithRefs, imageCache: newCache } = extractImagesFromState(stateForBroadcast, existingCache || {});
 
-                  // Get only new images (not already sent to this guest)
-                  const newImages = getNewImages(newCache, existingCache);
+                  // For first connection, send ALL images. For updates, send only new ones.
+                  const imagesToSend = isFirstConnection ? newCache : getNewImages(newCache, existingCache || {});
 
                   // Send state with image references
                   conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
 
-                  // Send new images separately (only if there are any)
-                  if (Object.keys(newImages).length > 0) {
-                      conn.send({ type: 'IMAGE_CACHE', payload: newImages });
+                  // Send images (all images for new connection, only new for existing)
+                  if (Object.keys(imagesToSend).length > 0) {
+                      conn.send({ type: 'IMAGE_CACHE', payload: imagesToSend });
                       // Update the cache for this guest
                       imageCachesRef.current!.set(peerId, newCache);
                   }
