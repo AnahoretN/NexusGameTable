@@ -3,7 +3,7 @@ import { Peer } from 'peerjs';
 import { Action } from './gameActions';
 import { Player } from '../types';
 import { logger } from '../utils/logger';
-import { extractImagesFromState } from '../utils/imageCache';
+import { extractImagesFromState, restoreImagesFromCache } from '../utils/imageCache';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type ImageCache = Record<string, string>; // imageId -> base64 data
@@ -49,11 +49,18 @@ export function usePeerConnection(
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
     if (data.type === 'SYNC_STATE') {
       // Received full state update (Guest receives from Host)
-      // Images in state are now references, will be restored via IMAGE_CACHE
-      localDispatch({ type: 'SYNC_STATE', payload: data.payload });
+      // Images in state are references - restore them from local cache
+      const payloadSize = JSON.stringify(data.payload).length;
+      console.log(`[P2P Debug Guest] Received SYNC_STATE, size: ${payloadSize} chars`);
+
+      // Restore images from local cache before dispatching
+      const restoredState = restoreImagesFromCache(data.payload, localImageCacheRef.current);
+
+      localDispatch({ type: 'SYNC_STATE', payload: restoredState });
     } else if (data.type === 'IMAGE_CACHE') {
       // Received image cache from host (Guest only)
       const newImages = data.payload;
+      console.log(`[P2P Debug Guest] Received IMAGE_CACHE with ${Object.keys(newImages).length} images, total size: ${JSON.stringify(newImages).length} chars`);
       localImageCacheRef.current = { ...localImageCacheRef.current, ...newImages };
       // Re-dispatch to update state with restored images
       localDispatch({ type: 'RESTORE_IMAGES', payload: newImages });

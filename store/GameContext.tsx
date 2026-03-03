@@ -40,11 +40,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'RESTORE_IMAGES': {
         // Restore images from cache - replace image references with base64 data
         const newImages = action.payload;
+        console.log(`[P2P Debug Guest] RESTORE_IMAGES called with ${Object.keys(newImages).length} images`);
+
+        // Check if state has image references
+        const stateJson = JSON.stringify(state.objects);
+        const hasRefs = stateJson.includes('img_ref://');
+        console.log(`[P2P Debug Guest] State has image refs: ${hasRefs}`);
 
         const restoredObjects: Record<string, TableObject> = {};
         Object.entries(state.objects).forEach(([id, obj]) => {
             restoredObjects[id] = restoreImagesFromCache(obj, newImages);
         });
+
+        // Verify restoration
+        const restoredJson = JSON.stringify(restoredObjects);
+        const stillHasRefs = restoredJson.includes('img_ref://');
+        const hasBase64 = restoredJson.includes('data:image/');
+        console.log(`[P2P Debug Guest] After restore - stillHasRefs: ${stillHasRefs}, hasBase64: ${hasBase64}`);
 
         return {
             ...state,
@@ -3655,7 +3667,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   }
                   filteredObjects[id] = obj;
               });
-              return { ...state, objects: filteredObjects };
+              const broadcastState = { ...state, objects: filteredObjects };
+              // Debug: log state size
+              console.log(`[P2P Debug] State for broadcast: ${Object.keys(broadcastState.objects).length} objects, raw size: ${JSON.stringify(broadcastState).length} chars`);
+              return broadcastState;
           })();
 
           // Extract images and replace with references for each connection
@@ -3670,6 +3685,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                   // For first connection, send ALL images. For updates, send only new ones.
                   const imagesToSend = isFirstConnection ? newCache : getNewImages(newCache, existingCache || {});
+
+                  // Debug logging
+                  if (Object.keys(imagesToSend).length > 0) {
+                      console.log(`[P2P Debug] Sending ${Object.keys(imagesToSend).length} images to ${peerId}, total size: ${JSON.stringify(imagesToSend).length} chars`);
+                  }
+
+                  // Debug: Check if state actually has references
+                  const stateJson = JSON.stringify(stateWithRefs);
+                  const hasBase64 = stateJson.includes('data:image/');
+                  const hasRefs = stateJson.includes('img_ref://');
+                  console.log(`[P2P Debug] Sending SYNC_STATE to ${peerId}, size: ${stateJson.length} chars, hasBase64: ${hasBase64}, hasRefs: ${hasRefs}`);
 
                   // Send state with image references
                   conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
