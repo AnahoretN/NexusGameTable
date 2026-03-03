@@ -352,6 +352,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
                       deckSpriteConfig={deck.spriteConfig}
                       deckShowTooltipImage={deck.showTooltipImage}
                       deckTooltipScale={deck.tooltipScale}
+                      language={language}
                     />
 
                     {/* Custom action buttons for Top Deck */}

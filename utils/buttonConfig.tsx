@@ -1,41 +1,80 @@
 import React from 'react';
 import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin, ArrowUp, ArrowDown, CornerDownRight } from 'lucide-react';
-import { ContextAction } from '../types';
+import { ContextAction, AppLanguage } from '../types';
+import { getTranslation } from '../translations';
 
 // Re-export ContextAction for convenience
 export type ButtonAction = ContextAction;
 
+// Mapping from button action to translation key
+const ACTION_TRANSLATION_KEYS: Record<ButtonAction, string> = {
+  flip: 'flip',
+  rotateClockwise: 'rotateClockwise',
+  rotateCounterClockwise: 'rotateCounterClockwise',
+  swingClockwise: 'swingClockwise',
+  swingCounterClockwise: 'swingCounterClockwise',
+  clone: 'cloneObject',
+  delete: 'deleteObject',
+  lock: 'lock',
+  pin: 'pin',
+  layerUp: 'layerUp',
+  layerDown: 'layerDown',
+  draw: 'drawCard',
+  playTopCard: 'playTop',
+  millTopCard: 'mill',
+  toBottom: 'toBottom',
+  shuffleDeck: 'shuffleDeck',
+  searchDeck: 'searchDeck',
+  topDeck: 'topDeckSection',
+  piles: 'piles',
+  returnAll: 'returnAll',
+  removeFromTable: 'removeFromTable',
+  millToBottom: 'millToBottom',
+  showTop: 'showTop',
+  // "Move to" actions
+  moveToHand: 'moveToHand',
+  moveToTopDeck: 'moveToTopDeck',
+  moveToBottomDeck: 'moveToBottomDeck',
+  moveToDiscard: 'moveToDiscard',
+  // Abstract actions (no buttons, but needed for type completeness)
+  rotate: 'rotate',
+  layer: 'layer',
+  moveTo: 'moveToSection',
+  configure: 'settings',
+  toggleHide: 'hide',
+};
+
 // Base button configuration (styling only)
 // Note: Not all ContextAction values have buttons (e.g., 'rotate', 'layer', 'moveTo' are abstract)
-export const BUTTON_STYLES: Partial<Record<ButtonAction, { className: string; title: string }>> = {
-  flip: { className: 'bg-purple-600 hover:bg-purple-500', title: 'Flip' },
-  rotateClockwise: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Rotate Clockwise' },
-  rotateCounterClockwise: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Rotate Counter-Clockwise' },
-  swingClockwise: { className: 'bg-orange-600 hover:bg-orange-500', title: 'Swing Clockwise' },
-  swingCounterClockwise: { className: 'bg-orange-600 hover:bg-orange-500', title: 'Swing Counter-Clockwise' },
-  clone: { className: 'bg-cyan-600 hover:bg-cyan-500', title: 'Clone' },
-  delete: { className: 'bg-red-600 hover:bg-red-500', title: 'Delete' },
-  lock: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Lock' },
-  pin: { className: 'bg-pink-600 hover:bg-pink-500', title: 'Pin/Unpin' },
-  layerUp: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Layer Up' },
-  layerDown: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Layer Down' },
-  draw: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Draw' },
-  playTopCard: { className: 'bg-green-600 hover:bg-green-500', title: 'Play Top' },
-  millTopCard: { className: 'bg-teal-600 hover:bg-teal-500', title: 'Mill' },
-  toBottom: { className: 'bg-yellow-500 hover:bg-yellow-400', title: 'To Bottom' },
-  shuffleDeck: { className: 'bg-purple-600 hover:bg-purple-500', title: 'Shuffle' },
-  searchDeck: { className: 'bg-cyan-600 hover:bg-cyan-500', title: 'Search' },
-  topDeck: { className: 'bg-orange-600 hover:bg-orange-500', title: 'Top Deck' },
-  piles: { className: 'bg-indigo-600 hover:bg-indigo-500', title: 'Piles' },
-  returnAll: { className: 'bg-red-600 hover:bg-red-500', title: 'Return All' },
-  removeFromTable: { className: 'bg-slate-600 hover:bg-slate-500', title: 'Remove From Table' },
-  millToBottom: { className: 'bg-teal-600 hover:bg-teal-500', title: 'Mill to Bottom' },
-  showTop: { className: 'bg-pink-600 hover:bg-pink-500', title: 'Show Top' },
+export const BUTTON_STYLES: Partial<Record<ButtonAction, { className: string }>> = {
+  flip: { className: 'bg-purple-600 hover:bg-purple-500' },
+  rotateClockwise: { className: 'bg-yellow-600 hover:bg-yellow-500' },
+  rotateCounterClockwise: { className: 'bg-yellow-600 hover:bg-yellow-500' },
+  swingClockwise: { className: 'bg-orange-600 hover:bg-orange-500' },
+  swingCounterClockwise: { className: 'bg-orange-600 hover:bg-orange-500' },
+  clone: { className: 'bg-cyan-600 hover:bg-cyan-500' },
+  delete: { className: 'bg-red-600 hover:bg-red-500' },
+  lock: { className: 'bg-yellow-600 hover:bg-yellow-500' },
+  pin: { className: 'bg-pink-600 hover:bg-pink-500' },
+  layerUp: { className: 'bg-blue-600 hover:bg-blue-500' },
+  layerDown: { className: 'bg-blue-600 hover:bg-blue-500' },
+  draw: { className: 'bg-blue-600 hover:bg-blue-500' },
+  playTopCard: { className: 'bg-green-600 hover:bg-green-500' },
+  millTopCard: { className: 'bg-teal-600 hover:bg-teal-500' },
+  toBottom: { className: 'bg-yellow-500 hover:bg-yellow-400' },
+  shuffleDeck: { className: 'bg-purple-600 hover:bg-purple-500' },
+  searchDeck: { className: 'bg-cyan-600 hover:bg-cyan-500' },
+  topDeck: { className: 'bg-orange-600 hover:bg-orange-500' },
+  piles: { className: 'bg-indigo-600 hover:bg-indigo-500' },
+  returnAll: { className: 'bg-red-600 hover:bg-red-500' },
+  removeFromTable: { className: 'bg-slate-600 hover:bg-slate-500' },
+  millToBottom: { className: 'bg-teal-600 hover:bg-teal-500' },
+  showTop: { className: 'bg-pink-600 hover:bg-pink-500' },
   // "Move to" actions
-  moveToHand: { className: 'bg-blue-600 hover:bg-blue-500', title: 'Move to Hand' },
-  moveToTopDeck: { className: 'bg-orange-600 hover:bg-orange-500', title: 'Move to Top Deck' },
-  moveToBottomDeck: { className: 'bg-yellow-600 hover:bg-yellow-500', title: 'Move to Bottom Deck' },
-  moveToDiscard: { className: 'bg-red-600 hover:bg-red-500', title: 'Move to Discard' },
+  moveToHand: { className: 'bg-blue-600 hover:bg-blue-500' },
+  moveToTopDeck: { className: 'bg-orange-600 hover:bg-orange-500' },
+  moveToBottomDeck: { className: 'bg-yellow-600 hover:bg-yellow-500' },
+  moveToDiscard: { className: 'bg-red-600 hover:bg-red-500' },
 };
 
 // Icon factory functions - return appropriate icon based on state
@@ -83,7 +122,8 @@ export interface CardButtonConfig {
 export function getCardButtonConfig(
   action: ButtonAction,
   faceUp: boolean,
-  locked: boolean
+  locked: boolean,
+  language: AppLanguage = 'en'
 ): CardButtonConfig | null {
   const style = BUTTON_STYLES[action as ButtonAction];
   if (!style) return null;
@@ -100,10 +140,23 @@ export function getCardButtonConfig(
     icon = (iconGetter as () => React.ReactNode)();
   }
 
+  // Get translated title
+  let title: string;
+  if (action === 'lock') {
+    title = locked
+      ? getTranslation(language, 'unlock')
+      : getTranslation(language, 'lock');
+  } else if (action === 'pin') {
+    title = getTranslation(language, 'pin');
+  } else {
+    const translationKey = ACTION_TRANSLATION_KEYS[action as ButtonAction];
+    title = translationKey ? getTranslation(language, translationKey as any) : action;
+  }
+
   return {
     action,
     className: style.className,
-    title: action === 'lock' ? (locked ? 'Unlock' : 'Lock') : style.title,
+    title,
     icon,
   };
 }
@@ -131,13 +184,14 @@ export interface CardButtonCallbacks {
 
 /**
  * Get button configs with callbacks for components like HandPanel
- * Excludes rotate/swing actions for hand panels
+ * Excludes rotate/swing actions from hand panel
  */
 export function getCardButtonConfigsWithActions(
   actions: ButtonAction[],
   callbacks: CardButtonCallbacks,
   faceUp: boolean = true,
-  locked: boolean = false
+  locked: boolean = false,
+  language: AppLanguage = 'en'
 ): CardButtonConfigWithAction[] {
   // Exclude rotate and swing buttons from hand panel
   const filteredActions = actions.filter(action =>
@@ -150,7 +204,7 @@ export function getCardButtonConfigsWithActions(
 
   return filteredActions
     .map(action => {
-      const config = getCardButtonConfig(action, faceUp, locked);
+      const config = getCardButtonConfig(action, faceUp, locked, language);
       if (!config) return null;
 
       let onAction: (() => void) | undefined;

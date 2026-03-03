@@ -4,7 +4,7 @@ import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WI
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
 import { loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
-import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, LocalSettings } from '../utils/localSettings';
+import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, clearLocalSettings, LocalSettings } from '../utils/localSettings';
 import { logger } from '../utils/logger';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
@@ -3324,9 +3324,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
     }
     case 'CLEAR_SAVED_STATE': {
-      // Clear the saved state from localStorage
-      clearStorageGameState();
-      return state;
+      // Clear all saved data from localStorage
+      clearStorageGameState(); // Game state
+      clearLocalSettings(); // Local settings (menu position, etc.)
+      localStorage.removeItem('nexus-session-id'); // Session ID
+
+      // Reset to initial state but preserve current language
+      return {
+        ...initialState,
+        language: state.language, // Preserve language setting
+      };
     }
     default:
       return state;
@@ -3487,7 +3494,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       menuY = localSettings.mainMenuPosition.y;
       menuHeight = localSettings.mainMenuSize.height;
 
-      // Update saved X coordinate
+      // Validate and clamp Y position to prevent it from being off-screen
+      const maxY = window.innerHeight - 100; // Leave at least 100px visible
+      if (menuY < 0 || menuY > maxY) {
+        menuY = calculatedPosition.y;
+        localSettings.mainMenuPosition.y = menuY;
+      }
+
+      // Validate height - ensure it's reasonable and not larger than viewport
+      const maxHeight = window.innerHeight - SCROLLBAR_WIDTH;
+      if (menuHeight < 200 || menuHeight > maxHeight) {
+        menuHeight = calculatedPosition.height;
+        localSettings.mainMenuSize.height = menuHeight;
+      }
+
+      // Update saved X coordinate and corrected values
       localSettings.mainMenuPosition.x = menuX;
       localSettings.mainMenuSize.width = menuWidth;
       saveLocalSettings(localSettings);

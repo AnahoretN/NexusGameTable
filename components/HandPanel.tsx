@@ -1,5 +1,6 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType, AppLanguage } from '../types';
 import { Card as CardComponent } from './Card';
@@ -7,14 +8,13 @@ import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
 import { getCardButtonConfigsWithActions } from '../utils/buttonConfig';
 import { MAIN_MENU_WIDTH } from '../constants';
-import { Plus, Minus } from 'lucide-react';
+import { Settings } from 'lucide-react';
+import { useTabCardScale } from '../hooks/useTabCardScale';
 
 interface HandPanelProps {
   width?: number;
-  isDragTarget?: boolean; // When a card from tabletop is being dragged over hand
-  isCollapsed?: boolean; // When true, show only header (height 32px)
-  cardScale?: number; // Scale for card display (0.5 - 2)
-  onCardScaleChange?: (newScale: number) => void; // Callback for scale changes
+  isDragTarget?: boolean;
+  isCollapsed?: boolean;
   language?: AppLanguage;
 }
 
@@ -22,17 +22,20 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   width = MAIN_MENU_WIDTH,
   isDragTarget = false,
   isCollapsed = false,
-  cardScale = 1,
-  onCardScaleChange,
   language = 'en'
 }) => {
   const { state, dispatch } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
+  const scaleMenuRef = useRef<HTMLDivElement>(null);
+  const tabScaleMenuRef = useRef<HTMLDivElement>(null);
 
   const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   // State for selected player hand tab (whose hand we're viewing)
   const [selectedPlayerId, setSelectedPlayerId] = useState(state.activePlayerId);
+
+  // Use per-tab scale hook for the currently selected player
+  const { scale: cardScale, setTabCardScale } = useTabCardScale(selectedPlayerId);
 
   // Get current player info
   const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
@@ -42,6 +45,11 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
   // Context menu state for hand scale (right-click on empty space in hand panel)
   const [scaleMenu, setScaleMenu] = useState<{ x: number; y: number } | null>(null);
+  // Context menu state for tab scale (right-click on tab)
+  const [tabScaleMenu, setTabScaleMenu] = useState<{ x: number; y: number; playerId: string } | null>(null);
+  // Edit mode for percentage input
+  const [isEditingPercentage, setIsEditingPercentage] = useState(false);
+  const [editedPercentage, setEditedPercentage] = useState('');
 
   // Local drag state for reorder
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -261,11 +269,56 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     setContextMenu({ x: e.clientX, y: e.clientY, object: card });
   }, []);
 
+  // Helper function to calculate safe menu position within viewport
+  const getSafeMenuPosition = useCallback((x: number, y: number): { x: number; y: number } => {
+    // Estimated menu dimensions
+    const menuWidth = 280;
+    const menuHeight = 180;
+    const padding = 8;
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let safeX = x;
+    let safeY = y;
+
+    // Adjust horizontal position if menu would go off right edge
+    if (safeX + menuWidth > viewportWidth - padding) {
+      safeX = viewportWidth - menuWidth - padding;
+    }
+
+    // Adjust if menu would go off left edge
+    if (safeX < padding) {
+      safeX = padding;
+    }
+
+    // Adjust vertical position if menu would go off bottom edge
+    if (safeY + menuHeight > viewportHeight - padding) {
+      safeY = viewportHeight - menuHeight - padding;
+    }
+
+    // Adjust if menu would go off top edge
+    if (safeY < padding) {
+      safeY = padding;
+    }
+
+    return { x: safeX, y: safeY };
+  }, []);
+
   // Context menu handler for hand panel empty space (shows scale options)
   const handlePanelContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    setScaleMenu({ x: e.clientX, y: e.clientY });
-  }, []);
+    const safePos = getSafeMenuPosition(e.clientX, e.clientY);
+    setScaleMenu(safePos);
+  }, [getSafeMenuPosition]);
+
+  // Context menu handler for tab right-click (shows tab scale options)
+  const handleTabContextMenu = useCallback((e: React.MouseEvent, playerId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const safePos = getSafeMenuPosition(e.clientX, e.clientY);
+    setTabScaleMenu({ ...safePos, playerId });
+  }, [getSafeMenuPosition]);
 
   // Handle context menu actions for cards
   const handleContextMenuAction = useCallback((action: string) => {
@@ -336,6 +389,16 @@ export const HandPanel: React.FC<HandPanelProps> = ({
         const isHidden = object.hidden === true;
         dispatch({ type: 'UPDATE_OBJECT', payload: { id: object.id, hidden: !isHidden } });
         break;
+      case 'flip':
+        dispatch({ type: 'FLIP_CARD', payload: { cardId: object.id } });
+        break;
+      case 'lock':
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: object.id, locked: !object.locked } });
+        break;
+      case 'pinToViewport':
+      case 'unpinFromViewport':
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: object.id, isPinnedToViewport: action === 'pinToViewport' } });
+        break;
       default:
         // Handle pile-specific move actions
         if (action.startsWith('moveToPile-')) {
@@ -349,24 +412,10 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     setContextMenu(null);
   }, [contextMenu, dispatch, state.objects]);
 
-  // Scale handlers - dispatch custom event for parent component to handle
-  const handleIncreaseScale = useCallback(() => {
-    const newScale = Math.min(2, cardScale + 0.03);
-    window.dispatchEvent(new CustomEvent('hand-card-scale-change', { detail: { newScale } }));
-    if (onCardScaleChange) {
-      onCardScaleChange(newScale);
-    }
-    setScaleMenu(null);
-  }, [cardScale, onCardScaleChange]);
-
-  const handleDecreaseScale = useCallback(() => {
-    const newScale = Math.max(0.5, cardScale - 0.03);
-    window.dispatchEvent(new CustomEvent('hand-card-scale-change', { detail: { newScale } }));
-    if (onCardScaleChange) {
-      onCardScaleChange(newScale);
-    }
-    setScaleMenu(null);
-  }, [cardScale, onCardScaleChange]);
+  // Scale handlers - use per-tab scale
+  const handleScaleChange = useCallback((newScale: number) => {
+    setTabCardScale(newScale);
+  }, [setTabCardScale]);
 
   // Handle card mouse down - start reorder drag or add to cursor slot with Shift or long-press
   // Only works for own hand (not when viewing opponent's hand)
@@ -630,17 +679,54 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     setSelectedPlayerId(state.activePlayerId);
   }, [state.activePlayerId]);
 
+  // Debug: log menu state changes
+  useEffect(() => {
+    if (tabScaleMenu) {
+      console.log('[HandPanel] tabScaleMenu rendered:', tabScaleMenu);
+    }
+  }, [tabScaleMenu]);
+
   // Close menus when clicking outside
   useEffect(() => {
-    const handleClickOutside = () => {
-      setContextMenu(null);
-      setScaleMenu(null);
+    const handleClickOutside = (e: Event) => {
+      const target = e.target as Node;
+
+      // Check if click is inside scale menu
+      if (scaleMenuRef.current && scaleMenuRef.current.contains(target)) {
+        return;
+      }
+
+      // Check if click is inside tab scale menu
+      if (tabScaleMenuRef.current && tabScaleMenuRef.current.contains(target)) {
+        return;
+      }
+
+      // Close context menu (click outside - ContextMenu component handles its own closing)
+      if (contextMenu) {
+        setContextMenu(null);
+      }
+
+      // Close scale menu
+      if (scaleMenu) {
+        setScaleMenu(null);
+      }
+
+      // Close tab scale menu
+      if (tabScaleMenu) {
+        setTabScaleMenu(null);
+      }
     };
-    if (contextMenu || scaleMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+    if (contextMenu || scaleMenu || tabScaleMenu) {
+      // Delay adding listener to avoid immediate closing after contextmenu
+      const timeoutId = setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside);
+      }, 100);
+      return () => {
+        clearTimeout(timeoutId);
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
     }
-  }, [contextMenu, scaleMenu]);
+  }, [contextMenu, scaleMenu, tabScaleMenu]);
 
   return (
     <div
@@ -649,7 +735,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       className="h-full flex flex-col transition-all"
       style={{ width }}
     >
-      {/* Player hand tabs - only show when not collapsed and there are multiple players */}
+      {/* Player hand tabs - show when not collapsed and multiple players exist */}
       {!isCollapsed && state.players.length > 1 && (
         <div className="flex flex-wrap gap-1 px-1 pt-1 pb-0 border-b border-slate-700">
           {state.players.map(player => {
@@ -677,6 +763,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
               <button
                 key={player.id}
                 onClick={() => setSelectedPlayerId(player.id)}
+                onContextMenu={(e) => handleTabContextMenu(e, player.id)}
                 className={`px-2 py-1 text-xs font-medium rounded-t transition-colors relative ${
                   isActive
                     ? isOwnHand
@@ -697,6 +784,26 @@ export const HandPanel: React.FC<HandPanelProps> = ({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Single player header with settings button - show when not collapsed and only one player */}
+      {!isCollapsed && state.players.length === 1 && (
+        <div className="flex items-center justify-between px-2 py-1 border-b border-slate-700">
+          <span className="text-xs text-slate-400">
+            {t({ en: 'My Hand', ru: 'Моя руку' })}
+          </span>
+          <button
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              const safePos = getSafeMenuPosition(rect.left, rect.bottom + 5);
+              setScaleMenu(safePos);
+            }}
+            className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+            title={t({ en: 'Card Scale Settings', ru: 'Настройки масштаба карт' })}
+          >
+            <Settings size={14} />
+          </button>
         </div>
       )}
 
@@ -769,7 +876,9 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                             onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id),
                             onMoveToDiscard: () => handleMoveToDiscard(card.id)
                           },
-                          card.faceUp ?? true
+                          card.faceUp ?? true,
+                          card.locked ?? false,
+                          language
                         );
 
                         const actualIndex = groupOffset + index;
@@ -806,6 +915,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                               deckShowTooltipImage={deck?.showTooltipImage}
                               deckTooltipScale={deck?.tooltipScale}
                               shouldSeeCardFace={!isViewingOpponentHand}
+                              language={language}
                             />
 
                             {!isViewingOpponentHand && buttons.length > 0 && (
@@ -848,39 +958,203 @@ export const HandPanel: React.FC<HandPanelProps> = ({
           onClose={() => setContextMenu(null)}
           allObjects={state.objects}
           hideCardActions={true}
-          showHandScaleOptions={true}
-          cardScale={cardScale}
-          onScaleIncrease={handleIncreaseScale}
-          onScaleDecrease={handleDecreaseScale}
           language={language}
         />
       )}
 
       {/* Scale menu for hand panel (right-click on empty space) */}
-      {scaleMenu && (
+      {scaleMenu && createPortal(
         <div
-          className="fixed z-[99999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[200px]"
+          ref={scaleMenuRef}
+          className="fixed z-[999999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-3 px-3 min-w-[220px]"
           style={{ left: scaleMenu.x, top: scaleMenu.y }}
-          onClick={() => setScaleMenu(null)}
+          onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-1.5 text-xs text-slate-400 border-b border-slate-700 mb-1">
-            {t({ en: 'Hand Card Scale (All Cards)', ru: 'Масштаб карт в руке (все карты)' })}
+          <div className="text-xs text-slate-400 mb-2">
+            {t({ en: 'Hand Card Scale', ru: 'Масштаб карт в руке' })}
           </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleIncreaseScale(); }}
-            className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-700 flex items-center gap-2"
-          >
-            <Plus size={14} />
-            {t({ en: 'Increase Scale', ru: 'Увеличить масштаб' })} ({Math.round(cardScale * 100)}%)
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleDecreaseScale(); }}
-            className="w-full px-3 py-2 text-left text-sm text-white hover:bg-slate-700 flex items-center gap-2"
-          >
-            <Minus size={14} />
-            {t({ en: 'Decrease Scale', ru: 'Уменьшить масштаб' })} ({Math.round(cardScale * 100)}%)
-          </button>
-        </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0.5}
+              max={2}
+              step={0.01}
+              value={cardScale}
+              onChange={(e) => {
+                const newScale = parseFloat(e.target.value);
+                handleScaleChange(newScale);
+              }}
+              className="flex-1 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer slider-input"
+              style={{
+                background: 'linear-gradient(to right, #4a5568, #7c3aed)',
+                borderRadius: '8px'
+              }}
+            />
+            {isEditingPercentage ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={50}
+                  max={200}
+                  value={editedPercentage}
+                  onChange={(e) => setEditedPercentage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const newPercent = parseFloat(editedPercentage);
+                      if (!isNaN(newPercent) && newPercent >= 50 && newPercent <= 200) {
+                        handleScaleChange(newPercent / 100);
+                      }
+                      setIsEditingPercentage(false);
+                    } else if (e.key === 'Escape') {
+                      setIsEditingPercentage(false);
+                    }
+                  }}
+                  onBlur={() => {
+                    const newPercent = parseFloat(editedPercentage);
+                    if (!isNaN(newPercent) && newPercent >= 50 && newPercent <= 200) {
+                      handleScaleChange(newPercent / 100);
+                    }
+                    setIsEditingPercentage(false);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="w-16 bg-slate-700 text-white text-center rounded px-1 py-0.5 text-sm"
+                  autoFocus
+                />
+                <span className="text-xs text-slate-400">%</span>
+              </div>
+            ) : (
+              <span
+                onClick={() => {
+                  setEditedPercentage(String(Math.round(cardScale * 100)));
+                  setIsEditingPercentage(true);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="cursor-pointer hover:bg-slate-700 px-2 py-0.5 rounded text-sm text-white"
+              >
+                {Math.round(cardScale * 100)}%
+              </span>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Tab scale menu (right-click on tab) */}
+      {tabScaleMenu && createPortal(
+        <div
+          ref={tabScaleMenuRef}
+          className="fixed z-[999999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-3 px-3 min-w-[220px]"
+          style={{ left: tabScaleMenu.x, top: tabScaleMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="text-xs text-slate-400 mb-2">
+            {t({ en: 'Tab Scale', ru: 'Масштаб вкладки' })}
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0.5}
+              max={2}
+              step={0.01}
+              value={selectedPlayerId === tabScaleMenu.playerId ? cardScale : 1}
+              onChange={(e) => {
+                const newScale = parseFloat(e.target.value);
+                // If this is the active tab, update directly
+                if (selectedPlayerId === tabScaleMenu.playerId) {
+                  handleScaleChange(newScale);
+                } else {
+                  // Otherwise update scale for that player directly via localStorage
+                  try {
+                    const key = `hand-card-scale-${tabScaleMenu.playerId}`;
+                    localStorage.setItem(key, String(newScale));
+                    window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
+                      detail: { playerId: tabScaleMenu.playerId, newScale }
+                    }));
+                  } catch {
+                    // Ignore localStorage errors
+                  }
+                }
+              }}
+              className="flex-1 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer slider-input"
+              style={{
+                background: 'linear-gradient(to right, #4a5568, #7c3aed)',
+                borderRadius: '8px'
+              }}
+            />
+            {isEditingPercentage ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={50}
+                  max={200}
+                  value={editedPercentage}
+                  onChange={(e) => setEditedPercentage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const newPercent = parseFloat(editedPercentage);
+                      const newScale = newPercent / 100;
+                      if (selectedPlayerId === tabScaleMenu.playerId) {
+                        if (!isNaN(newPercent) && newPercent >= 50 && newPercent <= 200) {
+                          handleScaleChange(newScale);
+                        }
+                      } else {
+                        try {
+                          const key = `hand-card-scale-${tabScaleMenu.playerId}`;
+                          localStorage.setItem(key, String(newScale));
+                          window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
+                            detail: { playerId: tabScaleMenu.playerId, newScale }
+                          }));
+                        } catch {
+                          // Ignore localStorage errors
+                        }
+                      }
+                      setIsEditingPercentage(false);
+                    } else if (e.key === 'Escape') {
+                      setIsEditingPercentage(false);
+                    }
+                  }}
+                  onBlur={() => {
+                    const newPercent = parseFloat(editedPercentage);
+                    const newScale = newPercent / 100;
+                    if (selectedPlayerId === tabScaleMenu.playerId) {
+                      if (!isNaN(newPercent) && newPercent >= 50 && newPercent <= 200) {
+                        handleScaleChange(newScale);
+                      }
+                    } else {
+                      try {
+                        const key = `hand-card-scale-${tabScaleMenu.playerId}`;
+                        localStorage.setItem(key, String(newScale));
+                        window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
+                          detail: { playerId: tabScaleMenu.playerId, newScale }
+                        }));
+                      } catch {
+                        // Ignore localStorage errors
+                      }
+                    }
+                    setIsEditingPercentage(false);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="w-16 bg-slate-700 text-white text-center rounded px-1 py-0.5 text-sm"
+                  autoFocus
+                />
+                <span className="text-xs text-slate-400">%</span>
+              </div>
+            ) : (
+              <span
+                onClick={() => {
+                  const currentScale = selectedPlayerId === tabScaleMenu.playerId ? cardScale : 1;
+                  setEditedPercentage(String(Math.round(currentScale * 100)));
+                  setIsEditingPercentage(true);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="cursor-pointer hover:bg-slate-700 px-2 py-0.5 rounded text-sm text-white"
+              >
+                {Math.round((selectedPlayerId === tabScaleMenu.playerId ? cardScale : 1) * 100)}%
+              </span>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

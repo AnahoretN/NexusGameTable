@@ -74,35 +74,40 @@ export const Tooltip: React.FC<TooltipProps> = ({
   const hasTextContent = text && !showImage;
   const hasContent = hasImageContent || hasTextContent;
 
+  // Calculate tooltip dimensions
+  const tooltipWidth = baseWidth * (scale / 100);
+  const tooltipHeight = tooltipWidth / aspectRatio;
+
   const tooltipContent = isVisible && hasContent && (
     <div
       className="fixed z-[99999] pointer-events-none"
       style={{
         left: position.x + 5,
         top: position.y,
+        // Firefox fix: ensure proper positioning with transforms
+        willChange: 'transform, left, top',
       }}
     >
-      <div className="bg-slate-900/95 border border-slate-600 rounded-lg overflow-hidden shadow-xl">
+      <div
+        className="bg-slate-900/95 border border-slate-600 rounded-lg overflow-hidden shadow-xl"
+        style={{
+          // Firefox fix: explicitly set dimensions to avoid scaling issues
+          minWidth: tooltipWidth,
+          maxWidth: tooltipWidth,
+          minHeight: tooltipHeight,
+          maxHeight: tooltipHeight,
+        }}
+      >
         {hasImageContent && (
-          <div
-            className="block"
+          <img
+            src={imageSrc}
+            alt=""
+            className="block w-full h-full object-cover"
             style={{
-              width: `${baseWidth * (scale / 100)}px`,
-              height: `${baseWidth * (scale / 100) / aspectRatio}px`,
-              backgroundImage: imageSrc ? `url(${imageSrc})` : undefined,
-              backgroundSize: spriteIndex !== undefined && spriteColumns && spriteRows
-                ? `${spriteColumns * 100}% ${spriteRows * 100}%`
-                : 'cover',
-              backgroundPosition: spriteIndex !== undefined && spriteColumns && spriteRows
-                ? (() => {
-                    const col = spriteIndex % spriteColumns;
-                    const row = Math.floor(spriteIndex / spriteColumns);
-                    const colPercent = spriteColumns > 1 ? (col / (spriteColumns - 1)) * 100 : 0;
-                    const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
-                    return `${colPercent}% ${rowPercent}%`;
-                  })()
-                : 'center',
-              backgroundRepeat: 'no-repeat',
+              width: tooltipWidth,
+              height: tooltipHeight,
+              // Use img instead of div with background for better Firefox rendering
+              imageRendering: 'auto',
             }}
           />
         )}

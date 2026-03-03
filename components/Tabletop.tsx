@@ -25,8 +25,8 @@ import { ObjectActionButtons } from './ObjectActionButtons';
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
 
-  // Viewport state
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  // Viewport state (offset is always 0,0 since native scroll handles panning)
+  const offset = useMemo(() => ({ x: 0, y: 0 }), []);
   const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [currentTool, setCurrentTool] = useState<string>('none');
@@ -366,7 +366,7 @@ export const Tabletop: React.FC = () => {
     hoveredPileRef.current = hoveredPileId;
   }, [hoveredPileId]);
 
-  const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragStartRef = useRef<{ x: number; y: number; scrollLeft?: number; scrollTop?: number }>({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleMouseUpRef = useRef<(e?: MouseEvent | React.MouseEvent) => void>(() => {});
@@ -1007,16 +1007,10 @@ export const Tabletop: React.FC = () => {
     // This function only handles dropping on the tabletop (not on decks)
 
     // Not dropping on a deck - drop items on tabletop
-    // Use current viewTransform from state to get accurate offset/zoom
-    const currentOffset = state.viewTransform.offset;
-    const currentZoom = state.viewTransform.zoom;
-
     // Convert screen coordinates to world coordinates
-    // CSS transform is: translate(offset) scale(zoom)
-    // So: screenX = (worldX + offset.x) * zoom
-    // Therefore: worldX = screenX / zoom - offset.x
-    const worldX = clientX / currentZoom - currentOffset.x;
-    const worldY = clientY / currentZoom - currentOffset.y;
+    // CSS transform is: translate(offset) scale(zoom), with offset always (0,0) now
+    const worldX = clientX / zoom - offset.x;
+    const worldY = clientY / zoom - offset.y;
 
     // Add all items from slot back to the game with same offsets as in cursor display
     currentSlot.forEach((item) => {
@@ -1090,7 +1084,7 @@ export const Tabletop: React.FC = () => {
     // Set flag to prevent immediate re-pickup
     justDroppedRef.current = true;
     lastDropTimeRef.current = Date.now();
-  }, [cursorSlot, cursorSlotSource, state.viewTransform.offset.x, state.viewTransform.offset.y, state.viewTransform.zoom, dispatch, getCardSettings]);
+  }, [cursorSlot, cursorSlotSource, offset.x, offset.y, zoom, dispatch, getCardSettings]);
 
   // Listen for drop-cursor-slot-at-position events (from drag-to-place in ToolsPanel)
   useEffect(() => {
@@ -1638,7 +1632,13 @@ export const Tabletop: React.FC = () => {
     if (!id) {
       if (e.button === 0 && e.shiftKey && currentTool !== 'marker') {
         setIsPanning(true);
-        dragStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
+        // Store initial mouse position AND scroll position for direct scroll manipulation
+        dragStartRef.current = {
+          x: e.clientX,
+          y: e.clientY,
+          scrollLeft: scrollContainerRef.current?.scrollLeft || 0,
+          scrollTop: scrollContainerRef.current?.scrollTop || 0
+        };
         return;
       }
 
@@ -1801,12 +1801,17 @@ export const Tabletop: React.FC = () => {
     }
 
     if (isPanning) {
-      const newOffset = {
-        x: e.clientX - dragStartRef.current.x,
-        y: e.clientY - dragStartRef.current.y,
-      };
+      // Direct scrollbar manipulation - synchronized with browser's scroll system
+      const container = scrollContainerRef.current;
+      if (container) {
+        const startRef = dragStartRef.current;
+        const deltaX = e.clientX - startRef.x;
+        const deltaY = e.clientY - startRef.y;
 
-      setOffset(newOffset);
+        // Update scroll position directly (inverse of drag direction)
+        container.scrollLeft = (startRef.scrollLeft || 0) - deltaX;
+        container.scrollTop = (startRef.scrollTop || 0) - deltaY;
+      }
       return;
     }
 
@@ -2417,30 +2422,27 @@ export const Tabletop: React.FC = () => {
   }, []);
 
   // Sync local state from global state when it changes externally (e.g., loading saved games)
-  // Only update if values are significantly different to avoid overwriting user interactions
+  // Note: offset is always kept at (0,0) since we use native scroll for panning now
   React.useEffect(() => {
-    const globalOffset = state.viewTransform.offset;
     const globalZoom = state.viewTransform.zoom;
 
-    // Check if values are different (with small tolerance for floating point)
-    const offsetChanged = Math.abs(globalOffset.x - offset.x) > 1 || Math.abs(globalOffset.y - offset.y) > 1;
+    // Only sync zoom, keep offset at (0,0)
     const zoomChanged = Math.abs(globalZoom - zoom) > 0.01;
 
-    if (offsetChanged || zoomChanged) {
-      setOffset(globalOffset);
+    if (zoomChanged) {
       setZoom(globalZoom);
     }
   }, [state.viewTransform]);
 
-  // Sync offset and zoom changes to global state (preserve current scroll)
+  // Sync zoom changes to global state (preserve current scroll, offset always 0)
   React.useEffect(() => {
     const currentScroll = scrollContainerRef.current?.scrollLeft || 0;
     const currentScrollTop = scrollContainerRef.current?.scrollTop || 0;
     dispatch({
       type: 'UPDATE_VIEW_TRANSFORM',
-      payload: { offset, zoom, scroll: { x: currentScroll, y: currentScrollTop } }
+      payload: { offset: { x: 0, y: 0 }, zoom, scroll: { x: currentScroll, y: currentScrollTop } }
     });
-  }, [offset, zoom, dispatch]);
+  }, [zoom, dispatch]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
       e.preventDefault();
@@ -3562,6 +3564,7 @@ export const Tabletop: React.FC = () => {
                                             break;
                                     }
                                 }}
+                                language={state.language}
                             />
                             </div>
                         </div>
@@ -3902,6 +3905,7 @@ export const Tabletop: React.FC = () => {
             <ObjectSettingsModal
                 object={settingsModalObj}
                 allObjects={state.objects}
+                language={state.language}
                 onClose={() => setSettingsModalObj(null)}
                 onSave={(updatedObj) => {
                     // If updating a deck with sprite config, generate cards from sprite
@@ -3997,6 +4001,7 @@ export const Tabletop: React.FC = () => {
                 objectName={(state.objects[deleteCandidateId] as any)?.name || 'Object'}
                 onConfirm={confirmDelete}
                 onCancel={() => setDeleteCandidateId(null)}
+                language={state.language}
             />
         )}
 

@@ -16,7 +16,7 @@ import { getTranslation } from '../translations';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.3';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.4';
 
 // Support links
 const SUPPORT_LINKS = [
@@ -811,8 +811,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                   onClick={() => {
                     if (confirm(getTranslation(state.language, 'clearCacheConfirm'))) {
                       dispatch({ type: 'CLEAR_SAVED_STATE' });
-                      // Also clear session ID to force generation of new one
-                      localStorage.removeItem('nexus-session-id');
                       // Reload page to start fresh
                       window.location.reload();
                     }

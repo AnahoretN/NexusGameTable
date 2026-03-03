@@ -617,6 +617,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                       deckSpriteConfig={deck.spriteConfig}
                       deckShowTooltipImage={deck.showTooltipImage}
                       deckTooltipScale={deck.tooltipScale}
+                      language={language}
                     />
 
                     {buttons.length > 0 && (
@@ -712,6 +713,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       {settingsModalObj && (
         <ObjectSettingsModal
           object={settingsModalObj}
+          language={language}
           onSave={(updatedObj) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
             setSettingsModalObj(null);

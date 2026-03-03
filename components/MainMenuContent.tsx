@@ -15,6 +15,66 @@ import { generateUUID } from '../utils/uuid';
 import { useDrawingTool } from './ToolsPanel';
 import { SvgTokenShape } from './SvgTokenShape';
 
+/**
+ * Convert blob URL to base64 data URL
+ */
+const convertBlobToBase64 = async (blobUrl: string): Promise<string> => {
+  if (!blobUrl?.startsWith('blob:')) {
+    return blobUrl; // Not a blob URL, return as is
+  }
+
+  try {
+    const response = await fetch(blobUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    logger.warn('Failed to convert blob to base64:', error);
+    return blobUrl; // Return original on error
+  }
+};
+
+/**
+ * Convert all blob URLs in objects to base64 data URLs
+ */
+const convertBlobsInObjects = async (objects: Record<string, TableObject>): Promise<Record<string, TableObject>> => {
+  const convertedObjects: Record<string, TableObject> = {};
+
+  for (const [id, obj] of Object.entries(objects)) {
+    const convertedObj = { ...obj };
+
+    // Convert content (image URL) if it's a blob URL
+    if (convertedObj.content && convertedObj.content.startsWith('blob:')) {
+      convertedObj.content = await convertBlobToBase64(convertedObj.content);
+    }
+
+    // Convert alternativeBack URL if present
+    if ((convertedObj as any).alternativeBack?.url?.startsWith('blob:')) {
+      (convertedObj as any).alternativeBack.url = await convertBlobToBase64((convertedObj as any).alternativeBack.url);
+    }
+
+    // Convert spriteConfig URLs if present
+    if ((convertedObj as any).spriteConfig) {
+      const spriteConfig = { ...(convertedObj as any).spriteConfig };
+      if (spriteConfig.spriteUrl?.startsWith('blob:')) {
+        spriteConfig.spriteUrl = await convertBlobToBase64(spriteConfig.spriteUrl);
+      }
+      if (spriteConfig.cardBackUrl?.startsWith('blob:')) {
+        spriteConfig.cardBackUrl = await convertBlobToBase64(spriteConfig.cardBackUrl);
+      }
+      (convertedObj as any).spriteConfig = spriteConfig;
+    }
+
+    convertedObjects[id] = convertedObj;
+  }
+
+  return convertedObjects;
+};
+
 // Get icon component for object type
 const getTypeIcon = (obj: TableObject): React.ReactElement => {
   switch (obj.type) {
@@ -324,8 +384,12 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     });
   }, [peerId]);
 
-  const handleSaveGame = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
+  const handleSaveGame = async () => {
+    // Convert blob URLs to base64 before saving
+    const convertedObjects = await convertBlobsInObjects(state.objects);
+    const stateToSave = { ...state, objects: convertedObjects };
+
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stateToSave));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
     downloadAnchorNode.setAttribute("download", `nexustable_save_${new Date().toISOString().slice(0, 10)}.json`);
@@ -567,7 +631,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     max="100"
                     value={markerThickness}
                     onChange={(e) => updateMarkerThickness(Number(e.target.value))}
-                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                   />
                   <div className="flex justify-between text-[9px] text-gray-600 mt-1">
                     <span>1px</span>
@@ -588,7 +652,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     max="100"
                     value={markerOpacity}
                     onChange={(e) => updateMarkerOpacity(Number(e.target.value))}
-                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                   />
                   <div className="flex justify-between text-[9px] text-gray-600 mt-1">
                     <span>1%</span>
@@ -769,6 +833,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       {settingsObject && (
         <ObjectSettingsModal
           object={settingsObject}
+          language={lang}
           onClose={() => setSettingsObject(null)}
           onSave={(updatedObj) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
