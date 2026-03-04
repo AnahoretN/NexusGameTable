@@ -6,7 +6,7 @@ import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -15,6 +15,7 @@ import { PlayerNameModal } from './PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
 import { useDrawingTool } from './ToolsPanel';
 import { SvgTokenShape } from './SvgTokenShape';
+import { LayersPanel } from './LayersPanel';
 
 /**
  * Convert blob URL to base64 data URL
@@ -531,7 +532,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               <Hand size={20} />
             </button>
             <button onClick={() => { setActiveTab('tools'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'tools' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
-              <Pen size={20} />
+              <Wrench size={20} />
             </button>
             <button onClick={() => { setActiveTab('chat'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'chat' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
               <MessageSquare size={20} />
@@ -573,126 +574,134 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         )}
 
         {activeTab === 'tools' && (
-          <div className="p-3 space-y-3">
-            {/* Drawing Tools Section */}
-            <div>
-              <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
-              <div className="grid grid-cols-4 gap-2">
-                <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label={translate('Cursor', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="marker" icon={<Pen size={20} />} label={translate('Marker', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label={translate('Eraser', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label={translate('Ruler', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+          <div className="flex flex-col h-full">
+            {/* Upper section - Drawing tools and tokens */}
+            <div className="flex-[3] overflow-y-auto p-3 space-y-3 min-h-0">
+              {/* Drawing Tools Section */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
+                <div className="grid grid-cols-4 gap-2">
+                  <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label={translate('Cursor', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="marker" icon={<Pen size={20} />} label={translate('Marker', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label={translate('Eraser', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label={translate('Ruler', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                </div>
+              </div>
+
+              {/* Marker Settings (shown when marker or eraser is selected) */}
+              {(selectedTool === 'marker' || selectedTool === 'eraser') && (
+                <div className="p-3 bg-slate-800 rounded-lg space-y-3">
+                  <h4 className="text-xs font-bold text-gray-400 uppercase">
+                    {selectedTool === 'marker' ? translate('Marker Settings', language as Locale) : translate('Eraser Settings', language as Locale)}
+                  </h4>
+
+                  {/* Color picker */}
+                  {selectedTool === 'marker' && (
+                    <div>
+                      <label className="block text-[10px] text-gray-400 mb-2">{translate('Color', language as Locale)}</label>
+                      <div className="grid grid-cols-8 gap-1">
+                        {[
+                          // Basic colors (first row)
+                          '#ff0000', '#ff8000', '#ffff00', '#80ff00',
+                          '#00ff00', '#00ff80', '#00ffff', '#0080ff',
+                          '#0000ff', '#8000ff', '#ff00ff', '#ff0080',
+                          // Light/Dark variants
+                          '#ffffff', '#c0c0c0', '#808080', '#404040',
+                          '#000000', '#800000', '#008000', '#000080',
+                          '#808000', '#008080', '#800080', '#ff8080',
+                        ].map((color) => (
+                          <button
+                            key={color}
+                            onClick={() => updateMarkerColor(color)}
+                            className={`w-6 h-6 rounded border transition-all ${
+                              markerColor === color ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'
+                            }`}
+                            style={{ backgroundColor: color }}
+                            title={color}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Thickness slider */}
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-2">
+                      {translate('Size', language as Locale)}: {markerThickness}px
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={markerThickness}
+                      onChange={(e) => updateMarkerThickness(Number(e.target.value))}
+                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                    />
+                    <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                      <span>1px</span>
+                      <span>50px</span>
+                      <span>100px</span>
+                    </div>
+                  </div>
+
+                  {/* Opacity slider - only for marker, not eraser */}
+                  {currentDrawingTool === 'marker' && (
+                    <div>
+                      <label className="block text-[10px] text-gray-400 mb-2">
+                        {translate('Opacity', language as Locale)}: {markerOpacity}%
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value={markerOpacity}
+                        onChange={(e) => updateMarkerOpacity(Number(e.target.value))}
+                        className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                      />
+                      <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                        <span>1%</span>
+                        <span>50%</span>
+                        <span>100%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Token Archetypes Section */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">Tokens</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.values(state.objects)
+                    .filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE)
+                    .map((archetype) => {
+                      // Count token copies for this archetype
+                      const copyCount = Object.values(state.objects).filter(
+                        obj => obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetype.id
+                      ).length;
+                      return (
+                        <TokenTypeCard
+                          key={archetype.id}
+                          archetype={archetype}
+                          copyCount={copyCount}
+                          onSettings={() => dispatch({
+                            type: 'CREATE_WINDOW',
+                            payload: {
+                              windowType: WindowType.OBJECT_SETTINGS,
+                              title: 'Settings: ' + archetype.name,
+                              targetObjectId: archetype.id
+                            }
+                          })}
+                        />
+                      );
+                    })}
+                </div>
               </div>
             </div>
 
-            {/* Marker Settings (shown when marker or eraser is selected) */}
-            {(selectedTool === 'marker' || selectedTool === 'eraser') && (
-              <div className="p-3 bg-slate-800 rounded-lg space-y-3">
-                <h4 className="text-xs font-bold text-gray-400 uppercase">
-                  {selectedTool === 'marker' ? translate('Marker Settings', language as Locale) : translate('Eraser Settings', language as Locale)}
-                </h4>
-
-                {/* Color picker */}
-                {selectedTool === 'marker' && (
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-2">{translate('Color', language as Locale)}</label>
-                    <div className="grid grid-cols-8 gap-1">
-                      {[
-                        // Basic colors (first row)
-                        '#ff0000', '#ff8000', '#ffff00', '#80ff00',
-                        '#00ff00', '#00ff80', '#00ffff', '#0080ff',
-                        '#0000ff', '#8000ff', '#ff00ff', '#ff0080',
-                        // Light/Dark variants
-                        '#ffffff', '#c0c0c0', '#808080', '#404040',
-                        '#000000', '#800000', '#008000', '#000080',
-                        '#808000', '#008080', '#800080', '#ff8080',
-                      ].map((color) => (
-                        <button
-                          key={color}
-                          onClick={() => updateMarkerColor(color)}
-                          className={`w-6 h-6 rounded border transition-all ${
-                            markerColor === color ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'
-                          }`}
-                          style={{ backgroundColor: color }}
-                          title={color}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Thickness slider */}
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-2">
-                    {translate('Size', language as Locale)}: {markerThickness}px
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={markerThickness}
-                    onChange={(e) => updateMarkerThickness(Number(e.target.value))}
-                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-600 mt-1">
-                    <span>1px</span>
-                    <span>50px</span>
-                    <span>100px</span>
-                  </div>
-                </div>
-
-                {/* Opacity slider - only for marker, not eraser */}
-                {currentDrawingTool === 'marker' && (
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-2">
-                    {translate('Opacity', language as Locale)}: {markerOpacity}%
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={markerOpacity}
-                    onChange={(e) => updateMarkerOpacity(Number(e.target.value))}
-                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-600 mt-1">
-                    <span>1%</span>
-                    <span>50%</span>
-                    <span>100%</span>
-                  </div>
-                </div>
-                )}
-              </div>
-            )}
-
-            {/* Token Archetypes Section */}
-            <div>
-              <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">Tokens</h4>
-              <div className="grid grid-cols-3 gap-2">
-                {Object.values(state.objects)
-                  .filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE)
-                  .map((archetype) => {
-                    // Count token copies for this archetype
-                    const copyCount = Object.values(state.objects).filter(
-                      obj => obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetype.id
-                    ).length;
-                    return (
-                      <TokenTypeCard
-                        key={archetype.id}
-                        archetype={archetype}
-                        copyCount={copyCount}
-                        onSettings={() => dispatch({
-                          type: 'CREATE_WINDOW',
-                          payload: {
-                            windowType: WindowType.OBJECT_SETTINGS,
-                            title: 'Settings: ' + archetype.name,
-                            targetObjectId: archetype.id
-                          }
-                        })}
-                      />
-                    );
-                  })}
-              </div>
+            {/* Lower section - Layers panel */}
+            <div className="flex-[2] border-t border-slate-700 min-h-0">
+              <LayersPanel language={language as Locale} />
             </div>
           </div>
         )}
@@ -970,8 +979,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardOrientation: CardOrientation.VERTICAL,
           cardWidth: DEFAULT_DECK_WIDTH,
           cardHeight: DEFAULT_DECK_HEIGHT,
-          cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
-          cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'delete', 'clone', 'lock', 'pin', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
+          cardAllowedActions: undefined, // undefined = all actions allowed for players
+          cardAllowedActionsForGM: undefined, // undefined = all actions allowed for GM
           cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
           cardSingleClickAction: undefined,
           cardDoubleClickAction: undefined,
@@ -979,7 +988,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           // Deck actions (for the deck itself, not cards)
           actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
           allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
-          allowedActionsForGM: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
+          allowedActionsForGM: undefined, // undefined = all actions allowed for GM
         };
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;
@@ -1023,8 +1032,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardOrientation: CardOrientation.VERTICAL,
           cardWidth: hexWidth,
           cardHeight: hexHeight,
-          cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
-          cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'delete', 'clone', 'lock', 'pin', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
+          cardAllowedActions: undefined, // undefined = all actions allowed for players
+          cardAllowedActionsForGM: undefined, // undefined = all actions allowed for GM
           cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
           cardSingleClickAction: undefined,
           cardDoubleClickAction: undefined,
@@ -1032,7 +1041,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           // Deck actions (for the deck itself, not cards)
           actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
           allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
-          allowedActionsForGM: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
+          allowedActionsForGM: undefined, // undefined = all actions allowed for GM
         };
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;

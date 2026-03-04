@@ -1,6 +1,9 @@
 
 import { Coordinates, CardShape } from './types';
 
+// Virtual Units (vu) - Game world size independent of screen pixels
+export const WORLD_SIZE_VU = 5000; // Game world is 5000×5000 vu
+
 export const CARD_WIDTH = 120;
 export const CARD_HEIGHT = 168;
 export const TOKEN_SIZE = 80;

@@ -161,6 +161,7 @@ export interface GameItem {
   singleClickAction?: ClickAction; // Action to perform on single click
   doubleClickAction?: ClickAction; // Action to perform on double click
   zIndex?: number; // Visual layering order
+  hyperscaleLayerId?: string; // ID of hyperscale layer this object belongs to (undefined = default "tokens" layer)
   baseRotation?: number; // Base rotation for swing actions (undefined = current rotation is base)
   // Viewport pinning - when true, object stays fixed on screen regardless of camera movement
   isPinnedToViewport?: boolean;
@@ -367,6 +368,22 @@ export interface PlayerPermissions {
   hideObjects: boolean;  // Can show/hide objects via eye icon
 }
 
+// Hyperscale layer system - higher level organization above regular z-index
+// Objects in lower hyperscale layers can never appear above objects in higher hyperscale layers
+export interface HyperscaleLayer {
+  id: string;
+  name: string;
+  minZIndex: number;  // Minimum z-index for this layer
+  maxZIndex: number;  // Maximum z-index for this layer
+  color: string;       // Display color in UI
+  // GM-only settings
+  playerCanSelect: boolean;  // Can players select this layer in Layers panel
+  playerCanView: boolean;    // Can players see this layer in context menu
+  individualPosition: boolean;  // Objects shared, but position is local per player (host knows for saving)
+  individualObjects: boolean;    // Layer is completely local - objects and positions individual per player (host knows for saving)
+  order: number;       // Display order (lower = higher priority in list)
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -400,6 +417,7 @@ export enum WindowType {
   OBJECT_SETTINGS = 'OBJECT_SETTINGS',
   DELETE_CONFIRM = 'DELETE_CONFIRM',
   TOP_DECK = 'TOP_DECK',
+  HYPERSCALE_LAYER_SETTINGS = 'HYPERSCALE_LAYER_SETTINGS',
 }
 
 // Base interface for all UI objects (panels and windows)
@@ -413,6 +431,7 @@ export interface UIObject {
   height: number;
   rotation: number;
   zIndex?: number;
+  hyperscaleLayerId?: string; // ID of hyperscale layer this object belongs to
   locked?: boolean;
   minimized?: boolean;
   visible: boolean; // Can be hidden/closed
@@ -466,6 +485,8 @@ export interface WindowObject extends UIObject {
   title: string;
   // Optional: target object ID this window operates on
   targetObjectId?: string;
+  // Optional: target hyperscale layer ID this window operates on
+  targetLayerId?: string;
 }
 
 // Undo/History system types

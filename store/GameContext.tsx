@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
-import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage } from '../types';
+import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
@@ -12,6 +12,7 @@ import { Action } from './gameActions';
 import { useAutoSave } from './useAutoSave';
 import { usePeerConnection } from './usePeerConnection';
 import { restoreImagesFromCache, extractImagesFromState, getNewImages } from '../utils/imageCache';
+import { calculatePixelsPerVU } from '../utils/vuSystem';
 
 const GameContext = createContext<{
   state: GameState;
@@ -259,10 +260,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Migrate viewTransform
         const payloadViewTransform = action.payload.viewTransform;
-        const viewTransform: ViewTransform = payloadViewTransform || {
-            offset: { x: 0, y: 0 },
-            zoom: 0.8,
-            scroll: { x: 0, y: 0 }
+        const viewTransform: ViewTransform = {
+            offset: payloadViewTransform?.offset || { x: 0, y: 0 },
+            zoom: payloadViewTransform?.zoom || 0.8,
+            scroll: payloadViewTransform?.scroll || { x: 0, y: 0 },
+            pixelsPerVU: payloadViewTransform?.pixelsPerVU || calculatePixelsPerVU(window.innerWidth, window.innerHeight)
         };
 
         // Ensure players array has required properties
@@ -343,15 +345,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const isBoard = action.payload.type === ItemType.BOARD;
       const isDeck = action.payload.type === ItemType.DECK;
       const isArchetype = action.payload.type === ItemType.TOKEN_TYPE;
-      const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
-      const currentMaxZ = allZ.length ? Math.max(...allZ) : 0;
-      // Decks get low z-index so they don't interfere with dragging cards
-      // Boards get -100, decks get 0, archetypes get -50 (for Tools panel), other objects get currentMaxZ + 1
-      const defaultZ = isBoard ? -100 : (isDeck ? 0 : (isArchetype ? -50 : (currentMaxZ + 1)));
+      const isToken = action.payload.type === ItemType.TOKEN;
+      const isCard = action.payload.type === ItemType.CARD;
+      const isCounter = action.payload.type === ItemType.COUNTER;
+      const isRandomizer = action.payload.type === ItemType.RANDOMIZER;
+      const isDice = action.payload.type === ItemType.DICE_OBJECT;
+      const isPanel = action.payload.type === ItemType.PANEL;
 
       const newObj = {
           ...action.payload,
-          zIndex: action.payload.zIndex ?? defaultZ, // Don't override existing zIndex
       } as any;
       const payload = action.payload as any;
       if (payload.isOnTable !== undefined) {
@@ -359,6 +361,56 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       } else {
           // Archetypes are hidden from table by default (shown in Tools panel)
           newObj.isOnTable = isArchetype ? false : true;
+      }
+
+      // Set hyperscaleLayerId if not already set
+      if (!newObj.hyperscaleLayerId) {
+        // Counters, randomizers, dice, and panels go to 'interface' layer if it exists
+        const preferInterface = isCounter || isRandomizer || isDice || isPanel;
+        // Decks go to 'cards' layer if it exists
+        const preferCards = isDeck;
+        // Tokens and cards being created: use 'tokens' layer if it exists
+        const preferTokens = isToken || isCard;
+
+        if (preferInterface && state.hyperscaleLayers.some(l => l.id === 'interface')) {
+          newObj.hyperscaleLayerId = 'interface';
+        } else if (preferCards && state.hyperscaleLayers.some(l => l.id === 'cards')) {
+          newObj.hyperscaleLayerId = 'cards';
+        } else if (preferTokens && state.hyperscaleLayers.some(l => l.id === 'tokens')) {
+          newObj.hyperscaleLayerId = 'tokens';
+        } else if (state.selectedHyperscaleLayerIds.length > 0) {
+          const selectedLayers = state.hyperscaleLayers.filter(l =>
+            state.selectedHyperscaleLayerIds.includes(l.id)
+          );
+          // Sort by maxZIndex descending to get the highest layer
+          selectedLayers.sort((a, b) => b.maxZIndex - a.maxZIndex);
+          newObj.hyperscaleLayerId = selectedLayers[0].id;
+        } else {
+          // Default to 'tokens' layer if nothing is selected
+          newObj.hyperscaleLayerId = 'tokens';
+        }
+      }
+
+      // Now calculate zIndex within the hyperscale layer's bounds
+      const layer = state.hyperscaleLayers.find(l => l.id === newObj.hyperscaleLayerId);
+      const minZ = layer?.minZIndex ?? 1;
+      const maxZ = layer?.maxZIndex ?? 10000;
+
+      // Get all objects in the same layer to find max zIndex
+      const layerObjects = Object.values(state.objects).filter(o =>
+        o.hyperscaleLayerId === newObj.hyperscaleLayerId
+      );
+      const layerZ = layerObjects.map(o => o.zIndex || 0);
+      const currentMaxZInLayer = layerZ.length ? Math.max(...layerZ) : minZ;
+
+      // Set zIndex: use provided value if within bounds, otherwise calculate default
+      if (action.payload.zIndex !== undefined && action.payload.zIndex >= minZ && action.payload.zIndex <= maxZ) {
+        newObj.zIndex = action.payload.zIndex;
+      } else {
+        // Default zIndex within layer bounds
+        // Boards get minZ, decks get minZ + 1, archetypes get minZ - 1 (hidden), others get currentMaxZInLayer + 1
+        const defaultZ = isBoard ? minZ : (isDeck ? minZ + 1 : (isArchetype ? minZ - 1 : Math.min(currentMaxZInLayer + 1, maxZ)));
+        newObj.zIndex = defaultZ;
       }
 
       // Migrate old decks without baseCardIds
@@ -377,10 +429,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       const updatedObj = { ...obj, ...action.payload } as TableObject;
 
-      // Ensure decks don't have excessively high z-index that interferes with card dragging
-      // Cards use zIndex 9999 when dragging, so decks should stay below that
-      if (updatedObj.type === ItemType.DECK && (updatedObj.zIndex === undefined || updatedObj.zIndex > 100)) {
-        updatedObj.zIndex = 0;
+      // Clamp zIndex to hyperscale layer bounds
+      const layerId = updatedObj.hyperscaleLayerId || obj.hyperscaleLayerId || 'tokens';
+      const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+      if (updatedObj.zIndex !== undefined) {
+        // Use layer bounds or defaults if layer not found
+        const minZ = layer?.minZIndex ?? (layerId === 'boards' ? 1 : layerId === 'cards' ? 1001 : layerId === 'tokens' ? 3001 : layerId === 'interface' ? 9001 : 1);
+        const maxZ = layer?.maxZIndex ?? (layerId === 'boards' ? 1000 : layerId === 'cards' ? 3000 : layerId === 'tokens' ? 6000 : layerId === 'interface' ? 10000 : 10000);
+        // Clamp zIndex to layer bounds
+        if (updatedObj.zIndex < minZ) {
+          updatedObj.zIndex = minZ;
+        } else if (updatedObj.zIndex > maxZ) {
+          updatedObj.zIndex = maxZ;
+        }
       }
 
       const newObjects = { ...state.objects, [action.payload.id]: updatedObj };
@@ -813,6 +874,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const card = state.objects[action.payload.cardId] as Card;
         if (!card) return state;
 
+        // For cards played to table: use 'cards' layer if it exists
+        let hyperscaleLayerId = 'cards';
+        if (!state.hyperscaleLayers.some(l => l.id === 'cards')) {
+          // Fall back to deck's layer if cards doesn't exist
+          hyperscaleLayerId = (card as any).hyperscaleLayerId;
+          if (!hyperscaleLayerId && card.deckId) {
+              const deck = state.objects[card.deckId] as Deck;
+              if (deck) {
+                  hyperscaleLayerId = (deck as any).hyperscaleLayerId;
+              }
+          }
+        }
+
         // Add to general history (max 25)
         const historyEntry: GeneralHistoryEntry = {
             type: 'card-played',
@@ -824,8 +898,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
-        const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
-        const maxZ = allZ.length ? Math.max(...allZ) : 0;
+        // Get max zIndex within the card's hyperscale layer
+        const layer = state.hyperscaleLayers.find(l => l.id === hyperscaleLayerId);
+        const layerMinZ = layer?.minZIndex ?? 1;
+        const layerMaxZ = layer?.maxZIndex ?? 10000;
+        const layerObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === hyperscaleLayerId);
+        const layerZ = layerObjects.map(o => o.zIndex || 0);
+        const maxZInLayer = layerZ.length ? Math.max(...layerZ) : layerMinZ;
+        const cardZ = Math.min(maxZInLayer + 1, layerMaxZ);
+
         return {
             ...state,
             objects: {
@@ -837,7 +918,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     y: action.payload.y,
                     ownerId: undefined,
                     isOnTable: true,
-                    zIndex: maxZ + 1
+                    zIndex: cardZ,
+                    ...(hyperscaleLayerId && { hyperscaleLayerId }),
                 }
             },
             undo: { ...state.undo, generalHistory: newGeneralHistory },
@@ -899,14 +981,27 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             const deck = state.objects[pendingPlayTop.deckId] as Deck;
             if (!deck) return state;
 
+            // Get hyperscale layer from parent deck
+            const deckHyperscaleLayerId = deck.hyperscaleLayerId || 'cards';
+            const layer = state.hyperscaleLayers.find(l => l.id === deckHyperscaleLayerId);
+            const minZ = layer?.minZIndex ?? 1001;
+            const maxZ = layer?.maxZIndex ?? 3000;
+
+            // Clamp zIndex to layer bounds
+            let cardZ = card.zIndex ?? minZ;
+            if (action.payload.zIndex !== undefined) {
+              cardZ = Math.max(minZ, Math.min(action.payload.zIndex, maxZ));
+            }
+
             const updatedCard: Card = {
                 ...card,
                 x: action.payload.x,
                 y: action.payload.y,
-                ...(action.payload.zIndex !== undefined && { zIndex: action.payload.zIndex }),
+                zIndex: cardZ,
                 inCursorSlot: false,
                 location: CardLocation.TABLE,
                 isOnTable: true,
+                hyperscaleLayerId: deckHyperscaleLayerId,
                 // Clear the pending data
                 __pendingPlayTop: undefined,
             };
@@ -922,27 +1017,50 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             };
             const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
+            // Auto-select the deck's hyperscale layer if not already selected
+            const newSelectedLayers = state.selectedHyperscaleLayerIds.includes(deckHyperscaleLayerId)
+                ? state.selectedHyperscaleLayerIds
+                : [...state.selectedHyperscaleLayerIds, deckHyperscaleLayerId];
+
             return {
                 ...state,
                 objects: { ...state.objects, [obj.id]: updatedCard },
                 undo: { ...state.undo, generalHistory: newGeneralHistory },
+                selectedHyperscaleLayerIds: newSelectedLayers,
             };
         }
 
         // Handle token drop (simpler than cards - no location/deck tracking)
         if (obj.type === ItemType.TOKEN || obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER) {
+            const tokenLayer = obj.hyperscaleLayerId || 'tokens';
+            const layer = state.hyperscaleLayers.find(l => l.id === tokenLayer);
+            const minZ = layer?.minZIndex ?? 3001;
+            const maxZ = layer?.maxZIndex ?? 6000;
+
+            // Clamp zIndex to layer bounds
+            let tokenZ = obj.zIndex ?? minZ;
+            if (action.payload.zIndex !== undefined) {
+              tokenZ = Math.max(minZ, Math.min(action.payload.zIndex, maxZ));
+            }
+
             const updatedObj: TableObject = {
                 ...obj,
                 x: action.payload.x,
                 y: action.payload.y,
-                ...(action.payload.zIndex !== undefined && { zIndex: action.payload.zIndex }),
+                zIndex: tokenZ,
                 inCursorSlot: false,
                 isOnTable: true,
             };
 
+            // Auto-select the token's hyperscale layer if not already selected
+            const newSelectedLayers = state.selectedHyperscaleLayerIds.includes(tokenLayer)
+                ? state.selectedHyperscaleLayerIds
+                : [...state.selectedHyperscaleLayerIds, tokenLayer];
+
             return {
                 ...state,
                 objects: { ...state.objects, [obj.id]: updatedObj },
+                selectedHyperscaleLayerIds: newSelectedLayers,
             };
         }
 
@@ -997,12 +1115,33 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             }
         }
 
+        // For cards, get hyperscale layer from parent deck
+        let hyperscaleLayerId = obj.hyperscaleLayerId;
+        if (obj.type === ItemType.CARD && previousDeckId) {
+            const deck = state.objects[previousDeckId] as Deck;
+            if (deck) {
+                hyperscaleLayerId = deck.hyperscaleLayerId || 'cards';
+            }
+        }
+
+        // Clamp zIndex to hyperscale layer bounds
+        const layerId = hyperscaleLayerId || (obj.type === ItemType.CARD ? 'cards' : 'tokens');
+        const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+        const minZ = layer?.minZIndex ?? (obj.type === ItemType.CARD ? 1001 : 3001);
+        const maxZ = layer?.maxZIndex ?? (obj.type === ItemType.CARD ? 3000 : 6000);
+
+        let objZ = obj.zIndex ?? minZ;
+        if (action.payload.zIndex !== undefined) {
+          objZ = Math.max(minZ, Math.min(action.payload.zIndex, maxZ));
+        }
+
         const updatedObj: TableObject = {
             ...obj,
             x: action.payload.x,
             y: action.payload.y,
-            ...(action.payload.zIndex !== undefined && { zIndex: action.payload.zIndex }),
+            zIndex: objZ,
             inCursorSlot: false,
+            ...(hyperscaleLayerId && { hyperscaleLayerId }),
         };
 
         // For cards, also update location to TABLE
@@ -1029,10 +1168,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
+        // Auto-select the object's hyperscale layer if not already selected
+        const objLayer = hyperscaleLayerId || (obj.type === ItemType.CARD ? 'cards' : 'tokens');
+        const newSelectedLayers = state.selectedHyperscaleLayerIds.includes(objLayer)
+            ? state.selectedHyperscaleLayerIds
+            : [...state.selectedHyperscaleLayerIds, objLayer];
+
         return {
             ...state,
             objects: { ...state.objects, [obj.id]: updatedObj },
             undo: { ...state.undo, generalHistory: newGeneralHistory },
+            selectedHyperscaleLayerIds: newSelectedLayers,
         };
     }
     case 'SHUFFLE_DECK': {
@@ -1230,8 +1376,22 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
         const newId = generateUUID();
-        const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
-        const maxZ = allZ.length ? Math.max(...allZ) : 0;
+
+        // For token copies: use 'tokens' layer if it exists
+        let hyperscaleLayerId = obj.hyperscaleLayerId;
+        if (obj.type === ItemType.TOKEN && state.hyperscaleLayers.some(l => l.id === 'tokens')) {
+          hyperscaleLayerId = 'tokens';
+        }
+
+        // Get max zIndex within the object's hyperscale layer
+        const layer = state.hyperscaleLayers.find(l => l.id === hyperscaleLayerId);
+        const layerMinZ = layer?.minZIndex ?? 1;
+        const layerMaxZ = layer?.maxZIndex ?? 10000;
+        const layerObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === hyperscaleLayerId);
+        const layerZ = layerObjects.map(o => o.zIndex || 0);
+        const maxZInLayer = layerZ.length ? Math.max(...layerZ) : layerMinZ;
+        const newZ = Math.min(maxZInLayer + 1, layerMaxZ);
+
         const clonedObj: any = {
             ...obj,
             id: newId,
@@ -1240,7 +1400,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             name: `${obj.name} (Copy)`,
             locked: false,
             isOnTable: true,
-            zIndex: maxZ + 1
+            zIndex: newZ,
+            hyperscaleLayerId,
         };
         if (clonedObj.type === ItemType.DECK) {
             clonedObj.cardIds = [];
@@ -1653,15 +1814,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'MOVE_LAYER_UP': {
         const obj = state.objects[action.payload.id];
         if (!obj) return state;
-        const sortedObjects = Object.values(state.objects).sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+        // Get object's hyperscale layer bounds
+        const layerId = obj.hyperscaleLayerId || 'tokens';
+        const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+        const maxZ = layer?.maxZIndex ?? 10000;
+
+        // Only sort objects within the same hyperscale layer
+        const layerObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === layerId);
+        const sortedObjects = layerObjects.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
         const index = sortedObjects.findIndex(o => o.id === obj.id);
         if (index === -1 || index === sortedObjects.length - 1) return state;
         const nextObj = sortedObjects[index + 1];
         const currentZ = obj.zIndex || 0;
         const nextZ = nextObj.zIndex || 0;
-        let newCurrentZ = nextZ;
+        let newCurrentZ = Math.min(nextZ, maxZ);
         let newNextZ = currentZ;
-        if (newCurrentZ <= newNextZ) { newCurrentZ = newNextZ + 1; }
+        if (newCurrentZ <= newNextZ) { newCurrentZ = Math.min(newNextZ + 1, maxZ); }
 
         // Add to general history
         const historyEntry: GeneralHistoryEntry = {
@@ -1683,7 +1852,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'MOVE_LAYER_DOWN': {
         const obj = state.objects[action.payload.id];
         if (!obj) return state;
-        const sortedObjects = Object.values(state.objects).sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+        // Get object's hyperscale layer bounds
+        const layerId = obj.hyperscaleLayerId || 'tokens';
+        const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+        const minZ = layer?.minZIndex ?? 1;
+
+        // Only sort objects within the same hyperscale layer
+        const layerObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === layerId);
+        const sortedObjects = layerObjects.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
         const index = sortedObjects.findIndex(o => o.id === obj.id);
         if (index <= 0) return state;
         const prevObj = sortedObjects[index - 1];
@@ -1692,9 +1869,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         if (isPrevBoard && !isCurrentBoard) return state;
         const currentZ = obj.zIndex || 0;
         const prevZ = prevObj.zIndex || 0;
-        let newCurrentZ = prevZ;
+        let newCurrentZ = Math.max(prevZ, minZ);
         let newPrevZ = currentZ;
-        if (newPrevZ >= newCurrentZ) { newPrevZ = newCurrentZ + 1; }
+        if (newPrevZ >= newCurrentZ) { newPrevZ = Math.max(newCurrentZ + 1, minZ); }
 
         // Add to general history
         const historyEntry: GeneralHistoryEntry = {
@@ -1715,6 +1892,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     }
     case 'UPDATE_VIEW_TRANSFORM': {
       return { ...state, viewTransform: action.payload };
+    }
+    case 'SET_PIXELS_PER_VU': {
+      return {
+        ...state,
+        viewTransform: { ...state.viewTransform, pixelsPerVU: action.payload.pixelsPerVU }
+      };
     }
     case 'DRAW_FROM_PILE': {
       const deck = state.objects[action.payload.deckId] as Deck;
@@ -2241,8 +2424,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const { panelType, x = 100, y = 100, width = DEFAULT_PANEL_WIDTH, height = DEFAULT_PANEL_HEIGHT, title, deckId } = action.payload;
       const panelId = generateUUID();
 
-      // UI panels have zIndex 9998, draggable cards have 9999
-      const panelZ = 9998;
+      // Get max zIndex within interface layer, clamp to layer bounds
+      const interfaceLayer = state.hyperscaleLayers.find(l => l.id === 'interface');
+      const layerMinZ = interfaceLayer?.minZIndex ?? 9001;
+      const layerMaxZ = interfaceLayer?.maxZIndex ?? 10000;
+      const interfaceObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === 'interface');
+      const interfaceZ = interfaceObjects.map(o => o.zIndex || 0);
+      const maxZInInterface = interfaceZ.length ? Math.max(...interfaceZ) : layerMinZ;
+      const panelZ = Math.min(maxZInInterface + 1, layerMaxZ);
 
       const panel: PanelObject = {
         id: panelId,
@@ -2260,6 +2449,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         minimized: false,
         visible: true,
         deckId,
+        hyperscaleLayerId: 'interface', // All panels go on the interface layer
       };
 
       // Main menu is pinned to viewport by default with dual position mode enabled
@@ -2275,11 +2465,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'CREATE_WINDOW': {
-      const { windowType, x = 200, y = 200, title, targetObjectId } = action.payload;
+      const { windowType, x = 200, y = 200, title, targetObjectId, targetLayerId } = action.payload;
       const windowId = generateUUID();
 
-      // UI windows have zIndex 9999 (above panels, same as dragging cards)
-      const windowZ = 9999;
+      // Get max zIndex within interface layer, clamp to layer bounds
+      const interfaceLayer = state.hyperscaleLayers.find(l => l.id === 'interface');
+      const layerMinZ = interfaceLayer?.minZIndex ?? 9001;
+      const layerMaxZ = interfaceLayer?.maxZIndex ?? 10000;
+      const interfaceObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === 'interface');
+      const interfaceZ = interfaceObjects.map(o => o.zIndex || 0);
+      const maxZInInterface = interfaceZ.length ? Math.max(...interfaceZ) : layerMinZ;
+      const windowZ = Math.min(maxZInInterface + 1, layerMaxZ);
 
       const windowObj: WindowObject = {
         id: windowId,
@@ -2297,8 +2493,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         minimized: false,
         visible: true,
         targetObjectId,
+        targetLayerId,
+        hyperscaleLayerId: 'interface', // All windows go on the interface layer
         // Settings windows are local to the player who created them
-        ownerId: windowType === WindowType.OBJECT_SETTINGS ? state.activePlayerId : undefined,
+        ownerId: windowType === WindowType.OBJECT_SETTINGS || windowType === WindowType.HYPERSCALE_LAYER_SETTINGS ? state.activePlayerId : undefined,
       };
 
       return {
@@ -2425,10 +2623,29 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Get current spawn count or start at 0
       const currentCount = archetype.spawnCount || 0;
 
+      // Determine hyperscale layer for spawned token
+      let hyperscaleLayerId = 'tokens';
+      if (state.hyperscaleLayers.some(l => l.id === 'tokens')) {
+        hyperscaleLayerId = 'tokens';
+      } else if (state.selectedHyperscaleLayerIds.length > 0) {
+        const selectedLayers = state.hyperscaleLayers.filter(l =>
+          state.selectedHyperscaleLayerIds.includes(l.id)
+        );
+        selectedLayers.sort((a, b) => b.maxZIndex - a.maxZIndex);
+        hyperscaleLayerId = selectedLayers[0].id;
+      }
+
+      // Get max zIndex within the hyperscale layer
+      const layer = state.hyperscaleLayers.find(l => l.id === hyperscaleLayerId);
+      const layerMinZ = layer?.minZIndex ?? 1;
+      const layerMaxZ = layer?.maxZIndex ?? 10000;
+      const layerObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === hyperscaleLayerId);
+      const layerZ = layerObjects.map(o => o.zIndex || 0);
+      const maxZInLayer = layerZ.length ? Math.max(...layerZ) : layerMinZ;
+      const newZ = Math.min(maxZInLayer + 1, layerMaxZ);
+
       // Generate new token based on archetype settings
       const tokenId = generateUUID();
-      const allZ = Object.values(state.objects).map(o => o.zIndex || 0);
-      const maxZ = allZ.length ? Math.max(...allZ) : 0;
 
       const newToken: Token = {
         id: tokenId,
@@ -2446,7 +2663,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         color: archetype.color,
         locked: false,
         isOnTable: true,
-        zIndex: maxZ + 1,
+        zIndex: newZ,
+        hyperscaleLayerId,
         archetypeId: archetype.id,
       };
 
@@ -3362,6 +3580,88 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         language: state.language, // Preserve language setting
       };
     }
+    case 'ADD_HYPERSCALE_LAYER': {
+      const newLayer: HyperscaleLayer = {
+        ...action.payload,
+        id: generateUUID()
+      };
+      return {
+        ...state,
+        hyperscaleLayers: [...state.hyperscaleLayers, newLayer]
+      };
+    }
+    case 'UPDATE_HYPERSCALE_LAYER': {
+      return {
+        ...state,
+        hyperscaleLayers: state.hyperscaleLayers.map(l =>
+          l.id === action.payload.layerId
+            ? { ...l, ...action.payload.updates }
+            : l
+        )
+      };
+    }
+    case 'DELETE_HYPERSCALE_LAYER': {
+      // Check if there are any objects on this layer
+      const hasObjects = Object.values(state.objects).some(
+        obj => obj.hyperscaleLayerId === action.payload.layerId
+      );
+      if (hasObjects) {
+        return state; // Cannot delete layer with objects
+      }
+      return {
+        ...state,
+        hyperscaleLayers: state.hyperscaleLayers.filter(l => l.id !== action.payload.layerId),
+        selectedHyperscaleLayerIds: state.selectedHyperscaleLayerIds.filter(id => id !== action.payload.layerId)
+      };
+    }
+    case 'SET_HYPERSCALE_LAYERS': {
+      return {
+        ...state,
+        selectedHyperscaleLayerIds: action.payload.layerIds
+      };
+    }
+    case 'MOVE_OBJECT_TO_HYPERSCALE_LAYER': {
+      const obj = state.objects[action.payload.objectId];
+      if (!obj) return state;
+
+      const targetLayer = state.hyperscaleLayers.find(l => l.id === action.payload.layerId);
+      if (!targetLayer) return state;
+
+      // Get all objects in target layer (excluding the moving object)
+      const targetLayerObjects = Object.values(state.objects).filter(o =>
+        o.hyperscaleLayerId === action.payload.layerId && o.id !== obj.id
+      );
+
+      // Defragment: sort by zIndex and reassign to fill gaps from minZIndex
+      const sortedTargetObjects = targetLayerObjects.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+      const newObjects = { ...state.objects };
+
+      // Reassign zIndex to compact the layer (fill gaps)
+      sortedTargetObjects.forEach((layerObj, index) => {
+        const newZ = targetLayer.minZIndex + index;
+        if (newZ <= targetLayer.maxZIndex) {
+          newObjects[layerObj.id] = { ...layerObj, zIndex: newZ };
+        }
+      });
+
+      // Calculate zIndex for moved object (after defragmentation)
+      const newZ = Math.min(
+        targetLayer.minZIndex + sortedTargetObjects.length,
+        targetLayer.maxZIndex
+      );
+
+      newObjects[action.payload.objectId] = {
+        ...obj,
+        hyperscaleLayerId: action.payload.layerId,
+        zIndex: newZ
+      };
+
+      return {
+        ...state,
+        objects: newObjects
+      };
+    }
     default:
       return state;
   }
@@ -3383,6 +3683,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Auto-save game state to localStorage (debounced)
   useAutoSave(state, isHost);
+
+  // Update pixelsPerVU when window size changes
+  useEffect(() => {
+    const handleResize = () => {
+      const newPixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
+      localDispatch({
+        type: 'SET_PIXELS_PER_VU',
+        payload: { pixelsPerVU: newPixelsPerVU }
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
@@ -3456,7 +3770,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // No saved state or empty saved state, create default game board (only for host)
         if (isHost) {
-          // Create game board
+          // Create game board on 'boards' layer
           const boardId = 'demo-board';
           const board: Board = {
                id: boardId,
@@ -3473,22 +3787,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                gridType: GridType.HEX,
                gridSize: 60,
                snapToGrid: true,
+               hyperscaleLayerId: 'boards',
           };
           localDispatch({ type: 'ADD_OBJECT', payload: board });
 
-          // Create Standard Deck positioned offset from center of screen
-          // Calculate world coordinates based on default viewport settings
-          const screenX = window.innerWidth - 460;
-          const screenY = 15;
-          const zoom = 1; // Default zoom (no scaling)
-          const offsetX = 0; // Default offset
-          const offsetY = 0; // Default offset
-          const worldX = (screenX - offsetX) / zoom;
-          const worldY = (screenY - offsetY) / zoom;
+          // Create Standard Deck on 'cards' layer at fixed vu position
+          const worldX = 1350; // Fixed vu position
+          const worldY = 10;  // Fixed vu position
           const { deck, cards } = createStandardDeck();
 
           deck.x = worldX;
           deck.y = worldY;
+          deck.hyperscaleLayerId = 'cards';
 
           // Add all cards first
           cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));

@@ -113,6 +113,7 @@ export const SvgDeckShape: React.FC<SvgDeckShapeProps> = ({
         strokeWidth={borderWidth}
         strokeLinejoin="round"
         strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
       />
 
       {/* Content container with clip path */}
@@ -141,11 +142,13 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
   shape,
   isTriangle = shape === CardShape.TRIANGLE
 }) => {
-  // For triangle, wrap text more aggressively to fit within the triangle
-  // The triangle narrows toward the top, so we need smaller text and more wrapping
+  // For geometric shapes (HEX, CIRCLE, TRIANGLE), the foreignObject scaling makes text appear larger
+  // We need to use smaller font sizes to compensate
+  const isGeometric = shape === CardShape.HEX || shape === CardShape.CIRCLE;
 
   if (isTriangle) {
-    // For triangle: try to split words, limit words per line to 2-3
+    // For triangle: wrap text more aggressively to fit within the triangle
+    // The triangle narrows toward the top, so we need smaller text and more wrapping
     const words = name.split(' ');
     const lines: string[] = [];
     let currentLine = '';
@@ -175,20 +178,40 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
         {displayLines.map((line, i) => (
           <span
             key={i}
-            className="text-[10px] text-slate-300 font-bold select-none drop-shadow-md leading-tight"
+            className="text-slate-300 font-bold select-none drop-shadow-md leading-tight"
             style={{ fontSize: '9px' }}
           >
             {line}
           </span>
         ))}
-        <span className="text-[10px] text-slate-500 select-none drop-shadow-md mt-0.5">
+        <span className="text-slate-500 select-none drop-shadow-md mt-0.5" style={{ fontSize: '9px' }}>
           {count} / {totalCount}
         </span>
       </div>
     );
   }
 
-  // For other shapes, normal display
+  if (isGeometric) {
+    // For HEX and CIRCLE: use smaller font size to compensate for SVG foreignObject scaling
+    return (
+      <div className="flex flex-col items-center justify-center text-center px-2">
+        <span
+          className="text-slate-300 font-bold select-none drop-shadow-md leading-tight"
+          style={{ fontSize: '9px' }}
+        >
+          {name}
+        </span>
+        <span
+          className="text-slate-500 select-none drop-shadow-md mt-0.5"
+          style={{ fontSize: '9px' }}
+        >
+          {count} / {totalCount}
+        </span>
+      </div>
+    );
+  }
+
+  // For other shapes (POKER, BRIDGE, etc.), normal display
   return (
     <div className="flex flex-col items-center justify-center">
       <span className="text-xs text-slate-300 font-bold px-2 text-center select-none drop-shadow-md">

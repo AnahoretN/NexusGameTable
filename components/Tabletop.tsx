@@ -18,8 +18,9 @@ import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
 import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown } from 'lucide-react';
-import { CARD_SHAPE_DIMS } from '../constants';
+import { CARD_SHAPE_DIMS, WORLD_SIZE_VU } from '../constants';
 import { generateUUID } from '../utils/uuid';
+import { vuToPixels, pixelsToVu } from '../utils/vuSystem';
 import { CursorSlotVisualization } from './CursorSlotVisualization';
 // import { RemoteObjectAnimation, useRemoteObjectAnimation } from './RemoteObjectAnimation';
 import { PinnedIndicator } from './PinnedIndicator';
@@ -28,6 +29,13 @@ import { ObjectActionButtons } from './ObjectActionButtons';
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
   const { settings: localSettings } = useLocalSettings();
+
+  // Get the pixelsPerVU conversion factor
+  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+
+  // Helper functions for vu ↔ pixel conversion
+  const v2p = useCallback((vu: number) => vuToPixels(vu ?? 0, pixelsPerVU), [pixelsPerVU]);
+  const p2v = useCallback((px: number) => pixelsToVu(px ?? 0, pixelsPerVU), [pixelsPerVU]);
 
   // Viewport state (offset is always 0,0 since native scroll handles panning)
   const offset = useMemo(() => ({ x: 0, y: 0 }), []);
@@ -1073,8 +1081,8 @@ export const Tabletop: React.FC = () => {
     // Not dropping on a deck - drop items on tabletop
     // Convert screen coordinates to world coordinates
     // CSS transform is: translate(offset) scale(zoom), with offset always (0,0) now
-    const worldX = clientX / zoom - offset.x;
-    const worldY = clientY / zoom - offset.y;
+    const worldX = p2v(clientX) - offset.x;
+    const worldY = p2v(clientY) - offset.y;
 
     // Add all items from slot back to the game with same offsets as in cursor display
     currentSlot.forEach((item) => {
@@ -1106,10 +1114,16 @@ export const Tabletop: React.FC = () => {
       const offsetX = offsetFromBack * offsetAmount;
       const offsetY = offsetFromBack * offsetAmount;
 
-      // Use original zIndex if preserving, otherwise use stack zIndex
+      // Clamp zIndex to hyperscale layer bounds
+      const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
+      const minZ = itemLayer?.minZIndex ?? 1;
+      const maxZ = itemLayer?.maxZIndex ?? 10000;
+
+      // Use original zIndex if preserving, otherwise use stack zIndex (clamped to layer bounds)
+      const stackZ = Math.min(10000 + slotIndex, maxZ);
       const zIndex = useOriginalZIndex
-        ? ((item as any).originalZIndex ?? 0)
-        : 10000 + slotIndex;
+        ? ((item as any).originalZIndex ?? minZ)
+        : stackZ;
 
       // Find snap target based on cursor position (worldX, worldY = cursor center)
       let snapTargetX: number, snapTargetY: number;
@@ -1229,6 +1243,11 @@ export const Tabletop: React.FC = () => {
         const offsetX = offsetFromBack * offsetAmount;
         const offsetY = offsetFromBack * offsetAmount;
 
+        // Clamp zIndex to hyperscale layer bounds
+        const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
+        const maxZ = itemLayer?.maxZIndex ?? 10000;
+        const stackZ = Math.min(10000 + slotIndex, maxZ);
+
         // Use DROP_FROM_CURSOR_SLOT action with undo tracking
         dispatch({
           type: 'DROP_FROM_CURSOR_SLOT',
@@ -1236,7 +1255,7 @@ export const Tabletop: React.FC = () => {
             objectId: item.id,
             x: deck.x + deck.width / 2 - baseWidth / 2 + offsetX,
             y: deck.y + deck.height / 2 - baseHeight / 2 + offsetY,
-            zIndex: 10000 + slotIndex,
+            zIndex: stackZ,
           }
         });
       });
@@ -1334,10 +1353,16 @@ export const Tabletop: React.FC = () => {
         const offsetX = offsetFromBack * offsetAmount;
         const offsetY = offsetFromBack * offsetAmount;
 
-        // Use original zIndex if preserving, otherwise use stack zIndex
+        // Clamp zIndex to hyperscale layer bounds
+        const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
+        const minZ = itemLayer?.minZIndex ?? 1;
+        const maxZ = itemLayer?.maxZIndex ?? 10000;
+        const stackZ = Math.min(10000 + slotIndex, maxZ);
+
+        // Use original zIndex if preserving, otherwise use stack zIndex (clamped to layer bounds)
         const zIndex = useOriginalZIndex
-          ? ((item as any).originalZIndex ?? 0)
-          : 10000 + slotIndex;
+          ? ((item as any).originalZIndex ?? minZ)
+          : stackZ;
 
         // Calculate center position (without offset for snapping)
         const pileCenterX = pileX + deck.width * pileSize / 2;
@@ -1799,7 +1824,30 @@ export const Tabletop: React.FC = () => {
       }
 
       // Locked objects check - don't send drag messages for locked objects even for GM
-      if (item && item.locked) return;
+      if (item && item.locked) {
+        console.log(`[LAYER DRAG] Object ${item.name} (id: ${id}) is LOCKED - drag prevented`);
+        return;
+      }
+
+      // Hyperscale layer check - only allow dragging objects in selected hyperscale layers
+      // This applies to all players including GM
+      // EXCEPTION: Objects in current player's cursor slot can always be moved
+      const isInCursorSlot = item.draggingPlayerId === state.activePlayerId;
+      if (!isInCursorSlot) {
+        const objLayer = item.hyperscaleLayerId || 'none';
+        const selectedLayers = state.selectedHyperscaleLayerIds;
+        const layerAllowed = objLayer === 'none' || selectedLayers.includes(objLayer);
+        console.log(`[LAYER DRAG] Object: ${item.name} (${item.type})`);
+        console.log(`[LAYER DRAG] Object layer: ${objLayer}`);
+        console.log(`[LAYER DRAG] Selected layers: ${selectedLayers.join(', ')}`);
+        console.log(`[LAYER DRAG] Drag allowed: ${layerAllowed}`);
+        if (!layerAllowed) {
+          console.log(`[LAYER DRAG] Drag PREVENTED - layer not selected`);
+          return; // Object is in a non-selected hyperscale layer
+        }
+      } else {
+        console.log(`[LAYER DRAG] Object ${item.name} is in cursor slot - layer check skipped`);
+      }
 
       // Cards and tokens: Shift+click immediately adds to cursor slot
       if (e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
@@ -1854,10 +1902,12 @@ export const Tabletop: React.FC = () => {
         // Note: We don't unpin pinned objects on drag anymore - pinned objects stay pinned while dragging
         // Their position is updated in both x/y and pinnedScreenPosition
 
-        // Bring dragged object to front (zIndex 9999)
+        // Bring dragged object to front (clamped to its hyperscale layer's maxZ)
+        const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
+        const maxZ = itemLayer?.maxZIndex ?? 10000;
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id, zIndex: 9999 }
+          payload: { id, zIndex: maxZ }
         });
 
         // Check if this object is pinned to viewport
@@ -1879,8 +1929,8 @@ export const Tabletop: React.FC = () => {
           // Note: CSS transform is translate(offset) scale(zoom), so:
           // screenX = (worldX + offset.x) * zoom, therefore:
           // worldX = screenX / zoom - offset.x
-          const mouseWorldX = e.clientX / zoom - offset.x;
-          const mouseWorldY = e.clientY / zoom - offset.y;
+          const mouseWorldX = p2v(e.clientX) - offset.x;
+          const mouseWorldY = p2v(e.clientY) - offset.y;
 
           offsetX = mouseWorldX - item.x;
           offsetY = mouseWorldY - item.y;
@@ -1899,7 +1949,7 @@ export const Tabletop: React.FC = () => {
         });
       }
     }
-  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, dispatch, addToCursorSlot, offset, zoom, setDraggingId, setIsPanning]);
+  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, state.selectedHyperscaleLayerIds, dispatch, addToCursorSlot, offset, zoom, setDraggingId, setIsPanning]);
 
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     // Always update cursor position for slot visualization (needed when adding token to slot)
@@ -1949,8 +1999,8 @@ export const Tabletop: React.FC = () => {
       const obj = state.objects[resizingId];
       if (!obj) return;
 
-      const deltaX = (e.clientX - resizeStart.x) / zoom;
-      const deltaY = (e.clientY - resizeStart.y) / zoom;
+      const deltaX = p2v(e.clientX - resizeStart.x);
+      const deltaY = p2v(e.clientY - resizeStart.y);
 
       const minSize = 100;
       const newWidth = Math.max(minSize, resizeStart.width + deltaX);
@@ -1996,8 +2046,8 @@ export const Tabletop: React.FC = () => {
       // Note: CSS transform is translate(offset) scale(zoom), so:
       // screenX = (worldX + offset.x) * zoom, therefore:
       // worldX = screenX / zoom - offset.x
-      const mouseWorldX = e.clientX / zoom - offset.x;
-      const mouseWorldY = e.clientY / zoom - offset.y;
+      const mouseWorldX = p2v(e.clientX) - offset.x;
+      const mouseWorldY = p2v(e.clientY) - offset.y;
 
       // Use the offset to position the object relative to cursor
       const targetX = mouseWorldX - (dragOffsetRef.current?.x || 0);
@@ -2037,8 +2087,8 @@ export const Tabletop: React.FC = () => {
       if (draggingObj.type === ItemType.CARD) {
         // Convert cursor screen coordinates to world coordinates
         // Note: scroll is handled by browser, not by game coordinates
-        const worldX = e.clientX / zoom - offset.x;
-        const worldY = e.clientY / zoom - offset.y;
+        const worldX = p2v(e.clientX) - offset.x;
+        const worldY = p2v(e.clientY) - offset.y;
 
         // First check if cursor is over any pile (piles take priority)
         let foundPile = null;
@@ -2107,8 +2157,8 @@ export const Tabletop: React.FC = () => {
 
     // Handle pile dragging (for free-position piles)
     if (draggingPile && pileDragStartRef.current) {
-      const mouseWorldX = e.clientX / zoom - offset.x;
-      const mouseWorldY = e.clientY / zoom - offset.y;
+      const mouseWorldX = p2v(e.clientX) - offset.x;
+      const mouseWorldY = p2v(e.clientY) - offset.y;
 
       // Calculate new position based on drag start offset
       const newX = mouseWorldX - pileDragStartRef.current.x;
@@ -2742,6 +2792,17 @@ export const Tabletop: React.FC = () => {
           return;
       }
 
+      // Handle hyperscale layer actions (moveToHyperscaleLayer:{layerId})
+      if (action.startsWith('moveToHyperscaleLayer:')) {
+          const layerId = action.replace('moveToHyperscaleLayer:', '');
+          dispatch({
+              type: 'MOVE_OBJECT_TO_HYPERSCALE_LAYER',
+              payload: { objectId: object.id, layerId }
+          });
+          setContextMenu(null);
+          return;
+      }
+
       // All other actions use the unified executeClickAction
       executeClickAction(object, action);
   };
@@ -2965,9 +3026,11 @@ export const Tabletop: React.FC = () => {
   }, [state.objects, state.activePlayerId]);
 
   const worldBounds = useMemo(() => {
-    // Fixed world size: 5000x5000
-    return { width: 5000, height: 5000 };
-  }, []);
+    // Fixed world size: WORLD_SIZE_VU × WORLD_SIZE_VU (in virtual units)
+    // Convert to pixels for rendering
+    const sizePx = vuToPixels(WORLD_SIZE_VU, state.viewTransform.pixelsPerVU);
+    return { width: sizePx, height: sizePx };
+  }, [state.viewTransform.pixelsPerVU]);
 
   const confirmDelete = () => {
     if (deleteCandidateId) {
@@ -3074,10 +3137,14 @@ export const Tabletop: React.FC = () => {
             const card = state.objects[cardId] as CardType;
             if (card.type === ItemType.CARD && card.location === CardLocation.HAND) {
                 // Calculate world position for the card
-                const worldX = e.clientX / zoom - offset.x - (card.width ?? 100) / 2;
-                const worldY = e.clientY / zoom - offset.y - (card.height ?? 140) / 2;
+                const worldX = p2v(e.clientX) - offset.x - (card.width ?? 100) / 2;
+                const worldY = p2v(e.clientY) - offset.y - (card.height ?? 140) / 2;
 
-                // Cards on table get zIndex 9999 (same as dragging, above panels at 9998)
+                // Clamp zIndex to card's hyperscale layer's maxZ
+                const cardLayer = state.hyperscaleLayers.find(l => l.id === card.hyperscaleLayerId);
+                const maxZ = cardLayer?.maxZIndex ?? 10000;
+
+                // Cards on table get max zIndex of their layer (same as dragging)
                 dispatch({
                     type: 'UPDATE_OBJECT',
                     payload: {
@@ -3087,7 +3154,7 @@ export const Tabletop: React.FC = () => {
                         y: worldY,
                         isOnTable: true,
                         faceUp: true,
-                        zIndex: 9999,
+                        zIndex: maxZ,
                         ownerId: undefined
                     }
                 });
@@ -3132,11 +3199,12 @@ export const Tabletop: React.FC = () => {
 
         <div
             data-tabletop="true"
-            className="absolute origin-top-left transition-transform duration-0 ease-linear"
+            className="absolute origin-top-left"
             style={{
                 top: 0,
                 left: 0,
-                transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+                width: worldBounds.width,
+                height: worldBounds.height,
             }}
         >
             {/* Objects in another player's cursor slot - darkened, semi-transparent, non-interactive */}
@@ -3150,10 +3218,10 @@ export const Tabletop: React.FC = () => {
                             key={`remote-cursor-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: obj.width,
-                                height: obj.height,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
+                                width: v2p(obj.width),
+                                height: v2p(obj.height),
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
@@ -3162,8 +3230,8 @@ export const Tabletop: React.FC = () => {
                         >
                             <SvgTokenShape
                                 shape={token.shape}
-                                width={obj.width}
-                                height={obj.height}
+                                width={v2p(obj.width)}
+                                height={v2p(obj.height)}
                                 color={obj.color || '#e74c3c'}
                                 content={obj.content}
                                 rotation={0}
@@ -3185,16 +3253,18 @@ export const Tabletop: React.FC = () => {
 
                     let baseWidth = card.width ?? (deck?.cardWidth ?? 63);
                     let baseHeight = card.height ?? (deck?.cardHeight ?? 88);
+                    const pxWidth = v2p(baseWidth);
+                    const pxHeight = v2p(baseHeight);
 
                     return (
                         <div
                             key={`remote-cursor-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: baseWidth,
-                                height: baseHeight,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
+                                width: pxWidth,
+                                height: pxHeight,
                                 transform: `rotate(${obj.rotation ?? 0}rad)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
@@ -3203,8 +3273,8 @@ export const Tabletop: React.FC = () => {
                         >
                             <Card
                                 card={card}
-                                overrideWidth={baseWidth}
-                                overrideHeight={baseHeight}
+                                overrideWidth={pxWidth}
+                                overrideHeight={pxHeight}
                                 cardWidth={deck?.cardWidth}
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
@@ -3235,10 +3305,10 @@ export const Tabletop: React.FC = () => {
                             key={`remote-drag-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: obj.width,
-                                height: obj.height,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
+                                width: v2p(obj.width),
+                                height: v2p(obj.height),
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
@@ -3247,8 +3317,8 @@ export const Tabletop: React.FC = () => {
                         >
                             <SvgTokenShape
                                 shape={token.shape}
-                                width={obj.width}
-                                height={obj.height}
+                                width={v2p(obj.width)}
+                                height={v2p(obj.height)}
                                 color={obj.color || '#e74c3c'}
                                 content={obj.content}
                                 rotation={0}
@@ -3269,15 +3339,17 @@ export const Tabletop: React.FC = () => {
                     const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
                     let baseWidth = card.width ?? (deck?.cardWidth ?? 63);
                     let baseHeight = card.height ?? (deck?.cardHeight ?? 88);
+                    const pxWidth = v2p(baseWidth);
+                    const pxHeight = v2p(baseHeight);
                     return (
                         <div
                             key={`remote-drag-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: baseWidth,
-                                height: baseHeight,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
+                                width: pxWidth,
+                                height: pxHeight,
                                 transform: `rotate(${obj.rotation ?? 0}rad)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
@@ -3286,8 +3358,8 @@ export const Tabletop: React.FC = () => {
                         >
                             <Card
                                 card={card}
-                                overrideWidth={baseWidth}
-                                overrideHeight={baseHeight}
+                                overrideWidth={pxWidth}
+                                overrideHeight={pxHeight}
                                 cardWidth={deck?.cardWidth}
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
@@ -3316,10 +3388,10 @@ export const Tabletop: React.FC = () => {
                             key={`remote-drag-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: obj.width,
-                                height: obj.height,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
+                                width: v2p(obj.width),
+                                height: v2p(obj.height),
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
@@ -3328,8 +3400,8 @@ export const Tabletop: React.FC = () => {
                         >
                             <SvgTokenShape
                                 shape={token.shape}
-                                width={obj.width}
-                                height={obj.height}
+                                width={v2p(obj.width)}
+                                height={v2p(obj.height)}
                                 color={obj.color || '#e74c3c'}
                                 content={obj.content}
                                 rotation={0}
@@ -3350,15 +3422,17 @@ export const Tabletop: React.FC = () => {
                     const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
                     let baseWidth = card.width ?? (deck?.cardWidth ?? 63);
                     let baseHeight = card.height ?? (deck?.cardHeight ?? 88);
+                    const pxWidth = v2p(baseWidth);
+                    const pxHeight = v2p(baseHeight);
                     return (
                         <div
                             key={`remote-drag-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: baseWidth,
-                                height: baseHeight,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
+                                width: pxWidth,
+                                height: pxHeight,
                                 transform: `rotate(${obj.rotation ?? 0}rad)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
@@ -3367,8 +3441,8 @@ export const Tabletop: React.FC = () => {
                         >
                             <Card
                                 card={card}
-                                overrideWidth={baseWidth}
-                                overrideHeight={baseHeight}
+                                overrideWidth={pxWidth}
+                                overrideHeight={pxHeight}
                                 cardWidth={deck?.cardWidth}
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
@@ -3393,10 +3467,10 @@ export const Tabletop: React.FC = () => {
                             key={`remote-drag-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: dice.width || 60,
-                                height: dice.height || 60,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
+                                width: v2p(dice.width || 60),
+                                height: v2p(dice.height || 60),
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
@@ -3405,8 +3479,8 @@ export const Tabletop: React.FC = () => {
                         >
                             <SvgTokenShape
                                 shape={diceShape}
-                                width={dice.width || 60}
-                                height={dice.height || 60}
+                                width={v2p(dice.width || 60)}
+                                height={v2p(dice.height || 60)}
                                 color={obj.color || '#6366f1'}
                                 content={''}
                                 borderColor="#4f46e5"
@@ -3450,15 +3524,15 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.COUNTER) {
                     const counter = obj as Counter;
-                    const width = Math.max(obj.width, 100);
-                    const height = 50;
+                    const width = v2p(Math.max(obj.width, 100));
+                    const height = v2p(50);
                     return (
                         <div
                             key={`remote-drag-${obj.id}`}
                             className="absolute pointer-events-none select-none bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-center p-2 text-white"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
                                 width: width,
                                 height: height,
                                 transform: `rotate(${obj.rotation}deg)`,
@@ -3477,8 +3551,8 @@ export const Tabletop: React.FC = () => {
                     const cardShape = deck.cardShape || CardShape.POKER;
                     const cardOrientation = deck.cardOrientation || CardOrientation.VERTICAL;
                     const useSvg = shouldUseSvgForDeck(cardShape);
-                    const effectiveWidth = (deck.cardWidth || 63) * (cardOrientation === CardOrientation.HORIZONTAL ? 1.5 : 1);
-                    const effectiveHeight = (deck.cardHeight || 88) * (cardOrientation === CardOrientation.HORIZONTAL ? 1.5 : 1);
+                    const effectiveWidth = v2p((deck.cardWidth || 63) * (cardOrientation === CardOrientation.HORIZONTAL ? 1.5 : 1));
+                    const effectiveHeight = v2p((deck.cardHeight || 88) * (cardOrientation === CardOrientation.HORIZONTAL ? 1.5 : 1));
                     const visibleCardCount = deck.cardIds?.length || 0;
                     const baseCardIds = deck.baseCardIds || deck.cardIds || [];
 
@@ -3487,8 +3561,8 @@ export const Tabletop: React.FC = () => {
                             key={`remote-drag-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
                                 width: effectiveWidth,
                                 height: effectiveHeight,
                                 opacity: 0.5,
@@ -3594,10 +3668,10 @@ export const Tabletop: React.FC = () => {
                             key={`remote-drag-${obj.id}`}
                             className="absolute pointer-events-none select-none"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
-                                width: obj.width,
-                                height: obj.height,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
+                                width: v2p(obj.width),
+                                height: v2p(obj.height),
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
                                 zIndex: obj.zIndex ?? 0,
@@ -3706,18 +3780,18 @@ export const Tabletop: React.FC = () => {
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
-                                    left: obj.x,
-                                    top: obj.y,
-                                    width: obj.width,
-                                    height: obj.height,
+                                    left: v2p(obj.x),
+                                    top: v2p(obj.y),
+                                    width: v2p(obj.width),
+                                    height: v2p(obj.height),
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
                                 {/* Render SVG token for all tokens */}
                                 <SvgTokenShape
                                     shape={token.shape}
-                                    width={obj.width}
-                                    height={obj.height}
+                                    width={v2p(obj.width)}
+                                    height={v2p(obj.height)}
                                     color={obj.color || '#e74c3c'}
                                     content={obj.content}
                                     rotation={0}
@@ -3837,17 +3911,17 @@ export const Tabletop: React.FC = () => {
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
-                                    left: obj.x,
-                                    top: obj.y,
-                                    width: obj.width,
-                                    height: obj.height,
+                                    left: v2p(obj.x),
+                                    top: v2p(obj.y),
+                                    width: v2p(obj.width),
+                                    height: v2p(obj.height),
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
                                 <SvgTokenShape
                                     shape={cell.shape}
-                                    width={obj.width}
-                                    height={obj.height}
+                                    width={v2p(obj.width)}
+                                    height={v2p(obj.height)}
                                     color={obj.color || '#4ade80'}
                                     borderWidth={obj.borderWidth ?? 2}
                                     borderColor={obj.borderColor || '#166534'}
@@ -3960,10 +4034,10 @@ export const Tabletop: React.FC = () => {
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
-                                    left: obj.x,
-                                    top: obj.y,
-                                    width: Math.max(obj.width, 100),
-                                    height: 50,
+                                    left: v2p(obj.x),
+                                    top: v2p(obj.y),
+                                    width: v2p(Math.max(obj.width, 100)),
+                                    height: v2p(50),
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
@@ -4064,17 +4138,17 @@ export const Tabletop: React.FC = () => {
                                 onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
                                 className={`absolute flex items-center justify-center group select-none ${draggingClass}`}
                                 style={{
-                                    left: obj.x,
-                                    top: obj.y,
-                                    width: dice.width || 60,
-                                    height: dice.height || 60,
+                                    left: v2p(obj.x),
+                                    top: v2p(obj.y),
+                                    width: v2p(dice.width || 60),
+                                    height: v2p(dice.height || 60),
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
                                 <SvgTokenShape
                                     shape={diceShape}
-                                    width={dice.width || 60}
-                                    height={dice.height || 60}
+                                    width={v2p(dice.width || 60)}
+                                    height={v2p(dice.height || 60)}
                                     color={obj.color || '#6366f1'}
                                     content={''}
                                     borderColor="#4f46e5"
@@ -4205,8 +4279,8 @@ export const Tabletop: React.FC = () => {
                             key={obj.id}
                             data-tabletop-card="true"
                             style={{
-                                left: obj.x,
-                                top: obj.y,
+                                left: v2p(obj.x),
+                                top: v2p(obj.y),
                                 position: 'absolute',
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: isCardHidden && isGM ? 0.5 : 1,
@@ -4224,8 +4298,8 @@ export const Tabletop: React.FC = () => {
                                   onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
                                   showActionButtons={currentTool === 'none'}
                                   actionButtons={cardSettings.actionButtons}
-                                  overrideWidth={displayWidth}
-                                  overrideHeight={displayHeight}
+                                  overrideWidth={v2p(displayWidth)}
+                                  overrideHeight={v2p(displayHeight)}
                                   cardNamePosition={cardSettings.cardNamePosition}
                                   cardOrientation={cardSettings.cardOrientation}
                                   disableRotationTransform={true}
@@ -4320,7 +4394,7 @@ export const Tabletop: React.FC = () => {
                 const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 return (
-                    <div key={deckObj.id} style={{ position: 'absolute', left: deckObj.x, top: deckObj.y }}>
+                    <div key={deckObj.id} style={{ position: 'absolute', left: v2p(deckObj.x), top: v2p(deckObj.y) }}>
                         <DeckComponent
                             deck={deckObj}
                             draggingId={draggingId}
@@ -4541,15 +4615,15 @@ export const Tabletop: React.FC = () => {
                                 onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
                                 className={`flex items-center justify-center group select-none ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
-                                    width: dice.width || 60,
-                                    height: dice.height || 60,
+                                    width: v2p(dice.width || 60),
+                                    height: v2p(dice.height || 60),
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
                                 <SvgTokenShape
                                     shape={diceShape}
-                                    width={dice.width || 60}
-                                    height={dice.height || 60}
+                                    width={v2p(dice.width || 60)}
+                                    height={v2p(dice.height || 60)}
                                     color={obj.color || '#6366f1'}
                                     content={''}
                                     borderColor="#4f46e5"
@@ -4606,8 +4680,8 @@ export const Tabletop: React.FC = () => {
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${draggingClass}`}
                                 style={{
-                                    width: Math.max(obj.width, 100),
-                                    height: 50,
+                                    width: v2p(Math.max(obj.width, 100)),
+                                    height: v2p(50),
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
