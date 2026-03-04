@@ -302,9 +302,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         ctx.lineJoin = 'round';
 
         // Transform and draw each point (relative to drawing position)
+        // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
         stroke.points.forEach((point, index) => {
-          const screenX = (point.x + drawing.x + offsetX) * zoom;
-          const screenY = (point.y + drawing.y + offsetY) * zoom;
+          const screenX = (point.x + drawing.x - offsetX) * zoom;
+          const screenY = (point.y + drawing.y - offsetY) * zoom;
 
           if (index === 0) {
             ctx.moveTo(screenX, screenY);
@@ -347,8 +348,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       ctx.lineJoin = 'round';
 
       currentStroke.forEach((point, index) => {
-        const screenX = (point.x + offsetX) * zoom;
-        const screenY = (point.y + offsetY) * zoom;
+        // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
+        const screenX = (point.x - offsetX) * zoom;
+        const screenY = (point.y - offsetY) * zoom;
 
         if (index === 0) {
           ctx.moveTo(screenX, screenY);
@@ -370,9 +372,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const screenY = clientY - rect.top;
 
     // Convert screen position to world position
+    // NOTE: offsetX/Y are scroll positions - add to convert screen to world
     return {
-      x: screenX / zoom - offsetX,
-      y: screenY / zoom - offsetY
+      x: screenX / zoom + offsetX,
+      y: screenY / zoom + offsetY
     };
   }, [zoom, offsetX, offsetY]);
 
@@ -415,8 +418,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
       // Update cursor position first
       const pos = getWorldPosition(e.clientX, e.clientY);
-      const screenX = (pos.x + offsetX) * zoom;
-      const screenY = (pos.y + offsetY) * zoom;
+      // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
+      const screenX = (pos.x - offsetX) * zoom;
+      const screenY = (pos.y - offsetY) * zoom;
       setCursorPosition({ x: screenX, y: screenY });
     };
 
@@ -553,8 +557,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const pos = getWorldPosition(e.clientX, e.clientY);
 
     // Convert world position to screen position for cursor display
-    const screenX = (pos.x + offsetX) * zoom;
-    const screenY = (pos.y + offsetY) * zoom;
+    // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
+    const screenX = (pos.x - offsetX) * zoom;
+    const screenY = (pos.y - offsetY) * zoom;
     setCursorPosition({ x: screenX, y: screenY });
 
     // Handle drawing dragging
@@ -594,8 +599,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     if (currentTool === 'eraser') {
       // Eraser implementation for Drawing objects
-      const screenX = (pos.x + offsetX) * zoom;
-      const screenY = (pos.y + offsetY) * zoom;
+      // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
+      const screenX = (pos.x - offsetX) * zoom;
+      const screenY = (pos.y - offsetY) * zoom;
 
       // Show eraser cursor (fully opaque white circle)
       ctx.beginPath();
@@ -705,8 +711,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
       const allPoints = [...currentStroke, { x: pos.x, y: pos.y }];
       allPoints.forEach((point, index) => {
-        const screenX = (point.x + offsetX) * zoom;
-        const screenY = (point.y + offsetY) * zoom;
+        // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
+        const screenX = (point.x - offsetX) * zoom;
+        const screenY = (point.y - offsetY) * zoom;
 
         if (index === 0) {
           ctx.moveTo(screenX, screenY);
@@ -994,8 +1001,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       onMouseEnter={(e) => {
         // Update cursor position on enter using world-to-screen conversion
         const pos = getWorldPosition(e.clientX, e.clientY);
-        const screenX = (pos.x + offsetX) * zoom;
-        const screenY = (pos.y + offsetY) * zoom;
+        // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
+        const screenX = (pos.x - offsetX) * zoom;
+        const screenY = (pos.y - offsetY) * zoom;
         setCursorPosition({ x: screenX, y: screenY });
       }}
     />

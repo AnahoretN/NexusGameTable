@@ -100,7 +100,7 @@ export const initialState: GameState = {
       playerCanSelect: true,
       playerCanView: false,
       individualPosition: true,
-      individualObjects: false,
+      individualObjects: true, // Each player has their own interface objects (panels, windows, etc.)
       order: 3
     }
   ],

@@ -8,25 +8,25 @@
  * - Object positions and sizes are stored in vu
  * - Each client converts vu to their local pixels for rendering
  * - Proportions are always preserved
+ *
+ * vu to pixels conversion: 1 vu = 0.1% of screen height
+ * This means 1000 vu = 100% of screen height (visible vertical area)
  */
 
 // Core constants
 export const WORLD_SIZE_VU = 5000; // Game world is 5000×5000 vu
-export const REFERENCE_SCREEN_SIZE = 1080; // Reference screen size in pixels (Full HD)
-export const REFERENCE_VU_VISIBLE = 1000; // How many vu are visible on reference screen by default
+export const VU_PER_SCREEN_HEIGHT = 1000; // 1000 vu = 100% of screen height
 
 /**
  * Calculate pixelsPerVU conversion factor for the current viewport
  *
- * On a 1080px screen, we can see REFERENCE_VU_VISIBLE (1000) vu by default.
- * This gives us pixelsPerVU = REFERENCE_SCREEN_SIZE / REFERENCE_VU_VISIBLE = 1.08 px/vu
+ * 1 vu = 0.1% of screen height
+ * 1000 vu = 100% of screen height
  *
- * For other screen sizes, we scale proportionally to maintain the same visual experience.
+ * pixelsPerVU = viewportHeight / 1000
  */
 export function calculatePixelsPerVU(viewportWidth: number, viewportHeight: number): number {
-  const minDimension = Math.min(viewportWidth, viewportHeight);
-  // Maintain the same ratio: how many pixels per vu
-  return (minDimension / REFERENCE_SCREEN_SIZE) * (REFERENCE_SCREEN_SIZE / REFERENCE_VU_VISIBLE);
+  return viewportHeight / VU_PER_SCREEN_HEIGHT;
 }
 
 /**

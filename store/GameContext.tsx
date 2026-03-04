@@ -264,7 +264,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             offset: payloadViewTransform?.offset || { x: 0, y: 0 },
             zoom: payloadViewTransform?.zoom || 0.8,
             scroll: payloadViewTransform?.scroll || { x: 0, y: 0 },
-            pixelsPerVU: payloadViewTransform?.pixelsPerVU || calculatePixelsPerVU(window.innerWidth, window.innerHeight)
+            // IMPORTANT: Always calculate pixelsPerVU for current screen (1 vu = 0.1% of screen height)
+            // DO NOT use saved value as it's screen-dependent
+            pixelsPerVU: calculatePixelsPerVU(window.innerWidth, window.innerHeight)
         };
 
         // Ensure players array has required properties
@@ -3792,7 +3794,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localDispatch({ type: 'ADD_OBJECT', payload: board });
 
           // Create Standard Deck on 'cards' layer at fixed vu position
-          const worldX = 1350; // Fixed vu position
+          const worldX = 1345; // Fixed vu position (5 vu left)
           const worldY = 10;  // Fixed vu position
           const { deck, cards } = createStandardDeck();
 
@@ -3813,59 +3815,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Function to create main menu from local settings
   const createMainMenu = useCallback((dispatch: React.Dispatch<Action>) => {
-    // Always calculate X position (right side flush with scrollbar)
+    // ALWAYS use calculated position - main menu is fixed at right side, full height
     const calculatedPosition = calculateMainMenuPosition();
 
-    // Check if there are saved local settings
-    const hasSettings = hasLocalSettings();
-
-    // X is always recalculated - right side flush with scrollbar
     const menuX = calculatedPosition.x;
+    const menuY = 0; // Always at top
     const menuWidth = calculatedPosition.width;
+    const menuHeight = calculatedPosition.height; // Full height minus scrollbar
 
-    let menuY, menuHeight;
+    // Update local settings with current calculated values
+    const localSettings = loadLocalSettings();
+    localSettings.mainMenuPosition = { x: menuX, y: menuY };
+    localSettings.mainMenuSize = { width: menuWidth, height: menuHeight };
 
-    if (hasSettings) {
-      // Load saved Y and height
-      const localSettings = loadLocalSettings();
-      menuY = localSettings.mainMenuPosition.y;
-      menuHeight = localSettings.mainMenuSize.height;
-
-      // Validate and clamp Y position to prevent it from being off-screen
-      const maxY = window.innerHeight - 100; // Leave at least 100px visible
-      if (menuY < 0 || menuY > maxY) {
-        menuY = calculatedPosition.y;
-        localSettings.mainMenuPosition.y = menuY;
-      }
-
-      // Validate height - ensure it's reasonable and not larger than viewport
-      const maxHeight = window.innerHeight - SCROLLBAR_WIDTH;
-      if (menuHeight < 200 || menuHeight > maxHeight) {
-        menuHeight = calculatedPosition.height;
-        localSettings.mainMenuSize.height = menuHeight;
-      }
-
-      // Update saved X coordinate and corrected values
-      localSettings.mainMenuPosition.x = menuX;
-      localSettings.mainMenuSize.width = menuWidth;
-      saveLocalSettings(localSettings);
-    } else {
-      // First load - use calculated values
-      menuY = calculatedPosition.y;
-      menuHeight = calculatedPosition.height;
-
-      // Save initial position
-      const initialSettings: LocalSettings = {
-        mainMenuPosition: { x: menuX, y: menuY },
-        mainMenuSize: { width: menuWidth, height: menuHeight },
-        hasSeenInitialScreen: false,
-        isPositionSet: false,
-        effects: {
-          showRemoteCursorSlotObjects: true,
-        },
-      };
-      saveLocalSettings(initialSettings);
+    // Preserve other settings
+    if (localSettings.hasSeenInitialScreen === undefined) {
+      localSettings.hasSeenInitialScreen = false;
     }
+    if (localSettings.effects === undefined) {
+      localSettings.effects = { showRemoteCursorSlotObjects: true };
+    }
+    saveLocalSettings(localSettings);
 
     // Create main menu
     dispatch({
@@ -3890,39 +3860,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ) as PanelObject | undefined;
 
       if (mainMenu) {
-        // Update size to fit new screen
-        const newHeight = window.innerHeight - SCROLLBAR_WIDTH;
+        // ALWAYS recalculate position and size based on current screen
+        // Main menu should always be: right side flush with scrollbar, full height
+        const calculated = calculateMainMenuPosition();
 
-        // Don't change position if user moved it
-        // But ensure menu doesn't go beyond screen boundaries
-        let newX = mainMenu.x;
-        let newY = mainMenu.y;
-
-        const maxRight = window.innerWidth - SCROLLBAR_WIDTH;
-        if (newX + mainMenu.width > maxRight) {
-          newX = maxRight - mainMenu.width;
-        }
-        if (newY < 0) newY = 0;
-        if (newY + newHeight > window.innerHeight - SCROLLBAR_WIDTH) {
-          newY = window.innerHeight - SCROLLBAR_WIDTH - newHeight;
-        }
-
-        // Update menu
+        // Update menu with calculated position and size
         localDispatch({
           type: 'UPDATE_OBJECT',
           payload: {
             id: mainMenu.id,
-            x: newX,
-            y: newY,
-            height: newHeight
+            x: calculated.x,
+            y: 0, // Always at top
+            width: calculated.width,
+            height: calculated.height // Full height minus horizontal scrollbar
           }
         });
 
-        // Save new position to local settings (without changing isPositionSet flag)
+        // Save new position to local settings
         const localSettings = loadLocalSettings();
-        localSettings.mainMenuPosition = { x: newX, y: newY };
-        localSettings.mainMenuSize = { width: mainMenu.width, height: newHeight };
-        // DON'T set isPositionSet = true - this is automatic resize, not user move
+        localSettings.mainMenuPosition = { x: calculated.x, y: 0 };
+        localSettings.mainMenuSize = { width: calculated.width, height: calculated.height };
         saveLocalSettings(localSettings);
       }
     };

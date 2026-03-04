@@ -17,7 +17,7 @@ import { t as translate, preloadTranslations, Locale } from '../utils/translatio
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.4';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.5';
 
 // Support links
 const SUPPORT_LINKS = [

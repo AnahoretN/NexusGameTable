@@ -31,6 +31,7 @@ interface DeckComponentProps {
   cursorSlotHasCards: boolean;
   allObjects: Record<string, any>;
   currentTool?: string;
+  pixelsPerVU?: number; // Conversion factor from vu to pixels
 }
 
 export const DeckComponent: React.FC<DeckComponentProps> = ({
@@ -57,24 +58,28 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   cursorSlotHasCards = false,
   allObjects,
   currentTool = 'none',
+  pixelsPerVU = 1.0,
 }) => {
   const { state } = useGame();
+
+  // Convert vu to pixels for deck dimensions
+  const vuToPx = (vu: number) => vu * pixelsPerVU;
 
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
   const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
 
-  // Get effective dimensions based on card orientation
+  // Get effective dimensions based on card orientation (in vu, then converted to px)
   // For geometric shapes with horizontal orientation, swap width/height
   const cardShape = deck.cardShape ?? CardShape.POKER;
   const cardOrientation = deck.cardOrientation ?? CardOrientation.VERTICAL;
   const isGeometricShape = isGeometricCardShape(cardShape);
 
-  const effectiveWidth = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
+  const effectiveWidth = vuToPx((isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
     ? deck.height
-    : deck.width;
-  const effectiveHeight = (isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
+    : deck.width);
+  const effectiveHeight = vuToPx((isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
     ? deck.width
-    : deck.height;
+    : deck.height);
 
   // Memoize visible card count calculation
   const visibleCardCount = useMemo(() => {
