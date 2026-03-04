@@ -62,6 +62,7 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
       spriteUrl,
       spriteColumns: columns,
       spriteRows: rows,
+      hyperscaleLayerId: 'cards', // Cards in deck are on cards layer
     };
     cards.push(card);
   }
@@ -92,6 +93,7 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
     cardDoubleClickAction: undefined,
     cardNamePosition: 'none' as const,
     initialCardCount: cardIds.length,
+    hyperscaleLayerId: 'cards', // Deck is on cards layer
     // Sprite sheet configuration
     spriteConfig: {
       spriteUrl,

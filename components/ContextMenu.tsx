@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight } from 'lucide-react';
+import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer } from '../types';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight, Check } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
+import { useGame } from '../store/GameContext';
 
 interface ContextMenuProps {
   x: number;
@@ -29,6 +30,7 @@ interface MenuItem {
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en' }) => {
+  const { state } = useGame();
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
@@ -41,6 +43,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const [submenuPositions, setSubmenuPositions] = React.useState<Record<string, { left: number; top: number; side: 'left' | 'right' }>>({});
   const menuRef = React.useRef<HTMLDivElement>(null);
   const submenuButtonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+
+  // Track actual menu dimensions for accurate positioning
+  const [menuDimensions, setMenuDimensions] = React.useState({ width: 0, height: 0 });
+  const [submenuDimensions, setSubmenuDimensions] = React.useState<Record<string, { width: number; height: number }>>({});
+  const layerSubmenuRef = React.useRef<HTMLDivElement>(null);
+  const rotateSubmenuRef = React.useRef<HTMLDivElement>(null);
+  const pilesSubmenuRef = React.useRef<HTMLDivElement>(null);
+  const topDeckSubmenuRef = React.useRef<HTMLDivElement>(null);
+  const moveSubmenuRef = React.useRef<HTMLDivElement>(null);
 
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = (card: Card) => {
@@ -108,34 +119,103 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Measure main menu dimensions using ResizeObserver
+  React.useEffect(() => {
+    const menuEl = menuRef.current;
+    if (!menuEl) return;
+
+    const updateDimensions = () => {
+      const rect = menuEl.getBoundingClientRect();
+      setMenuDimensions({ width: rect.width, height: rect.height });
+    };
+
+    // Initial measurement
+    updateDimensions();
+
+    // Observe size changes
+    const resizeObserver = new ResizeObserver(updateDimensions);
+    resizeObserver.observe(menuEl);
+
+    return () => resizeObserver.disconnect();
+  }, [menuRef]);
+
+  // Measure submenu dimensions using individual refs
+  React.useEffect(() => {
+    const refs: Record<string, React.RefObject<HTMLDivElement>> = {
+      layer: layerSubmenuRef,
+      rotate: rotateSubmenuRef,
+      piles: pilesSubmenuRef,
+      topDeck: topDeckSubmenuRef,
+      moveTo: moveSubmenuRef
+    };
+
+    const openSubmenus: string[] = [];
+    if (layerSubmenuOpen) openSubmenus.push('layer');
+    if (rotateSubmenuOpen) openSubmenus.push('rotate');
+    if (pilesSubmenuOpen) openSubmenus.push('piles');
+    if (topDeckSubmenuOpen) openSubmenus.push('topDeck');
+    if (moveSubmenuOpen) openSubmenus.push('moveTo');
+
+    const updateDimensions = () => {
+      const dimensions: Record<string, { width: number; height: number }> = {};
+
+      openSubmenus.forEach(key => {
+        const ref = refs[key];
+        if (ref.current) {
+          const rect = ref.current.getBoundingClientRect();
+          dimensions[key] = { width: rect.width, height: rect.height };
+        }
+      });
+
+      setSubmenuDimensions(dimensions);
+    };
+
+    // Initial measurement after a short delay to ensure portal rendering is complete
+    const timeoutId = setTimeout(updateDimensions, 10);
+
+    // Set up ResizeObserver for each open submenu
+    const observers: ResizeObserver[] = [];
+    openSubmenus.forEach(key => {
+      const ref = refs[key];
+      if (ref.current) {
+        const observer = new ResizeObserver(updateDimensions);
+        observer.observe(ref.current);
+        observers.push(observer);
+      }
+    });
+
+    return () => {
+      clearTimeout(timeoutId);
+      observers.forEach(obs => obs.disconnect());
+    };
+  }, [layerSubmenuOpen, rotateSubmenuOpen, pilesSubmenuOpen, topDeckSubmenuOpen, moveSubmenuOpen]);
+
   // Calculate main menu position to keep it on screen
   React.useEffect(() => {
-    const menuWidth = 200; // approximate min width
-    const menuHeight = 400; // approximate max height
+    const menuWidth = menuDimensions.width || 200; // Use measured dimensions or fallback
+    const menuHeight = menuDimensions.height || 400;
 
     let left = x;
     let top = y;
 
     // Check right edge
     if (left + menuWidth > window.innerWidth) {
-      left = window.innerWidth - menuWidth - 10;
+      left = Math.max(10, window.innerWidth - menuWidth - 10);
     }
     if (left < 10) left = 10;
 
     // Check bottom edge
     if (top + menuHeight > window.innerHeight) {
-      top = window.innerHeight - menuHeight - 10;
+      top = Math.max(10, window.innerHeight - menuHeight - 10);
     }
     if (top < 10) top = 10;
 
     setMenuPosition({ left, top });
-  }, [x, y]);
+  }, [x, y, menuDimensions.width, menuDimensions.height]);
 
-  // Calculate submenu positions based on actual button positions
+  // Calculate submenu positions based on actual button positions and submenu dimensions
   React.useEffect(() => {
     const positions: Record<string, { left: number; top: number; side: 'left' | 'right' }> = {};
-    const submenuWidth = 180;
-    const submenuHeight = 200; // estimated max height
 
     const openSubmenus: string[] = [];
     if (layerSubmenuOpen) openSubmenus.push('layer');
@@ -152,6 +232,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
 
     openSubmenus.forEach(key => {
       const button = submenuButtonRefs.current[key];
+      const dims = submenuDimensions[key] || { width: 180, height: 200 };
+
       if (button) {
         const rect = button.getBoundingClientRect();
         let left = rect.right + 5;
@@ -159,24 +241,27 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         let side: 'left' | 'right' = 'right';
 
         // Check if submenu would go off right edge
-        if (left + submenuWidth > window.innerWidth) {
+        if (left + dims.width > window.innerWidth) {
           // Show on left side instead
-          left = rect.left - submenuWidth - 5;
+          left = rect.left - dims.width - 5;
           side = 'left';
         }
 
-        // Check if submenu would go off bottom edge
-        if (top + submenuHeight > window.innerHeight) {
-          top = window.innerHeight - submenuHeight - 10;
+        // Check if submenu would go off bottom edge - also check top edge
+        if (top + dims.height > window.innerHeight) {
+          top = Math.max(10, window.innerHeight - dims.height - 10);
         }
         if (top < 10) top = 10;
+
+        // Also ensure left position is valid
+        if (left < 10) left = 10;
 
         positions[key] = { left, top, side };
       }
     });
 
     setSubmenuPositions(positions);
-  }, [layerSubmenuOpen, rotateSubmenuOpen, pilesSubmenuOpen, topDeckSubmenuOpen, moveSubmenuOpen]);
+  }, [layerSubmenuOpen, rotateSubmenuOpen, pilesSubmenuOpen, topDeckSubmenuOpen, moveSubmenuOpen, submenuDimensions]);
 
   // "Move to.." section for cards - defined here to be inserted early
   const moveToSection: MenuItem[] = object.type === ItemType.CARD ? (() => {
@@ -189,7 +274,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         label: translate('Hand', language as Locale),
         action: 'moveToHand',
         icon: <Hand size={14} />,
-        visible: !hideCardActions && can('moveToHand')
+        visible: (!hideCardActions || isSearchWindow) && can('moveToHand')
       },
       {
         label: translate('Top Deck', language as Locale),
@@ -266,20 +351,63 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       visible: !hideCardActions && (can('layerUp') || can('layerDown')),
       hasSubmenu: true,
       separator: false,
-      submenuItems: [
-        {
-          label: translate('Layer Up', language as Locale),
-          action: 'layerUp',
-          icon: <ArrowUp size={14} />,
-          visible: can('layerUp')
-        },
-        {
-          label: translate('Layer Down', language as Locale),
-          action: 'layerDown',
-          icon: <ArrowDown size={14} />,
-          visible: can('layerDown')
-        }
-      ]
+      submenuItems: (() => {
+        // Get hyperscale layers, sorted by reverse order (higher maxZIndex = higher in list)
+        const sortedLayers = [...state.hyperscaleLayers]
+          .sort((a, b) => b.maxZIndex - a.maxZIndex);
+
+        // Check if player/GM can see this layer in context menu
+        const canViewLayer = (layer: HyperscaleLayer) => {
+          if (isGM) return true;
+          return layer.playerCanView;
+        };
+
+        // Generate menu items for each hyperscale layer
+        const layerItems: MenuItem[] = sortedLayers
+          .filter(layer => canViewLayer(layer))
+          .map(layer => {
+            const isSelected = object.hyperscaleLayerId === layer.id;
+            return {
+              label: layer.name,
+              action: `moveToHyperscaleLayer:${layer.id}`,
+              icon: (
+                <div className="flex items-center gap-1">
+                  {!isSelected && (
+                    <div
+                      className="w-2 h-2 rounded"
+                      style={{ backgroundColor: layer.color }}
+                    />
+                  )}
+                  {isSelected && <Check size={12} style={{ color: layer.color }} />}
+                </div>
+              ),
+              visible: true
+            };
+          });
+
+        // Add legacy layer up/down options first, then hyperscale layers
+        return [
+          {
+            label: translate('Layer Up', language as Locale),
+            action: 'layerUp',
+            icon: <ArrowUp size={14} />,
+            visible: can('layerUp')
+          },
+          {
+            label: translate('Layer Down', language as Locale),
+            action: 'layerDown',
+            icon: <ArrowDown size={14} />,
+            visible: can('layerDown')
+          },
+          {
+            label: '-',
+            action: 'separator',
+            visible: layerItems.length > 0,
+            isSeparator: true
+          },
+          ...layerItems
+        ];
+      })()
     },
     {
       label: translate('Rotation', language as Locale),
@@ -496,6 +624,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
               const submenuKey = isRotateSubmenu ? 'rotate' : isPilesSubmenu ? 'piles' : isTopDeckSubmenu ? 'topDeck' : isMoveSubmenu ? 'moveTo' : 'layer';
               const submenuPos = submenuPositions[submenuKey];
 
+              // Get the correct ref for this submenu
+              const getSubmenuRef = () => {
+                if (isRotateSubmenu) return rotateSubmenuRef;
+                if (isPilesSubmenu) return pilesSubmenuRef;
+                if (isTopDeckSubmenu) return topDeckSubmenuRef;
+                if (isMoveSubmenu) return moveSubmenuRef;
+                return layerSubmenuRef;
+              };
+
               return (
                 <div key={item.action || idx} className="relative" ref={submenuRef}>
                   <button
@@ -511,6 +648,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                   </button>
                   {isSubmenuOpen && submenuPos && createPortal(
                     <div
+                      ref={getSubmenuRef()}
+                      data-submenu="true"
+                      data-submenu-key={submenuKey}
                       className="fixed z-[10000] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
                       style={{ left: submenuPos.left, top: submenuPos.top }}
                       onMouseDown={(e) => e.stopPropagation()}

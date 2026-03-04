@@ -60,6 +60,7 @@ export type Action =
   | BaseAction<'SYNC_STATE', GameState> // Network sync
   | BaseAction<'RESTORE_IMAGES', Record<string, string>> // Restore images from cache (guest)
   | BaseAction<'UPDATE_VIEW_TRANSFORM', ViewTransform>
+  | BaseAction<'SET_PIXELS_PER_VU', { pixelsPerVU: number }>
   | BaseAction<'UPDATE_HAND_CARD_ORDER', { playerId: string; cardOrder: string[] }>
   | BaseAction<'UPDATE_DECK_CARD_DIMENSIONS', { deckId: string; cardWidth?: number; cardHeight?: number }>
   | BaseAction<'MILL_CARD_TO_BOTTOM', { cardId: string; deckId: string }>
@@ -71,7 +72,7 @@ export type Action =
   | BaseAction<'UNPIN_FROM_VIEWPORT', { id: string; worldX: number; worldY: number }>
   // UI Object actions
   | BaseAction<'CREATE_PANEL', { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string }>
-  | BaseAction<'CREATE_WINDOW', { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string }>
+  | BaseAction<'CREATE_WINDOW', { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string; targetLayerId?: string }>
   | BaseAction<'CLOSE_UI_OBJECT', { id: string }>
   | BaseAction<'TOGGLE_MINIMIZE', { id: string }>
   | BaseAction<'RESIZE_UI_OBJECT', { id: string; width: number; height: number }>
@@ -88,6 +89,12 @@ export type Action =
   | BaseAction<'DELETE_DRAWING_LAYER', { layerId: string }>
   | BaseAction<'UPDATE_DRAWING_LAYER', { layerId: string; updates: Partial<DrawingLayer> }>
   | BaseAction<'CLEAR_DRAWING_LAYER', { layerId: string }>
+  // Hyperscale layer actions
+  | BaseAction<'ADD_HYPERSCALE_LAYER', Omit<import('../types').HyperscaleLayer, 'id'>>
+  | BaseAction<'UPDATE_HYPERSCALE_LAYER', { layerId: string; updates: Partial<import('../types').HyperscaleLayer> }>
+  | BaseAction<'DELETE_HYPERSCALE_LAYER', { layerId: string }>
+  | BaseAction<'SET_HYPERSCALE_LAYERS', { layerIds: string[] }> // Set selected hyperscale layers
+  | BaseAction<'MOVE_OBJECT_TO_HYPERSCALE_LAYER', { objectId: string; layerId: string }>
   // Undo actions
   | ActionWithoutPayload<'UNDO_MARKER'>
   | ActionWithoutPayload<'UNDO_GENERAL'>

@@ -619,7 +619,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                 >
                   <foreignObject x="0" y="0" width="100" height="100">
                     <div className="w-full h-full flex flex-col items-center justify-center">
-                      <Layers className="text-slate-400 mb-1" size={16} />
+                      <Layers className="text-slate-400 mb-1" size={shouldUseSvgForDeck(cardShape) ? 12 : 16} />
                       <DeckLabel
                         name={deck.name}
                         count={isShuffling ? animatedCurrentCount : visibleCardCount}

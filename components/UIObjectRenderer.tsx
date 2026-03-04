@@ -8,6 +8,7 @@ import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { TopDeckModal } from './TopDeckModal';
 import { PanelSettingsModal } from './PanelSettingsModal';
+import { HyperscaleLayerSettingsWindow } from './HyperscaleLayerSettingsWindow';
 import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { useLocalSettings } from '../hooks/useLocalSettings';
@@ -381,15 +382,17 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     ? 'border-purple-400'
     : 'border-slate-600';
 
-  // Special handling for OBJECT_SETTINGS windows - render without frame since modal uses portal
-  const isObjectSettingsWindow = uiObject.type === ItemType.WINDOW &&
-    (uiObject as WindowObject).windowType === WindowType.OBJECT_SETTINGS;
-  if (isObjectSettingsWindow) {
+  // Special handling for modal windows that render via portal - don't render window frame
+  const isModalWindow = uiObject.type === ItemType.WINDOW &&
+    ((uiObject as WindowObject).windowType === WindowType.OBJECT_SETTINGS ||
+     (uiObject as WindowObject).windowType === WindowType.HYPERSCALE_LAYER_SETTINGS);
+  if (isModalWindow) {
     const windowObj = uiObject as WindowObject;
     const targetObj = windowObj.targetObjectId ? state.objects[windowObj.targetObjectId] : null;
     const targetPanel = targetObj?.type === ItemType.PANEL ? targetObj as PanelObject : null;
-    // For non-panel objects, don't render the window frame - the modal renders via portal
-    if (!targetPanel || targetPanel.panelType === PanelType.HAND) {
+    // For non-panel objects and hyperscale layer settings, don't render the window frame - the modal renders via portal
+    if ((uiObject as WindowObject).windowType === WindowType.HYPERSCALE_LAYER_SETTINGS ||
+        !targetPanel || targetPanel.panelType === PanelType.HAND) {
       return <WindowContent window={windowObj} />;
     }
   }
@@ -675,7 +678,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 <div className="pt-4 pb-2 border-t border-slate-700">
                   <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Player Permissions', state.language as Locale)}</h4>
                   <div className="grid grid-cols-2 gap-2">
-                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
+                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
                       <span className="text-xs text-gray-300">{translate('Create Objects', state.language as Locale)}</span>
                       <button
                         onClick={(e) => {
@@ -695,7 +698,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                         }`} />
                       </button>
                     </label>
-                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
+                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
                       <span className="text-xs text-gray-300">{translate('Configure Objects (Settings)', state.language as Locale)}</span>
                       <button
                         onClick={(e) => {
@@ -715,7 +718,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                         }`} />
                       </button>
                     </label>
-                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
+                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
                       <span className="text-xs text-gray-300">{translate('Delete Objects', state.language as Locale)}</span>
                       <button
                         onClick={(e) => {
@@ -735,7 +738,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                         }`} />
                       </button>
                     </label>
-                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
+                    <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
                       <span className="text-xs text-gray-300">{translate('Show/Hide Objects', state.language as Locale)}</span>
                       <button
                         onClick={(e) => {
@@ -766,7 +769,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                   {translate('Effects', state.language as Locale)}
                 </h4>
                 <label
-                  className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50"
+                  className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer "
                   title={translate('Show ghost/locked version of objects when another player has them in cursor slot', state.language as Locale)}
                 >
                   <span className="text-xs text-gray-300">{translate('Show shadow objects held by other players', state.language as Locale)}</span>
@@ -1082,6 +1085,25 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
           language={state.language}
         />
       ) : null;
+    case WindowType.HYPERSCALE_LAYER_SETTINGS:
+      const targetLayer = windowObj.targetLayerId
+        ? state.hyperscaleLayers.find(l => l.id === windowObj.targetLayerId)
+        : null;
+      if (!targetLayer) {
+        return (
+          <div className="p-4 text-slate-400 text-sm">
+            Layer not found
+            <button onClick={handleClose} className="ml-2 text-red-400 hover:text-red-300">Close</button>
+          </div>
+        );
+      }
+      return (
+        <HyperscaleLayerSettingsWindow
+          layer={targetLayer}
+          onClose={handleClose}
+          language={state.language}
+        />
+      );
     default:
       return (
         <div className="p-4 text-slate-400 text-sm">

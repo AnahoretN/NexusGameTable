@@ -1,10 +1,12 @@
-import { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage } from '../types';
+import { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, HyperscaleLayer } from '../types';
 import { GM_COLOR, getSessionId } from './gameConstants';
+import { calculatePixelsPerVU } from '../utils/vuSystem';
 
 export interface ViewTransform {
   offset: { x: number; y: number };
   zoom: number;
   scroll: { x: number; y: number };
+  pixelsPerVU: number; // Conversion factor from virtual units to pixels
 }
 
 export interface GameState {
@@ -18,6 +20,8 @@ export interface GameState {
   undo: UndoState; // Undo/redo history
   playerPermissions: PlayerPermissions; // Permissions for non-GM players
   language: AppLanguage; // Application language
+  hyperscaleLayers: HyperscaleLayer[]; // Hyperscale layers configuration
+  selectedHyperscaleLayerIds: string[]; // IDs of hyperscale layers currently selected for manipulation
 }
 
 /**
@@ -31,7 +35,12 @@ export const initialState: GameState = {
   ],
   activePlayerId: 'gm',
   diceRolls: [],
-  viewTransform: { offset: { x: 0, y: 0 }, zoom: 1, scroll: { x: 0, y: 0 } },
+  viewTransform: {
+    offset: { x: 0, y: 0 },
+    zoom: 1,
+    scroll: { x: 0, y: 0 },
+    pixelsPerVU: typeof window !== 'undefined' ? calculatePixelsPerVU(window.innerWidth, window.innerHeight) : 1.08
+  },
   sessionId: getSessionId(),
   drawings: { layers: [] },
   undo: { markerHistory: [], generalHistory: [], maxMarkerHistory: 10, maxGeneralHistory: 100 },
@@ -44,4 +53,57 @@ export const initialState: GameState = {
   },
   // Load language from localStorage or default to 'en'
   language: (typeof localStorage !== 'undefined' && (localStorage.getItem('app-language') as AppLanguage)) || 'en',
+  // Default hyperscale layers
+  hyperscaleLayers: [
+    {
+      id: 'boards',
+      name: 'Game Boards',
+      minZIndex: 1,
+      maxZIndex: 1000,
+      color: '#3b82f6',
+      playerCanSelect: true,
+      playerCanView: true,
+      individualPosition: false,
+      individualObjects: false,
+      order: 0
+    },
+    {
+      id: 'cards',
+      name: 'Cards',
+      minZIndex: 1001,
+      maxZIndex: 3000,
+      color: '#f59e0b',
+      playerCanSelect: true,
+      playerCanView: true,
+      individualPosition: false,
+      individualObjects: false,
+      order: 1
+    },
+    {
+      id: 'tokens',
+      name: 'Tokens',
+      minZIndex: 3001,
+      maxZIndex: 6000,
+      color: '#10b981',
+      playerCanSelect: true,
+      playerCanView: true,
+      individualPosition: false,
+      individualObjects: false,
+      order: 2
+    },
+    {
+      id: 'interface',
+      name: 'Interface',
+      minZIndex: 9001,
+      maxZIndex: 10000,
+      color: '#8b5cf6',
+      playerCanSelect: true,
+      playerCanView: false,
+      individualPosition: true,
+      individualObjects: false,
+      order: 3
+    }
+  ],
+  // All layers selected by default
+  selectedHyperscaleLayerIds: ['boards', 'cards', 'tokens', 'interface'],
 };
