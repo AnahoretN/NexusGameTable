@@ -1043,10 +1043,11 @@ export const Tabletop: React.FC = () => {
       setCursorPosition(newPos);
     } else {
       // Calculate screen position of object center (world -> screen) for Shift+click
+      // IMPORTANT: Use v2p to convert vu to pixels, and account for scroll position
       const itemCenterX = item.x + (item.width ?? 63) / 2;
       const itemCenterY = item.y + (item.height ?? 88) / 2;
-      const screenX = itemCenterX * zoom + offset.x;
-      const screenY = itemCenterY * zoom + offset.y;
+      const screenX = v2p(itemCenterX) - state.viewTransform.scroll.x;
+      const screenY = v2p(itemCenterY) - state.viewTransform.scroll.y;
       // Set cursor position to object center on screen
       cursorPositionRef.current = { x: screenX, y: screenY };
       setCursorPosition({ x: screenX, y: screenY });
@@ -1059,7 +1060,7 @@ export const Tabletop: React.FC = () => {
 
     // Mark the item as inCursorSlot (keeps it in objects list but hidden from tabletop)
     dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
-  }, [cursorSlot.length, dispatch, offset.x, offset.y, zoom, cursorSlotRef]);
+  }, [cursorSlot.length, dispatch, v2p, state.viewTransform, cursorSlotRef]);
 
   // Drop all items from cursor slot at specified screen coordinates
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
@@ -1080,9 +1081,11 @@ export const Tabletop: React.FC = () => {
 
     // Not dropping on a deck - drop items on tabletop
     // Convert screen coordinates to world coordinates
-    // CSS transform is: translate(offset) scale(zoom), with offset always (0,0) now
-    const worldX = p2v(clientX) - offset.x;
-    const worldY = p2v(clientY) - offset.y;
+    // clientX/Y are viewport coordinates, add scroll position to get world-relative position
+    const scrollX = state.viewTransform.scroll.x;
+    const scrollY = state.viewTransform.scroll.y;
+    const worldX = p2v(clientX + scrollX);
+    const worldY = p2v(clientY + scrollY);
 
     // Add all items from slot back to the game with same offsets as in cursor display
     currentSlot.forEach((item) => {
@@ -1174,7 +1177,7 @@ export const Tabletop: React.FC = () => {
     // Set flag to prevent immediate re-pickup
     justDroppedRef.current = true;
     lastDropTimeRef.current = Date.now();
-  }, [cursorSlot, cursorSlotSource, offset.x, offset.y, zoom, dispatch, getCardSettings]);
+  }, [cursorSlot, cursorSlotSource, p2v, state.viewTransform, dispatch, getCardSettings]);
 
   // Listen for drop-cursor-slot-at-position events (from drag-to-place in ToolsPanel)
   useEffect(() => {
@@ -1662,11 +1665,19 @@ export const Tabletop: React.FC = () => {
         }
 
         // If moved less than 5px, treat as click and add to cursor slot (same as Shift+click)
+        // EXCEPTION: Token clones already on table should NOT be added to slot with simple click
+        // (Shift+click and HOLD mode still work for clones)
         if (distance < 5) {
-          // Add to cursor slot WITHOUT mousePosition - this uses card center like Shift+click
-          console.log(`[DRAG SYSTEM] CLICK without drag (${distance.toFixed(1)}px < 5px) - activating HOLD mode for item: ${itemRef.item.name}`);
-          addToCursorSlot(itemRef.id, itemRef.item, 'hold');
-          return;
+          // Check if this is a token clone (id !== archetypeId means it's a clone, not an archetype)
+          const item = itemRef.item as any;
+          const isTokenClone = item.archetypeId !== undefined && item.id !== item.archetypeId;
+          if (!isTokenClone) {
+            // Add to cursor slot WITHOUT mousePosition - this uses card center like Shift+click
+            console.log(`[DRAG SYSTEM] CLICK without drag (${distance.toFixed(1)}px < 5px) - activating HOLD mode for item: ${itemRef.item.name}`);
+            addToCursorSlot(itemRef.id, itemRef.item, 'hold');
+            return;
+          }
+          console.log(`[DRAG SYSTEM] CLICK without drag ignored for token clone on table (use Shift+click or HOLD): ${itemRef.item.name}`);
         }
         console.log(`[DRAG SYSTEM] Mouse up after drag completed (${distance.toFixed(1)}px >= 5px) - tracking already cleared`);
         // If moved 5px or more, the card was already added to slot in mousemove, nothing to do
@@ -1926,11 +1937,10 @@ export const Tabletop: React.FC = () => {
           offsetY = e.clientY - item.y;
         } else {
           // Unpinned objects: use world coordinates
-          // Note: CSS transform is translate(offset) scale(zoom), so:
-          // screenX = (worldX + offset.x) * zoom, therefore:
-          // worldX = screenX / zoom - offset.x
-          const mouseWorldX = p2v(e.clientX) - offset.x;
-          const mouseWorldY = p2v(e.clientY) - offset.y;
+          // Convert viewport coordinates to world coordinates
+          // Add scroll position to account for panning
+          const mouseWorldX = p2v(e.clientX + state.viewTransform.scroll.x);
+          const mouseWorldY = p2v(e.clientY + state.viewTransform.scroll.y);
 
           offsetX = mouseWorldX - item.x;
           offsetY = mouseWorldY - item.y;
@@ -2043,11 +2053,10 @@ export const Tabletop: React.FC = () => {
 
       // Unpinned game objects use world coordinates with zoom and offset
       // Always update position - the world coordinates work correctly even when cursor is outside
-      // Note: CSS transform is translate(offset) scale(zoom), so:
-      // screenX = (worldX + offset.x) * zoom, therefore:
-      // worldX = screenX / zoom - offset.x
-      const mouseWorldX = p2v(e.clientX) - offset.x;
-      const mouseWorldY = p2v(e.clientY) - offset.y;
+      // Convert viewport coordinates to world coordinates
+      // Add scroll position to account for panning
+      const mouseWorldX = p2v(e.clientX + state.viewTransform.scroll.x);
+      const mouseWorldY = p2v(e.clientY + state.viewTransform.scroll.y);
 
       // Use the offset to position the object relative to cursor
       const targetX = mouseWorldX - (dragOffsetRef.current?.x || 0);
@@ -2086,9 +2095,9 @@ export const Tabletop: React.FC = () => {
       // Check if cursor is over a deck (for card-to-deck drop)
       if (draggingObj.type === ItemType.CARD) {
         // Convert cursor screen coordinates to world coordinates
-        // Note: scroll is handled by browser, not by game coordinates
-        const worldX = p2v(e.clientX) - offset.x;
-        const worldY = p2v(e.clientY) - offset.y;
+        // Add scroll position to account for panning
+        const worldX = p2v(e.clientX + state.viewTransform.scroll.x);
+        const worldY = p2v(e.clientY + state.viewTransform.scroll.y);
 
         // First check if cursor is over any pile (piles take priority)
         let foundPile = null;
@@ -2157,8 +2166,8 @@ export const Tabletop: React.FC = () => {
 
     // Handle pile dragging (for free-position piles)
     if (draggingPile && pileDragStartRef.current) {
-      const mouseWorldX = p2v(e.clientX) - offset.x;
-      const mouseWorldY = p2v(e.clientY) - offset.y;
+      const mouseWorldX = p2v(e.clientX + state.viewTransform.scroll.x);
+      const mouseWorldY = p2v(e.clientY + state.viewTransform.scroll.y);
 
       // Calculate new position based on drag start offset
       const newX = mouseWorldX - pileDragStartRef.current.x;
@@ -3137,8 +3146,8 @@ export const Tabletop: React.FC = () => {
             const card = state.objects[cardId] as CardType;
             if (card.type === ItemType.CARD && card.location === CardLocation.HAND) {
                 // Calculate world position for the card
-                const worldX = p2v(e.clientX) - offset.x - (card.width ?? 100) / 2;
-                const worldY = p2v(e.clientY) - offset.y - (card.height ?? 140) / 2;
+                const worldX = p2v(e.clientX + state.viewTransform.scroll.x) - (card.width ?? 100) / 2;
+                const worldY = p2v(e.clientY + state.viewTransform.scroll.y) - (card.height ?? 140) / 2;
 
                 // Clamp zIndex to card's hyperscale layer's maxZ
                 const cardLayer = state.hyperscaleLayers.find(l => l.id === card.hyperscaleLayerId);
@@ -3189,11 +3198,11 @@ export const Tabletop: React.FC = () => {
 
         {/* Drawing Canvas - overlays the board for marker/eraser tools */}
         <DrawingCanvas
-          width={window.innerWidth}
-          height={window.innerHeight}
+          width={worldBounds.width}
+          height={worldBounds.height}
           zoom={zoom}
-          offsetX={offset.x}
-          offsetY={offset.y}
+          offsetX={state.viewTransform.scroll.x}
+          offsetY={state.viewTransform.scroll.y}
           cursorSlotLength={cursorSlot.length}
         />
 
@@ -4419,6 +4428,7 @@ export const Tabletop: React.FC = () => {
                             cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
                             allObjects={state.objects}
                             currentTool={currentTool}
+                            pixelsPerVU={pixelsPerVU}
                         />
                     </div>
                 );
@@ -4512,6 +4522,7 @@ export const Tabletop: React.FC = () => {
                             cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
                             allObjects={state.objects}
                             currentTool={currentTool}
+                            pixelsPerVU={pixelsPerVU}
                         />
                     </div>
                 );
@@ -4552,8 +4563,8 @@ export const Tabletop: React.FC = () => {
                             position: 'absolute',
                             left: pinnedPosition.x,
                             top: pinnedPosition.y,
-                            width: board.width,
-                            height: board.height,
+                            width: v2p(board.width),
+                            height: v2p(board.height),
                             zIndex: board.zIndex || 1000,
                         }}
                     >
