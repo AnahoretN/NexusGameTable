@@ -1,3 +1,4 @@
+import { t as translate, Locale } from '../utils/translations';
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -29,7 +30,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   const scaleMenuRef = useRef<HTMLDivElement>(null);
   const tabScaleMenuRef = useRef<HTMLDivElement>(null);
 
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   // State for selected player hand tab (whose hand we're viewing)
   const [selectedPlayerId, setSelectedPlayerId] = useState(state.activePlayerId);
@@ -776,7 +776,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
               >
                 <span className="flex items-center gap-1">
                   {isOwnHand ? (
-                    <span>{t({ en: 'My Hand', ru: 'Моя рука' })} ({cardCount})</span>
+                    <span>{translate('My Hand', language as Locale)} ({cardCount})</span>
                   ) : (
                     <span>{player.name} ({cardCount})</span>
                   )}
@@ -791,7 +791,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       {!isCollapsed && state.players.length === 1 && (
         <div className="flex items-center justify-between px-2 py-1 border-b border-slate-700">
           <span className="text-xs text-slate-400">
-            {t({ en: 'My Hand', ru: 'Моя руку' })}
+            {translate('My Hand', language as Locale)}
           </span>
           <button
             onClick={(e) => {
@@ -800,7 +800,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
               setScaleMenu(safePos);
             }}
             className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-            title={t({ en: 'Card Scale Settings', ru: 'Настройки масштаба карт' })}
+            title={translate('Card Scale Settings', language as Locale)}
           >
             <Settings size={14} />
           </button>
@@ -827,13 +827,13 @@ export const HandPanel: React.FC<HandPanelProps> = ({
             <div className="flex flex-col items-center justify-center min-h-[200px] text-slate-500">
               <p className="text-sm">
                 {isViewingOpponentHand
-                  ? `${state.players.find(p => p.id === selectedPlayerId)?.name || t({ en: 'Player', ru: 'Игрок' })} ${t({ en: 'has no cards', ru: 'не имеет карт' })}`
-                  : t({ en: 'No cards in hand', ru: 'Нет карт в руке' })}
+                  ? `${state.players.find(p => p.id === selectedPlayerId)?.name || translate('Player', language as Locale)} ${translate('has no cards', language as Locale)}`
+                  : translate('No cards in hand', language as Locale)}
               </p>
               <p className="text-xs mt-1">
                 {isViewingOpponentHand
-                  ? t({ en: 'Cards will be shown here when they appear', ru: 'Карты будут видны здесь когда они появятся' })
-                  : t({ en: 'Draw cards from a deck', ru: 'Возьмите карты из колоды' })}
+                  ? translate('Cards will be shown here when they appear', language as Locale)
+                  : translate('Draw cards from a deck', language as Locale)}
               </p>
             </div>
           ) : (
@@ -972,7 +972,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="text-xs text-slate-400 mb-2">
-            {t({ en: 'Hand Card Scale', ru: 'Масштаб карт в руке' })}
+            {translate('Hand Card Scale', language as Locale)}
           </div>
           <div className="flex items-center gap-3">
             <input
@@ -1049,7 +1049,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="text-xs text-slate-400 mb-2">
-            {t({ en: 'Tab Scale', ru: 'Масштаб вкладки' })}
+            {translate('Tab Scale', language as Locale)}
           </div>
           <div className="flex items-center gap-3">
             <input

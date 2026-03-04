@@ -1,45 +1,45 @@
 import React from 'react';
 import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin, ArrowUp, ArrowDown, CornerDownRight } from 'lucide-react';
 import { ContextAction, AppLanguage } from '../types';
-import { getTranslation } from '../translations';
+import { t as translate, Locale } from './translations';
 
 // Re-export ContextAction for convenience
 export type ButtonAction = ContextAction;
 
-// Mapping from button action to translation key
-const ACTION_TRANSLATION_KEYS: Record<ButtonAction, string> = {
-  flip: 'flip',
-  rotateClockwise: 'rotateClockwise',
-  rotateCounterClockwise: 'rotateCounterClockwise',
-  swingClockwise: 'swingClockwise',
-  swingCounterClockwise: 'swingCounterClockwise',
-  clone: 'cloneObject',
-  delete: 'deleteObject',
-  lock: 'lock',
-  pin: 'pin',
-  layerUp: 'layerUp',
-  layerDown: 'layerDown',
-  draw: 'drawCard',
-  playTopCard: 'playTop',
-  millTopCard: 'mill',
-  toBottom: 'toBottom',
-  shuffleDeck: 'shuffleDeck',
-  searchDeck: 'searchDeck',
-  topDeck: 'topDeckSection',
-  piles: 'piles',
-  returnAll: 'returnAll',
-  hide: 'removeFromTable',
-  millToBottom: 'millToBottom',
-  showTop: 'showTop',
+// Mapping from button action to English text (used as translation key)
+const ACTION_LABELS: Record<ButtonAction, string> = {
+  flip: 'Flip',
+  rotateClockwise: 'Rotate Clockwise',
+  rotateCounterClockwise: 'Rotate Counter-Clockwise',
+  swingClockwise: 'Swing Clockwise',
+  swingCounterClockwise: 'Swing Counter-Clockwise',
+  clone: 'Clone',
+  delete: 'Delete',
+  lock: 'Lock',
+  pin: 'Pin',
+  layerUp: 'Layer Up',
+  layerDown: 'Layer Down',
+  draw: 'Draw Card',
+  playTopCard: 'Play Top',
+  millTopCard: 'Mill',
+  toBottom: 'To Bottom',
+  shuffleDeck: 'Shuffle',
+  searchDeck: 'Search',
+  topDeck: 'Top Deck (section)',
+  piles: 'Piles',
+  returnAll: 'Return All',
+  hide: 'Hide/Show',
+  millToBottom: 'To Bottom',
+  showTop: 'Show Top',
   // "Move to" actions
-  moveToHand: 'moveToHand',
-  moveToTopDeck: 'moveToTopDeck',
-  moveToBottomDeck: 'moveToBottomDeck',
-  moveToDiscard: 'moveToDiscard',
+  moveToHand: 'Move to Hand',
+  moveToTopDeck: 'Move to Top Deck',
+  moveToBottomDeck: 'Move to Bottom Deck',
+  moveToDiscard: 'Move to Discard',
   // Abstract actions (no buttons, but needed for type completeness)
-  rotate: 'rotate',
-  layer: 'layer',
-  moveTo: 'moveToSection',
+  rotate: 'Rotation',
+  layer: 'Change Layer',
+  moveTo: 'Move to...',
 };
 
 // Base button configuration (styling only)
@@ -142,13 +142,15 @@ export function getCardButtonConfig(
   let title: string;
   if (action === 'lock') {
     title = locked
-      ? getTranslation(language, 'unlock')
-      : getTranslation(language, 'lock');
+      ? translate('Unlock', language as Locale)
+      : translate('Lock', language as Locale);
   } else if (action === 'pin') {
-    title = getTranslation(language, 'pin');
+    title = locked
+      ? translate('Unpin', language as Locale)
+      : translate('Pin', language as Locale);
   } else {
-    const translationKey = ACTION_TRANSLATION_KEYS[action as ButtonAction];
-    title = translationKey ? getTranslation(language, translationKey as any) : action;
+    const label = ACTION_LABELS[action as ButtonAction];
+    title = label ? translate(label, language as Locale) : action;
   }
 
   return {

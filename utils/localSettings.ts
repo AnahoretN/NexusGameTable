@@ -18,6 +18,11 @@ export interface LocalSettings {
   hasSeenInitialScreen: boolean;
   // Whether the menu position was set by the user (or loaded from save)
   isPositionSet: boolean;
+  // Visual effects settings
+  effects: {
+    // Show shadow/ghost version of objects held by other players in their cursor slot
+    showRemoteCursorSlotObjects: boolean;
+  };
 }
 
 const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
@@ -31,6 +36,9 @@ const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   },
   hasSeenInitialScreen: false,
   isPositionSet: false,
+  effects: {
+    showRemoteCursorSlotObjects: true, // Enabled by default
+  },
 };
 
 /**

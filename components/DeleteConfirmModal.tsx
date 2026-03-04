@@ -1,3 +1,4 @@
+import { t as translate, Locale } from '../utils/translations';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle } from 'lucide-react';
@@ -11,7 +12,6 @@ interface DeleteConfirmModalProps {
 }
 
 export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ objectName, onConfirm, onCancel, language = 'en' }) => {
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -24,12 +24,12 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ objectNa
             <AlertTriangle className="text-red-500" size={24} />
           </div>
 
-          <h3 className="text-xl font-bold text-white">{t({ en: 'Permanently Delete?', ru: 'Удалить навсегда?' })}</h3>
+          <h3 className="text-xl font-bold text-white">{translate('Delete', language as Locale)}</h3>
 
           <p className="text-slate-300 text-sm leading-relaxed">
-            {t({ en: `Are you sure you want to destroy "${objectName}"?`, ru: `Вы уверены, что хотите удалить "${objectName}"?` })}
+            {translate(`Are you sure you want to delete "${objectName}"?`, language as Locale)}
             <br/>
-            <span className="text-red-400 text-xs mt-1 block">{t({ en: 'This action cannot be undone.', ru: 'Это действие нельзя отменить.' })}</span>
+            <span className="text-red-400 text-xs mt-1 block">{translate('This action cannot be undone.', language as Locale)}</span>
           </p>
 
           <div className="flex gap-3 w-full mt-4">
@@ -37,13 +37,13 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ objectNa
               onClick={onCancel}
               className="flex-1 px-4 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-medium hover:bg-slate-700 hover:text-white transition-colors border border-slate-700"
             >
-              {t({ en: 'Cancel', ru: 'Отмена' })}
+              {translate('Cancel', language as Locale)}
             </button>
             <button
               onClick={onConfirm}
               className="flex-1 px-4 py-2.5 rounded-lg bg-red-600 text-white font-bold hover:bg-red-500 transition-all shadow-lg shadow-red-900/20"
             >
-              {t({ en: 'Destroy Object', ru: 'Удалить объект' })}
+              {translate('Delete', language as Locale)}
             </button>
           </div>
         </div>

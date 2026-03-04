@@ -10,8 +10,9 @@ import { TopDeckModal } from './TopDeckModal';
 import { PanelSettingsModal } from './PanelSettingsModal';
 import { useGame } from '../store/GameContext';
 import { MAIN_MENU_WIDTH } from '../constants';
+import { useLocalSettings } from '../hooks/useLocalSettings';
 import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
-import { getTranslation } from '../translations';
+import { t as translate, preloadTranslations, Locale } from '../utils/translations';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
@@ -78,9 +79,16 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   // Main menu specific state
   const [showGameSettings, setShowGameSettings] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
+  const { settings: localSettings, updateEffectSetting } = useLocalSettings();
 
   const minimized = uiObject.minimized || false;
   const visible = uiObject.visible !== false;
+
+  // Preload translations for current language
+  useEffect(() => {
+    const lang = localStorage.getItem('app-language') as Locale || 'en';
+    preloadTranslations(lang);
+  }, []);
 
   if (!visible) return null;
 
@@ -424,7 +432,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 }}
                 className="text-sm text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
               >
-                [{getTranslation(state.language, 'supportProject')}]
+                [{translate('Support Project', state.language as Locale)}]
               </button>
             )}
           </div>
@@ -439,7 +447,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     setShowGameSettings(true);
                   }}
                   className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                  title={getTranslation(state.language, 'settings')}
+                  title={translate('Settings', state.language as Locale)}
                 >
                   <Settings size={14} className="text-white" />
                 </button>
@@ -631,7 +639,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
-              <h3 className="text-base font-bold text-white">{getTranslation(state.language, 'gameSettings')}</h3>
+              <h3 className="text-base font-bold text-white">{translate('Game Settings', state.language as Locale)}</h3>
             </div>
 
             {/* Content */}
@@ -643,28 +651,32 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
               {/* Language Settings */}
               <div className="pt-2">
-                <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'language')}</h4>
+                <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Language', state.language as Locale)}</h4>
                 <select
                   value={localStorage.getItem('app-language') || 'en'}
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const newLang = e.target.value as AppLanguage;
                     localStorage.setItem('app-language', newLang);
+                    await preloadTranslations(newLang as Locale);
                     dispatch({ type: 'UPDATE_LANGUAGE', payload: newLang });
                   }}
                   className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
                 >
+                  <option value="be">Беларуская</option>
                   <option value="en">English</option>
                   <option value="ru">Русский</option>
+                  <option value="sr">Srpski (Latin)</option>
+                  <option value="uk">Українська</option>
                 </select>
               </div>
 
               {/* Player Permissions */}
               {isGM && (
                 <div className="pt-4 pb-2 border-t border-slate-700">
-                  <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'playerPermissions')}</h4>
+                  <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Player Permissions', state.language as Locale)}</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'createObjects')}</span>
+                      <span className="text-xs text-gray-300">{translate('Create Objects', state.language as Locale)}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -684,7 +696,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'configureObjects')}</span>
+                      <span className="text-xs text-gray-300">{translate('Configure Objects (Settings)', state.language as Locale)}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -704,7 +716,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'deleteObjects')}</span>
+                      <span className="text-xs text-gray-300">{translate('Delete Objects', state.language as Locale)}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -724,7 +736,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'showHideObjects')}</span>
+                      <span className="text-xs text-gray-300">{translate('Show/Hide Objects', state.language as Locale)}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -747,39 +759,67 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 </div>
               )}
 
+              {/* Effects Section */}
+              <div className="pt-4 pb-2 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
+                  <Eye size={14} />
+                  {translate('Effects', state.language as Locale)}
+                </h4>
+                <label
+                  className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer hover:bg-slate-700/50"
+                  title={translate('Show ghost/locked version of objects when another player has them in cursor slot', state.language as Locale)}
+                >
+                  <span className="text-xs text-gray-300">{translate('Show shadow objects held by other players', state.language as Locale)}</span>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      updateEffectSetting('showRemoteCursorSlotObjects', !localSettings.effects.showRemoteCursorSlotObjects);
+                    }}
+                    className={`w-10 h-5 rounded-full transition-colors ${
+                      localSettings.effects.showRemoteCursorSlotObjects ? 'bg-green-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                      localSettings.effects.showRemoteCursorSlotObjects ? 'translate-x-5' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </label>
+              </div>
+
               {/* Hotkeys Section */}
               <div className="pt-4 pb-2 border-t border-slate-700">
                 <h4 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
                   <Keyboard size={14} />
-                  {getTranslation(state.language, 'hotkeys')}
+                  {translate('Hotkeys', state.language as Locale)}
                 </h4>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-slate-900 rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkUndo')}</span>
+                      <span className="text-xs text-gray-300">{translate('Undo', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Z</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkEscape')}</span>
+                      <span className="text-xs text-gray-300">{translate('Close tooltip/menu', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Esc</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkShiftClick')}</span>
+                      <span className="text-xs text-gray-300">{translate('Add to cursor slot', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Click</kbd>
                     </div>
                   </div>
                   <div className="bg-slate-900 rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkShiftPan')}</span>
+                      <span className="text-xs text-gray-300">{translate('Pan view (hold + drag)', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Drag</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkShiftMarker')}</span>
+                      <span className="text-xs text-gray-300">{translate('Move the drawing', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Marker</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2">
-                      <span className="text-xs text-gray-300">{getTranslation(state.language, 'hkShiftEraser')}</span>
+                      <span className="text-xs text-gray-300">{translate('Delete entire drawing', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Eraser</kbd>
                     </div>
                   </div>
@@ -788,20 +828,20 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
               {/* Storage & Cache Section */}
               <div className="pt-4 pb-2 border-t border-slate-700">
-                <h4 className="text-sm font-bold text-gray-300 mb-3">{getTranslation(state.language, 'storage')}</h4>
+                <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Storage & Cache', state.language as Locale)}</h4>
 
                 {hasSavedGameState() && (
                   <div className="bg-slate-900 rounded px-3 py-2 mb-3">
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                       <Clock size={12} />
-                      <span>{getTranslation(state.language, 'lastSave')}{formatTimestamp(getSavedGameTimestamp() || 0)}</span>
+                      <span>{translate('Last save: ', state.language as Locale)}{formatTimestamp(getSavedGameTimestamp() || 0)}</span>
                     </div>
                   </div>
                 )}
 
                 <button
                   onClick={() => {
-                    if (confirm(getTranslation(state.language, 'clearCacheConfirm'))) {
+                    if (confirm(translate('Are you sure you want to clear all saved game data? This action cannot be undone.', state.language as Locale))) {
                       dispatch({ type: 'CLEAR_SAVED_STATE' });
                       // Reload page to start fresh
                       window.location.reload();
@@ -810,7 +850,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded transition-colors text-sm"
                 >
                   <Trash2 size={14} />
-                  <span>{getTranslation(state.language, 'clearCache')}</span>
+                  <span>{translate('Clear Cache', state.language as Locale)}</span>
                 </button>
               </div>
             </div>
@@ -821,7 +861,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 onClick={() => setShowGameSettings(false)}
                 className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded font-medium"
               >
-                {getTranslation(state.language, 'close')}
+                {translate('Close', state.language as Locale)}
               </button>
             </div>
           </div>
@@ -834,11 +874,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[420px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
-              <h3 className="text-base font-bold text-white">{getTranslation(state.language, 'supportProject')}</h3>
+              <h3 className="text-base font-bold text-white">{translate('Links', state.language as Locale)}</h3>
             </div>
             <div className="p-6">
               <p className="text-sm text-gray-400 text-center mb-6">
-                {getTranslation(state.language, 'supportProjectDesc')}
+                {translate('Follow me on social media or support my work through donations!', state.language as Locale)}
               </p>
               <div className="grid grid-cols-2 gap-4">
                 {SUPPORT_LINKS.map((link) => (
@@ -887,8 +927,8 @@ const PanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
       return <HandPanelWithDragDetection panel={panel} />;
     case PanelType.TABLEAU:
       return <TableauPanelContent panel={panel} />;
-    case PanelType.PULL:
-      return <PullPanelContent panel={panel} />;
+    case PanelType.POOL:
+      return <PoolPanelContent panel={panel} />;
     // TODO: Add other panel types
     // case PanelType.CHAT:
     //   return <ChatPanel />;
@@ -968,12 +1008,12 @@ const TableauPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   );
 };
 
-// Pull panel content
-const PullPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+// Pool panel content
+const PoolPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 text-slate-300 text-sm">
-        Pull Panel
+        Pool Panel
       </div>
     </div>
   );

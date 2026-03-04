@@ -1,3 +1,4 @@
+import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
@@ -25,67 +26,66 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = [], l
     !['rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action)
   );
 
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   const configs: Partial<Record<ContextAction, { className: string; title: string; icon: JSX.Element }>> = {
     flip: {
       className: 'bg-purple-600 hover:bg-purple-500',
-      title: t({ en: 'Flip', ru: 'Перевернуть' }),
+      title: translate('Flip', language as Locale),
       icon: card.faceUp ? <EyeOff size={14} /> : <Eye size={14} />
     },
     rotate: {
       className: 'bg-green-600 hover:bg-green-500',
-      title: t({ en: 'Rotate', ru: 'Вращать' }),
+      title: translate('Rotate', language as Locale),
       icon: <RefreshCw size={14} />
     },
     rotateClockwise: {
       className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: t({ en: 'Rotate Clockwise', ru: 'Вращить по часовой' }),
+      title: translate('Rotate Clockwise', language as Locale),
       icon: <RotateCw size={14} />
     },
     rotateCounterClockwise: {
       className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: t({ en: 'Rotate Counter-Clockwise', ru: 'Вращить против часовой' }),
+      title: translate('Rotate Counter-Clockwise', language as Locale),
       icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />
     },
     swingClockwise: {
       className: 'bg-green-600 hover:bg-green-500',
-      title: t({ en: 'Swing Clockwise', ru: 'Покачать по часовой' }),
+      title: translate('Swing Clockwise', language as Locale),
       icon: <Move3D size={14} />
     },
     swingCounterClockwise: {
       className: 'bg-green-600 hover:bg-green-500',
-      title: t({ en: 'Swing Counter-Clockwise', ru: 'Покачать против часовой' }),
+      title: translate('Swing Counter-Clockwise', language as Locale),
       icon: <Move3D size={14} style={{ transform: 'scaleX(-1)' }} />
     },
     layerUp: {
       className: 'bg-blue-600 hover:bg-blue-500',
-      title: t({ en: 'Layer Up', ru: 'Слой выше' }),
+      title: translate('Layer Up', language as Locale),
       icon: <ArrowUp size={14} />
     },
     layerDown: {
       className: 'bg-blue-600 hover:bg-blue-500',
-      title: t({ en: 'Layer Down', ru: 'Слой ниже' }),
+      title: translate('Layer Down', language as Locale),
       icon: <ArrowDown size={14} />
     },
     clone: {
       className: 'bg-cyan-600 hover:bg-cyan-500',
-      title: t({ en: 'Clone', ru: 'Клонировать' }),
+      title: translate('Clone', language as Locale),
       icon: <Copy size={14} />
     },
     moveToHand: {
       className: 'bg-blue-600 hover:bg-blue-500',
-      title: t({ en: 'Move to Hand', ru: 'В руку' }),
+      title: translate('Move to Hand', language as Locale),
       icon: <Hand size={14} />
     },
     moveToTopDeck: {
       className: 'bg-orange-600 hover:bg-orange-500',
-      title: t({ en: 'Move to Top Deck', ru: 'В верх колоды' }),
+      title: translate('Move to Top Deck', language as Locale),
       icon: <ArrowUp size={14} />
     },
     moveToBottomDeck: {
       className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: t({ en: 'Move to Bottom Deck', ru: 'В низ колоды' }),
+      title: translate('Move to Bottom Deck', language as Locale),
       icon: <ArrowDown size={14} />
     },
   };
@@ -101,7 +101,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const gmInitializedRef = useRef(false);
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   const [cardOrder, setCardOrder] = useState<string[]>(
     pile ? pile.cardIds : deck.cardIds
@@ -557,7 +556,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             <button
               onClick={() => setModalWidth(DEFAULT_MODAL_WIDTH)}
               className="p-1 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-white"
-              title={t({ en: 'Reset Size', ru: 'Сбросить размер' })}
+              title={translate('Reset Size', language as Locale)}
             >
               <RefreshCw size={14} />
             </button>
@@ -586,7 +585,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-600">
               <Search size={32} className="mb-2 opacity-30" />
-              <p className="text-sm">{t({ en: 'No cards', ru: 'Нет карт' })}</p>
+              <p className="text-sm">{translate('No cards', language as Locale)}</p>
             </div>
           ) : (
             <div className="flex flex-wrap gap-[2px] w-full">
@@ -658,7 +657,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                 setCardOrder(newOrder);
               }}
               className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-              title={t({ en: 'Shuffle All', ru: 'Перемешать все' })}
+              title={translate('Shuffle All', language as Locale)}
             >
               <RefreshCw size={14} />
             </button>
@@ -684,7 +683,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                 }
               }}
               className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-              title={t({ en: 'Flip All', ru: 'Перевернуть все' })}
+              title={translate('Flip All', language as Locale)}
             >
               <Eye size={14} />
             </button>

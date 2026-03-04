@@ -530,7 +530,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         {/* Deck container - keeps normal z-index */}
         <div
           data-object-id={deck.id}
-          onMouseDown={(e) => isGM && handleMouseDown(e, deck.id)}
+          onMouseDown={(e) => (!deck.locked || isGM) && handleMouseDown(e, deck.id)}
           onContextMenu={(e) => handleContextMenu(e, deck)}
           onMouseEnter={() => {
             // Allow hover if dragging card OR if cursor slot has cards
