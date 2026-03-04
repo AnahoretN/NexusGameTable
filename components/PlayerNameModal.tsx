@@ -1,3 +1,4 @@
+import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { User, Check } from 'lucide-react';
@@ -18,7 +19,6 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
   title = 'Join Game',
   language = 'en'
 }) => {
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   const [name, setName] = useState(defaultName);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -59,7 +59,7 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
           </div>
 
           <p className="text-slate-300 text-sm">
-            {t({ en: 'Enter your name to join the game session:', ru: 'Введите ваше имя для присоединения к игре:' })}
+            {translate('Enter your name to join the game session:', language as Locale)}
           </p>
 
           <form onSubmit={handleSubmit}>
@@ -68,7 +68,7 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={t({ en: 'Your name...', ru: 'Ваше имя...' })}
+              placeholder={translate('Your name...', language as Locale)}
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
               maxLength={20}
             />
@@ -80,7 +80,7 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
             className="w-full px-4 py-3 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
           >
             <Check size={18} />
-            {t({ en: 'Join Game', ru: 'Присоединиться' })}
+            {translate('Join Game', language as Locale)}
           </button>
         </div>
       </div>

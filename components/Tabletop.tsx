@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, PanelObject, WindowObject, BattlefieldCell, Board as BoardType } from '../types';
+import { useLocalSettings } from '../hooks/useLocalSettings';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board as BoardType } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -14,16 +15,19 @@ import { UIObjectRendererMemo } from './UIObjectRenderer';
 import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
+import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
 import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown } from 'lucide-react';
 import { CARD_SHAPE_DIMS } from '../constants';
 import { generateUUID } from '../utils/uuid';
 import { CursorSlotVisualization } from './CursorSlotVisualization';
+// import { RemoteObjectAnimation, useRemoteObjectAnimation } from './RemoteObjectAnimation';
 import { PinnedIndicator } from './PinnedIndicator';
 import { ObjectActionButtons } from './ObjectActionButtons';
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
+  const { settings: localSettings } = useLocalSettings();
 
   // Viewport state (offset is always 0,0 since native scroll handles panning)
   const offset = useMemo(() => ({ x: 0, y: 0 }), []);
@@ -88,10 +92,17 @@ export const Tabletop: React.FC = () => {
   const resizingIdRef = useRef<string | null>(null);
   const draggingPileRef = useRef<{ pile: CardPile; deck: DeckType } | null>(null);
   const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
+  // Track objects that were recently in local cursor slot to prevent showing their shadow version
+  // when another player hasn't synced the inCursorSlot: false state yet
+  const [recentlyInMyCursorSlot, setRecentlyInMyCursorSlot] = useState<Set<string>>(new Set());
   const globalMousePosRef = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   // Track when items were just dropped from cursor slot to prevent immediate re-pickup
   const justDroppedRef = useRef(false);
   const lastDropTimeRef = useRef(0);
+
+  // Dice roll animation sync tracking
+  const initiatedRollsRef = useRef<Set<string>>(new Set()); // Dice IDs we initiated rolls for
+  const lastSeenRollStartTimeRef = useRef<Record<string, number>>({}); // Last rollStartTime per dice
 
   // Update refs when state changes
   useEffect(() => { draggingIdRef.current = draggingId; }, [draggingId]);
@@ -548,7 +559,8 @@ export const Tabletop: React.FC = () => {
       return { x: cursorX - objHalfW, y: cursorY - objHalfH };
   };
 
-  const animateDiceRoll = (dice: DiceObject) => {
+  // Local dice animation function (used by both initiator and remote players)
+  const startDiceAnimation = useCallback((diceId: string, sides: number, isInitiator: boolean) => {
     let steps = 0;
     const maxSteps = 10; // Change 10 times
     const duration = 1000; // 1 second
@@ -560,22 +572,67 @@ export const Tabletop: React.FC = () => {
             // Update local state for visual effect only
             setRollingDice(prev => ({
                 ...prev,
-                [dice.id]: Math.floor(Math.random() * dice.sides) + 1
+                [diceId]: Math.floor(Math.random() * sides) + 1
             }));
         } else {
             clearInterval(interval);
-            // Dispatch the actual game logic roll (which sets the final permanent value)
-            dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: dice.id } });
-            
+
             // Clear local override so the component displays the value from the store
             setRollingDice(prev => {
                 const next = { ...prev };
-                delete next[dice.id];
+                delete next[diceId];
                 return next;
             });
+
+            // Only the initiator dispatches the final result
+            if (isInitiator) {
+                dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
+                // Clear the rollStartTime after animation completes
+                dispatch({
+                  type: 'UPDATE_OBJECT',
+                  payload: { id: diceId, rollStartTime: undefined }
+                });
+                initiatedRollsRef.current.delete(diceId);
+            }
         }
     }, intervalTime);
-  };
+  }, [dispatch]);
+
+  const animateDiceRoll = useCallback((dice: DiceObject) => {
+    const rollStartTime = Date.now();
+
+    // Mark this as a roll we initiated (so we dispatch the final result)
+    initiatedRollsRef.current.add(dice.id);
+
+    // Broadcast the roll start time to all players
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: dice.id, rollStartTime }
+    });
+
+    // Start local animation
+    startDiceAnimation(dice.id, dice.sides, true);
+  }, [dispatch, startDiceAnimation]);
+
+  // Watch for dice rollStartTime changes to sync animations across players
+  useEffect(() => {
+    Object.values(state.objects).forEach(obj => {
+      if (obj.type === ItemType.DICE_OBJECT) {
+        const dice = obj as DiceObject;
+        const lastSeen = lastSeenRollStartTimeRef.current[dice.id];
+
+        // If rollStartTime is newer than what we've seen, start animation
+        if (dice.rollStartTime && dice.rollStartTime !== lastSeen) {
+          lastSeenRollStartTimeRef.current[dice.id] = dice.rollStartTime;
+
+          // Only start animation if we didn't initiate this roll ourselves
+          if (!initiatedRollsRef.current.has(dice.id)) {
+            startDiceAnimation(dice.id, dice.sides, false);
+          }
+        }
+      }
+    });
+  }, [state.objects, startDiceAnimation]);
 
   const handleResizeStart = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -1082,6 +1139,18 @@ export const Tabletop: React.FC = () => {
       });
     });
 
+    // Track recently dropped objects to prevent showing shadow version
+    const droppedIds = new Set(currentSlot.map(item => item.id));
+    setRecentlyInMyCursorSlot(droppedIds);
+    // Clear after 500ms (enough time for WebRTC sync)
+    setTimeout(() => {
+      setRecentlyInMyCursorSlot(prev => {
+        const next = new Set(prev);
+        droppedIds.forEach(id => next.delete(id));
+        return next;
+      });
+    }, 500);
+
     // Clear the slot - also update ref immediately for mouseup handler
     console.log(`[DRAG SYSTEM] Clearing cursor slot - dropped ${currentSlot.length} items`);
     cursorSlotRef.current = [];
@@ -1172,6 +1241,17 @@ export const Tabletop: React.FC = () => {
         });
       });
     }
+
+    // Track recently dropped objects to prevent showing shadow version
+    const droppedIds = new Set(currentSlot.map(item => item.id));
+    setRecentlyInMyCursorSlot(droppedIds);
+    setTimeout(() => {
+      setRecentlyInMyCursorSlot(prev => {
+        const next = new Set(prev);
+        droppedIds.forEach(id => next.delete(id));
+        return next;
+      });
+    }, 500);
 
     // Clear the slot - also update ref immediately for mouseup handler
     cursorSlotRef.current = [];
@@ -1289,6 +1369,17 @@ export const Tabletop: React.FC = () => {
       });
     }
 
+    // Track recently dropped objects to prevent showing shadow version
+    const droppedIds = new Set(currentSlot.map(item => item.id));
+    setRecentlyInMyCursorSlot(droppedIds);
+    setTimeout(() => {
+      setRecentlyInMyCursorSlot(prev => {
+        const next = new Set(prev);
+        droppedIds.forEach(id => next.delete(id));
+        return next;
+      });
+    }, 500);
+
     // Clear the slot - also update ref immediately for mouseup handler
     cursorSlotRef.current = [];
     setCursorSlot([]);
@@ -1334,6 +1425,16 @@ export const Tabletop: React.FC = () => {
         window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
           detail: { items: cursorSlot }
         }));
+        // Track recently dropped objects to prevent showing shadow version
+        const droppedIds = new Set(cursorSlot.map(item => item.id));
+        setRecentlyInMyCursorSlot(droppedIds);
+        setTimeout(() => {
+          setRecentlyInMyCursorSlot(prev => {
+            const next = new Set(prev);
+            droppedIds.forEach(id => next.delete(id));
+            return next;
+          });
+        }, 500);
         // Clear the slot - also update ref immediately
         cursorSlotRef.current = [];
         setCursorSlot([]);
@@ -1563,6 +1664,16 @@ export const Tabletop: React.FC = () => {
         window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
           detail: { items: currentSlot }
         }));
+        // Track recently dropped objects to prevent showing shadow version
+        const droppedIds = new Set(currentSlot.map(item => item.id));
+        setRecentlyInMyCursorSlot(droppedIds);
+        setTimeout(() => {
+          setRecentlyInMyCursorSlot(prev => {
+            const next = new Set(prev);
+            droppedIds.forEach(id => next.delete(id));
+            return next;
+          });
+        }, 500);
         // Clear the slot
         cursorSlotRef.current = [];
         setCursorSlot([]);
@@ -1666,7 +1777,7 @@ export const Tabletop: React.FC = () => {
 
       // Check if this is a UI object (panel or window) - handled differently
       if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
-        if (item.locked) return;
+        if (item.locked) return; // Locked objects can't be dragged
 
         // Note: We DON'T unpin pinned objects on drag - pinned objects stay pinned while dragging
 
@@ -1679,10 +1790,16 @@ export const Tabletop: React.FC = () => {
         };
         // Store initial position for network commit on drag end
         dragStartPositionRef.current = { id, x: item.x, y: item.y };
+        // Mark object as being dragged by local player (shows as shadow/locked to others)
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id, draggingPlayerId: state.activePlayerId, broadcastX: item.x, broadcastY: item.y }
+        });
         return;
       }
 
-      if (item && item.locked && !isGM) return;
+      // Locked objects check - don't send drag messages for locked objects even for GM
+      if (item && item.locked) return;
 
       // Cards and tokens: Shift+click immediately adds to cursor slot
       if (e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
@@ -1775,6 +1892,11 @@ export const Tabletop: React.FC = () => {
         };
         // Store initial position for network commit on drag end
         dragStartPositionRef.current = { id, x: item.x, y: item.y };
+        // Mark object as being dragged by local player (shows as shadow/locked to others)
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id, draggingPlayerId: state.activePlayerId, broadcastX: item.x, broadcastY: item.y }
+        });
       }
     }
   }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, dispatch, addToCursorSlot, offset, zoom, setDraggingId, setIsPanning]);
@@ -2001,7 +2123,8 @@ export const Tabletop: React.FC = () => {
 
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: draggingPile.deck.id, piles: updatedPiles }
+        payload: { id: draggingPile.deck.id, piles: updatedPiles },
+        _localOnly: true // Don't send over network during drag
       });
     }
   }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, cursorSlot, isPointInRotatedRect]);
@@ -2215,6 +2338,11 @@ export const Tabletop: React.FC = () => {
           // Skip deck check and card-drag-end event if we found a pile
           setHoveredDeckId(null);
           setHoveredPileId(null);
+          // Clear dragging state and draggingPlayerId
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: { id: draggingId, draggingPlayerId: null, broadcastX: undefined, broadcastY: undefined }
+          });
           setDraggingId(null);
           setIsPanning(false);
           setResizingId(null);
@@ -2285,31 +2413,68 @@ export const Tabletop: React.FC = () => {
     setHoveredDeckId(null);
     setHoveredPileId(null);
 
-    // Send MOVE_OBJECT_COMMIT for guests when drag ends (non-local drag)
-    if (!isHost && dragStartPositionRef.current && draggingId) {
+    // Send final position when drag ends
+    if (dragStartPositionRef.current && draggingId) {
       const startPos = dragStartPositionRef.current;
       const obj = state.objects[draggingId];
       if (obj && startPos.id === draggingId) {
-        // Object was dragged, send final position to host
-        dispatch({
-          type: 'MOVE_OBJECT_COMMIT',
-          payload: {
-            id: draggingId,
-            x: obj.x,
-            y: obj.y,
-            previousX: startPos.x,
-            previousY: startPos.y,
-          },
-        });
+        if (!isHost) {
+          // Guest: send MOVE_OBJECT_COMMIT to host
+          dispatch({
+            type: 'MOVE_OBJECT_COMMIT',
+            payload: {
+              id: draggingId,
+              x: obj.x,
+              y: obj.y,
+              previousX: startPos.x,
+              previousY: startPos.y,
+            },
+          });
+        } else {
+          // Host: send final MOVE_OBJECT to all guests (without _localOnly)
+          dispatch({
+            type: 'MOVE_OBJECT',
+            payload: {
+              id: draggingId,
+              x: obj.x,
+              y: obj.y,
+            },
+          });
+        }
       }
     }
     dragStartPositionRef.current = null;
+
+    // Clear draggingPlayerId for any dragging object
+    if (draggingId) {
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: draggingId, draggingPlayerId: null, broadcastX: undefined, broadcastY: undefined }
+      });
+    }
 
     setDraggingId(null);
     setIsPanning(false);
     setResizingId(null);
     setResizeStart(null);
     dragOffsetRef.current = null;
+
+    // Send final pile position when drag ends
+    if (draggingPile && pileDragStartRef.current) {
+      if (!isHost) {
+        // Guest: send final position to host
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: draggingPile.deck.id, piles: draggingPile.deck.piles }
+        });
+      } else {
+        // Host: broadcast final position to all guests
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: draggingPile.deck.id, piles: draggingPile.deck.piles }
+        });
+      }
+    }
 
     // Clear pile dragging state
     setDraggingPile(null);
@@ -2629,17 +2794,29 @@ export const Tabletop: React.FC = () => {
       }
   };
 
+  // Track remote object animations
+  // const { getAnimatingIds, animatingObjects } = useRemoteObjectAnimation(
+  //   state.objects,
+  //   draggingId
+  // );
+  // const animatingIds = getAnimatingIds();
+
   // Memoize table objects to prevent unnecessary re-renders
   // Note: DECK objects are filtered out here and rendered separately (pinned/unpinned)
   const tableObjects = useMemo(() => {
     return (Object.values(state.objects || {}) as TableObject[])
       .filter(obj => {
+          // Exclude objects currently being animated (they're rendered separately)
+          // if (animatingIds.has(obj.id)) return false;
           // Exclude UI objects (panels and windows) - they have their own rendering
           if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
           // Exclude DECK objects - they are rendered separately with pinned/unpinned logic
           if (obj.type === ItemType.DECK) return false;
           // Exclude objects in cursor slot
           if (obj.inCursorSlot) return false;
+          // Exclude objects being dragged by another player (rendered separately as shadow if effect enabled)
+          const draggingPlayerId = (obj as any).draggingPlayerId;
+          if (draggingPlayerId && draggingPlayerId !== state.activePlayerId) return false;
           if (!obj.isOnTable) return false;
           if (obj.type === ItemType.CARD) {
             const card = obj as CardType;
@@ -2667,6 +2844,67 @@ export const Tabletop: React.FC = () => {
           return 0;
       });
   }, [state.objects, isGM]);
+
+  // Objects that are in another player's cursor slot (inCursorSlot=true but not in my local cursorSlot)
+  // These are rendered as darkened/semi-transparent and non-interactive
+  const remoteCursorSlotObjects = useMemo(() => {
+    // Early return if effect is disabled
+    if (!localSettings.effects.showRemoteCursorSlotObjects) return [];
+
+    const myCursorSlotIds = new Set(cursorSlot.map(item => item.id));
+    return (Object.values(state.objects || {}) as TableObject[])
+      .filter(obj => {
+        // Exclude UI objects and decks first (they don't have inCursorSlot)
+        if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) return false;
+        // Must be marked as in cursor slot in synced state
+        if (!(obj as any).inCursorSlot) return false;
+        // Must NOT be in my local cursor slot (that means another player has it)
+        if (myCursorSlotIds.has(obj.id)) return false;
+        // Must NOT be in my recently dropped cursor slot (prevents shadow flicker when I drop items)
+        if (recentlyInMyCursorSlot.has(obj.id)) return false;
+        // Must be on table
+        if (!(obj as any).isOnTable) return false;
+        if (obj.type === ItemType.CARD) {
+          const card = obj as CardType;
+          if (card.location !== CardLocation.TABLE) return false;
+          // Filter out hidden cards for players (GM sees them)
+          if (card.hidden && !isGM) return false;
+        }
+        // Filter out hidden objects
+        if ((obj as any).visible === false) return false;
+        return true;
+      })
+      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+  }, [state.objects, cursorSlot, recentlyInMyCursorSlot, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
+
+  // Objects that are being dragged by another player (draggingPlayerId is set but not by local player)
+  // These are rendered as darkened/semi-transparent and non-interactive (if effect enabled)
+  const remoteDraggingObjects = useMemo(() => {
+    // Early return if effect is disabled
+    if (!localSettings.effects.showRemoteCursorSlotObjects) return [];
+
+    return (Object.values(state.objects || {}) as TableObject[])
+      .filter(obj => {
+        // Exclude UI objects only
+        if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
+        // Must be marked as being dragged by another player
+        const draggingPlayerId = (obj as any).draggingPlayerId;
+        if (!draggingPlayerId) return false;
+        // Must NOT be dragged by local player
+        if (draggingPlayerId === state.activePlayerId) return false;
+        // Must be on table
+        if (!(obj as any).isOnTable) return false;
+        if (obj.type === ItemType.CARD) {
+          const card = obj as CardType;
+          if (card.location !== CardLocation.TABLE) return false;
+          if (card.hidden && !isGM) return false;
+        }
+        // Filter out hidden objects
+        if ((obj as any).visible === false) return false;
+        return true;
+      })
+      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+  }, [state.objects, state.activePlayerId, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
 
   // UI objects (panels and windows) - separate from game objects
   const uiObjects = useMemo(() => {
@@ -2702,13 +2940,29 @@ export const Tabletop: React.FC = () => {
   // Split deck objects into pinned and unpinned for separate rendering
   const pinnedDecks = useMemo(() => {
     return (Object.values(state.objects) as TableObject[])
-      .filter(obj => obj.type === ItemType.DECK && obj.isOnTable && (obj as any).isPinnedToViewport === true);
-  }, [state.objects]);
+      .filter(obj => {
+        if (obj.type !== ItemType.DECK) return false;
+        if (!obj.isOnTable) return false;
+        if ((obj as any).isPinnedToViewport !== true) return false;
+        // Exclude decks being dragged by other players (shown as shadow in remoteDraggingObjects if effect enabled)
+        const draggingPlayerId = (obj as any).draggingPlayerId;
+        if (draggingPlayerId && draggingPlayerId !== state.activePlayerId) return false;
+        return true;
+      });
+  }, [state.objects, state.activePlayerId]);
 
   const unpinnedDecks = useMemo(() => {
     return (Object.values(state.objects) as TableObject[])
-      .filter(obj => obj.type === ItemType.DECK && obj.isOnTable && (obj as any).isPinnedToViewport !== true);
-  }, [state.objects]);
+      .filter(obj => {
+        if (obj.type !== ItemType.DECK) return false;
+        if (!obj.isOnTable) return false;
+        if ((obj as any).isPinnedToViewport === true) return false;
+        // Exclude decks being dragged by other players (shown as shadow in remoteDraggingObjects if effect enabled)
+        const draggingPlayerId = (obj as any).draggingPlayerId;
+        if (draggingPlayerId && draggingPlayerId !== state.activePlayerId) return false;
+        return true;
+      });
+  }, [state.objects, state.activePlayerId]);
 
   const worldBounds = useMemo(() => {
     // Fixed world size: 5000x5000
@@ -2885,6 +3139,485 @@ export const Tabletop: React.FC = () => {
                 transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
             }}
         >
+            {/* Objects in another player's cursor slot - darkened, semi-transparent, non-interactive */}
+            {remoteCursorSlotObjects.map((obj) => {
+                if (obj.type === ItemType.BOARD) return null; // Boards shouldn't be in cursor slot
+
+                if (obj.type === ItemType.TOKEN) {
+                    const token = obj as TokenType;
+                    return (
+                        <div
+                            key={`remote-cursor-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: obj.width,
+                                height: obj.height,
+                                transform: `rotate(${obj.rotation}deg)`,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <SvgTokenShape
+                                shape={token.shape}
+                                width={obj.width}
+                                height={obj.height}
+                                color={obj.color || '#e74c3c'}
+                                content={obj.content}
+                                rotation={0}
+                                borderWidth={obj.borderWidth ?? 2}
+                                borderColor={(obj as any).borderColor || 'white'}
+                                opacity={obj.opacity ?? 100}
+                                borderOpacity={obj.borderOpacity ?? 100}
+                                showThickness={true}
+                                tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                fontColor={(obj as any).fontColor || 'white'}
+                            />
+                        </div>
+                    );
+                }
+
+                if (obj.type === ItemType.CARD) {
+                    const card = obj as CardType;
+                    const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+
+                    let baseWidth = card.width ?? (deck?.cardWidth ?? 63);
+                    let baseHeight = card.height ?? (deck?.cardHeight ?? 88);
+
+                    return (
+                        <div
+                            key={`remote-cursor-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: baseWidth,
+                                height: baseHeight,
+                                transform: `rotate(${obj.rotation ?? 0}rad)`,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <Card
+                                card={card}
+                                overrideWidth={baseWidth}
+                                overrideHeight={baseHeight}
+                                cardWidth={deck?.cardWidth}
+                                cardHeight={deck?.cardHeight}
+                                cardOrientation={deck?.cardOrientation}
+                                cardNamePosition={deck?.cardNamePosition}
+                                disableRotationTransform={true}
+                                disablePointerEvents={true}
+                                showActionButtons={false}
+                                skipTooltip={true}
+                                deckSpriteConfig={deck?.spriteConfig}
+                                deckShowTooltipImage={deck?.showTooltipImage}
+                                deckTooltipScale={deck?.tooltipScale}
+                            />
+                        </div>
+                    );
+                }
+
+                return null;
+            })}
+
+            {/* Objects being dragged by another player - darkened, semi-transparent, non-interactive */}
+            {remoteDraggingObjects.map((obj) => {
+                if (obj.type === ItemType.BOARD) return null;
+
+                if (obj.type === ItemType.TOKEN) {
+                    const token = obj as TokenType;
+                    return (
+                        <div
+                            key={`remote-drag-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: obj.width,
+                                height: obj.height,
+                                transform: `rotate(${obj.rotation}deg)`,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <SvgTokenShape
+                                shape={token.shape}
+                                width={obj.width}
+                                height={obj.height}
+                                color={obj.color || '#e74c3c'}
+                                content={obj.content}
+                                rotation={0}
+                                borderWidth={obj.borderWidth ?? 2}
+                                borderColor={(obj as any).borderColor || 'white'}
+                                opacity={obj.opacity ?? 100}
+                                borderOpacity={obj.borderOpacity ?? 100}
+                                showThickness={true}
+                                tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                fontColor={(obj as any).fontColor || 'white'}
+                            />
+                        </div>
+                    );
+                }
+
+                if (obj.type === ItemType.CARD) {
+                    const card = obj as CardType;
+                    const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+                    let baseWidth = card.width ?? (deck?.cardWidth ?? 63);
+                    let baseHeight = card.height ?? (deck?.cardHeight ?? 88);
+                    return (
+                        <div
+                            key={`remote-drag-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: baseWidth,
+                                height: baseHeight,
+                                transform: `rotate(${obj.rotation ?? 0}rad)`,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <Card
+                                card={card}
+                                overrideWidth={baseWidth}
+                                overrideHeight={baseHeight}
+                                cardWidth={deck?.cardWidth}
+                                cardHeight={deck?.cardHeight}
+                                cardOrientation={deck?.cardOrientation}
+                                cardNamePosition={deck?.cardNamePosition}
+                                disableRotationTransform={true}
+                                disablePointerEvents={true}
+                                showActionButtons={false}
+                                skipTooltip={true}
+                                deckSpriteConfig={deck?.spriteConfig}
+                                deckShowTooltipImage={deck?.showTooltipImage}
+                                deckTooltipScale={deck?.tooltipScale}
+                            />
+                        </div>
+                    );
+                }
+
+                return null;
+            })}
+
+            {/* Shadow objects being dragged by remote players */}
+            {remoteDraggingObjects.map((obj) => {
+                if (obj.type === ItemType.TOKEN) {
+                    const token = obj as TokenType;
+                    return (
+                        <div
+                            key={`remote-drag-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: obj.width,
+                                height: obj.height,
+                                transform: `rotate(${obj.rotation}deg)`,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <SvgTokenShape
+                                shape={token.shape}
+                                width={obj.width}
+                                height={obj.height}
+                                color={obj.color || '#e74c3c'}
+                                content={obj.content}
+                                rotation={0}
+                                borderWidth={obj.borderWidth ?? 2}
+                                borderColor={(obj as any).borderColor || 'white'}
+                                opacity={obj.opacity ?? 100}
+                                borderOpacity={obj.borderOpacity ?? 100}
+                                showThickness={true}
+                                tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                fontColor={(obj as any).fontColor || 'white'}
+                            />
+                        </div>
+                    );
+                }
+
+                if (obj.type === ItemType.CARD) {
+                    const card = obj as CardType;
+                    const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+                    let baseWidth = card.width ?? (deck?.cardWidth ?? 63);
+                    let baseHeight = card.height ?? (deck?.cardHeight ?? 88);
+                    return (
+                        <div
+                            key={`remote-drag-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: baseWidth,
+                                height: baseHeight,
+                                transform: `rotate(${obj.rotation ?? 0}rad)`,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <Card
+                                card={card}
+                                overrideWidth={baseWidth}
+                                overrideHeight={baseHeight}
+                                cardWidth={deck?.cardWidth}
+                                cardHeight={deck?.cardHeight}
+                                cardOrientation={deck?.cardOrientation}
+                                cardNamePosition={deck?.cardNamePosition}
+                                disableRotationTransform={true}
+                                disablePointerEvents={true}
+                                showActionButtons={false}
+                                skipTooltip={true}
+                                deckSpriteConfig={deck?.spriteConfig}
+                                deckShowTooltipImage={deck?.showTooltipImage}
+                                deckTooltipScale={deck?.tooltipScale}
+                            />
+                        </div>
+                    );
+                }
+
+                if (obj.type === ItemType.DICE_OBJECT) {
+                    const dice = obj as DiceObject;
+                    const diceShape = dice.shape || TokenShape.SQUARE;
+                    return (
+                        <div
+                            key={`remote-drag-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: dice.width || 60,
+                                height: dice.height || 60,
+                                transform: `rotate(${obj.rotation}deg)`,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <SvgTokenShape
+                                shape={diceShape}
+                                width={dice.width || 60}
+                                height={dice.height || 60}
+                                color={obj.color || '#6366f1'}
+                                content={''}
+                                borderColor="#4f46e5"
+                                borderWidth={3}
+                            />
+                            {/* Dice value - always centered */}
+                            <div
+                                className="absolute flex items-center justify-center pointer-events-none"
+                                style={{
+                                    top: diceShape === TokenShape.TRIANGLE ? '56%' : '45%',
+                                    left: '50%',
+                                    transform: 'translate(-50%, -50%)'
+                                }}
+                            >
+                                <span
+                                    className="font-bold text-white drop-shadow-md"
+                                    style={{
+                                        fontSize: `${Math.min(24 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.7)}px`
+                                    }}
+                                >{dice.currentValue}</span>
+                            </div>
+                            {/* Dice sides indicator */}
+                            <div
+                                className="absolute flex items-center justify-center pointer-events-none"
+                                style={{
+                                    top: diceShape === TokenShape.TRIANGLE ? '78%' : '72.5%',
+                                    left: '50%',
+                                    transform: 'translate(-50%, -50%)'
+                                }}
+                            >
+                                <span
+                                    className="opacity-75 text-white drop-shadow-md"
+                                    style={{
+                                        fontSize: `${Math.min(9 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.25)}px`
+                                    }}
+                                >d{dice.sides}</span>
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (obj.type === ItemType.COUNTER) {
+                    const counter = obj as Counter;
+                    const width = Math.max(obj.width, 100);
+                    const height = 50;
+                    return (
+                        <div
+                            key={`remote-drag-${obj.id}`}
+                            className="absolute pointer-events-none select-none bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-center p-2 text-white"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: width,
+                                height: height,
+                                transform: `rotate(${obj.rotation}deg)`,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <span className="text-xl font-bold">{counter.value}</span>
+                        </div>
+                    );
+                }
+
+                if (obj.type === ItemType.DECK) {
+                    const deck = obj as DeckType;
+                    const cardShape = deck.cardShape || CardShape.POKER;
+                    const cardOrientation = deck.cardOrientation || CardOrientation.VERTICAL;
+                    const useSvg = shouldUseSvgForDeck(cardShape);
+                    const effectiveWidth = (deck.cardWidth || 63) * (cardOrientation === CardOrientation.HORIZONTAL ? 1.5 : 1);
+                    const effectiveHeight = (deck.cardHeight || 88) * (cardOrientation === CardOrientation.HORIZONTAL ? 1.5 : 1);
+                    const visibleCardCount = deck.cardIds?.length || 0;
+                    const baseCardIds = deck.baseCardIds || deck.cardIds || [];
+
+                    return (
+                        <div
+                            key={`remote-drag-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: effectiveWidth,
+                                height: effectiveHeight,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <div style={{ transform: `rotate(${deck.rotation || 0}deg)`, width: '100%', height: '100%' }}>
+                                {useSvg ? (
+                                    // SVG rendering for geometric shapes (HEX, TRIANGLE)
+                                    <>
+                                        {/* Stacked layers effect */}
+                                        {[2, 1, 0].map(i => (
+                                            <div
+                                                key={i}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 0,
+                                                    left: 0,
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    transform: `translate(${i * 4}px, ${i * 4}px)`,
+                                                    zIndex: -i,
+                                                }}
+                                            >
+                                                <SvgDeckShape
+                                                    shape={cardShape}
+                                                    width={effectiveWidth}
+                                                    height={effectiveHeight}
+                                                    backgroundColor="#1e293b"
+                                                    borderColor="#475569"
+                                                    borderWidth={2}
+                                                    orientation={cardOrientation}
+                                                />
+                                            </div>
+                                        ))}
+
+                                        {/* Main deck with content */}
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                            <SvgDeckShape
+                                                shape={cardShape}
+                                                width={effectiveWidth}
+                                                height={effectiveHeight}
+                                                backgroundColor="#0f172a"
+                                                borderColor="#64748b"
+                                                borderWidth={2}
+                                                orientation={cardOrientation}
+                                            >
+                                                <foreignObject x="0" y="0" width="100" height="100">
+                                                    <div className="w-full h-full flex flex-col items-center justify-center">
+                                                        <Layers className="text-slate-400 mb-1" size={16} />
+                                                        <DeckLabel
+                                                            name={deck.name}
+                                                            count={visibleCardCount}
+                                                            totalCount={baseCardIds.length}
+                                                            shape={cardShape}
+                                                        />
+                                                    </div>
+                                                </foreignObject>
+                                            </SvgDeckShape>
+                                        </div>
+                                    </>
+                                ) : (
+                                    // CSS rendering for standard shapes (POKER, BRIDGE, etc.)
+                                    <>
+                                        {/* Stacked layers effect */}
+                                        {[2, 1, 0].map(i => (
+                                            <div
+                                                key={i}
+                                                className="absolute bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    top: 0,
+                                                    left: 0,
+                                                    transform: `translate(${i * 4}px, ${i * 4}px)`,
+                                                    zIndex: -i,
+                                                }}
+                                            />
+                                        ))}
+
+                                        {/* Main deck */}
+                                        <div className="absolute inset-0 bg-slate-900 border-2 border-slate-500 flex flex-col items-center justify-center">
+                                            <Layers className="text-slate-400 mb-1" size={16} />
+                                            <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">
+                                                {deck.name}
+                                            </span>
+                                            <span className="text-xs text-slate-500 select-none">
+                                                {visibleCardCount} / {baseCardIds.length}
+                                            </span>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (obj.type === ItemType.BOARD) {
+                    const board = obj as BoardType;
+                    return (
+                        <div
+                            key={`remote-drag-${obj.id}`}
+                            className="absolute pointer-events-none select-none"
+                            style={{
+                                left: obj.x,
+                                top: obj.y,
+                                width: obj.width,
+                                height: obj.height,
+                                opacity: 0.5,
+                                filter: 'brightness(0.6)',
+                                zIndex: obj.zIndex ?? 0,
+                            }}
+                        >
+                            <div
+                                className="w-full h-full border-4 border-slate-600 rounded-lg bg-cover bg-center"
+                                style={{
+                                    backgroundImage: board.content ? `url(${board.content})` : undefined,
+                                    backgroundColor: board.content ? undefined : '#4a5568',
+                                    transform: `rotate(${obj.rotation || 0}deg)`,
+                                }}
+                            />
+                        </div>
+                    );
+                }
+
+                return null;
+            })}
+
             {/* All objects in unified space */}
             {tableObjects.map((obj) => {
                 const isOwner = !(obj as any).ownerId || (obj as any).ownerId === state.activePlayerId || isGM;
@@ -4104,6 +4837,14 @@ export const Tabletop: React.FC = () => {
             state={state}
             getCardSettings={getCardSettings}
         />
+
+        {/* Remote Object Animation - smooth position transitions for remote player movements */}
+        {/* <RemoteObjectAnimation
+            animatingObjects={animatingObjects}
+            state={state}
+            zoom={zoom}
+            getCardSettings={getCardSettings}
+        /> */}
 
         {/* Click-to-show tooltip for cards */}
         {clickTooltip && (() => {

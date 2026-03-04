@@ -152,6 +152,9 @@ export interface GameItem {
   locked: boolean;
   isOnTable: boolean; // Controls visibility on the battlefield vs just in the list
   inCursorSlot?: boolean; // Object is currently in the cursor slot (hidden from tabletop, locked from editing)
+  draggingPlayerId?: string | null; // ID of player currently dragging this object (if any, object appears as shadow/locked to others)
+  broadcastX?: number; // X coordinate to broadcast while dragging (prevents showing drag path to other players)
+  broadcastY?: number; // Y coordinate to broadcast while dragging (prevents showing drag path to other players)
   allowedActions?: ContextAction[]; // Actions players are allowed to perform in context menu (undefined = all allowed)
   allowedActionsForGM?: ContextAction[]; // Actions GM is allowed to perform in context menu (undefined = all allowed)
   actionButtons?: ContextAction[]; // Actions shown as buttons on the object (max 4)
@@ -310,6 +313,7 @@ export interface DiceObject extends GameItem {
   sides: number;
   currentValue: number;
   shape?: TokenShape;
+  rollStartTime?: number; // Timestamp when roll animation started (for syncing across players)
 }
 
 export interface Counter extends GameItem {
@@ -353,7 +357,7 @@ export interface Drawing extends GameItem {
 export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell;
 
 // Language settings
-export type AppLanguage = 'en' | 'ru';
+export type AppLanguage = 'en' | 'ru' | 'be' | 'uk' | 'sr';
 
 // Player permissions for object management in main menu
 export interface PlayerPermissions {
@@ -388,7 +392,7 @@ export enum PanelType {
   CREATE = 'CREATE',
   MAIN_MENU = 'MAIN_MENU',  // Main right menu panel
   TABLEAU = 'TABLEAU',  // Tableau panel for card tableau
-  PULL = 'PULL',        // Pull panel for drawing cards
+  POOL = 'POOL',        // Pool panel for drawing cards
 }
 
 // Window types for modal windows

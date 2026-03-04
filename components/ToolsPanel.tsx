@@ -1,13 +1,25 @@
+import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { ItemType, TableObject, TokenType, TokenShape, WindowType, AppLanguage } from '../types';
 import { Pen, Eraser, Ruler, Compass, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { SvgTokenShape } from './SvgTokenShape';
-import { getTranslation } from '../translations';
 
 // Helper function to get translation for tool keys
 function getToolTranslation(language: AppLanguage, key: string): string {
-  return getTranslation(language, key as any);
+  const toolTranslations: Record<string, string> = {
+    toolCursor: 'Cursor',
+    toolCursorDesc: 'Normal cursor mode',
+    toolMarker: 'Marker',
+    toolMarkerDesc: 'Draw on the board or objects',
+    toolEraser: 'Eraser',
+    toolEraserDesc: 'Erase drawings',
+    toolRuler: 'Ruler',
+    toolRulerDesc: 'Measure distances',
+    toolCompass: 'Compass',
+    toolCompassDesc: 'Draw circles/arcs',
+  };
+  return translate(toolTranslations[key] || key, language as Locale);
 }
 
 // Drawing tools
@@ -46,7 +58,6 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   const { state, dispatch, isHost } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   // Current selected tool
   const [selectedTool, setSelectedTool] = useState<DrawingTool>('none');
@@ -241,7 +252,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
         <button
           onClick={onToggleCollapse}
           className="w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-slate-700 transition-colors rounded-r-lg"
-          title={t({ en: 'Expand Tools', ru: 'Развернуть инструменты' })}
+          title={translate('Expand Tools', language as Locale)}
         >
           <ChevronUp size={20} className="rotate-90" />
         </button>
@@ -258,11 +269,11 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-        <h3 className="text-sm font-bold text-white">{t({ en: 'Tools', ru: 'Инструменты' })}</h3>
+        <h3 className="text-sm font-bold text-white">{translate('Tools', language as Locale)}</h3>
         <button
           onClick={onToggleCollapse}
           className="p-1 text-gray-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-          title={t({ en: 'Collapse', ru: 'Свернуть' })}
+          title={translate('Collapse', language as Locale)}
         >
           <ChevronDown size={16} className="rotate-90" />
         </button>
@@ -271,7 +282,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {/* Drawing Tools Section */}
         <div className="p-3 border-b border-slate-700">
-          <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{t({ en: 'Drawing', ru: 'Рисование' })}</h4>
+          <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing', language as Locale)}</h4>
           <div className="grid grid-cols-4 gap-2 mb-3">
             {DRAWING_TOOLS.map((tool) => (
               <button
@@ -294,7 +305,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
           {selectedTool === 'marker' && (
             <div className="space-y-2 mt-3 p-2 bg-slate-900 rounded">
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{t({ en: 'Color', ru: 'Цвет' })}</label>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Color', language as Locale)}</label>
                 <div className="flex gap-1">
                   {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ffffff', '#000000'].map((color) => (
                     <button
@@ -310,7 +321,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{t({ en: 'Thickness', ru: 'Толщина' })}: {markerThickness}px</label>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Thickness', language as Locale)}: {markerThickness}px</label>
                 <input
                   type="range"
                   min="1"
@@ -327,7 +338,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
         {/* Token Archetypes Section */}
         <div className="p-3">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-bold text-gray-400 uppercase">{t({ en: 'Tokens', ru: 'Фишки' })}</h4>
+            <h4 className="text-xs font-bold text-gray-400 uppercase">{translate('Tokens', language as Locale)}</h4>
             <button
               onClick={() => setArchetypesExpanded(!archetypesExpanded)}
               className="p-1 text-gray-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
@@ -340,8 +351,8 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
             <div className="grid grid-cols-3 gap-2">
               {archetypes.length === 0 ? (
                 <div className="col-span-3 text-center py-4 text-gray-500 text-xs">
-                  {t({ en: 'No token archetypes.', ru: 'Нет архетипов фишек.' })}<br />
-                  {t({ en: 'Add them from the main menu.', ru: 'Добавьте их из главного меню.' })}
+                  {translate('No token archetypes.', language as Locale)}<br />
+                  {translate('Add them from the main menu.', language as Locale)}
                 </div>
               ) : (
                 archetypes.map((archetype) => {
@@ -361,7 +372,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
                     data-archetype-card
                     data-archetype-id={archetype.id}
                     className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-pointer transition-colors"
-                    title={`${archetype.name}\n${t({ en: 'Click to add to cursor slot', ru: 'Нажмите, чтобы добавить в слот курсора' })}`}
+                    title={`${archetype.name}\n${translate('Click to add to cursor slot', language as Locale)}`}
                   >
                     {/* Preview of the token using SvgTokenShape */}
                     <div className="w-full h-full flex items-center justify-center overflow-hidden rounded">

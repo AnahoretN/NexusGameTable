@@ -1,3 +1,4 @@
+import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useHandCardScale } from '../hooks/useHandCardScale';
 import { createPortal } from 'react-dom';
@@ -111,10 +112,10 @@ interface MainMenuContentProps {
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const { state, dispatch, peerId } = useGame();
-  const lang: AppLanguage = state.language || 'en';
+  const language: AppLanguage = state.language || 'en';
 
   // Translation helper
-  const t = (key: { en: string; ru: string }): string => key[lang] || key.en;
+  const t = (key: { en: string; ru: string; be?: string; uk?: string; sr?: string }): string => key[language] || key.en;
 
   const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [chatInput, setChatInput] = useState('');
@@ -456,62 +457,62 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   // Create categories with proper order and labels
   const categories = [
     {
-      id: 'boards', label: t({ en: 'Game Boards', ru: 'Игровые доски' }), icon: <LayoutGrid size={16}/>,
+      id: 'boards', label: translate('Game Boards', language as Locale), icon: <LayoutGrid size={16}/>,
       items: [
-        { name: t({ en: 'Standard Board', ru: 'Стандартная доска' }), type: 'BOARD', gridType: GridType.SQUARE },
-        { name: t({ en: 'Cell', ru: 'Ячейка' }), type: 'BATTLEFIELD_CELL' },
+        { name: translate('Standard Board', language as Locale), type: 'BOARD', gridType: GridType.SQUARE },
+        { name: translate('Cell', language as Locale), type: 'BATTLEFIELD_CELL' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.BOARD || obj.type === ItemType.BATTLEFIELD_CELL
     },
     {
-      id: 'decks', label: t({ en: 'Decks', ru: 'Колоды' }), icon: <Library size={16}/>,
+      id: 'decks', label: translate('Decks', language as Locale), icon: <Library size={16}/>,
       items: [
-        { name: t({ en: 'Standard Deck', ru: 'Стандартная колода' }), type: 'DECK' },
-        { name: t({ en: 'Hex Deck', ru: 'Гекс-колода' }), type: 'HEX_DECK' },
+        { name: translate('Standard Deck', language as Locale), type: 'DECK' },
+        { name: translate('Hex Deck', language as Locale), type: 'HEX_DECK' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.DECK
     },
     {
-      id: 'tokens', label: t({ en: 'Tokens', ru: 'Токены' }), icon: <CircleDot size={16}/>,
+      id: 'tokens', label: translate('Tokens', language as Locale), icon: <CircleDot size={16}/>,
       items: [
-        { name: t({ en: 'Standard Token', ru: 'Стандартный токен' }), type: 'TOKEN', shape: TokenShape.CIRCLE },
-        { name: t({ en: 'Token Type', ru: 'Тип токена' }), type: 'TOKEN_TYPE' },
+        { name: translate('Standard Token', language as Locale), type: 'TOKEN', shape: TokenShape.CIRCLE },
+        { name: translate('Token Type', language as Locale), type: 'TOKEN_TYPE' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.TOKEN || obj.type === ItemType.TOKEN_TYPE
     },
     {
-      id: 'randomizers', label: t({ en: 'Randomizers & Dice', ru: 'Рандомайзеры и кости' }), icon: <Dices size={16}/>,
+      id: 'randomizers', label: translate('Randomizers & Dice', language as Locale), icon: <Dices size={16}/>,
       items: [
-        { name: t({ en: 'Standard Dice', ru: 'Стандартные кости' }), type: 'DICE' },
+        { name: translate('Standard Dice', language as Locale), type: 'DICE' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.RANDOMIZER
     },
     {
-      id: 'counters', label: t({ en: 'Counters', ru: 'Счётчики' }), icon: <Box size={16}/>,
+      id: 'counters', label: translate('Counters', language as Locale), icon: <Box size={16}/>,
       items: [
-        { name: t({ en: 'Life Counter', ru: 'Счётчик жизней' }), type: 'COUNTER' },
-        { name: t({ en: 'Score Tracker', ru: 'Трекер очков' }), type: 'COUNTER' },
+        { name: translate('Life Counter', language as Locale), type: 'COUNTER' },
+        { name: translate('Score Tracker', language as Locale), type: 'COUNTER' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.COUNTER
     },
     {
-      id: 'panels', label: t({ en: 'Panels', ru: 'Панели' }), icon: <Layers size={16}/>,
+      id: 'panels', label: translate('Panels', language as Locale), icon: <Layers size={16}/>,
       items: [
-        { name: t({ en: 'Hand Panel', ru: 'Панель руки' }), type: 'PANEL', panelType: PanelType.HAND },
-        { name: t({ en: 'Tableau Panel', ru: 'Панель таблицы' }), type: 'PANEL', panelType: PanelType.TABLEAU, disabled: true },
-        { name: t({ en: 'Pull Panel', ru: 'Pull панель' }), type: 'PANEL', panelType: PanelType.PULL, disabled: true },
+        { name: translate('Hand Panel', language as Locale), type: 'PANEL', panelType: PanelType.HAND },
+        { name: translate('Tableau Panel', language as Locale), type: 'PANEL', panelType: PanelType.TABLEAU, disabled: true },
+        { name: translate('Pool Panel', language as Locale), type: 'PANEL', panelType: PanelType.POOL, disabled: true },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.PANEL && (obj as any).panelType !== PanelType.MAIN_MENU
     },
     {
-      id: 'drawings', label: t({ en: 'Drawings', ru: 'Рисунки' }), icon: <Brush size={16}/>,
+      id: 'drawings', label: translate('Drawings', language as Locale), icon: <Brush size={16}/>,
       items: [], // Drawings are created with marker tool, not via menu
       matcher: (obj: TableObject) => obj.type === ItemType.DRAWING
     },
     {
-      id: 'pages', label: t({ en: 'Pages', ru: 'Страницы' }), icon: <FileText size={16}/>,
+      id: 'pages', label: translate('Pages', language as Locale), icon: <FileText size={16}/>,
       items: [
-        { name: t({ en: 'Page', ru: 'Страница' }), type: 'PAGE', disabled: true },
+        { name: translate('Page', language as Locale), type: 'PAGE', disabled: true },
       ],
       matcher: (obj: TableObject) => false // Pages not implemented yet
     },
@@ -566,7 +567,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           <div className="h-full flex flex-col">
             {/* Hand Panel */}
             <div className="flex-1 overflow-hidden">
-              <HandPanel width={width} isDragTarget={dragOverHand} language={lang} />
+              <HandPanel width={width} isDragTarget={dragOverHand} language={language} />
             </div>
           </div>
         )}
@@ -575,12 +576,12 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           <div className="p-3 space-y-3">
             {/* Drawing Tools Section */}
             <div>
-              <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{t({ en: 'Drawing Tools', ru: 'Инструменты рисования' })}</h4>
+              <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
               <div className="grid grid-cols-4 gap-2">
-                <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label={t({ en: 'Cursor', ru: 'Курсор' })} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="marker" icon={<Pen size={20} />} label={t({ en: 'Marker', ru: 'Маркер' })} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label={t({ en: 'Eraser', ru: 'Ластик' })} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label={t({ en: 'Ruler', ru: 'Линейка' })} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label={translate('Cursor', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="marker" icon={<Pen size={20} />} label={translate('Marker', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label={translate('Eraser', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label={translate('Ruler', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
               </div>
             </div>
 
@@ -588,13 +589,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             {(selectedTool === 'marker' || selectedTool === 'eraser') && (
               <div className="p-3 bg-slate-800 rounded-lg space-y-3">
                 <h4 className="text-xs font-bold text-gray-400 uppercase">
-                  {selectedTool === 'marker' ? t({ en: 'Marker Settings', ru: 'Настройки маркера' }) : t({ en: 'Eraser Settings', ru: 'Настройки ластика' })}
+                  {selectedTool === 'marker' ? translate('Marker Settings', language as Locale) : translate('Eraser Settings', language as Locale)}
                 </h4>
 
                 {/* Color picker */}
                 {selectedTool === 'marker' && (
                   <div>
-                    <label className="block text-[10px] text-gray-400 mb-2">{t({ en: 'Color', ru: 'Цвет' })}</label>
+                    <label className="block text-[10px] text-gray-400 mb-2">{translate('Color', language as Locale)}</label>
                     <div className="grid grid-cols-8 gap-1">
                       {[
                         // Basic colors (first row)
@@ -623,7 +624,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 {/* Thickness slider */}
                 <div>
                   <label className="block text-[10px] text-gray-400 mb-2">
-                    {t({ en: 'Size', ru: 'Размер' })}: {markerThickness}px
+                    {translate('Size', language as Locale)}: {markerThickness}px
                   </label>
                   <input
                     type="range"
@@ -644,7 +645,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 {currentDrawingTool === 'marker' && (
                 <div>
                   <label className="block text-[10px] text-gray-400 mb-2">
-                    {t({ en: 'Opacity', ru: 'Прозрачность' })}: {markerOpacity}%
+                    {translate('Opacity', language as Locale)}: {markerOpacity}%
                   </label>
                   <input
                     type="range"
@@ -699,10 +700,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         {activeTab === 'players' && (
           <div className="p-4 space-y-6">
             <div>
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">{t({ en: 'Session Tools', ru: 'Инструменты сессии' })}</h3>
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">{translate('Session Tools', language as Locale)}</h3>
               {/* Session ID Display */}
               <div className="mb-2 p-2 bg-slate-800 rounded border border-slate-700">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{t({ en: 'Session ID', ru: 'ID сессии' })}</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{translate('Session ID', language as Locale)}</div>
                 <div className="text-sm text-gray-300 font-mono break-all">{state.sessionId || 'Generating...'}</div>
               </div>
               <div className="grid grid-cols-1 gap-2">
@@ -711,14 +712,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   className={`w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold transition-all ${inviteCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
                 >
                   {inviteCopied ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
-                  {inviteCopied ? t({ en: 'Link Copied!', ru: 'Ссылка скопирована!' }) : t({ en: 'Invite Player', ru: 'Пригласить игрока' })}
+                  {inviteCopied ? translate('Link Copied!', language as Locale) : translate('Invite Player', language as Locale)}
                 </button>
                 <button
                   onClick={handleSaveGame}
                   className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
                 >
                   <Save size={16} />
-                  {t({ en: 'Save Session', ru: 'Сохранить сессию' })}
+                  {translate('Save Session', language as Locale)}
                 </button>
                 {isGM && (
                   <button
@@ -726,7 +727,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
                   >
                     <Upload size={16} />
-                    {t({ en: 'Load Session', ru: 'Загрузить сессию' })}
+                    {translate('Load Session', language as Locale)}
                   </button>
                 )}
                 <input
@@ -740,7 +741,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{t({ en: 'Active Players', ru: 'Активные игроки' })}</h3>
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{translate('Active Players', language as Locale)}</h3>
               {state.players
                 .map(p => {
                   const isCurrentPlayer = p.id === state.activePlayerId;
@@ -775,7 +776,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{backgroundColor: p.color}} />
                       <span className="font-medium text-white truncate">{p.name}</span>
                       {p.isGM && <span className="text-xs bg-yellow-600 px-1 rounded text-white">GM</span>}
-                      {isCurrentPlayer && <span className="text-xs bg-slate-600 px-1 rounded text-gray-300">{t({ en: 'You', ru: 'Вы' })}</span>}
+                      {isCurrentPlayer && <span className="text-xs bg-slate-600 px-1 rounded text-gray-300">{translate('You', language as Locale)}</span>}
 
                       {/* GM Mode Switch Button - shown for both Game Master and GM Player when current user is host */}
                       {showSwitchButton && (
@@ -790,7 +791,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                             }
                           }}
                           className="ml-auto p-1 bg-purple-600/20 hover:bg-purple-600/40 rounded text-purple-400 hover:text-purple-300 transition-colors"
-                          title={isGMView ? t({ en: "Switch to Player Mode", ru: "Переключиться в режим игрока" }) : t({ en: "Switch to GM Mode", ru: "Переключиться в режим ГМ" })}
+                          title={isGMView ? translate('Switch to Player Mode', language as Locale) : translate('Switch to GM Mode', language as Locale)}
                         >
                           <User size={14} />
                         </button>
@@ -801,7 +802,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                         <button
                           onClick={() => setRenamePlayerId(p.id)}
                           className="ml-auto p-1 hover:bg-slate-700 rounded text-gray-400 hover:text-white transition-colors"
-                          title={t({ en: "Edit name", ru: "Изменить имя" })}
+                          title={translate('Edit name', language as Locale)}
                         >
                           <Pencil size={14} />
                         </button>
@@ -833,7 +834,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       {settingsObject && (
         <ObjectSettingsModal
           object={settingsObject}
-          language={lang}
+          language={language}
           onClose={() => setSettingsObject(null)}
           onSave={(updatedObj) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });

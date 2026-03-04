@@ -1,8 +1,8 @@
-
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage } from '../types';
 import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight } from 'lucide-react';
+import { t as translate, Locale } from '../utils/translations';
 
 interface ContextMenuProps {
   x: number;
@@ -35,8 +35,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const [topDeckSubmenuOpen, setTopDeckSubmenuOpen] = useState(false);
   const [moveSubmenuOpen, setMoveSubmenuOpen] = useState(false);
   const submenuRef = React.useRef<HTMLDivElement>(null);
-
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   // Store computed positions for main menu and submenus
   const [menuPosition, setMenuPosition] = React.useState({ left: x, top: y });
@@ -188,26 +186,26 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
 
     const submenuItems: MenuItem[] = [
       {
-        label: t({ en: 'Hand', ru: 'В руку' }),
+        label: translate('Hand', language as Locale),
         action: 'moveToHand',
         icon: <Hand size={14} />,
         visible: !hideCardActions && can('moveToHand')
       },
       {
-        label: t({ en: 'Top Deck', ru: 'Верх колоды' }),
+        label: translate('Top Deck', language as Locale),
         action: 'moveToTopDeck',
         icon: <ArrowUp size={14} />,
         visible: !!deck && can('moveToTopDeck')
       },
       {
-        label: t({ en: 'Bottom Deck', ru: 'Низ колоды' }),
+        label: translate('Bottom Deck', language as Locale),
         action: 'moveToBottomDeck',
         icon: <ArrowDown size={14} />,
         visible: !!deck && can('moveToBottomDeck')
       },
       // Move to Mill - only visible if there's a mill pile AND action is allowed
       ...(piles.some(p => p.isMillPile) && can('moveToDiscard') ? [{
-        label: t({ en: 'Mill', ru: 'В сброс' }),
+        label: translate('Mill', language as Locale),
         action: 'moveToDiscard' as const,
         icon: <Trash2 size={14} />,
         visible: true
@@ -232,7 +230,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
 
     return hasVisibleItems ? [
       {
-        label: t({ en: 'Move to...', ru: 'Переместить...' }),
+        label: translate('Move to...', language as Locale),
         action: 'moveTo',
         icon: <CornerDownRight size={14} />,
         visible: true,
@@ -245,7 +243,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
 
   const menuItems: MenuItem[] = [
     {
-      label: t({ en: 'Configure...', ru: 'Настроить...' }),
+      label: translate('Configure...', language as Locale),
       action: 'configure',
       icon: <Settings size={14} />,
       // Hide for token-copies (tokens with archetypeId)
@@ -253,7 +251,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       separator: false
     },
     {
-      label: t({ en: 'Set as Card Back', ru: 'Установить как рубашку' }),
+      label: translate('Set as Card Back', language as Locale),
       action: 'setCardBack',
       icon: <ImageDown size={14} />,
       visible: isSearchWindow && isGM && object.type === ItemType.CARD,
@@ -262,7 +260,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     // "Move to..." section for cards - before Change Layer
     ...moveToSection,
     {
-      label: t({ en: 'Change Layer', ru: 'Изменить слой' }),
+      label: translate('Change Layer', language as Locale),
       action: 'layer',
       icon: <Layers size={14} />,
       visible: !hideCardActions && (can('layerUp') || can('layerDown')),
@@ -270,13 +268,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       separator: false,
       submenuItems: [
         {
-          label: t({ en: 'Layer Up', ru: 'Слой выше' }),
+          label: translate('Layer Up', language as Locale),
           action: 'layerUp',
           icon: <ArrowUp size={14} />,
           visible: can('layerUp')
         },
         {
-          label: t({ en: 'Layer Down', ru: 'Слой ниже' }),
+          label: translate('Layer Down', language as Locale),
           action: 'layerDown',
           icon: <ArrowDown size={14} />,
           visible: can('layerDown')
@@ -284,7 +282,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       ]
     },
     {
-      label: t({ en: 'Rotation', ru: 'Вращение' }),
+      label: translate('Rotation', language as Locale),
       action: 'rotate',
       icon: <RotateCw size={14} />,
       // Hide rotation in search window and for cards in hand panel (only available in game space)
@@ -293,19 +291,19 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       separator: true,
       submenuItems: [
         {
-          label: t({ en: 'Clockwise', ru: 'По часовой' }),
+          label: translate('Clockwise', language as Locale),
           action: 'rotateClockwise',
           icon: <RefreshCw size={14} />,
           visible: can('rotateClockwise')
         },
         {
-          label: t({ en: 'Counter-Clockwise', ru: 'Против часовой' }),
+          label: translate('Counter-Clockwise', language as Locale),
           action: 'rotateCounterClockwise',
           icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />,
           visible: can('rotateCounterClockwise')
         },
         {
-          label: t({ en: 'Reset', ru: 'Сбросить' }),
+          label: translate('Reset', language as Locale),
           action: 'resetRotation',
           icon: <Undo size={14} />,
           visible: can('rotateClockwise') // Using rotateClockwise as proxy for rotate permission
@@ -317,13 +315,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
           isSeparator: true
         },
         {
-          label: t({ en: 'Swing CW', ru: 'Покачать по часовой' }),
+          label: translate('Swing CW', language as Locale),
           action: 'swingClockwise',
           icon: <RefreshCw size={14} />,
           visible: can('swingClockwise')
         },
         {
-          label: t({ en: 'Swing CCW', ru: 'Покачать против часовой' }),
+          label: translate('Swing CCW', language as Locale),
           action: 'swingCounterClockwise',
           icon: <RefreshCw size={14} style={{ transform: 'scaleY(-1)' }} />,
           visible: can('swingCounterClockwise')
@@ -332,26 +330,26 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     },
     // Deck-specific actions
     {
-      label: t({ en: 'Top Deck', ru: 'Верх колоды' }),
+      label: translate('Top Deck', language as Locale),
       action: 'topDeck',
       icon: <ArrowUp size={14} />,
       visible: object.type === ItemType.DECK && can('topDeck'),
       hasSubmenu: true
     },
     {
-      label: t({ en: 'Search', ru: 'Поиск' }),
+      label: translate('Search', language as Locale),
       action: 'searchDeck',
       icon: <Search size={14} />,
       visible: object.type === ItemType.DECK && can('searchDeck')
     },
     {
-      label: t({ en: 'Shuffle', ru: 'Перемешать' }),
+      label: translate('Shuffle', language as Locale),
       action: 'shuffleDeck',
       icon: <Shuffle size={14} />,
       visible: object.type === ItemType.DECK && can('shuffleDeck')
     },
     {
-      label: t({ en: 'Piles', ru: 'Стопки' }),
+      label: translate('Piles', language as Locale),
       action: 'piles',
       icon: <Layers size={14} />,
       visible: object.type === ItemType.DECK && can('piles') && (object as Deck).piles && (object as Deck).piles!.length > 0,
@@ -364,32 +362,32 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       })) || []
     },
     {
-      label: t({ en: 'Return All', ru: 'Вернуть все' }),
+      label: translate('Return All', language as Locale),
       action: 'returnAll',
       icon: <Undo size={14} />,
       visible: object.type === ItemType.DECK && can('returnAll'),
       separator: true
     },
     {
-      label: (object as any).isOnTable === false ? t({ en: 'Show', ru: 'Показать' }) : t({ en: 'Hide', ru: 'Скрыть' }),
+      label: (object as any).isOnTable === false ? translate('Show', language as Locale) : translate('Hide', language as Locale),
       action: (object as any).isOnTable === false ? 'show' : 'hide',
       icon: (object as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />,
       visible: can('hide')
     },
     {
-      label: t({ en: 'Flip', ru: 'Перевернуть' }),
+      label: translate('Flip', language as Locale),
       action: 'flip',
       icon: <Eye size={14} />,
       visible: object.type === ItemType.CARD && can('flip')
     },
     {
-      label: object.locked ? t({ en: 'Unlock', ru: 'Разблокировать' }) : t({ en: 'Lock', ru: 'Заблокировать' }),
+      label: object.locked ? translate('Unlock', language as Locale) : translate('Lock', language as Locale),
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
       visible: !hideCardActions && can('lock')
     },
     {
-      label: object.isPinnedToViewport ? t({ en: 'Unpin', ru: 'Открепить' }) : t({ en: 'Pin', ru: 'Закрепить' }),
+      label: object.isPinnedToViewport ? translate('Unpin', language as Locale) : translate('Pin', language as Locale),
       action: object.isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
       icon: <Pin size={14} />,
       visible: !hideCardActions && can('pin'),
@@ -397,19 +395,19 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     },
     // Remove the old "To Hand" item since it's now in "Move to.."
     {
-      label: (object as Card).hidden ? t({ en: 'Unhide Card', ru: 'Показать карту' }) : t({ en: 'Hide Card', ru: 'Скрыть карту' }),
+      label: (object as Card).hidden ? translate('Unhide Card', language as Locale) : translate('Hide Card', language as Locale),
       action: 'toggleHide',
       icon: (object as Card).hidden ? <Eye size={14} /> : <EyeOff size={14} />,
       visible: isSearchWindow && isGM && object.type === ItemType.CARD
     },
     {
-      label: t({ en: 'Clone', ru: 'Клонировать' }),
+      label: translate('Clone', language as Locale),
       action: 'clone',
       icon: <Copy size={14} />,
       visible: !hideCardActions && can('clone')
     },
     {
-      label: t({ en: 'Delete', ru: 'Удалить' }),
+      label: translate('Delete', language as Locale),
       action: 'delete',
       icon: <Trash2 size={14} />,
       visible: !hideCardActions && can('delete')
@@ -549,7 +547,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                             className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                           >
                             <Settings size={14} />
-                            <span>{t({ en: 'Manager', ru: 'Менеджер' })}</span>
+                            <span>{translate('Manager', language as Locale)}</span>
                           </button>
                           <div className="h-px bg-slate-700 my-1 mx-2" />
                           {can('draw') && (
@@ -558,7 +556,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                               className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                             >
                               <Hand size={14} />
-                              <span>{t({ en: 'Draw', ru: 'Взять' })}</span>
+                              <span>{translate('Draw', language as Locale)}</span>
                             </button>
                           )}
                           {can('playTopCard') && (
@@ -567,7 +565,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                               className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                             >
                               <ArrowUp size={14} />
-                              <span>{t({ en: 'Play', ru: 'Сыграть' })}</span>
+                              <span>{translate('Play', language as Locale)}</span>
                             </button>
                           )}
                           {deck.piles && deck.piles.length > 0 && (
@@ -576,7 +574,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                               className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                             >
                               <Undo size={14} />
-                              <span>{t({ en: 'Mill', ru: 'В сброс' })}</span>
+                              <span>{translate('Mill', language as Locale)}</span>
                             </button>
                           )}
                           <button
@@ -584,7 +582,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                             className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                           >
                             <ArrowDown size={14} />
-                            <span>{t({ en: 'To Bottom', ru: 'В низ' })}</span>
+                            <span>{translate('To Bottom', language as Locale)}</span>
                           </button>
                           {can('showTop') && (
                             <button
@@ -592,7 +590,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                               className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                             >
                               <Eye size={14} />
-                              <span>{(object as Deck).showTopCard ? t({ en: 'Hide Top', ru: 'Скрыть верхнюю' }) : t({ en: 'Show Top', ru: 'Показать верхнюю' })}</span>
+                              <span>{(object as Deck).showTopCard ? translate('Hide Top', language as Locale) : translate('Show Top', language as Locale)}</span>
                             </button>
                           )}
                         </>
@@ -603,14 +601,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                             className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                           >
                             <ArrowUp size={14} />
-                            <span>{t({ en: 'Layer Up', ru: 'Слой выше' })}</span>
+                            <span>{translate('Layer Up', language as Locale)}</span>
                           </button>
                           <button
                             onClick={() => { onAction('layerDown'); onClose(); }}
                             className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
                           >
                             <ArrowDown size={14} />
-                            <span>{t({ en: 'Layer Down', ru: 'Слой ниже' })}</span>
+                            <span>{translate('Layer Down', language as Locale)}</span>
                           </button>
                         </>
                       )}

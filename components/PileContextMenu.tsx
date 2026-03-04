@@ -1,3 +1,4 @@
+import { t as translate, Locale } from '../utils/translations';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { CardPile, Deck, AppLanguage } from '../types';
@@ -14,35 +15,34 @@ interface PileContextMenuProps {
 }
 
 export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, deck, onAction, onClose, language = 'en' }) => {
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   const menuItems = [
     {
-      label: pile.locked ? t({ en: 'Unlock', ru: 'Разблокировать' }) : t({ en: 'Lock', ru: 'Заблокировать' }),
+      label: pile.locked ? translate('Unlock', language as Locale) : translate('Lock', language as Locale),
       action: 'lock',
       icon: pile.locked ? <Unlock size={14} /> : <Lock size={14} />,
       visible: pile.position === 'free'
     },
     {
-      label: pile.showTopCard ? t({ en: 'Hide top', ru: 'Скрыть верхнюю' }) : t({ en: 'Show top', ru: 'Показать верхнюю' }),
+      label: pile.showTopCard ? translate('Hide top', language as Locale) : translate('Show top', language as Locale),
       action: 'showTop',
       icon: <Eye size={14} />,
       visible: true
     },
     {
-      label: t({ en: 'Search', ru: 'Поиск' }),
+      label: translate('Search', language as Locale),
       action: 'searchDeck',
       icon: <Search size={14} />,
       visible: true
     },
     {
-      label: t({ en: 'Draw', ru: 'Взять' }),
+      label: translate('Draw', language as Locale),
       action: 'draw',
       icon: <Hand size={14} />,
       visible: pile.cardIds.length > 0
     },
     {
-      label: t({ en: 'Return All', ru: 'Вернуть все' }),
+      label: translate('Return All', language as Locale),
       action: 'returnAll',
       icon: <Undo size={14} />,
       visible: true

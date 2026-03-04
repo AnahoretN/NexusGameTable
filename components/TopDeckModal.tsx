@@ -1,3 +1,4 @@
+import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
@@ -19,7 +20,6 @@ interface TopDeckModalProps {
 }
 
 export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, language = 'en' }) => {
-  const t = (key: { en: string; ru: string }): string => key[language] || key.en;
 
   const { state, dispatch } = useGame();
   const modalContainerRef = useRef<HTMLDivElement>(null);
@@ -211,43 +211,43 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
     const buttonConfigs: Partial<Record<ContextAction, { className: string; title: string; icon: JSX.Element; onClick: () => void }>> = {
       flip: {
         className: 'bg-purple-600 hover:bg-purple-500',
-        title: t({ en: 'Flip', ru: 'Перевернуть' }),
+        title: translate('Flip', language as Locale),
         icon: card.faceUp ? <EyeOff size={12} /> : <Eye size={12} />,
         onClick: () => handleFlip(card.id)
       },
       moveToHand: {
         className: 'bg-blue-600 hover:bg-blue-500',
-        title: t({ en: 'Move to Hand', ru: 'В руку' }),
+        title: translate('Move to Hand', language as Locale),
         icon: <Hand size={12} />,
         onClick: () => handleToHand(card.id)
       },
       moveToTopDeck: {
         className: 'bg-orange-600 hover:bg-orange-500',
-        title: t({ en: 'Move to Top Deck', ru: 'В верх колоды' }),
+        title: translate('Move to Top Deck', language as Locale),
         icon: <ArrowUp size={12} />,
         onClick: () => handleMoveToTopDeck(card.id)
       },
       moveToBottomDeck: {
         className: 'bg-yellow-600 hover:bg-yellow-500',
-        title: t({ en: 'Move to Bottom Deck', ru: 'В низ колоды' }),
+        title: translate('Move to Bottom Deck', language as Locale),
         icon: <ArrowDown size={12} />,
         onClick: () => handleMoveToBottomDeck(card.id)
       },
       moveToDiscard: {
         className: 'bg-red-600 hover:bg-red-500',
-        title: t({ en: 'Move to Discard', ru: 'В сброс' }),
+        title: translate('Move to Discard', language as Locale),
         icon: <Trash2 size={12} />,
         onClick: () => handleMoveToDiscard(card.id)
       },
       millToBottom: {
         className: 'bg-green-600 hover:bg-green-500',
-        title: t({ en: 'Mill to Bottom', ru: 'В низ колоды' }),
+        title: translate('Mill to Bottom', language as Locale),
         icon: <ArrowDown size={12} />,
         onClick: () => handleMillToBottom(card.id)
       },
       clone: {
         className: 'bg-cyan-600 hover:bg-cyan-500',
-        title: t({ en: 'Clone', ru: 'Клонировать' }),
+        title: translate('Clone', language as Locale),
         icon: <Copy size={12} />,
         onClick: () => handleClone(card.id)
       }
@@ -257,7 +257,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
     if (millPile && !(buttonConfigs as any).mill) {
       (buttonConfigs as any).mill = {
         className: 'bg-red-600 hover:bg-red-500',
-        title: t({ en: `Mill to ${millPile.name}`, ru: `В ${millPile.name}` }),
+        title: translate(`Mill to ${millPile.name}`, language as Locale),
         icon: <Trash2 size={12} />,
         onClick: () => handleMill(card.id)
       };
@@ -298,14 +298,14 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
           <div className="flex items-center gap-2">
             <ArrowUp size={16} className="text-slate-400" />
-            <span className="text-sm font-semibold text-white">{t({ en: `Top Deck - ${deck.name}`, ru: `Верх колоды - ${deck.name}` })}</span>
+            <span className="text-sm font-semibold text-white">{translate(`Top Deck - ${deck.name}`, language as Locale)}</span>
             <span className="text-xs text-slate-500">({cards.length})</span>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setModalWidth(DEFAULT_MODAL_WIDTH)}
               className="p-1 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-white"
-              title={t({ en: 'Reset Size', ru: 'Сбросить размер' })}
+              title={translate('Reset Size', language as Locale)}
             >
               <RefreshCw size={14} />
             </button>
@@ -324,7 +324,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-600">
               <ArrowUp size={32} className="mb-2 opacity-30" />
-              <p className="text-sm">{t({ en: 'No cards in deck', ru: 'Нет карт в колоде' })}</p>
+              <p className="text-sm">{translate('No cards in deck', language as Locale)}</p>
             </div>
           ) : (
             <div className="flex flex-wrap gap-[2px] w-full">
@@ -368,12 +368,12 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         <div className="flex items-center justify-between px-3 py-2 border-t border-slate-700">
           <div className="text-xs text-slate-500">
             {millPile ? (
-              <span>{t({ en: `Mill: ${millPile.name}`, ru: `Сброс: ${millPile.name}` })}</span>
+              <span>{translate(`Mill: ${millPile.name}`, language as Locale)}</span>
             ) : (
-              <span className="text-slate-600">{t({ en: 'No mill pile', ru: 'Нет сброса' })}</span>
+              <span className="text-slate-600">{translate('No mill pile', language as Locale)}</span>
             )}
           </div>
-          <span className="text-xs text-slate-600">{t({ en: 'Top Deck', ru: 'Верх колоды' })}</span>
+          <span className="text-xs text-slate-600">{translate('Top Deck', language as Locale)}</span>
         </div>
       </div>
     </div>,

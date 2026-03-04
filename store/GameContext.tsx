@@ -3550,6 +3550,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         mainMenuSize: { width: menuWidth, height: menuHeight },
         hasSeenInitialScreen: false,
         isPositionSet: false,
+        effects: {
+          showRemoteCursorSlotObjects: true,
+        },
       };
       saveLocalSettings(initialSettings);
     }
@@ -3665,7 +3668,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   if (obj.type === ItemType.WINDOW && (obj as WindowObject).ownerId) {
                       return;
                   }
-                  filteredObjects[id] = obj;
+                  // For objects being dragged by host, use broadcast coordinates (prevents showing drag path)
+                  if ((obj as any).draggingPlayerId === state.activePlayerId && (obj as any).broadcastX !== undefined) {
+                    // Create a copy with broadcast coordinates instead of current position
+                    const broadcastObj = { ...obj, x: (obj as any).broadcastX, y: (obj as any).broadcastY };
+                    filteredObjects[id] = broadcastObj;
+                  } else {
+                    filteredObjects[id] = obj;
+                  }
               });
               const broadcastState = { ...state, objects: filteredObjects };
               // Debug: log state size
