@@ -5000,6 +5000,7 @@ export const Tabletop: React.FC = () => {
             cursorPosition={cursorPosition}
             cursorPositionRef={cursorPositionRef}
             zoom={zoom}
+            pixelsPerVU={pixelsPerVU}
             state={state}
             getCardSettings={getCardSettings}
         />

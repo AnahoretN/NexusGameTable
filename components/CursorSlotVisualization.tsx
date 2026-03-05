@@ -8,6 +8,7 @@ interface CursorSlotVisualizationProps {
   cursorPosition: { x: number; y: number } | null;
   cursorPositionRef: React.MutableRefObject<{ x: number; y: number } | null>;
   zoom: number;
+  pixelsPerVU: number;
   state: { objects: Record<string, any> };
   getCardSettings: (card: CardType) => {
     cardWidth?: number;
@@ -37,6 +38,7 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
   cursorPosition,
   cursorPositionRef,
   zoom,
+  pixelsPerVU,
   state,
   getCardSettings,
 }) => {
@@ -61,8 +63,9 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
           isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
         }
 
-        let width = baseWidth * zoom;
-        let height = baseHeight * zoom;
+        // Convert vu to pixels
+        let width = baseWidth * pixelsPerVU;
+        let height = baseHeight * pixelsPerVU;
 
         if (isHorizontal) {
           [width, height] = [height, width];
@@ -103,7 +106,7 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
         clearTimeout(cleanupTimeoutRef.current);
       }
     };
-  }, [cursorSlot, cursorPositionRef.current, zoom, getCardSettings]);
+  }, [cursorSlot, cursorPositionRef.current, pixelsPerVU, getCardSettings]);
 
   // Check if items from heldItems are now visible on table (not in cursor slot anymore)
   // If so, remove them from heldItems immediately
@@ -159,8 +162,9 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
           isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
         }
 
-        let width = baseWidth * zoom;
-        let height = baseHeight * zoom;
+        // Convert vu to pixels
+        let width = baseWidth * pixelsPerVU;
+        let height = baseHeight * pixelsPerVU;
 
         if (isHorizontal) {
           [width, height] = [height, width];
@@ -332,10 +336,13 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
         if (firstItem?.type === ItemType.CARD && (firstItem as any).isHorizontal) {
           [badgeWidth, badgeHeight] = [badgeHeight, badgeWidth];
         }
+        // Convert vu to pixels for badge positioning
+        const badgeWidthPx = badgeWidth * pixelsPerVU;
+        const badgeHeightPx = badgeHeight * pixelsPerVU;
         return (
           <div className="absolute" style={{
-            left: `${(badgeWidth * zoom) / 2 + 4}px`,
-            top: `-${(badgeHeight * zoom) / 2 + 4}px`,
+            left: `${badgeWidthPx / 2 + 4}px`,
+            top: `-${badgeHeightPx / 2 + 4}px`,
           }}>
             <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
               {cursorSlot.length}
