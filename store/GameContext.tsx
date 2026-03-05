@@ -3793,9 +3793,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           localDispatch({ type: 'ADD_OBJECT', payload: board });
 
-          // Create Standard Deck on 'cards' layer at fixed vu position
-          const worldX = 1345; // Fixed vu position (5 vu left)
-          const worldY = 10;  // Fixed vu position
+          // Create Standard Deck on 'cards' layer
+          // Position: 5 vu from top, 10 vu left of main panel
+          const menuPosition = calculateMainMenuPosition(); // Returns pixels
+          const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
+          // Convert menu X from pixels to vu, then subtract 10 vu and deck width
+          const menuX_vu = menuPosition.x / pixelsPerVU;
+          const deckWidth = 120; // Standard deck width in vu (cardWidth * 2 for stacked effect)
+          const worldX = menuX_vu - deckWidth - 10; // 10 vu left of menu
+          const worldY = 5; // 5 vu from top
           const { deck, cards } = createStandardDeck();
 
           deck.x = worldX;
