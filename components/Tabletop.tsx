@@ -1671,20 +1671,10 @@ export const Tabletop: React.FC = () => {
           return;
         }
 
-        // If moved less than 5px, treat as click and add to cursor slot (same as Shift+click)
-        // EXCEPTION: Token clones already on table should NOT be added to slot with simple click
-        // (Shift+click and HOLD mode still work for clones)
+        // Simple click without drag no longer adds to cursor slot
+        // Only Shift+click and drag (5px+) work for adding items
         if (distance < 5) {
-          // Check if this is a token clone (id !== archetypeId means it's a clone, not an archetype)
-          const item = itemRef.item as any;
-          const isTokenClone = item.archetypeId !== undefined && item.id !== item.archetypeId;
-          if (!isTokenClone) {
-            // Add to cursor slot WITHOUT mousePosition - this uses card center like Shift+click
-            console.log(`[DRAG SYSTEM] CLICK without drag (${distance.toFixed(1)}px < 5px) - activating HOLD mode for item: ${itemRef.item.name}`);
-            addToCursorSlot(itemRef.id, itemRef.item, 'hold');
-            return;
-          }
-          console.log(`[DRAG SYSTEM] CLICK without drag ignored for token clone on table (use Shift+click or HOLD): ${itemRef.item.name}`);
+          console.log(`[DRAG SYSTEM] CLICK without drag (${distance.toFixed(1)}px < 5px) - ignored, use Shift+click to add to slot`);
         }
         console.log(`[DRAG SYSTEM] Mouse up after drag completed (${distance.toFixed(1)}px >= 5px) - tracking already cleared`);
         // If moved 5px or more, the card was already added to slot in mousemove, nothing to do
