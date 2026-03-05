@@ -14,6 +14,17 @@ interface ObjectSettingsModalProps {
   language?: AppLanguage; // Language for translations
 }
 
+// Translate GridType value to display name
+function translateGridType(gridType: GridType, language: AppLanguage = 'en'): string {
+  // Convert uppercase enum values to title case for translation lookup
+  const lookupKey: Record<typeof gridType, string> = {
+    [GridType.NONE]: 'None',
+    [GridType.SQUARE]: 'Square',
+    [GridType.HEX]: 'Hex'
+  };
+  return translate(lookupKey[gridType], language as Locale);
+}
+
 // Get available actions with translated labels
 function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
   return [
@@ -495,7 +506,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-center items-center py-2 px-4">
-          <h3 className="text-base font-bold text-white">Settings: {object.name}</h3>
+          <h3 className="text-base font-bold text-white">{translate('Settings', language as Locale)}: {object.name}</h3>
         </div>
 
         {/* Tabs */}
@@ -666,12 +677,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           update('height', height);
                         }
                       }}
-                      disabled={(data as any).shape === TokenShape.CIRCLE || (data as any).shape === TokenShape.SQUARE}
-                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
-                        (data as any).shape === TokenShape.CIRCLE || (data as any).shape === TokenShape.SQUARE
-                          ? 'bg-slate-800 border-slate-700 cursor-not-allowed opacity-50'
-                          : 'bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500'
-                      }`}
+                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500`}
                       title={translate('Normalize to perfect shape', language as Locale)}
                     >
                       <Maximize2 size={14} />
@@ -1042,7 +1048,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       >
                         {Object.values(GridType).map(v => (
-                          <option key={v} value={v}>{v}</option>
+                          <option key={v} value={v}>{translateGridType(v, language)}</option>
                         ))}
                       </select>
                     </div>
@@ -1666,12 +1672,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         updateCardSettings('cardWidth', width);
                         updateCardSettings('cardHeight', height);
                       }}
-                      disabled={cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE}
-                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
-                        cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE
-                          ? 'bg-slate-800 border-slate-700 cursor-not-allowed opacity-50'
-                          : 'bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500'
-                      }`}
+                      className="w-9 h-9 rounded border-2 flex items-center justify-center transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500"
                       title={translate('Normalize to perfect shape', language as Locale)}
                     >
                       <Maximize2 size={14} />

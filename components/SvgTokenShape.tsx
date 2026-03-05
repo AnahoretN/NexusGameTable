@@ -10,7 +10,7 @@ const SHAPE_PATHS: Record<TokenShape, { path: string; viewBox: string; useRect?:
   },
   [TokenShape.HEX_HORIZONTAL]: {
     // Horizontal hexagon (rotated 90°) - pointy top/bottom, flat sides on left/right
-    path: 'M 16 0 L 44 0 L 60 30 L 44 60 L 16 60 L 0 30 Z',
+    path: 'M 18 0 L 46 0 L 62 30 L 46 60 L 18 60 L 2 30 Z',
     viewBox: '0 0 64 60'
   },
   [TokenShape.TRIANGLE]: {

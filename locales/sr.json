@@ -137,6 +137,7 @@
   "Counter Limits": "Ograničenja brojača",
   "Base Value": "Osnovna vrednost",
   "Max Value (optional)": "Maks. vrednost (opciono)",
+  "Name": "Ime",
   "No limit": "Bez ograničenja",
   "Allow Negative Values": "Dozvoli negativne vrednosti",
   "preview": "pregled",

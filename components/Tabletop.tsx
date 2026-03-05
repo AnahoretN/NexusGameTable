@@ -4093,93 +4093,87 @@ export const Tabletop: React.FC = () => {
                                     style={{ overflow: 'visible' }}
                                 >
                                     <g transform={`translate(${v2p(obj.width) / 2}, ${v2p(obj.height) / 2})`}>
-                                        {/* Inscribed ellipse (green) - magnetism boundary */}
-                                        <ellipse
-                                            cx={0}
-                                            cy={0}
-                                            rx={v2p(obj.width / 2 - 2)}
-                                            ry={v2p(obj.height / 2 - 2)}
-                                            fill="none"
-                                            stroke="#22c55e"
-                                            strokeWidth={v2p(1.5)}
-                                            opacity={0.7}
-                                        />
+                                        {/* Calculate ellipse radii - simple version (inscribed in bounding box) */}
+                                        {(() => {
+                                            // For all shapes, use the same simple approach: ellipse in bounding box
+                                            const ellipseRx = obj.width / 2 - 2;
+                                            const ellipseRy = obj.height / 2 - 2;
 
-                                        {/* Magnet lines (from center to inscribed ellipse) */}
-                                        {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
-                                            const anglePerSlice = 360 / magnetPointCount;
-                                            const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
-
-                                            // Calculate distance to inscribed ellipse in this direction
-                                            // Ellipse equation: (x/a)² + (y/b)² = 1
-                                            // For ray at angle: x = r*cos(angle), y = r*sin(angle)
-                                            // r = 1 / sqrt((cos(a)/a)² + (sin(a)/b)²)
-                                            const halfW = obj.width / 2 - 2; // 2 vu padding from edge
-                                            const halfH = obj.height / 2 - 2;
-                                            const cosA = Math.cos(angle);
-                                            const sinA = Math.sin(angle);
-
-                                            const lineLength = 1 / Math.sqrt(
-                                                (cosA / halfW) ** 2 + (sinA / halfH) ** 2
-                                            );
-
-                                            const endX = cosA * lineLength;
-                                            const endY = sinA * lineLength;
+                                            // Helper to calculate line length to ellipse at given angle
+                                            const calcLineLength = (angleRad: number) => {
+                                                const cosA = Math.cos(angleRad);
+                                                const sinA = Math.sin(angleRad);
+                                                return 1 / Math.sqrt((cosA / ellipseRx) ** 2 + (sinA / ellipseRy) ** 2);
+                                            };
 
                                             return (
-                                                <line
-                                                    key={`magnet-line-${index}`}
-                                                    x1={0}
-                                                    y1={0}
-                                                    x2={v2p(endX)}
-                                                    y2={v2p(endY)}
-                                                    stroke="#f59e0b"
-                                                    strokeWidth={v2p(1)}
-                                                    opacity={0.6}
-                                                />
+                                                <>
+                                                    {/* Inscribed ellipse (green) - magnetism boundary */}
+                                                    <ellipse
+                                                        cx={0}
+                                                        cy={0}
+                                                        rx={v2p(ellipseRx)}
+                                                        ry={v2p(ellipseRy)}
+                                                        fill="none"
+                                                        stroke="#22c55e"
+                                                        strokeWidth={v2p(1.5)}
+                                                        opacity={0.7}
+                                                    />
+
+                                                    {/* Magnet lines (from center to inscribed ellipse) */}
+                                                    {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                        const anglePerSlice = 360 / magnetPointCount;
+                                                        const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+                                                        const lineLength = calcLineLength(angle);
+                                                        const endX = Math.cos(angle) * lineLength;
+                                                        const endY = Math.sin(angle) * lineLength;
+
+                                                        return (
+                                                            <line
+                                                                key={`magnet-line-${index}`}
+                                                                x1={0}
+                                                                y1={0}
+                                                                x2={v2p(endX)}
+                                                                y2={v2p(endY)}
+                                                                stroke="#f59e0b"
+                                                                strokeWidth={v2p(1)}
+                                                                opacity={0.6}
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Magnet points (red dots at 60% from center along each line) */}
+                                                    {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                        const anglePerSlice = 360 / magnetPointCount;
+                                                        const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+                                                        const lineLength = calcLineLength(angle);
+                                                        const magnetRadius = lineLength * 0.6;
+                                                        const magnetX = Math.cos(angle) * magnetRadius;
+                                                        const magnetY = Math.sin(angle) * magnetRadius;
+
+                                                        return (
+                                                            <circle
+                                                                key={`magnet-point-${index}`}
+                                                                cx={v2p(magnetX)}
+                                                                cy={v2p(magnetY)}
+                                                                r={v2p(2)}
+                                                                fill="#ef4444"
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Center point (yellow dot) - only shown when no magnet lines */}
+                                                    {magnetPointCount === 1 && (
+                                                        <circle
+                                                            cx={0}
+                                                            cy={0}
+                                                            r={v2p(3)}
+                                                            fill="#fbbf24"
+                                                        />
+                                                    )}
+                                                </>
                                             );
-                                        })}
-
-                                        {/* Magnet points (red dots at 60% from center along each line) */}
-                                        {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
-                                            const anglePerSlice = 360 / magnetPointCount;
-                                            const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
-
-                                            // Calculate distance to inscribed ellipse in this direction
-                                            const halfW = obj.width / 2 - 2;
-                                            const halfH = obj.height / 2 - 2;
-                                            const cosA = Math.cos(angle);
-                                            const sinA = Math.sin(angle);
-
-                                            const lineLength = 1 / Math.sqrt(
-                                                (cosA / halfW) ** 2 + (sinA / halfH) ** 2
-                                            );
-
-                                            // Magnet point is at 60% from center along the line
-                                            const magnetRadius = lineLength * 0.6;
-                                            const magnetX = cosA * magnetRadius;
-                                            const magnetY = sinA * magnetRadius;
-
-                                            return (
-                                                <circle
-                                                    key={`magnet-point-${index}`}
-                                                    cx={v2p(magnetX)}
-                                                    cy={v2p(magnetY)}
-                                                    r={v2p(2)}
-                                                    fill="#ef4444"
-                                                />
-                                            );
-                                        })}
-
-                                        {/* Center point (yellow dot) - only shown when no magnet lines */}
-                                        {magnetPointCount === 1 && (
-                                            <circle
-                                                cx={0}
-                                                cy={0}
-                                                r={v2p(3)}
-                                                fill="#fbbf24"
-                                            />
-                                        )}
+                                        })()}
                                     </g>
                                 </svg>
 
