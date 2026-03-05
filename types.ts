@@ -20,6 +20,7 @@ export enum TokenShape {
   CIRCLE = 'CIRCLE',
   SQUARE = 'SQUARE',
   HEX = 'HEX',
+  HEX_HORIZONTAL = 'HEX_HORIZONTAL',
   TRIANGLE = 'TRIANGLE'
 }
 

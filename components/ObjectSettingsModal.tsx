@@ -164,19 +164,15 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         // For square, width = height
         return { width: avgSize, height: avgSize };
       case TokenShape.HEX:
-        // For regular hex, width / height ≈ 1.155
-        if (currentWidth > currentHeight) {
-          return { width: currentWidth, height: Math.round(currentWidth / 1.155) };
-        } else {
-          return { width: Math.round(currentHeight * 1.155), height: currentHeight };
-        }
+        // For regular hexagon: height / width = 1.1547
+        return { width: avgSize, height: Math.round(avgSize * 1.1547) };
+      case TokenShape.HEX_HORIZONTAL:
+        // For horizontal hexagon (rotated 90°): width / height = 1.1547
+        return { width: avgSize, height: Math.round(avgSize / 1.1547) };
       case TokenShape.TRIANGLE:
-        // For equilateral triangle, height / width ≈ 1.155
-        if (currentWidth > currentHeight) {
-          return { width: currentWidth, height: Math.round(currentWidth / 1.155) };
-        } else {
-          return { width: Math.round(currentHeight * 1.155), height: currentHeight };
-        }
+        // For equilateral triangle: height / width = sqrt(3)/2 ≈ 0.866
+        // Use avgSize as width, calculate height
+        return { width: avgSize, height: Math.round(avgSize * 0.866) };
       default:
         // For unknown shapes, just make them equal (square)
         return { width: avgSize, height: avgSize };
@@ -671,14 +667,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         }
                       }}
                       disabled={(data as any).shape === TokenShape.CIRCLE || (data as any).shape === TokenShape.SQUARE}
-                      className={`w-10 h-10 rounded border-2 flex items-center justify-center transition-colors ${
+                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
                         (data as any).shape === TokenShape.CIRCLE || (data as any).shape === TokenShape.SQUARE
                           ? 'bg-slate-800 border-slate-700 cursor-not-allowed opacity-50'
                           : 'bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500'
                       }`}
                       title={translate('Normalize to perfect shape', language as Locale)}
                     >
-                      <Maximize2 size={16} />
+                      <Maximize2 size={14} />
                     </button>
                   </div>
                 </div>
@@ -790,6 +786,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         <option value={TokenShape.SQUARE}>{translate('Square', language as Locale)}</option>
                         <option value={TokenShape.CIRCLE}>{translate('Circle', language as Locale)}</option>
                         <option value={TokenShape.HEX}>{translate('Hex', language as Locale)}</option>
+                        <option value={TokenShape.HEX_HORIZONTAL}>{translate('Hex (Horizontal)', language as Locale)}</option>
                         <option value={TokenShape.TRIANGLE}>{translate('Triangle', language as Locale)}</option>
                       </select>
                     </div>
@@ -1011,6 +1008,19 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" />
                         </svg>
                         <span className="text-xs">{translate('Hex', language as Locale)}</span>
+                      </button>
+                      <button
+                        onClick={() => { update('shape', TokenShape.HEX_HORIZONTAL); update('width', Math.round((data.height || 60) * 1.155)); }}
+                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
+                          (data as DiceObject).shape === TokenShape.HEX_HORIZONTAL
+                            ? 'border-purple-500 bg-purple-500/20 text-white'
+                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
+                        }`}
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                          <polygon points="2,12 7,3 17,3 22,12 17,21 7,21" />
+                        </svg>
+                        <span className="text-xs">{translate('Hex (Horizontal)', language as Locale)}</span>
                       </button>
                     </div>
                   </div>
@@ -1639,7 +1649,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
 
                   {/* Normalize button for cards */}
-                  <div className="flex items-end pb-1">
+                  <div className="flex items-end pb-0.5">
                     <button
                       onClick={() => {
                         const currentWidth = cardSettings.cardWidth ?? deck.width;
@@ -1657,14 +1667,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         updateCardSettings('cardHeight', height);
                       }}
                       disabled={cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE}
-                      className={`w-10 h-10 rounded border-2 flex items-center justify-center transition-colors ${
+                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
                         cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE
                           ? 'bg-slate-800 border-slate-700 cursor-not-allowed opacity-50'
                           : 'bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500'
                       }`}
                       title={translate('Normalize to perfect shape', language as Locale)}
                     >
-                      <Maximize2 size={16} />
+                      <Maximize2 size={14} />
                     </button>
                   </div>
                 </div>
