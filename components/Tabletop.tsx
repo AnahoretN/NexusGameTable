@@ -541,22 +541,61 @@ export const Tabletop: React.FC = () => {
           }
       }
 
-      // Check individual battlefield cells - snap center-to-center
+      // Check individual battlefield cells - snap to magnet points
       for (const cell of cells) {
           const cellCenterX = cell.x + (cell.width ?? 100) / 2;
           const cellCenterY = cell.y + (cell.height ?? 100) / 2;
 
-          const distance = Math.sqrt(
-              Math.pow(cursorX - cellCenterX, 2) +
-              Math.pow(cursorY - cellCenterY, 2)
-          );
+          // Get magnetism settings for this cell
+          const magnetPointCount = cell.magnetPointCount ?? 1;
+          const magnetRotation = cell.magnetRotation ?? 0;
 
-          if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
-              nearestCell = { x: cellCenterX, y: cellCenterY, distance };
+          // Calculate magnet point positions
+          const magnetPoints: { x: number; y: number }[] = [];
+
+          if (magnetPointCount === 1) {
+              // Single point at center
+              magnetPoints.push({ x: cellCenterX, y: cellCenterY });
+          } else {
+              // Multiple magnet points along lines from center to inscribed ellipse
+              const anglePerSlice = 360 / magnetPointCount;
+              const halfW = (cell.width ?? 100) / 2 - 2; // 2 vu padding
+              const halfH = (cell.height ?? 100) / 2 - 2;
+
+              for (let i = 0; i < magnetPointCount; i++) {
+                  const angle = (i * anglePerSlice + magnetRotation) * Math.PI / 180;
+                  const cosA = Math.cos(angle);
+                  const sinA = Math.sin(angle);
+
+                  // Calculate distance to inscribed ellipse in this direction
+                  // Ellipse equation: (x/a)² + (y/b)² = 1
+                  // r = 1 / sqrt((cos(a)/a)² + (sin(a)/b)²)
+                  const lineLength = 1 / Math.sqrt(
+                      (cosA / halfW) ** 2 + (sinA / halfH) ** 2
+                  );
+
+                  // Magnet point is at 60% from center along the line
+                  const magnetRadius = lineLength * 0.6;
+                  const magnetX = cellCenterX + cosA * magnetRadius;
+                  const magnetY = cellCenterY + sinA * magnetRadius;
+                  magnetPoints.push({ x: magnetX, y: magnetY });
+              }
+          }
+
+          // Find nearest magnet point
+          for (const magnetPoint of magnetPoints) {
+              const distance = Math.sqrt(
+                  Math.pow(cursorX - magnetPoint.x, 2) +
+                  Math.pow(cursorY - magnetPoint.y, 2)
+              );
+
+              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
+                  nearestCell = { x: magnetPoint.x, y: magnetPoint.y, distance };
+              }
           }
       }
 
-      // If we found a cell to snap to, return coordinates centered on that cell
+      // If we found a magnet point to snap to, return coordinates centered on that point
       if (nearestCell) {
           return {
               x: nearestCell.x - objHalfW,
@@ -1958,6 +1997,44 @@ export const Tabletop: React.FC = () => {
     }
   }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, state.selectedHyperscaleLayerIds, dispatch, addToCursorSlot, offset, zoom, setDraggingId, setIsPanning]);
 
+  // Handle click on battlefield cell for magnetism control
+  // Shift+click: add magnet point
+  // Ctrl+Shift+click: remove magnet point
+  const handleCellMagnetClick = useCallback((e: React.MouseEvent, cell: BattlefieldCell) => {
+    // Prevent default behavior
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Check for Shift key
+    if (!e.shiftKey) {
+      return; // Only handle Shift+click
+    }
+
+    const currentCount = cell.magnetPointCount ?? 1;
+    const currentRotation = cell.magnetRotation ?? 0;
+    let newCount = currentCount;
+
+    // Ctrl+Shift = decrease, Shift only = increase
+    if (e.ctrlKey || e.metaKey) {
+      // Decrease magnet points (min 1)
+      newCount = Math.max(1, currentCount - 1);
+      console.log('[CELL MAGNET] Decrease magnet points:', currentCount, '->', newCount);
+    } else {
+      // Increase magnet points (max 12 for practical reasons)
+      newCount = Math.min(12, currentCount + 1);
+      console.log('[CELL MAGNET] Increase magnet points:', currentCount, '->', newCount);
+    }
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: cell.id,
+        magnetPointCount: newCount,
+        magnetRotation: currentRotation
+      }
+    });
+  }, [dispatch]);
+
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     // Always update cursor position for slot visualization (needed when adding token to slot)
     const newCursorPosition = { x: e.clientX, y: e.clientY };
@@ -3283,7 +3360,7 @@ export const Tabletop: React.FC = () => {
                                 opacity={obj.opacity ?? 100}
                                 borderOpacity={obj.borderOpacity ?? 100}
                                 showThickness={true}
-                                tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                tokenName={(obj as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
                                 fontColor={(obj as any).fontColor || 'white'}
                             />
                         </div>
@@ -3375,7 +3452,7 @@ export const Tabletop: React.FC = () => {
                                 opacity={obj.opacity ?? 100}
                                 borderOpacity={obj.borderOpacity ?? 100}
                                 showThickness={true}
-                                tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                tokenName={(obj as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
                                 fontColor={(obj as any).fontColor || 'white'}
                             />
                         </div>
@@ -3463,7 +3540,7 @@ export const Tabletop: React.FC = () => {
                                 opacity={obj.opacity ?? 100}
                                 borderOpacity={obj.borderOpacity ?? 100}
                                 showThickness={true}
-                                tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                tokenName={(obj as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
                                 fontColor={(obj as any).fontColor || 'white'}
                             />
                         </div>
@@ -3872,7 +3949,7 @@ export const Tabletop: React.FC = () => {
                                     opacity={obj.opacity ?? 100}
                                     borderOpacity={obj.borderOpacity ?? 100}
                                     showThickness={true}
-                                    tokenName={(obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                    tokenName={(obj as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
                                     fontColor={(obj as any).fontColor || 'white'}
                                 />
 
@@ -3970,6 +4047,9 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.BATTLEFIELD_CELL) {
                     const cell = obj as BattlefieldCell;
+                    const magnetPointCount = cell.magnetPointCount ?? 1;
+                    const magnetRotation = cell.magnetRotation ?? 0;
+
                     return (
                         <Tooltip
                             key={obj.id}
@@ -3980,6 +4060,7 @@ export const Tabletop: React.FC = () => {
                         >
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                onClick={(e) => isOwner && handleCellMagnetClick(e, cell)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
@@ -4003,6 +4084,104 @@ export const Tabletop: React.FC = () => {
                                     rotation={0}
                                     showThickness={false}
                                 />
+
+                                {/* Magnetism System Visualization */}
+                                <svg
+                                    className="absolute pointer-events-none"
+                                    width={v2p(obj.width)}
+                                    height={v2p(obj.height)}
+                                    style={{ overflow: 'visible' }}
+                                >
+                                    <g transform={`translate(${v2p(obj.width) / 2}, ${v2p(obj.height) / 2})`}>
+                                        {/* Inscribed ellipse (green) - magnetism boundary */}
+                                        <ellipse
+                                            cx={0}
+                                            cy={0}
+                                            rx={v2p(obj.width / 2 - 2)}
+                                            ry={v2p(obj.height / 2 - 2)}
+                                            fill="none"
+                                            stroke="#22c55e"
+                                            strokeWidth={v2p(1.5)}
+                                            opacity={0.7}
+                                        />
+
+                                        {/* Magnet lines (from center to inscribed ellipse) */}
+                                        {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                            const anglePerSlice = 360 / magnetPointCount;
+                                            const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+
+                                            // Calculate distance to inscribed ellipse in this direction
+                                            // Ellipse equation: (x/a)² + (y/b)² = 1
+                                            // For ray at angle: x = r*cos(angle), y = r*sin(angle)
+                                            // r = 1 / sqrt((cos(a)/a)² + (sin(a)/b)²)
+                                            const halfW = obj.width / 2 - 2; // 2 vu padding from edge
+                                            const halfH = obj.height / 2 - 2;
+                                            const cosA = Math.cos(angle);
+                                            const sinA = Math.sin(angle);
+
+                                            const lineLength = 1 / Math.sqrt(
+                                                (cosA / halfW) ** 2 + (sinA / halfH) ** 2
+                                            );
+
+                                            const endX = cosA * lineLength;
+                                            const endY = sinA * lineLength;
+
+                                            return (
+                                                <line
+                                                    key={`magnet-line-${index}`}
+                                                    x1={0}
+                                                    y1={0}
+                                                    x2={v2p(endX)}
+                                                    y2={v2p(endY)}
+                                                    stroke="#f59e0b"
+                                                    strokeWidth={v2p(1)}
+                                                    opacity={0.6}
+                                                />
+                                            );
+                                        })}
+
+                                        {/* Magnet points (red dots at 60% from center along each line) */}
+                                        {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                            const anglePerSlice = 360 / magnetPointCount;
+                                            const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+
+                                            // Calculate distance to inscribed ellipse in this direction
+                                            const halfW = obj.width / 2 - 2;
+                                            const halfH = obj.height / 2 - 2;
+                                            const cosA = Math.cos(angle);
+                                            const sinA = Math.sin(angle);
+
+                                            const lineLength = 1 / Math.sqrt(
+                                                (cosA / halfW) ** 2 + (sinA / halfH) ** 2
+                                            );
+
+                                            // Magnet point is at 60% from center along the line
+                                            const magnetRadius = lineLength * 0.6;
+                                            const magnetX = cosA * magnetRadius;
+                                            const magnetY = sinA * magnetRadius;
+
+                                            return (
+                                                <circle
+                                                    key={`magnet-point-${index}`}
+                                                    cx={v2p(magnetX)}
+                                                    cy={v2p(magnetY)}
+                                                    r={v2p(2)}
+                                                    fill="#ef4444"
+                                                />
+                                            );
+                                        })}
+
+                                        {/* Center point (yellow dot) - only shown when no magnet lines */}
+                                        {magnetPointCount === 1 && (
+                                            <circle
+                                                cx={0}
+                                                cy={0}
+                                                r={v2p(3)}
+                                                fill="#fbbf24"
+                                            />
+                                        )}
+                                    </g>
+                                </svg>
 
                                 {(obj as any).isPinnedToViewport && (
                                     <div
