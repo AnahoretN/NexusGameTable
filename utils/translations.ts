@@ -21,7 +21,9 @@ async function loadTranslations(locale: Locale): Promise<Record<string, string>>
   if (locale === 'en') return {};
 
   try {
-    const response = await fetch(`/locales/${locale}.json`);
+    // Use relative path for GitHub Pages compatibility
+    const basePath = import.meta.env.BASE_URL || './';
+    const response = await fetch(`${basePath}locales/${locale}.json`);
     if (!response.ok) return {};
     return await response.json();
   } catch {
