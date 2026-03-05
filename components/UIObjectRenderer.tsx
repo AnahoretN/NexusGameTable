@@ -366,8 +366,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       ? (pinnedPosition?.y ?? uiObject.y)
       : (uiObject.y - offset.y) / zoom,
     // For pinned panels, convert vu to pixels; for unpinned, use vu directly (scaled by CSS transform)
-    width: isPinnedMode ? vuToPx(uiObject.width) : uiObject.width,
-    height: minimized ? 32 : (isPinnedMode ? vuToPx(uiObject.height) : uiObject.height),
+    // Main menu is special: its dimensions are already in pixels, not vu
+    width: isPinnedMode ? (isMainMenu ? uiObject.width : vuToPx(uiObject.width)) : uiObject.width,
+    height: minimized ? 32 : (isPinnedMode ? (isMainMenu ? uiObject.height : vuToPx(uiObject.height)) : uiObject.height),
     // In pinned mode, no scale transform; in unpinned mode, reverse the scale
     transform: isPinnedMode
       ? `rotate(${uiObject.rotation}deg)`
