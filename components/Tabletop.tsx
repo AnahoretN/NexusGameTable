@@ -3718,7 +3718,7 @@ export const Tabletop: React.FC = () => {
                     const isResizing = resizingId === obj.id;
                     const isDragging = draggingId === obj.id;
                     const canResize = !obj.locked;
-                    const gridSize = board.gridSize || 50;
+                    const gridSize = v2p(board.gridSize || 50); // Convert vu to pixels
 
                     const hexR = gridSize;
                     const hexW = hexR * Math.sqrt(3);
@@ -3739,23 +3739,35 @@ export const Tabletop: React.FC = () => {
                             imageSrc={obj.content}
                             scale={obj.tooltipScale}
                         >
-                            <BoardWithResizeMemo
-                                token={board}
-                                obj={obj}
-                                isOwner={isOwner}
-                                isDragging={isDragging}
-                                isResizing={isResizing}
-                                canResize={canResize}
-                                zoom={zoom}
-                                onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
-                                onContextMenu={(e) => handleContextMenu(e, obj)}
-                                onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
-                                gridSize={gridSize}
-                                hexR={hexR}
-                                hexW={hexW}
-                                hexPath={hexPath}
-                                currentTool={currentTool}
-                            />
+                            <div
+                                className="pointer-events-auto"
+                                style={{
+                                    position: 'absolute',
+                                    left: v2p(obj.x),
+                                    top: v2p(obj.y),
+                                    width: v2p(board.width),
+                                    height: v2p(board.height),
+                                    zIndex: board.zIndex || 0,
+                                }}
+                            >
+                                <BoardWithResizeMemo
+                                    token={board}
+                                    obj={obj}
+                                    isOwner={isOwner}
+                                    isDragging={isDragging}
+                                    isResizing={isResizing}
+                                    canResize={canResize}
+                                    zoom={zoom}
+                                    onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                    onContextMenu={(e) => handleContextMenu(e, obj)}
+                                    onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
+                                    gridSize={gridSize}
+                                    hexR={hexR}
+                                    hexW={hexW}
+                                    hexPath={hexPath}
+                                    currentTool={currentTool}
+                                />
+                            </div>
                         </Tooltip>
                     );
                 }
@@ -3763,7 +3775,7 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
                     const showGrid = token.gridType && token.gridType !== GridType.NONE;
-                    const gridSize = token.gridSize || 50;
+                    const gridSize = v2p(token.gridSize || 50); // Convert vu to pixels
 
                     const hexR = gridSize;
                     const hexW = hexR * Math.sqrt(3);
@@ -4536,7 +4548,7 @@ export const Tabletop: React.FC = () => {
                 const pinnedPosition = board.pinnedScreenPosition;
                 if (!pinnedPosition) return null;
 
-                const gridSize = board.gridSize || 50;
+                const gridSize = v2p(board.gridSize || 50); // Convert vu to pixels
                 const hexR = gridSize;
                 const hexW = hexR * Math.sqrt(3);
                 const hexPath =

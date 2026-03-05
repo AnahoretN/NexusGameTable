@@ -14,6 +14,7 @@ import { MAIN_MENU_WIDTH } from '../constants';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 import { t as translate, preloadTranslations, Locale } from '../utils/translations';
+import { vuToPixels } from '../utils/vuSystem';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
@@ -350,6 +351,10 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   const pinnedPosition = isPinnedMode ? getPinnedPosition() : null;
 
+  // Get pixelsPerVU for converting vu to pixels (for pinned panels)
+  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+  const vuToPx = useCallback((vu: number) => vuToPixels(vu ?? 0, pixelsPerVU), [pixelsPerVU]);
+
   const containerStyle: React.CSSProperties = {
     position: isPinnedMode ? 'fixed' : 'absolute',
     // For pinned mode: use pinnedScreenPosition (actual screen coordinates)
@@ -360,8 +365,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     top: isPinnedMode
       ? (pinnedPosition?.y ?? uiObject.y)
       : (uiObject.y - offset.y) / zoom,
-    width: uiObject.width,
-    height: minimized ? 32 : uiObject.height,
+    // For pinned panels, convert vu to pixels; for unpinned, use vu directly (scaled by CSS transform)
+    width: isPinnedMode ? vuToPx(uiObject.width) : uiObject.width,
+    height: minimized ? 32 : (isPinnedMode ? vuToPx(uiObject.height) : uiObject.height),
     // In pinned mode, no scale transform; in unpinned mode, reverse the scale
     transform: isPinnedMode
       ? `rotate(${uiObject.rotation}deg)`

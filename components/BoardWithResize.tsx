@@ -77,10 +77,10 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             onContextMenu={onContextMenu}
             className="absolute flex items-center justify-center text-white font-bold select-none"
             style={{
-                left: obj.x,
-                top: obj.y,
-                width: obj.width,
-                height: obj.height,
+                left: 0,
+                top: 0,
+                width: '100%',   // Use full width of parent container
+                height: '100%',  // Use full height of parent container
                 backgroundColor: (obj as any).color || '#34495e',
                 backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
                 backgroundSize: 'cover',
