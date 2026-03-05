@@ -307,6 +307,10 @@ export interface BattlefieldCell extends GameItem {
   shape: TokenShape; // CIRCLE, SQUARE, HEX, or TRIANGLE
   snapToGrid?: boolean; // When enabled, other objects snap to this cell's position
   gridSize?: number; // Grid size for snapping (default 50)
+
+  // Magnetism system - controls where tokens snap to in this cell
+  magnetPointCount?: number; // Number of magnet points (default 1, min 1, max 12)
+  magnetRotation?: number; // Rotation of magnet lines in degrees (default 0)
 }
 
 export interface DiceObject extends GameItem {

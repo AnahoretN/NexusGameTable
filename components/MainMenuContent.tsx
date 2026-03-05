@@ -1182,6 +1182,24 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         break;
       }
       case 'BATTLEFIELD_CELL': {
+        // Determine hyperscale layer: try 'boards' first, then use top selected layer
+        let targetLayerId: string | undefined;
+
+        // First priority: 'boards' layer if it exists
+        const boardsLayer = state.hyperscaleLayers.find(l => l.id === 'boards');
+        if (boardsLayer) {
+          targetLayerId = 'boards';
+        } else if (state.selectedHyperscaleLayerIds.length > 0) {
+          // Second priority: use the top-most selected layer
+          // Sort selected layers by order (lower = higher priority) and pick the first
+          const selectedLayers = state.hyperscaleLayers.filter(l =>
+            state.selectedHyperscaleLayerIds.includes(l.id)
+          ).sort((a, b) => a.order - b.order);
+          if (selectedLayers.length > 0) {
+            targetLayerId = selectedLayers[0].id;
+          }
+        }
+
         const cell: BattlefieldCell = {
           id: generateUUID(),
           type: ItemType.BATTLEFIELD_CELL,
@@ -1202,7 +1220,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           borderOpacity: 100,
           snapToGrid: false,
           gridSize: 50,
-          zIndex: 0, // Cells at bottom layer by default
+          zIndex: 0, // Will be clamped to layer bounds
+          hyperscaleLayerId: targetLayerId, // Place on boards layer or top selected layer
         };
         dispatch({ type: 'ADD_OBJECT', payload: cell });
         break;
@@ -1250,7 +1269,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 key={idx}
                 onClick={() => !isItemDisabled && handleCreateItem(item)}
                 disabled={isItemDisabled}
-                className={`w-full flex items-center gap-2 py-1 px-2 rounded text-sm transition-colors ${
+                className={`w-full flex items-center gap-2 py-1 px-2 rounded text-xs transition-colors ${
                   isItemDisabled
                     ? 'text-gray-600 cursor-not-allowed'
                     : 'text-gray-400 hover:text-white hover:bg-slate-800'
@@ -1265,11 +1284,14 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           {/* Objects on table */}
           {objectsOnTable.length > 0 && (
             <div className="mt-2 pt-2 border-t border-slate-700">
-              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">On Table</div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{translate('On Table', language as Locale)}</div>
               {objectsOnTable.map(obj => {
                 const isLocked = obj.locked || false;
                 // For UI objects check 'visible', for game objects check 'isOnTable'
-                const isVisible = 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
+                // Token types (TOKEN_TYPE) should always be considered visible in this list
+                const isVisible = obj.type === ItemType.TOKEN_TYPE
+                  ? true
+                  : 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
                 let objColor = 'color' in obj ? obj.color : '#6366f1';
                 // For drawings, use their color property or first stroke color
@@ -1294,18 +1316,18 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                 return (
                   <div
                     key={obj.id}
-                    className={`flex items-center gap-1 py-1 px-2 rounded text-sm group ${isVisible ? 'text-gray-300 hover:bg-slate-800' : 'text-gray-600 hover:bg-slate-800/50'}`}
+                    className={`flex items-center gap-1 py-1 px-2 rounded text-xs group ${isVisible ? 'text-white hover:bg-slate-800' : 'text-gray-400 hover:bg-slate-800/50'}`}
                   >
-                    <span className="text-gray-500 flex-shrink-0">{getTypeIcon(obj)}</span>
+                    <span className="text-gray-500 flex-shrink-0 text-xs">{getTypeIcon(obj)}</span>
                     <div
                       className="w-3 h-3 rounded flex-shrink-0"
                       style={{ backgroundColor: obj.type === ItemType.TOKEN_TYPE ? objColor : (isVisible ? objColor : '#4a5568') }}
                     />
-                    <span className="flex-1 truncate text-xs">{getDisplayName()}</span>
+                    <span className="flex-1 truncate font-normal">{getDisplayName()}</span>
                     {canHideObjects && (
                       <button
                         onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
-                        className={`p-1 rounded ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} opacity-0 group-hover:opacity-100`}
+                        className={`p-1 rounded text-xs ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} opacity-0 group-hover:opacity-100`}
                         title={isLocked ? 'Unlock' : 'Lock'}
                       >
                         {isLocked ? <Lock size={10} /> : <Unlock size={10} />}
@@ -1314,7 +1336,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     {canHideObjects && (
                       <button
                         onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } })}
-                        className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100"
+                        className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 text-xs"
                         title={isVisible ? 'Hide' : 'Show'}
                       >
                         {isVisible ? <Eye size={10} /> : <EyeOff size={10} />}
@@ -1330,7 +1352,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                             title: 'Settings'
                           }
                         })}
-                        className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100"
+                        className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 text-xs"
                         title="Settings"
                       >
                         <Settings size={10} />
@@ -1346,7 +1368,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                             setDeleteCandidateId(obj.id);
                           }
                         }}
-                        className="p-1 hover:bg-red-600 rounded text-red-400 hover:text-white opacity-0 group-hover:opacity-100"
+                        className="p-1 hover:bg-red-600 rounded text-red-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
                         title="Delete"
                       >
                         <Trash2 size={10} />

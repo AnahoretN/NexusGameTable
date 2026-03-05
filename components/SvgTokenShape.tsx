@@ -250,14 +250,13 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
         )}
       </g>
 
-      {/* Children overlay (text, icons, etc.) */}
+      {/* Children overlay (text, icons, etc.) - use viewBox-relative coordinates */}
       {(children || tokenName) && (
         <foreignObject
           x="0"
           y="0"
           width="60"
-          height={shape === TokenShape.HEX ? 64 : 60}
-          clipPath={`url(#token-clip-${uniqueId})`}
+          height="60"
         >
           <div
             style={{
@@ -267,6 +266,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               flexDirection: 'column',
+              overflow: 'hidden',
+              transform: 'translateY(5%)',
             }}
           >
             {children}
@@ -278,8 +279,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
                   color: fontColor,
                   textShadow: '0 1px 3px rgba(0,0,0,0.8)',
                   textAlign: 'center',
-                  maxWidth: '85%',
-                  maxHeight: shape === TokenShape.HEX ? '64px' : '60px',
+                  maxWidth: '90%',
+                  maxHeight: '100%',
                   overflow: 'hidden',
                   display: '-webkit-box',
                   WebkitLineClamp: 3,

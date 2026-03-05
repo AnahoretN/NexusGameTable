@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell } from '../types';
 
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices } from 'lucide-react';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2 } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 
 interface ObjectSettingsModalProps {
@@ -151,6 +151,37 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       }
     ]) : []
   );
+
+  // Function to normalize dimensions based on shape (make it a "perfect" shape)
+  const normalizeShapeSizes = (shape: TokenShape, currentWidth: number, currentHeight: number): { width: number; height: number } => {
+    const avgSize = (currentWidth + currentHeight) / 2;
+
+    switch (shape) {
+      case TokenShape.CIRCLE:
+        // For circle, width = height
+        return { width: avgSize, height: avgSize };
+      case TokenShape.SQUARE:
+        // For square, width = height
+        return { width: avgSize, height: avgSize };
+      case TokenShape.HEX:
+        // For regular hex, width / height ≈ 1.155
+        if (currentWidth > currentHeight) {
+          return { width: currentWidth, height: Math.round(currentWidth / 1.155) };
+        } else {
+          return { width: Math.round(currentHeight * 1.155), height: currentHeight };
+        }
+      case TokenShape.TRIANGLE:
+        // For equilateral triangle, height / width ≈ 1.155
+        if (currentWidth > currentHeight) {
+          return { width: currentWidth, height: Math.round(currentWidth / 1.155) };
+        } else {
+          return { width: Math.round(currentHeight * 1.155), height: currentHeight };
+        }
+      default:
+        // For unknown shapes, just make them equal (square)
+        return { width: avgSize, height: avgSize };
+    }
+  };
 
   // Card settings for decks (settings that apply to cards belonging to this deck)
   // These are stored on the deck object and inherited by its cards
@@ -377,7 +408,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       // Properties to copy from archetype to token-copies
       const propsToUpdate = [
         'width', 'height', 'color', 'shape', 'content',
-        'borderColor', 'borderWidth', 'showName', 'name', 'fontColor'
+        'borderColor', 'borderWidth', 'showNameOnToken', 'showName', 'name', 'fontColor'
       ] as const;
 
       tokenCopies.forEach(copy => {
@@ -395,7 +426,15 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
         propsToUpdate.forEach(prop => {
           if (prop !== 'width' && prop !== 'height') {
-            (updatedCopy as any)[prop] = (data as any)[prop];
+            // Handle showName/showNameOnToken mapping between archetype and token
+            if (prop === 'showName' && !(data as any).showNameOnToken) {
+              // If archetype has showName, copy to token's showNameOnToken
+              (updatedCopy as any).showNameOnToken = (data as any)[prop];
+            } else if (prop === 'showNameOnToken') {
+              // Skip - tokens use showNameOnToken, not showNameOnToken from archetype
+            } else {
+              (updatedCopy as any)[prop] = (data as any)[prop];
+            }
           }
         });
 
@@ -535,7 +574,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 {isToken || isArchetype || isCounter ? (
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Name', language as Locale)}</label>
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-2">
                       <input
                         value={data.name}
                         onChange={e => update('name', e.target.value)}
@@ -549,17 +588,21 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         className="w-9 h-9 rounded cursor-pointer border-0 p-0 bg-slate-900"
                         title={translate('Font Color', language as Locale)}
                       />
-                      {/* Show Name Toggle - for token types and counters */}
-                      {(isArchetype || isCounter) && (
+
+                      {/* Show Name Toggle - for tokens and token types */}
+                      {(isToken || isArchetype) && (
                         <button
-                          onClick={() => update('showNameOnToken', !(data as any).showNameOnToken)}
+                          onClick={() => {
+                            const targetProp = isArchetype ? 'showName' : 'showNameOnToken';
+                            update(targetProp, !(data as any)[targetProp]);
+                          }}
                           className={`w-9 h-5 rounded-full transition-colors ${
-                            (data as any).showNameOnToken ? 'bg-green-600' : 'bg-slate-700'
+                            (data as any).showNameOnToken || (data as any).showName ? 'bg-green-600' : 'bg-slate-700'
                           }`}
-                          title={translate('Show name on object', language as Locale)}
+                          title={translate('Show name on token', language as Locale)}
                         >
                           <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                            (data as any).showNameOnToken ? 'translate-x-2.5' : 'translate-x-0.5'
+                            (data as any).showNameOnToken || (data as any).showName ? 'translate-x-5' : 'translate-x-0.5'
                           }`} />
                         </button>
                       )}
@@ -577,7 +620,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 )}
 
                 {/* Size */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Width', language as Locale)}</label>
                     <input
@@ -611,6 +654,32 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     />
+                  </div>
+                  <div className="flex items-end pb-0.5">
+                    <button
+                      onClick={() => {
+                        const currentWidth = isArchetype ? (data as any).defaultSize?.width || data.width : data.width;
+                        const currentHeight = isArchetype ? (data as any).defaultSize?.height || data.height : data.height;
+                        const currentShape = (data as any).shape || TokenShape.SQUARE;
+                        const { width, height } = normalizeShapeSizes(currentShape, currentWidth, currentHeight);
+
+                        if (isArchetype) {
+                          update('defaultSize', { ...(data as any).defaultSize, width, height });
+                        } else {
+                          update('width', width);
+                          update('height', height);
+                        }
+                      }}
+                      disabled={(data as any).shape === TokenShape.CIRCLE || (data as any).shape === TokenShape.SQUARE}
+                      className={`w-10 h-10 rounded border-2 flex items-center justify-center transition-colors ${
+                        (data as any).shape === TokenShape.CIRCLE || (data as any).shape === TokenShape.SQUARE
+                          ? 'bg-slate-800 border-slate-700 cursor-not-allowed opacity-50'
+                          : 'bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500'
+                      }`}
+                      title={translate('Normalize to perfect shape', language as Locale)}
+                    >
+                      <Maximize2 size={16} />
+                    </button>
                   </div>
                 </div>
 
@@ -1544,7 +1613,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mb-2">
+                <div className="grid grid-cols-[1fr_1fr_auto] gap-3 mb-2">
                   {/* Card Width */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Width (px)', language as Locale)}</label>
@@ -1567,6 +1636,36 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       placeholder={translate('Default', language as Locale)}
                     />
+                  </div>
+
+                  {/* Normalize button for cards */}
+                  <div className="flex items-end pb-1">
+                    <button
+                      onClick={() => {
+                        const currentWidth = cardSettings.cardWidth ?? deck.width;
+                        const currentHeight = cardSettings.cardHeight ?? deck.height;
+                        const currentShape = cardSettings.cardShape ?? CardShape.POKER;
+                        const { width, height } = normalizeShapeSizes(
+                          currentShape === CardShape.HEX ? TokenShape.HEX :
+                          currentShape === CardShape.TRIANGLE ? TokenShape.TRIANGLE :
+                          currentShape === CardShape.CIRCLE ? TokenShape.CIRCLE :
+                          TokenShape.SQUARE,
+                          currentWidth,
+                          currentHeight
+                        );
+                        updateCardSettings('cardWidth', width);
+                        updateCardSettings('cardHeight', height);
+                      }}
+                      disabled={cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE}
+                      className={`w-10 h-10 rounded border-2 flex items-center justify-center transition-colors ${
+                        cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE
+                          ? 'bg-slate-800 border-slate-700 cursor-not-allowed opacity-50'
+                          : 'bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500'
+                      }`}
+                      title={translate('Normalize to perfect shape', language as Locale)}
+                    >
+                      <Maximize2 size={16} />
+                    </button>
                   </div>
                 </div>
 

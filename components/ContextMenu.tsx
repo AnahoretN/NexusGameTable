@@ -586,7 +586,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="px-3 py-2 border-b border-slate-700 mb-1">
-            <span className="text-xs text-gray-400 font-bold uppercase truncate block max-w-[150px]">
+            <span className="text-xs text-white truncate block max-w-[150px]">
               {object.type === ItemType.CARD
                 ? (object as Card).hidden
                   ? 'HIDDEN'
