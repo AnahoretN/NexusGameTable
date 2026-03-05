@@ -1901,21 +1901,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const layer = state.hyperscaleLayers.find(l => l.id === layerId);
         const minZ = layer?.minZIndex ?? 1;
 
-        // Get all objects in the same layer, sorted by zIndex
-        const layerObjects = Object.values(state.objects)
-            .filter(o => o.hyperscaleLayerId === layerId)
+        // Get all objects in the same layer, sorted by zIndex, EXCLUDING target
+        const otherObjects = Object.values(state.objects)
+            .filter(o => o.hyperscaleLayerId === layerId && o.id !== obj.id)
             .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
-        // Defragment: compact all objects starting from minZ, preserving relative order
+        // Defragment: compact all other objects starting from minZ
         const newObjects = { ...state.objects };
-        layerObjects.forEach((layerObj, index) => {
-            if (layerObj.id !== obj.id) {
-                newObjects[layerObj.id] = { ...layerObj, zIndex: minZ + index };
-            }
+        otherObjects.forEach((layerObj, index) => {
+            newObjects[layerObj.id] = { ...layerObj, zIndex: minZ + index };
         });
 
-        // Place the target object at the top (above all others)
-        const targetZ = minZ + layerObjects.length - 1;
+        // Place the target object at the top (above all others, at lowest possible position)
+        const targetZ = minZ + otherObjects.length;
         newObjects[obj.id] = { ...obj, zIndex: targetZ };
 
         // Add to general history
@@ -1942,18 +1940,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const layer = state.hyperscaleLayers.find(l => l.id === layerId);
         const minZ = layer?.minZIndex ?? 1;
 
-        // Get all objects in the same layer, sorted by zIndex
-        const layerObjects = Object.values(state.objects)
-            .filter(o => o.hyperscaleLayerId === layerId)
+        // Get all objects in the same layer, sorted by zIndex, EXCLUDING target
+        const otherObjects = Object.values(state.objects)
+            .filter(o => o.hyperscaleLayerId === layerId && o.id !== obj.id)
             .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
-        // Defragment: compact all objects (except target) starting from minZ + 1
-        // Then place target at minZ
+        // Defragment: compact all other objects starting from minZ + 1
         const newObjects = { ...state.objects };
-        layerObjects.forEach((layerObj, index) => {
-            if (layerObj.id !== obj.id) {
-                newObjects[layerObj.id] = { ...layerObj, zIndex: minZ + 1 + index };
-            }
+        otherObjects.forEach((layerObj, index) => {
+            newObjects[layerObj.id] = { ...layerObj, zIndex: minZ + 1 + index };
         });
 
         // Place the target object at the bottom (minZ)
