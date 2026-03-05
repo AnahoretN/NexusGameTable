@@ -556,14 +556,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[99999] cursor-default"
+        className="fixed inset-0 z-[100000] cursor-default"
         onClick={onClose}
         onContextMenu={(e) => { e.preventDefault(); onClose(); }}
         onMouseDown={(e) => e.stopPropagation()}
       />
       <div
         ref={menuRef}
-        className="fixed z-[99999] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100 cursor-default"
+        className="fixed z-[100000] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100 cursor-default"
         style={menuStyle}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -651,7 +651,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                       ref={getSubmenuRef()}
                       data-submenu="true"
                       data-submenu-key={submenuKey}
-                      className="fixed z-[100000] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
+                      className="fixed z-[100001] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
                       style={{ left: submenuPos.left, top: submenuPos.top }}
                       onMouseDown={(e) => e.stopPropagation()}
                     >

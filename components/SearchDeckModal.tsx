@@ -539,7 +539,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   }, [isResizing]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center">
       <div
         ref={modalContainerRef}
         className="bg-slate-900 border border-slate-700 h-[85vh] flex flex-col relative overflow-hidden"

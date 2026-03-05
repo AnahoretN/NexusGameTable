@@ -2672,9 +2672,9 @@ export const Tabletop: React.FC = () => {
     const currentScrollTop = scrollContainerRef.current?.scrollTop || 0;
     dispatch({
       type: 'UPDATE_VIEW_TRANSFORM',
-      payload: { offset: { x: 0, y: 0 }, zoom, scroll: { x: currentScroll, y: currentScrollTop } }
+      payload: { offset: { x: 0, y: 0 }, zoom, scroll: { x: currentScroll, y: currentScrollTop }, pixelsPerVU }
     });
-  }, [zoom, dispatch]);
+  }, [zoom, dispatch, pixelsPerVU]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
       e.preventDefault();
@@ -3347,8 +3347,8 @@ export const Tabletop: React.FC = () => {
 
                 // Calculate global z-index for remote dragging objects
                 const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
-                const layerOrder = layer?.order ?? 2;
-                const globalZIndex = layerOrder * 10000 + (obj.zIndex ?? 0);
+                const layerMinZ = layer?.minZIndex ?? 3001;
+                const globalZIndex = layerMinZ + (obj.zIndex ?? 0);
 
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
@@ -3433,6 +3433,11 @@ export const Tabletop: React.FC = () => {
 
             {/* Shadow objects being dragged by remote players */}
             {remoteDraggingObjects.map((obj) => {
+                // Calculate global z-index for shadow objects
+                const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+                const layerMinZ = layer?.minZIndex ?? 3001;
+                const globalZIndex = layerMinZ + (obj.zIndex ?? 0);
+
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
                     return (
@@ -4359,6 +4364,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: isCardHidden && isGM ? 0.5 : 1,
                                 pointerEvents: isDragging ? 'none' : 'auto', // Allow mouse events to pass through when dragging
+                                zIndex: globalZIndex, // Apply global z-index for proper layer ordering
                             }}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}
@@ -4467,8 +4473,13 @@ export const Tabletop: React.FC = () => {
                 const canDrag = !deckObj.locked;
                 const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
+                // Calculate global z-index for decks (cards layer: 1001-3000)
+                const layer = state.hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
+                const layerMinZ = layer?.minZIndex ?? 1001;
+                const globalZIndex = layerMinZ + (deckObj.zIndex ?? 0);
+
                 return (
-                    <div key={deckObj.id} style={{ position: 'absolute', left: v2p(deckObj.x), top: v2p(deckObj.y) }}>
+                    <div key={deckObj.id} style={{ position: 'absolute', left: v2p(deckObj.x), top: v2p(deckObj.y), zIndex: globalZIndex }}>
                         <DeckComponent
                             deck={deckObj}
                             draggingId={draggingId}
@@ -4542,6 +4553,11 @@ export const Tabletop: React.FC = () => {
                 const canDrag = !deckObj.locked;
                 const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
+                // Calculate global z-index for decks (cards layer: 1001-3000)
+                const layer = state.hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
+                const layerMinZ = layer?.minZIndex ?? 1001;
+                const globalZIndex = layerMinZ + (deckObj.zIndex ?? 0);
+
                 return (
                     <div
                         key={deckObj.id}
@@ -4550,7 +4566,7 @@ export const Tabletop: React.FC = () => {
                             position: 'fixed',
                             left: pinnedPosition.x,
                             top: pinnedPosition.y,
-                            zIndex: deckObj.zIndex || 1000,
+                            zIndex: globalZIndex,
                         }}
                     >
                         {/* Pinned indicator */}

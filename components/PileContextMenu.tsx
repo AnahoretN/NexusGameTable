@@ -60,12 +60,12 @@ export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, de
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[9998]"
+        className="fixed inset-0 z-[100000]"
         onClick={onClose}
         onMouseDown={onClose}
       />
       <div
-        className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] z-[9999]"
+        className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] z-[100000]"
         style={menuStyle}
         onMouseDown={(e) => e.stopPropagation()}
       >

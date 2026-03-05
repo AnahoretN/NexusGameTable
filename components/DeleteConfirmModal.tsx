@@ -14,7 +14,7 @@ interface DeleteConfirmModalProps {
 export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ objectName, onConfirm, onCancel, language = 'en' }) => {
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-red-500/50 rounded-xl shadow-2xl p-6 w-[400px] relative overflow-hidden">
         {/* Background glow effect */}
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50" />
