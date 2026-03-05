@@ -74,13 +74,20 @@ export const Tooltip: React.FC<TooltipProps> = ({
   const hasTextContent = text && !showImage;
   const hasContent = hasImageContent || hasTextContent;
 
+  // Calculate sprite position if sprite sheet is used
+  const hasSpriteInfo = spriteIndex !== undefined && spriteColumns && spriteRows;
+  const spriteCol = hasSpriteInfo ? spriteIndex % spriteColumns : 0;
+  const spriteRow = hasSpriteInfo ? Math.floor(spriteIndex / spriteColumns) : 0;
+  const spriteColPercent = spriteColumns && spriteColumns > 1 ? (spriteCol / (spriteColumns - 1)) * 100 : 0;
+  const spriteRowPercent = spriteRows && spriteRows > 1 ? (spriteRow / (spriteRows - 1)) * 100 : 0;
+
   // Calculate tooltip dimensions
   const tooltipWidth = baseWidth * (scale / 100);
   const tooltipHeight = tooltipWidth / aspectRatio;
 
   const tooltipContent = isVisible && hasContent && (
     <div
-      className="fixed z-[99999] pointer-events-none"
+      className="fixed z-[99998] pointer-events-none"
       style={{
         left: position.x + 5,
         top: position.y,
@@ -91,25 +98,47 @@ export const Tooltip: React.FC<TooltipProps> = ({
       <div
         className="bg-slate-900/95 border border-slate-600 rounded-lg overflow-hidden shadow-xl"
         style={{
-          // Firefox fix: explicitly set dimensions to avoid scaling issues
-          minWidth: tooltipWidth,
-          maxWidth: tooltipWidth,
-          minHeight: tooltipHeight,
-          maxHeight: tooltipHeight,
+          // For image tooltips: use calculated dimensions
+          // For text-only tooltips: size based on content
+          ...(hasImageContent ? {
+            minWidth: tooltipWidth,
+            maxWidth: tooltipWidth,
+            minHeight: tooltipHeight,
+            maxHeight: tooltipHeight,
+          } : {
+            // Text-only: let content determine size, with max constraints
+            maxWidth: Math.min(400, window.innerWidth - 20),
+            maxHeight: Math.min(300, window.innerHeight - 20),
+          })
         }}
       >
         {hasImageContent && (
-          <img
-            src={imageSrc}
-            alt=""
-            className="block w-full h-full object-cover"
-            style={{
-              width: tooltipWidth,
-              height: tooltipHeight,
-              // Use img instead of div with background for better Firefox rendering
-              imageRendering: 'auto',
-            }}
-          />
+          hasSpriteInfo ? (
+            // Sprite sheet: use background-image to show correct portion
+            <div
+              style={{
+                width: tooltipWidth,
+                height: tooltipHeight,
+                backgroundImage: `url(${imageSrc})`,
+                backgroundSize: `${spriteColumns! * 100}% ${spriteRows! * 100}%`,
+                backgroundPosition: `${spriteColPercent}% ${spriteRowPercent}%`,
+                backgroundRepeat: 'no-repeat',
+                imageRendering: 'auto',
+              }}
+            />
+          ) : (
+            // Regular image: use img tag
+            <img
+              src={imageSrc}
+              alt=""
+              className="block w-full h-full object-cover"
+              style={{
+                width: tooltipWidth,
+                height: tooltipHeight,
+                imageRendering: 'auto',
+              }}
+            />
+          )
         )}
         {hasTextContent && (
           <div className="p-3">

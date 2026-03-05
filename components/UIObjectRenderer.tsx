@@ -645,7 +645,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
       {/* Game Settings Modal for Main Menu */}
       {isMainMenu && showGameSettings && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/15" onClick={() => setShowGameSettings(false)}>
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/15" onClick={() => setShowGameSettings(false)}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
@@ -881,7 +881,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
       {/* Support Modal */}
       {isMainMenu && showSupportModal && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[420px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
               <h3 className="text-base font-bold text-white">{translate('Links', state.language as Locale)}</h3>

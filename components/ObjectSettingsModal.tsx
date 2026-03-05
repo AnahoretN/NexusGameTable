@@ -454,7 +454,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/15">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/15">
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-center items-center py-2 px-4">
