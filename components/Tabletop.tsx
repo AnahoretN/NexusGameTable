@@ -450,6 +450,7 @@ export const Tabletop: React.FC = () => {
 
       // Check boards first
       for (const board of boards) {
+          // All values are in vu (virtual units)
           const size = board.gridSize || 50;
           const boardCols = Math.floor(board.width / size);
           const boardRows = Math.floor(board.height / size);
@@ -2900,6 +2901,14 @@ export const Tabletop: React.FC = () => {
           return true;
       })
       .sort((a, b) => {
+          // First, sort by hyperscale layer order (boards < cards < tokens < interface)
+          const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
+          const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
+          const orderA = layerA?.order ?? 2;
+          const orderB = layerB?.order ?? 2;
+          if (orderA !== orderB) return orderA - orderB;
+
+          // Within the same layer, sort by zIndex
           const zA = a.zIndex ?? 0;
           const zB = b.zIndex ?? 0;
           if (zA !== zB) return zA - zB;
@@ -2913,7 +2922,7 @@ export const Tabletop: React.FC = () => {
 
           return 0;
       });
-  }, [state.objects, isGM]);
+  }, [state.objects, state.hyperscaleLayers, isGM]);
 
   // Objects that are in another player's cursor slot (inCursorSlot=true but not in my local cursorSlot)
   // These are rendered as darkened/semi-transparent and non-interactive
@@ -2944,8 +2953,16 @@ export const Tabletop: React.FC = () => {
         if ((obj as any).visible === false) return false;
         return true;
       })
-      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
-  }, [state.objects, cursorSlot, recentlyInMyCursorSlot, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
+      .sort((a, b) => {
+          // Sort by hyperscale layer order first, then by zIndex
+          const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
+          const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
+          const orderA = layerA?.order ?? 2;
+          const orderB = layerB?.order ?? 2;
+          if (orderA !== orderB) return orderA - orderB;
+          return (a.zIndex ?? 0) - (b.zIndex ?? 0);
+      });
+  }, [state.objects, state.hyperscaleLayers, cursorSlot, recentlyInMyCursorSlot, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
 
   // Objects that are being dragged by another player (draggingPlayerId is set but not by local player)
   // These are rendered as darkened/semi-transparent and non-interactive (if effect enabled)
@@ -2973,8 +2990,16 @@ export const Tabletop: React.FC = () => {
         if ((obj as any).visible === false) return false;
         return true;
       })
-      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
-  }, [state.objects, state.activePlayerId, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
+      .sort((a, b) => {
+          // Sort by hyperscale layer order first, then by zIndex
+          const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
+          const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
+          const orderA = layerA?.order ?? 2;
+          const orderB = layerB?.order ?? 2;
+          if (orderA !== orderB) return orderA - orderB;
+          return (a.zIndex ?? 0) - (b.zIndex ?? 0);
+      });
+  }, [state.objects, state.hyperscaleLayers, state.activePlayerId, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
 
   // UI objects (panels and windows) - separate from game objects
   const uiObjects = useMemo(() => {
@@ -2995,8 +3020,16 @@ export const Tabletop: React.FC = () => {
         }
         return true;
       })
-      .sort((a, b) => (a.zIndex || 1000) - (b.zIndex || 1000));
-  }, [state.objects, state.activePlayerId]);
+      .sort((a, b) => {
+          // Sort by hyperscale layer order first, then by zIndex
+          const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'interface'));
+          const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'interface'));
+          const orderA = layerA?.order ?? 3;
+          const orderB = layerB?.order ?? 3;
+          if (orderA !== orderB) return orderA - orderB;
+          return (a.zIndex || 1000) - (b.zIndex || 1000);
+      });
+  }, [state.objects, state.hyperscaleLayers, state.activePlayerId]);
 
   // Split UI objects into pinned and unpinned for separate rendering
   const pinnedUIObjects = useMemo(() => {
@@ -3220,6 +3253,11 @@ export const Tabletop: React.FC = () => {
             {remoteCursorSlotObjects.map((obj) => {
                 if (obj.type === ItemType.BOARD) return null; // Boards shouldn't be in cursor slot
 
+                // Calculate global z-index for remote objects
+                const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+                const layerOrder = layer?.order ?? 2;
+                const globalZIndex = layerOrder * 10000 + (obj.zIndex ?? 0);
+
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
                     return (
@@ -3234,7 +3272,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <SvgTokenShape
@@ -3277,7 +3315,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation ?? 0}rad)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <Card
@@ -3307,6 +3345,11 @@ export const Tabletop: React.FC = () => {
             {remoteDraggingObjects.map((obj) => {
                 if (obj.type === ItemType.BOARD) return null;
 
+                // Calculate global z-index for remote dragging objects
+                const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+                const layerOrder = layer?.order ?? 2;
+                const globalZIndex = layerOrder * 10000 + (obj.zIndex ?? 0);
+
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
                     return (
@@ -3321,7 +3364,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <SvgTokenShape
@@ -3362,7 +3405,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation ?? 0}rad)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <Card
@@ -3404,7 +3447,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <SvgTokenShape
@@ -3445,7 +3488,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation ?? 0}rad)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <Card
@@ -3483,7 +3526,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <SvgTokenShape
@@ -3547,7 +3590,7 @@ export const Tabletop: React.FC = () => {
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <span className="text-xl font-bold">{counter.value}</span>
@@ -3576,7 +3619,7 @@ export const Tabletop: React.FC = () => {
                                 height: effectiveHeight,
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <div style={{ transform: `rotate(${deck.rotation || 0}deg)`, width: '100%', height: '100%' }}>
@@ -3683,7 +3726,7 @@ export const Tabletop: React.FC = () => {
                                 height: v2p(obj.height),
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
-                                zIndex: obj.zIndex ?? 0,
+                                zIndex: globalZIndex,
                             }}
                         >
                             <div
@@ -3707,6 +3750,12 @@ export const Tabletop: React.FC = () => {
                 // Only show grab cursor for unlocked objects that can be dragged
                 const canDrag = !obj.locked;
                 const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+
+                // Calculate global z-index using layer's minZIndex as base
+                // This ensures tokens (3001-6000) always render above boards (1-1000)
+                const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+                const layerMinZ = layer?.minZIndex ?? 3001;
+                const globalZIndex = layerMinZ + (obj.zIndex ?? 0);
 
                 if (obj.type === ItemType.BOARD) {
                     // Skip pinned boards - they are rendered separately in fixed container
@@ -3747,7 +3796,7 @@ export const Tabletop: React.FC = () => {
                                     top: v2p(obj.y),
                                     width: v2p(board.width),
                                     height: v2p(board.height),
-                                    zIndex: board.zIndex || 0,
+                                    zIndex: globalZIndex,
                                 }}
                             >
                                 <BoardWithResizeMemo
@@ -3805,7 +3854,8 @@ export const Tabletop: React.FC = () => {
                                     top: v2p(obj.y),
                                     width: v2p(obj.width),
                                     height: v2p(obj.height),
-                                    transform: `rotate(${obj.rotation}deg)`
+                                    transform: `rotate(${obj.rotation}deg)`,
+                                    zIndex: globalZIndex,
                                 }}
                             >
                                 {/* Render SVG token for all tokens */}
@@ -3936,7 +3986,8 @@ export const Tabletop: React.FC = () => {
                                     top: v2p(obj.y),
                                     width: v2p(obj.width),
                                     height: v2p(obj.height),
-                                    transform: `rotate(${obj.rotation}deg)`
+                                    transform: `rotate(${obj.rotation}deg)`,
+                                    zIndex: globalZIndex,
                                 }}
                             >
                                 <SvgTokenShape
@@ -4059,7 +4110,8 @@ export const Tabletop: React.FC = () => {
                                     top: v2p(obj.y),
                                     width: v2p(Math.max(obj.width, 100)),
                                     height: v2p(50),
-                                    transform: `rotate(${obj.rotation}deg)`
+                                    transform: `rotate(${obj.rotation}deg)`,
+                                    zIndex: globalZIndex,
                                 }}
                             >
                             {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
@@ -4163,7 +4215,8 @@ export const Tabletop: React.FC = () => {
                                     top: v2p(obj.y),
                                     width: v2p(dice.width || 60),
                                     height: v2p(dice.height || 60),
-                                    transform: `rotate(${obj.rotation}deg)`
+                                    transform: `rotate(${obj.rotation}deg)`,
+                                    zIndex: globalZIndex,
                                 }}
                             >
                                 <SvgTokenShape
