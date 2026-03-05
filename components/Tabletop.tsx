@@ -870,6 +870,12 @@ export const Tabletop: React.FC = () => {
       case 'layerDown':
         dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } });
         break;
+      case 'bringToFront':
+        dispatch({ type: 'BRING_TO_FRONT', payload: { id: obj.id } });
+        break;
+      case 'sendToBack':
+        dispatch({ type: 'SEND_TO_BACK', payload: { id: obj.id } });
+        break;
       case 'showTop':
         if (obj.type === ItemType.DECK) {
           dispatch({ type: 'TOGGLE_SHOW_TOP_CARD', payload: { deckId: obj.id } });

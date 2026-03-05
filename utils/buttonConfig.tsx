@@ -1,5 +1,5 @@
 import React from 'react';
-import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin, ArrowUp, ArrowDown, CornerDownRight } from 'lucide-react';
+import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin, ArrowUp, ArrowDown, CornerDownRight, ChevronsUp, ChevronsDown } from 'lucide-react';
 import { ContextAction, AppLanguage } from '../types';
 import { t as translate, Locale } from './translations';
 
@@ -19,6 +19,8 @@ const ACTION_LABELS: Record<ButtonAction, string> = {
   pin: 'Pin',
   layerUp: 'Layer Up',
   layerDown: 'Layer Down',
+  bringToFront: 'To Top',
+  sendToBack: 'To Bottom',
   draw: 'Draw Card',
   playTopCard: 'Play Top',
   millTopCard: 'Mill',
@@ -56,6 +58,8 @@ export const BUTTON_STYLES: Partial<Record<ButtonAction, { className: string }>>
   pin: { className: 'bg-pink-600 hover:bg-pink-500' },
   layerUp: { className: 'bg-blue-600 hover:bg-blue-500' },
   layerDown: { className: 'bg-blue-600 hover:bg-blue-500' },
+  bringToFront: { className: 'bg-indigo-600 hover:bg-indigo-500' },
+  sendToBack: { className: 'bg-indigo-600 hover:bg-indigo-500' },
   draw: { className: 'bg-blue-600 hover:bg-blue-500' },
   playTopCard: { className: 'bg-green-600 hover:bg-green-500' },
   millTopCard: { className: 'bg-teal-600 hover:bg-teal-500' },
@@ -90,6 +94,8 @@ export const ButtonIcons = {
   layer: () => <Layers size={14} />,
   layerUp: () => <ArrowUp size={14} />,
   layerDown: () => <ArrowDown size={14} />,
+  bringToFront: () => <ChevronsUp size={14} />,
+  sendToBack: () => <ChevronsDown size={14} />,
   draw: () => <Hand size={14} />,
   playTopCard: () => <Eye size={14} />,
   millTopCard: () => <Undo size={14} />,

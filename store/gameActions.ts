@@ -50,6 +50,8 @@ export type Action =
   | BaseAction<'UPDATE_ACTION_BUTTONS', { id: string; actions: ContextAction[] }>
   | BaseAction<'MOVE_LAYER_UP', { id: string }>
   | BaseAction<'MOVE_LAYER_DOWN', { id: string }>
+  | BaseAction<'BRING_TO_FRONT', { id: string }>
+  | BaseAction<'SEND_TO_BACK', { id: string }>
   | BaseAction<'LOAD_GAME', GameState>
   | BaseAction<'ADD_PLAYER', Player>
   | BaseAction<'REMOVE_PLAYER', { id: string }>
