@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight, Check } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight, Check } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 import { useGame } from '../store/GameContext';
 
@@ -398,6 +398,24 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
             action: 'layerDown',
             icon: <ArrowDown size={14} />,
             visible: can('layerDown')
+          },
+          {
+            label: '-',
+            action: 'separator',
+            visible: true,
+            isSeparator: true
+          },
+          {
+            label: translate('To Top', language as Locale),
+            action: 'bringToFront',
+            icon: <ChevronsUp size={14} />,
+            visible: can('bringToFront')
+          },
+          {
+            label: translate('To Bottom', language as Locale),
+            action: 'sendToBack',
+            icon: <ChevronsDown size={14} />,
+            visible: can('sendToBack')
           },
           {
             label: '-',

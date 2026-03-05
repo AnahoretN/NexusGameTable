@@ -1892,6 +1892,88 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
+    case 'BRING_TO_FRONT': {
+        const obj = state.objects[action.payload.id];
+        if (!obj) return state;
+
+        // Get object's hyperscale layer bounds
+        const layerId = obj.hyperscaleLayerId || 'tokens';
+        const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+        const minZ = layer?.minZIndex ?? 1;
+
+        // Get all objects in the same layer, sorted by zIndex
+        const layerObjects = Object.values(state.objects)
+            .filter(o => o.hyperscaleLayerId === layerId)
+            .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+        // Defragment: compact all objects starting from minZ, preserving relative order
+        const newObjects = { ...state.objects };
+        layerObjects.forEach((layerObj, index) => {
+            if (layerObj.id !== obj.id) {
+                newObjects[layerObj.id] = { ...layerObj, zIndex: minZ + index };
+            }
+        });
+
+        // Place the target object at the top (above all others)
+        const targetZ = minZ + layerObjects.length - 1;
+        newObjects[obj.id] = { ...obj, zIndex: targetZ };
+
+        // Add to general history
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'object-layer-changed',
+            objectId: obj.id,
+            direction: 'up',
+            previousZIndex: obj.zIndex || 0,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return {
+            ...state,
+            objects: newObjects,
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
+    }
+    case 'SEND_TO_BACK': {
+        const obj = state.objects[action.payload.id];
+        if (!obj) return state;
+
+        // Get object's hyperscale layer bounds
+        const layerId = obj.hyperscaleLayerId || 'tokens';
+        const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+        const minZ = layer?.minZIndex ?? 1;
+
+        // Get all objects in the same layer, sorted by zIndex
+        const layerObjects = Object.values(state.objects)
+            .filter(o => o.hyperscaleLayerId === layerId)
+            .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+        // Defragment: compact all objects (except target) starting from minZ + 1
+        // Then place target at minZ
+        const newObjects = { ...state.objects };
+        layerObjects.forEach((layerObj, index) => {
+            if (layerObj.id !== obj.id) {
+                newObjects[layerObj.id] = { ...layerObj, zIndex: minZ + 1 + index };
+            }
+        });
+
+        // Place the target object at the bottom (minZ)
+        newObjects[obj.id] = { ...obj, zIndex: minZ };
+
+        // Add to general history
+        const historyEntry: GeneralHistoryEntry = {
+            type: 'object-layer-changed',
+            objectId: obj.id,
+            direction: 'down',
+            previousZIndex: obj.zIndex || 0,
+        };
+        const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+
+        return {
+            ...state,
+            objects: newObjects,
+            undo: { ...state.undo, generalHistory: newGeneralHistory },
+        };
+    }
     case 'UPDATE_VIEW_TRANSFORM': {
       return { ...state, viewTransform: action.payload };
     }
@@ -3794,14 +3876,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localDispatch({ type: 'ADD_OBJECT', payload: board });
 
           // Create Standard Deck on 'cards' layer
-          // Position: 5 vu from top, 10 vu left of main panel
+          // Position: 10 vu from top, 15 vu left of main panel
           const menuPosition = calculateMainMenuPosition(); // Returns pixels
           const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
-          // Convert menu X from pixels to vu, then subtract 10 vu and deck width
+          // Convert menu X from pixels to vu, then subtract 15 vu and deck width
           const menuX_vu = menuPosition.x / pixelsPerVU;
           const deckWidth = 120; // Standard deck width in vu (cardWidth * 2 for stacked effect)
-          const worldX = menuX_vu - deckWidth - 10; // 10 vu left of menu
-          const worldY = 5; // 5 vu from top
+          const worldX = menuX_vu - deckWidth - 15; // 15 vu left of menu
+          const worldY = 10; // 10 vu from top
           const { deck, cards } = createStandardDeck();
 
           deck.x = worldX;

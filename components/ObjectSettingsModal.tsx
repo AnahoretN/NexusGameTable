@@ -35,6 +35,8 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
     { id: 'layer', label: translate('Change Layer (section)', language as Locale) },
     { id: 'layerUp', label: translate('Layer Up', language as Locale) },
     { id: 'layerDown', label: translate('Layer Down', language as Locale) },
+    { id: 'bringToFront', label: translate('To Top', language as Locale) },
+    { id: 'sendToBack', label: translate('To Bottom', language as Locale) },
     { id: 'lock', label: translate('Lock/Unlock Position', language as Locale) },
     { id: 'pin', label: translate('Pin/Unpin to Screen', language as Locale) },
     { id: 'rotate', label: translate('Rotation (section)', language as Locale) },
@@ -57,7 +59,7 @@ function getMoveToActions(language: AppLanguage = 'en'): { id: ContextAction; la
 }
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles', 'bringToFront', 'sendToBack'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
