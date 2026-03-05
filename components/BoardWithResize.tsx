@@ -97,7 +97,8 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                     <defs>
                         {token.gridType === GridType.SQUARE && (
                             <pattern id={`grid-square-${obj.id}`} width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                                <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="black" strokeWidth="1"/>
+                                {/* Draw complete square: top, left, right, bottom edges */}
+                                <rect x="0" y="0" width={gridSize} height={gridSize} fill="none" stroke="black" strokeWidth="1"/>
                             </pattern>
                         )}
                         {token.gridType === GridType.HEX && (

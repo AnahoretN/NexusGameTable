@@ -966,7 +966,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Size (px)', language as Locale)}</label>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Size (vu)', language as Locale)}</label>
                       <input
                         type="number"
                         value={(data as Board).gridSize || 50}
