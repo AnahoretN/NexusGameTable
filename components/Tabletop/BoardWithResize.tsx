@@ -14,9 +14,9 @@ interface BoardWithResizeProps {
     onContextMenu: (e: React.MouseEvent) => void;
     onResizeStart: (e: React.MouseEvent) => void;
     gridSize: number;
-    hexR: number;
-    hexW: number;
-    hexPath: string;
+    gridWidth?: number;
+    gridHeight?: number;
+    showGrid?: boolean;
     currentTool?: string;
 }
 
@@ -32,28 +32,69 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     onContextMenu,
     onResizeStart,
     gridSize,
-    hexR,
-    hexW,
-    hexPath,
+    gridWidth,
+    gridHeight,
+    showGrid,
     currentTool = 'none',
 }) => {
-    const showGrid = token.gridType && token.gridType !== 'NONE';
+    // Use gridWidth/gridHeight if provided, otherwise fall back to gridSize
+    const gridW = gridWidth ?? gridSize;
+    const gridH = gridHeight ?? gridSize;
+
+    // Check if grid should be shown (grid type exists AND showGrid is not false)
+    const shouldShowGrid = token.gridType && token.gridType !== 'NONE' && (token as BoardType).showGrid !== false;
     const isHexGrid = token.gridType === 'HEX';
 
-    // Generate hex grid pattern
+    // For hex grid, with 120° top/bottom angles always
+    // Top and bottom angles are always 120° regardless of width/height ratio
+    const rowSpacing = gridH * 0.75;  // Vertical distance between hexagon centers
+    const patternW = gridW * 2;        // Two hexagon columns for proper tiling
+    const patternH = rowSpacing * 2;   // Two hexagon rows
+
+    // Pointy-top hexagon: width = gridW, height = gridH
+    // Shoulder Y at W/(2√3) preserves 120° top/bottom angles
+    const shoulderY1 = gridW / 2 / Math.sqrt(3);
+    const shoulderY2 = gridH - shoulderY1;
+    const hexPath =
+      `M ${gridW / 2} 0 ` +
+      `L ${gridW} ${shoulderY1} ` +
+      `L ${gridW} ${shoulderY2} ` +
+      `L ${gridW / 2} ${gridH} ` +
+      `L 0 ${shoulderY2} ` +
+      `L 0 ${shoulderY1} Z`;
+
+    // Build tiling pattern with 4 hexagons:
+    // Even row: (0, 0) and (0, rowSpacing)
+    // Odd row offset: (gridW/2, rowSpacing/2) and (gridW/2, rowSpacing * 1.5)
+    const hexGridPath =
+      // First hexagon (col 0, row 0)
+      hexPath + ' ' +
+      // Second hexagon (col 0, row 1)
+      hexPath.replace(/([ML]) ([\d.]+) ([\d.]+)/g, (match, cmd, x, y) =>
+        `${cmd} ${x} ${parseFloat(y) + rowSpacing}`
+      ) + ' ' +
+      // Third hexagon (col 1 offset, row 0)
+      hexPath.replace(/([ML]) ([\d.]+) ([\d.]+)/g, (match, cmd, x, y) =>
+        `${cmd} ${parseFloat(x) + gridW/2} ${parseFloat(y) + rowSpacing/2}`
+      ) + ' ' +
+      // Fourth hexagon (col 1 offset, row 1)
+      hexPath.replace(/([ML]) ([\d.]+) ([\d.]+)/g, (match, cmd, x, y) =>
+        `${cmd} ${parseFloat(x) + gridW/2} ${parseFloat(y) + rowSpacing * 1.5}`
+      );
+
+    // Generate hex grid pattern with proper tiling
     const hexGridPattern = (
         <pattern
             id={`hex-grid-${token.id}`}
-            width={hexW}
-            height={hexR * 3}
+            width={patternW}
+            height={patternH}
             patternUnits="userSpaceOnUse"
-            patternTransform={`scale(${zoom})`}
         >
             <path
-                d={hexPath}
+                d={hexGridPath}
                 fill="none"
                 stroke="rgba(128,128,128,0.3)"
-                strokeWidth="1"
+                strokeWidth={1 / zoom}
             />
         </pattern>
     );
@@ -62,17 +103,16 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     const squareGridPattern = (
         <pattern
             id={`square-grid-${token.id}`}
-            width={gridSize}
-            height={gridSize}
+            width={gridW}
+            height={gridH}
             patternUnits="userSpaceOnUse"
-            patternTransform={`scale(${zoom})`}
         >
             <rect
-                width={gridSize}
-                height={gridSize}
+                width={gridW}
+                height={gridH}
                 fill="none"
                 stroke="rgba(128,128,128,0.3)"
-                strokeWidth="1"
+                strokeWidth={1 / zoom}
             />
         </pattern>
     );
@@ -114,7 +154,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             }}
         >
             {/* Grid overlay */}
-            {showGrid && gridContent}
+            {shouldShowGrid && gridContent}
 
             {/* Resize handle - bottom right corner */}
             {canResize && !obj.locked && (

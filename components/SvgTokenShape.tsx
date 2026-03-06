@@ -1,32 +1,6 @@
 import React from 'react';
 import { TokenShape } from '../types';
-
-// SVG paths for shapes that fill the entire viewBox
-// Rounded corners achieved via stroke-linejoin="round" with thicker stroke
-const SHAPE_PATHS: Record<TokenShape, { path: string; viewBox: string; useRect?: boolean }> = {
-  [TokenShape.HEX]: {
-    path: 'M 30 0 L 60 16 L 60 48 L 30 64 L 0 48 L 0 16 Z',
-    viewBox: '0 0 60 64'
-  },
-  [TokenShape.HEX_HORIZONTAL]: {
-    // Horizontal hexagon (rotated 90°) - pointy top/bottom, flat sides on left/right
-    path: 'M 18 0 L 46 0 L 62 30 L 46 60 L 18 60 L 2 30 Z',
-    viewBox: '0 0 64 60'
-  },
-  [TokenShape.TRIANGLE]: {
-    path: 'M 30 0 L 60 60 L 0 60 Z',
-    viewBox: '0 0 60 60'
-  },
-  [TokenShape.CIRCLE]: {
-    path: 'M 30 0 A 30 30 0 1 1 30 60 A 30 30 0 1 1 30 0',
-    viewBox: '0 0 60 60'
-  },
-  [TokenShape.SQUARE]: {
-    path: '',
-    viewBox: '0 0 60 60',
-    useRect: true
-  }
-};
+import { getTokenShapePath, generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
 
 // Border radius in viewBox units (scales with the SVG)
 const BORDER_RADIUS = 4;
@@ -63,7 +37,8 @@ function calculateFontSize(textLength: number, tokenWidth: number, tokenHeight: 
 
 /**
  * SVG-based token shape with rounded corners and proper stroke
- * Used for HEX and TRIANGLE tokens that need rounded corners and proper border
+ * Uses universal path generation for consistent shapes across the app
+ * For HEX shapes, the path adjusts dynamically based on aspect ratio
  */
 export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   shape,
@@ -83,8 +58,27 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   tokenName,
   fontColor = 'white',
 }) => {
-  const shapeData = SHAPE_PATHS[shape] || SHAPE_PATHS[TokenShape.SQUARE];
-  const { path, viewBox, useRect } = shapeData;
+  // For HEX and HEX_HORIZONTAL, generate dynamic path based on aspect ratio
+  let shapeData;
+  if (shape === TokenShape.HEX) {
+    const aspectRatio = width / height;
+    const hexWidth = 60;
+    const hexHeight = Math.round(60 / aspectRatio);
+    shapeData = generatePointyTopHexPath(hexWidth, hexHeight);
+  } else if (shape === TokenShape.HEX_HORIZONTAL) {
+    const aspectRatio = width / height;
+    const hexHeight = 60;
+    const hexWidth = Math.round(60 * aspectRatio);
+    shapeData = generateFlatTopHexPath(hexWidth, hexHeight);
+  } else {
+    // For basic shapes, use static paths
+    const aspectRatio = width / height;
+    shapeData = getTokenShapePath(shape, aspectRatio);
+  }
+
+  const { path, viewBox } = shapeData;
+  // Use rect rendering for SQUARE shape only
+  const useRect = shape === TokenShape.SQUARE;
 
   // Generate unique ID for this instance
   const uniqueId = React.useId();
@@ -171,7 +165,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
               y="0"
               width="100%"
               height="100%"
-              preserveAspectRatio="xMidYMid slice"
+              preserveAspectRatio="none"
             />
             {/* Border stroke on top */}
             {useRect ? (

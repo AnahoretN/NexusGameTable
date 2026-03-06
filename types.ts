@@ -335,6 +335,9 @@ export interface Board extends GameItem {
   shape: TokenShape;
   gridType: GridType;
   gridSize: number;
+  gridWidth?: number;  // Width of grid cell (for non-square cells)
+  gridHeight?: number; // Height of grid cell (for non-square cells)
+  showGrid?: boolean;  // Whether to show the grid visually
   snapToGrid: boolean;
 }
 

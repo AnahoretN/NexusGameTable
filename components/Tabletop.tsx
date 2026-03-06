@@ -451,16 +451,17 @@ export const Tabletop: React.FC = () => {
       // Check boards first
       for (const board of boards) {
           // All values are in vu (virtual units)
-          const size = board.gridSize || 50;
-          const boardCols = Math.floor(board.width / size);
-          const boardRows = Math.floor(board.height / size);
+          const gridW = board.gridWidth || board.gridSize || 50;
+          const gridH = board.gridHeight || board.gridSize || 50;
+          const boardCols = Math.floor(board.width / gridW);
+          const boardRows = Math.floor(board.height / gridH);
 
           if (board.gridType === GridType.SQUARE) {
               // Find the cell under cursor
               const relativeX = cursorX - board.x;
               const relativeY = cursorY - board.y;
-              const col = Math.floor(relativeX / size);
-              const row = Math.floor(relativeY / size);
+              const col = Math.floor(relativeX / gridW);
+              const row = Math.floor(relativeY / gridH);
 
               // Check if cell is within board bounds
               if (col < 0 || col >= boardCols || row < 0 || row >= boardRows) {
@@ -468,8 +469,8 @@ export const Tabletop: React.FC = () => {
               }
 
               // Calculate cell center
-              const cellCenterX = board.x + (col * size) + (size / 2);
-              const cellCenterY = board.y + (row * size) + (size / 2);
+              const cellCenterX = board.x + (col * gridW) + (gridW / 2);
+              const cellCenterY = board.y + (row * gridH) + (gridH / 2);
 
               // Check if within snap radius
               const distance = Math.sqrt(
@@ -481,8 +482,8 @@ export const Tabletop: React.FC = () => {
                   nearestCell = { x: cellCenterX, y: cellCenterY, distance };
               }
           } else if (board.gridType === GridType.HEX) {
-              // Hex grid snapping
-              const hexR = size;
+              // Hex grid snapping - use average of gridW and gridH for hex size
+              const hexR = (gridW + gridH) / 2;
               const hexW = hexR * Math.sqrt(3);
               const originOffsetX = hexW / 2;
               const originOffsetY = hexR;
@@ -3846,17 +3847,8 @@ export const Tabletop: React.FC = () => {
                     const isDragging = draggingId === obj.id;
                     const canResize = !obj.locked;
                     const gridSize = v2p(board.gridSize || 50); // Convert vu to pixels
-
-                    const hexR = gridSize;
-                    const hexW = hexR * Math.sqrt(3);
-                    const hexPath =
-                      `M 0 ${hexR/2} ` +
-                      `L ${hexW/2} 0 ` +
-                      `L ${hexW} ${hexR/2} ` +
-                      `L ${hexW} ${hexR*1.5} ` +
-                      `L ${hexW/2} ${hexR*2} ` +
-                      `L 0 ${hexR*1.5} Z ` +
-                      `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+                    const gridW_px = v2p(board.gridWidth || board.gridSize || 50);
+                    const gridH_px = v2p(board.gridHeight || board.gridSize || 50);
 
                     return (
                         <Tooltip
@@ -3866,17 +3858,25 @@ export const Tabletop: React.FC = () => {
                             imageSrc={obj.content}
                             scale={obj.tooltipScale}
                         >
-                            <div
-                                className="pointer-events-auto"
-                                style={{
-                                    position: 'absolute',
-                                    left: v2p(obj.x),
-                                    top: v2p(obj.y),
-                                    width: v2p(board.width),
-                                    height: v2p(board.height),
-                                    zIndex: globalZIndex,
-                                }}
-                            >
+                            {/* Check if object's layer is selected - if not, make it permeable to clicks */}
+                            {(() => {
+                                const objLayer = obj.hyperscaleLayerId || 'none';
+                                const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                                const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                                const isPermeable = hasSelectedLayers && !isLayerSelected;
+                                return (
+                                    <div
+                                        className={isPermeable ? '' : 'pointer-events-auto'}
+                                        style={{
+                                            position: 'absolute',
+                                            left: v2p(obj.x),
+                                            top: v2p(obj.y),
+                                            width: v2p(board.width),
+                                            height: v2p(board.height),
+                                            zIndex: globalZIndex,
+                                            pointerEvents: isPermeable ? 'none' : 'auto',
+                                        }}
+                                    >
                                 <BoardWithResizeMemo
                                     token={board}
                                     obj={obj}
@@ -3889,12 +3889,14 @@ export const Tabletop: React.FC = () => {
                                     onContextMenu={(e) => handleContextMenu(e, obj)}
                                     onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
                                     gridSize={gridSize}
-                                    hexR={hexR}
-                                    hexW={hexW}
-                                    hexPath={hexPath}
+                                    gridWidth={board.gridWidth}
+                                    gridHeight={board.gridHeight}
+                                    showGrid={board.showGrid}
                                     currentTool={currentTool}
                                 />
-                            </div>
+                                    </div>
+                                );
+                            })()}
                         </Tooltip>
                     );
                 }
@@ -3904,16 +3906,52 @@ export const Tabletop: React.FC = () => {
                     const showGrid = token.gridType && token.gridType !== GridType.NONE;
                     const gridSize = v2p(token.gridSize || 50); // Convert vu to pixels
 
-                    const hexR = gridSize;
-                    const hexW = hexR * Math.sqrt(3);
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+                    // Regular hexagon (all angles 60°)
+                    // For pointy-top regular hex: width = R * sqrt(3), height = 2 * R
+                    // Using gridSize as the base dimension
+                    const hexR = gridSize / Math.sqrt(3);  // Radius from width
+                    const hexW = hexR * Math.sqrt(3);      // Width = gridSize
+                    const hexH = hexR * 2;                 // Height
+                    const rowSpacing = hexR * 1.5;         // Vertical distance between hex centers
+
+                    const patternW = hexW * 2;
+                    const patternH = rowSpacing * 2;
+
                     const hexPath =
+                      // Column 0, row 0 - center at (hexW/2, hexR)
                       `M 0 ${hexR/2} ` +
                       `L ${hexW/2} 0 ` +
                       `L ${hexW} ${hexR/2} ` +
                       `L ${hexW} ${hexR*1.5} ` +
                       `L ${hexW/2} ${hexR*2} ` +
                       `L 0 ${hexR*1.5} Z ` +
-                      `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+                      // Column 0, row 1 - center at (hexW/2, hexR + rowSpacing)
+                      `M 0 ${hexR/2 + rowSpacing} ` +
+                      `L ${hexW/2} ${hexR*0 + rowSpacing} ` +
+                      `L ${hexW} ${hexR/2 + rowSpacing} ` +
+                      `L ${hexW} ${hexR*1.5 + rowSpacing} ` +
+                      `L ${hexW/2} ${hexR*2 + rowSpacing} ` +
+                      `L 0 ${hexR*1.5 + rowSpacing} Z ` +
+                      // Column 1 (offset by hexR/2), row 0 - center at (hexW*1.5, hexR + rowSpacing/2)
+                      `M ${hexW} ${hexR} ` +
+                      `L ${hexW*1.5} ${hexR*0.5} ` +
+                      `L ${hexW*2} ${hexR} ` +
+                      `L ${hexW*2} ${hexR*2} ` +
+                      `L ${hexW*1.5} ${hexR*2.5} ` +
+                      `L ${hexW} ${hexR*2} Z ` +
+                      // Column 1 (offset), row 1 - center at (hexW*1.5, hexR + rowSpacing*1.5)
+                      `M ${hexW} ${hexR + rowSpacing} ` +
+                      `L ${hexW*1.5} ${hexR*0.5 + rowSpacing} ` +
+                      `L ${hexW*2} ${hexR + rowSpacing} ` +
+                      `L ${hexW*2} ${hexR*2 + rowSpacing} ` +
+                      `L ${hexW*1.5} ${hexR*2.5 + rowSpacing} ` +
+                      `L ${hexW} ${hexR*2 + rowSpacing} Z`;
 
                     return (
                         <Tooltip
@@ -3934,6 +3972,7 @@ export const Tabletop: React.FC = () => {
                                     height: v2p(obj.height),
                                     transform: `rotate(${obj.rotation}deg)`,
                                     zIndex: globalZIndex,
+                                    pointerEvents: isPermeable ? 'none' : 'auto',
                                 }}
                             >
                                 {/* Render SVG token for all tokens */}
@@ -3963,7 +4002,7 @@ export const Tabletop: React.FC = () => {
                                             </pattern>
                                         )}
                                         {token.gridType === GridType.HEX && (
-                                            <pattern id={`grid-hex-${obj.id}`} width={hexW} height={gridSize * 3} patternUnits="userSpaceOnUse">
+                                            <pattern id={`grid-hex-${obj.id}`} width={patternW} height={patternH} patternUnits="userSpaceOnUse">
                                                 <path d={hexPath} fill="none" stroke="black" strokeWidth="1"/>
                                             </pattern>
                                         )}
@@ -4050,6 +4089,12 @@ export const Tabletop: React.FC = () => {
                     const magnetPointCount = cell.magnetPointCount ?? 1;
                     const magnetRotation = cell.magnetRotation ?? 0;
 
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                     return (
                         <Tooltip
                             key={obj.id}
@@ -4070,6 +4115,7 @@ export const Tabletop: React.FC = () => {
                                     height: v2p(obj.height),
                                     transform: `rotate(${obj.rotation}deg)`,
                                     zIndex: globalZIndex,
+                                    pointerEvents: isPermeable ? 'none' : 'auto',
                                 }}
                             >
                                 <SvgTokenShape
@@ -4267,6 +4313,13 @@ export const Tabletop: React.FC = () => {
                         return null;
                     }
                     const counter = obj as Counter;
+
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                     return (
                         <Tooltip
                             key={obj.id}
@@ -4286,6 +4339,7 @@ export const Tabletop: React.FC = () => {
                                     height: v2p(50),
                                     transform: `rotate(${obj.rotation}deg)`,
                                     zIndex: globalZIndex,
+                                    pointerEvents: isPermeable ? 'none' : 'auto',
                                 }}
                             >
                             {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
@@ -4371,6 +4425,12 @@ export const Tabletop: React.FC = () => {
                     const dice = obj as DiceObject;
                     const diceShape = dice.shape || TokenShape.SQUARE;
 
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                     return (
                         <Tooltip
                             key={obj.id}
@@ -4390,6 +4450,7 @@ export const Tabletop: React.FC = () => {
                                     width: v2p(dice.width || 60),
                                     height: v2p(dice.height || 60),
                                     transform: `rotate(${obj.rotation}deg)`,
+                                    pointerEvents: isPermeable ? 'none' : 'auto',
                                     zIndex: globalZIndex,
                                 }}
                             >
@@ -4522,6 +4583,13 @@ export const Tabletop: React.FC = () => {
                     const isDragging = draggingId === obj.id;
                     const isCardHidden = (card as any).hidden === true;
 
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    // Objects in non-selected layers are permeable (let clicks pass through)
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                     return (
                         <div
                             key={obj.id}
@@ -4532,7 +4600,7 @@ export const Tabletop: React.FC = () => {
                                 position: 'absolute',
                                 transform: `rotate(${obj.rotation}deg)`,
                                 opacity: isCardHidden && isGM ? 0.5 : 1,
-                                pointerEvents: isDragging ? 'none' : 'auto', // Allow mouse events to pass through when dragging
+                                pointerEvents: isDragging || isPermeable ? 'none' : 'auto', // Allow mouse events to pass through when dragging or on non-selected layer
                                 zIndex: globalZIndex, // Apply global z-index for proper layer ordering
                             }}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
@@ -4787,16 +4855,8 @@ export const Tabletop: React.FC = () => {
                 if (!pinnedPosition) return null;
 
                 const gridSize = v2p(board.gridSize || 50); // Convert vu to pixels
-                const hexR = gridSize;
-                const hexW = hexR * Math.sqrt(3);
-                const hexPath =
-                  `M 0 ${hexR/2} ` +
-                  `L ${hexW/2} 0 ` +
-                  `L ${hexW} ${hexR/2} ` +
-                  `L ${hexW} ${hexR*1.5} ` +
-                  `L ${hexW/2} ${hexR*2} ` +
-                  `L 0 ${hexR*1.5} Z ` +
-                  `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+                const gridW_px = v2p(board.gridWidth || board.gridSize || 50);
+                const gridH_px = v2p(board.gridHeight || board.gridSize || 50);
 
                 const isDragging = draggingId === board.id;
                 const isResizing = resizingId === board.id;
@@ -4830,9 +4890,9 @@ export const Tabletop: React.FC = () => {
                             onContextMenu={(e) => handleContextMenu(e, board)}
                             onResizeStart={(e) => !board.locked && handleResizeStart(e, board.id)}
                             gridSize={gridSize}
-                            hexR={hexR}
-                            hexW={hexW}
-                            hexPath={hexPath}
+                            gridWidth={board.gridWidth}
+                            gridHeight={board.gridHeight}
+                            showGrid={board.showGrid}
                         />
                         {/* Pinned indicator - top-right corner */}
                         <div
@@ -4860,6 +4920,12 @@ export const Tabletop: React.FC = () => {
                 const canDrag = !obj.locked;
                 const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
+                // Check if object's layer is selected - if not, make it permeable to clicks
+                const objLayer = obj.hyperscaleLayerId || 'none';
+                const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                 // Render dice
                 if (obj.type === ItemType.DICE_OBJECT) {
                     const dice = obj as DiceObject;
@@ -4867,8 +4933,12 @@ export const Tabletop: React.FC = () => {
                     return (
                         <div
                             key={obj.id}
-                            className="pointer-events-auto absolute"
-                            style={{ left: pinnedPosition.x, top: pinnedPosition.y }}
+                            className={isPermeable ? '' : 'pointer-events-auto'}
+                            style={{
+                                left: pinnedPosition.x,
+                                top: pinnedPosition.y,
+                                pointerEvents: isPermeable ? 'none' : 'auto',
+                            }}
                         >
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
@@ -4933,8 +5003,12 @@ export const Tabletop: React.FC = () => {
                     return (
                         <div
                             key={obj.id}
-                            className="pointer-events-auto absolute"
-                            style={{ left: pinnedPosition.x, top: pinnedPosition.y }}
+                            className={isPermeable ? '' : 'pointer-events-auto'}
+                            style={{
+                                left: pinnedPosition.x,
+                                top: pinnedPosition.y,
+                                pointerEvents: isPermeable ? 'none' : 'auto',
+                            }}
                         >
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}

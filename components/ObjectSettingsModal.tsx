@@ -1039,44 +1039,87 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
                     <Grid3x3 size={14} /> {translate('Grid Settings', language as Locale)}
                   </h4>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Type', language as Locale)}</label>
+                    <select
+                      value={(data as Board).gridType || GridType.NONE}
+                      onChange={e => update('gridType', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      {Object.values(GridType).map(v => (
+                        <option key={v} value={v}>{translateGridType(v, language)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Grid Cell Width and Height with Normalize button */}
+                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Type', language as Locale)}</label>
-                      <select
-                        value={(data as Board).gridType || GridType.NONE}
-                        onChange={e => update('gridType', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                      >
-                        {Object.values(GridType).map(v => (
-                          <option key={v} value={v}>{translateGridType(v, language)}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Size (vu)', language as Locale)}</label>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Width (vu)', language as Locale)}</label>
                       <input
                         type="number"
-                        value={(data as Board).gridSize || 50}
-                        onChange={e => update('gridSize', Number(e.target.value))}
+                        value={(data as Board).gridWidth || (data as Board).gridSize || 50}
+                        onChange={e => update('gridWidth', Number(e.target.value))}
                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       />
                     </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Height (vu)', language as Locale)}</label>
+                      <input
+                        type="number"
+                        value={(data as Board).gridHeight || (data as Board).gridSize || 50}
+                        onChange={e => update('gridHeight', Number(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                    </div>
+                    <div className="flex items-end pb-0.5">
+                      <button
+                        onClick={() => {
+                          const board = data as Board;
+                          const avgSize = ((board.gridWidth || board.gridSize || 50) + (board.gridHeight || board.gridSize || 50)) / 2;
+                          update('gridWidth', avgSize);
+                          update('gridHeight', avgSize);
+                        }}
+                        className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500`}
+                        title={translate('Normalize to perfect square', language as Locale)}
+                      >
+                        <Maximize2 size={14} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
-                    <label className="text-xs text-gray-400 flex items-center gap-2">
-                      <Grid3x3 size={12} />
-                      {translate('Snap Objects to Grid', language as Locale)}
-                    </label>
-                    <button
-                      onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
-                      className={`w-10 h-5 rounded-full transition-colors ${
-                        (data as Board).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
-                      }`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                        (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
-                      }`} />
-                    </button>
+                  {/* Show Grid and Snap Objects to Grid on same line */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Eye size={12} />
+                        {translate('Show Grid', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('showGrid', (data as Board).showGrid === false ? true : false)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Board).showGrid !== false ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Board).showGrid !== false ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Grid3x3 size={12} />
+                        {translate('Snap Objects to Grid', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Board).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
