@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell } from '../types';
 
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2 } from 'lucide-react';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 
 interface ObjectSettingsModalProps {
@@ -117,6 +117,14 @@ type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite';
 export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en' }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
+
+  // Proportional resize states - enabled by default
+  const [linkObjectSize, setLinkObjectSize] = useState(true);
+  const [linkGridSize, setLinkGridSize] = useState(true);
+  const [linkCardSize, setLinkCardSize] = useState(true);
+  const [objectRatio, setObjectRatio] = useState(1);
+  const [gridRatio, setGridRatio] = useState(1);
+  const [cardRatio, setCardRatio] = useState(1);
 
   // Translation helper
 
@@ -270,10 +278,33 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       // Initialize sprite config
       setSpriteConfig(deckObj.spriteConfig || null);
     }
+
+    // Initialize ratios for proportional resize
+    const objWidth = object.width || 50;
+    const objHeight = object.height || 50;
+    setObjectRatio(objHeight / objWidth);
+
+    if (object.type === ItemType.BOARD) {
+      const board = object as Board;
+      const gridW = board.gridWidth || board.gridSize || 50;
+      const gridH = board.gridHeight || board.gridSize || 50;
+      setGridRatio(gridH / gridW);
+    }
+
+    if (object.type === ItemType.DECK) {
+      const deckObj = object as Deck;
+      const cardW = deckObj.cardWidth || deckObj.width || 50;
+      const cardH = deckObj.cardHeight || deckObj.height || 50;
+      setCardRatio(cardH / cardW);
+    }
   }, [object]);
 
   const update = (field: string, value: any) => {
     setData(prev => ({ ...prev, [field]: value } as TableObject));
+  };
+
+  const updateMultiple = (fields: Record<string, any>) => {
+    setData(prev => ({ ...prev, ...fields } as TableObject));
   };
 
   const toggleActionButton = (action: ContextAction) => {
@@ -301,6 +332,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
       return updated;
     });
+  };
+
+  const updateCardSettingsMultiple = (fields: Partial<CardSettings>) => {
+    setCardSettings(prev => ({ ...prev, ...fields }));
   };
 
   const toggleCardActionButton = (action: ContextAction) => {
@@ -627,36 +662,83 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 )}
 
                 {/* Size */}
-                <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-end">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Width', language as Locale)}</label>
                     <input
                       type="number"
+                      step="0.01"
                       value={isArchetype ? (data as any).defaultSize?.width || data.width : data.width}
                       onChange={e => {
-                        const value = Number(e.target.value);
+                        const value = parseFloat(e.target.value);
                         if (isArchetype) {
                           // For token types, update defaultSize
-                          update('defaultSize', { ...(data as any).defaultSize, width: value });
+                          const currentHeight = (data as any).defaultSize?.height || data.height || 50;
+                          update('defaultSize', {
+                            ...(data as any).defaultSize,
+                            width: value,
+                            height: linkObjectSize ? value * objectRatio : currentHeight
+                          });
                         } else {
-                          update('width', value);
+                          if (linkObjectSize) {
+                            updateMultiple({
+                              width: value,
+                              height: value * objectRatio
+                            });
+                          } else {
+                            update('width', value);
+                          }
                         }
                       }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     />
                   </div>
+                  <div className="flex items-end pb-0.5">
+                    <button
+                      onClick={() => {
+                        if (!linkObjectSize) {
+                          // Turning on - save current ratio
+                          const currentWidth = isArchetype ? (data as any).defaultSize?.width || data.width : data.width;
+                          const currentHeight = isArchetype ? (data as any).defaultSize?.height || data.height : data.height;
+                          setObjectRatio(currentHeight / currentWidth);
+                        }
+                        setLinkObjectSize(!linkObjectSize);
+                      }}
+                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                        linkObjectSize
+                          ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
+                          : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                      }`}
+                      title={linkObjectSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale)}
+                    >
+                      {linkObjectSize ? <Link size={14} /> : <Unlink size={14} />}
+                    </button>
+                  </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Height', language as Locale)}</label>
                     <input
                       type="number"
+                      step="0.01"
                       value={isArchetype ? (data as any).defaultSize?.height || data.height : data.height}
                       onChange={e => {
-                        const value = Number(e.target.value);
+                        const value = parseFloat(e.target.value);
                         if (isArchetype) {
                           // For token types, update defaultSize
-                          update('defaultSize', { ...(data as any).defaultSize, height: value });
+                          const currentWidth = (data as any).defaultSize?.width || data.width || 50;
+                          update('defaultSize', {
+                            ...(data as any).defaultSize,
+                            height: value,
+                            width: linkObjectSize ? value / objectRatio : currentWidth
+                          });
                         } else {
-                          update('height', value);
+                          if (linkObjectSize) {
+                            updateMultiple({
+                              height: value,
+                              width: value / objectRatio
+                            });
+                          } else {
+                            update('height', value);
+                          }
                         }
                       }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
@@ -667,8 +749,31 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onClick={() => {
                         const currentWidth = isArchetype ? (data as any).defaultSize?.width || data.width : data.width;
                         const currentHeight = isArchetype ? (data as any).defaultSize?.height || data.height : data.height;
-                        const currentShape = (data as any).shape || TokenShape.SQUARE;
-                        const { width, height } = normalizeShapeSizes(currentShape, currentWidth, currentHeight);
+
+                        // Determine shape for normalization
+                        let tokenShapeForNorm: TokenShape;
+                        if (isDeck || (isArchetype && (data as any).cardShape)) {
+                          // For decks, use cardShape and cardOrientation
+                          const cardShape = (data as any).cardShape || CardShape.POKER;
+                          const cardOrientation = (data as any).cardOrientation || CardOrientation.VERTICAL;
+
+                          if (cardShape === CardShape.HEX) {
+                            tokenShapeForNorm = cardOrientation === CardOrientation.HORIZONTAL
+                              ? TokenShape.HEX_HORIZONTAL
+                              : TokenShape.HEX;
+                          } else if (cardShape === CardShape.TRIANGLE) {
+                            tokenShapeForNorm = TokenShape.TRIANGLE;
+                          } else if (cardShape === CardShape.CIRCLE) {
+                            tokenShapeForNorm = TokenShape.CIRCLE;
+                          } else {
+                            tokenShapeForNorm = TokenShape.SQUARE;
+                          }
+                        } else {
+                          // For tokens, use shape
+                          tokenShapeForNorm = (data as any).shape || TokenShape.SQUARE;
+                        }
+
+                        const { width, height } = normalizeShapeSizes(tokenShapeForNorm, currentWidth, currentHeight);
 
                         if (isArchetype) {
                           update('defaultSize', { ...(data as any).defaultSize, width, height });
@@ -1052,22 +1157,66 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     </select>
                   </div>
                   {/* Grid Cell Width and Height with Normalize button */}
-                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                  <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-end">
                     <div>
                       <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Width (vu)', language as Locale)}</label>
                       <input
                         type="number"
+                        step="0.01"
                         value={(data as Board).gridWidth || (data as Board).gridSize || 50}
-                        onChange={e => update('gridWidth', Number(e.target.value))}
+                        onChange={e => {
+                          const value = parseFloat(e.target.value);
+                          if (linkGridSize) {
+                            updateMultiple({
+                              gridWidth: value,
+                              gridHeight: value * gridRatio
+                            });
+                          } else {
+                            update('gridWidth', value);
+                          }
+                        }}
                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       />
+                    </div>
+                    <div className="flex items-end pb-0.5">
+                      <button
+                        onClick={() => {
+                          if (!linkGridSize) {
+                            // Turning on - save current ratio
+                            const board = data as Board;
+                            const currentWidth = board.gridWidth || board.gridSize || 50;
+                            const currentHeight = board.gridHeight || board.gridSize || 50;
+                            setGridRatio(currentHeight / currentWidth);
+                          }
+                          setLinkGridSize(!linkGridSize);
+                        }}
+                        className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                          linkGridSize
+                            ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
+                            : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                        }`}
+                        title={linkGridSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale)}
+                      >
+                        {linkGridSize ? <Link size={14} /> : <Unlink size={14} />}
+                      </button>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Height (vu)', language as Locale)}</label>
                       <input
                         type="number"
+                        step="0.01"
                         value={(data as Board).gridHeight || (data as Board).gridSize || 50}
-                        onChange={e => update('gridHeight', Number(e.target.value))}
+                        onChange={e => {
+                          const value = parseFloat(e.target.value);
+                          if (linkGridSize) {
+                            updateMultiple({
+                              gridHeight: value,
+                              gridWidth: value / gridRatio
+                            });
+                          } else {
+                            update('gridHeight', value);
+                          }
+                        }}
                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       />
                     </div>
@@ -1672,17 +1821,50 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 </div>
 
-                <div className="grid grid-cols-[1fr_1fr_auto] gap-3 mb-2">
+                <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 mb-2">
                   {/* Card Width */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Width (px)', language as Locale)}</label>
                     <input
                       type="number"
+                      step="0.01"
                       value={cardSettings.cardWidth ?? deck.width}
-                      onChange={(e) => updateCardSettings('cardWidth', e.target.value ? parseInt(e.target.value) : undefined)}
+                      onChange={(e) => {
+                        const value = e.target.value ? parseFloat(e.target.value) : undefined;
+                        if (linkCardSize && value !== undefined) {
+                          updateCardSettingsMultiple({
+                            cardWidth: value,
+                            cardHeight: Math.round(value * cardRatio * 100) / 100
+                          });
+                        } else {
+                          updateCardSettings('cardWidth', value);
+                        }
+                      }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       placeholder={translate('Default', language as Locale)}
                     />
+                  </div>
+
+                  <div className="flex items-end pb-0.5">
+                    <button
+                      onClick={() => {
+                        if (!linkCardSize) {
+                          // Turning on - save current ratio
+                          const currentWidth = cardSettings.cardWidth ?? deck.width;
+                          const currentHeight = cardSettings.cardHeight ?? deck.height;
+                          setCardRatio(currentHeight / currentWidth);
+                        }
+                        setLinkCardSize(!linkCardSize);
+                      }}
+                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                        linkCardSize
+                          ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
+                          : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                      }`}
+                      title={linkCardSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale)}
+                    >
+                      {linkCardSize ? <Link size={14} /> : <Unlink size={14} />}
+                    </button>
                   </div>
 
                   {/* Card Height */}
@@ -1690,8 +1872,19 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Height (px)', language as Locale)}</label>
                     <input
                       type="number"
+                      step="0.01"
                       value={cardSettings.cardHeight ?? deck.height}
-                      onChange={(e) => updateCardSettings('cardHeight', e.target.value ? parseInt(e.target.value) : undefined)}
+                      onChange={(e) => {
+                        const value = e.target.value ? parseFloat(e.target.value) : undefined;
+                        if (linkCardSize && value !== undefined) {
+                          updateCardSettingsMultiple({
+                            cardHeight: value,
+                            cardWidth: Math.round((value / cardRatio) * 100) / 100
+                          });
+                        } else {
+                          updateCardSettings('cardHeight', value);
+                        }
+                      }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       placeholder={translate('Default', language as Locale)}
                     />
