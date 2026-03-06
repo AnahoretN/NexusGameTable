@@ -78,6 +78,32 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     };
   };
 
+  // Mapping of submenu actions to their parent section actions
+  // When a parent section is enabled, its submenu actions are automatically available
+  const SUBMENU_TO_PARENT: Record<string, ContextAction> = {
+    'layerUp': 'layer',
+    'layerDown': 'layer',
+    'bringToFront': 'layer',
+    'sendToBack': 'layer',
+    'rotateClockwise': 'rotate',
+    'rotateCounterClockwise': 'rotate',
+    'swingClockwise': 'rotate',
+    'swingCounterClockwise': 'rotate',
+    'resetRotation': 'rotate',
+    'draw': 'topDeck',
+    'playTopCard': 'topDeck',
+    'millTopCard': 'topDeck',
+    'millToBottom': 'topDeck',
+    'toBottom': 'topDeck',
+    'showTop': 'topDeck',
+    'hideTop': 'topDeck',
+    'unhideCard': 'topDeck',
+    'moveToHand': 'moveTo',
+    'moveToTopDeck': 'moveTo',
+    'moveToBottomDeck': 'moveTo',
+    'moveToDiscard': 'moveTo',
+  };
+
   // Helper to check if an action is allowed for the current user
   const can = (action: ContextAction) => {
     let allowedActions: ContextAction[] | undefined;
@@ -93,14 +119,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       allowedActionsForGM = object.allowedActionsForGM;
     }
 
+    // Check if this is a submenu action - if so, check parent section permission
+    const parentAction = SUBMENU_TO_PARENT[action];
+    const actionToCheck = parentAction || action;
+
     if (isGM) {
       // GM: check allowedActionsForGM
       // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
-      return allowedActionsForGM == null || (allowedActionsForGM.length > 0 && allowedActionsForGM.includes(action));
+      return allowedActionsForGM == null || (allowedActionsForGM.length > 0 && allowedActionsForGM.includes(actionToCheck));
     }
     // Player: check allowedActions
     // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
-    return allowedActions == null || (allowedActions.length > 0 && allowedActions.includes(action));
+    return allowedActions == null || (allowedActions.length > 0 && allowedActions.includes(actionToCheck));
   };
 
   // Close layer submenu when clicking outside
@@ -333,24 +363,78 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       icon: <Settings size={14} />,
       // Hide for token-copies (tokens with archetypeId)
       visible: isGM && !(object.type === ItemType.TOKEN && (object as any).archetypeId),
-      separator: false
+    },
+    // Separator after Configure (only visible if Configure is visible)
+    {
+      label: '-',
+      action: 'separator-configure',
+      visible: isGM && !(object.type === ItemType.TOKEN && (object as any).archetypeId),
+      isSeparator: true
     },
     {
       label: translate('Set as Card Back', language as Locale),
       action: 'setCardBack',
       icon: <ImageDown size={14} />,
       visible: isSearchWindow && isGM && object.type === ItemType.CARD,
-      separator: true
     },
-    // "Move to..." section for cards - before Change Layer
+    // "Move to..." section for cards
     ...moveToSection,
+    // Deck-specific actions
+    {
+      label: translate('Top Deck', language as Locale),
+      action: 'topDeck',
+      icon: <ArrowUp size={14} />,
+      visible: object.type === ItemType.DECK && can('topDeck'),
+      hasSubmenu: true
+    },
+    {
+      label: translate('Search', language as Locale),
+      action: 'searchDeck',
+      icon: <Search size={14} />,
+      visible: object.type === ItemType.DECK && can('searchDeck')
+    },
+    {
+      label: translate('Shuffle', language as Locale),
+      action: 'shuffleDeck',
+      icon: <Shuffle size={14} />,
+      visible: object.type === ItemType.DECK && can('shuffleDeck')
+    },
+    {
+      label: translate('Piles', language as Locale),
+      action: 'piles',
+      icon: <Layers size={14} />,
+      visible: object.type === ItemType.DECK && can('piles') && (object as Deck).piles && (object as Deck).piles!.length > 0,
+      hasSubmenu: true,
+      submenuItems: (object as Deck).piles?.map((pile) => ({
+        label: `${pile.name} (${pile.cardIds.length})`,
+        action: `pile-${pile.id}`,
+        icon: <Layers size={14} />,
+        visible: true
+      })) || []
+    },
+    {
+      label: translate('Return All', language as Locale),
+      action: 'returnAll',
+      icon: <Undo size={14} />,
+      visible: object.type === ItemType.DECK && can('returnAll'),
+    },
+    // Separator before Change Layer group (only visible if any of Change Layer, Rotation, Hide, Lock, Pin are visible)
+    {
+      label: '-',
+      action: 'separator-layer-group',
+      visible: (!hideCardActions && (can('layerUp') || can('layerDown'))) ||
+               (!isSearchWindow && !hideCardActions && can('rotate')) ||
+               can('hide') ||
+               (!hideCardActions && can('lock')) ||
+               (!hideCardActions && can('pin')),
+      isSeparator: true
+    },
     {
       label: translate('Change Layer', language as Locale),
       action: 'layer',
       icon: <Layers size={14} />,
       visible: !hideCardActions && (can('layerUp') || can('layerDown')),
       hasSubmenu: true,
-      separator: false,
       submenuItems: (() => {
         // Get hyperscale layers, sorted by reverse order (higher maxZIndex = higher in list)
         const sortedLayers = [...state.hyperscaleLayers]
@@ -434,7 +518,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       // Hide rotation in search window and for cards in hand panel (only available in game space)
       visible: !isSearchWindow && !hideCardActions && can('rotate'),
       hasSubmenu: true,
-      separator: true,
       submenuItems: [
         {
           label: translate('Clockwise', language as Locale),
@@ -474,57 +557,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         }
       ]
     },
-    // Deck-specific actions
-    {
-      label: translate('Top Deck', language as Locale),
-      action: 'topDeck',
-      icon: <ArrowUp size={14} />,
-      visible: object.type === ItemType.DECK && can('topDeck'),
-      hasSubmenu: true
-    },
-    {
-      label: translate('Search', language as Locale),
-      action: 'searchDeck',
-      icon: <Search size={14} />,
-      visible: object.type === ItemType.DECK && can('searchDeck')
-    },
-    {
-      label: translate('Shuffle', language as Locale),
-      action: 'shuffleDeck',
-      icon: <Shuffle size={14} />,
-      visible: object.type === ItemType.DECK && can('shuffleDeck')
-    },
-    {
-      label: translate('Piles', language as Locale),
-      action: 'piles',
-      icon: <Layers size={14} />,
-      visible: object.type === ItemType.DECK && can('piles') && (object as Deck).piles && (object as Deck).piles!.length > 0,
-      hasSubmenu: true,
-      submenuItems: (object as Deck).piles?.map((pile) => ({
-        label: `${pile.name} (${pile.cardIds.length})`,
-        action: `pile-${pile.id}`,
-        icon: <Layers size={14} />,
-        visible: true
-      })) || []
-    },
-    {
-      label: translate('Return All', language as Locale),
-      action: 'returnAll',
-      icon: <Undo size={14} />,
-      visible: object.type === ItemType.DECK && can('returnAll'),
-      separator: true
-    },
+    // Remove the old "To Hand" item since it's now in "Move to.."
     {
       label: (object as any).isOnTable === false ? translate('Show', language as Locale) : translate('Hide', language as Locale),
       action: (object as any).isOnTable === false ? 'show' : 'hide',
       icon: (object as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />,
       visible: can('hide')
-    },
-    {
-      label: translate('Flip', language as Locale),
-      action: 'flip',
-      icon: <Eye size={14} />,
-      visible: object.type === ItemType.CARD && can('flip')
     },
     {
       label: object.locked ? translate('Unlock', language as Locale) : translate('Lock', language as Locale),
@@ -537,20 +575,25 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: object.isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
       icon: <Pin size={14} />,
       visible: !hideCardActions && can('pin'),
-      separator: true
     },
-    // Remove the old "To Hand" item since it's now in "Move to.."
+    // Separator before Clone/Delete (only visible if Clone or Delete is visible)
+    {
+      label: '-',
+      action: 'separator-clone-delete',
+      visible: (!hideCardActions && can('clone')) || (!hideCardActions && can('delete')),
+      isSeparator: true
+    },
     {
       label: (object as Card).hidden ? translate('Unhide Card', language as Locale) : translate('Hide Card', language as Locale),
       action: 'toggleHide',
       icon: (object as Card).hidden ? <Eye size={14} /> : <EyeOff size={14} />,
-      visible: isSearchWindow && isGM && object.type === ItemType.CARD
+      visible: isSearchWindow && isGM && object.type === ItemType.CARD,
     },
     {
       label: translate('Clone', language as Locale),
       action: 'clone',
       icon: <Copy size={14} />,
-      visible: !hideCardActions && can('clone')
+      visible: !hideCardActions && can('clone'),
     },
     {
       label: translate('Delete', language as Locale),
@@ -598,6 +641,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         </div>
 
         {finalItems.map((item, idx) => {
+            // Handle standalone separator items
+            if (item.isSeparator) {
+              return <div key={item.action || idx} className="h-px bg-slate-700 my-1 mx-2" />;
+            }
+
             if (item.hasSubmenu) {
               const isRotateSubmenu = item.action === 'rotate';
               const isPilesSubmenu = item.action === 'piles';
