@@ -28,12 +28,6 @@ function translateGridType(gridType: GridType, language: AppLanguage = 'en'): st
 // Get available actions with translated labels
 function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
   return [
-    { id: 'draw', label: translate('Draw Card', language as Locale) },
-    { id: 'playTopCard', label: translate('Play Top', language as Locale) },
-    { id: 'millTopCard', label: translate('Mill', language as Locale) },
-    { id: 'millToBottom', label: translate('To Bottom', language as Locale) },
-    { id: 'toBottom', label: translate('To Bottom', language as Locale) },
-    { id: 'showTop', label: translate('Show Top', language as Locale) },
     { id: 'topDeck', label: translate('Top Deck (section)', language as Locale) },
     { id: 'searchDeck', label: translate('Search', language as Locale) },
     { id: 'shuffleDeck', label: translate('Shuffle', language as Locale) },
@@ -44,17 +38,9 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
     { id: 'delete', label: translate('Delete Object', language as Locale) },
     { id: 'flip', label: translate('Flip Card', language as Locale) },
     { id: 'layer', label: translate('Change Layer (section)', language as Locale) },
-    { id: 'layerUp', label: translate('Layer Up', language as Locale) },
-    { id: 'layerDown', label: translate('Layer Down', language as Locale) },
-    { id: 'bringToFront', label: translate('To Top', language as Locale) },
-    { id: 'sendToBack', label: translate('To Bottom', language as Locale) },
-    { id: 'lock', label: translate('Lock/Unlock Position', language as Locale) },
-    { id: 'pin', label: translate('Pin/Unpin to Screen', language as Locale) },
+    { id: 'lock', label: translate('Lock/Unlock', language as Locale) },
+    { id: 'pin', label: translate('Pin/Unpin', language as Locale) },
     { id: 'rotate', label: translate('Rotation (section)', language as Locale) },
-    { id: 'rotateClockwise', label: translate('Rotate Clockwise', language as Locale) },
-    { id: 'rotateCounterClockwise', label: translate('Rotate Counter-Clockwise', language as Locale) },
-    { id: 'swingClockwise', label: translate('Swing Clockwise', language as Locale) },
-    { id: 'swingCounterClockwise', label: translate('Swing Counter-Clockwise', language as Locale) },
   ];
 }
 
@@ -70,7 +56,8 @@ function getMoveToActions(language: AppLanguage = 'en'): { id: ContextAction; la
 }
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles', 'bringToFront', 'sendToBack'];
+// Submenu actions are excluded since they depend on their parent section (layer/rotate/topDeck)
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'topDeck', 'piles'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -83,24 +70,11 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   if (!isActionButtonAllowed(action)) return [];
 
   switch (action) {
-    case 'draw':
-    case 'playTopCard':
     case 'shuffleDeck':
     case 'searchDeck':
-    case 'millTopCard':
-    case 'toBottom':
       return [ItemType.DECK];
-    case 'rotateClockwise':
-    case 'rotateCounterClockwise':
-    case 'swingClockwise':
-    case 'swingCounterClockwise':
-    case 'layerUp':
-    case 'layerDown':
-      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
     case 'flip':
       return [ItemType.CARD, ItemType.TOKEN];
-    case 'rotate':
-      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
     // "Move to" actions for cards
     case 'moveToHand':
     case 'moveToTopDeck':
@@ -131,9 +105,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   // Get translated action labels
   const AVAILABLE_ACTIONS = getAvailableActions(language);
   const MOVE_TO_ACTIONS = getMoveToActions(language);
+  // Exclude section headers from click actions
+  const SECTION_ACTIONS: ContextAction[] = ['layer', 'rotate', 'topDeck', 'piles', 'moveTo', 'showTop'];
   const CLICK_ACTIONS = [
     { id: 'none' as const, label: translate('None', language as Locale) },
-    ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+    ...AVAILABLE_ACTIONS.filter(a => !SECTION_ACTIONS.includes(a.id)).map(a => ({ id: a.id, label: a.label }))
   ];
   const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
     { id: 'none' as const, label: translate('None', language as Locale) },
@@ -141,11 +117,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
       .filter(action => {
         // Exclude deck-specific and section actions
-        if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-            action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'hide' ||
+        if (action.id === 'hide' ||
             action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
             action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-            action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
+            action.id === 'rotate' || action.id === 'layer') {
           return false;
         }
         // Exclude section headers
@@ -171,30 +146,27 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     ]) : []
   );
 
-  // Function to normalize dimensions based on shape (make it a "perfect" shape)
-  const normalizeShapeSizes = (shape: TokenShape, currentWidth: number, currentHeight: number): { width: number; height: number } => {
-    const avgSize = (currentWidth + currentHeight) / 2;
-
+  // Function to normalize dimensions based on shape (keeps width, adjusts height only)
+  const normalizeShapeSizes = (shape: TokenShape, currentWidth: number, _currentHeight: number): { width: number; height: number } => {
     switch (shape) {
       case TokenShape.CIRCLE:
-        // For circle, width = height
-        return { width: avgSize, height: avgSize };
+        // For circle, height = width (keep width, make height equal)
+        return { width: currentWidth, height: currentWidth };
       case TokenShape.SQUARE:
-        // For square, width = height
-        return { width: avgSize, height: avgSize };
+        // For square, height = width (keep width, make height equal)
+        return { width: currentWidth, height: currentWidth };
       case TokenShape.HEX:
-        // For regular hexagon: height / width = 1.1547
-        return { width: avgSize, height: Math.round(avgSize * 1.1547) };
+        // For pointy-top hexagon: height = width * 1.15
+        return { width: currentWidth, height: Math.round(currentWidth * 1.15) };
       case TokenShape.HEX_HORIZONTAL:
-        // For horizontal hexagon (rotated 90°): width / height = 1.1547
-        return { width: avgSize, height: Math.round(avgSize / 1.1547) };
+        // For flat-top hexagon: height = width / 1.15
+        return { width: currentWidth, height: Math.round(currentWidth / 1.15) };
       case TokenShape.TRIANGLE:
-        // For equilateral triangle: height / width = sqrt(3)/2 ≈ 0.866
-        // Use avgSize as width, calculate height
-        return { width: avgSize, height: Math.round(avgSize * 0.866) };
+        // For equilateral triangle: height = width * √3 / 2
+        return { width: currentWidth, height: Math.round(currentWidth * Math.sqrt(3) / 2) };
       default:
-        // For unknown shapes, just make them equal (square)
-        return { width: avgSize, height: avgSize };
+        // For unknown shapes, just make height equal to width
+        return { width: currentWidth, height: currentWidth };
     }
   };
 
@@ -347,33 +319,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     }
   };
 
-  const toggleCardAllowedAction = (action: ContextAction, forGM: boolean) => {
-    const field = forGM ? 'allowedActionsForGM' : 'allowedActions';
-    const current = cardSettings[field];
-
-    if (current === undefined) {
-      // Currently all allowed, switch to "all except this one"
-      const allExcept = AVAILABLE_ACTIONS.filter(a => a.id !== action).map(a => a.id);
-      setCardSettings(prev => ({ ...prev, [field]: allExcept }));
-    } else if (current.includes(action)) {
-      // Remove this action
-      const updated = current.filter(a => a !== action);
-      // Keep empty array as empty array (none allowed)
-      setCardSettings(prev => ({ ...prev, [field]: updated }));
-    } else {
-      // Add this action
-      const updated = [...current, action];
-      setCardSettings(prev => ({ ...prev, [field]: updated }));
-    }
-  };
-
-  const isCardActionAllowed = (action: ContextAction, forGM: boolean) => {
-    const field = forGM ? 'allowedActionsForGM' : 'allowedActions';
-    const current = cardSettings[field];
-    // undefined = all allowed, [] = none allowed, specific array = only those allowed
-    return current === undefined || (current.length > 0 && current.includes(action));
-  };
-
   const handleSave = () => {
     // Helper to normalize permissions:
     // undefined = all allowed (default for new objects)
@@ -409,7 +354,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     if (toSave.type === ItemType.DECK) {
       (toSave as Deck).piles = piles;
       // Normalize card settings - cards can only use card-specific actions, not deck-specific ones
-      const deckOnlyActions = ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'hide', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'];
+      const deckOnlyActions = ['hide', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'];
       const cardOnlyActions = allActionIds.filter(id => !deckOnlyActions.includes(id));
 
       let normalizedCardAllowedActions: ContextAction[] | undefined = cardSettings.allowedActions;
@@ -976,7 +921,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <FilePickerInput
                   value={data.content || ''}
                   onChange={value => update('content', value)}
-                  label={translate('Text shown on hover...' , language as Locale)}
+                  label={translate('Image URL', language as Locale)}
                   className="w-full"
                 />
               )}
@@ -1400,23 +1345,19 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       if (isDrawing) return false;
                       // Cards should ONLY use "Context Menu Actions for Cards" from deck settings
                       // Skip all card-specific actions in the general Context Menu Actions section
-                      if (isCard && ['flip', 'layer', 'layerUp', 'layerDown', 'pin'].includes(action.id)) {
+                      if (isCard && ['flip', 'layer', 'pin'].includes(action.id)) {
                         return false;
                       }
                       // Deck-specific actions - only for decks, not cards, tokens, or battlefield cells
-                      if ((isCard || isToken || isBattlefieldCell) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'hide', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if ((isCard || isToken || isBattlefieldCell) && ['hide', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                         return false;
                       }
                       // Board-specific actions - only decks, not boards
-                      if (isBoard && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if (isBoard && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
                       if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip'].includes(action.id)) {
-                        return false;
-                      }
-                      // Rotation/swing actions - only for dice/counters/boards/tokens/battlefield cells, not for cards
-                      if (isCard && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
                       // 'flip' only applies to cards (not tokens, decks, boards, or battlefield cells)
@@ -1560,16 +1501,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if (action.id === 'none') return true;
 
                           // Deck-specific actions - only for decks, not cards, boards, or battlefield cells
-                          if ((isCard || isBoard || isBattlefieldCell) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                          if ((isCard || isBoard || isBattlefieldCell) && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
                           }
                           // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
                           if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip', 'moveTo'].includes(action.id)) {
                             return false;
                           }
-                          // For boards and battlefield cells, only allow rotate/swing/layer actions
+                          // For boards and battlefield cells, only allow rotate/layer section actions
                           if (isBoard || isBattlefieldCell) {
-                            const boardAllowedActions = ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layerUp', 'layerDown'];
+                            const boardAllowedActions = ['rotate', 'layer'];
                             if (!boardAllowedActions.includes(action.id)) {
                               return false;
                             }
@@ -1596,16 +1537,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if (action.id === 'none') return true;
 
                           // Deck-specific actions - only for decks, not cards, boards, or battlefield cells
-                          if ((isCard || isBoard || isBattlefieldCell) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                          if ((isCard || isBoard || isBattlefieldCell) && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
                           }
                           // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
                           if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip', 'moveTo'].includes(action.id)) {
                             return false;
                           }
-                          // For boards and battlefield cells, only allow rotate/swing/layer actions
+                          // For boards and battlefield cells, only allow rotate/layer section actions
                           if (isBoard || isBattlefieldCell) {
-                            const boardAllowedActions = ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layerUp', 'layerDown'];
+                            const boardAllowedActions = ['rotate', 'layer'];
                             if (!boardAllowedActions.includes(action.id)) {
                               return false;
                             }
@@ -2010,8 +1951,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               </div>
 
-              {/* Context Menu Actions - with PL and GM toggle buttons */}
-              <div className="pt-2">
+              {/* Context Menu Actions for Cards - with PL and GM toggle buttons */}
+              <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Shield size={14} /> {translate('Context Menu Actions for Cards', language as Locale)}
                 </h4>
@@ -2019,26 +1960,80 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-1">
                   {[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
                     .filter(action => {
-                      // Only show card-applicable actions (exclude deck-specific actions)
-                      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-                          action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'hide' ||
-                          action.id === 'showTop' ||
+                      // Exclude deck-specific and section actions
+                      if (action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'piles') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
+                      // Exclude section headers
+                      if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate') return false;
                       return true;
                     })
                     .map((action) => {
-                    const isPlayerAllowed = isCardActionAllowed(action.id, false);
-                    const isGMAllowed = isCardActionAllowed(action.id, true);
+                    const isPlayerAllowed = cardSettings.allowedActions === undefined || cardSettings.allowedActions.includes(action.id as ContextAction);
+                    const isGMAllowed = cardSettings.allowedActionsForGM === undefined || cardSettings.allowedActionsForGM.includes(action.id as ContextAction);
+
+                    const togglePlayer = () => {
+                      const current = cardSettings.allowedActions;
+                      const cardActions = [...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
+                        .filter(a => {
+                          if (a.id === 'hide' ||
+                              a.id === 'shuffleDeck' || a.id === 'searchDeck' ||
+                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles') return false;
+                          if (a.id === 'moveTo' || a.id === 'layer' || a.id === 'rotate') return false;
+                          return true;
+                        })
+                        .map(a => a.id);
+
+                      if (isPlayerAllowed) {
+                        // Remove from player's allowed actions
+                        if (current && current.includes(action.id as ContextAction)) {
+                          const newActions = current.filter((a: ContextAction) => a !== action.id);
+                          setCardSettings(prev => ({ ...prev, allowedActions: newActions }));
+                        } else if (current === undefined) {
+                          setCardSettings(prev => ({ ...prev, allowedActions: cardActions.filter((a: string) => a !== action.id) as ContextAction[] }));
+                        }
+                      } else {
+                        // Add to player's allowed actions
+                        const updated = current ? [...current, action.id as ContextAction] : [action.id as ContextAction];
+                        setCardSettings(prev => ({ ...prev, allowedActions: updated }));
+                      }
+                    };
+
+                    const toggleGM = () => {
+                      const current = cardSettings.allowedActionsForGM;
+                      const cardActions = [...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
+                        .filter(a => {
+                          if (a.id === 'hide' ||
+                              a.id === 'shuffleDeck' || a.id === 'searchDeck' ||
+                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles') return false;
+                          if (a.id === 'moveTo' || a.id === 'layer' || a.id === 'rotate') return false;
+                          return true;
+                        })
+                        .map(a => a.id);
+
+                      if (isGMAllowed) {
+                        // Remove from GM's allowed actions
+                        if (current && current.includes(action.id as ContextAction)) {
+                          const newActions = current.filter((a: ContextAction) => a !== action.id);
+                          setCardSettings(prev => ({ ...prev, allowedActionsForGM: newActions }));
+                        } else if (current === undefined) {
+                          setCardSettings(prev => ({ ...prev, allowedActionsForGM: cardActions.filter((a: string) => a !== action.id) as ContextAction[] }));
+                        }
+                      } else {
+                        // Add to GM's allowed actions
+                        const updated = current ? [...current, action.id as ContextAction] : [action.id as ContextAction];
+                        setCardSettings(prev => ({ ...prev, allowedActionsForGM: updated }));
+                      }
+                    };
 
                     return (
                       <div
-                        key={`card-${action.id}`}
+                        key={`card-action-${action.id}`}
                         className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-700 transition-colors bg-slate-800 border border-slate-700"
                       >
                         <span className="text-gray-200 text-xs font-medium leading-tight flex-1 truncate">{action.label}</span>
                         <button
-                          onClick={() => toggleCardAllowedAction(action.id, false)}
+                          onClick={togglePlayer}
                           className={`w-7 h-7 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
                             isPlayerAllowed
                               ? 'bg-blue-600 text-white'
@@ -2049,7 +2044,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           PL
                         </button>
                         <button
-                          onClick={() => toggleCardAllowedAction(action.id, true)}
+                          onClick={toggleGM}
                           className={`w-7 h-7 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
                             isGMAllowed
                               ? 'bg-purple-600 text-white'
@@ -2076,12 +2071,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   {[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
                     .filter(action => {
                       // Only card-applicable actions
-                      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' || action.id === 'toBottom' ||
-                          action.id === 'millToBottom' || action.id === 'hide' ||
+                      if (action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
                           action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
                       // Exclude section headers only
-                      if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate' || action.id === 'showTop') return false;
+                      if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate') return false;
                       return true;
                     })
                     .map((action) => {
