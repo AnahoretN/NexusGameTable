@@ -9,6 +9,8 @@ export interface GridSnapResult {
 
 export interface GridSnapOptions {
   gridSize: number;
+  gridWidth?: number;
+  gridHeight?: number;
   gridType: GridType;
   offsetX?: number;
   offsetY?: number;
@@ -22,7 +24,11 @@ export function snapToGrid(
   y: number,
   options: GridSnapOptions
 ): Coordinates {
-  const { gridSize, gridType, offsetX = 0, offsetY = 0 } = options;
+  const { gridSize, gridWidth, gridHeight, gridType, offsetX = 0, offsetY = 0 } = options;
+
+  // Use gridWidth/gridHeight if provided, otherwise fall back to gridSize
+  const snapX = gridWidth ?? gridSize;
+  const snapY = gridHeight ?? gridSize;
 
   // Adjust for grid offset
   const adjustedX = x - offsetX;
@@ -34,15 +40,15 @@ export function snapToGrid(
   switch (gridType) {
     case GridType.HEX:
       // Hex grid - treat as pointy top
-      snappedX = Math.round(adjustedX / (gridSize * Math.sqrt(3))) * gridSize * Math.sqrt(3);
-      snappedY = Math.round(adjustedY / (gridSize * 1.5)) * gridSize * 1.5;
+      snappedX = Math.round(adjustedX / (snapX * Math.sqrt(3))) * snapX * Math.sqrt(3);
+      snappedY = Math.round(adjustedY / (snapY * 1.5)) * snapY * 1.5;
       break;
 
     case GridType.SQUARE:
     default:
       // Standard square grid
-      snappedX = Math.round(adjustedX / gridSize) * gridSize;
-      snappedY = Math.round(adjustedY / gridSize) * gridSize;
+      snappedX = Math.round(adjustedX / snapX) * snapX;
+      snappedY = Math.round(adjustedY / snapY) * snapY;
       break;
   }
 

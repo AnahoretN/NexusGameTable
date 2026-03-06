@@ -366,54 +366,48 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                     borderWidth={2}
                     orientation={cardOrientation}
                   >
-                    <foreignObject x="0" y="0" width="100" height="100">
-                      <div className="w-full h-full flex flex-col items-center justify-center">
-                        {pile.showTopCard && topCard ? (
-                          // Show top card face without text overlay
-                          <div className="w-full h-full relative overflow-hidden">
-                            <div
-                              className="w-full h-full"
-                              style={{
-                                backgroundColor: 'white',
-                                backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center'
-                              }}
-                            />
-                          </div>
-                        ) : topCard ? (
-                          // Normal pile appearance with optional face up display
-                          <div className="w-full h-full relative overflow-hidden">
-                            <div
-                              className="w-full h-full"
-                              style={{
-                                backgroundColor: pile.faceUp ? 'white' : '#1e293b',
-                                backgroundImage: pile.faceUp && topCard.content ? `url(${topCard.content})` : undefined,
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center'
-                              }}
-                            />
-                            {/* Pile name overlay with count */}
-                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
-                              <DeckLabel
-                                name={pile.name}
-                                count={pileCards.length}
-                                totalCount={pileCards.length}
-                                shape={cardShape}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          // Empty pile
+                    {pile.showTopCard && topCard ? (
+                      // Show top card face without text overlay
+                      <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+                        <div
+                          style={{ width: '100%', height: '100%',
+                            backgroundColor: 'white',
+                            backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
+                            backgroundSize: '100% 100%',
+                            backgroundPosition: 'center'
+                          }}
+                        />
+                      </div>
+                    ) : topCard ? (
+                      // Normal pile appearance with optional face up display
+                      <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+                        <div
+                          style={{ width: '100%', height: '100%',
+                            backgroundColor: pile.faceUp ? 'white' : '#1e293b',
+                            backgroundImage: pile.faceUp && topCard.content ? `url(${topCard.content})` : undefined,
+                            backgroundSize: '100% 100%',
+                            backgroundPosition: 'center'
+                          }}
+                        />
+                        {/* Pile name overlay with count */}
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
                           <DeckLabel
                             name={pile.name}
                             count={pileCards.length}
                             totalCount={pileCards.length}
                             shape={cardShape}
                           />
-                        )}
+                        </div>
                       </div>
-                    </foreignObject>
+                    ) : (
+                      // Empty pile
+                      <DeckLabel
+                        name={pile.name}
+                        count={pileCards.length}
+                        totalCount={pileCards.length}
+                        shape={cardShape}
+                      />
+                    )}
                   </SvgDeckShape>
                 </div>
               ) : (
@@ -598,21 +592,18 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                   borderWidth={2}
                   orientation={cardOrientation}
                 >
-                  <foreignObject x="0" y="0" width="100" height="100">
-                    <div
-                      className="w-full h-full"
-                      style={{
-                        backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
-                      }}
-                    />
-                  </foreignObject>
+                  <div
+                    style={{ width: '100%', height: '100%',
+                      backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
+                      backgroundSize: '100% 100%',
+                      backgroundPosition: 'center'
+                    }}
+                  />
                 </SvgDeckShape>
               </div>
             ) : (
               // Normal deck appearance with SVG shape
-              <div className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer">
+              <div className="absolute inset-0 cursor-pointer">
                 <SvgDeckShape
                   shape={cardShape}
                   width={effectiveWidth}
@@ -622,17 +613,13 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                   borderWidth={2}
                   orientation={cardOrientation}
                 >
-                  <foreignObject x="0" y="0" width="100" height="100">
-                    <div className="w-full h-full flex flex-col items-center justify-center">
-                      <Layers className="text-slate-400 mb-1" size={shouldUseSvgForDeck(cardShape) ? 12 : 16} />
-                      <DeckLabel
-                        name={deck.name}
-                        count={isShuffling ? animatedCurrentCount : visibleCardCount}
-                        totalCount={isShuffling ? animatedBaseCount : (deck.baseCardIds || deck.cardIds).length}
-                        shape={cardShape}
-                      />
-                    </div>
-                  </foreignObject>
+                  <Layers className="text-slate-400 mb-1" size={shouldUseSvgForDeck(cardShape) ? 12 : 16} />
+                  <DeckLabel
+                    name={deck.name}
+                    count={isShuffling ? animatedCurrentCount : visibleCardCount}
+                    totalCount={isShuffling ? animatedBaseCount : (deck.baseCardIds || deck.cardIds).length}
+                    shape={cardShape}
+                  />
                 </SvgDeckShape>
               </div>
             )}

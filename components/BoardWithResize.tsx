@@ -13,9 +13,9 @@ interface BoardWithResizeProps {
     onContextMenu: (e: React.MouseEvent) => void;
     onResizeStart: (e: React.MouseEvent) => void;
     gridSize: number;
-    hexR: number;
-    hexW: number;
-    hexPath: string;
+    gridWidth?: number;
+    gridHeight?: number;
+    showGrid?: boolean;
     currentTool?: string;
 }
 
@@ -31,12 +31,53 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     onContextMenu,
     onResizeStart,
     gridSize,
-    hexR,
-    hexW,
-    hexPath,
+    gridWidth,
+    gridHeight,
+    showGrid,
 }) => {
     const [isHoveringCorner, setIsHoveringCorner] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+
+    // Use gridWidth/gridHeight if provided, otherwise fall back to gridSize
+    const gridW = gridWidth ?? gridSize;
+    const gridH = gridHeight ?? gridSize;
+
+    // For hex grid, with 120° top/bottom angles always
+    // Top and bottom angles are always 120° regardless of width/height ratio
+    const rowSpacing = gridH * 0.75;  // Vertical distance between hexagon centers
+    const patternW = gridW * 2;        // Two hexagon columns for proper tiling
+    const patternH = rowSpacing * 2;   // Two hexagon rows
+
+    // Pointy-top hexagon: width = gridW, height = gridH
+    // Shoulder Y at W/(2√3) preserves 120° top/bottom angles
+    const shoulderY1 = gridW / 2 / Math.sqrt(3);
+    const shoulderY2 = gridH - shoulderY1;
+    const hexPath =
+      `M ${gridW / 2} 0 ` +
+      `L ${gridW} ${shoulderY1} ` +
+      `L ${gridW} ${shoulderY2} ` +
+      `L ${gridW / 2} ${gridH} ` +
+      `L 0 ${shoulderY2} ` +
+      `L 0 ${shoulderY1} Z`;
+
+    // Build tiling pattern with 4 hexagons:
+    // Even row: (0, 0) and (0, rowSpacing)
+    // Odd row offset: (gridW/2, rowSpacing/2) and (gridW/2, rowSpacing * 1.5)
+    const hexGridPath =
+      // First hexagon (col 0, row 0)
+      hexPath + ' ' +
+      // Second hexagon (col 0, row 1)
+      hexPath.replace(/([ML]) ([\d.]+) ([\d.]+)/g, (match, cmd, x, y) =>
+        `${cmd} ${x} ${parseFloat(y) + rowSpacing}`
+      ) + ' ' +
+      // Third hexagon (col 1 offset, row 0)
+      hexPath.replace(/([ML]) ([\d.]+) ([\d.]+)/g, (match, cmd, x, y) =>
+        `${cmd} ${parseFloat(x) + gridW/2} ${parseFloat(y) + rowSpacing/2}`
+      ) + ' ' +
+      // Fourth hexagon (col 1 offset, row 1)
+      hexPath.replace(/([ML]) ([\d.]+) ([\d.]+)/g, (match, cmd, x, y) =>
+        `${cmd} ${parseFloat(x) + gridW/2} ${parseFloat(y) + rowSpacing * 1.5}`
+      );
 
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
         if (!containerRef.current || !canResize) return;
@@ -56,7 +97,8 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         setIsHoveringCorner(false);
     }, []);
 
-    const showGrid = token.gridType && token.gridType !== GridType.NONE;
+    // Check if grid should be shown (grid type exists AND showGrid is not false)
+    const shouldShowGrid = token.gridType && token.gridType !== GridType.NONE && (token as BoardType).showGrid !== false;
 
     // Determine cursor based on hover state and action state
     const getCursor = useCallback(() => {
@@ -92,17 +134,17 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             }}
         >
             {/* Grid overlay */}
-            {showGrid && (
+            {shouldShowGrid && (
                 <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
                     <defs>
                         {token.gridType === GridType.SQUARE && (
-                            <pattern id={`grid-square-${obj.id}`} width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
+                            <pattern id={`grid-square-${obj.id}`} width={gridW} height={gridH} patternUnits="userSpaceOnUse">
                                 {/* Draw complete square: top, left, right, bottom edges */}
-                                <rect x="0" y="0" width={gridSize} height={gridSize} fill="none" stroke="black" strokeWidth="1"/>
+                                <rect x="0" y="0" width={gridW} height={gridH} fill="none" stroke="black" strokeWidth="1"/>
                             </pattern>
                         )}
                         {token.gridType === GridType.HEX && (
-                            <pattern id={`grid-hex-${obj.id}`} width={hexW} height={gridSize * 3} patternUnits="userSpaceOnUse">
+                            <pattern id={`grid-hex-${obj.id}`} width={patternW} height={patternH} patternUnits="userSpaceOnUse">
                                 <path d={hexPath} fill="none" stroke="black" strokeWidth="1"/>
                             </pattern>
                         )}

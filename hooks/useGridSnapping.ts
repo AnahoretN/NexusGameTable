@@ -5,6 +5,8 @@ import { snapToGrid, getSnappedCenter, GridSnapOptions } from '../utils/gridUtil
 interface UseGridSnappingOptions {
   enabled: boolean;
   gridSize?: number;
+  gridWidth?: number;
+  gridHeight?: number;
   gridType?: GridType;
   offset?: Coordinates;
 }
@@ -20,11 +22,15 @@ interface UseGridSnappingResult {
  * Custom hook for grid snapping functionality
  */
 export function useGridSnapping(options: UseGridSnappingOptions): UseGridSnappingResult {
-  const { enabled, gridSize = 50, gridType = GridType.SQUARE, offset = { x: 0, y: 0 } } = options;
+  const { enabled, gridSize = 50, gridWidth, gridHeight, gridType = GridType.SQUARE, offset = { x: 0, y: 0 } } = options;
+
+  // Use gridWidth/gridHeight if provided, otherwise fall back to gridSize
+  const snapX = gridWidth ?? gridSize;
+  const snapY = gridHeight ?? gridSize;
 
   const snapOptions: GridSnapOptions = useMemo(
-    () => ({ gridSize, gridType, offsetX: offset.x, offsetY: offset.y }),
-    [gridSize, gridType, offset.x, offset.y]
+    () => ({ gridSize, gridWidth, gridHeight, gridType, offsetX: offset.x, offsetY: offset.y }),
+    [gridSize, gridWidth, gridHeight, gridType, offset.x, offset.y]
   );
 
   const getSnappedCoordinates = useMemo(
@@ -64,15 +70,15 @@ export function useGridSnapping(options: UseGridSnappingOptions): UseGridSnappin
     () => (x: number, y: number, threshold: number = 5): boolean => {
       if (!enabled) return false;
 
-      const xMod = x % gridSize;
-      const yMod = y % gridSize;
+      const xMod = x % snapX;
+      const yMod = y % snapY;
 
-      const distToX = Math.min(xMod, gridSize - xMod);
-      const distToY = Math.min(yMod, gridSize - yMod);
+      const distToX = Math.min(xMod, snapX - xMod);
+      const distToY = Math.min(yMod, snapY - yMod);
 
       return distToX < threshold || distToY < threshold;
     },
-    [enabled, gridSize]
+    [enabled, snapX, snapY]
   );
 
   return {
