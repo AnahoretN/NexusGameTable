@@ -1704,11 +1704,25 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         const currentWidth = cardSettings.cardWidth ?? deck.width;
                         const currentHeight = cardSettings.cardHeight ?? deck.height;
                         const currentShape = cardSettings.cardShape ?? CardShape.POKER;
+                        const currentOrientation = cardSettings.cardOrientation ?? CardOrientation.VERTICAL;
+
+                        // Map CardShape + Orientation to TokenShape for normalization
+                        let tokenShapeForNorm: TokenShape;
+                        if (currentShape === CardShape.HEX) {
+                          // HEX with HORIZONTAL orientation -> HEX_HORIZONTAL
+                          tokenShapeForNorm = currentOrientation === CardOrientation.HORIZONTAL
+                            ? TokenShape.HEX_HORIZONTAL
+                            : TokenShape.HEX;
+                        } else if (currentShape === CardShape.TRIANGLE) {
+                          tokenShapeForNorm = TokenShape.TRIANGLE;
+                        } else if (currentShape === CardShape.CIRCLE) {
+                          tokenShapeForNorm = TokenShape.CIRCLE;
+                        } else {
+                          tokenShapeForNorm = TokenShape.SQUARE;
+                        }
+
                         const { width, height } = normalizeShapeSizes(
-                          currentShape === CardShape.HEX ? TokenShape.HEX :
-                          currentShape === CardShape.TRIANGLE ? TokenShape.TRIANGLE :
-                          currentShape === CardShape.CIRCLE ? TokenShape.CIRCLE :
-                          TokenShape.SQUARE,
+                          tokenShapeForNorm,
                           currentWidth,
                           currentHeight
                         );
