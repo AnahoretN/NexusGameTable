@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Action } from './gameActions';
+import { Player } from '../types';
 
 export type ManualConnectionStep = 'idle' | 'creating' | 'waiting_for_answer' | 'connecting' | 'connected' | 'failed';
 
@@ -163,6 +164,9 @@ export function useManualConnection() {
   const connectionRef = useRef<DataChannelAdapter | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const hostPlayerIdRef = useRef<string>('');
+  const guestNameRef = useRef<string>('');
+  const guestIdRef = useRef<string>('');
+  const localDispatchRef = useRef<React.Dispatch<Action> | null>(null);
 
   // Helper function to set up a connection and listen for its open event
   const setupConnection = useCallback((adapter: DataChannelAdapter) => {
@@ -337,16 +341,21 @@ export function useManualConnection() {
   }, []);
 
   // Guest: Connect to Host
-  const connectToHost = useCallback(async (offerCode: string, guestName: string = 'Guest Player') => {
+  const connectToHost = useCallback(async (offerCode: string, guestName: string = 'Guest Player', localDispatch?: React.Dispatch<Action>) => {
     try {
       console.log('[Manual P2P] Connecting to host...');
       setState(prev => ({ ...prev, step: 'connecting', error: null }));
+
+      // Store dispatch and guest name for later use when channel opens
+      localDispatchRef.current = localDispatch || null;
+      guestNameRef.current = guestName;
 
       // Decode offer
       const offerMessage: SDPMessage = JSON.parse(atob(offerCode));
 
       // Generate guest ID
       const guestId = 'manual-guest-' + Math.random().toString(36).substr(2, 9);
+      guestIdRef.current = guestId;
 
       // Create RTCPeerConnection with STUN servers (TURN removed)
       const pc = new RTCPeerConnection({
@@ -377,6 +386,41 @@ export function useManualConnection() {
         const adapter = new DataChannelAdapter(dc, hostPlayerIdRef.current || 'manual-host');
         setupConnection(adapter);
         console.log('[Manual P2P] Guest: DataChannelAdapter created', 'open:', adapter.open);
+
+        // When data channel opens, register the guest player with the host
+        adapter.on('open', () => {
+          console.log('[Manual P2P] Guest: Data channel open, registering with host...');
+
+          const dispatch = localDispatchRef.current;
+          const playerName = guestNameRef.current || 'Guest Player';
+          const playerId = guestIdRef.current;
+
+          // Create player object
+          const myPlayer: Player = {
+            id: playerId,
+            name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
+            color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+            isGM: false
+          };
+
+          console.log('[Manual P2P] Guest: Created player object:', myPlayer);
+
+          // Add ourselves locally
+          if (dispatch) {
+            dispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+            dispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
+            console.log('[Manual P2P] Guest: Player added locally and set as active');
+          } else {
+            console.warn('[Manual P2P] Guest: No dispatch available - player not added locally');
+          }
+
+          // Small delay to ensure host is ready to receive HELO
+          setTimeout(() => {
+            // Send HELO to host
+            console.log('[Manual P2P] Guest: Sending HELO to host...');
+            adapter.send({ type: 'HELO', payload: myPlayer });
+          }, 200);
+        });
       };
 
       // Debug: check if offer contains data channel info
