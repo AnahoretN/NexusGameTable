@@ -96,6 +96,8 @@ export type Action =
   | BaseAction<'UPDATE_HYPERSCALE_LAYER', { layerId: string; updates: Partial<import('../types').HyperscaleLayer> }>
   | BaseAction<'DELETE_HYPERSCALE_LAYER', { layerId: string }>
   | BaseAction<'SET_HYPERSCALE_LAYERS', { layerIds: string[] }> // Set selected hyperscale layers
+  // Connection lock actions
+  | ActionWithoutPayload<'TOGGLE_CONNECTIONS_LOCKED'>
   | BaseAction<'MOVE_OBJECT_TO_HYPERSCALE_LAYER', { objectId: string; layerId: string }>
   // Undo actions
   | ActionWithoutPayload<'UNDO_MARKER'>

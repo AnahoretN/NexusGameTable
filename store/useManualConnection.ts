@@ -1,0 +1,558 @@
+import { useState, useCallback, useRef } from 'react';
+import { Action } from './gameActions';
+
+export type ManualConnectionStep = 'idle' | 'creating' | 'waiting_for_answer' | 'connecting' | 'connected' | 'failed';
+
+export interface ManualConnectionState {
+  step: ManualConnectionStep;
+  localOffer: string;
+  remoteAnswer: string;
+  error: string | null;
+  generatedCode: string;
+  channelOpen: boolean;  // Track if the data channel is actually open
+  noCandidates: boolean; // Track if no ICE candidates were gathered (localhost issue)
+}
+
+export interface SDPMessage {
+  type: 'offer' | 'answer';
+  sdp: string;
+  playerId?: string;
+  playerName?: string;
+}
+
+/**
+ * Adapter that wraps RTCDataChannel to look like a PeerJS DataConnection
+ * This allows the manual connection to work with the existing P2P sync system
+ */
+class DataChannelAdapter {
+  private dc: RTCDataChannel;
+  private _handlers: { [event: string]: ((...args: any[]) => void)[] } = {};
+  public peer: string;
+  public open: boolean = false;
+  private static activeAdapters = new Set<DataChannelAdapter>();
+
+  constructor(dataChannel: RTCDataChannel, peerId: string) {
+    this.dc = dataChannel;
+    this.peer = peerId;
+
+    // Check for duplicate adapters for the same data channel
+    for (const adapter of DataChannelAdapter.activeAdapters) {
+      if (adapter.dc === dataChannel) {
+        console.error('[DataChannelAdapter] WARNING: Creating duplicate adapter for same data channel!', {
+          existingPeer: adapter.peer,
+          newPeer: peerId,
+          readyState: dataChannel.readyState
+        });
+      }
+    }
+    DataChannelAdapter.activeAdapters.add(this);
+
+    console.log('[DataChannelAdapter] Creating adapter, readyState:', dataChannel.readyState, 'peer:', peerId);
+
+    // Forward data channel events to adapter handlers
+    this.dc.onopen = () => {
+      console.log('[DataChannelAdapter] Data channel OPENED!', 'peer:', this.peer,
+                  'id:', this.dc.id,
+                  'label:', this.dc.label,
+                  'ordered:', this.dc.ordered,
+                  'maxPacketLifeTime:', this.dc.maxPacketLifeTime,
+                  'maxRetransmits:', this.dc.maxRetransmits);
+      this.open = true;
+      // Emit asynchronously to allow handlers to be set up
+      setTimeout(() => this.emit('open'), 0);
+    };
+
+    this.dc.onmessage = (event) => {
+      console.log('[DataChannelAdapter] Received message:', event.data);
+      try {
+        const data = JSON.parse(event.data);
+        this.emit('data', data);
+      } catch (e) {
+        // If not JSON, emit raw
+        this.emit('data', event.data);
+      }
+    };
+
+    this.dc.onclose = (event) => {
+      console.log('[DataChannelAdapter] Data channel CLOSED', 'peer:', this.peer,
+                  'wasClean:', event?.wasClean,
+                  'code:', event?.code,
+                  'reason:', event?.reason);
+      this.open = false;
+      DataChannelAdapter.activeAdapters.delete(this);
+      this.emit('close');
+    };
+
+    this.dc.onerror = (error: any) => {
+      console.error('[DataChannelAdapter] Data channel ERROR', 'peer:', this.peer,
+                   'error:', error?.error || error,
+                   'errorDetail:', error?.errorDetail,
+                   'sctpCauseCode:', error?.error?.sctpCauseCode);
+      this.emit('error', error);
+    };
+
+    // Check if already open
+    if (dataChannel.readyState === 'open') {
+      console.log('[DataChannelAdapter] Data channel was already open!');
+      this.open = true;
+      // Emit in next tick to allow handlers to be registered
+      setTimeout(() => this.emit('open'), 0);
+    }
+  }
+
+  // PeerJS-compatible send method (takes object, auto-serializes)
+  send(data: any): void {
+    if (this.open && this.dc.readyState === 'open') {
+      // PeerJS sends objects directly, we need to stringify for raw data channel
+      if (typeof data === 'object') {
+        this.dc.send(JSON.stringify(data));
+      } else {
+        this.dc.send(data);
+      }
+    }
+  }
+
+  // Event handler methods
+  on(event: string, handler: (...args: any[]) => void): void {
+    if (!this._handlers[event]) {
+      this._handlers[event] = [];
+    }
+    this._handlers[event].push(handler);
+  }
+
+  off(event: string, handler: (...args: any[]) => void): void {
+    if (this._handlers[event]) {
+      this._handlers[event] = this._handlers[event].filter(h => h !== handler);
+    }
+  }
+
+  private emit(event: string, ...args: any[]): void {
+    if (this._handlers[event]) {
+      this._handlers[event].forEach(handler => handler(...args));
+    }
+  }
+
+  close(): void {
+    console.log('[DataChannelAdapter] close() called!', 'peer:', this.peer, 'Stack:');
+    console.log(new Error().stack?.split('\n').slice(1, 6).join('\n'));
+    DataChannelAdapter.activeAdapters.delete(this);
+    this.dc.close();
+  }
+
+  // Allow direct access to underlying data channel if needed
+  get dataChannel(): RTCDataChannel {
+    return this.dc;
+  }
+}
+
+/**
+ * Hook for manual P2P connection without signalling server
+ * Returns a PeerJS-compatible connection that integrates with existing sync system
+ */
+export function useManualConnection() {
+  const [state, setState] = useState<ManualConnectionState>({
+    step: 'idle',
+    localOffer: '',
+    remoteAnswer: '',
+    error: null,
+    generatedCode: '',
+    channelOpen: false,
+    noCandidates: false,
+  });
+
+  const connectionRef = useRef<DataChannelAdapter | null>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const hostPlayerIdRef = useRef<string>('');
+
+  // Helper function to set up a connection and listen for its open event
+  const setupConnection = useCallback((adapter: DataChannelAdapter) => {
+    connectionRef.current = adapter;
+
+    // Listen for the data channel to actually open
+    const handleOpen = () => {
+      console.log('[Manual P2P] Data channel is now open and ready!');
+      setState(prev => ({ ...prev, channelOpen: true }));
+    };
+
+    const handleClose = () => {
+      console.log('[Manual P2P] Data channel closed');
+      setState(prev => ({ ...prev, channelOpen: false }));
+    };
+
+    adapter.on('open', handleOpen);
+    adapter.on('close', handleClose);
+
+    // If already open, update state immediately
+    if (adapter.open) {
+      setState(prev => ({ ...prev, channelOpen: true }));
+    }
+  }, []);
+
+  // Host: Create Offer
+  const createOffer = useCallback(async (playerName: string) => {
+    try {
+      console.log('[Manual P2P] Creating offer...');
+      setState(prev => ({ ...prev, step: 'creating', error: null }));
+
+      // Generate a host ID
+      const hostId = 'manual-host-' + Math.random().toString(36).substr(2, 9);
+      hostPlayerIdRef.current = hostId;
+
+      // Create RTCPeerConnection with STUN servers and force host candidate gathering
+      const rtcConfig: RTCConfiguration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ]
+      };
+
+      // Try to force host candidate gathering for localhost testing (Chrome only)
+      // @ts-ignore - RTCConfiguration is extended in Chrome
+      if ((rtcConfig as any).iceTransportPolicy !== undefined) {
+        (rtcConfig as any).iceTransportPolicy = 'all';
+        console.log('[Manual P2P] Setting iceTransportPolicy to "all" to enable host candidates');
+      }
+
+      const pc = new RTCPeerConnection(rtcConfig);
+
+      peerConnectionRef.current = pc;
+
+      // Create data channel (host initiates) BEFORE creating offer
+      const dc = pc.createDataChannel('nexus-game', {
+        ordered: true
+        // Removed 'protocol: json' as it may cause compatibility issues
+      });
+
+      // Create adapter immediately - it will handle data channel opening
+      const guestId = 'manual-guest-' + Math.random().toString(36).substr(2, 9);
+      const adapter = new DataChannelAdapter(dc, guestId);
+      setupConnection(adapter);
+      console.log('[Manual P2P] Host: DataChannelAdapter created for guest:', guestId);
+
+      // Wait for ICE gathering to complete before generating code (with timeout)
+      const iceGatheringComplete = new Promise<void>((resolve) => {
+        let resolved = false;
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            console.log('[Manual P2P] ICE gathering timeout (1s) - using candidates gathered so far');
+            resolved = true;
+            resolve();
+          }
+        }, 1000); // 1 second timeout - STUN should be fast
+
+        if (pc.iceGatheringState === 'complete') {
+          clearTimeout(timeout);
+          resolve();
+          return;
+        }
+        pc.onicegatheringstatechange = () => {
+          console.log('[Manual P2P] ICE gathering state:', pc.iceGatheringState);
+          if (pc.iceGatheringState === 'complete' && !resolved) {
+            clearTimeout(timeout);
+            resolved = true;
+            resolve();
+          }
+        };
+      });
+
+      // Create offer
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      console.log('[Manual P2P] Offer created, waiting for ICE gathering (max 3s)...');
+
+      // Wait for ICE gathering to complete
+      await iceGatheringComplete;
+
+      // Now get the updated SDP with all ICE candidates
+      const finalSdp = pc.localDescription?.sdp || offer.sdp;
+      console.log('[Manual P2P] ICE gathering complete');
+      console.log('[Manual P2P] Final SDP length:', finalSdp.length);
+      console.log('[Manual P2P] SDP contains data channel:', finalSdp.includes('application'));
+
+      // Generate final code with all candidates
+      const message: SDPMessage = {
+        type: 'offer',
+        sdp: finalSdp,
+        playerName
+      };
+
+      const code = btoa(JSON.stringify(message));
+      setState(prev => ({ ...prev, step: 'waiting_for_answer', localOffer: code, generatedCode: code }));
+
+      pc.onconnectionstatechange = () => {
+        console.log('[Manual P2P] Host connection state changed:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          console.log('[Manual P2P] Host: ICE connection fully established!');
+          setState(prev => ({ ...prev, noCandidates: false }));
+        } else if (pc.connectionState === 'failed') {
+          console.error('[Manual P2P] Host: ICE connection failed!');
+          console.error('[Manual P2P] Host: ICE connection state:', pc.iceConnectionState);
+          console.error('[Manual P2P] Host: Check if both peers are on localhost - try testing on different devices/networks');
+          // Set noCandidates flag and error when connection fails
+          setState(prev => ({
+            ...prev,
+            step: 'failed',
+            error: 'ICE connection failed - try testing on different devices or networks',
+            noCandidates: true
+          }));
+        } else if (pc.connectionState === 'disconnected') {
+          console.warn('[Manual P2P] Host: ICE connection disconnected!');
+        }
+      };
+
+      // Log ICE candidates for debugging
+      let candidatesGathered = 0;
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          candidatesGathered++;
+          const candidate = event.candidate.candidate;
+          const type = candidate.includes('typ srflx') ? 'srflx (public)' :
+                       candidate.includes('typ host') ? 'host (local)' :
+                       candidate.includes('typ relay') ? 'relay (TURN)' :
+                       candidate.includes('typ prflx') ? 'prflx (peer)' : 'unknown';
+          console.log('[Manual P2P] Host ICE candidate:', type, candidate.substring(0, 100));
+        } else {
+          console.log('[Manual P2P] Host: ICE gathering complete (no more candidates). Total:', candidatesGathered);
+          if (candidatesGathered === 0) {
+            console.warn('[Manual P2P] ⚠️ No ICE candidates gathered during offer creation!');
+            console.warn('[Manual P2P] This is normal for localhost - the warning will only show if connection fails');
+          }
+        }
+      };
+
+      // Log initial ICE state for debugging
+      setTimeout(() => {
+        console.log('[Manual P2P] Host: ICE gathering state after 1s:', pc.iceGatheringState);
+        console.log('[Manual P2P] Host: ICE connection state:', pc.iceConnectionState);
+        console.log('[Manual P2P] Host: Local description:', pc.localDescription ? 'set' : 'not set');
+      }, 1000);
+    } catch (error) {
+      console.error('[Manual P2P] Error creating offer:', error);
+      setState(prev => ({ ...prev, step: 'failed', error: String(error) }));
+    }
+  }, []);
+
+  // Guest: Connect to Host
+  const connectToHost = useCallback(async (offerCode: string, guestName: string = 'Guest Player') => {
+    try {
+      console.log('[Manual P2P] Connecting to host...');
+      setState(prev => ({ ...prev, step: 'connecting', error: null }));
+
+      // Decode offer
+      const offerMessage: SDPMessage = JSON.parse(atob(offerCode));
+
+      // Generate guest ID
+      const guestId = 'manual-guest-' + Math.random().toString(36).substr(2, 9);
+
+      // Create RTCPeerConnection with STUN servers (TURN removed)
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ]
+      });
+
+      peerConnectionRef.current = pc;
+
+      // Listen for data channel from host
+      pc.ondatachannel = (event) => {
+        console.log('[Manual P2P] Guest: Received data channel from host!');
+        console.log('[Manual P2P] Guest: Data channel label:', event.channel.label);
+        console.log('[Manual P2P] Guest: Data channel readyState:', event.channel.readyState);
+        const dc = event.channel;
+
+        // Log data channel events for debugging
+        dc.onopen = () => console.log('[Manual P2P] Guest: Native data channel.onopen fired!');
+        dc.onclose = () => console.log('[Manual P2P] Guest: Native data channel.onclose fired!');
+        dc.onerror = (err) => console.error('[Manual P2P] Guest: Native data channel.onerror:', err);
+
+        // Create adapter with host's ID (we'll use the offer message to identify)
+        const adapter = new DataChannelAdapter(dc, hostPlayerIdRef.current || 'manual-host');
+        setupConnection(adapter);
+        console.log('[Manual P2P] Guest: DataChannelAdapter created', 'open:', adapter.open);
+      };
+
+      // Debug: check if offer contains data channel info
+      console.log('[Manual P2P] Guest: Offer SDP length:', offerMessage.sdp.length);
+      console.log('[Manual P2P] Guest: Offer contains application data channel:', offerMessage.sdp.includes('application'));
+
+      // Set remote description (offer)
+      await pc.setRemoteDescription(new RTCSessionDescription({
+        type: 'offer',
+        sdp: offerMessage.sdp
+      }));
+
+      // Wait for ICE gathering to complete before generating code (with timeout)
+      const iceGatheringComplete = new Promise<void>((resolve) => {
+        let resolved = false;
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            console.log('[Manual P2P] Guest: ICE gathering timeout (1s) - using candidates gathered so far');
+            resolved = true;
+            resolve();
+          }
+        }, 1000); // 1 second timeout - STUN should be fast
+
+        if (pc.iceGatheringState === 'complete') {
+          clearTimeout(timeout);
+          resolve();
+          return;
+        }
+        pc.onicegatheringstatechange = () => {
+          console.log('[Manual P2P] Guest ICE gathering state:', pc.iceGatheringState);
+          if (pc.iceGatheringState === 'complete' && !resolved) {
+            clearTimeout(timeout);
+            resolved = true;
+            resolve();
+          }
+        };
+      });
+
+      // Create answer
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      console.log('[Manual P2P] Answer created, waiting for ICE gathering (max 3s)...');
+
+      // Wait for ICE gathering to complete
+      await iceGatheringComplete;
+
+      // Now get the updated SDP with all ICE candidates
+      const finalSdp = pc.localDescription?.sdp || answer.sdp;
+      console.log('[Manual P2P] Guest ICE gathering complete');
+      console.log('[Manual P2P] Guest Answer SDP length:', finalSdp.length);
+
+      // Generate answer code
+      const message: SDPMessage = {
+        type: 'answer',
+        sdp: finalSdp
+      };
+
+      const code = btoa(JSON.stringify(message));
+      // Don't set step to 'connected' yet - wait for ICE connection to actually establish
+      // Instead, set generatedCode so the UI can show the answer code
+      setState(prev => ({ ...prev, generatedCode: code }));
+
+      // Set up connection state change handler BEFORE checking current state
+      pc.onconnectionstatechange = () => {
+        console.log('[Manual P2P] Guest connection state changed:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          console.log('[Manual P2P] Guest: ICE connection fully established!');
+          // Only now set step to 'connected'
+          setState(prev => ({ ...prev, step: 'connected', noCandidates: false }));
+        } else if (pc.connectionState === 'failed') {
+          console.error('[Manual P2P] Guest: ICE connection failed!');
+          console.error('[Manual P2P] Guest: ICE connection state:', pc.iceConnectionState);
+          console.error('[Manual P2P] Guest: Make sure the host has pasted your answer code and clicked Connect!');
+          // Set noCandidates flag when connection fails
+          setState(prev => ({ ...prev, noCandidates: true }));
+        } else if (pc.connectionState === 'disconnected') {
+          console.warn('[Manual P2P] Guest: ICE connection disconnected!');
+        }
+      };
+
+      // Log ICE candidates for debugging
+      let candidatesGathered = 0;
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          candidatesGathered++;
+          const candidate = event.candidate.candidate;
+          const type = candidate.includes('typ srflx') ? 'srflx (public)' :
+                       candidate.includes('typ host') ? 'host (local)' :
+                       candidate.includes('typ relay') ? 'relay (TURN)' :
+                       candidate.includes('typ prflx') ? 'prflx (peer)' : 'unknown';
+          console.log('[Manual P2P] Guest ICE candidate:', type, candidate.substring(0, 100));
+        } else {
+          console.log('[Manual P2P] Guest: ICE gathering complete (no more candidates). Total:', candidatesGathered);
+          if (candidatesGathered === 0) {
+            console.warn('[Manual P2P] ⚠️ No ICE candidates gathered during answer creation!');
+            console.warn('[Manual P2P] This is normal for localhost - the warning will only show if connection fails');
+          }
+        }
+      };
+
+      // Log initial ICE state for debugging
+      setTimeout(() => {
+        console.log('[Manual P2P] Guest: ICE gathering state after 1s:', pc.iceGatheringState);
+        console.log('[Manual P2P] Guest: ICE connection state:', pc.iceConnectionState);
+        console.log('[Manual P2P] Guest: Local description:', pc.localDescription ? 'set' : 'not set');
+        console.log('[Manual P2P] Guest: Remote description:', pc.remoteDescription ? 'set' : 'not set');
+      }, 1000);
+    } catch (error) {
+      console.error('[Manual P2P] Error connecting:', error);
+      setState(prev => ({ ...prev, step: 'failed', error: String(error) }));
+    }
+  }, []);
+
+  // Host: Handle Answer from Guest
+  const handleGuestAnswer = useCallback(async (answerCode: string) => {
+    try {
+      console.log('[Manual P2P] Host: Processing guest answer...');
+      const answerMessage: SDPMessage = JSON.parse(atob(answerCode));
+      const pc = peerConnectionRef.current;
+
+      if (!pc) {
+        throw new Error('PeerConnection not initialized. Create an offer first.');
+      }
+
+      // Set remote description (answer)
+      await pc.setRemoteDescription(new RTCSessionDescription({
+        type: 'answer',
+        sdp: answerMessage.sdp
+      }));
+
+      console.log('[Manual P2P] Host: Connection established!');
+      setState(prev => ({ ...prev, step: 'connected', noCandidates: false }));
+    } catch (error) {
+      console.error('[Manual P2P] Error processing answer:', error);
+      setState(prev => ({ ...prev, step: 'failed', error: String(error) }));
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    if (connectionRef.current) {
+      connectionRef.current.close();
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+    }
+    connectionRef.current = null;
+    peerConnectionRef.current = null;
+    hostPlayerIdRef.current = '';
+    setState({
+      step: 'idle',
+      localOffer: '',
+      remoteAnswer: '',
+      error: null,
+      generatedCode: '',
+      channelOpen: false,
+      noCandidates: false,
+    });
+  }, []);
+
+  const setRemoteAnswer = useCallback((answer: string) => {
+    setState(prev => ({ ...prev, remoteAnswer: answer }));
+  }, []);
+
+  const setLocalOffer = useCallback((offer: string) => {
+    setState(prev => ({ ...prev, localOffer: offer }));
+  }, []);
+
+  return {
+    state,
+    createOffer,
+    connectToHost,
+    handleGuestAnswer,
+    reset,
+    setRemoteAnswer,
+    setLocalOffer,
+    connectionRef,  // PeerJS-compatible connection adapter
+  };
+}
