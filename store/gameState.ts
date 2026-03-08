@@ -22,6 +22,7 @@ export interface GameState {
   language: AppLanguage; // Application language
   hyperscaleLayers: HyperscaleLayer[]; // Hyperscale layers configuration
   selectedHyperscaleLayerIds: string[]; // IDs of hyperscale layers currently selected for manipulation
+  connectionsLocked: boolean; // Whether new player connections are locked (host only)
 }
 
 /**
@@ -51,6 +52,8 @@ export const initialState: GameState = {
     deleteObjects: false,
     hideObjects: false,
   },
+  // Connections are unlocked by default
+  connectionsLocked: false,
   // Load language from localStorage or default to 'en'
   language: (typeof localStorage !== 'undefined' && (localStorage.getItem('app-language') as AppLanguage)) || 'en',
   // Default hyperscale layers

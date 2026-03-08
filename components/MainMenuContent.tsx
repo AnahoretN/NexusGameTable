@@ -5,8 +5,8 @@ import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
-import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench } from 'lucide-react';
+import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2 } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -16,6 +16,7 @@ import { generateUUID } from '../utils/uuid';
 import { useDrawingTool } from './ToolsPanel';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
+import { useManualConnection } from '../store/useManualConnection';
 
 /**
  * Convert blob URL to base64 data URL
@@ -112,11 +113,13 @@ interface MainMenuContentProps {
 }
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
-  const { state, dispatch, peerId } = useGame();
+  const { state, dispatch, peerId, isHost, stateRef } = useGame();
   const language: AppLanguage = state.language || 'en';
 
-  // Translation helper
-  const t = (key: { en: string; ru: string; be?: string; uk?: string; sr?: string }): string => key[language] || key.en;
+  // Translation helper - must be memoized to update when language changes
+  const t = useMemo(() => (key: { en: string; ru: string; be?: string; uk?: string; sr?: string }): string => {
+    return key[language] || key.en;
+  }, [language]);
 
   const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [chatInput, setChatInput] = useState('');
@@ -132,6 +135,24 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass'>('none');
+  // Manual connection modal state
+  const [showManualConnection, setShowManualConnection] = useState(false);
+  const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
+  const [guestNameInput, setGuestNameInput] = useState('');
+  const manualConnection = useManualConnection();
+
+  // Set manual connection ref for GameContext to use
+  useEffect(() => {
+    if ((window as any).__setManualConnection) {
+      const conn = manualConnection.connectionRef.current;
+      // Only update if there's actually a connection (don't clear existing connection)
+      if (conn) {
+        console.log('[MainMenuContent] Setting manual connection for GameContext');
+        (window as any).__setManualConnection(conn);
+      }
+    }
+  }, [manualConnection.state.step]);
+
   // Drawing settings (shared via events with drawing components)
   const [markerColor, setMarkerColor] = useState('#ff0000');
   const [markerThickness, setMarkerThickness] = useState(10);
@@ -153,6 +174,46 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     window.addEventListener('hand-card-scale-change', handleScaleChange);
     return () => window.removeEventListener('hand-card-scale-change', handleScaleChange);
   }, [setHandCardScale]);
+
+  // Nexus Board unlock via Shift+3 pressed 3 times
+  const [nexusBoardUnlocked, setNexusBoardUnlocked] = useState(false);
+  const shiftThreeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pressCountRef = useRef(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Use e.code instead of e.key to work with any keyboard layout
+      // Digit3 is the physical key '3' regardless of layout
+      if (e.code === 'Digit3' && e.shiftKey) {
+        // Increment press count using ref to avoid closure issues
+        pressCountRef.current += 1;
+
+        // Clear existing timeout
+        if (shiftThreeTimeoutRef.current) {
+          clearTimeout(shiftThreeTimeoutRef.current);
+        }
+
+        // Set timeout to reset count after 2 seconds
+        shiftThreeTimeoutRef.current = setTimeout(() => {
+          pressCountRef.current = 0;
+        }, 2000);
+
+        // Unlock after 3 presses
+        if (pressCountRef.current >= 3) {
+          setNexusBoardUnlocked(true);
+          pressCountRef.current = 0;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (shiftThreeTimeoutRef.current) {
+        clearTimeout(shiftThreeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Sync marker settings with drawing components via events
   useEffect(() => {
@@ -455,6 +516,25 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     setChatInput('');
   };
 
+  // Manual connection handlers
+  const handleCreateManualOffer = async () => {
+    const name = guestNameInput.trim() || 'Host';
+    await manualConnection.createOffer(name);
+  };
+
+  const handleJoinManualConnection = async (code: string) => {
+    const guestName = guestNameInput.trim() || 'Guest Player';
+    await manualConnection.connectToHost(code, guestName);
+  };
+
+  const handleManualAnswer = async (code: string) => {
+    await manualConnection.handleGuestAnswer(code);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
   // Create categories with proper order and labels
   const categories = [
     {
@@ -462,8 +542,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       items: [
         { name: translate('Standard Board', language as Locale), type: 'BOARD', gridType: GridType.SQUARE },
         { name: translate('Cell', language as Locale), type: 'BATTLEFIELD_CELL' },
+        { name: translate('Nexus Board', language as Locale), type: 'NEXUS_BOARD', disabled: !nexusBoardUnlocked },
       ],
-      matcher: (obj: TableObject) => obj.type === ItemType.BOARD || obj.type === ItemType.BATTLEFIELD_CELL
+      matcher: (obj: TableObject) => obj.type === ItemType.BOARD || obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_BOARD
     },
     {
       id: 'decks', label: translate('Decks', language as Locale), icon: <Library size={16}/>,
@@ -724,6 +805,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   {inviteCopied ? translate('Link Copied!', language as Locale) : translate('Invite Player', language as Locale)}
                 </button>
                 <button
+                  onClick={() => setShowManualConnection(true)}
+                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all"
+                  title={translate('Direct connection without signalling server - works through any messenger', language as Locale)}
+                >
+                  <Network size={16} />
+                  {translate('Direct Connection', language as Locale)}
+                </button>
+                <button
                   onClick={handleSaveGame}
                   className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
                 >
@@ -850,6 +939,306 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             setSettingsObject(null);
           }}
         />
+      )}
+
+      {/* Manual P2P Connection Modal */}
+      {showManualConnection && createPortal(
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000]">
+          <div className="bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white">{translate('Direct Connection', language as Locale)}</h2>
+              <button
+                onClick={() => {
+                  // Don't allow closing if connection is in progress
+                  if (manualConnection.state.step === 'connecting' ||
+                      manualConnection.state.step === 'waiting_for_answer' ||
+                      (manualConnection.state.step === 'connected' && !manualConnection.state.channelOpen)) {
+                    if (!confirm(translate('Connection is in progress. Close anyway?', language as Locale))) {
+                      return;
+                    }
+                  }
+                  setShowManualConnection(false);
+                  manualConnection.reset();
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Tab selector */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setManualConnectionTab('create')}
+                className={`flex-1 py-2 px-4 rounded font-medium transition-colors ${
+                  manualConnectionTab === 'create'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                }`}
+              >
+                {translate('Create (Host)', language as Locale)}
+              </button>
+              <button
+                onClick={() => setManualConnectionTab('join')}
+                className={`flex-1 py-2 px-4 rounded font-medium transition-colors ${
+                  manualConnectionTab === 'join'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                }`}
+              >
+                {translate('Join (Guest)', language as Locale)}
+              </button>
+            </div>
+
+            {/* Status indicator */}
+            {manualConnection.state.error && (
+              <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-200">
+                {translate('Error', language as Locale)}: {manualConnection.state.error}
+              </div>
+            )}
+
+            {manualConnection.state.noCandidates && (manualConnection.state.error || manualConnection.state.step === 'failed') && (
+              <div className="mb-4 p-3 bg-yellow-900/50 border border-yellow-700 rounded text-yellow-200">
+                {translate('No ICE candidates gathered - try testing on different devices', language as Locale)}
+              </div>
+            )}
+
+            {manualConnection.state.step === 'connected' && manualConnection.state.channelOpen && (
+              <div className="mb-4 p-3 bg-green-900/50 border border-green-700 rounded text-green-200">
+                {translate('Connected successfully!', language as Locale)}
+              </div>
+            )}
+
+            {/* Show connecting message if step is connected but channel not yet open */}
+            {manualConnection.state.step === 'connected' && !manualConnection.state.channelOpen && (
+              <div className="mb-4 p-3 bg-blue-900/50 border border-blue-700 rounded text-blue-200">
+                {translate('Establishing secure connection...', language as Locale)}
+              </div>
+            )}
+
+            {/* Create (Host) Tab */}
+            {manualConnectionTab === 'create' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    {translate('Your Name', language as Locale)}
+                  </label>
+                  <input
+                    type="text"
+                    defaultValue={state.players.find(p => p.id === state.activePlayerId)?.name || 'Host'}
+                    id="host-name-input"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  />
+                </div>
+
+                {manualConnection.state.step === 'idle' && (
+                  <button
+                    onClick={() => {
+                      const name = (document.getElementById('host-name-input') as HTMLInputElement)?.value || 'Host';
+                      manualConnection.createOffer(name);
+                    }}
+                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium transition-colors"
+                  >
+                    {translate('Generate Connection Code', language as Locale)}
+                  </button>
+                )}
+
+                {(manualConnection.state.step === 'creating' || manualConnection.state.step === 'waiting_for_answer') && (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-blue-900/30 border border-blue-700 rounded text-blue-200">
+                      {translate('Step 1: Copy this code and send to your guest', language as Locale)}
+                    </div>
+
+                    <textarea
+                      readOnly
+                      value={manualConnection.state.generatedCode}
+                      className="w-full h-32 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
+                    />
+
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(manualConnection.state.generatedCode);
+                      }}
+                      className="w-full py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Copy size={16} />
+                      {translate('Copy to Clipboard', language as Locale)}
+                    </button>
+
+                    {manualConnection.state.step === 'waiting_for_answer' && (
+                      <div className="space-y-4 pt-4 border-t border-slate-700">
+                        <div className="p-3 bg-green-900/30 border border-green-700 rounded text-green-200">
+                          {translate('Step 2: Paste the answer code from your guest', language as Locale)}
+                        </div>
+
+                        <textarea
+                          placeholder={translate('Paste answer code here...', language as Locale)}
+                          value={manualConnection.state.remoteAnswer}
+                          onChange={(e) => manualConnection.setRemoteAnswer(e.target.value)}
+                          className="w-full h-24 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
+                        />
+
+                        <button
+                          onClick={() => {
+                            const guestName = (document.getElementById('guest-name-answer-input') as HTMLInputElement)?.value || 'Guest';
+                            manualConnection.handleGuestAnswer(manualConnection.state.remoteAnswer, guestName);
+                          }}
+                          disabled={!manualConnection.state.remoteAnswer}
+                          className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors"
+                        >
+                          {translate('Connect', language as Locale)}
+                        </button>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-2">
+                            {translate('Guest Name (optional)', language as Locale)}
+                          </label>
+                          <input
+                            type="text"
+                            id="guest-name-answer-input"
+                            placeholder="Guest"
+                            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {manualConnection.state.step === 'creating' && (
+                      <div className="flex items-center justify-center gap-2 text-blue-400">
+                        <Loader2 size={20} className="animate-spin" />
+                        {translate('Generating code...', language as Locale)}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {manualConnection.state.step === 'connected' && manualConnection.state.channelOpen && (
+                  <button
+                    onClick={() => {
+                      setShowManualConnection(false);
+                      manualConnection.reset();
+                    }}
+                    className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 text-white rounded font-medium transition-colors"
+                  >
+                    {translate('Close', language as Locale)}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Join (Guest) Tab */}
+            {manualConnectionTab === 'join' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    {translate('Your Name', language as Locale)}
+                  </label>
+                  <input
+                    type="text"
+                    value={guestNameInput}
+                    onChange={(e) => setGuestNameInput(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  />
+                </div>
+
+                {manualConnection.state.step === 'idle' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        {translate('Host Connection Code', language as Locale)}
+                      </label>
+                      <textarea
+                        placeholder={translate('Paste the code from host here...', language as Locale)}
+                        value={manualConnection.state.localOffer}
+                        onChange={(e) => manualConnection.setLocalOffer(e.target.value)}
+                        className="w-full h-32 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => manualConnection.connectToHost(manualConnection.state.localOffer, guestNameInput.trim() || 'Guest Player')}
+                      disabled={!manualConnection.state.localOffer || !guestNameInput}
+                      className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors"
+                    >
+                      {translate('Connect to Host', language as Locale)}
+                    </button>
+                  </>
+                )}
+
+                {(manualConnection.state.step === 'connecting' || manualConnection.state.step === 'connected') && (
+                  <div className="space-y-4">
+                    {/* Show answer code when it's been generated */}
+                    {manualConnection.state.generatedCode && (
+                      <>
+                        <div className="p-3 bg-green-900/30 border border-green-700 rounded text-green-200">
+                          {translate('Copy this answer code and send back to host', language as Locale)}
+                        </div>
+
+                        <textarea
+                          readOnly
+                          value={manualConnection.state.generatedCode}
+                          className="w-full h-32 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
+                        />
+
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(manualConnection.state.generatedCode);
+                          }}
+                          className="w-full py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Copy size={16} />
+                          {translate('Copy to Clipboard', language as Locale)}
+                        </button>
+
+                        {!manualConnection.state.channelOpen && (
+                          <div className="flex items-center justify-center gap-2 text-blue-400">
+                            <Loader2 size={20} className="animate-spin" />
+                            {translate('Waiting for host to connect...', language as Locale)}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Show connecting message if no code yet */}
+                    {!manualConnection.state.generatedCode && (
+                      <div className="flex items-center justify-center gap-2 text-blue-400">
+                        <Loader2 size={20} className="animate-spin" />
+                        {translate('Connecting...', language as Locale)}
+                      </div>
+                    )}
+
+                    {/* Show Done button only when fully connected */}
+                    {manualConnection.state.step === 'connected' && manualConnection.state.channelOpen && (
+                      <button
+                        onClick={() => {
+                          setShowManualConnection(false);
+                          manualConnection.reset();
+                        }}
+                        className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 text-white rounded font-medium transition-colors"
+                      >
+                        {translate('Done', language as Locale)}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Reset button */}
+            <div className="mt-6 pt-4 border-t border-slate-700">
+              <button
+                onClick={() => {
+                  manualConnection.reset();
+                  setGuestNameInput('');
+                }}
+                className="w-full py-2 px-4 bg-red-900/50 hover:bg-red-900/70 text-red-200 rounded font-medium transition-colors"
+              >
+                {translate('Reset', language as Locale)}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -1176,7 +1565,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           shape: TokenShape.HEX,
           gridType: GridType.HEX,
           gridSize: 65,
+          gridWidth: 100,  // Must match DEFAULT_HEX_WIDTH for HEX grids
+          gridHeight: 115, // Must match DEFAULT_HEX_WIDTH * 1.15 for HEX grids
           snapToGrid: true,
+          hyperscaleLayerId: 'boards',  // Place on boards hyperscale layer
         };
         dispatch({ type: 'ADD_OBJECT', payload: board });
         break;
@@ -1224,6 +1616,90 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           hyperscaleLayerId: targetLayerId, // Place on boards layer or top selected layer
         };
         dispatch({ type: 'ADD_OBJECT', payload: cell });
+        break;
+      }
+      case 'NEXUS_BOARD': {
+        // Find target hyperscale layer
+        let targetLayerId: string | undefined = undefined;
+        const selectedLayers = state.hyperscaleLayers.filter(l =>
+          state.selectedHyperscaleLayerIds.includes(l.id)
+        ).sort((a, b) => a.order - b.order);
+        if (selectedLayers.length > 0) {
+          targetLayerId = selectedLayers[0].id;
+        }
+
+        const boardId = generateUUID();
+        const mainCellId = generateUUID();
+        const cellWidth = 100;
+        const cellHeight = 150;
+
+        // Create main cell as a separate NexusCellObject
+        const mainCell: NexusCellObject = {
+          id: mainCellId,
+          type: ItemType.NEXUS_CELL,
+          shape: TokenShape.HEX,
+          x: screenX - 50,
+          y: screenY - 75,
+          rotation: 0,
+          width: cellWidth,
+          height: cellHeight,
+          content: '',
+          name: 'Main Cell',
+          isOnTable: true,
+          locked: false,
+          color: '#496179',
+          borderColor: '#212f3c',
+          borderWidth: 3,
+          opacity: 100,
+          borderOpacity: 100,
+          snapToGrid: true,
+          gridSize: 50,
+          zIndex: 0,
+          hyperscaleLayerId: targetLayerId,
+          nexusBoardId: boardId,
+          direction: 'N' as HexDirection,
+          offset: { x: 0, y: 0 },
+          gridType: GridType.HEX,
+          magnetPointCount: 1,
+          magnetRotation: 0,
+        };
+
+        // Create the NexusBoard (smaller, just a container)
+        const nexusBoard: NexusBoard = {
+          id: boardId,
+          type: ItemType.NEXUS_BOARD,
+          shape: TokenShape.HEX,
+          x: screenX - 50,
+          y: screenY - 75,
+          rotation: 0,
+          width: 0,  // Board itself doesn't render, just a container
+          height: 0,
+          content: '',
+          name: item.name || 'Nexus Board',
+          isOnTable: true,
+          locked: false,
+          color: '#496179',
+          borderColor: '#212f3c',
+          borderWidth: 0,
+          opacity: 100,
+          borderOpacity: 100,
+          zIndex: 0,
+          hyperscaleLayerId: targetLayerId,
+          gridType: GridType.HEX,
+          gridSize: 50,
+          cells: [
+            {
+              id: mainCellId,
+              direction: 'N' as HexDirection,
+            }
+          ],
+          cellWidth: cellWidth,
+          cellHeight: cellHeight,
+        };
+
+        // Add both objects - board first, then cell
+        dispatch({ type: 'ADD_OBJECT', payload: nexusBoard });
+        dispatch({ type: 'ADD_OBJECT', payload: mainCell });
         break;
       }
       case 'PANEL': {

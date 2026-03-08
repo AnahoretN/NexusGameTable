@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
-import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer } from '../types';
+import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer, NexusBoard, NexusCellObject } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
@@ -22,6 +22,7 @@ const GameContext = createContext<{
   connectionStatus: 'disconnected' | 'connecting' | 'connected';
   waitingForPlayerName: { hostId: string } | null;
   setPlayerName: (name: string) => void;
+  stateRef: React.RefObject<GameState>;
 } | null>(null);
 
 const gameReducer = (state: GameState, action: Action): GameState => {
@@ -514,6 +515,210 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
       }
 
+      // Handle NexusCellObject updates - propagate to all cells in the same board
+      if (updatedObj.type === ItemType.NEXUS_CELL) {
+          const cell = updatedObj as NexusCellObject;
+          const oldCell = obj as NexusCellObject;
+          const boardId = cell.nexusBoardId;
+
+          // Properties that should be synced across all cells (NOT including opacity)
+          const syncableProps = ['locked', 'isPinnedToViewport', 'hyperscaleLayerId', 'zIndex'];
+          const hasSyncableChange = syncableProps.some(prop => action.payload[prop as keyof typeof action.payload] !== undefined);
+
+          if (hasSyncableChange) {
+              const payload = action.payload as any;
+              Object.values(state.objects).forEach(o => {
+                  if (o.type === ItemType.NEXUS_CELL && o.id !== cell.id) {
+                      const otherCell = o as NexusCellObject;
+                      if (otherCell.nexusBoardId === boardId) {
+                          const updates: any = {};
+                          if (payload.locked !== undefined) updates.locked = payload.locked;
+                          if (payload.isPinnedToViewport !== undefined) updates.isPinnedToViewport = payload.isPinnedToViewport;
+                          if (payload.hyperscaleLayerId !== undefined) updates.hyperscaleLayerId = payload.hyperscaleLayerId;
+                          if (payload.zIndex !== undefined) updates.zIndex = payload.zIndex;
+
+                          (newObjects as any)[o.id] = { ...otherCell, ...updates };
+                      }
+                  }
+              });
+
+              // Also sync to the NexusBoard itself
+              const board = state.objects[boardId];
+              if (board && board.type === ItemType.NEXUS_BOARD) {
+                  const boardUpdates: any = {};
+                  if (payload.locked !== undefined) boardUpdates.locked = payload.locked;
+                  if (payload.isPinnedToViewport !== undefined) boardUpdates.isPinnedToViewport = payload.isPinnedToViewport;
+                  if (payload.hyperscaleLayerId !== undefined) boardUpdates.hyperscaleLayerId = payload.hyperscaleLayerId;
+                  if (payload.zIndex !== undefined) boardUpdates.zIndex = payload.zIndex;
+
+                  if (Object.keys(boardUpdates).length > 0) {
+                      (newObjects as any)[boardId] = { ...board, ...boardUpdates };
+                  }
+              }
+          }
+
+          // Handle width/height changes - resize all cells and update positions
+          if ((action.payload.width !== undefined || action.payload.height !== undefined) &&
+              (action.payload.width !== oldCell.width || action.payload.height !== oldCell.height)) {
+
+              const newWidth = action.payload.width ?? oldCell.width;
+              const newHeight = action.payload.height ?? oldCell.height;
+              const oldWidth = oldCell.width;
+              const oldHeight = oldCell.height;
+
+              // Update all cells in the board
+              Object.values(state.objects).forEach(o => {
+                  if (o.type === ItemType.NEXUS_CELL) {
+                      const otherCell = o as NexusCellObject;
+                      if (otherCell.nexusBoardId === boardId) {
+                          // Calculate new position based on size change
+                          // The offset is stored in VU, so we need to recalculate
+                          const storedOffset = otherCell.offset; // { x, y } in VU
+
+                          // Recalculate offset based on new dimensions
+                          let newOffsetX = storedOffset.x;
+                          let newOffsetY = storedOffset.y;
+
+                          // Scale offsets proportionally to size change
+                          const widthRatio = newWidth / oldWidth;
+                          const heightRatio = newHeight / oldHeight;
+
+                          if (storedOffset.x !== 0) newOffsetX = storedOffset.x * widthRatio;
+                          if (storedOffset.y !== 0) newOffsetY = storedOffset.y * heightRatio;
+
+                          // Find the main cell (direction 'N') to use as reference
+                          const mainCell = Object.values(state.objects).find(
+                              obj => obj.type === ItemType.NEXUS_CELL &&
+                                     (obj as NexusCellObject).nexusBoardId === boardId &&
+                                     (obj as NexusCellObject).direction === 'N'
+                          ) as NexusCellObject;
+
+                          if (mainCell) {
+                              // Calculate position relative to main cell
+                              const relativeX = otherCell.x - mainCell.x;
+                              const relativeY = otherCell.y - mainCell.y;
+
+                              // Recalculate relative position
+                              const newRelativeX = relativeX * widthRatio;
+                              const newRelativeY = relativeY * heightRatio;
+
+                              newObjects[o.id] = {
+                                  ...otherCell,
+                                  width: newWidth,
+                                  height: newHeight,
+                                  x: mainCell.x + newRelativeX,
+                                  y: mainCell.y + newRelativeY,
+                                  offset: { x: newOffsetX, y: newOffsetY }
+                              };
+                          } else {
+                              // Fallback: just update size
+                              newObjects[o.id] = {
+                                  ...otherCell,
+                                  width: newWidth,
+                                  height: newHeight
+                              };
+                          }
+                      }
+                  }
+              });
+          }
+      }
+
+      // Handle NexusBoard updates - propagate to all cells
+      if (updatedObj.type === ItemType.NEXUS_BOARD) {
+          const board = updatedObj as NexusBoard;
+          const payload = action.payload as any;
+
+          // Sync properties to all cells
+          const syncableProps = ['opacity', 'locked', 'isPinnedToViewport', 'hyperscaleLayerId', 'zIndex', 'cellWidth', 'cellHeight'];
+          const hasSyncableChange = syncableProps.some(prop => payload[prop] !== undefined);
+
+          if (hasSyncableChange) {
+              // Get main cell for position reference
+              const mainCellId = board.cells[0]?.id;
+              const mainCell = mainCellId ? (state.objects[mainCellId] as NexusCellObject) : null;
+              const mainCellX = mainCell?.x ?? board.x;
+              const mainCellY = mainCell?.y ?? board.y;
+
+              // Check if cell dimensions changed - need to recalculate positions
+              const sizeChanged = payload.cellWidth !== undefined || payload.cellHeight !== undefined;
+              const newCellWidth = payload.cellWidth ?? board.cellWidth ?? 100;
+              const newCellHeight = payload.cellHeight ?? board.cellHeight ?? 150;
+
+              // Calculate row spacing ratio (same formula as in NexusBoard.tsx)
+              // Uses decaying extrapolation: height=115→coeff=0.75, height=150→coeff=0.80833, approaches 0.86
+              const H1 = 115;
+              const C1 = 0.75;
+              const H2 = 150;
+              const C2 = 121.25 / 150;
+              const targetRatio = 0.906;
+              const k = -Math.log((targetRatio - C2) / (targetRatio - C1)) / (H2 - H1);
+              const rowSpacingRatio = targetRatio - (targetRatio - C1) * Math.exp(-k * (newCellHeight - H1));
+              const rowSpacing = newCellHeight * rowSpacingRatio;
+              const colSpacing = newCellWidth;
+              const colOffset = newCellWidth * 0.5;
+
+              Object.values(state.objects).forEach(o => {
+                  if (o.type === ItemType.NEXUS_CELL) {
+                      const cell = o as NexusCellObject;
+                      if (cell.nexusBoardId === board.id) {
+                          const updates: any = {};
+                          if (payload.opacity !== undefined) updates.opacity = payload.opacity;
+                          if (payload.locked !== undefined) updates.locked = payload.locked;
+                          if (payload.isPinnedToViewport !== undefined) updates.isPinnedToViewport = payload.isPinnedToViewport;
+                          if (payload.hyperscaleLayerId !== undefined) updates.hyperscaleLayerId = payload.hyperscaleLayerId;
+                          if (payload.zIndex !== undefined) updates.zIndex = payload.zIndex;
+                          if (payload.cellWidth !== undefined) updates.width = payload.cellWidth;
+                          if (payload.cellHeight !== undefined) updates.height = payload.cellHeight;
+
+                          // Recalculate position if size changed and cell has a direction
+                          if (sizeChanged && cell.direction && cell.id !== mainCellId) {
+                              // Get potentially updated main cell position
+                              const updatedMainCell = mainCellId ? (newObjects[mainCellId] as NexusCellObject) : null;
+                              const baseX = updatedMainCell?.x ?? mainCellX;
+                              const baseY = updatedMainCell?.y ?? mainCellY;
+
+                              let offsetX = 0;
+                              let offsetY = 0;
+
+                              switch (cell.direction) {
+                                  case 'NE':
+                                      offsetX = colOffset;
+                                      offsetY = -rowSpacing;
+                                      break;
+                                  case 'SE':
+                                      offsetX = colSpacing;
+                                      offsetY = 0;
+                                      break;
+                                  case 'NW':
+                                      offsetX = -colOffset;
+                                      offsetY = -rowSpacing;
+                                      break;
+                                  case 'SW':
+                                      offsetX = -colSpacing;
+                                      offsetY = 0;
+                                      break;
+                                  case 'N':
+                                      offsetX = 0;
+                                      offsetY = -rowSpacing;
+                                      break;
+                                  case 'S':
+                                      offsetX = 0;
+                                      offsetY = rowSpacing;
+                                      break;
+                              }
+
+                              updates.x = baseX + offsetX;
+                              updates.y = baseY + offsetY;
+                          }
+
+                          (newObjects as any)[o.id] = { ...cell, ...updates };
+                      }
+                  }
+              });
+          }
+      }
+
       // Handle drawing updates - when color changes, update all strokes
       if (updatedObj.type === ItemType.DRAWING) {
         const drawing = obj as Drawing;
@@ -557,6 +762,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj || obj.locked) return state;
 
+      // Calculate position delta
+      const deltaX = action.payload.x - obj.x;
+      const deltaY = action.payload.y - obj.y;
+
       // Don't track history for drawings (they use marker history), objects in cursor slot, or local-only moves
       const isDrawing = obj.type === ItemType.DRAWING;
       const isInCursorSlot = (obj as any).inCursorSlot;
@@ -588,12 +797,60 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             undo: { ...state.undo, generalHistory: newGeneralHistory },
           };
         }
+
+        // Build updated objects including NexusCellObjects linked to moved NexusBoard
+        const updatedObjects: Record<string, TableObject> = {
+          [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
+        };
+
+        // If moving a NexusBoard, also move all linked NexusCellObjects
+        if (obj.type === ItemType.NEXUS_BOARD) {
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.NEXUS_CELL) {
+              const cell = o as NexusCellObject;
+              if (cell.nexusBoardId === obj.id) {
+                updatedObjects[cell.id] = {
+                  ...cell,
+                  x: cell.x + deltaX,
+                  y: cell.y + deltaY,
+                };
+              }
+            }
+          });
+        }
+
+        // If moving a NexusCellObject, also move all other cells in the same board
+        if (obj.type === ItemType.NEXUS_CELL) {
+          const movedCell = obj as NexusCellObject;
+          const boardId = movedCell.nexusBoardId;
+
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+              const cell = o as NexusCellObject;
+              if (cell.nexusBoardId === boardId) {
+                updatedObjects[cell.id] = {
+                  ...cell,
+                  x: cell.x + deltaX,
+                  y: cell.y + deltaY,
+                };
+              }
+            }
+          });
+
+          // Also move the NexusBoard itself
+          const board = state.objects[boardId];
+          if (board && board.type === ItemType.NEXUS_BOARD) {
+            updatedObjects[boardId] = {
+              ...board,
+              x: board.x + deltaX,
+              y: board.y + deltaY,
+            };
+          }
+        }
+
         return {
           ...state,
-          objects: {
-            ...state.objects,
-            [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
-          },
+          objects: { ...state.objects, ...updatedObjects },
           undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
       }
@@ -613,12 +870,60 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           },
         };
       }
+
+      // Build updated objects including NexusCellObjects linked to moved NexusBoard (local-only moves)
+      const updatedObjects: Record<string, TableObject> = {
+        [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
+      };
+
+      // If moving a NexusBoard, also move all linked NexusCellObjects
+      if (obj.type === ItemType.NEXUS_BOARD) {
+        Object.values(state.objects).forEach(o => {
+          if (o.type === ItemType.NEXUS_CELL) {
+            const cell = o as NexusCellObject;
+            if (cell.nexusBoardId === obj.id) {
+              updatedObjects[cell.id] = {
+                ...cell,
+                x: cell.x + deltaX,
+                y: cell.y + deltaY,
+              };
+            }
+          }
+        });
+      }
+
+      // If moving a NexusCellObject, also move all other cells in the same board
+      if (obj.type === ItemType.NEXUS_CELL) {
+        const movedCell = obj as NexusCellObject;
+        const boardId = movedCell.nexusBoardId;
+
+        Object.values(state.objects).forEach(o => {
+          if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+            const cell = o as NexusCellObject;
+            if (cell.nexusBoardId === boardId) {
+              updatedObjects[cell.id] = {
+                ...cell,
+                x: cell.x + deltaX,
+                y: cell.y + deltaY,
+              };
+            }
+          }
+        });
+
+        // Also move the NexusBoard itself
+        const board = state.objects[boardId];
+        if (board && board.type === ItemType.NEXUS_BOARD) {
+          updatedObjects[boardId] = {
+            ...board,
+            x: board.x + deltaX,
+            y: board.y + deltaY,
+          };
+        }
+      }
+
       return {
         ...state,
-        objects: {
-          ...state.objects,
-          [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
-        },
+        objects: { ...state.objects, ...updatedObjects },
       };
     }
     case 'MOVE_OBJECT_COMMIT': {
@@ -626,6 +931,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const { id, x, y, previousX, previousY } = action.payload;
       const obj = state.objects[id];
       if (!obj || obj.locked) return state;
+
+      // Calculate position delta
+      const deltaX = x - obj.x;
+      const deltaY = y - obj.y;
 
       const isDrawing = obj.type === ItemType.DRAWING;
       const isInCursorSlot = (obj as any).inCursorSlot;
@@ -655,12 +964,60 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             undo: { ...state.undo, generalHistory: newGeneralHistory },
           };
         }
+
+        // Build updated objects including NexusCellObjects linked to moved NexusBoard
+        const updatedObjects: Record<string, TableObject> = {
+          [id]: { ...obj, x, y },
+        };
+
+        // If moving a NexusBoard, also move all linked NexusCellObjects
+        if (obj.type === ItemType.NEXUS_BOARD) {
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.NEXUS_CELL) {
+              const cell = o as NexusCellObject;
+              if (cell.nexusBoardId === obj.id) {
+                updatedObjects[cell.id] = {
+                  ...cell,
+                  x: cell.x + deltaX,
+                  y: cell.y + deltaY,
+                };
+              }
+            }
+          });
+        }
+
+        // If moving a NexusCellObject, also move all other cells in the same board
+        if (obj.type === ItemType.NEXUS_CELL) {
+          const movedCell = obj as NexusCellObject;
+          const boardId = movedCell.nexusBoardId;
+
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+              const cell = o as NexusCellObject;
+              if (cell.nexusBoardId === boardId) {
+                updatedObjects[cell.id] = {
+                  ...cell,
+                  x: cell.x + deltaX,
+                  y: cell.y + deltaY,
+                };
+              }
+            }
+          });
+
+          // Also move the NexusBoard itself
+          const board = state.objects[boardId];
+          if (board && board.type === ItemType.NEXUS_BOARD) {
+            updatedObjects[boardId] = {
+              ...board,
+              x: board.x + deltaX,
+              y: board.y + deltaY,
+            };
+          }
+        }
+
         return {
           ...state,
-          objects: {
-            ...state.objects,
-            [id]: { ...obj, x, y },
-          },
+          objects: { ...state.objects, ...updatedObjects },
           undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
       }
@@ -680,12 +1037,60 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           },
         };
       }
+
+      // Build updated objects including NexusCellObjects linked to moved NexusBoard (drawings/local-only)
+      const updatedObjects: Record<string, TableObject> = {
+        [id]: { ...obj, x, y },
+      };
+
+      // If moving a NexusBoard, also move all linked NexusCellObjects
+      if (obj.type === ItemType.NEXUS_BOARD) {
+        Object.values(state.objects).forEach(o => {
+          if (o.type === ItemType.NEXUS_CELL) {
+            const cell = o as NexusCellObject;
+            if (cell.nexusBoardId === obj.id) {
+              updatedObjects[cell.id] = {
+                ...cell,
+                x: cell.x + deltaX,
+                y: cell.y + deltaY,
+              };
+            }
+          }
+        });
+      }
+
+      // If moving a NexusCellObject, also move all other cells in the same board
+      if (obj.type === ItemType.NEXUS_CELL) {
+        const movedCell = obj as NexusCellObject;
+        const boardId = movedCell.nexusBoardId;
+
+        Object.values(state.objects).forEach(o => {
+          if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+            const cell = o as NexusCellObject;
+            if (cell.nexusBoardId === boardId) {
+              updatedObjects[cell.id] = {
+                ...cell,
+                x: cell.x + deltaX,
+                y: cell.y + deltaY,
+              };
+            }
+          }
+        });
+
+        // Also move the NexusBoard itself
+        const board = state.objects[boardId];
+        if (board && board.type === ItemType.NEXUS_BOARD) {
+          updatedObjects[boardId] = {
+            ...board,
+            x: board.x + deltaX,
+            y: board.y + deltaY,
+          };
+        }
+      }
+
       return {
         ...state,
-        objects: {
-          ...state.objects,
-          [id]: { ...obj, x, y },
-        },
+        objects: { ...state.objects, ...updatedObjects },
       };
     }
     case 'FINISH_DRAWING_STROKE': {
@@ -776,6 +1181,39 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     delete newObjects[tokenId];
                 }
             });
+        }
+
+        // If deleting a NexusBoard, delete all its NexusCellObjects
+        if (objectToDelete.type === ItemType.NEXUS_BOARD) {
+            const board = objectToDelete as NexusBoard;
+            Object.keys(newObjects).forEach(cellId => {
+                const cell = newObjects[cellId];
+                if (cell.type === ItemType.NEXUS_CELL) {
+                    const nexusCell = cell as NexusCellObject;
+                    if (nexusCell.nexusBoardId === board.id) {
+                        cascadedDeletes.push(cell);
+                        delete newObjects[cellId];
+                    }
+                }
+            });
+        }
+
+        // If deleting a NexusCellObject, only delete this cell (not the whole board)
+        // But remove it from the board's cells array
+        if (objectToDelete.type === ItemType.NEXUS_CELL) {
+            const deletedCell = objectToDelete as NexusCellObject;
+            const boardId = deletedCell.nexusBoardId;
+
+            // Remove cell from board's cells array
+            const board = newObjects[boardId];
+            if (board && board.type === ItemType.NEXUS_BOARD) {
+                const nexusBoard = board as NexusBoard;
+                const updatedCells = nexusBoard.cells.filter(c => c.id !== deletedCell.id);
+                newObjects[boardId] = {
+                    ...nexusBoard,
+                    cells: updatedCells
+                };
+            }
         }
 
         // If deleting a card, remove it from deck's cardIds and update initialCardCount
@@ -1288,6 +1726,30 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const obj = state.objects[action.payload.id];
         if (!obj) return state;
 
+        const newLocked = !obj.locked;
+        const newObjects = { ...state.objects, [action.payload.id]: { ...obj, locked: newLocked } };
+
+        // If toggling lock on a NexusCellObject, sync to all other cells in the same board
+        if (obj.type === ItemType.NEXUS_CELL) {
+            const cell = obj as NexusCellObject;
+            const boardId = cell.nexusBoardId;
+
+            Object.values(state.objects).forEach(o => {
+                if (o.type === ItemType.NEXUS_CELL && o.id !== cell.id) {
+                    const otherCell = o as NexusCellObject;
+                    if (otherCell.nexusBoardId === boardId) {
+                        (newObjects as any)[o.id] = { ...otherCell, locked: newLocked };
+                    }
+                }
+            });
+
+            // Also sync to the NexusBoard itself
+            const board = state.objects[boardId];
+            if (board && board.type === ItemType.NEXUS_BOARD) {
+                (newObjects as any)[boardId] = { ...board, locked: newLocked };
+            }
+        }
+
         // Don't track history for drawings (they use marker history)
         if (obj.type !== ItemType.DRAWING) {
             const historyEntry: GeneralHistoryEntry = {
@@ -1299,12 +1761,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
             return {
                 ...state,
-                objects: { ...state.objects, [action.payload.id]: { ...obj, locked: !obj.locked } },
+                objects: newObjects,
                 undo: { ...state.undo, generalHistory: newGeneralHistory },
             };
         }
 
-        return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, locked: !obj.locked } } };
+        return { ...state, objects: newObjects };
     }
     case 'TOGGLE_ON_TABLE': {
         const obj = state.objects[action.payload.id] as any;
@@ -1394,21 +1856,97 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const maxZInLayer = layerZ.length ? Math.max(...layerZ) : layerMinZ;
         const newZ = Math.min(maxZInLayer + 1, layerMaxZ);
 
-        const clonedObj: any = {
-            ...obj,
-            id: newId,
-            x: obj.x + 30,
-            y: obj.y + 30,
-            name: `${obj.name} (Copy)`,
-            locked: false,
-            isOnTable: true,
-            zIndex: newZ,
-            hyperscaleLayerId,
-        };
-        if (clonedObj.type === ItemType.DECK) {
-            clonedObj.cardIds = [];
-            clonedObj.initialCardCount = 0;
+        // Prepare new objects map for deck cloning
+        const newObjects: Record<string, TableObject> = {};
+        let clonedObj: any;
+
+        if (obj.type === ItemType.DECK) {
+            // Deep clone deck with new cards and piles
+            const deck = obj as Deck;
+            const oldCardIdToNew: Map<string, string> = new Map();
+            const oldPileIdToNew: Map<string, string> = new Map();
+            const newBaseCardIds: string[] = [];
+            const newCardIds: string[] = [];
+
+            // Clone all cards from baseCardIds
+            for (const oldCardId of deck.baseCardIds || []) {
+                const oldCard = state.objects[oldCardId] as Card;
+                if (oldCard) {
+                    const newCardId = generateUUID();
+                    oldCardIdToNew.set(oldCardId, newCardId);
+
+                    newObjects[newCardId] = {
+                        ...oldCard,
+                        id: newCardId,
+                        deckId: newId,
+                        location: CardLocation.DECK,
+                        isOnTable: false,
+                        x: deck.x,
+                        y: deck.y,
+                    } as Card;
+
+                    newBaseCardIds.push(newCardId);
+                    newCardIds.push(newCardId);
+                }
+            }
+
+            // Clone piles with new IDs and new card references
+            const newPiles: CardPile[] = [];
+            for (const oldPile of deck.piles || []) {
+                const newPileId = generateUUID();
+                oldPileIdToNew.set(oldPile.id, newPileId);
+
+                const newPileCardIds: string[] = [];
+                for (const oldCardId of oldPile.cardIds || []) {
+                    const newCardId = oldCardIdToNew.get(oldCardId);
+                    if (newCardId) {
+                        newPileCardIds.push(newCardId);
+                        // Update card location to pile
+                        (newObjects[newCardId] as Card).location = CardLocation.PILE;
+                    }
+                }
+
+                newPiles.push({
+                    ...oldPile,
+                    id: newPileId,
+                    deckId: newId,
+                    cardIds: newPileCardIds,
+                });
+            }
+
+            // Create the cloned deck
+            clonedObj = {
+                ...obj,
+                id: newId,
+                x: obj.x + 30,
+                y: obj.y + 30,
+                name: `${obj.name} (Copy)`,
+                locked: false,
+                isOnTable: true,
+                zIndex: newZ,
+                hyperscaleLayerId,
+                baseCardIds: newBaseCardIds,
+                cardIds: newCardIds,
+                initialCardCount: newBaseCardIds.length,
+                piles: newPiles,
+            };
+        } else {
+            // Simple clone for non-deck objects
+            clonedObj = {
+                ...obj,
+                id: newId,
+                x: obj.x + 30,
+                y: obj.y + 30,
+                name: `${obj.name} (Copy)`,
+                locked: false,
+                isOnTable: true,
+                zIndex: newZ,
+                hyperscaleLayerId,
+            };
         }
+
+        // Add cloned object and any new cards to the result
+        const updatedObjects = { ...state.objects, [newId]: clonedObj, ...newObjects };
 
         // Add to general history (max 100)
         const historyEntry: GeneralHistoryEntry = {
@@ -1420,7 +1958,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         return {
             ...state,
-            objects: { ...state.objects, [newId]: clonedObj },
+            objects: updatedObjects,
             undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
@@ -3752,6 +4290,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Ref to track latest state for event listeners
   const stateRef = useRef(state);
   const initializedRef = useRef(false);
+  // Manual P2P connection (PeerJS-compatible adapter for direct connection without PeerJS)
+  const manualConnectionRef = useRef<any>(null);
+  // Track which connection we've set up handlers for to prevent duplicates
+  const manualConnectionSetupRef = useRef<string | null>(null);
+  // Expose manual connection ref globally so MainMenuContent can set it
+  (window as any).__setManualConnection = (conn: any) => {
+    // Only update if it's a different connection
+    if (conn && conn.peer !== manualConnectionSetupRef.current) {
+      console.log('[GameContext] __setManualConnection called with new connection:', conn?.peer);
+      manualConnectionRef.current = conn;
+    }
+  };
 
   useEffect(() => {
       stateRef.current = state;
@@ -3865,6 +4415,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                isOnTable: true,
                gridType: GridType.HEX,
                gridSize: 60,
+               gridWidth: 100,  // Must match DEFAULT_HEX_WIDTH for HEX grids
+               gridHeight: 115, // Must match DEFAULT_HEX_WIDTH * 1.15 for HEX grids
                snapToGrid: true,
                hyperscaleLayerId: 'boards',
           };
@@ -3985,7 +4537,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // State broadcast handled by useEffect to ensure updated state is sent
       } else {
           // Guest sends action to Host
-          if (hostConnectionRef.current && connectionStatus === 'connected') {
+          const hasPeerJSConnection = hostConnectionRef.current && connectionStatus === 'connected';
+          const hasManualConnection = manualConnectionRef.current && manualConnectionRef.current.open === true;
+
+          if (hasPeerJSConnection) {
               // UPDATE_PLAYER_NAME is sent as a separate message type for clarity
               if (action.type === 'UPDATE_PLAYER_NAME') {
                   hostConnectionRef.current.send({ type: 'UPDATE_PLAYER_NAME', payload: action });
@@ -4001,6 +4556,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               } else {
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
                   // Wait for sync to avoid desync
+              }
+          } else if (hasManualConnection) {
+              // Using manual P2P connection (DataChannelAdapter has PeerJS-compatible interface)
+              console.log('[Manual P2P] Sending action to host:', action.type);
+              if (action.type === 'UPDATE_PLAYER_NAME') {
+                  manualConnectionRef.current.send({ type: 'UPDATE_PLAYER_NAME', payload: action });
+                  localDispatch(action);  // Optimistic update
+              } else {
+                  manualConnectionRef.current.send({ type: 'ACTION', payload: action });
               }
           }
       }
@@ -4069,10 +4633,124 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
           });
       }
+
+      // Also broadcast to manual P2P connection guest
+      if (isHost && manualConnectionRef.current && manualConnectionRef.current.open === true) {
+          console.log('[Manual P2P] Broadcasting state change to manual connection guest');
+          const { state: stateWithRefs, imageCache } = extractImagesFromState(state);
+          try {
+              manualConnectionRef.current.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+              if (Object.keys(imageCache).length > 0) {
+                  manualConnectionRef.current.send({ type: 'IMAGE_CACHE', payload: imageCache });
+              }
+          } catch (e) {
+              console.error('[Manual P2P] Error broadcasting state:', e);
+          }
+      }
   }, [state, isHost]);
 
+  // Handle incoming data from manual P2P connection
+  useEffect(() => {
+      const conn = manualConnectionRef.current;
+      if (!conn) return;
+
+      // Only set up handlers once per connection (tracked by peer ID)
+      if (manualConnectionSetupRef.current === conn.peer) {
+          console.log('[Manual P2P] Handlers already set up for:', conn.peer, 'skipping');
+          return;
+      }
+
+      console.log('[Manual P2P] Setting up connection handlers for:', conn.peer, 'open:', conn.open);
+
+      const handleData = (data: any) => {
+          console.log('[Manual P2P] Received data:', data.type);
+          if (data.type === 'SYNC_STATE') {
+              // Restore images from local cache before dispatching
+              const restoredState = restoreImagesFromCache(data.payload, {});
+              localDispatch({ type: 'SYNC_STATE', payload: restoredState });
+          } else if (data.type === 'IMAGE_CACHE') {
+              localDispatch({ type: 'RESTORE_IMAGES', payload: data.payload });
+          } else if (data.type === 'HELO') {
+              // Host received HELO from guest - add player and send current state
+              const newPlayer = data.payload;
+              console.log('[Manual P2P] Received HELO from player:', newPlayer.name);
+              localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
+
+              // Send current state to new player
+              setTimeout(() => {
+                  if (conn && conn.open) {
+                      const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
+                      conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+                      if (Object.keys(imageCache).length > 0) {
+                          conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+                      }
+                  }
+              }, 100);
+          } else if (data.type === 'UPDATE_PLAYER_NAME') {
+              localDispatch(data.payload);
+          } else if (data.type === 'ACTION') {
+              localDispatch(data.payload);
+          }
+      };
+
+      const handleOpen = () => {
+          console.log('[Manual P2P] Connection opened');
+
+          // If we are guest, send HELO to host
+          if (!isHost && conn && conn.open) {
+              const myPlayer: Player = {
+                  id: conn.peer + '-' + Math.random().toString(36).substr(2, 9),
+                  name: 'Player ' + Math.floor(Math.random() * 1000),
+                  color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+                  isGM: false
+              };
+              console.log('[Manual P2P] Sending HELO to host:', myPlayer);
+              conn.send({ type: 'HELO', payload: myPlayer });
+              localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+              localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
+          }
+      };
+
+      const handleClose = () => {
+          console.log('[Manual P2P] Connection closed');
+          // Reset the setup ref when connection closes so we can re-connect if needed
+          manualConnectionSetupRef.current = null;
+      };
+
+      const handleError = (error: any) => {
+          console.error('[Manual P2P] Connection error:', error);
+      };
+
+      // Register event handlers
+      conn.on('data', handleData);
+      conn.on('open', handleOpen);
+      conn.on('close', handleClose);
+      conn.on('error', handleError);
+
+      // Mark this connection as set up
+      manualConnectionSetupRef.current = conn.peer;
+
+      // If connection is already open when we set up handlers, trigger handleOpen manually
+      // This handles the case where the data channel opened before GameContext registered handlers
+      if (conn.open) {
+          console.log('[Manual P2P] Connection already open, triggering handleOpen manually');
+          setTimeout(() => handleOpen(), 0);
+      }
+
+      // IMPORTANT: Clean up handlers only when connection actually changes or closes
+      return () => {
+          console.log('[Manual P2P] Cleaning up connection handlers for:', conn.peer);
+          conn.off('data', handleData);
+          conn.off('open', handleOpen);
+          conn.off('close', handleClose);
+          conn.off('error', handleError);
+          // Don't reset the setup ref here - it will be reset when connection actually closes
+          // This prevents the effect from re-running unnecessarily
+      };
+  }, [localDispatch, isHost]);
+
   return (
-    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName }}>
+    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, stateRef }}>
       {children}
       <PlayerNameModal
         isOpen={waitingForPlayerName !== null}
