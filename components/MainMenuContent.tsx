@@ -524,7 +524,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
   const handleJoinManualConnection = async (code: string) => {
     const guestName = guestNameInput.trim() || 'Guest Player';
-    await manualConnection.connectToHost(code, guestName);
+    await manualConnection.connectToHost(code, guestName, dispatch);
   };
 
   const handleManualAnswer = async (code: string) => {
@@ -1156,7 +1156,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     </div>
 
                     <button
-                      onClick={() => manualConnection.connectToHost(manualConnection.state.localOffer, guestNameInput.trim() || 'Guest Player')}
+                      onClick={() => manualConnection.connectToHost(manualConnection.state.localOffer, guestNameInput.trim() || 'Guest Player', dispatch)}
                       disabled={!manualConnection.state.localOffer || !guestNameInput}
                       className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors"
                     >

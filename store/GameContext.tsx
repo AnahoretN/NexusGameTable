@@ -4695,20 +4695,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const handleOpen = () => {
           console.log('[Manual P2P] Connection opened');
-
-          // If we are guest, send HELO to host
-          if (!isHost && conn && conn.open) {
-              const myPlayer: Player = {
-                  id: conn.peer + '-' + Math.random().toString(36).substr(2, 9),
-                  name: 'Player ' + Math.floor(Math.random() * 1000),
-                  color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-                  isGM: false
-              };
-              console.log('[Manual P2P] Sending HELO to host:', myPlayer);
-              conn.send({ type: 'HELO', payload: myPlayer });
-              localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
-              localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
-          }
+          // HELO is now handled by useManualConnection with proper guest name
       };
 
       const handleClose = () => {
