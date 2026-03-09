@@ -31,6 +31,23 @@ export interface UsePeerConnectionReturn {
  * @param stateRef - Ref to current state (for syncing)
  */
 
+// ICE/STUN servers configuration for WebRTC NAT traversal
+// Multiple STUN servers provide fallback options if one fails
+const PEERJS_CONFIG = {
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      { urls: 'stun:stun.nextcloud.com:443' },
+      { urls: 'stun:stun.framasoft.org:443' },
+      { urls: 'stun:stun.miwifi.com:3478' },
+      { urls: 'stun:stun.voip.blackberry.com:3478' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+    ]
+  }
+};
+
 // Diagnostic logging on module load
 console.log(`[P2P Diagnostic] ============================================`);
 console.log(`[P2P Diagnostic] 🚀 Nexus Game Table P2P Module Loaded`);
@@ -40,6 +57,7 @@ console.log(`[P2P Diagnostic] 🔍 WebRTC Support:`, !!(window as any).RTCPeerCo
 console.log(`[P2P Diagnostic] 🔍 WebSocket Support:`, !!(window as any).WebSocket);
 console.log(`[P2P Diagnostic] 🔍 getUserMedia Support:`, !!(navigator.mediaDevices?.getUserMedia));
 console.log(`[P2P Diagnostic] 📍 Current URL:`, window.location.href);
+console.log(`[P2P Diagnostic] 🔌 STUN Servers:`, PEERJS_CONFIG.config.iceServers.map(s => s.urls).join(', '));
 console.log(`[P2P Diagnostic] ============================================`);
 
 export function usePeerConnection(
@@ -131,7 +149,7 @@ export function usePeerConnection(
     console.log(`[P2P Guest] 🌐 User Agent: ${navigator.userAgent}`);
     console.log(`[P2P Guest] 📍 URL: ${window.location.href}`);
 
-    const peer = new Peer();
+    const peer = new Peer(PEERJS_CONFIG);
     peerRef.current = peer;
 
     console.log(`[P2P Guest] ⏳ Waiting for PeerJS to assign ID...`);
@@ -274,7 +292,7 @@ export function usePeerConnection(
     console.log(`[P2P Host] 🌐 User Agent: ${navigator.userAgent}`);
     console.log(`[P2P Host] 📍 URL: ${window.location.href}`);
 
-    const peer = new Peer();
+    const peer = new Peer(PEERJS_CONFIG);
     peerRef.current = peer;
     // Store for diagnostic access
     (window as any).__nexusPeer = peer;
@@ -456,7 +474,7 @@ if (typeof window !== 'undefined') {
     },
     testConnection: async (hostId: string) => {
       console.log(`[P2P Diagnostic] 🧪 Testing connection to host: ${hostId}`);
-      const testPeer = new Peer();
+      const testPeer = new Peer(PEERJS_CONFIG);
       return new Promise((resolve) => {
         testPeer.on('open', (id: string) => {
           console.log(`[P2P Diagnostic] ✅ Test peer ID: ${id}`);
