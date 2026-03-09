@@ -1,5 +1,5 @@
 import React from 'react';
-import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin, ArrowUp, ArrowDown, CornerDownRight, ChevronsUp, ChevronsDown } from 'lucide-react';
+import { Hand, Eye, EyeOff, Shuffle, RefreshCw, Copy, Trash2, Lock, Unlock, Layers, Undo, Search, Pin, ArrowUp, ArrowDown, CornerDownRight, ChevronsUp, ChevronsDown, Plus, Check } from 'lucide-react';
 import { ContextAction, AppLanguage } from '../types';
 import { t as translate, Locale } from './translations';
 
@@ -38,6 +38,10 @@ const ACTION_LABELS: Record<ButtonAction, string> = {
   moveToTopDeck: 'Move to Top Deck',
   moveToBottomDeck: 'Move to Bottom Deck',
   moveToDiscard: 'Move to Discard',
+  // Nexus Board actions
+  editNexusBoard: 'Edit Board',
+  closeNexusBoardEditing: 'Close Editing',
+  deleteNexusBoard: 'Delete Board',
   // Abstract actions (no buttons, but needed for type completeness)
   rotate: 'Rotation',
   layer: 'Change Layer',
@@ -77,6 +81,7 @@ export const BUTTON_STYLES: Partial<Record<ButtonAction, { className: string }>>
   moveToTopDeck: { className: 'bg-orange-600 hover:bg-orange-500' },
   moveToBottomDeck: { className: 'bg-yellow-600 hover:bg-yellow-500' },
   moveToDiscard: { className: 'bg-red-600 hover:bg-red-500' },
+  deleteNexusBoard: { className: 'bg-red-700 hover:bg-red-600' },
 };
 
 // Icon factory functions - return appropriate icon based on state
@@ -113,6 +118,9 @@ export const ButtonIcons = {
   moveToTopDeck: () => <ArrowUp size={14} />,
   moveToBottomDeck: () => <ArrowDown size={14} />,
   moveToDiscard: () => <Trash2 size={14} />,
+  editNexusBoard: () => <Plus size={14} />,
+  closeNexusBoardEditing: () => <Check size={14} />,
+  deleteNexusBoard: () => <Trash2 size={14} />,
 } as const;
 
 // Helper to get complete button config for cards

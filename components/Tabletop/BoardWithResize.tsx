@@ -1,6 +1,7 @@
 import React from 'react';
-import { Token as TokenType, Board as BoardType } from '../../types';
+import { Token as TokenType, Board as BoardType, GridType } from '../../types';
 import { Lock } from 'lucide-react';
+import { calculateFlexibleHexGrid, calculateHorizontalHexGrid } from '../../utils/gridUtils';
 
 interface BoardWithResizeProps {
     token: TokenType | BoardType;
@@ -39,57 +40,70 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 }) => {
     // Check if grid should be shown (grid type exists AND showGrid is not false)
     const shouldShowGrid = token.gridType && token.gridType !== 'NONE' && (token as BoardType).showGrid !== false;
-    const isHexGrid = token.gridType === 'HEX';
+    const isHexGrid = token.gridType === GridType.HEX;
+    const isHexHorizontalGrid = token.gridType === GridType.HEX_HORIZONTAL;
 
-    // Hex grid calculations (from main branch - flat-top hexagons)
-    const hexR = gridSize;           // Radius (height/2 of hex)
-    const hexW = hexR * Math.sqrt(3); // Width of hex
+    // Hex grid constants
+    const HEX_RATIO = 1.15;
 
-    // Single hex path + vertical line for tiling
-    // This creates a seamless brick-wall pattern
-    const hexPath =
-      `M 0 ${hexR/2} ` +
-      `L ${hexW/2} 0 ` +
-      `L ${hexW} ${hexR/2} ` +
-      `L ${hexW} ${hexR*1.5} ` +
-      `L ${hexW/2} ${hexR*2} ` +
-      `L 0 ${hexR*1.5} Z ` +
-      `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+    // Use gridWidth if provided, otherwise fall back to gridSize
+    // This ensures the grid matches the snapping behavior which uses gridSize
+    const actualGridWidth = gridWidth ?? gridSize;
+    const actualGridHeight = gridHeight ?? (isHexGrid ? Math.round(gridSize * HEX_RATIO * 100) / 100 : (isHexHorizontalGrid ? gridSize / HEX_RATIO : gridSize));
 
-    // Pattern dimensions for proper tiling
-    const patternW = hexW;
-    const patternH = hexR * 3;
+    // Flexible hex grid calculations
+    let hexGridPattern: React.ReactNode = null;
+    if (isHexGrid) {
+        const hexGrid = calculateFlexibleHexGrid(actualGridWidth);
 
-    // Generate hex grid pattern with proper tiling
-    const hexGridPattern = (
-        <pattern
-            id={`hex-grid-${token.id}`}
-            width={patternW}
-            height={patternH}
-            patternUnits="userSpaceOnUse"
-        >
-            <path
-                d={hexPath}
-                fill="none"
-                stroke="rgba(128,128,128,0.3)"
-                strokeWidth={1 / zoom}
-            />
-        </pattern>
-    );
+        hexGridPattern = (
+            <pattern
+                id={`hex-grid-${token.id}`}
+                width={hexGrid.patternWidth}
+                height={hexGrid.patternHeight}
+                patternUnits="userSpaceOnUse"
+            >
+                <path
+                    d={hexGrid.path}
+                    fill="none"
+                    stroke="rgba(100,100,100,0.7)"
+                    strokeWidth={1 / zoom}
+                />
+            </pattern>
+        );
+    } else if (isHexHorizontalGrid) {
+        const hexGrid = calculateHorizontalHexGrid(actualGridWidth);
 
-    // Generate square grid pattern
+        hexGridPattern = (
+            <pattern
+                id={`hex-grid-${token.id}`}
+                width={hexGrid.patternWidth}
+                height={hexGrid.patternHeight}
+                patternUnits="userSpaceOnUse"
+            >
+                <path
+                    d={hexGrid.path}
+                    fill="none"
+                    stroke="rgba(100,100,100,0.7)"
+                    strokeWidth={1 / zoom}
+                />
+            </pattern>
+        );
+    }
+
+    // Generate square grid pattern (uses actualGridWidth and actualGridHeight)
     const squareGridPattern = (
         <pattern
             id={`square-grid-${token.id}`}
-            width={gridSize}
-            height={gridSize}
+            width={actualGridWidth}
+            height={actualGridHeight}
             patternUnits="userSpaceOnUse"
         >
             <rect
-                width={gridSize}
-                height={gridSize}
+                width={actualGridWidth}
+                height={actualGridHeight}
                 fill="none"
-                stroke="rgba(128,128,128,0.3)"
+                stroke="rgba(100,100,100,0.7)"
                 strokeWidth={1 / zoom}
             />
         </pattern>
@@ -101,15 +115,91 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             style={{ zIndex: 0 }}
         >
             <defs>
-                {isHexGrid ? hexGridPattern : squareGridPattern}
+                {(isHexGrid || isHexHorizontalGrid) ? hexGridPattern : squareGridPattern}
             </defs>
             <rect
                 width="100%"
                 height="100%"
-                fill={`url(#${isHexGrid ? `hex-grid-${token.id}` : `square-grid-${token.id}`})`}
+                fill={`url(#${(isHexGrid || isHexHorizontalGrid) ? `hex-grid-${token.id}` : `square-grid-${token.id}`})`}
             />
+            {/* Magnetism points at cell centers */}
+            {magnetPoints.map((point, index) => (
+                <circle
+                    key={index}
+                    cx={point.x}
+                    cy={point.y}
+                    r={4 / zoom}
+                    fill="rgba(100, 150, 255, 0.6)"
+                    stroke="rgba(100, 150, 255, 0.3)"
+                    strokeWidth={1 / zoom}
+                />
+            ))}
         </svg>
     );
+
+    // Generate magnetism points at cell centers
+    const magnetPoints: { x: number; y: number }[] = [];
+    const boardWidth = token.width;
+    const boardHeight = token.height;
+
+    if (isHexGrid) {
+        // Pointy-top hex grid
+        const hexWidth = actualGridWidth;
+        const hexHeight = actualGridWidth * 1.15;
+        const rowSpacing = hexHeight * 0.75;
+        const colSpacing = hexWidth;
+        const rowOffset = hexWidth / 2;
+        const halfW = hexWidth / 2;
+        const halfH = hexHeight / 2;
+
+        const numCols = Math.ceil(boardWidth / colSpacing) + 2;
+        const numRows = Math.ceil(boardHeight / rowSpacing) + 2;
+
+        for (let row = -1; row < numRows; row++) {
+            for (let col = -1; col < numCols; col++) {
+                const x = col * colSpacing + (row % 2) * rowOffset + halfW;
+                const y = row * rowSpacing + halfH;
+                if (x >= -hexWidth/2 && x <= boardWidth + hexWidth/2 && y >= -hexHeight/2 && y <= boardHeight + hexHeight/2) {
+                    magnetPoints.push({ x, y });
+                }
+            }
+        }
+    } else if (isHexHorizontalGrid) {
+        // Flat-top hex grid
+        const hexWidth = actualGridWidth;
+        const hexHeight = actualGridWidth / 1.15;
+        const colSpacing = hexWidth * 0.75;
+        const rowSpacing = hexHeight;
+        const colOffset = hexHeight / 2;
+        const halfW = hexWidth / 2;
+        const halfH = hexHeight / 2;
+
+        const numCols = Math.ceil(boardWidth / colSpacing) + 1;
+        const numRows = Math.ceil(boardHeight / rowSpacing) + 1;
+
+        for (let col = 0; col < numCols; col++) {
+            for (let row = 0; row < numRows; row++) {
+                const x = col * colSpacing + halfW;
+                const y = row * rowSpacing + (col % 2) * colOffset + halfH;
+                if (x >= -hexWidth && x <= boardWidth + hexWidth && y >= -hexHeight && y <= boardHeight + hexHeight) {
+                    magnetPoints.push({ x, y });
+                }
+            }
+        }
+    } else {
+        // Square grid - points at cell centers
+        const numCols = Math.ceil(boardWidth / actualGridWidth) + 1;
+        const numRows = Math.ceil(boardHeight / actualGridHeight) + 1;
+
+        for (let row = 0; row <= numRows; row++) {
+            for (let col = 0; col <= numCols; col++) {
+                magnetPoints.push({
+                    x: col * actualGridWidth + actualGridWidth / 2,
+                    y: row * actualGridHeight + actualGridHeight / 2
+                });
+            }
+        }
+    }
 
     return (
         <div
@@ -131,7 +221,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 borderRadius: '4px',
             }}
         >
-            {/* Grid overlay */}
+            {/* Grid overlay with magnetism points */}
             {shouldShowGrid && gridContent}
 
             {/* Resize handle - bottom right corner */}

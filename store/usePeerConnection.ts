@@ -46,10 +46,23 @@ export function usePeerConnection(
   localDispatch: React.Dispatch<Action>,
   stateRef: React.RefObject<any>
 ): UsePeerConnectionReturn {
-  const [isHost, setIsHost] = useState(true);
+  // Determine immediately from URL if we're a guest or host
+  // This must be done before any effects run to prevent race conditions
+  const getInitialHostStatus = (): boolean => {
+    if (typeof window === 'undefined') return true;
+    const params = new URLSearchParams(window.location.search);
+    return !params.has('hostId'); // Guest if hostId exists, host otherwise
+  };
+
+  const [isHost, setIsHost] = useState<boolean>(getInitialHostStatus());
   const [peerId, setPeerId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [waitingForPlayerName, setWaitingForPlayerName] = useState<WaitingForPlayerName | null>(null);
+
+  // Log initial role detection for debugging
+  useEffect(() => {
+    console.log(`[P2P Init] 🔍 Role determined from URL: isHost=${isHost}, URL=${window.location.href}`);
+  }, [isHost]);
 
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<any[]>([]); // For Host: list of guest connections
@@ -93,8 +106,21 @@ export function usePeerConnection(
       localDispatch(data.payload);
     } else if (data.type === 'ACTION') {
       // Host received action request from Guest
-      console.log(`[P2P Network] 🎮 Received ACTION:`, data.payload?.type);
-      localDispatch(data.payload);
+      const actionType = data.payload?.type;
+      console.log(`[P2P Network] 🎮 Received ACTION:`, actionType);
+
+      // Filter out local-only actions that should not affect host state
+      // These actions are screen-specific and should not be synced
+      const localOnlyActions = [
+        'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
+        'SET_PIXELS_PER_VU'       // Pixels per VU is screen-specific
+      ];
+
+      if (localOnlyActions.includes(actionType)) {
+        console.log(`[P2P Network] ⚠️ Ignoring local-only action:`, actionType, '- not applying to host state');
+      } else {
+        localDispatch(data.payload);
+      }
     }
   }, [localDispatch]);
 
@@ -116,7 +142,7 @@ export function usePeerConnection(
       // Store for diagnostic access
       (window as any).__nexusPeer = peer;
       setPeerId(id);
-      setIsHost(false);
+      // isHost already set correctly from URL during initialization
       setConnectionStatus('connecting');
 
       const conn = peer.connect(hostId);
@@ -260,7 +286,7 @@ export function usePeerConnection(
       console.log(`[P2P Host] 📋 Share this ID with players or use the Invite button`);
       console.log(`[P2P Host] 🔗 Invite link format: ${window.location.href.split('?')[0]}?hostId=${id}`);
       setPeerId(id);
-      setIsHost(true);
+      // isHost already set correctly from URL during initialization
       setConnectionStatus('connected');
     });
 

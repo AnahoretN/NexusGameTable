@@ -105,9 +105,9 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
   shape,
   isTriangle = shape === CardShape.TRIANGLE
 }) => {
-  // For geometric shapes (HEX, CIRCLE, TRIANGLE), the foreignObject scaling makes text appear larger
+  // For geometric shapes (HEX, HEX_HORIZONTAL, CIRCLE, TRIANGLE), the foreignObject scaling makes text appear larger
   // We need to use smaller font sizes to compensate
-  const isGeometric = shape === CardShape.HEX || shape === CardShape.CIRCLE;
+  const isGeometric = shape === CardShape.HEX || shape === CardShape.HEX_HORIZONTAL || shape === CardShape.CIRCLE;
 
   if (isTriangle) {
     // For triangle: wrap text more aggressively to fit within the triangle
@@ -191,7 +191,7 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
  * Check if a card shape should use SVG rendering for decks
  */
 export function shouldUseSvgForDeck(shape: CardShape): boolean {
-  return shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
+  return shape === CardShape.HEX || shape === CardShape.HEX_HORIZONTAL || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
 }
 
 // Memoize SvgDeckShape to prevent unnecessary re-renders

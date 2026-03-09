@@ -8,6 +8,7 @@ import { logger } from '../utils/logger';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2 } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
+import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanel } from './HandPanel';
@@ -140,6 +141,22 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
   const [guestNameInput, setGuestNameInput] = useState('');
   const manualConnection = useManualConnection();
+
+  // Read offer code from URL on mount (for invite links)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const offerCode = urlParams.get('offer');
+    if (offerCode) {
+      console.log('[MainMenuContent] Found offer code in URL');
+      setManualConnectionTab('join');
+      manualConnection.setLocalOffer(offerCode);
+      setShowManualConnection(true);
+      // Remove only the offer parameter, keep others (like hostId)
+      urlParams.delete('offer');
+      const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
 
   // Set manual connection ref for GameContext to use
   useEffect(() => {
@@ -1055,15 +1072,29 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       className="w-full h-32 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
                     />
 
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(manualConnection.state.generatedCode);
-                      }}
-                      className="w-full py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Copy size={16} />
-                      {translate('Copy to Clipboard', language as Locale)}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(manualConnection.state.generatedCode);
+                        }}
+                        className="flex-1 py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Copy size={16} />
+                        {translate('Copy to Clipboard', language as Locale)}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const baseUrl = window.location.origin + window.location.pathname;
+                          const inviteLink = `${baseUrl}?offer=${encodeURIComponent(manualConnection.state.generatedCode)}`;
+                          navigator.clipboard.writeText(inviteLink);
+                        }}
+                        className="flex-1 py-2 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
+                      >
+                        <LinkIcon size={16} />
+                        Copy Invite Link
+                      </button>
+                    </div>
 
                     {manualConnection.state.step === 'waiting_for_answer' && (
                       <div className="space-y-4 pt-4 border-t border-slate-700">
@@ -1324,14 +1355,19 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     const screenX = window.innerWidth / 2;
     const screenY = window.innerHeight / 2;
 
-    // Convert screen coordinates to world coordinates
+    // Convert screen coordinates to world coordinates (in pixels first)
     // Objects are rendered inside transform container with: translate(offset.x, offset.y) scale(zoom)
     const zoom = state.viewTransform.zoom;
     const offsetX = state.viewTransform.offset.x;
     const offsetY = state.viewTransform.offset.y;
 
-    const worldX = (screenX - offsetX) / zoom;
-    const worldY = (screenY - offsetY) / zoom;
+    const worldX_px = (screenX - offsetX) / zoom;
+    const worldY_px = (screenY - offsetY) / zoom;
+
+    // Convert pixels to VU (Virtual Units) for consistent positioning across different screen sizes
+    const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
+    const worldX = pixelsToVu(worldX_px, pixelsPerVU);
+    const worldY = pixelsToVu(worldY_px, pixelsPerVU);
 
     switch (item.type) {
       case 'DECK': {

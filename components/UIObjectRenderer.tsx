@@ -18,7 +18,7 @@ import { vuToPixels } from '../utils/vuSystem';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.5';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.6';
 
 // Support links
 const SUPPORT_LINKS = [
@@ -663,7 +663,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Language', state.language as Locale)}</h4>
                 <select
-                  value={localStorage.getItem('app-language') || 'en'}
+                  value={state.language || 'en'}
                   onChange={async (e) => {
                     const newLang = e.target.value as AppLanguage;
                     localStorage.setItem('app-language', newLang);
