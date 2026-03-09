@@ -4,7 +4,7 @@ import { useGame } from '../store/GameContext';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation } from '../types';
 import { DECK_OFFSET } from '../constants';
 import { Tooltip } from './Tooltip';
-import { getCardShapeStyles, isGeometricCardShape } from '../utils/shapeUtils';
+import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 
 interface DeckComponentProps {
@@ -68,18 +68,14 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
   const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
 
-  // Get effective dimensions based on card orientation (in vu, then converted to px)
-  // For geometric shapes with horizontal orientation, swap width/height
+  // Card shape and orientation for deck styling (not for deck dimensions)
   const cardShape = deck.cardShape ?? CardShape.POKER;
   const cardOrientation = deck.cardOrientation ?? CardOrientation.VERTICAL;
-  const isGeometricShape = isGeometricCardShape(cardShape);
 
-  const effectiveWidth = vuToPx((isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
-    ? deck.height
-    : deck.width);
-  const effectiveHeight = vuToPx((isGeometricShape && cardOrientation === CardOrientation.HORIZONTAL)
-    ? deck.width
-    : deck.height);
+  // Deck dimensions are independent of card orientation
+  // The deck displays with its own width and height
+  const effectiveWidth = vuToPx(deck.width);
+  const effectiveHeight = vuToPx(deck.height);
 
   // Memoize visible card count calculation
   const visibleCardCount = useMemo(() => {

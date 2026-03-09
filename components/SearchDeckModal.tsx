@@ -231,13 +231,12 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const getCardDimensions = useCallback((card: Card) => {
     const actualCardWidth = card.width ?? DEFAULT_DECK_WIDTH;
     const actualCardHeight = card.height ?? DEFAULT_DECK_HEIGHT;
-    const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
-    const layoutWidth = isHorizontal ? actualCardHeight : actualCardWidth;
-    const layoutHeight = isHorizontal ? actualCardWidth : actualCardHeight;
-    const aspectRatio = layoutWidth / layoutHeight;
+    // Card dimensions now reflect the orientation (swapped when horizontal)
+    // No need to manually swap based on deck.cardOrientation
+    const aspectRatio = actualCardWidth / actualCardHeight;
     const cardHeight = scaledBaseCardWidth / aspectRatio;
     return { width: scaledBaseCardWidth, height: cardHeight };
-  }, [deck.cardOrientation, scaledBaseCardWidth]);
+  }, [scaledBaseCardWidth]);
 
   const handleFlip = useCallback((cardId: string) => {
     if (isGM) {

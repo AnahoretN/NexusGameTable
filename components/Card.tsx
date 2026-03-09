@@ -153,16 +153,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
       transforms.push(`rotate(${cardRotation}deg)`);
     }
 
-    // Apply horizontal orientation (90 degrees clockwise = -90deg CSS)
-    // For geometric shapes (HEX, TRIANGLE, CIRCLE), orientation affects dimensions but NOT shape rotation
-    // For other shapes, only rotate if dimensions indicate the card isn't already in horizontal orientation
-    if (orientation === CardOrientation.HORIZONTAL && !isGeometric) {
-      // If width > height, card is already landscape - don't rotate
-      // Otherwise (portrait card being displayed horizontally), apply -90deg rotation
-      if (displayWidth <= displayHeight) {
-        transforms.push('rotate(-90deg)');
-      }
-    }
+    // Note: For all cards, orientation affects dimensions (width/height) but NOT rotation
+    // The sprite/image is never rotated - only the container dimensions change
 
     return transforms.length > 0 ? transforms.join(' ') : undefined;
   };
@@ -304,6 +296,15 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               className={`w-full h-full ${!isGeometric ? 'border-2 border-gray-700 rounded-lg' : ''} ${isHovered && !isGeometric ? 'ring-2 ring-yellow-400' : ''}`}
               style={{
                   backgroundColor: card.faceUp ? 'white' : '#1e293b',
+                  position: 'relative',
+                  overflow: 'hidden',
+              }}
+            >
+              {/* Inner content wrapper - handles rotation for HORIZONTAL orientation */}
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
                   backgroundImage: (() => {
                     if (card.faceUp) {
                       // Use card's spriteUrl, or deck's spriteConfig spriteUrl, or card's content
@@ -395,6 +396,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                       <p className="text-[10px] text-white truncate text-center font-medium w-full">{card.name}</p>
                   </div>
               )}
+          </div>
           </div>
           )}
       </div>

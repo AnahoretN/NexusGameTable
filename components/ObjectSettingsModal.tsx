@@ -6,6 +6,7 @@ import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counte
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { calculateHexHeight, calculateFlatHexHeight } from '../utils/gridUtils';
+import { CARD_SHAPE_DIMS } from '../constants';
 
 // Hex grid constants
 const HEX_RATIO = 1.15;
@@ -320,6 +321,47 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         if (value === CardShape.SQUARE || value === CardShape.CIRCLE) {
           updated.cardOrientation = CardOrientation.VERTICAL;
         }
+
+        // Auto-normalize dimensions when card shape changes
+        // Keep the current width, adjust height based on new shape's aspect ratio
+        const currentWidth = prev.cardWidth ?? deck.width;
+        const currentOrientation = prev.cardOrientation ?? CardOrientation.VERTICAL;
+        const newShape = value as CardShape;
+
+        // For standard card shapes (POKER, BRIDGE, MINI_US, MINI_EURO)
+        if (newShape === CardShape.POKER || newShape === CardShape.BRIDGE ||
+            newShape === CardShape.MINI_US || newShape === CardShape.MINI_EURO) {
+          const baseDims = CARD_SHAPE_DIMS[newShape];
+          const baseRatio = baseDims.height / baseDims.width;
+          // VERTICAL: normal ratio, HORIZONTAL: inverted ratio
+          const ratio = currentOrientation === CardOrientation.VERTICAL ? baseRatio : 1 / baseRatio;
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = Math.round(currentWidth * ratio);
+        }
+        // For HEX_HORIZONTAL, use exact formula: height = width / 1.15
+        else if (newShape === CardShape.HEX_HORIZONTAL) {
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = Math.round(currentWidth / 1.15);
+        }
+        // For HEX, normalization depends on orientation
+        else if (newShape === CardShape.HEX) {
+          updated.cardWidth = currentWidth;
+          // VERTICAL (pointy-top): height = width × 1.15
+          // HORIZONTAL (flat-top): height = width / 1.15
+          updated.cardHeight = currentOrientation === CardOrientation.VERTICAL
+            ? Math.round(currentWidth * 1.15)
+            : Math.round(currentWidth / 1.15);
+        }
+        // For TRIANGLE, use equilateral triangle ratio
+        else if (newShape === CardShape.TRIANGLE) {
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = Math.round(currentWidth * Math.sqrt(3) / 2);
+        }
+        // For SQUARE and CIRCLE, make height equal to width
+        else if (newShape === CardShape.SQUARE || newShape === CardShape.CIRCLE) {
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = currentWidth;
+        }
       }
 
       return updated;
@@ -456,6 +498,40 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     }
 
     onSave(toSave);
+
+    // After saving, update all cards in the deck when cardWidth/cardHeight/cardOrientation changed
+    if (isDeck) {
+      const deckId = data.id;
+      const cardsInDeck = Object.values(allObjects).filter(obj =>
+        obj.type === ItemType.CARD && (obj as Card).deckId === deckId
+      ) as Card[];
+
+      // Check if card dimensions or orientation changed
+      const oldCardWidth = (data as Deck).cardWidth;
+      const oldCardHeight = (data as Deck).cardHeight;
+      const oldCardOrientation = (data as Deck).cardOrientation;
+      const newCardWidth = cardSettings.cardWidth;
+      const newCardHeight = cardSettings.cardHeight;
+      const newCardOrientation = cardSettings.cardOrientation;
+
+      const dimensionsChanged = oldCardWidth !== newCardWidth || oldCardHeight !== newCardHeight || oldCardOrientation !== newCardOrientation;
+
+      if (dimensionsChanged && cardsInDeck.length > 0) {
+        // Use cardWidth/cardHeight from settings, fallback to deck's width/height
+        const finalCardWidth = newCardWidth ?? (data as Deck).width;
+        const finalCardHeight = newCardHeight ?? (data as Deck).height;
+
+        // Dispatch event to update all cards in this deck
+        window.dispatchEvent(new CustomEvent('update-deck-cards-dimensions', {
+          detail: {
+            deckId,
+            cardWidth: finalCardWidth,
+            cardHeight: finalCardHeight
+          }
+        }));
+      }
+    }
+
     onClose();
   };
 
@@ -734,30 +810,69 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         const currentWidth = isArchetype ? (data as any).defaultSize?.width || data.width : data.width;
                         const currentHeight = isArchetype ? (data as any).defaultSize?.height || data.height : data.height;
 
-                        // Determine shape for normalization
-                        let tokenShapeForNorm: TokenShape;
-                        if (isDeck || (isArchetype && (data as any).cardShape)) {
-                          // For decks, use cardShape and cardOrientation
-                          const cardShape = (data as any).cardShape || CardShape.POKER;
-                          const cardOrientation = (data as any).cardOrientation || CardOrientation.VERTICAL;
+                        let width: number;
+                        let height: number;
 
-                          if (cardShape === CardShape.HEX) {
-                            tokenShapeForNorm = cardOrientation === CardOrientation.HORIZONTAL
-                              ? TokenShape.HEX_HORIZONTAL
-                              : TokenShape.HEX;
-                          } else if (cardShape === CardShape.TRIANGLE) {
-                            tokenShapeForNorm = TokenShape.TRIANGLE;
-                          } else if (cardShape === CardShape.CIRCLE) {
-                            tokenShapeForNorm = TokenShape.CIRCLE;
+                        // For decks/archetypes with card shape, use card normalization
+                        if (isDeck || (isArchetype && (data as any).cardShape)) {
+                          const cardShape = (data as any).cardShape || CardShape.POKER;
+                          const cardWidthSetting = (data as any).cardWidth;
+                          const cardHeightSetting = (data as any).cardHeight;
+
+                          // For card shapes with standard aspect ratios (POKER, BRIDGE, MINI_US, MINI_EURO)
+                          if (cardShape === CardShape.POKER || cardShape === CardShape.BRIDGE ||
+                              cardShape === CardShape.MINI_US || cardShape === CardShape.MINI_EURO) {
+                            if (cardWidthSetting && cardHeightSetting) {
+                              // Use the card's aspect ratio from settings: height = width * (cardHeight / cardWidth)
+                              width = currentWidth;
+                              height = Math.round(currentWidth * cardHeightSetting / cardWidthSetting);
+                            } else {
+                              // Use default aspect ratio from CARD_SHAPE_DIMS
+                              const baseDims = CARD_SHAPE_DIMS[cardShape as CardShape];
+                              const ratio = baseDims.height / baseDims.width;
+                              width = currentWidth;
+                              height = Math.round(currentWidth * ratio);
+                            }
+                          } else if (cardShape === CardShape.HEX_HORIZONTAL) {
+                            // For HEX_HORIZONTAL, use exact formula: height = width / 1.15
+                            if (cardWidthSetting && cardHeightSetting) {
+                              width = currentWidth;
+                              height = Math.round(currentWidth / 1.15);
+                            } else {
+                              width = currentWidth;
+                              height = Math.round(currentWidth / 1.15);
+                            }
+                          } else if (cardShape === CardShape.HEX) {
+                            // For HEX, normalization depends on cardOrientation
+                            // Read from cardSettings to get the current (unsaved) orientation value
+                            const orientation = cardSettings.cardOrientation ?? CardOrientation.VERTICAL;
+                            // VERTICAL (pointy-top): height = width × 1.15
+                            // HORIZONTAL (flat-top): height = width / 1.15
+                            width = currentWidth;
+                            height = orientation === CardOrientation.VERTICAL
+                              ? Math.round(currentWidth * 1.15)
+                              : Math.round(currentWidth / 1.15);
                           } else {
-                            tokenShapeForNorm = TokenShape.SQUARE;
+                            // For other geometric shapes (TRIANGLE, CIRCLE), use existing normalization logic
+                            let tokenShapeForNorm: TokenShape;
+                            if (cardShape === CardShape.TRIANGLE) {
+                              tokenShapeForNorm = TokenShape.TRIANGLE;
+                            } else if (cardShape === CardShape.CIRCLE) {
+                              tokenShapeForNorm = TokenShape.CIRCLE;
+                            } else {
+                              tokenShapeForNorm = TokenShape.SQUARE;
+                            }
+                            const normalized = normalizeShapeSizes(tokenShapeForNorm, currentWidth, currentHeight);
+                            width = normalized.width;
+                            height = normalized.height;
                           }
                         } else {
                           // For tokens, use shape
-                          tokenShapeForNorm = (data as any).shape || TokenShape.SQUARE;
+                          const tokenShapeForNorm = (data as any).shape || TokenShape.SQUARE;
+                          const normalized = normalizeShapeSizes(tokenShapeForNorm, currentWidth, currentHeight);
+                          width = normalized.width;
+                          height = normalized.height;
                         }
-
-                        const { width, height } = normalizeShapeSizes(tokenShapeForNorm, currentWidth, currentHeight);
 
                         if (isArchetype) {
                           update('defaultSize', { ...(data as any).defaultSize, width, height });
@@ -1914,7 +2029,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={(e) => updateCardSettings('cardShape', e.target.value as CardShape)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      {Object.keys(CardShape).map(key => (
+                      {Object.keys(CardShape).filter(key => key !== 'HEX_HORIZONTAL').map(key => (
                         <option key={key} value={key}>{key}</option>
                       ))}
                     </select>
@@ -1925,7 +2040,54 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Orientation', language as Locale)}</label>
                     <select
                       value={cardSettings.cardOrientation ?? CardOrientation.VERTICAL}
-                      onChange={(e) => updateCardSettings('cardOrientation', e.target.value as CardOrientation)}
+                      onChange={(e) => {
+                        const newOrientation = e.target.value as CardOrientation;
+                        const currentWidth = cardSettings.cardWidth ?? deck.width;
+                        const currentShape = cardSettings.cardShape ?? CardShape.POKER;
+
+                        // Auto-normalize dimensions when orientation changes
+                        // Keep the current width, adjust height based on shape and new orientation
+                        if (currentShape === CardShape.POKER || currentShape === CardShape.BRIDGE ||
+                            currentShape === CardShape.MINI_US || currentShape === CardShape.MINI_EURO) {
+                          const baseDims = CARD_SHAPE_DIMS[currentShape];
+                          const baseRatio = baseDims.height / baseDims.width;
+                          // VERTICAL: normal ratio, HORIZONTAL: inverted ratio
+                          const ratio = newOrientation === CardOrientation.VERTICAL ? baseRatio : 1 / baseRatio;
+                          const newHeight = Math.round(currentWidth * ratio);
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation,
+                            cardWidth: currentWidth,
+                            cardHeight: newHeight
+                          });
+                        } else if (currentShape === CardShape.HEX_HORIZONTAL) {
+                          // HEX_HORIZONTAL: exact formula height = width / 1.15 (always flat-top)
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation,
+                            cardWidth: currentWidth,
+                            cardHeight: Math.round(currentWidth / 1.15)
+                          });
+                        } else if (currentShape === CardShape.HEX) {
+                          // HEX: normalize based on orientation
+                          // VERTICAL (pointy-top): height = width × 1.15
+                          // HORIZONTAL (flat-top): height = width / 1.15
+                          const hexHeight = newOrientation === CardOrientation.VERTICAL
+                            ? Math.round(currentWidth * 1.15)
+                            : Math.round(currentWidth / 1.15);
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation,
+                            cardWidth: currentWidth,
+                            cardHeight: hexHeight
+                          });
+                        } else {
+                          // For other shapes (TRIANGLE, SQUARE, CIRCLE), just swap
+                          const currentHeight = cardSettings.cardHeight ?? deck.height;
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation,
+                            cardWidth: currentHeight,
+                            cardHeight: currentWidth
+                          });
+                        }
+                      }}
                       disabled={cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE}
                       className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${
                         cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE
@@ -1942,7 +2104,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 mb-2">
                   {/* Card Width */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Width (px)', language as Locale)}</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Width (vu)', language as Locale)}</label>
                     <input
                       type="number"
                       step="0.01"
@@ -1991,7 +2153,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
                   {/* Card Height */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Height (px)', language as Locale)}</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Height (vu)', language as Locale)}</label>
                     <input
                       type="number"
                       step="0.01"
@@ -2022,14 +2184,54 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         const currentShape = cardSettings.cardShape ?? CardShape.POKER;
                         const currentOrientation = cardSettings.cardOrientation ?? CardOrientation.VERTICAL;
 
-                        // Map CardShape + Orientation to TokenShape for normalization
-                        let tokenShapeForNorm: TokenShape;
+                        // For card shapes with standard aspect ratios (POKER, BRIDGE, MINI_US, MINI_EURO)
+                        // Always keep width, adjust height only based on orientation
+                        if (currentShape === CardShape.POKER || currentShape === CardShape.BRIDGE ||
+                            currentShape === CardShape.MINI_US || currentShape === CardShape.MINI_EURO) {
+                          const baseDims = CARD_SHAPE_DIMS[currentShape];
+                          // Calculate aspect ratio (height/width) from the base dimensions
+                          const baseRatio = baseDims.height / baseDims.width;
+
+                          // VERTICAL: use normal ratio (tall portrait)
+                          // HORIZONTAL: use inverted ratio (wide landscape)
+                          const ratio = currentOrientation === CardOrientation.VERTICAL ? baseRatio : 1 / baseRatio;
+                          const normalizedHeight = Math.round(currentWidth * ratio);
+                          updateCardSettingsMultiple({
+                            cardWidth: currentWidth,
+                            cardHeight: normalizedHeight
+                          });
+                          return;
+                        }
+
+                        // For HEX_HORIZONTAL, use its specific aspect ratio (wider than tall, flat-top)
+                        // Orientation setting doesn't affect HEX_HORIZONTAL shape (always flat-top)
+                        // Use exact formula: height = width / 1.15
+                        if (currentShape === CardShape.HEX_HORIZONTAL) {
+                          const normalizedHeight = Math.round(currentWidth / 1.15);
+                          updateCardSettingsMultiple({
+                            cardWidth: currentWidth,
+                            cardHeight: normalizedHeight
+                          });
+                          return;
+                        }
+
+                        // For HEX, normalization depends on orientation
                         if (currentShape === CardShape.HEX) {
-                          // HEX with HORIZONTAL orientation -> HEX_HORIZONTAL
-                          tokenShapeForNorm = currentOrientation === CardOrientation.HORIZONTAL
-                            ? TokenShape.HEX_HORIZONTAL
-                            : TokenShape.HEX;
-                        } else if (currentShape === CardShape.TRIANGLE) {
+                          // VERTICAL (pointy-top): height = width × 1.15
+                          // HORIZONTAL (flat-top): height = width / 1.15
+                          const normalizedHeight = currentOrientation === CardOrientation.VERTICAL
+                            ? Math.round(currentWidth * 1.15)
+                            : Math.round(currentWidth / 1.15);
+                          updateCardSettingsMultiple({
+                            cardWidth: currentWidth,
+                            cardHeight: normalizedHeight
+                          });
+                          return;
+                        }
+
+                        // For other shapes (TRIANGLE, CIRCLE, SQUARE), use existing normalization logic
+                        let tokenShapeForNorm: TokenShape;
+                        if (currentShape === CardShape.TRIANGLE) {
                           tokenShapeForNorm = TokenShape.TRIANGLE;
                         } else if (currentShape === CardShape.CIRCLE) {
                           tokenShapeForNorm = TokenShape.CIRCLE;
@@ -2042,8 +2244,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           currentWidth,
                           currentHeight
                         );
-                        updateCardSettings('cardWidth', width);
-                        updateCardSettings('cardHeight', height);
+                        updateCardSettingsMultiple({
+                          cardWidth: width,
+                          cardHeight: height
+                        });
                       }}
                       className="w-9 h-9 rounded border-2 flex items-center justify-center transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500"
                       title={translate('Normalize to perfect shape', language as Locale)}
