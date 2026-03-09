@@ -4448,10 +4448,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                id: boardId,
                type: ItemType.BOARD,
                shape: TokenShape.SQUARE,
-               x: 50,    // VU: 5% from left
-               y: 50,    // VU: 5% from top
-               width: 400,  // VU: 40% of screen width
-               height: 300, // VU: 30% of screen height
+               x: 100,    // VU: centered position
+               y: 100,    // VU: centered position
+               width: 1200,  // VU: 120% of screen width
+               height: 800, // VU: 80% of screen height
                rotation: 0,
                name: 'Game Board',
                content: '',
