@@ -48,6 +48,62 @@ const PEERJS_CONFIG = {
   }
 };
 
+/**
+ * Get local IP address using WebRTC
+ * This detects the LAN IP address for local network connections
+ */
+async function getLocalIPAddress(): Promise<string | null> {
+  if (typeof window === 'undefined' || !(window as any).RTCPeerConnection) {
+    return null;
+  }
+
+  try {
+    const rtc = new (window as any).RTCPeerConnection({ iceServers: [] });
+    rtc.createDataChannel(''); // Create a bogus data channel
+
+    // Create an offer to trigger ICE candidate gathering
+    const offer = await rtc.createOffer();
+    await rtc.setLocalDescription(offer);
+
+    // Wait a bit for ICE candidates to be gathered
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Check the local description for IP addresses
+    const candidates = await new Promise<string>((resolve) => {
+      setTimeout(() => {
+        if (rtc.localDescription && rtc.localDescription.sdp) {
+          resolve(rtc.localDescription.sdp);
+        } else {
+          resolve('');
+        }
+      }, 200);
+    });
+
+    rtc.close();
+
+    // Parse SDP for IP addresses
+    const ipRegex = /c=IN IP4 (\d+\.\d+\.\d+\.\d+)/g;
+    const ips = new Set<string>();
+    let match;
+
+    while ((match = ipRegex.exec(candidates)) !== null) {
+      const ip = match[1];
+      // Filter out localhost and invalid IPs
+      if (ip !== '127.0.0.1' && ip !== '0.0.0.0' && !ip.startsWith('169.254')) {
+        ips.add(ip);
+      }
+    }
+
+    // Return the first found IP (prefer non-192.168.x.x if available)
+    const ipArray = Array.from(ips);
+    const lanIp = ipArray.find(ip => !ip.startsWith('192.168.')) || ipArray[0] || null;
+
+    return lanIp;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Diagnostic logging on module load
 console.log(`[P2P Diagnostic] ============================================`);
 console.log(`[P2P Diagnostic] 🚀 Nexus Game Table P2P Module Loaded`);
@@ -299,10 +355,23 @@ export function usePeerConnection(
 
     console.log(`[P2P Host] ⏳ Waiting for PeerJS to assign host ID...`);
 
-    peer.on('open', (id) => {
+    peer.on('open', async (id) => {
       console.log(`[P2P Host] ✅ Host ID assigned: ${id}`);
       console.log(`[P2P Host] 📋 Share this ID with players or use the Invite button`);
       console.log(`[P2P Host] 🔗 Invite link format: ${window.location.href.split('?')[0]}?hostId=${id}`);
+
+      // Get and display local IP for LAN connections
+      const localIP = await getLocalIPAddress();
+      if (localIP) {
+        const protocol = window.location.protocol;
+        const port = window.location.port ? `:${window.location.port}` : '';
+        const path = window.location.pathname;
+        const lanUrl = `${protocol}//${localIP}${port}${path}?hostId=${id}`;
+        console.log(`[P2P Host] 🏠 Local Network (LAN) URL: ${lanUrl}`);
+        console.log(`[P2P Host] 📍 Local IP: ${localIP}`);
+        console.log(`[P2P Host] 💡 Other devices on the same network can use the LAN URL to connect`);
+      }
+
       setPeerId(id);
       // isHost already set correctly from URL during initialization
       setConnectionStatus('connected');
