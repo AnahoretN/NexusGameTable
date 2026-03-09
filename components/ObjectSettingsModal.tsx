@@ -469,6 +469,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   const isDice = data.type === ItemType.DICE_OBJECT;
   const isCounter = data.type === ItemType.COUNTER;
   const isDrawing = data.type === ItemType.DRAWING;
+  const isPanel = data.type === ItemType.PANEL;
   const isBattlefieldCell = data.type === ItemType.BATTLEFIELD_CELL;
 
   // Pile management functions
@@ -524,7 +525,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
           >
             <Settings size={16} /> {translate('General', language as Locale)}
           </button>
-          {!isCard && !isDice && !isCounter && !isBattlefieldCell && (
+          {!isCard && !isDice && !isCounter && !isBattlefieldCell && !isPanel && (
             <button
               onClick={() => setActiveTab('actions')}
               className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
@@ -1507,8 +1508,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
           {activeTab === 'actions' && (
             <div className="space-y-4">
-              {/* Context Menu Actions - with PL and GM toggle buttons - not for drawings */}
-              {!isDrawing && (
+              {/* Context Menu Actions - with PL and GM toggle buttons - not for drawings or panels */}
+              {!isDrawing && !isPanel && (
               <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Shield size={14} /> {translate('Context Menu Actions', language as Locale)}
@@ -1655,8 +1656,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               </div>
 
-              {/* Click Actions - not for drawings */}
-              {!isDrawing && (
+              {/* Click Actions - not for drawings or panels */}
+              {!isDrawing && !isPanel && (
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <MousePointer size={14} /> {translate('Mouse Click Actions', language as Locale)}
