@@ -162,7 +162,10 @@
       "Bash(perl -i -pe 's/getTranslation\\\\\\(language, ''''gridPreview''''\\\\\\)/translate\\(''''Grid Preview'''', language as Locale\\)/g' components/ObjectSettingsModal.tsx)",
       "Bash(perl -i -pe 's/getTranslation\\\\\\(language, ''''spriteSheetPreview''''\\\\\\)/translate\\(''''Sprite Sheet Preview'''', language as Locale\\)/g' components/ObjectSettingsModal.tsx)",
       "Bash(perl -i -pe 's/getTranslation\\\\\\(language, ''''generateCardsFromSprite''''\\\\\\)/translate\\(''''Generate Cards from Sprite'''', language as Locale\\)/g' components/ObjectSettingsModal.tsx)",
-      "Read(//c/Users/AnahUsers/Anahoret/Documents/NexusGameTable/components/**)"
+      "Read(//c/Users/AnahUsers/Anahoret/Documents/NexusGameTable/components/**)",
+      "Bash(perl -i -pe \"s/Card Height \\\\\\(px\\\\\\)/Card Height \\(vu\\)/g\" locales/*.json docs/locales/*.json)",
+      "Bash(perl -i -pe 's/\\(<Card\\\\s*\\\\n[^>]*cardOrientation=\\\\{deck\\\\?\\\\.cardOrientation\\\\}\\)/$1\\\\n\\\\s+pixelsPerVU=\\\\{pixelsPerVU\\\\}/g' Tabletop.tsx)",
+      "Bash(npx next build --dry-run)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Anahoret\\Documents\\NexusGameTable"

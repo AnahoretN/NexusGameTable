@@ -37,6 +37,11 @@ function translateGridType(gridType: GridType, language: AppLanguage = 'en'): st
 function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
   return [
     { id: 'topDeck', label: translate('Top Deck (section)', language as Locale) },
+    { id: 'draw', label: translate('Draw Card', language as Locale) },
+    { id: 'playTopCard', label: translate('Play Top', language as Locale) },
+    { id: 'millTopCard', label: translate('Mill', language as Locale) },
+    { id: 'toBottom', label: translate('To Bottom', language as Locale) },
+    { id: 'showTop', label: translate('Show Top', language as Locale) },
     { id: 'searchDeck', label: translate('Search', language as Locale) },
     { id: 'shuffleDeck', label: translate('Shuffle', language as Locale) },
     { id: 'piles', label: translate('Piles', language as Locale) },
@@ -49,6 +54,8 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
     { id: 'lock', label: translate('Lock/Unlock', language as Locale) },
     { id: 'pin', label: translate('Pin/Unpin', language as Locale) },
     { id: 'rotate', label: translate('Rotation (section)', language as Locale) },
+    { id: 'swingClockwise', label: translate('Swing CW', language as Locale) },
+    { id: 'swingCounterClockwise', label: translate('Swing CCW', language as Locale) },
   ];
 }
 
@@ -80,9 +87,17 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   switch (action) {
     case 'shuffleDeck':
     case 'searchDeck':
+    case 'draw':
+    case 'playTopCard':
+    case 'millTopCard':
+    case 'toBottom':
+    case 'showTop':
       return [ItemType.DECK];
     case 'flip':
       return [ItemType.CARD, ItemType.TOKEN];
+    case 'swingClockwise':
+    case 'swingCounterClockwise':
+      return [ItemType.CARD];
     // "Move to" actions for cards
     case 'moveToHand':
     case 'moveToTopDeck':
@@ -113,8 +128,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   // Get translated action labels
   const AVAILABLE_ACTIONS = getAvailableActions(language);
   const MOVE_TO_ACTIONS = getMoveToActions(language);
-  // Exclude section headers from click actions
-  const SECTION_ACTIONS: ContextAction[] = ['layer', 'rotate', 'topDeck', 'piles', 'moveTo', 'showTop'];
+  // Exclude section headers from click actions (note: showTop is NOT a section, it's a concrete action)
+  const SECTION_ACTIONS: ContextAction[] = ['layer', 'rotate', 'topDeck', 'piles', 'moveTo'];
   const CLICK_ACTIONS = [
     { id: 'none' as const, label: translate('None', language as Locale) },
     ...AVAILABLE_ACTIONS.filter(a => !SECTION_ACTIONS.includes(a.id)).map(a => ({ id: a.id, label: a.label }))
@@ -122,13 +137,15 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
     { id: 'none' as const, label: translate('None', language as Locale) },
     { id: 'showTooltipImage' as const, label: translate('Card Tooltip Image', language as Locale) },
-    ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+    ...[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS].map(a => ({ id: a.id, label: a.label }))
       .filter(action => {
         // Exclude deck-specific and section actions
         if (action.id === 'hide' ||
             action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
             action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-            action.id === 'rotate' || action.id === 'layer') {
+            action.id === 'rotate' || action.id === 'layer' ||
+            action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+            action.id === 'toBottom' || action.id === 'showTop') {
           return false;
         }
         // Exclude section headers
@@ -335,32 +352,51 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
           const baseRatio = baseDims.height / baseDims.width;
           // VERTICAL: normal ratio, HORIZONTAL: inverted ratio
           const ratio = currentOrientation === CardOrientation.VERTICAL ? baseRatio : 1 / baseRatio;
+          const newHeight = Math.round(currentWidth * ratio);
           updated.cardWidth = currentWidth;
-          updated.cardHeight = Math.round(currentWidth * ratio);
+          updated.cardHeight = newHeight;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', newHeight);
         }
         // For HEX_HORIZONTAL, use exact formula: height = width / 1.15
         else if (newShape === CardShape.HEX_HORIZONTAL) {
+          const newHeight = Math.round(currentWidth / 1.15);
           updated.cardWidth = currentWidth;
-          updated.cardHeight = Math.round(currentWidth / 1.15);
+          updated.cardHeight = newHeight;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', newHeight);
         }
         // For HEX, normalization depends on orientation
         else if (newShape === CardShape.HEX) {
-          updated.cardWidth = currentWidth;
           // VERTICAL (pointy-top): height = width × 1.15
           // HORIZONTAL (flat-top): height = width / 1.15
-          updated.cardHeight = currentOrientation === CardOrientation.VERTICAL
+          const newHeight = currentOrientation === CardOrientation.VERTICAL
             ? Math.round(currentWidth * 1.15)
             : Math.round(currentWidth / 1.15);
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = newHeight;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', newHeight);
         }
         // For TRIANGLE, use equilateral triangle ratio
         else if (newShape === CardShape.TRIANGLE) {
+          const newHeight = Math.round(currentWidth * Math.sqrt(3) / 2);
           updated.cardWidth = currentWidth;
-          updated.cardHeight = Math.round(currentWidth * Math.sqrt(3) / 2);
+          updated.cardHeight = newHeight;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', newHeight);
         }
         // For SQUARE and CIRCLE, make height equal to width
         else if (newShape === CardShape.SQUARE || newShape === CardShape.CIRCLE) {
           updated.cardWidth = currentWidth;
           updated.cardHeight = currentWidth;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', currentWidth);
         }
       }
 
@@ -1641,11 +1677,15 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         return false;
                       }
                       // Deck-specific actions - only for decks, not cards, tokens, or battlefield cells
-                      if ((isCard || isToken || isBattlefieldCell) && ['hide', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if ((isCard || isToken || isBattlefieldCell) && ['hide', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles', 'draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop'].includes(action.id)) {
                         return false;
                       }
                       // Board-specific actions - only decks, not boards
-                      if (isBoard && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if (isBoard && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles', 'draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop'].includes(action.id)) {
+                        return false;
+                      }
+                      // For decks: exclude individual Top Deck actions (they're controlled by 'topDeck' section)
+                      if (isDeck && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
@@ -2059,32 +2099,50 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                             cardWidth: currentWidth,
                             cardHeight: newHeight
                           });
+                          // Also update deck dimensions to match
+                          update('width', currentWidth);
+                          update('height', newHeight);
                         } else if (currentShape === CardShape.HEX_HORIZONTAL) {
                           // HEX_HORIZONTAL: exact formula height = width / 1.15 (always flat-top)
+                          const newHeight = Math.round(currentWidth / 1.15);
                           updateCardSettingsMultiple({
                             cardOrientation: newOrientation,
                             cardWidth: currentWidth,
-                            cardHeight: Math.round(currentWidth / 1.15)
+                            cardHeight: newHeight
                           });
+                          // Also update deck dimensions to match
+                          update('width', currentWidth);
+                          update('height', newHeight);
                         } else if (currentShape === CardShape.HEX) {
                           // HEX: normalize based on orientation
                           // VERTICAL (pointy-top): height = width × 1.15
                           // HORIZONTAL (flat-top): height = width / 1.15
-                          const hexHeight = newOrientation === CardOrientation.VERTICAL
+                          const newHeight = newOrientation === CardOrientation.VERTICAL
                             ? Math.round(currentWidth * 1.15)
                             : Math.round(currentWidth / 1.15);
                           updateCardSettingsMultiple({
                             cardOrientation: newOrientation,
                             cardWidth: currentWidth,
-                            cardHeight: hexHeight
+                            cardHeight: newHeight
                           });
-                        } else {
-                          // For other shapes (TRIANGLE, SQUARE, CIRCLE), just swap
+                          // Also update deck dimensions to match
+                          update('width', currentWidth);
+                          update('height', newHeight);
+                        } else if (currentShape === CardShape.TRIANGLE) {
+                          // TRIANGLE: swap width/height for orientation
                           const currentHeight = cardSettings.cardHeight ?? deck.height;
                           updateCardSettingsMultiple({
                             cardOrientation: newOrientation,
                             cardWidth: currentHeight,
                             cardHeight: currentWidth
+                          });
+                          // Also update deck dimensions to match
+                          update('width', currentHeight);
+                          update('height', currentWidth);
+                        } else {
+                          // For SQUARE and CIRCLE, orientation doesn't change dimensions
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation
                           });
                         }
                       }}
@@ -2349,9 +2407,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       // Exclude deck-specific and section actions
                       if (action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
-                      // Exclude section headers
-                      if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
+                          action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+                          action.id === 'toBottom' || action.id === 'showTop') return false;
+                      // Exclude individual Move To actions (keep moveTo section only)
+                      if (action.id === 'moveToHand' || action.id === 'moveToTopDeck' ||
+                          action.id === 'moveToBottomDeck' || action.id === 'moveToDiscard') return false;
+                      // Exclude swing actions (only for Action Buttons, not Context Menu)
+                      if (action.id === 'swingClockwise' || action.id === 'swingCounterClockwise') return false;
                       return true;
                     })
                     .map((action) => {
@@ -2364,8 +2427,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         .filter(a => {
                           if (a.id === 'hide' ||
                               a.id === 'shuffleDeck' || a.id === 'searchDeck' ||
-                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles') return false;
-                          if (a.id === 'moveTo' || a.id === 'layer' || a.id === 'rotate') return false;
+                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles' ||
+                              a.id === 'draw' || a.id === 'playTopCard' || a.id === 'millTopCard' ||
+                              a.id === 'toBottom' || a.id === 'showTop') return false;
+                          // Exclude individual Move To actions (keep moveTo section only)
+                          if (a.id === 'moveToHand' || a.id === 'moveToTopDeck' ||
+                              a.id === 'moveToBottomDeck' || a.id === 'moveToDiscard') return false;
+                          // Exclude swing actions (only for Action Buttons, not Context Menu)
+                          if (a.id === 'swingClockwise' || a.id === 'swingCounterClockwise') return false;
                           return true;
                         })
                         .map(a => a.id);
@@ -2391,8 +2460,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         .filter(a => {
                           if (a.id === 'hide' ||
                               a.id === 'shuffleDeck' || a.id === 'searchDeck' ||
-                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles') return false;
-                          if (a.id === 'moveTo' || a.id === 'layer' || a.id === 'rotate') return false;
+                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles' ||
+                              a.id === 'draw' || a.id === 'playTopCard' || a.id === 'millTopCard' ||
+                              a.id === 'toBottom' || a.id === 'showTop') return false;
+                          // Exclude individual Move To actions (keep moveTo section only)
+                          if (a.id === 'moveToHand' || a.id === 'moveToTopDeck' ||
+                              a.id === 'moveToBottomDeck' || a.id === 'moveToDiscard') return false;
+                          // Exclude swing actions (only for Action Buttons, not Context Menu)
+                          if (a.id === 'swingClockwise' || a.id === 'swingCounterClockwise') return false;
                           return true;
                         })
                         .map(a => a.id);
@@ -2456,10 +2531,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-2">
                   {[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
                     .filter(action => {
-                      // Only card-applicable actions
+                      // Only card-applicable actions (exclude all deck-specific actions)
                       if (action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
+                          action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+                          action.id === 'toBottom' || action.id === 'showTop') return false;
                       // Exclude section headers only
                       if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate') return false;
                       return true;

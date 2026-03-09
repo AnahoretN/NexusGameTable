@@ -80,7 +80,7 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
     cardIds,
     locked: false,
     isOnTable: true,
-    allowedActions: ['draw', 'shuffleDeck', 'playTopCard', 'searchDeck', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
+    allowedActions: ['topDeck', 'layer', 'piles', 'draw', 'shuffleDeck', 'playTopCard', 'searchDeck', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
     actionButtons: ['draw', 'playTopCard', 'shuffleDeck', 'searchDeck'],
     cardShape: defaultShape,
     cardOrientation: CardOrientation.VERTICAL,
