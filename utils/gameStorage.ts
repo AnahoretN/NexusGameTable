@@ -141,25 +141,20 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
   if (typeof window === 'undefined') return null;
 
   try {
-    logger.log('[LOAD_STATE] Loading from localStorage - isGuest:', isGuest, 'STORAGE_VERSION:', STORAGE_VERSION);
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) {
-      logger.log('[LOAD_STATE] No saved state found in localStorage');
       return null;
     }
 
     const parsed = JSON.parse(stored);
-    logger.log('[LOAD_STATE] Parsed saved state - version:', parsed.version, 'has objects:', !!parsed.state?.objects, 'objects count:', parsed.state?.objects ? Object.keys(parsed.state.objects).length : 0);
 
     // Migrate old formats
     if (!parsed.version || parsed.version < 3) {
-      logger.log('[LOAD_STATE] Old save format detected, migrating...');
       return migrateOldFormat(parsed);
     }
 
     if (parsed.version === 3) {
       // Version 3 had adaptation issues - migrate to version 4
-      logger.log('[LOAD_STATE] Version 3 detected, migrating to version 4');
       return migrateVersion3(parsed);
     }
 
@@ -169,12 +164,10 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
       // Check if state is too old (more than 7 days)
       const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
       if (data.timestamp < weekAgo) {
-        logger.warn('[LOAD_STATE] Saved game state is too old, clearing');
         clearGameState();
         return null;
       }
       const shouldAdapt = !isGuest;
-      logger.log('[LOAD_STATE] Loading version 4, shouldAdapt:', shouldAdapt);
       return shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
@@ -184,7 +177,6 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
 
     // Check version (now using version 5)
     if (data.version !== STORAGE_VERSION) {
-      logger.warn('[LOAD_STATE] Game state version mismatch - expected:', STORAGE_VERSION, 'got:', data.version, ', clearing saved state');
       clearGameState();
       return null;
     }
@@ -192,7 +184,6 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
     // Check if state is too old (more than 7 days)
     const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     if (data.timestamp < weekAgo) {
-      logger.warn('[LOAD_STATE] Saved game state is too old, clearing');
       clearGameState();
       return null;
     }
@@ -200,13 +191,11 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
     // If guest - DON'T adapt objects (host controls their position)
     // If host or solo game - adapt objects to new screen size
     const shouldAdapt = !isGuest;
-    logger.log('[LOAD_STATE] shouldAdapt:', shouldAdapt, 'viewport:', data.viewport.width + 'x' + data.viewport.height, 'current:', window.innerWidth + 'x' + window.innerHeight);
 
     const adaptedState = shouldAdapt
       ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
       : data.state;
 
-    logger.log('[LOAD_STATE] Returning state with', adaptedState?.objects ? Object.keys(adaptedState.objects).length : 0, 'objects');
     return adaptedState;
   } catch (error) {
     logger.error('[LOAD_STATE] Failed to load game state:', error);
@@ -349,7 +338,6 @@ export const clearGameState = (): void => {
 
   try {
     localStorage.removeItem(STORAGE_KEY);
-    logger.log('[CLEAR] Game state cleared from localStorage');
   } catch (error) {
     logger.error('Failed to clear game state:', error);
   }
@@ -363,23 +351,14 @@ export const clearAllData = (): void => {
   if (typeof window === 'undefined') return;
 
   try {
-    logger.log('[CLEAR] Starting full data clear...');
-
-    // Log current localStorage keys before clearing
-    const beforeKeys = Object.keys(localStorage);
-    logger.log('[CLEAR] Current localStorage keys:', beforeKeys);
-
     // Clear game state
     localStorage.removeItem(STORAGE_KEY);
-    logger.log('[CLEAR] Removed', STORAGE_KEY);
 
     // Clear local settings
     localStorage.removeItem('nexus-local-settings');
-    logger.log('[CLEAR] Removed nexus-local-settings');
 
     // Clear language preference
     localStorage.removeItem('app-language');
-    logger.log('[CLEAR] Removed app-language');
 
     // Clear any PeerJS-related data that might be cached
     Object.keys(localStorage).forEach(key => {
@@ -392,13 +371,7 @@ export const clearAllData = (): void => {
     if (window.location.search.includes('hostId')) {
       const cleanUrl = window.location.pathname + window.location.hash;
       window.history.replaceState({}, '', cleanUrl);
-      logger.log('[CLEAR] URL parameters cleared, reset to solo mode');
     }
-
-    // Verify clear
-    const afterKeys = Object.keys(localStorage);
-    logger.log('[CLEAR] Remaining localStorage keys after clear:', afterKeys);
-    logger.log('[CLEAR] All data cleared - application reset to initial state');
   } catch (error) {
     logger.error('[CLEAR] Failed to clear all data:', error);
   }
