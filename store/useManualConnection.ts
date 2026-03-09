@@ -262,8 +262,13 @@ export function useManualConnection() {
         };
       });
 
-      // Create offer
-      const offer = await pc.createOffer();
+      // Create offer with proper SDP options
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: false,
+        offerToReceiveVideo: false
+      });
+
+      // Host offer keeps 'setup:actpass' (accepts either active or passive from answerer)
       await pc.setLocalDescription(offer);
 
       console.log('[Manual P2P] Offer created, waiting for ICE gathering (max 3s)...');
@@ -276,6 +281,10 @@ export function useManualConnection() {
       console.log('[Manual P2P] ICE gathering complete');
       console.log('[Manual P2P] Final SDP length:', finalSdp.length);
       console.log('[Manual P2P] SDP contains data channel:', finalSdp.includes('application'));
+
+      // Log the setup attribute for debugging
+      const hostOfferSetup = finalSdp.match(/a=setup:(\w+)/);
+      console.log('[Manual P2P] Host Offer setup attribute:', hostOfferSetup ? hostOfferSetup[1] : 'not found');
 
       // Generate final code with all candidates
       const message: SDPMessage = {
@@ -459,19 +468,54 @@ export function useManualConnection() {
         };
       });
 
-      // Create answer
+      // Create answer with proper SDP options
       const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+
+      // Guest must use 'setup:active' to initiate the DTLS connection
+      let sdp = answer.sdp;
+
+      // Log original setup attribute for debugging
+      const originalSetup = sdp.match(/a=setup:(\w+)/);
+      console.log('[Manual P2P] Guest original setup attribute:', originalSetup ? originalSetup[1] : 'not found');
+
+      // Replace setup attribute - try multiple patterns
+      if (sdp.includes('a=setup:actpass')) {
+        sdp = sdp.replace(/a=setup:actpass/g, 'a=setup:active');
+      } else if (sdp.includes('a=setup:holdconn')) {
+        sdp = sdp.replace(/a=setup:holdconn/g, 'a=setup:active');
+      }
+
+      const newSetup = sdp.match(/a=setup:(\w+)/);
+      console.log('[Manual P2P] Guest modified setup attribute:', newSetup ? newSetup[1] : 'not found');
+
+      await pc.setLocalDescription(new RTCSessionDescription({
+        type: 'answer',
+        sdp: sdp
+      }));
 
       console.log('[Manual P2P] Answer created, waiting for ICE gathering (max 3s)...');
 
       // Wait for ICE gathering to complete
       await iceGatheringComplete;
 
-      // Now get the updated SDP with all ICE candidates
-      const finalSdp = pc.localDescription?.sdp || answer.sdp;
+      // Get the updated SDP with all ICE candidates
+      let finalSdp = pc.localDescription?.sdp || answer.sdp;
       console.log('[Manual P2P] Guest ICE gathering complete');
       console.log('[Manual P2P] Guest Answer SDP length:', finalSdp.length);
+
+      // CRITICAL: Modify SDP AFTER ICE gathering to fix setup attribute
+      // Browser may have reset it to actpass, so fix it again before sending
+      const finalSetupBefore = finalSdp.match(/a=setup:(\w+)/);
+      console.log('[Manual P2P] Guest final setup BEFORE fix:', finalSetupBefore ? finalSetupBefore[1] : 'not found');
+
+      if (finalSdp.includes('a=setup:actpass')) {
+        finalSdp = finalSdp.replace(/a=setup:actpass/g, 'a=setup:active');
+      } else if (finalSdp.includes('a=setup:holdconn')) {
+        finalSdp = finalSdp.replace(/a=setup:holdconn/g, 'a=setup:active');
+      }
+
+      const finalSetupAfter = finalSdp.match(/a=setup:(\w+)/);
+      console.log('[Manual P2P] Guest final setup AFTER fix:', finalSetupAfter ? finalSetupAfter[1] : 'not found');
 
       // Generate answer code
       const message: SDPMessage = {
@@ -545,6 +589,10 @@ export function useManualConnection() {
       if (!pc) {
         throw new Error('PeerConnection not initialized. Create an offer first.');
       }
+
+      // Log the setup attribute from guest's answer for debugging
+      const guestSetup = answerMessage.sdp.match(/a=setup:(\w+)/);
+      console.log('[Manual P2P] Host: Guest answer setup attribute:', guestSetup ? guestSetup[1] : 'not found');
 
       // Set remote description (answer)
       await pc.setRemoteDescription(new RTCSessionDescription({

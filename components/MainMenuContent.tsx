@@ -824,7 +824,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 <button
                   onClick={() => setShowManualConnection(true)}
                   className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all"
-                  title={translate('Direct connection without signalling server - works through any messenger', language as Locale)}
                 >
                   <Network size={16} />
                   {translate('Direct Connection', language as Locale)}
@@ -1082,18 +1081,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                         <Copy size={16} />
                         {translate('Copy to Clipboard', language as Locale)}
                       </button>
-
-                      <button
-                        onClick={() => {
-                          const baseUrl = window.location.origin + window.location.pathname;
-                          const inviteLink = `${baseUrl}?offer=${encodeURIComponent(manualConnection.state.generatedCode)}`;
-                          navigator.clipboard.writeText(inviteLink);
-                        }}
-                        className="flex-1 py-2 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
-                      >
-                        <LinkIcon size={16} />
-                        Copy Invite Link
-                      </button>
                     </div>
 
                     {manualConnection.state.step === 'waiting_for_answer' && (
@@ -1111,26 +1098,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
                         <button
                           onClick={() => {
-                            const guestName = (document.getElementById('guest-name-answer-input') as HTMLInputElement)?.value || 'Guest';
-                            manualConnection.handleGuestAnswer(manualConnection.state.remoteAnswer, guestName);
+                            manualConnection.handleGuestAnswer(manualConnection.state.remoteAnswer, 'Guest');
                           }}
                           disabled={!manualConnection.state.remoteAnswer}
                           className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors"
                         >
                           {translate('Connect', language as Locale)}
                         </button>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            {translate('Guest Name (optional)', language as Locale)}
-                          </label>
-                          <input
-                            type="text"
-                            id="guest-name-answer-input"
-                            placeholder="Guest"
-                            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
-                          />
-                        </div>
                       </div>
                     )}
 
