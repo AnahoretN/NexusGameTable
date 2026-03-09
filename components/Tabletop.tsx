@@ -340,6 +340,35 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('update-token-copy-from-archetype', handleUpdateTokenCopy);
   }, [dispatch]);
 
+  // Listen for deck card dimensions updates from deck settings changes
+  useEffect(() => {
+    const handleUpdateDeckCardsDimensions = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        deckId: string;
+        cardWidth: number;
+        cardHeight: number;
+      }>;
+      const { deckId, cardWidth, cardHeight } = customEvent.detail;
+
+      // Update all cards in this deck with new dimensions
+      Object.values(state.objects).forEach(obj => {
+        if (obj.type === ItemType.CARD && (obj as CardType).deckId === deckId) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: obj.id,
+              width: cardWidth,
+              height: cardHeight
+            }
+          });
+        }
+      });
+    };
+
+    window.addEventListener('update-deck-cards-dimensions', handleUpdateDeckCardsDimensions);
+    return () => window.removeEventListener('update-deck-cards-dimensions', handleUpdateDeckCardsDimensions);
+  }, [dispatch]);
+
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = useCallback((card: CardType) => {
     if (card.deckId) {
@@ -3583,6 +3612,7 @@ export const Tabletop: React.FC = () => {
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
                                 cardNamePosition={deck?.cardNamePosition}
+                                pixelsPerVU={pixelsPerVU}
                                 disableRotationTransform={true}
                                 disablePointerEvents={true}
                                 showActionButtons={false}
@@ -3673,6 +3703,7 @@ export const Tabletop: React.FC = () => {
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
                                 cardNamePosition={deck?.cardNamePosition}
+                                pixelsPerVU={pixelsPerVU}
                                 disableRotationTransform={true}
                                 disablePointerEvents={true}
                                 showActionButtons={false}
@@ -3761,6 +3792,7 @@ export const Tabletop: React.FC = () => {
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
                                 cardNamePosition={deck?.cardNamePosition}
+                                pixelsPerVU={pixelsPerVU}
                                 disableRotationTransform={true}
                                 disablePointerEvents={true}
                                 showActionButtons={false}
@@ -4980,12 +5012,9 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.CARD) {
                     const card = obj as CardType;
                     const cardSettings = getCardSettings(card);
-                    // For horizontal orientation, swap width and height for display
-                    const isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
-                    const actualCardWidth = card.width ?? cardSettings.cardWidth ?? 100;
-                    const actualCardHeight = card.height ?? cardSettings.cardHeight ?? 140;
-                    const displayWidth = isHorizontal ? actualCardHeight : actualCardWidth;
-                    const displayHeight = isHorizontal ? actualCardWidth : actualCardHeight;
+                    // Card dimensions now reflect the orientation (no swap needed)
+                    const displayWidth = card.width ?? cardSettings.cardWidth ?? 100;
+                    const displayHeight = card.height ?? cardSettings.cardHeight ?? 140;
 
                     const isDragging = draggingId === obj.id;
                     const isCardHidden = (card as any).hidden === true;
@@ -5026,6 +5055,7 @@ export const Tabletop: React.FC = () => {
                                   overrideHeight={v2p(displayHeight)}
                                   cardNamePosition={cardSettings.cardNamePosition}
                                   cardOrientation={cardSettings.cardOrientation}
+                                  pixelsPerVU={pixelsPerVU}
                                   disableRotationTransform={true}
                                   deckSpriteConfig={card.deckId ? (state.objects[card.deckId] as DeckType)?.spriteConfig : undefined}
                                   deckShowTooltipImage={card.deckId ? (state.objects[card.deckId] as DeckType)?.showTooltipImage : undefined}

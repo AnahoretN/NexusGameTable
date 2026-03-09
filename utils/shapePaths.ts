@@ -120,11 +120,14 @@ export function getCardShapePath(
     }
   }
 
-  // For HEX_HORIZONTAL card shape (always flat-top)
+  // For HEX_HORIZONTAL card shape (always flat-top, wider than tall)
   if (shape === CardShape.HEX_HORIZONTAL) {
-    const hexHeight = 100;
-    const hexWidth = Math.round(100 * aspectRatio);
-    return generateFlatTopHexPath(hexWidth, hexHeight);
+    // For flat-top hex: width > height
+    // Use a fixed width of 100, calculate height from aspectRatio
+    // aspectRatio = width / height, so height = width / aspectRatio
+    const baseWidth = 100;
+    const baseHeight = Math.round(baseWidth / aspectRatio);
+    return generateFlatTopHexPath(baseWidth, baseHeight);
   }
 
   // For TRIANGLE and other shapes, use static paths (viewBox 0 0 100 100)

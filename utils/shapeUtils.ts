@@ -40,6 +40,13 @@ export function getCardShapeStyles(
         clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
       };
 
+    case CardShape.HEX_HORIZONTAL:
+      // Always flat-top (vertices at left/right)
+      return {
+        borderRadius: '0',
+        clipPath: 'polygon(0% 50%, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%)'
+      };
+
     case CardShape.TRIANGLE:
       return {
         borderRadius: '0',
@@ -93,10 +100,10 @@ export function getTokenShapeStyles(shape: TokenShape): ShapeStyles {
 /**
  * Check if a shape is geometric (uses clipPath)
  * @param shape - CardShape or TokenShape value
- * @returns true if shape is geometric (CIRCLE, HEX, TRIANGLE)
+ * @returns true if shape is geometric (CIRCLE, HEX, HEX_HORIZONTAL, TRIANGLE)
  */
 export function isGeometricCardShape(shape: CardShape): boolean {
-  return shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
+  return shape === CardShape.HEX || shape === CardShape.HEX_HORIZONTAL || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
 }
 
 export function isGeometricTokenShape(shape: TokenShape): boolean {
