@@ -1,11 +1,33 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { Layers, Lock, Unlock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react';
 import { useGame } from '../store/GameContext';
-import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation } from '../types';
+import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation, ContextAction } from '../types';
 import { DECK_OFFSET } from '../constants';
 import { Tooltip } from './Tooltip';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
+
+// Submenu actions map to their parent section for permission checking
+const SUBMENU_TO_PARENT: Record<string, ContextAction> = {
+  'layerUp': 'layer',
+  'layerDown': 'layer',
+  'layerToTop': 'layer',
+  'layerToBottom': 'layer',
+  'rotateClockwise': 'rotate',
+  'rotateCounterClockwise': 'rotate',
+  'resetRotation': 'rotate',
+  'swingClockwise': 'rotate',
+  'swingCounterClockwise': 'rotate',
+  'draw': 'topDeck',
+  'playTopCard': 'topDeck',
+  'millTopCard': 'topDeck',
+  'toBottom': 'topDeck',
+  'showTop': 'topDeck',
+  'moveToHand': 'moveTo',
+  'moveToTopDeck': 'moveTo',
+  'moveToBottomDeck': 'moveTo',
+  'moveToDiscard': 'moveTo',
+};
 
 interface DeckComponentProps {
   deck: DeckType;
@@ -67,6 +89,25 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
 
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
   const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
+
+  // Helper to check if an action is allowed for the current user
+  const can = (action: ContextAction): boolean => {
+    const allowedActions = deck.allowedActions;
+    const allowedActionsForGM = deck.allowedActionsForGM;
+
+    // Check if this is a submenu action - if so, check parent section permission
+    const parentAction = SUBMENU_TO_PARENT[action];
+    const actionToCheck = parentAction || action;
+
+    if (isGM) {
+      // GM: check allowedActionsForGM
+      // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
+      return allowedActionsForGM == null || (allowedActionsForGM.length > 0 && allowedActionsForGM.includes(actionToCheck));
+    }
+    // Player: check allowedActions
+    // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
+    return allowedActions == null || (allowedActions.length > 0 && allowedActions.includes(actionToCheck));
+  };
 
   // Card shape and orientation for deck styling (not for deck dimensions)
   const cardShape = deck.cardShape ?? CardShape.POKER;
@@ -808,7 +849,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
 
             const buttons = actionButtons
               .map(action => buttonConfigs[action])
-              .filter(Boolean)
+              .filter(btnConfig => btnConfig && can(btnConfig.key as ContextAction))
               .slice(0, 4);
 
             return buttons.map(btn => (

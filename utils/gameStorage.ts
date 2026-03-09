@@ -4,7 +4,7 @@ import { SCROLLBAR_WIDTH } from '../constants';
 import { logger } from './logger';
 
 const STORAGE_KEY = 'nexus-game-state';
-const STORAGE_VERSION = 5; // Version with blob URL to base64 conversion
+const STORAGE_VERSION = 6; // Version with hyperscale layers saving
 
 interface ViewportInfo {
   width: number;
@@ -124,6 +124,10 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         language: state.language,
         // Save session ID
         sessionId: state.sessionId,
+        // Save hyperscale layers
+        hyperscaleLayers: state.hyperscaleLayers,
+        // Save selected hyperscale layer IDs
+        selectedHyperscaleLayerIds: state.selectedHyperscaleLayerIds,
       }
     };
 
@@ -158,7 +162,7 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
       return migrateVersion3(parsed);
     }
 
-    // Version 4 can be loaded directly (will be converted to v5 on next save)
+    // Version 4 can be loaded directly (will be converted to newer version on next save)
     if (parsed.version === 4) {
       const data: StoredGameState = parsed;
       // Check if state is too old (more than 7 days)
@@ -168,14 +172,33 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
         return null;
       }
       const shouldAdapt = !isGuest;
-      return shouldAdapt
+      const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
+      // Migrate to version 6 by adding hyperscale layers
+      return migrateToVersion6(adaptedState);
+    }
+
+    // Version 5 migration - add hyperscale layers if missing
+    if (parsed.version === 5) {
+      const data: StoredGameState = parsed;
+      // Check if state is too old (more than 7 days)
+      const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      if (data.timestamp < weekAgo) {
+        clearGameState();
+        return null;
+      }
+      const shouldAdapt = !isGuest;
+      const adaptedState = shouldAdapt
+        ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
+        : data.state;
+      // Migrate to version 6 by adding hyperscale layers
+      return migrateToVersion6(adaptedState);
     }
 
     const data: StoredGameState = parsed;
 
-    // Check version (now using version 5)
+    // Check version
     if (data.version !== STORAGE_VERSION) {
       clearGameState();
       return null;
@@ -235,11 +258,82 @@ function migrateVersion3(parsed: any): Partial<GameState> | null {
 }
 
 /**
+ * Migrate from version 5 to version 6 (add hyperscale layers)
+ */
+function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
+  const migrated = { ...state };
+
+  // Add hyperscale layers if missing
+  if (!migrated.hyperscaleLayers || migrated.hyperscaleLayers.length === 0) {
+    migrated.hyperscaleLayers = [
+      {
+        id: 'boards',
+        name: 'Game Boards',
+        minZIndex: 1,
+        maxZIndex: 1000,
+        color: '#3b82f6',
+        playerCanSelect: true,
+        playerCanView: true,
+        individualPosition: false,
+        individualObjects: false,
+        order: 0
+      },
+      {
+        id: 'cards',
+        name: 'Cards',
+        minZIndex: 1001,
+        maxZIndex: 3000,
+        color: '#f59e0b',
+        playerCanSelect: true,
+        playerCanView: true,
+        individualPosition: false,
+        individualObjects: false,
+        order: 1
+      },
+      {
+        id: 'tokens',
+        name: 'Tokens',
+        minZIndex: 3001,
+        maxZIndex: 6000,
+        color: '#10b981',
+        playerCanSelect: true,
+        playerCanView: true,
+        individualPosition: false,
+        individualObjects: false,
+        order: 2
+      },
+      {
+        id: 'interface',
+        name: 'Interface',
+        minZIndex: 9001,
+        maxZIndex: 10000,
+        color: '#8b5cf6',
+        playerCanSelect: true,
+        playerCanView: false,
+        individualPosition: false,
+        individualObjects: false,
+        order: 3
+      }
+    ];
+  }
+
+  // Add selected layer IDs if missing
+  if (!migrated.selectedHyperscaleLayerIds || migrated.selectedHyperscaleLayerIds.length === 0) {
+    migrated.selectedHyperscaleLayerIds = ['boards', 'cards', 'tokens', 'interface'];
+  }
+
+  return migrated;
+}
+
+/**
  * Adapt game state to new screen size
- * Scales object positions and pan/zoom to visually keep everything in place
  *
  * IMPORTANT: This function is ONLY called for host or solo game
  * Guests don't adapt objects - their position is controlled by host
+ *
+ * VU (Virtual Units) are screen-independent - they should NOT be scaled!
+ * Only viewport-pinned objects use screen coordinates and need adjustment.
+ * The camera (viewTransform) adjusts to keep the same visual view.
  */
 function adaptStateToViewport(
   savedState: Partial<GameState>,
@@ -260,11 +354,8 @@ function adaptStateToViewport(
 
   logger.log(`Adapting game state from ${savedViewport.width}x${savedViewport.height} to ${currentWidth}x${currentHeight}`);
 
-  // Calculate scaling factors
-  const scaleX = currentWidth / savedViewport.width;
-  const scaleY = currentHeight / savedViewport.height;
-
-  // Adapt objects
+  // VU coordinates are screen-independent - DON'T scale them!
+  // Only adapt viewport-pinned objects (they use screen coordinates)
   if (newState.objects) {
     const adaptedObjects: Record<string, TableObject> = {};
 
@@ -272,36 +363,53 @@ function adaptStateToViewport(
       const adaptedObj = { ...obj };
 
       if (obj.isPinnedToViewport) {
-        // Pinned objects - check they don't go beyond screen boundaries
-        // Right side should be within screen
-        let newX = obj.x;
-        let newY = obj.y;
+        // Pinned objects use screen coordinates - need to adjust for screen size change
+        // Keep relative position the same (e.g., if it was at 50% of screen width, keep it there)
+        const relativeX = obj.x / savedViewport.width;
+        const relativeY = obj.y / savedViewport.height;
 
-        // If object is beyond right edge, shift it
-        if (newX + (obj.width || 100) > currentWidth) {
-          newX = currentWidth - (obj.width || 100) - SCROLLBAR_WIDTH;
-        }
-        // If below bottom edge, shift up
-        if (newY + (obj.height || 100) > currentHeight - SCROLLBAR_WIDTH) {
-          newY = currentHeight - (obj.height || 100) - SCROLLBAR_WIDTH;
-        }
+        adaptedObj.x = relativeX * currentWidth;
+        adaptedObj.y = relativeY * currentHeight;
 
-        adaptedObj.x = newX;
-        adaptedObj.y = newY;
+        // Ensure object stays within screen bounds
+        if (adaptedObj.x + (obj.width || 100) > currentWidth) {
+          adaptedObj.x = currentWidth - (obj.width || 100) - SCROLLBAR_WIDTH;
+        }
+        if (adaptedObj.y + (obj.height || 100) > currentHeight - SCROLLBAR_WIDTH) {
+          adaptedObj.y = currentHeight - (obj.height || 100) - SCROLLBAR_WIDTH;
+        }
 
         // Adapt pinnedScreenPosition if present
         if (obj.pinnedScreenPosition) {
+          const pinnedRelativeX = obj.pinnedScreenPosition.x / savedViewport.width;
+          const pinnedRelativeY = obj.pinnedScreenPosition.y / savedViewport.height;
           adaptedObj.pinnedScreenPosition = {
-            x: newX,
-            y: newY
+            x: pinnedRelativeX * currentWidth,
+            y: pinnedRelativeY * currentHeight
           };
         }
-      } else {
-        // Regular objects - scale coordinates
-        // This preserves their visual position relative to screen
-        adaptedObj.x = obj.x * scaleX;
-        adaptedObj.y = obj.y * scaleY;
+
+        // Adapt expandedPinnedPosition if present
+        if (obj.expandedPinnedPosition) {
+          const expandedRelativeX = obj.expandedPinnedPosition.x / savedViewport.width;
+          const expandedRelativeY = obj.expandedPinnedPosition.y / savedViewport.height;
+          adaptedObj.expandedPinnedPosition = {
+            x: expandedRelativeX * currentWidth,
+            y: expandedRelativeY * currentHeight
+          };
+        }
+
+        // Adapt collapsedPinnedPosition if present
+        if (obj.collapsedPinnedPosition) {
+          const collapsedRelativeX = obj.collapsedPinnedPosition.x / savedViewport.width;
+          const collapsedRelativeY = obj.collapsedPinnedPosition.y / savedViewport.height;
+          adaptedObj.collapsedPinnedPosition = {
+            x: collapsedRelativeX * currentWidth,
+            y: collapsedRelativeY * currentHeight
+          };
+        }
       }
+      // Regular objects: keep VU coordinates unchanged! They're screen-independent.
 
       adaptedObjects[id] = adaptedObj;
     });
@@ -309,23 +417,9 @@ function adaptStateToViewport(
     newState.objects = adaptedObjects;
   }
 
-  // Adapt viewTransform (pan/zoom) so camera stays in place
-  if (newState.viewTransform) {
-    const vt: ViewTransform = { ...newState.viewTransform };
-    if (vt.scroll) {
-      vt.scroll = {
-        x: vt.scroll.x * scaleX,
-        y: vt.scroll.y * scaleY
-      };
-    }
-    if (vt.offset) {
-      vt.offset = {
-        x: vt.offset.x * scaleX,
-        y: vt.offset.y * scaleY
-      };
-    }
-    newState.viewTransform = vt;
-  }
+  // ViewTransform stores VU coordinates - don't scale them!
+  // The visual appearance will be correct because VU is screen-independent
+  // No changes needed to viewTransform
 
   return newState;
 }
