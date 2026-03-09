@@ -100,6 +100,49 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
     return visibleCardIds.length > 0 ? (allObjects[visibleCardIds[0]] as CardType) : null;
   }, [deck.cardIds, allObjects]);
 
+  // Helper function to get background styles for a card (handles sprite sheets)
+  const getCardBackgroundStyles = useCallback((card: CardType | null) => {
+    if (!card) return { backgroundColor: 'white' };
+
+    const deckSpriteConfig = deck.spriteConfig;
+    const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
+    const spriteIndex = card.spriteIndex !== undefined ? card.spriteIndex : deckSpriteConfig?.spriteIndex;
+    const spriteColumns = card.spriteColumns || deckSpriteConfig?.columns;
+    const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
+    const hasSpriteSheet = spriteUrl && spriteIndex !== undefined && spriteColumns && spriteRows;
+
+    if (hasSpriteSheet) {
+      // Calculate background position for sprite sheet
+      const col = spriteIndex % spriteColumns;
+      const row = Math.floor(spriteIndex / spriteColumns);
+      const colPercent = spriteColumns > 1 ? (col / (spriteColumns - 1)) * 100 : 0;
+      const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
+
+      return {
+        backgroundImage: `url(${spriteUrl})`,
+        backgroundSize: `${spriteColumns * 100}% ${spriteRows * 100}%`,
+        backgroundPosition: `${colPercent}% ${rowPercent}%`,
+        backgroundColor: 'white'
+      };
+    } else if (card.content) {
+      // Regular card with content image
+      return {
+        backgroundImage: `url(${card.content})`,
+        backgroundSize: '100% 100%',
+        backgroundPosition: 'center',
+        backgroundColor: 'white'
+      };
+    }
+
+    // No image - just white background
+    return {
+      backgroundImage: undefined,
+      backgroundSize: '100% 100%',
+      backgroundPosition: 'center',
+      backgroundColor: 'white'
+    };
+  }, [deck.spriteConfig]);
+
   // Memoize piles grouping by position
   const { pilesByPosition, getPilePosition } = useMemo(() => {
     const visiblePiles = deck.piles?.filter(p => p.visible) || [];
@@ -365,26 +408,12 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                     {pile.showTopCard && topCard ? (
                       // Show top card face without text overlay
                       <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                        <div
-                          style={{ width: '100%', height: '100%',
-                            backgroundColor: 'white',
-                            backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
-                            backgroundSize: '100% 100%',
-                            backgroundPosition: 'center'
-                          }}
-                        />
+                        <div style={{ width: '100%', height: '100%', ...getCardBackgroundStyles(topCard) }} />
                       </div>
                     ) : topCard ? (
                       // Normal pile appearance with optional face up display
                       <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                        <div
-                          style={{ width: '100%', height: '100%',
-                            backgroundColor: pile.faceUp ? 'white' : '#1e293b',
-                            backgroundImage: pile.faceUp && topCard.content ? `url(${topCard.content})` : undefined,
-                            backgroundSize: '100% 100%',
-                            backgroundPosition: 'center'
-                          }}
-                        />
+                        <div style={{ width: '100%', height: '100%', ...(pile.faceUp ? getCardBackgroundStyles(topCard) : { backgroundColor: '#1e293b' }) }} />
                         {/* Pile name overlay with count */}
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
                           <DeckLabel
@@ -437,27 +466,14 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                   {pile.showTopCard && topCard ? (
                     // Show top card face without text overlay
                     <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
-                      <div
-                        className="w-full h-full"
-                        style={{
-                          backgroundColor: 'white',
-                          backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center'
-                        }}
-                      />
+                      <div className="w-full h-full" style={getCardBackgroundStyles(topCard)} />
                     </div>
                   ) : topCard ? (
                     // Normal pile appearance with optional face up display
                     <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
                       <div
                         className="w-full h-full"
-                        style={{
-                          backgroundColor: pile.faceUp ? 'white' : '#1e293b',
-                          backgroundImage: pile.faceUp && topCard.content ? `url(${topCard.content})` : undefined,
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center'
-                        }}
+                        style={pile.faceUp ? getCardBackgroundStyles(topCard) : { backgroundColor: '#1e293b' }}
                       />
                       {/* Pile name overlay with count */}
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
@@ -589,11 +605,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
                   orientation={cardOrientation}
                 >
                   <div
-                    style={{ width: '100%', height: '100%',
-                      backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
-                      backgroundSize: '100% 100%',
-                      backgroundPosition: 'center'
-                    }}
+                    style={{ width: '100%', height: '100%', ...getCardBackgroundStyles(topCard) }}
                   />
                 </SvgDeckShape>
               </div>
@@ -644,12 +656,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
               <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
                 <div
                   className="w-full h-full"
-                  style={{
-                    backgroundColor: 'white',
-                    backgroundImage: topCard.content ? `url(${topCard.content})` : undefined,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center'
-                  }}
+                  style={getCardBackgroundStyles(topCard)}
                 />
               </div>
             ) : (
