@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { TableObject, Token as TokenType, Board as BoardType, GridType } from '../types';
+import { calculateFlexibleHexGrid, calculateHorizontalHexGrid } from '../utils/gridUtils';
 
 interface BoardWithResizeProps {
     token: TokenType | BoardType;
@@ -38,25 +39,6 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     const [isHoveringCorner, setIsHoveringCorner] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Hex grid calculations (from main branch - flat-top hexagons)
-    const hexR = gridSize;           // Radius (height/2 of hex)
-    const hexW = hexR * Math.sqrt(3); // Width of hex
-
-    // Single hex path + vertical line for tiling
-    // This creates a seamless brick-wall pattern
-    const hexPath =
-      `M 0 ${hexR/2} ` +
-      `L ${hexW/2} 0 ` +
-      `L ${hexW} ${hexR/2} ` +
-      `L ${hexW} ${hexR*1.5} ` +
-      `L ${hexW/2} ${hexR*2} ` +
-      `L 0 ${hexR*1.5} Z ` +
-      `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
-
-    // Pattern dimensions for proper tiling
-    const patternW = hexW;
-    const patternH = hexR * 3;
-
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
         if (!containerRef.current || !canResize) return;
         const rect = containerRef.current.getBoundingClientRect();
@@ -77,6 +59,77 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 
     // Check if grid should be shown (grid type exists AND showGrid is not false)
     const shouldShowGrid = token.gridType && token.gridType !== GridType.NONE && (token as BoardType).showGrid !== false;
+    const isHexGrid = token.gridType === GridType.HEX;
+    const isHexHorizontalGrid = token.gridType === GridType.HEX_HORIZONTAL;
+
+    // Hex grid constants
+    const HEX_RATIO = 1.15;
+    const DEFAULT_HEX_WIDTH = 100;
+    const DEFAULT_FLAT_HEX_WIDTH = 115;
+
+    // Use gridWidth if provided, otherwise fall back to default hex dimensions
+    // For HEX (pointy-top): default width=100, height = 100 * 1.15 = 115
+    // For HEX_HORIZONTAL (flat-top): default width=115, height = 100
+    const actualGridWidth = gridWidth ?? (isHexGrid ? DEFAULT_HEX_WIDTH : (isHexHorizontalGrid ? DEFAULT_FLAT_HEX_WIDTH : gridSize));
+    const actualGridHeight = gridHeight ?? (isHexGrid ? Math.round(DEFAULT_HEX_WIDTH * HEX_RATIO * 100) / 100 : (isHexHorizontalGrid ? DEFAULT_HEX_WIDTH : gridSize));
+
+    // Flexible hex grid calculations
+    let hexGridPattern: React.ReactNode = null;
+    if (isHexGrid) {
+        const hexGrid = calculateFlexibleHexGrid(actualGridWidth);
+
+        hexGridPattern = (
+            <pattern
+                id={`hex-grid-${obj.id}`}
+                width={hexGrid.patternWidth}
+                height={hexGrid.patternHeight}
+                patternUnits="userSpaceOnUse"
+            >
+                <path
+                    d={hexGrid.path}
+                    fill="none"
+                    stroke="rgba(33,47,60,0.7)"
+                    strokeWidth={1 / zoom}
+                />
+            </pattern>
+        );
+    } else if (isHexHorizontalGrid) {
+        const hexGrid = calculateHorizontalHexGrid(actualGridWidth);
+
+        hexGridPattern = (
+            <pattern
+                id={`hex-grid-${obj.id}`}
+                width={hexGrid.patternWidth}
+                height={hexGrid.patternHeight}
+                patternUnits="userSpaceOnUse"
+            >
+                <path
+                    d={hexGrid.path}
+                    fill="none"
+                    stroke="rgba(33,47,60,0.7)"
+                    strokeWidth={1 / zoom}
+                />
+            </pattern>
+        );
+    }
+
+    // Generate square grid pattern (uses actualGridWidth and actualGridHeight)
+    const squareGridPattern = (
+        <pattern
+            id={`square-grid-${obj.id}`}
+            width={actualGridWidth}
+            height={actualGridHeight}
+            patternUnits="userSpaceOnUse"
+        >
+            <rect
+                width={actualGridWidth}
+                height={actualGridHeight}
+                fill="none"
+                stroke="rgba(33,47,60,0.7)"
+                strokeWidth={1 / zoom}
+            />
+        </pattern>
+    );
 
     // Determine cursor based on hover state and action state
     const getCursor = useCallback(() => {
@@ -113,21 +166,15 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         >
             {/* Grid overlay */}
             {shouldShowGrid && (
-                <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
+                <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
                     <defs>
-                        {token.gridType === GridType.SQUARE && (
-                            <pattern id={`grid-square-${obj.id}`} width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                                {/* Draw complete square: top, left, right, bottom edges */}
-                                <rect x="0" y="0" width={gridSize} height={gridSize} fill="none" stroke="black" strokeWidth="1"/>
-                            </pattern>
-                        )}
-                        {token.gridType === GridType.HEX && (
-                            <pattern id={`grid-hex-${obj.id}`} width={patternW} height={patternH} patternUnits="userSpaceOnUse">
-                                <path d={hexPath} fill="none" stroke="black" strokeWidth="1"/>
-                            </pattern>
-                        )}
+                        {(isHexGrid || isHexHorizontalGrid) ? hexGridPattern : squareGridPattern}
                     </defs>
-                    <rect width="100%" height="100%" fill={`url(#grid-${token.gridType === GridType.SQUARE ? 'square' : 'hex'}-${obj.id})`} />
+                    <rect
+                        width="100%"
+                        height="100%"
+                        fill={`url(#${(isHexGrid || isHexHorizontalGrid) ? `hex-grid-${obj.id}` : `square-grid-${obj.id}`})`}
+                    />
                 </svg>
             )}
 

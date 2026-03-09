@@ -2,7 +2,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { useLocalSettings } from '../hooks/useLocalSettings';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board as BoardType } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board as BoardType, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -17,6 +17,7 @@ import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
+import { NexusBoardMemo } from './NexusBoard';
 import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown } from 'lucide-react';
 import { CARD_SHAPE_DIMS, WORLD_SIZE_VU } from '../constants';
 import { generateUUID } from '../utils/uuid';
@@ -25,6 +26,7 @@ import { CursorSlotVisualization } from './CursorSlotVisualization';
 // import { RemoteObjectAnimation, useRemoteObjectAnimation } from './RemoteObjectAnimation';
 import { PinnedIndicator } from './PinnedIndicator';
 import { ObjectActionButtons } from './ObjectActionButtons';
+import { calculateFlexibleHexGrid, calculateHorizontalHexGrid } from '../utils/gridUtils';
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
@@ -79,6 +81,8 @@ export const Tabletop: React.FC = () => {
   const [searchModalPile, setSearchModalPile] = useState<CardPile | undefined>(undefined);
   const [topDeckModalDeck, setTopDeckModalDeck] = useState<DeckType | null>(null);
   const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: DeckType } | null>(null);
+  // NexusBoard add-cell UI state
+  const [nexusBoardAddingCell, setNexusBoardAddingCell] = useState<string | null>(null);
 
   // Click-to-show tooltip state for cards
   const [clickTooltip, setClickTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
@@ -482,51 +486,72 @@ export const Tabletop: React.FC = () => {
                   nearestCell = { x: cellCenterX, y: cellCenterY, distance };
               }
           } else if (board.gridType === GridType.HEX) {
-              // Hex grid snapping - use average of gridW and gridH for hex size
-              const hexR = (gridW + gridH) / 2;
-              const hexW = hexR * Math.sqrt(3);
-              const originOffsetX = hexW / 2;
-              const originOffsetY = hexR;
+              // Pointy-top hex grid snapping
+              // Height is calculated from width: height = width * 1.15
+              // Row spacing = 0.75 * height (tight hex packing)
+              // Column spacing = width
+              // Every other row is offset by width / 2
+              const hexW = gridW || 100;
+              const hexH = hexW * 1.15;  // Fixed aspect ratio for pointy-top hex
+              const rowSpacing = hexH * 0.75;  // Tight packing: 3/4 of height
+              const colSpacing = hexW;
+              const rowOffset = hexW / 2;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
 
-              const relativeX = cursorX - board.x - originOffsetX;
-              const relativeY = cursorY - board.y - originOffsetY;
-
-              // Convert to hex coordinates
-              const q_raw = (Math.sqrt(3)/3 * relativeX - 1/3 * relativeY) / hexR;
-              const r_raw = (2/3 * relativeY) / hexR;
-
-              let rx = Math.round(q_raw);
-              let ry = Math.round(r_raw);
-              let rz = Math.round(-q_raw - r_raw);
-
-              // Round to nearest hex
-              const x_diff = Math.abs(rx - q_raw);
-              const y_diff = Math.abs(ry - r_raw);
-              const z_diff = Math.abs(rz - (-q_raw - r_raw));
-
-              if (x_diff > y_diff && x_diff > z_diff) {
-                  rx = -ry - rz;
-              } else if (y_diff > z_diff) {
-                  ry = -rx - rz;
-              } else {
-                  rz = -rx - ry;
-              }
-
-              const q = rx;
-              const r = ry;
+              // Calculate row and column
+              const row = Math.round((cursorY - board.y - halfH) / rowSpacing);
+              const col = Math.round((cursorX - board.x - (row % 2) * rowOffset - halfW) / colSpacing);
 
               // Calculate hex center
-              const centerDx = hexR * Math.sqrt(3) * (q + r/2);
-              const centerDy = hexR * 3/2 * r;
-
-              const hexCenterX = board.x + originOffsetX + centerDx;
-              const hexCenterY = board.y + originOffsetY + centerDy;
+              const hexCenterX = board.x + col * colSpacing + (row % 2) * rowOffset + halfW;
+              const hexCenterY = board.y + row * rowSpacing + halfH;
 
               // Check if hex center is within board bounds
               const hexX = hexCenterX - board.x;
               const hexY = hexCenterY - board.y;
               if (hexX < -hexW/2 || hexX > board.width + hexW/2 ||
-                  hexY < -hexR || hexY > board.height + hexR) {
+                  hexY < -halfH || hexY > board.height + halfH) {
+                  continue;
+              }
+
+              // Check if within snap radius
+              const distance = Math.sqrt(
+                  Math.pow(cursorX - hexCenterX, 2) +
+                  Math.pow(cursorY - hexCenterY, 2)
+              );
+
+              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
+                  nearestCell = { x: hexCenterX, y: hexCenterY, distance };
+              }
+          } else if (board.gridType === GridType.HEX_HORIZONTAL) {
+              // Flat-top (horizontal) hex grid snapping - 90° rotated from pointy-top
+              // Width is the base dimension, height = width / 1.15
+              // Default: width=115, height=100
+              // Column spacing = 0.75 * width (tight hex packing)
+              // Row spacing = height
+              // Every other column is offset by height/2
+              const hexW = gridW || 115;
+              const hexH = hexW / 1.15;  // Fixed aspect ratio for flat-top hex
+              const colSpacing = hexW * 0.75;  // Tight packing: 3/4 of width
+              const rowSpacing = hexH;
+              const colOffset = hexH / 2;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              // Calculate column and row (adjusted for hex positioning)
+              const col = Math.round((cursorX - board.x - halfW) / colSpacing);
+              const row = Math.round((cursorY - board.y - (col % 2) * colOffset - halfH) / rowSpacing);
+
+              // Calculate hex center
+              const hexCenterX = board.x + col * colSpacing + halfW;
+              const hexCenterY = board.y + row * rowSpacing + (col % 2) * colOffset + halfH;
+
+              // Check if hex center is within board bounds
+              const hexX = hexCenterX - board.x;
+              const hexY = hexCenterY - board.y;
+              if (hexX < -halfW || hexX > board.width + halfW ||
+                  hexY < -hexH/2 || hexY > board.height + hexH/2) {
                   continue;
               }
 
@@ -1815,6 +1840,118 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, addToCursorSlot]);
 
+  // Handler for adding a cell to a NexusBoard - creates a standalone NexusCellObject
+  const handleAddNexusCell = useCallback((boardId: string, direction: HexDirection) => {
+    const board = state.objects[boardId] as NexusBoard;
+
+    if (!board || board.type !== ItemType.NEXUS_BOARD) {
+      return;
+    }
+
+    // Find main cell to use its position and size
+    const mainCellId = board.cells[0]?.id;
+    const mainCell = mainCellId ? (state.objects[mainCellId] as NexusCellObject) : null;
+
+    // Use actual main cell dimensions, or fall back to board defaults
+    const cellWidth = mainCell?.width || board.cellWidth || 100;
+    const cellHeight = mainCell?.height || board.cellHeight || 150;
+
+    // Hex grid spacing (same as used in NexusBoard.tsx for UI)
+    // Uses decaying extrapolation: height=115→coeff=0.75, height=150→coeff=0.80833, approaches 0.86
+    const H1 = 115;
+    const C1 = 0.75;
+    const H2 = 150;
+    const C2 = 121.25 / 150;
+    const targetRatio = 0.906;
+    const k = -Math.log((targetRatio - C2) / (targetRatio - C1)) / (H2 - H1);
+    const rowSpacingRatio = targetRatio - (targetRatio - C1) * Math.exp(-k * (cellHeight - H1));
+    const rowSpacing = cellHeight * rowSpacingRatio;
+    const colSpacing = cellWidth;
+    const colOffset = cellWidth * 0.5;
+
+    let offsetX = 0;
+    let offsetY = 0;
+
+    switch (direction) {
+      case 'NE':
+        offsetX = colOffset;
+        offsetY = -rowSpacing;
+        break;
+      case 'SE':
+        offsetX = colSpacing;
+        offsetY = 0;
+        break;
+      case 'NW':
+        offsetX = -colOffset;
+        offsetY = -rowSpacing;
+        break;
+      case 'SW':
+        offsetX = -colSpacing;
+        offsetY = 0;
+        break;
+      case 'N':
+        offsetX = 0;
+        offsetY = -rowSpacing;
+        break;
+      case 'S':
+        offsetX = 0;
+        offsetY = rowSpacing;
+        break;
+    }
+
+    // Main cell position is top-left corner, but green buttons are positioned from center
+    // The container is centered on main cell, so:
+    // Green button at: left: calc(50% + offsetX - cellWidth/2) from center
+    // In absolute coords: mainCell.x + cellWidth/2 + offsetX - cellWidth/2 = mainCell.x + offsetX
+    const cellX = (mainCell?.x ?? board.x) + offsetX;
+    const cellY = (mainCell?.y ?? board.y) + offsetY;
+
+    // Create new NexusCellObject (similar to BattlefieldCell)
+    const newCell: NexusCellObject = {
+      id: generateUUID(),
+      type: ItemType.NEXUS_CELL,
+      shape: TokenShape.HEX,
+      x: cellX,
+      y: cellY,
+      rotation: 0,
+      width: cellWidth,
+      height: cellHeight,
+      content: '',
+      name: `${board.name} - ${direction}`,
+      isOnTable: true,
+      locked: false,
+      color: board.color || '#496179',
+      borderColor: board.borderColor || '#212f3c',
+      borderWidth: 3,
+      opacity: board.opacity || 100,
+      borderOpacity: board.borderOpacity || 100,
+      snapToGrid: true,
+      gridSize: board.gridSize || 50,
+      zIndex: board.zIndex,
+      hyperscaleLayerId: board.hyperscaleLayerId,
+      nexusBoardId: board.id,
+      direction: direction,
+      offset: { x: offsetX, y: offsetY },
+      gridType: board.gridType,
+      magnetPointCount: 1,
+      magnetRotation: 0,
+    };
+
+    // Add the cell object to the table
+    dispatch({ type: 'ADD_OBJECT', payload: newCell });
+
+    // Also update board's cells array for reference
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: boardId,
+        cells: [...board.cells, { id: newCell.id, direction }]
+      }
+    });
+
+    // Keep editing mode open for adding more cells
+  }, [state.objects, dispatch]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
 
@@ -2001,7 +2138,7 @@ export const Tabletop: React.FC = () => {
   // Handle click on battlefield cell for magnetism control
   // Shift+click: add magnet point
   // Ctrl+Shift+click: remove magnet point
-  const handleCellMagnetClick = useCallback((e: React.MouseEvent, cell: BattlefieldCell) => {
+  const handleCellMagnetClick = useCallback((e: React.MouseEvent, cell: BattlefieldCell | NexusCellObject) => {
     // Prevent default behavior
     e.preventDefault();
     e.stopPropagation();
@@ -2884,6 +3021,52 @@ export const Tabletop: React.FC = () => {
               payload: { objectId: object.id, layerId }
           });
           setContextMenu(null);
+          return;
+      }
+
+      // Handle editNexusBoard action for NexusBoard - start editing mode
+      if (action === 'editNexusBoard' && object.type === ItemType.NEXUS_BOARD) {
+          setContextMenu(null);
+          setNexusBoardAddingCell(object.id);
+          return;
+      }
+
+      // Handle editNexusBoard action for NexusCellObject - use linked board
+      if (action === 'editNexusBoard' && object.type === ItemType.NEXUS_CELL) {
+          setContextMenu(null);
+          setNexusBoardAddingCell((object as NexusCellObject).nexusBoardId);
+          return;
+      }
+
+      // Handle closeNexusBoardEditing action for NexusBoard - stop editing mode
+      if (action === 'closeNexusBoardEditing' && object.type === ItemType.NEXUS_BOARD) {
+          setContextMenu(null);
+          setNexusBoardAddingCell(null);
+          return;
+      }
+
+      // Handle closeNexusBoardEditing action for NexusCellObject - use linked board
+      if (action === 'closeNexusBoardEditing' && object.type === ItemType.NEXUS_CELL) {
+          setContextMenu(null);
+          setNexusBoardAddingCell(null);
+          return;
+      }
+
+      // Handle deleteNexusBoard action for NexusCellObject - delete the whole board
+      if (action === 'deleteNexusBoard' && object.type === ItemType.NEXUS_CELL) {
+          setContextMenu(null);
+          const cell = object as NexusCellObject;
+          const boardId = cell.nexusBoardId;
+
+          // Delete the NexusBoard (this will cascade to all cells)
+          dispatch({ type: 'DELETE_OBJECT', payload: { id: boardId } });
+          return;
+      }
+
+      // Handle deleteNexusBoard action for NexusBoard - delete the whole board
+      if (action === 'deleteNexusBoard' && object.type === ItemType.NEXUS_BOARD) {
+          setContextMenu(null);
+          dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id } });
           return;
       }
 
@@ -3889,14 +4072,67 @@ export const Tabletop: React.FC = () => {
                                     onContextMenu={(e) => handleContextMenu(e, obj)}
                                     onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
                                     gridSize={gridSize}
-                                    gridWidth={board.gridWidth}
-                                    gridHeight={board.gridHeight}
+                                    gridWidth={gridW_px}
+                                    gridHeight={gridH_px}
                                     showGrid={board.showGrid}
                                     currentTool={currentTool}
                                 />
                                     </div>
                                 );
                             })()}
+                        </Tooltip>
+                    );
+                }
+
+                if (obj.type === ItemType.NEXUS_BOARD) {
+                    const nexusBoard = obj as NexusBoard;
+                    const isDragging = draggingId === obj.id;
+                    const showAddUI = nexusBoardAddingCell === obj.id;
+
+                    // Find main cell to position the board correctly
+                    const mainCellId = nexusBoard.cells[0]?.id;
+                    const mainCell = mainCellId ? (state.objects[mainCellId] as NexusCellObject) : null;
+
+                    // Use main cell's position and size for proper centering of green + buttons
+                    const boardX = mainCell?.x ?? obj.x;
+                    const boardY = mainCell?.y ?? obj.y;
+                    const boardWidth = mainCell?.width ?? nexusBoard.cellWidth ?? 100;
+                    const boardHeight = mainCell?.height ?? nexusBoard.cellHeight ?? 150;
+
+                    return (
+                        <Tooltip
+                            key={obj.id}
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
+                        >
+                            <div
+                                className="absolute"
+                                style={{
+                                    left: v2p(boardX),
+                                    top: v2p(boardY),
+                                    width: v2p(boardWidth),
+                                    height: v2p(boardHeight),
+                                    zIndex: globalZIndex,
+                                    transform: `rotate(${obj.rotation || 0}deg) scale(${zoom})`,
+                                    transformOrigin: 'center center',
+                                }}
+                            >
+                                <NexusBoardMemo
+                                    board={nexusBoard}
+                                    isOwner={isOwner}
+                                    isDragging={isDragging}
+                                    zoom={zoom}
+                                    onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                    onContextMenu={(e) => handleContextMenu(e, obj)}
+                                    onAddCell={(direction) => handleAddNexusCell(obj.id, direction)}
+                                    showAddUI={showAddUI}
+                                    mainCellWidth={mainCell?.width}
+                                    mainCellHeight={mainCell?.height}
+                                    pixelsPerVU={pixelsPerVU}
+                                />
+                            </div>
                         </Tooltip>
                     );
                 }
@@ -3912,46 +4148,19 @@ export const Tabletop: React.FC = () => {
                     const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
                     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
-                    // Regular hexagon (all angles 60°)
-                    // For pointy-top regular hex: width = R * sqrt(3), height = 2 * R
-                    // Using gridSize as the base dimension
-                    const hexR = gridSize / Math.sqrt(3);  // Radius from width
-                    const hexW = hexR * Math.sqrt(3);      // Width = gridSize
-                    const hexH = hexR * 2;                 // Height
-                    const rowSpacing = hexR * 1.5;         // Vertical distance between hex centers
+                    // Flexible hexagon grid
+                    // Height is calculated from width for proper hex proportions
+                    // For HEX (pointy-top): default width=100, height=115
+                    // For HEX_HORIZONTAL (flat-top): default width=115, height=100
+                    const isHexHorizontal = token.gridType === GridType.HEX_HORIZONTAL;
+                    const tokenGridWidth = (obj as any).gridWidth ?? (isHexHorizontal ? 115 : 100);
 
-                    const patternW = hexW * 2;
-                    const patternH = rowSpacing * 2;
-
-                    const hexPath =
-                      // Column 0, row 0 - center at (hexW/2, hexR)
-                      `M 0 ${hexR/2} ` +
-                      `L ${hexW/2} 0 ` +
-                      `L ${hexW} ${hexR/2} ` +
-                      `L ${hexW} ${hexR*1.5} ` +
-                      `L ${hexW/2} ${hexR*2} ` +
-                      `L 0 ${hexR*1.5} Z ` +
-                      // Column 0, row 1 - center at (hexW/2, hexR + rowSpacing)
-                      `M 0 ${hexR/2 + rowSpacing} ` +
-                      `L ${hexW/2} ${hexR*0 + rowSpacing} ` +
-                      `L ${hexW} ${hexR/2 + rowSpacing} ` +
-                      `L ${hexW} ${hexR*1.5 + rowSpacing} ` +
-                      `L ${hexW/2} ${hexR*2 + rowSpacing} ` +
-                      `L 0 ${hexR*1.5 + rowSpacing} Z ` +
-                      // Column 1 (offset by hexR/2), row 0 - center at (hexW*1.5, hexR + rowSpacing/2)
-                      `M ${hexW} ${hexR} ` +
-                      `L ${hexW*1.5} ${hexR*0.5} ` +
-                      `L ${hexW*2} ${hexR} ` +
-                      `L ${hexW*2} ${hexR*2} ` +
-                      `L ${hexW*1.5} ${hexR*2.5} ` +
-                      `L ${hexW} ${hexR*2} Z ` +
-                      // Column 1 (offset), row 1 - center at (hexW*1.5, hexR + rowSpacing*1.5)
-                      `M ${hexW} ${hexR + rowSpacing} ` +
-                      `L ${hexW*1.5} ${hexR*0.5 + rowSpacing} ` +
-                      `L ${hexW*2} ${hexR + rowSpacing} ` +
-                      `L ${hexW*2} ${hexR*2 + rowSpacing} ` +
-                      `L ${hexW*1.5} ${hexR*2.5 + rowSpacing} ` +
-                      `L ${hexW} ${hexR*2 + rowSpacing} Z`;
+                    const hexGrid = isHexHorizontal
+                        ? calculateHorizontalHexGrid(tokenGridWidth)
+                        : calculateFlexibleHexGrid(tokenGridWidth);
+                    const patternW = hexGrid.patternWidth;
+                    const patternH = hexGrid.patternHeight;
+                    const hexPath = hexGrid.path;
 
                     return (
                         <Tooltip
@@ -4001,7 +4210,7 @@ export const Tabletop: React.FC = () => {
                                                 <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="black" strokeWidth="1"/>
                                             </pattern>
                                         )}
-                                        {token.gridType === GridType.HEX && (
+                                        {(token.gridType === GridType.HEX || token.gridType === GridType.HEX_HORIZONTAL) && (
                                             <pattern id={`grid-hex-${obj.id}`} width={patternW} height={patternH} patternUnits="userSpaceOnUse">
                                                 <path d={hexPath} fill="none" stroke="black" strokeWidth="1"/>
                                             </pattern>
@@ -4300,6 +4509,204 @@ export const Tabletop: React.FC = () => {
                                                 </button>
                                             );
                                         });
+                                    })()}
+                                </div>
+                            </div>
+                        </Tooltip>
+                    );
+                }
+
+                if (obj.type === ItemType.NEXUS_CELL) {
+                    const cell = obj as NexusCellObject;
+                    const magnetPointCount = cell.magnetPointCount ?? 1;
+                    const magnetRotation = cell.magnetRotation ?? 0;
+
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+                    return (
+                        <Tooltip
+                            key={obj.id}
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
+                        >
+                            <div
+                                onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                onClick={(e) => isOwner && handleCellMagnetClick(e, cell)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                                style={{
+                                    left: v2p(obj.x),
+                                    top: v2p(obj.y),
+                                    width: v2p(obj.width),
+                                    height: v2p(obj.height),
+                                    transform: `rotate(${obj.rotation}deg)`,
+                                    zIndex: globalZIndex,
+                                    pointerEvents: isPermeable ? 'none' : 'auto',
+                                }}
+                            >
+                                <SvgTokenShape
+                                    shape={cell.shape}
+                                    width={v2p(obj.width)}
+                                    height={v2p(obj.height)}
+                                    color={obj.color || '#4ade80'}
+                                    borderWidth={obj.borderWidth ?? 2}
+                                    borderColor={obj.borderColor || '#166534'}
+                                    opacity={obj.opacity ?? 100}
+                                    borderOpacity={obj.borderOpacity ?? 100}
+                                    rotation={0}
+                                    showThickness={false}
+                                />
+
+                                {/* Magnetism System Visualization */}
+                                <svg
+                                    className="absolute pointer-events-none"
+                                    width={v2p(obj.width)}
+                                    height={v2p(obj.height)}
+                                    style={{ overflow: 'visible' }}
+                                >
+                                    <g transform={`translate(${v2p(obj.width) / 2}, ${v2p(obj.height) / 2})`}>
+                                        {/* Calculate ellipse radii - simple version (inscribed in bounding box) */}
+                                        {(() => {
+                                            // For all shapes, use the same simple approach: ellipse in bounding box
+                                            const ellipseRx = obj.width / 2 - 2;
+                                            const ellipseRy = obj.height / 2 - 2;
+
+                                            // Helper to calculate line length to ellipse at given angle
+                                            const calcLineLength = (angleRad: number) => {
+                                                const cosA = Math.cos(angleRad);
+                                                const sinA = Math.sin(angleRad);
+                                                return 1 / Math.sqrt((cosA / ellipseRx) ** 2 + (sinA / ellipseRy) ** 2);
+                                            };
+
+                                            return (
+                                                <>
+                                                    {/* Inscribed ellipse (green) - magnetism boundary */}
+                                                    <ellipse
+                                                        cx={0}
+                                                        cy={0}
+                                                        rx={v2p(ellipseRx)}
+                                                        ry={v2p(ellipseRy)}
+                                                        fill="none"
+                                                        stroke="#22c55e"
+                                                        strokeWidth={v2p(1.5)}
+                                                        opacity={0.7}
+                                                    />
+
+                                                    {/* Magnet lines (from center to inscribed ellipse) */}
+                                                    {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                        const anglePerSlice = 360 / magnetPointCount;
+                                                        const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+                                                        const lineLength = calcLineLength(angle);
+                                                        const endX = Math.cos(angle) * lineLength;
+                                                        const endY = Math.sin(angle) * lineLength;
+
+                                                        return (
+                                                            <line
+                                                                key={`magnet-line-${index}`}
+                                                                x1={0}
+                                                                y1={0}
+                                                                x2={v2p(endX)}
+                                                                y2={v2p(endY)}
+                                                                stroke="#f59e0b"
+                                                                strokeWidth={v2p(1)}
+                                                                opacity={0.6}
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Magnet points (red dots at 60% from center along each line) */}
+                                                    {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                        const anglePerSlice = 360 / magnetPointCount;
+                                                        const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+                                                        const lineLength = calcLineLength(angle);
+                                                        const magnetRadius = lineLength * 0.6;
+                                                        const magnetX = Math.cos(angle) * magnetRadius;
+                                                        const magnetY = Math.sin(angle) * magnetRadius;
+
+                                                        return (
+                                                            <circle
+                                                                key={`magnet-point-${index}`}
+                                                                cx={v2p(magnetX)}
+                                                                cy={v2p(magnetY)}
+                                                                r={v2p(2)}
+                                                                fill="#ef4444"
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Center point (yellow dot) - only shown when no magnet lines */}
+                                                    {magnetPointCount === 1 && (
+                                                        <circle
+                                                            cx={0}
+                                                            cy={0}
+                                                            r={v2p(3)}
+                                                            fill="#fbbf24"
+                                                        />
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </g>
+                                </svg>
+
+                                {/* Action buttons */}
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100' : ''}`}>
+                                    {(() => {
+                                        const actionButtons = obj.actionButtons || [];
+                                        const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+                                            rotate: {
+                                                key: 'rotate',
+                                                action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-green-600 hover:bg-green-500',
+                                                title: 'Rotate',
+                                                icon: <RefreshCw size={14} />
+                                            },
+                                            delete: {
+                                                key: 'delete',
+                                                action: () => dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-red-600 hover:bg-red-500',
+                                                title: 'Delete',
+                                                icon: <Trash2 size={14} />
+                                            },
+                                            clone: {
+                                                key: 'clone',
+                                                action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-cyan-600 hover:bg-cyan-500',
+                                                title: 'Clone',
+                                                icon: <Copy size={14} />
+                                            },
+                                            layerUp: {
+                                                key: 'layerUp',
+                                                action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+                                                className: 'bg-blue-600 hover:bg-blue-500',
+                                                title: 'Layer Up',
+                                                icon: <ChevronsUpDown size={14} />
+                                            },
+                                            layerDown: {
+                                                key: 'layerDown',
+                                                action: () => dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } }),
+                                                className: 'bg-blue-700 hover:bg-blue-600',
+                                                title: 'Layer Down',
+                                                icon: <ChevronsUpDown size={14} />
+                                            },
+                                        };
+                                        return actionButtons.map(action => buttonConfigs[action]).filter(Boolean).map(config => (
+                                            <button
+                                                key={config.key}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                                onClick={config.action}
+                                                className={`${config.className} text-white rounded p-1 shadow-lg hover:scale-110 transition-transform pointer-events-auto`}
+                                                title={config.title}
+                                            >
+                                                {config.icon}
+                                            </button>
+                                        ));
                                     })()}
                                 </div>
                             </div>
@@ -4890,8 +5297,8 @@ export const Tabletop: React.FC = () => {
                             onContextMenu={(e) => handleContextMenu(e, board)}
                             onResizeStart={(e) => !board.locked && handleResizeStart(e, board.id)}
                             gridSize={gridSize}
-                            gridWidth={board.gridWidth}
-                            gridHeight={board.gridHeight}
+                            gridWidth={gridW_px}
+                            gridHeight={gridH_px}
                             showGrid={board.showGrid}
                         />
                         {/* Pinned indicator - top-right corner */}
@@ -5047,6 +5454,7 @@ export const Tabletop: React.FC = () => {
                 onClose={() => setContextMenu(null)}
                 allObjects={state.objects}
                 language={state.language}
+                nexusBoardEditingId={nexusBoardAddingCell}
             />
         )}
 

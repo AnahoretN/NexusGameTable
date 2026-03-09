@@ -184,9 +184,13 @@ export function restoreImagesFromCache(obj: any, cache: ImageCache): any {
 export function extractImagesFromState(state: any, existingCache: ImageCache = {}): StateWithImageCache {
   const cache: ImageCache = { ...existingCache };
 
-  // Process objects
+  // Process objects (but skip main menu - each player has their own)
   const processedObjects: any = {};
   Object.entries(state.objects || {}).forEach(([id, obj]) => {
+    // Skip main menu panel - it's recreated locally for each player
+    if (obj.type === 'PANEL' && obj.panelType === 'MAIN_MENU') {
+      return;
+    }
     processedObjects[id] = extractImagesToCache(obj, cache, existingCache);
   });
 
@@ -199,8 +203,11 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
     console.warn('[P2P Debug] extractImagesFromState: State still has base64 data! Extraction failed.');
   }
 
+  // Filter out viewTransform from sync (pixelsPerVU is screen-specific)
+  const { viewTransform, ...stateWithoutViewTransform } = state;
+
   return {
-    state: { ...state, objects: processedObjects },
+    state: { ...stateWithoutViewTransform, objects: processedObjects },
     imageCache: cache
   };
 }

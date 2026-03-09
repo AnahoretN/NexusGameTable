@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight, Check } from 'lucide-react';
+import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer, NexusCellObject } from '../types';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight, Check, Plus } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 import { useGame } from '../store/GameContext';
 
@@ -16,6 +16,7 @@ interface ContextMenuProps {
   hideCardActions?: boolean;
   isSearchWindow?: boolean;
   language?: AppLanguage;
+  nexusBoardEditingId?: string | null; // ID of NexusBoard currently being edited
 }
 
 interface MenuItem {
@@ -29,7 +30,7 @@ interface MenuItem {
   isSeparator?: boolean;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en' }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId }) => {
   const { state } = useGame();
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
@@ -417,6 +418,30 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: 'returnAll',
       icon: <Undo size={14} />,
       visible: object.type === ItemType.DECK && can('returnAll'),
+    },
+    {
+      label: translate('Edit Board', language as Locale),
+      action: 'editNexusBoard',
+      icon: <Plus size={14} />,
+      visible: !hideCardActions && can('editNexusBoard') && (
+        (object.type === ItemType.NEXUS_BOARD && nexusBoardEditingId !== object.id) ||
+        (object.type === ItemType.NEXUS_CELL && nexusBoardEditingId !== (object as NexusCellObject).nexusBoardId)
+      ),
+    },
+    {
+      label: translate('Close Editing', language as Locale),
+      action: 'closeNexusBoardEditing',
+      icon: <Check size={14} />,
+      visible: !hideCardActions && (
+        (object.type === ItemType.NEXUS_BOARD && nexusBoardEditingId === object.id) ||
+        (object.type === ItemType.NEXUS_CELL && nexusBoardEditingId === (object as NexusCellObject).nexusBoardId)
+      ),
+    },
+    {
+      label: translate('Delete Board', language as Locale),
+      action: 'deleteNexusBoard',
+      icon: <Trash2 size={14} />,
+      visible: !hideCardActions && can('deleteNexusBoard') && object.type === ItemType.NEXUS_CELL,
     },
     // Separator before Change Layer group (only visible if any of Change Layer, Rotation, Hide, Lock, Pin are visible)
     {

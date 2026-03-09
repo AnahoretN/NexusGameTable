@@ -5,6 +5,12 @@ import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counte
 
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
+import { calculateHexHeight, calculateFlatHexHeight } from '../utils/gridUtils';
+
+// Hex grid constants
+const HEX_RATIO = 1.15;
+const DEFAULT_HEX_WIDTH = 100;  // Pointy-top default width
+const DEFAULT_FLAT_HEX_WIDTH = 115;  // Flat-top default width
 
 interface ObjectSettingsModalProps {
   object: TableObject;
@@ -20,7 +26,8 @@ function translateGridType(gridType: GridType, language: AppLanguage = 'en'): st
   const lookupKey: Record<typeof gridType, string> = {
     [GridType.NONE]: 'None',
     [GridType.SQUARE]: 'Square',
-    [GridType.HEX]: 'Hex'
+    [GridType.HEX]: 'Hex',
+    [GridType.HEX_HORIZONTAL]: 'Hex (Horizontal)'
   };
   return translate(lookupKey[gridType], language as Locale);
 }
@@ -92,12 +99,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
 
-  // Proportional resize states - enabled by default
-  const [linkObjectSize, setLinkObjectSize] = useState(true);
-  const [linkGridSize, setLinkGridSize] = useState(true);
-  const [linkCardSize, setLinkCardSize] = useState(true);
+  // Proportional resize states - initialize from object data, default to true
+  const getInitialLinkState = (value?: boolean) => value !== undefined ? value : true;
+  const [linkObjectSize, setLinkObjectSize] = useState(getInitialLinkState((object as any).linkObjectSize));
+  const [linkGridSize, setLinkGridSize] = useState(getInitialLinkState((object as any).linkGridSize));
+  const [linkCardSize, setLinkCardSize] = useState(getInitialLinkState((object as any).linkCardSize));
   const [objectRatio, setObjectRatio] = useState(1);
-  const [gridRatio, setGridRatio] = useState(1);
   const [cardRatio, setCardRatio] = useState(1);
 
   // Translation helper
@@ -186,6 +193,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     searchFaceUp?: boolean;
     playTopFaceUp?: boolean;
     searchWindowVisibility?: SearchWindowVisibility;
+    linkCardSize?: boolean; // Remember proportions button state
   }
 
   const [cardSettings, setCardSettings] = useState<CardSettings>(() => {
@@ -204,6 +212,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         searchFaceUp: deck.searchFaceUp ?? true,
         playTopFaceUp: deck.playTopFaceUp ?? true,
         searchWindowVisibility: deck.searchWindowVisibility,
+        linkCardSize: deck.linkCardSize,
       };
     }
     return {};
@@ -258,9 +267,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
     if (object.type === ItemType.BOARD) {
       const board = object as Board;
-      const gridW = board.gridWidth || board.gridSize || 50;
-      const gridH = board.gridHeight || board.gridSize || 50;
-      setGridRatio(gridH / gridW);
+      // For hex grids, force link proportions
+      const gridType = board.gridType;
+      if (gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL) {
+        setLinkGridSize(true);
+      }
     }
 
     if (object.type === ItemType.DECK) {
@@ -277,6 +288,15 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
   const updateMultiple = (fields: Record<string, any>) => {
     setData(prev => ({ ...prev, ...fields } as TableObject));
+  };
+
+  // Check if value should trigger rounding (only if more than 1 digit)
+  const shouldRound = (value: number): boolean => {
+    if (isNaN(value)) return false;
+    const absValue = Math.abs(value);
+    // Single digit integers (0-9) don't trigger rounding
+    if (absValue < 10 && Number.isInteger(value)) return false;
+    return true;
   };
 
   const toggleActionButton = (action: ContextAction) => {
@@ -382,6 +402,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       (toSave as Deck).searchFaceUp = cardSettings.searchFaceUp;
       (toSave as Deck).playTopFaceUp = cardSettings.playTopFaceUp;
       (toSave as Deck).searchWindowVisibility = cardSettings.searchWindowVisibility;
+      (toSave as Deck).linkCardSize = cardSettings.linkCardSize;
       (toSave as Deck).spriteConfig = spriteConfig || undefined;
     }
 
@@ -441,6 +462,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   const isToken = data.type === ItemType.TOKEN;
   const isArchetype = data.type === ItemType.TOKEN_TYPE;
   const isBoard = data.type === ItemType.BOARD;
+  const isNexusBoard = data.type === ItemType.NEXUS_BOARD;
+  const isNexusCell = data.type === ItemType.NEXUS_CELL;
   const isDeck = data.type === ItemType.DECK;
   const isCard = data.type === ItemType.CARD; // Cards don't have their own settings
   const isDice = data.type === ItemType.DICE_OBJECT;
@@ -616,19 +639,23 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       value={isArchetype ? (data as any).defaultSize?.width || data.width : data.width}
                       onChange={e => {
                         const value = parseFloat(e.target.value);
-                        if (isArchetype) {
+                        const roundHeight = shouldRound(value);
+                        if (isNexusCell) {
+                          // Nexus cells always have 1:1.15 proportion
+                          updateMultiple({ width: value, height: roundHeight ? Math.round(value * 1.15 * 100) / 100 : value * 1.15 });
+                        } else if (isArchetype) {
                           // For token types, update defaultSize
                           const currentHeight = (data as any).defaultSize?.height || data.height || 50;
                           update('defaultSize', {
                             ...(data as any).defaultSize,
                             width: value,
-                            height: linkObjectSize ? value * objectRatio : currentHeight
+                            height: linkObjectSize ? (roundHeight ? Math.round(value * objectRatio * 100) / 100 : value * objectRatio) : currentHeight
                           });
                         } else {
                           if (linkObjectSize) {
                             updateMultiple({
                               width: value,
-                              height: value * objectRatio
+                              height: roundHeight ? Math.round(value * objectRatio * 100) / 100 : value * objectRatio
                             });
                           } else {
                             update('width', value);
@@ -641,22 +668,29 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div className="flex items-end pb-0.5">
                     <button
                       onClick={() => {
+                        if (isNexusCell) return; // Locked for Nexus cells
+                        const newState = !linkObjectSize;
                         if (!linkObjectSize) {
                           // Turning on - save current ratio
                           const currentWidth = isArchetype ? (data as any).defaultSize?.width || data.width : data.width;
                           const currentHeight = isArchetype ? (data as any).defaultSize?.height || data.height : data.height;
                           setObjectRatio(currentHeight / currentWidth);
                         }
-                        setLinkObjectSize(!linkObjectSize);
+                        setLinkObjectSize(newState);
+                        // Save to object
+                        updateMultiple({ linkObjectSize: newState });
                       }}
+                      disabled={isNexusCell}
                       className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
-                        linkObjectSize
-                          ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
-                          : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                        isNexusCell
+                          ? 'bg-purple-600 border-purple-500 cursor-not-allowed'
+                          : linkObjectSize
+                            ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
+                            : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
                       }`}
-                      title={linkObjectSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale)}
+                      title={isNexusCell ? translate('Proportions locked (1:1.15)', language as Locale) : (linkObjectSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale))}
                     >
-                      {linkObjectSize ? <Link size={14} /> : <Unlink size={14} />}
+                      <Link size={14} />
                     </button>
                   </div>
                   <div>
@@ -664,29 +698,33 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     <input
                       type="number"
                       step="0.01"
+                      disabled={isNexusCell}
                       value={isArchetype ? (data as any).defaultSize?.height || data.height : data.height}
                       onChange={e => {
                         const value = parseFloat(e.target.value);
+                        const roundWidth = shouldRound(value);
                         if (isArchetype) {
                           // For token types, update defaultSize
                           const currentWidth = (data as any).defaultSize?.width || data.width || 50;
                           update('defaultSize', {
                             ...(data as any).defaultSize,
                             height: value,
-                            width: linkObjectSize ? value / objectRatio : currentWidth
+                            width: linkObjectSize ? (roundWidth ? Math.round(value / objectRatio * 100) / 100 : value / objectRatio) : currentWidth
                           });
                         } else {
                           if (linkObjectSize) {
                             updateMultiple({
                               height: value,
-                              width: value / objectRatio
+                              width: roundWidth ? Math.round(value / objectRatio * 100) / 100 : value / objectRatio
                             });
                           } else {
                             update('height', value);
                           }
                         }
                       }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${
+                        isNexusCell ? 'cursor-not-allowed opacity-60' : ''
+                      }`}
                     />
                   </div>
                   <div className="flex items-end pb-0.5">
@@ -1093,28 +1131,74 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Type', language as Locale)}</label>
                     <select
                       value={(data as Board).gridType || GridType.NONE}
-                      onChange={e => update('gridType', e.target.value)}
+                      onChange={e => {
+                        const newGridType = e.target.value as GridType;
+                        const board = data as Board;
+                        const isCurrentlyHex = board.gridType === GridType.HEX || board.gridType === GridType.HEX_HORIZONTAL;
+                        // Use same fallback logic as the input field: 100 for HEX grids, gridSize otherwise
+                        const currentWidth = board.gridWidth || (isCurrentlyHex ? DEFAULT_HEX_WIDTH : board.gridSize) || 50;
+
+                        update('gridType', newGridType);
+
+                        // Always normalize dimensions when switching to HEX grids
+                        if (newGridType === GridType.HEX) {
+                          // Pointy-top hex: height = width * 1.15
+                          const height = calculateHexHeight(currentWidth);
+                          updateMultiple({
+                            gridWidth: currentWidth,
+                            gridHeight: Math.round(height * 100) / 100
+                          });
+                          setLinkGridSize(true);  // Force link for hex grids
+                        } else if (newGridType === GridType.HEX_HORIZONTAL) {
+                          // Flat-top hex: width = currentWidth * 1.15, height = currentWidth
+                          // This makes HEX_HORIZONTAL a 90° rotation of HEX
+                          const newWidth = currentWidth * HEX_RATIO;
+                          updateMultiple({
+                            gridWidth: Math.round(newWidth * 100) / 100,
+                            gridHeight: currentWidth
+                          });
+                          setLinkGridSize(true);  // Force link for hex grids
+                        } else {
+                          // Not a hex grid (SQUARE or NONE) - unlink proportions (allow independent width/height)
+                          setLinkGridSize(false);
+                          updateMultiple({ linkGridSize: false });
+                        }
+                      }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       {Object.values(GridType).map(v => (
-                        <option key={v} value={v}>{translateGridType(v, language)}</option>
+                        <option
+                          key={v}
+                          value={v}
+                          disabled={v === GridType.HEX_HORIZONTAL}
+                          className={v === GridType.HEX_HORIZONTAL ? 'opacity-50 cursor-not-allowed' : ''}
+                        >
+                          {translateGridType(v, language)}
+                        </option>
                       ))}
                     </select>
                   </div>
                   {/* Grid Cell Width and Height with Normalize button */}
                   <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-end">
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Width (vu)', language as Locale)}</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={(data as Board).gridWidth || (data as Board).gridSize || 50}
-                        onChange={e => {
+                          <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Width (vu)', language as Locale)}</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={(data as Board).gridWidth || ((data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL ? DEFAULT_HEX_WIDTH : (data as Board).gridSize) || 50}
+                            onChange={e => {
                           const value = parseFloat(e.target.value);
-                          if (linkGridSize) {
+                          const board = data as Board;
+                          const gridType = board.gridType;
+                          const isHexGrid = gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL;
+
+                          if (linkGridSize || isHexGrid) {
+                            // For hex grids, height = width * sqrt(3) / 2 (same formula for both orientations)
+                            const height = calculateHexHeight(value);
+                            const roundHeight = shouldRound(value);
                             updateMultiple({
                               gridWidth: value,
-                              gridHeight: value * gridRatio
+                              gridHeight: roundHeight ? Math.round(height * 100) / 100 : height
                             });
                           } else {
                             update('gridWidth', value);
@@ -1126,23 +1210,29 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     <div className="flex items-end pb-0.5">
                       <button
                         onClick={() => {
-                          if (!linkGridSize) {
-                            // Turning on - save current ratio
-                            const board = data as Board;
-                            const currentWidth = board.gridWidth || board.gridSize || 50;
-                            const currentHeight = board.gridHeight || board.gridSize || 50;
-                            setGridRatio(currentHeight / currentWidth);
-                          }
-                          setLinkGridSize(!linkGridSize);
+                          const board = data as Board;
+                          const gridType = board.gridType;
+                          const isHexGrid = gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL;
+
+                          // Cannot unlink proportions for hex grids
+                          if (isHexGrid) return;
+
+                          const newState = !linkGridSize;
+                          setLinkGridSize(newState);
+                          // Save to object
+                          updateMultiple({ linkGridSize: newState });
                         }}
+                        disabled={(data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL}
                         className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
-                          linkGridSize
+                          (data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL
+                            ? 'bg-purple-600 border-purple-500 cursor-not-allowed'
+                            : linkGridSize
                             ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
                             : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
                         }`}
                         title={linkGridSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale)}
                       >
-                        {linkGridSize ? <Link size={14} /> : <Unlink size={14} />}
+                        <Link size={14} />
                       </button>
                     </div>
                     <div>
@@ -1150,31 +1240,71 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       <input
                         type="number"
                         step="0.01"
-                        value={(data as Board).gridHeight || (data as Board).gridSize || 50}
+                        disabled={(data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL}
+                        value={(data as Board).gridHeight || (() => {
+                          const board = data as Board;
+                          if (board.gridType === GridType.HEX) return Math.round(DEFAULT_HEX_WIDTH * HEX_RATIO * 100) / 100;  // 115
+                          if (board.gridType === GridType.HEX_HORIZONTAL) return DEFAULT_HEX_WIDTH;  // 100
+                          return board.gridSize || 50;
+                        })() || 50}
                         onChange={e => {
+                          const board = data as Board;
+                          const gridType = board.gridType;
+                          const isHexGrid = gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL;
+
                           const value = parseFloat(e.target.value);
-                          if (linkGridSize) {
+                          if (linkGridSize || isHexGrid) {
+                            // For hex grids, calculate width from height
+                            const width = gridType === GridType.HEX ? value / HEX_RATIO : value * HEX_RATIO;
+                            const roundWidth = shouldRound(value);
                             updateMultiple({
                               gridHeight: value,
-                              gridWidth: value / gridRatio
+                              gridWidth: roundWidth ? Math.round(width * 100) / 100 : width
                             });
                           } else {
                             update('gridHeight', value);
                           }
                         }}
-                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                        className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${
+                          (data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL
+                            ? 'opacity-50 cursor-not-allowed'
+                            : ''
+                        }`}
                       />
                     </div>
                     <div className="flex items-end pb-0.5">
                       <button
                         onClick={() => {
                           const board = data as Board;
-                          const avgSize = ((board.gridWidth || board.gridSize || 50) + (board.gridHeight || board.gridSize || 50)) / 2;
-                          update('gridWidth', avgSize);
-                          update('gridHeight', avgSize);
+                          const gridType = board.gridType;
+                          const currentWidth = board.gridWidth || board.gridSize || 50;
+
+                          // Normalize based on grid type
+                          if (gridType === GridType.HEX) {
+                            // Pointy-top hex: height = width * sqrt(3) / 2
+                            const height = calculateHexHeight(currentWidth);
+                            updateMultiple({
+                              gridWidth: currentWidth,
+                              gridHeight: Math.round(height * 100) / 100
+                            });
+                          } else if (gridType === GridType.HEX_HORIZONTAL) {
+                            // Flat-top hex: height = width * sqrt(3) / 2
+                            const height = calculateHexHeight(currentWidth);
+                            updateMultiple({
+                              gridWidth: currentWidth,
+                              gridHeight: Math.round(height * 100) / 100
+                            });
+                          } else {
+                            // Square grid: make both equal
+                            const avgSize = ((board.gridWidth || board.gridSize || 50) + (board.gridHeight || board.gridSize || 50)) / 2;
+                            updateMultiple({
+                              gridWidth: avgSize,
+                              gridHeight: avgSize
+                            });
+                          }
                         }}
                         className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500`}
-                        title={translate('Normalize to perfect square', language as Locale)}
+                        title={translate('Normalize to perfect shape', language as Locale)}
                       >
                         <Maximize2 size={14} />
                       </button>
@@ -1213,6 +1343,52 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Cell Size Settings (for NexusBoard) */}
+              {isNexusBoard && (
+                <div className="pt-4 space-y-3">
+                  <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                    <Grid3x3 size={14} /> {translate('Cell Size Settings', language as Locale)}
+                  </h4>
+                  <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Cell Width (vu)', language as Locale)}</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={(data as any).cellWidth || 100}
+                        onChange={e => {
+                          const value = parseFloat(e.target.value);
+                          // Update both width and height to maintain 1:1.15 proportion
+                          const roundHeight = shouldRound(value);
+                          updateMultiple({ cellWidth: value, cellHeight: roundHeight ? Math.round(value * 1.15 * 100) / 100 : value * 1.15 });
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                    </div>
+                    <div className="flex items-end pb-0.5">
+                      <button
+                        disabled={true}
+                        className="w-9 h-9 rounded border-2 flex items-center justify-center bg-purple-600 border-purple-500 cursor-not-allowed opacity-100"
+                        title={translate('Proportions locked (1:1.15)', language as Locale)}
+                      >
+                        <Link size={14} />
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Cell Height (vu)', language as Locale)}</label>
+                      <input
+                        type="number"
+                        step="1"
+                        disabled={true}
+                        value={Math.round(((data as any).cellHeight ?? 150) * 100) / 100}
+                        onChange={() => {}}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm cursor-not-allowed opacity-60"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1773,9 +1949,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={(e) => {
                         const value = e.target.value ? parseFloat(e.target.value) : undefined;
                         if (linkCardSize && value !== undefined) {
+                          const roundHeight = shouldRound(value);
                           updateCardSettingsMultiple({
                             cardWidth: value,
-                            cardHeight: Math.round(value * cardRatio * 100) / 100
+                            cardHeight: roundHeight ? Math.round(value * cardRatio * 100) / 100 : value * cardRatio
                           });
                         } else {
                           updateCardSettings('cardWidth', value);
@@ -1789,13 +1966,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div className="flex items-end pb-0.5">
                     <button
                       onClick={() => {
+                        const newState = !linkCardSize;
                         if (!linkCardSize) {
                           // Turning on - save current ratio
                           const currentWidth = cardSettings.cardWidth ?? deck.width;
                           const currentHeight = cardSettings.cardHeight ?? deck.height;
                           setCardRatio(currentHeight / currentWidth);
                         }
-                        setLinkCardSize(!linkCardSize);
+                        setLinkCardSize(newState);
+                        // Save to object
+                        updateCardSettingsMultiple({ linkCardSize: newState });
                       }}
                       className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
                         linkCardSize
@@ -1818,9 +1998,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={(e) => {
                         const value = e.target.value ? parseFloat(e.target.value) : undefined;
                         if (linkCardSize && value !== undefined) {
+                          const roundWidth = shouldRound(value);
                           updateCardSettingsMultiple({
                             cardHeight: value,
-                            cardWidth: Math.round((value / cardRatio) * 100) / 100
+                            cardWidth: roundWidth ? Math.round((value / cardRatio) * 100) / 100 : value / cardRatio
                           });
                         } else {
                           updateCardSettings('cardHeight', value);

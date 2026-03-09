@@ -102,7 +102,7 @@ export function getCardShapePath(
   aspectRatio: number = 1
 ): { path: string; viewBox: string } {
   // Map CardShape to equivalent logic
-  const isGeometric = shape === CardShape.HEX || shape === CardShape.TRIANGLE;
+  const isGeometric = shape === CardShape.HEX || shape === CardShape.HEX_HORIZONTAL || shape === CardShape.TRIANGLE;
   const isHorizontal = isGeometric && orientation === CardOrientation.HORIZONTAL;
 
   // For HEX card shape
@@ -120,9 +120,17 @@ export function getCardShapePath(
     }
   }
 
+  // For HEX_HORIZONTAL card shape (always flat-top)
+  if (shape === CardShape.HEX_HORIZONTAL) {
+    const hexHeight = 100;
+    const hexWidth = Math.round(100 * aspectRatio);
+    return generateFlatTopHexPath(hexWidth, hexHeight);
+  }
+
   // For TRIANGLE and other shapes, use static paths (viewBox 0 0 100 100)
   const staticPaths: Record<CardShape, string> = {
     [CardShape.HEX]: '', // Should be handled above
+    [CardShape.HEX_HORIZONTAL]: '', // Should be handled above
     [CardShape.TRIANGLE]: isHorizontal
       ? 'M 5 50 L 95 5 L 95 95 Z'  // Point at right
       : 'M 50 5 L 95 95 L 5 95 Z', // Point at top

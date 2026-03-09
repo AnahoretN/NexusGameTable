@@ -3,8 +3,8 @@ import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocatio
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
-import { loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
-import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, clearLocalSettings, LocalSettings } from '../utils/localSettings';
+import { loadGameState, clearAllData, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
+import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, LocalSettings } from '../utils/localSettings';
 import { logger } from '../utils/logger';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
@@ -32,10 +32,52 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // ensuring we don't accidentally become someone else visually
         const currentActiveId = state.activePlayerId;
         const currentViewTransform = state.viewTransform;
+
+        const incomingObjectsCount = action.payload.objects ? Object.keys(action.payload.objects).length : 0;
+        const currentObjectsCount = Object.keys(state.objects).length;
+        logger.log('[REDUCER] SYNC_STATE - incoming objects:', incomingObjectsCount, 'current objects:', currentObjectsCount, 'payload keys:', Object.keys(action.payload));
+
+        // Log board dimensions for debugging VU issues
+        const demoBoard = action.payload.objects?.['demo-board'];
+        if (demoBoard) {
+          logger.log('[REDUCER] SYNC_STATE - demo-board: x=' + demoBoard.x + ' y=' + demoBoard.y + ' width=' + demoBoard.width + ' height=' + demoBoard.height);
+        }
+
+        // Keep our local main menu panel (each player has their own)
+        const localMainMenu = Object.values(state.objects).find(
+          obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
+        );
+
+        // Only process objects if they're in the payload
+        let finalObjects = state.objects; // Default to current objects
+        if (action.payload.objects) {
+            // Filter out main menu from incoming state to preserve local position
+            const incomingObjects = { ...action.payload.objects };
+            const incomingMainMenuId = Object.keys(incomingObjects).find(id => {
+              const obj = incomingObjects[id];
+              return obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU;
+            });
+            if (incomingMainMenuId) {
+              delete incomingObjects[incomingMainMenuId];
+            }
+
+            // Merge incoming objects with local main menu (if exists)
+            finalObjects = localMainMenu
+              ? { ...incomingObjects, [localMainMenu.id]: localMainMenu }
+              : incomingObjects;
+        }
+
+        logger.log('[REDUCER] SYNC_STATE - final objects count:', Object.keys(finalObjects).length, 'has localMainMenu:', !!localMainMenu);
+
+        // Remove viewTransform from payload to prevent any cross-contamination
+        const { viewTransform, ...payloadWithoutViewTransform } = action.payload;
+
         return {
             ...state, // Keep existing state as base
-            ...action.payload, // Merge with payload (only override provided properties)
+            ...payloadWithoutViewTransform, // Merge with payload (excluding viewTransform)
+            objects: finalObjects, // Use merged objects (or current if none in payload)
             activePlayerId: currentActiveId,
+            // CRITICAL: Never use viewTransform from remote state - always keep local
             viewTransform: currentViewTransform
         };
     }
@@ -354,6 +396,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const isRandomizer = action.payload.type === ItemType.RANDOMIZER;
       const isDice = action.payload.type === ItemType.DICE_OBJECT;
       const isPanel = action.payload.type === ItemType.PANEL;
+
+      // Log object addition for debugging
+      const currentCount = Object.keys(state.objects).length;
+      logger.log('[REDUCER] ADD_OBJECT - type:', action.payload.type, 'id:', action.payload.id, 'current objects:', currentCount, 'name:', (action.payload as any).name || 'unnamed');
 
       const newObj = {
           ...action.payload,
@@ -2508,9 +2554,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'UPDATE_VIEW_TRANSFORM': {
+      logger.log('[REDUCER] UPDATE_VIEW_TRANSFORM - pixelsPerVU:', action.payload.pixelsPerVU, 'zoom:', action.payload.zoom, 'offset:', action.payload.offset);
       return { ...state, viewTransform: action.payload };
     }
     case 'SET_PIXELS_PER_VU': {
+      logger.log('[REDUCER] SET_PIXELS_PER_VU - old:', state.viewTransform.pixelsPerVU, 'new:', action.payload.pixelsPerVU);
       return {
         ...state,
         viewTransform: { ...state.viewTransform, pixelsPerVU: action.payload.pixelsPerVU }
@@ -4186,16 +4234,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
     }
     case 'CLEAR_SAVED_STATE': {
-      // Clear all saved data from localStorage
-      clearStorageGameState(); // Game state
-      clearLocalSettings(); // Local settings (menu position, etc.)
-      localStorage.removeItem('nexus-session-id'); // Session ID
+      // Clear ALL saved data from localStorage including URL parameters
+      logger.log('[REDUCER] CLEAR_SAVED_STATE - clearing all data and resetting to initial state');
+      clearAllData();
 
       // Reset to initial state but preserve current language
-      return {
+      const resetState = {
         ...initialState,
         language: state.language, // Preserve language setting
       };
+      logger.log('[REDUCER] CLEAR_SAVED_STATE - reset state object count:', Object.keys(resetState.objects).length);
+      return resetState;
     }
     case 'ADD_HYPERSCALE_LAYER': {
       const newLayer: HyperscaleLayer = {
@@ -4290,6 +4339,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Ref to track latest state for event listeners
   const stateRef = useRef(state);
   const initializedRef = useRef(false);
+  const creatingMenuRef = useRef(false); // Track if menu creation is in progress
   // Manual P2P connection (PeerJS-compatible adapter for direct connection without PeerJS)
   const manualConnectionRef = useRef<any>(null);
   // Track which connection we've set up handlers for to prevent duplicates
@@ -4317,11 +4367,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const handleResize = () => {
       const newPixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
+      logger.log('[RESIZE] pixelsPerVU updated:', newPixelsPerVU, 'viewport:', window.innerWidth + 'x' + window.innerHeight);
       localDispatch({
         type: 'SET_PIXELS_PER_VU',
         payload: { pixelsPerVU: newPixelsPerVU }
       });
     };
+
+    // Recalculate on mount using requestAnimationFrame to ensure layout is stable
+    // This fixes the issue where initial window.innerHeight is incorrect
+    requestAnimationFrame(() => {
+      // Double-check with another RAF to ensure browser has painted
+      requestAnimationFrame(() => {
+        handleResize();
+      });
+    });
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -4329,16 +4389,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
+    logger.log('[INIT] Effect triggered - isHost:', isHost, 'connectionStatus:', connectionStatus, 'objects count:', Object.keys(state.objects).length, 'initializedRef:', initializedRef.current);
+
     // Only initialize once we're sure about host status and haven't initialized yet
     if (!initializedRef.current && Object.keys(state.objects).length === 0) {
+        logger.log('[INIT] Starting initialization - isHost:', isHost);
         initializedRef.current = true;
 
         const isGuest = !isHost;
+        logger.log('[INIT] isGuest:', isGuest);
 
-        // Try to load saved game state from localStorage
-        const savedState = loadGameState(isGuest);
+        // Guests don't load from localStorage - they receive state from host
+        if (isGuest) {
+          logger.log('[INIT] Guest mode - skipping localStorage load, will receive state from host');
+          logger.log('[INIT] Creating main menu for guest');
+          createMainMenu(localDispatch);
+          logger.log('[INIT] Guest initialization complete - waiting for host state');
+          return;
+        }
+
+        // Try to load saved game state from localStorage (host only)
+        const savedState = loadGameState(false);
+        logger.log('[INIT] savedState loaded:', savedState ? 'EXISTS' : 'NULL', 'objects count:', savedState?.objects ? Object.keys(savedState.objects).length : 0);
+
         if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
-          logger.log('Restoring game state from localStorage');
+          logger.log('[INIT] Restoring game state from localStorage - objects to restore:', Object.keys(savedState.objects).length);
 
           // Create a batch of updates to restore all state
           const updates: any[] = [];
@@ -4390,23 +4465,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           // Apply all updates in a single batch
+          logger.log('[INIT] Applying', updates.length, 'updates');
           updates.forEach(update => localDispatch(update));
 
           // Create main menu from local settings
+          logger.log('[INIT] Creating main menu after restoring saved state');
           createMainMenu(localDispatch);
+          logger.log('[INIT] Initialization complete - saved state restored');
           return;
         }
 
+        logger.log('[INIT] No saved state found, creating default board');
         // No saved state or empty saved state, create default game board (only for host)
         if (isHost) {
-          // Create game board on 'boards' layer
+          // Create game board on 'boards' layer - ALL VALUES IN VU
           const boardId = 'demo-board';
           const board: Board = {
                id: boardId,
                type: ItemType.BOARD,
                shape: TokenShape.SQUARE,
-               x: 100, y: 100,
-               width: 800, height: 600,
+               x: 50,    // VU: 5% from left
+               y: 50,    // VU: 5% from top
+               width: 400,  // VU: 40% of screen width
+               height: 300, // VU: 30% of screen height
                rotation: 0,
                name: 'Game Board',
                content: '',
@@ -4414,12 +4495,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                locked: true,
                isOnTable: true,
                gridType: GridType.HEX,
-               gridSize: 60,
-               gridWidth: 100,  // Must match DEFAULT_HEX_WIDTH for HEX grids
-               gridHeight: 115, // Must match DEFAULT_HEX_WIDTH * 1.15 for HEX grids
+               gridSize: 60,  // Grid cell size in VU
+               gridWidth: 100,  // Hex width in VU
+               gridHeight: 115, // Hex height in VU
                snapToGrid: true,
                hyperscaleLayerId: 'boards',
           };
+          logger.log('[INIT] Creating default board at VU coordinates:', { x: board.x, y: board.y, width: board.width, height: board.height });
           localDispatch({ type: 'ADD_OBJECT', payload: board });
 
           // Create Standard Deck on 'cards' layer
@@ -4441,15 +4523,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
           // Then add the deck
           localDispatch({ type: 'ADD_OBJECT', payload: deck });
+          logger.log('[INIT] Default board and deck created');
         }
 
         // Create main menu (for everyone)
+        logger.log('[INIT] Creating main menu (default flow)');
         createMainMenu(localDispatch);
+        logger.log('[INIT] Initialization complete - default state created');
     }
-  }, [isHost, connectionStatus]); // Add connectionStatus to ensure peer is ready
+  }, [isHost]); // Only depend on isHost - connectionStatus changes should NOT re-trigger initialization
 
   // Function to create main menu from local settings
   const createMainMenu = useCallback((dispatch: React.Dispatch<Action>) => {
+    // Prevent duplicate menu creation
+    if (creatingMenuRef.current) {
+      logger.log('[CREATE_MENU] Menu creation already in progress, skipping');
+      return;
+    }
+    creatingMenuRef.current = true;
+
     // ALWAYS use calculated position - main menu is fixed at right side, full height
     const calculatedPosition = calculateMainMenuPosition();
 
@@ -4472,6 +4564,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     saveLocalSettings(localSettings);
 
+    logger.log('[CREATE_MENU] Creating main menu panel at x:', menuX, 'y:', menuY, 'width:', menuWidth, 'height:', menuHeight);
+
     // Create main menu
     dispatch({
       type: 'CREATE_PANEL',
@@ -4484,6 +4578,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         title: 'Main Menu'
       }
     });
+
+    // Reset flag after a short delay to allow dispatch to process
+    setTimeout(() => {
+      creatingMenuRef.current = false;
+    }, 100);
   }, []);
 
   // Update main menu on window resize
@@ -4523,6 +4622,38 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('resize', handleResize);
   }, [state.objects, localDispatch]);
 
+  // Ensure main menu exists (create it if missing)
+  // This handles edge cases where the main menu might be accidentally removed
+  useEffect(() => {
+    logger.log('[ENSURE_MENU] Effect triggered - connectionStatus:', connectionStatus, 'initializedRef:', initializedRef.current, 'creatingMenuRef:', creatingMenuRef.current, 'objects count:', Object.keys(state.objects).length);
+
+    // Only run after initialization is complete to avoid race conditions
+    if (!initializedRef.current) {
+      logger.log('[ENSURE_MENU] Skipping - initialization not complete');
+      return;
+    }
+
+    // Skip if menu creation is already in progress
+    if (creatingMenuRef.current) {
+      logger.log('[ENSURE_MENU] Skipping - menu creation already in progress');
+      return;
+    }
+
+    const hasMainMenu = Object.values(state.objects).some(
+      obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
+    );
+
+    logger.log('[ENSURE_MENU] hasMainMenu:', hasMainMenu);
+
+    if (!hasMainMenu) {
+      // Small delay to ensure DOM is ready and calculateMainMenuPosition works
+      setTimeout(() => {
+        logger.log('[ENSURE_MENU] Creating main menu from ensure effect');
+        createMainMenu(localDispatch);
+      }, 0);
+    }
+  }, [state.objects]); // Only depend on state.objects, NOT connectionStatus
+
   // Middleware Dispatcher - memoized with useCallback to prevent infinite loops
   const dispatch = useCallback((action: Action) => {
       // Local-only actions are executed locally but never sent over network
@@ -4537,6 +4668,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // State broadcast handled by useEffect to ensure updated state is sent
       } else {
           // Guest sends action to Host
+          // Filter out local-only actions that should not be sent to host
+          const localOnlyActions = [
+              'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
+              'SET_PIXELS_PER_VU'       // Pixels per VU is screen-specific
+          ];
+
+          if (localOnlyActions.includes(action.type)) {
+              // Local-only actions - execute locally only, don't send to host
+              logger.log('[P2P Guest] Local-only action:', action.type, '- executing locally only');
+              localDispatch(action);
+              return;
+          }
+
           const hasPeerJSConnection = hostConnectionRef.current && connectionStatus === 'connected';
           const hasManualConnection = manualConnectionRef.current && manualConnectionRef.current.open === true;
 
