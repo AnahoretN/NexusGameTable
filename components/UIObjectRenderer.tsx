@@ -35,6 +35,12 @@ const SUPPORT_LINKS = [
     color: 'bg-indigo-500'
   },
   {
+    name: 'GitHub',
+    url: 'https://github.com/AnahoretN/NexusGameTable',
+    icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1773145441/github_xcc4uw.png',
+    color: 'bg-gray-700'
+  },
+  {
     name: 'Boosty',
     url: 'https://boosty.to/anahoret',
     icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1770475932/Boosty_mwnvrh.png',
@@ -882,7 +888,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       {/* Support Modal */}
       {isMainMenu && showSupportModal && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
-          <div className="bg-slate-800 rounded-lg shadow-xl w-[420px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[540px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
               <h3 className="text-base font-bold text-white">{translate('Links', state.language as Locale)}</h3>
             </div>
@@ -890,7 +896,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               <p className="text-sm text-gray-400 text-center mb-6">
                 {translate('Follow me on social media or support my work through donations!', state.language as Locale)}
               </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 {SUPPORT_LINKS.map((link) => (
                   <a
                     key={link.name}
