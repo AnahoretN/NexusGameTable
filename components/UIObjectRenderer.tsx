@@ -442,7 +442,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 }}
                 className="text-sm text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
               >
-                [{translate('Support Project', state.language as Locale)}]
+                [{translate('Links', state.language as Locale)}]
               </button>
             )}
           </div>
