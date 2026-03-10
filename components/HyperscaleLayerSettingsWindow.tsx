@@ -284,8 +284,8 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
             {(individualPosition || individualObjects) && (
               <div className="mt-3 p-2 bg-slate-700/50 border border-slate-600 rounded text-xs text-gray-400">
                 {individualObjects
-                  ? translate('Objects in this layer are individual for each player. Host can save but other players cannot see changes.', language as Locale)
-                  : translate('Object positions in this layer are individual for each player. Host can save but other players cannot see position changes.', language as Locale)
+                  ? translate('Objects in this layer are individual for each player.', language as Locale)
+                  : translate('Object positions in this layer are individual for each player.', language as Locale)
                 }
               </div>
             )}
