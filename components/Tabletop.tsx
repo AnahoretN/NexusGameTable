@@ -39,22 +39,73 @@ export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
   const { settings: localSettings } = useLocalSettings();
 
-  // Get the pixelsPerVU conversion factor
-  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+  // Get the base pixelsPerVU conversion factor
+  const basePixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+  // Local zoom multiplier (100 = default, 150 = 50% larger objects, etc.)
+  const zoomMultiplier = (localSettings.zoom ?? 100) / 100;
 
-  // Helper functions for vu ↔ pixel conversion
+  // Helper to get zoom scale for a specific layer (returns 1 if zoom disabled for layer)
+  const getLayerZoomScale = useCallback((layerId: string): number => {
+    const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+    const zoomEnabled = layer?.zoomEnabled ?? true;
+    return zoomEnabled ? zoomMultiplier : 1;
+  }, [zoomMultiplier, state.hyperscaleLayers]);
+
+  // Helper to get inverse scale for layers without zoom (to cancel out global zoom)
+  const getLayerInverseScale = useCallback((layerId: string): number => {
+    const scale = getLayerZoomScale(layerId);
+    return scale !== zoomMultiplier ? (1 / zoomMultiplier) : 1;
+  }, [getLayerZoomScale, zoomMultiplier]);
+
+  // Helper to create positioning styles with layer zoom consideration
+  const createPositionedStyle = useCallback(((
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    zIndex: number,
+    layerId: string,
+    additionalStyle: React.CSSProperties = {}
+  ): React.CSSProperties => {
+    const inverseScale = getLayerInverseScale(layerId);
+    return {
+      position: 'absolute' as const,
+      left: x,
+      top: y,
+      width,
+      height,
+      zIndex,
+      ...(inverseScale !== 1 && {
+        transform: `scale(${inverseScale})`,
+        transformOrigin: 'top left',
+      }),
+      ...additionalStyle,
+    };
+  }), [getLayerInverseScale]);
+
+  // Apply zoom multiplier to pixelsPerVU (affects all calculations)
+  const pixelsPerVU = useMemo(() => basePixelsPerVU * zoomMultiplier, [basePixelsPerVU, zoomMultiplier]);
+
+  // Helper functions for vu ↔ pixel conversion (with zoom applied)
   const v2p = useCallback((vu: number) => vuToPixels(vu ?? 0, pixelsPerVU), [pixelsPerVU]);
   const p2v = useCallback((px: number) => pixelsToVu(px ?? 0, pixelsPerVU), [pixelsPerVU]);
 
   // Viewport state (offset is always 0,0 since native scroll handles panning)
   const offset = useMemo(() => ({ x: 0, y: 0 }), []);
-  const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [currentTool, setCurrentTool] = useState<string>('none');
 
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [draggingPile, setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
+
+  // Shift key state for delete cursor
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
+
+  // Ruler state
+  const [rulerStart, setRulerStart] = useState<{ x: number; y: number } | null>(null);
+  const [rulerCurrent, setRulerCurrent] = useState<{ x: number; y: number } | null>(null);
+  const [isRulerRightClick, setIsRulerRightClick] = useState(false);
 
   // Resizing state for boards
   const [resizingId, setResizingId] = useState<string | null>(null);
@@ -324,7 +375,14 @@ export const Tabletop: React.FC = () => {
   useEffect(() => {
     const handleToolChanged = (e: Event) => {
       const customEvent = e as CustomEvent<{ tool: string }>;
-      setCurrentTool(customEvent.detail.tool);
+      const newTool = customEvent.detail.tool;
+      setCurrentTool(newTool);
+      // Clear ruler state when switching away from ruler tool
+      if (newTool !== 'ruler') {
+        setRulerStart(null);
+        setRulerCurrent(null);
+        setIsRulerRightClick(false);
+      }
     };
     window.addEventListener('drawing-tool-changed', handleToolChanged);
     return () => window.removeEventListener('drawing-tool-changed', handleToolChanged);
@@ -938,8 +996,8 @@ export const Tabletop: React.FC = () => {
           const isPinned = (obj as any).isPinnedToViewport || false;
           if (isPinned) {
             // Unpin: convert viewport coordinates to world coordinates
-            const worldX = obj.x / zoom + offset.x;
-            const worldY = obj.y / zoom + offset.y;
+            const worldX = obj.x + offset.x;
+            const worldY = obj.y + offset.y;
             dispatch({
               type: 'UPDATE_OBJECT',
               payload: { id: obj.id, x: worldX, y: worldY, isPinnedToViewport: false }
@@ -948,8 +1006,8 @@ export const Tabletop: React.FC = () => {
             // Pin: use current screen position
             const worldX = obj.x;
             const worldY = obj.y;
-            const screenX = (worldX - offset.x) * zoom;
-            const screenY = (worldY - offset.y) * zoom;
+            const screenX = worldX - offset.x;
+            const screenY = worldY - offset.y;
             // For dice and counters, also store pinnedScreenPosition
             const isDiceOrCounter = obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER;
             dispatch({
@@ -2206,6 +2264,37 @@ export const Tabletop: React.FC = () => {
   const handleMouseDown = useCallback((e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
 
+    // Block all mouse interactions when ruler tool is active (except ruler-specific handling)
+    if (currentTool === 'ruler') {
+      // Only handle left click for ruler functionality
+      if (e.button === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Get world coordinates from screen coordinates
+        const scrollContainer = scrollContainerRef.current;
+        if (scrollContainer) {
+          const rect = scrollContainer.getBoundingClientRect();
+          const worldX = (e.clientX - rect.left + scrollContainer.scrollLeft) / pixelsPerVU;
+          const worldY = (e.clientY - rect.top + scrollContainer.scrollTop) / pixelsPerVU;
+
+          if (rulerStart) {
+            // If we have a start point, clear it (reset ruler)
+            setRulerStart(null);
+            setRulerCurrent(null);
+            setIsRulerRightClick(false);
+          } else {
+            // Set the start point and current position (so the point appears immediately)
+            const startPos = { x: worldX, y: worldY };
+            setRulerStart(startPos);
+            setRulerCurrent(startPos);
+          }
+        }
+      }
+      // Block all other buttons when ruler is active
+      return;
+    }
+
     // Check if clicking on a UI object - if it has an id, process normally
     // If no id (background), check for panning or dropping cursor slot
     if (!id) {
@@ -2384,7 +2473,7 @@ export const Tabletop: React.FC = () => {
         });
       }
     }
-  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, state.selectedHyperscaleLayerIds, dispatch, addToCursorSlot, offset, zoom, setDraggingId, setIsPanning]);
+  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, state.selectedHyperscaleLayerIds, dispatch, addToCursorSlot, offset, setDraggingId, setIsPanning]);
 
   // Handle click on battlefield cell for magnetism control
   // Shift+click: add magnet point
@@ -2395,6 +2484,20 @@ export const Tabletop: React.FC = () => {
     setCursorPosition(newCursorPosition);
     // Also update ref immediately for synchronous access during render
     cursorPositionRef.current = newCursorPosition;
+
+    // Update ruler current position when ruler is active
+    if (currentTool === 'ruler' && rulerStart) {
+      const scrollContainer = scrollContainerRef.current;
+      if (scrollContainer) {
+        const rect = scrollContainer.getBoundingClientRect();
+        const worldX = (e.clientX - rect.left + scrollContainer.scrollLeft) / pixelsPerVU;
+        const worldY = (e.clientY - rect.top + scrollContainer.scrollTop) / pixelsPerVU;
+        setRulerCurrent({ x: worldX, y: worldY });
+      }
+    } else if (currentTool !== 'ruler') {
+      // Clear ruler current when tool is not ruler
+      setRulerCurrent(null);
+    }
 
     // Check for drag movement - if mouse moves 5px while holding on a card/token, add to slot immediately
     if (longPressItemRef.current) {
@@ -2614,7 +2717,7 @@ export const Tabletop: React.FC = () => {
         _localOnly: true // Don't send over network during drag
       });
     }
-  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, cursorSlot, isPointInRotatedRect]);
+  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, dispatch, cursorSlot, isPointInRotatedRect, currentTool, rulerStart, scrollContainerRef]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
     // Clear long-press timer if mouse is released before timeout
@@ -2766,8 +2869,8 @@ export const Tabletop: React.FC = () => {
 
         // Convert cursor screen coordinates to world coordinates
         // CSS transform is: translate(offset) scale(zoom)
-        const worldX = dropClientX / zoom - offset.x;
-        const worldY = dropClientY / zoom - offset.y;
+        const worldX = dropClientX - offset.x;
+        const worldY = dropClientY - offset.y;
 
         // First check if dropping on a pile (piles should take priority over decks)
         type PileInfo = { pile: CardPile; deck: DeckType };
@@ -2848,9 +2951,8 @@ export const Tabletop: React.FC = () => {
             if (obj.type === ItemType.DECK) {
               const deck = obj as DeckType;
               // Convert cursor screen coordinates to world coordinates
-              // CSS transform is: translate(offset) scale(zoom)
-              const worldX = dropClientX / zoom - offset.x;
-              const worldY = dropClientY / zoom - offset.y;
+              const worldX = dropClientX - offset.x;
+              const worldY = dropClientY - offset.y;
 
               // Check if cursor is within deck bounds (accounting for rotation)
               if (isPointInRotatedRect(worldX, worldY, deck.x, deck.y, deck.width, deck.height, deck.rotation || 0)) {
@@ -2993,6 +3095,12 @@ export const Tabletop: React.FC = () => {
           setClickTooltip(null);
           clickTooltipBoundsRef.current = null;
         }
+        // Clear ruler on ESC
+        if (currentTool === 'ruler' && rulerStart) {
+          setRulerStart(null);
+          setRulerCurrent(null);
+          setIsRulerRightClick(false);
+        }
       }
 
       // Ctrl+Z / Cmd+Z for undo (use 'code' to work with any keyboard layout)
@@ -3019,8 +3127,8 @@ export const Tabletop: React.FC = () => {
           // For pinned objects: convert screen position to world position
           // CSS transform is: translate(offset) scale(zoom)
           // So: worldX = screenX / zoom - offset.x
-          const newRenderX = (pinnedDeck as any).pinnedScreenPosition.x / zoom - offset.x;
-          const newRenderY = (pinnedDeck as any).pinnedScreenPosition.y / zoom - offset.y;
+          const newRenderX = (pinnedDeck as any).pinnedScreenPosition.x - offset.x;
+          const newRenderY = (pinnedDeck as any).pinnedScreenPosition.y - offset.y;
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -3034,7 +3142,66 @@ export const Tabletop: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state.objects, offset, zoom, clickTooltip, currentTool, dispatch]);
+  }, [state.objects, offset, clickTooltip, currentTool, dispatch, rulerStart]);
+
+  // Track Shift key state for delete cursor when eraser tool is active
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Track right mouse button for ruler circle display
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button === 2 && currentTool === 'ruler' && rulerStart) {
+        setIsRulerRightClick(true);
+      }
+    };
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.button === 2) {
+        setIsRulerRightClick(false);
+      }
+    };
+    // Also clear on leaving the window
+    const handleMouseLeave = () => {
+      setIsRulerRightClick(false);
+    };
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mouseleave', handleMouseLeave);
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [currentTool, rulerStart]);
+
+  // Prevent context menu when right-clicking with ruler tool
+  useEffect(() => {
+    if (currentTool !== 'ruler') return;
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => window.removeEventListener('contextmenu', handleContextMenu);
+  }, [currentTool]);
 
   // Global mouseup handler for drag operations - ALWAYS active, checks state internally
   useEffect(() => {
@@ -3080,30 +3247,26 @@ export const Tabletop: React.FC = () => {
     // Zoom disabled - keeping scale at 1
   }, []);
 
-  // Sync local state from global state when it changes externally (e.g., loading saved games)
-  // Note: offset is always kept at (0,0) since we use native scroll for panning now
-  React.useEffect(() => {
-    const globalZoom = state.viewTransform.zoom;
-
-    // Only sync zoom, keep offset at (0,0)
-    const zoomChanged = Math.abs(globalZoom - zoom) > 0.01;
-
-    if (zoomChanged) {
-      setZoom(globalZoom);
-    }
-  }, [state.viewTransform]);
-
-  // Sync zoom changes to global state (preserve current scroll, offset always 0)
+  // Sync scroll and pixelsPerVU to global state (for save/load)
   React.useEffect(() => {
     const currentScroll = scrollContainerRef.current?.scrollLeft || 0;
     const currentScrollTop = scrollContainerRef.current?.scrollTop || 0;
+    // Calculate base pixelsPerVU without local zoom multiplier
+    const zoomMultiplier = (localSettings.zoom ?? 100) / 100;
+    const basePixelsPerVU = pixelsPerVU / zoomMultiplier;
+
     dispatch({
       type: 'UPDATE_VIEW_TRANSFORM',
-      payload: { offset: { x: 0, y: 0 }, zoom, scroll: { x: currentScroll, y: currentScrollTop }, pixelsPerVU }
+      payload: { offset: { x: 0, y: 0 }, zoom: 1, scroll: { x: currentScroll, y: currentScrollTop }, pixelsPerVU: basePixelsPerVU }
     });
-  }, [zoom, dispatch, pixelsPerVU]);
+  }, [pixelsPerVU, localSettings.zoom, dispatch]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
+      // Don't show context menu when ruler tool is active
+      if (currentTool === 'ruler') {
+          e.preventDefault();
+          return;
+      }
       e.preventDefault();
       e.stopPropagation();
       setContextMenu({
@@ -3111,7 +3274,7 @@ export const Tabletop: React.FC = () => {
           y: e.clientY,
           object: obj
       });
-  }, []);
+  }, [currentTool]);
 
   const executeMenuAction = (action: string) => {
       if (!contextMenu) return;
@@ -3155,8 +3318,8 @@ export const Tabletop: React.FC = () => {
                   // For game objects (decks, etc.) in transform container
                   // CSS transform is: translate(offset) scale(zoom)
                   // So: screenX = (worldX + offset.x) * zoom
-                  screenX = (object.x + offset.x) * zoom;
-                  screenY = (object.y + offset.y) * zoom;
+                  screenX = object.x + offset.x;
+                  screenY = object.y + offset.y;
               }
 
               setContextMenu(null);
@@ -3181,8 +3344,8 @@ export const Tabletop: React.FC = () => {
                   // To convert to world coordinates for unpinned: worldX = screenX / zoom + offset.x
                   // But for UI objects, they use position: absolute with left: object.x (no transform)
                   // So: worldX = object.x * zoom + offset.x
-                  worldX = object.x * zoom + offset.x;
-                  worldY = object.y * zoom + offset.y;
+                  worldX = object.x + offset.x;
+                  worldY = object.y + offset.y;
               } else {
                   // Game objects (decks, etc.): render in transform container
                   // For pinned game objects, visual position comes from pinnedScreenPosition
@@ -3194,8 +3357,8 @@ export const Tabletop: React.FC = () => {
                   } else {
                       // pinnedPos contains current viewport coordinates
                       // Convert to world coordinates: worldX = screenX / zoom - offset.x
-                      worldX = pinnedPos.x / zoom - offset.x;
-                      worldY = pinnedPos.y / zoom - offset.y;
+                      worldX = pinnedPos.x - offset.x;
+                      worldY = pinnedPos.y - offset.y;
                   }
               }
 
@@ -3542,10 +3705,10 @@ export const Tabletop: React.FC = () => {
 
   const worldBounds = useMemo(() => {
     // Fixed world size: WORLD_SIZE_VU × WORLD_SIZE_VU (in virtual units)
-    // Convert to pixels for rendering
-    const sizePx = vuToPixels(WORLD_SIZE_VU, state.viewTransform.pixelsPerVU);
+    // Convert to pixels for rendering (using local zoom-adjusted pixelsPerVU)
+    const sizePx = vuToPixels(WORLD_SIZE_VU, pixelsPerVU);
     return { width: sizePx, height: sizePx };
-  }, [state.viewTransform.pixelsPerVU]);
+  }, [pixelsPerVU]);
 
   const confirmDelete = () => {
     if (deleteCandidateId) {
@@ -3558,8 +3721,24 @@ export const Tabletop: React.FC = () => {
     <div
       ref={scrollContainerRef}
       data-tabletop="true"
-      className={`w-full h-full bg-table overflow-auto relative ${cursorSlot.length > 0 ? 'cursor-grabbing' : 'cursor-default'}`}
-      style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
+      className={`w-full h-full bg-table overflow-auto relative ${
+        currentTool === 'eraser' && isShiftPressed
+          ? 'cursor-eraser-delete'
+          : currentTool === 'marker' && isShiftPressed
+            ? 'cursor-move'
+            : cursorSlot.length > 0
+              ? 'cursor-grabbing'
+              : 'cursor-default'
+      }`}
+      style={{
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+        cursor: currentTool === 'eraser' && isShiftPressed
+          ? `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18' /><path d='M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6' /><path d='M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2' /><line x1='10' y1='11' x2='10' y2='17' /><line x1='14' y1='11' x2='14' y2='17' /></svg>") 12 12, auto`
+          : undefined
+      }}
       onMouseDown={(e) => handleMouseDown(e)}
       onMouseMove={handleMouseMove}
       onWheel={handleWheel}
@@ -3597,8 +3776,8 @@ export const Tabletop: React.FC = () => {
               // For game objects in transform container: screenX = (obj.x + offset.x) * zoom
               // We want: screenX = pinnedPosition.x
               // So: obj.x = pinnedPosition.x / zoom - offset.x
-              const newX = pinnedPosition.x / zoom - offset.x;
-              const newY = pinnedPosition.y / zoom - offset.y;
+              const newX = pinnedPosition.x - offset.x;
+              const newY = pinnedPosition.y - offset.y;
 
               // Only dispatch if position actually changed significantly
               if (Math.abs(newX - obj.x) > 0.5 || Math.abs(newY - obj.y) > 0.5) {
@@ -3706,7 +3885,6 @@ export const Tabletop: React.FC = () => {
         <DrawingCanvas
           width={worldBounds.width}
           height={worldBounds.height}
-          zoom={zoom}
           offsetX={state.viewTransform.scroll.x}
           offsetY={state.viewTransform.scroll.y}
           cursorSlotLength={cursorSlot.length}
@@ -3722,6 +3900,66 @@ export const Tabletop: React.FC = () => {
                 height: worldBounds.height,
             }}
         >
+            {/* Ruler overlay - inside world container for correct coordinate system */}
+            {currentTool === 'ruler' && rulerStart && (
+              <svg
+                className="absolute pointer-events-none"
+                style={{ top: 0, left: 0, width: '100%', height: '100%', zIndex: 1000 }}
+              >
+                {/* Start point circle */}
+                <circle
+                  cx={v2p(rulerStart.x)}
+                  cy={v2p(rulerStart.y)}
+                  r={v2p(1.5)}
+                  fill="white"
+                />
+                {/* Dashed line from start to current */}
+                {rulerCurrent && (
+                  <>
+                    <line
+                      x1={v2p(rulerStart.x)}
+                      y1={v2p(rulerStart.y)}
+                      x2={v2p(rulerCurrent.x)}
+                      y2={v2p(rulerCurrent.y)}
+                      stroke="white"
+                      strokeWidth={v2p(1)}
+                      strokeDasharray={`${v2p(6)},${v2p(4)}`}
+                    />
+                    {/* Circle around start point when right-click is held (radius = line length) */}
+                    {isRulerRightClick && (() => {
+                      const lineLength = Math.sqrt(Math.pow(rulerCurrent.x - rulerStart.x, 2) + Math.pow(rulerCurrent.y - rulerStart.y, 2));
+                      return lineLength > 0 ? (
+                        <circle
+                          cx={v2p(rulerStart.x)}
+                          cy={v2p(rulerStart.y)}
+                          r={v2p(lineLength)}
+                          fill="none"
+                          stroke="white"
+                          strokeWidth={v2p(0.5)}
+                          strokeDasharray={`${v2p(6)},${v2p(4)}`}
+                        />
+                      ) : null;
+                    })()}
+                    {/* Length label in the middle */}
+                    <text
+                      x={v2p((rulerStart.x + rulerCurrent.x) / 2)}
+                      y={v2p((rulerStart.y + rulerCurrent.y) / 2)}
+                      fill="white"
+                      fontSize={12}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      style={{
+                        textShadow: '1px 1px 2px black, -1px -1px 2px black, 1px -1px 2px black, -1px 1px 2px black',
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      {Math.sqrt(Math.pow(rulerCurrent.x - rulerStart.x, 2) + Math.pow(rulerCurrent.y - rulerStart.y, 2)).toFixed(1)}vu
+                    </text>
+                  </>
+                )}
+              </svg>
+            )}
+
             {/* Objects in another player's cursor slot - darkened, semi-transparent, non-interactive */}
             {remoteCursorSlotObjects.map((obj) => {
                 if (obj.type === ItemType.BOARD) return null; // Boards shouldn't be in cursor slot
@@ -4238,6 +4476,10 @@ export const Tabletop: React.FC = () => {
                 const layerMinZ = layer?.minZIndex ?? 3001;
                 const globalZIndex = layerMinZ + (obj.zIndex ?? 0);
 
+                // Get local zoom scale for this object's layer
+                const objLayerId = obj.hyperscaleLayerId || 'tokens';
+                const layerZoomScale = getLayerZoomScale(objLayerId);
+
                 if (obj.type === ItemType.BOARD) {
                     // Skip pinned boards - they are rendered separately in fixed container
                     if ((obj as any).isPinnedToViewport === true) {
@@ -4260,42 +4502,41 @@ export const Tabletop: React.FC = () => {
                             imageSrc={obj.content}
                             scale={obj.tooltipScale}
                         >
-                            {/* Check if object's layer is selected - if not, make it permeable to clicks */}
                             {(() => {
                                 const objLayer = obj.hyperscaleLayerId || 'none';
                                 const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
                                 const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
                                 const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                                 return (
                                     <div
                                         className={isPermeable ? '' : 'pointer-events-auto'}
-                                        style={{
-                                            position: 'absolute',
-                                            left: v2p(obj.x),
-                                            top: v2p(obj.y),
-                                            width: v2p(board.width),
-                                            height: v2p(board.height),
-                                            zIndex: globalZIndex,
-                                            pointerEvents: isPermeable ? 'none' : 'auto',
-                                        }}
+                                        style={createPositionedStyle(
+                                            v2p(obj.x),
+                                            v2p(obj.y),
+                                            v2p(board.width),
+                                            v2p(board.height),
+                                            globalZIndex,
+                                            objLayer,
+                                            { pointerEvents: isPermeable ? 'none' : 'auto' }
+                                        )}
                                     >
-                                <BoardWithResizeMemo
-                                    token={board}
-                                    obj={obj}
-                                    isOwner={isOwner}
-                                    isDragging={isDragging}
-                                    isResizing={isResizing}
-                                    canResize={canResize}
-                                    zoom={zoom}
-                                    onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
-                                    onContextMenu={(e) => handleContextMenu(e, obj)}
-                                    onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
-                                    gridSize={gridSize}
-                                    gridWidth={gridW_px}
-                                    gridHeight={gridH_px}
-                                    showGrid={board.showGrid}
-                                    currentTool={currentTool}
-                                />
+                                    <BoardWithResizeMemo
+                                        token={board}
+                                        obj={obj}
+                                        isOwner={isOwner}
+                                        isDragging={isDragging}
+                                        isResizing={isResizing}
+                                        canResize={canResize}
+                                        onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                        onContextMenu={(e) => handleContextMenu(e, obj)}
+                                        onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
+                                        gridSize={gridSize}
+                                        gridWidth={gridW_px}
+                                        gridHeight={gridH_px}
+                                        showGrid={board.showGrid}
+                                        currentTool={currentTool}
+                                    />
                                     </div>
                                 );
                             })()}
@@ -4328,21 +4569,23 @@ export const Tabletop: React.FC = () => {
                         >
                             <div
                                 className="absolute"
-                                style={{
-                                    left: v2p(boardX),
-                                    top: v2p(boardY),
-                                    width: v2p(boardWidth),
-                                    height: v2p(boardHeight),
-                                    zIndex: globalZIndex,
-                                    transform: `rotate(${obj.rotation || 0}deg) scale(${zoom})`,
-                                    transformOrigin: 'center center',
-                                }}
+                                style={createPositionedStyle(
+                                    v2p(boardX),
+                                    v2p(boardY),
+                                    v2p(boardWidth),
+                                    v2p(boardHeight),
+                                    globalZIndex,
+                                    obj.hyperscaleLayerId || 'none',
+                                    {
+                                        transform: `rotate(${obj.rotation || 0}deg)${getLayerInverseScale(obj.hyperscaleLayerId || 'none') !== 1 ? ` scale(${getLayerInverseScale(obj.hyperscaleLayerId || 'none')})` : ''}`,
+                                        transformOrigin: 'center center',
+                                    }
+                                )}
                             >
                                 <NexusBoardMemo
                                     board={nexusBoard}
                                     isOwner={isOwner}
                                     isDragging={isDragging}
-                                    zoom={zoom}
                                     onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                     onContextMenu={(e) => handleContextMenu(e, obj)}
                                     onAddCell={(direction) => handleAddNexusCell(obj.id, direction)}
@@ -4393,15 +4636,18 @@ export const Tabletop: React.FC = () => {
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
-                                style={{
-                                    left: v2p(obj.x),
-                                    top: v2p(obj.y),
-                                    width: v2p(obj.width),
-                                    height: v2p(obj.height),
-                                    transform: `rotate(${obj.rotation}deg)`,
-                                    zIndex: globalZIndex,
-                                    pointerEvents: isPermeable ? 'none' : 'auto',
-                                }}
+                                style={createPositionedStyle(
+                                    v2p(obj.x),
+                                    v2p(obj.y),
+                                    v2p(obj.width),
+                                    v2p(obj.height),
+                                    globalZIndex,
+                                    objLayer,
+                                    {
+                                        transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+                                        pointerEvents: isPermeable ? 'none' : 'auto',
+                                    }
+                                )}
                             >
                                 {/* Render SVG token for all tokens */}
                                 <SvgTokenShape
@@ -4420,7 +4666,7 @@ export const Tabletop: React.FC = () => {
                                     fontColor={(obj as any).fontColor || 'white'}
                                 />
 
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             {showGrid && (
                                 <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
                                     <defs>
@@ -4537,15 +4783,18 @@ export const Tabletop: React.FC = () => {
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
-                                style={{
-                                    left: v2p(obj.x),
-                                    top: v2p(obj.y),
-                                    width: v2p(obj.width),
-                                    height: v2p(obj.height),
-                                    transform: `rotate(${obj.rotation}deg)`,
-                                    zIndex: globalZIndex,
-                                    pointerEvents: isPermeable ? 'none' : 'auto',
-                                }}
+                                style={createPositionedStyle(
+                                    v2p(obj.x),
+                                    v2p(obj.y),
+                                    v2p(obj.width),
+                                    v2p(obj.height),
+                                    globalZIndex,
+                                    objLayer,
+                                    {
+                                        transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+                                        pointerEvents: isPermeable ? 'none' : 'auto',
+                                    }
+                                )}
                             >
                                 <SvgTokenShape
                                     shape={cell.shape}
@@ -4665,7 +4914,6 @@ export const Tabletop: React.FC = () => {
                                     <div
                                         className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
                                         title="Pinned to screen"
-                                        style={{ transform: `scale(${1/zoom})` }}
                                     >
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                                             <line x1="12" y1="17" x2="12" y2="22"></line>
@@ -4988,7 +5236,7 @@ export const Tabletop: React.FC = () => {
                                     pointerEvents: isPermeable ? 'none' : 'auto',
                                 }}
                             >
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
                             <span className="text-xl font-bold">{counter.value}</span>
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
@@ -5145,7 +5393,6 @@ export const Tabletop: React.FC = () => {
                                     <div
                                         className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
                                         title="Pinned to screen"
-                                        style={{ transform: `scale(${1/zoom})` }}
                                     >
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                                             <line x1="12" y1="17" x2="12" y2="22"></line>
@@ -5233,24 +5480,31 @@ export const Tabletop: React.FC = () => {
                     // Objects in non-selected layers are permeable (let clicks pass through)
                     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
+                    // Get inverse scale if zoom is disabled for this layer
+                    const inverseScale = getLayerInverseScale(objLayer);
+
                     return (
                         <div
                             key={obj.id}
                             data-tabletop-card="true"
-                            style={{
-                                left: v2p(obj.x),
-                                top: v2p(obj.y),
-                                position: 'absolute',
-                                transform: `rotate(${obj.rotation}deg)`,
-                                opacity: isCardHidden && isGM ? 0.5 : 1,
-                                pointerEvents: isDragging || isPermeable ? 'none' : 'auto', // Allow mouse events to pass through when dragging or on non-selected layer
-                                zIndex: globalZIndex, // Apply global z-index for proper layer ordering
-                            }}
+                            style={createPositionedStyle(
+                                v2p(obj.x),
+                                v2p(obj.y),
+                                v2p(displayWidth),
+                                v2p(displayHeight),
+                                globalZIndex,
+                                objLayer,
+                                {
+                                    transform: `rotate(${obj.rotation}deg)${inverseScale !== 1 ? ` scale(${inverseScale})` : ''}`,
+                                    opacity: isCardHidden && isGM ? 0.5 : 1,
+                                    pointerEvents: isDragging || isPermeable ? 'none' : 'auto',
+                                }
+                            )}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}
                             className={`rounded-lg ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                         >
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             <div>
                               <Card
                                   card={card}
@@ -5358,9 +5612,20 @@ export const Tabletop: React.FC = () => {
                 const layer = state.hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
                 const layerMinZ = layer?.minZIndex ?? 1001;
                 const globalZIndex = layerMinZ + (deckObj.zIndex ?? 0);
+                const objLayerId = deckObj.hyperscaleLayerId || 'cards';
 
                 return (
-                    <div key={deckObj.id} style={{ position: 'absolute', left: v2p(deckObj.x), top: v2p(deckObj.y), zIndex: globalZIndex }}>
+                    <div
+                        key={deckObj.id}
+                        style={createPositionedStyle(
+                            v2p(deckObj.x),
+                            v2p(deckObj.y),
+                            0,
+                            0,
+                            globalZIndex,
+                            objLayerId
+                        )}
+                    >
                         <DeckComponent
                             deck={deckObj}
                             draggingId={draggingId}
@@ -5401,7 +5666,6 @@ export const Tabletop: React.FC = () => {
                     isDragging={draggingId === uiObj.id}
                     onMouseDown={handleMouseDown}
                     offset={offset}
-                    zoom={zoom}
                     isPinnedMode={false}
                 />
             ))}
@@ -5417,7 +5681,6 @@ export const Tabletop: React.FC = () => {
                     isDragging={draggingId === uiObj.id}
                     onMouseDown={handleMouseDown}
                     offset={{ x: 0, y: 0 }}
-                    zoom={1}
                     isPinnedMode={true}
                 />
             ))}
@@ -5529,7 +5792,6 @@ export const Tabletop: React.FC = () => {
                             isDragging={isDragging}
                             isResizing={isResizing}
                             canResize={!board.locked}
-                            zoom={zoom}
                             onMouseDown={(e) => handleMouseDown(e, board.id)}
                             onContextMenu={(e) => handleContextMenu(e, board)}
                             onResizeStart={(e) => !board.locked && handleResizeStart(e, board.id)}
@@ -5887,7 +6149,6 @@ export const Tabletop: React.FC = () => {
             cursorSlot={cursorSlot}
             cursorPosition={cursorPosition}
             cursorPositionRef={cursorPositionRef}
-            zoom={zoom}
             pixelsPerVU={pixelsPerVU}
             state={state}
             getCardSettings={getCardSettings}

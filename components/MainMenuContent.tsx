@@ -1,12 +1,13 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useHandCardScale } from '../hooks/useHandCardScale';
+import { useLocalSettings } from '../hooks/useLocalSettings';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2 } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -115,6 +116,7 @@ interface MainMenuContentProps {
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const { state, dispatch, peerId, isHost, stateRef } = useGame();
+  const { settings: localSettings, updateSetting } = useLocalSettings();
   const language: AppLanguage = state.language || 'en';
 
   // Translation helper - must be memoized to update when language changes
@@ -135,7 +137,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [previousTab, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
-  const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass'>('none');
+  const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom'>('none');
   // Manual connection modal state
   const [showManualConnection, setShowManualConnection] = useState(false);
   const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
@@ -678,53 +680,33 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               {/* Drawing Tools Section */}
               <div>
                 <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label={translate('Cursor', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="marker" icon={<Pen size={20} />} label={translate('Marker', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label={translate('Eraser', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label={translate('Ruler', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <div className="grid grid-cols-5 gap-2">
+                  <DrawingToolButton tool="none" icon={<MousePointer2 size={15} />} label={translate('Cursor', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="marker" icon={<Pen size={15} />} label={translate('Marker', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="eraser" icon={<Eraser size={15} />} label={translate('Eraser', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="ruler" icon={<Ruler size={15} />} label={translate('Ruler', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="zoom" icon={<Search size={15} />} label={translate('Zoom', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
                 </div>
               </div>
 
               {/* Marker Settings (shown when marker or eraser is selected) */}
               {(selectedTool === 'marker' || selectedTool === 'eraser') && (
                 <div className="p-3 bg-slate-800 rounded-lg space-y-3">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase">
-                    {selectedTool === 'marker' ? translate('Marker Settings', language as Locale) : translate('Eraser Settings', language as Locale)}
-                  </h4>
-
                   {/* Color picker */}
                   {selectedTool === 'marker' && (
                     <div>
-                      <label className="block text-[10px] text-gray-400 mb-2">{translate('Color', language as Locale)}</label>
-                      <div className="grid grid-cols-8 gap-1">
-                        {[
-                          // Basic colors (first row)
-                          '#ff0000', '#ff8000', '#ffff00', '#80ff00',
-                          '#00ff00', '#00ff80', '#00ffff', '#0080ff',
-                          '#0000ff', '#8000ff', '#ff00ff', '#ff0080',
-                          // Light/Dark variants
-                          '#ffffff', '#c0c0c0', '#808080', '#404040',
-                          '#000000', '#800000', '#008000', '#000080',
-                          '#808000', '#008080', '#800080', '#ff8080',
-                        ].map((color) => (
-                          <button
-                            key={color}
-                            onClick={() => updateMarkerColor(color)}
-                            className={`w-6 h-6 rounded border transition-all ${
-                              markerColor === color ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'
-                            }`}
-                            style={{ backgroundColor: color }}
-                            title={color}
-                          />
-                        ))}
-                      </div>
+                      <input
+                        type="color"
+                        value={markerColor}
+                        onChange={(e) => updateMarkerColor(e.target.value)}
+                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                      />
                     </div>
                   )}
 
                   {/* Thickness slider */}
                   <div>
-                    <label className="block text-[10px] text-gray-400 mb-2">
+                    <label className="block text-[10px] text-gray-400 mb-1">
                       {translate('Size', language as Locale)}: {markerThickness}px
                     </label>
                     <input
@@ -735,7 +717,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       onChange={(e) => updateMarkerThickness(Number(e.target.value))}
                       className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                     />
-                    <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
                       <span>1px</span>
                       <span>50px</span>
                       <span>100px</span>
@@ -745,7 +727,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   {/* Opacity slider - only for marker, not eraser */}
                   {currentDrawingTool === 'marker' && (
                     <div>
-                      <label className="block text-[10px] text-gray-400 mb-2">
+                      <label className="block text-[10px] text-gray-400 mb-1">
                         {translate('Opacity', language as Locale)}: {markerOpacity}%
                       </label>
                       <input
@@ -756,13 +738,43 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                         onChange={(e) => updateMarkerOpacity(Number(e.target.value))}
                         className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                       />
-                      <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                      <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
                         <span>1%</span>
                         <span>50%</span>
                         <span>100%</span>
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Zoom Settings (shown when zoom tool is selected) */}
+              {selectedTool === 'zoom' && (
+                <div className="p-3 bg-slate-800 rounded-lg space-y-3">
+                  {/* Zoom slider */}
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-1">
+                      {t({ en: 'Zoom', ru: 'Масштаб', be: 'Маштаб', uk: 'Масштаб', sr: 'Zum' })}: {localSettings.zoom ?? 100}%
+                    </label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="200"
+                      step="5"
+                      value={localSettings.zoom ?? 100}
+                      onChange={(e) => updateSetting('zoom', Number(e.target.value))}
+                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                    />
+                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                      <span>50%</span>
+                      <span>100%</span>
+                      <span>200%</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[9px] text-gray-500 italic">
+                    {t({ en: 'Configure layer zoom in Layer Settings', ru: 'Настройте зум слоя в настройках слоя', be: 'Наладзьце зум слоя ў наладах слоя', uk: 'Налаштуйте зум шару в налаштуваннях шару', sr: 'Podesite zum sloja u postavkama sloja' })}
+                  </p>
                 </div>
               )}
 
@@ -1890,7 +1902,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 };
 
 // Drawing tool types
-type DrawingTool = 'none' | 'marker' | 'eraser' | 'compass';
+type DrawingTool = 'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom';
 
 // Drawing tool button component
 interface DrawingToolButtonProps {
