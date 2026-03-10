@@ -453,6 +453,7 @@ export interface HyperscaleLayer {
   playerCanView: boolean;    // Can players see this layer in context menu
   individualPosition: boolean;  // Objects shared, but position is local per player (host knows for saving)
   individualObjects: boolean;    // Layer is completely local - objects and positions individual per player (host knows for saving)
+  zoomEnabled: boolean;  // Whether local zoom affects objects in this layer
   order: number;       // Display order (lower = higher priority in list)
 }
 

@@ -7,7 +7,6 @@ interface NexusBoardProps {
   board: NexusBoardType;
   isOwner: boolean;
   isDragging: boolean;
-  zoom: number;
   onMouseDown: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onAddCell: (direction: HexDirection) => void;

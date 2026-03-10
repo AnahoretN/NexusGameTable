@@ -9,7 +9,6 @@ interface BoardWithResizeProps {
     isDragging: boolean;
     isResizing: boolean;
     canResize: boolean;
-    zoom: number;
     onMouseDown: (e: React.MouseEvent) => void;
     onContextMenu: (e: React.MouseEvent) => void;
     onResizeStart: (e: React.MouseEvent) => void;
@@ -27,7 +26,6 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     isDragging,
     isResizing,
     canResize,
-    zoom,
     onMouseDown,
     onContextMenu,
     onResizeStart,
@@ -89,7 +87,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                     d={hexGrid.path}
                     fill="none"
                     stroke="rgba(33,47,60,0.7)"
-                    strokeWidth={1 / zoom}
+                    strokeWidth={1}
                 />
             </pattern>
         );
@@ -107,7 +105,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                     d={hexGrid.path}
                     fill="none"
                     stroke="rgba(33,47,60,0.7)"
-                    strokeWidth={1 / zoom}
+                    strokeWidth={1}
                 />
             </pattern>
         );
@@ -126,7 +124,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 height={actualGridHeight}
                 fill="none"
                 stroke="rgba(33,47,60,0.7)"
-                strokeWidth={1 / zoom}
+                strokeWidth={1}
             />
         </pattern>
     );

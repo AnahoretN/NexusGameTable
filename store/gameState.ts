@@ -68,6 +68,7 @@ export const initialState: GameState = {
       playerCanView: true,
       individualPosition: false,
       individualObjects: false,
+      zoomEnabled: true,
       order: 0
     },
     {
@@ -80,6 +81,7 @@ export const initialState: GameState = {
       playerCanView: true,
       individualPosition: false,
       individualObjects: false,
+      zoomEnabled: true,
       order: 1
     },
     {
@@ -92,6 +94,7 @@ export const initialState: GameState = {
       playerCanView: true,
       individualPosition: false,
       individualObjects: false,
+      zoomEnabled: true,
       order: 2
     },
     {
@@ -104,6 +107,7 @@ export const initialState: GameState = {
       playerCanView: false,
       individualPosition: true,
       individualObjects: true, // Each player has their own interface objects (panels, windows, etc.)
+      zoomEnabled: false, // Interface layer NOT affected by zoom
       order: 3
     }
   ],

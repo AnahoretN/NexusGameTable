@@ -276,6 +276,7 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         playerCanView: true,
         individualPosition: false,
         individualObjects: false,
+        zoomEnabled: true,
         order: 0
       },
       {
@@ -288,6 +289,7 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         playerCanView: true,
         individualPosition: false,
         individualObjects: false,
+        zoomEnabled: true,
         order: 1
       },
       {
@@ -300,6 +302,7 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         playerCanView: true,
         individualPosition: false,
         individualObjects: false,
+        zoomEnabled: true,
         order: 2
       },
       {
@@ -312,10 +315,17 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         playerCanView: false,
         individualPosition: false,
         individualObjects: false,
+        zoomEnabled: false,
         order: 3
       }
     ];
   }
+
+  // Migrate: Add zoomEnabled to existing layers that don't have it
+  migrated.hyperscaleLayers = migrated.hyperscaleLayers.map(layer => ({
+    ...layer,
+    zoomEnabled: layer.zoomEnabled ?? (layer.id !== 'interface')
+  }));
 
   // Add selected layer IDs if missing
   if (!migrated.selectedHyperscaleLayerIds || migrated.selectedHyperscaleLayerIds.length === 0) {
