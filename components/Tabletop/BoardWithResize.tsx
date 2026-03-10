@@ -122,84 +122,8 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 height="100%"
                 fill={`url(#${(isHexGrid || isHexHorizontalGrid) ? `hex-grid-${token.id}` : `square-grid-${token.id}`})`}
             />
-            {/* Magnetism points at cell centers */}
-            {magnetPoints.map((point, index) => (
-                <circle
-                    key={index}
-                    cx={point.x}
-                    cy={point.y}
-                    r={4 / zoom}
-                    fill="rgba(100, 150, 255, 0.6)"
-                    stroke="rgba(100, 150, 255, 0.3)"
-                    strokeWidth={1 / zoom}
-                />
-            ))}
         </svg>
     );
-
-    // Generate magnetism points at cell centers
-    const magnetPoints: { x: number; y: number }[] = [];
-    const boardWidth = token.width;
-    const boardHeight = token.height;
-
-    if (isHexGrid) {
-        // Pointy-top hex grid
-        const hexWidth = actualGridWidth;
-        const hexHeight = actualGridWidth * 1.15;
-        const rowSpacing = hexHeight * 0.75;
-        const colSpacing = hexWidth;
-        const rowOffset = hexWidth / 2;
-        const halfW = hexWidth / 2;
-        const halfH = hexHeight / 2;
-
-        const numCols = Math.ceil(boardWidth / colSpacing) + 2;
-        const numRows = Math.ceil(boardHeight / rowSpacing) + 2;
-
-        for (let row = -1; row < numRows; row++) {
-            for (let col = -1; col < numCols; col++) {
-                const x = col * colSpacing + (row % 2) * rowOffset + halfW;
-                const y = row * rowSpacing + halfH;
-                if (x >= -hexWidth/2 && x <= boardWidth + hexWidth/2 && y >= -hexHeight/2 && y <= boardHeight + hexHeight/2) {
-                    magnetPoints.push({ x, y });
-                }
-            }
-        }
-    } else if (isHexHorizontalGrid) {
-        // Flat-top hex grid
-        const hexWidth = actualGridWidth;
-        const hexHeight = actualGridWidth / 1.15;
-        const colSpacing = hexWidth * 0.75;
-        const rowSpacing = hexHeight;
-        const colOffset = hexHeight / 2;
-        const halfW = hexWidth / 2;
-        const halfH = hexHeight / 2;
-
-        const numCols = Math.ceil(boardWidth / colSpacing) + 1;
-        const numRows = Math.ceil(boardHeight / rowSpacing) + 1;
-
-        for (let col = 0; col < numCols; col++) {
-            for (let row = 0; row < numRows; row++) {
-                const x = col * colSpacing + halfW;
-                const y = row * rowSpacing + (col % 2) * colOffset + halfH;
-                if (x >= -hexWidth && x <= boardWidth + hexWidth && y >= -hexHeight && y <= boardHeight + hexHeight) {
-                    magnetPoints.push({ x, y });
-                }
-            }
-        }
-    } else {
-        // Square grid - points at cell centers
-        const numCols = Math.ceil(boardWidth / actualGridWidth) + 1;
-        const numRows = Math.ceil(boardHeight / actualGridHeight) + 1;
-
-        for (let row = 0; row <= numRows; row++) {
-            for (let col = 0; col <= numCols; col++) {
-                magnetPoints.push({
-                    x: col * actualGridWidth + actualGridWidth / 2,
-                    y: row * actualGridHeight + actualGridHeight / 2
-                });
-            }
-        }
-    }
 
     return (
         <div

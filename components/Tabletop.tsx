@@ -26,7 +26,14 @@ import { CursorSlotVisualization } from './CursorSlotVisualization';
 // import { RemoteObjectAnimation, useRemoteObjectAnimation } from './RemoteObjectAnimation';
 import { PinnedIndicator } from './PinnedIndicator';
 import { ObjectActionButtons } from './ObjectActionButtons';
-import { calculateFlexibleHexGrid, calculateHorizontalHexGrid } from '../utils/gridUtils';
+import {
+  calculateFlexibleHexGrid,
+  calculateHorizontalHexGrid,
+  addObjectToCellMagnet,
+  removeObjectFromCellMagnet,
+  findCellForSnappedObject,
+  calculateMagnetPointPositions
+} from '../utils/gridUtils';
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
@@ -1161,7 +1168,41 @@ export const Tabletop: React.FC = () => {
 
     // Mark the item as inCursorSlot (keeps it in objects list but hidden from tabletop)
     dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
-  }, [cursorSlot.length, dispatch, v2p, state.viewTransform, cursorSlotRef]);
+
+    // Clean up magnet points - when picking up an object, remove it from any cell's magnet points
+    // and reposition remaining objects
+    for (const obj of Object.values(state.objects)) {
+      if ((obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_CELL) && obj.magnetPoints) {
+        const cell = obj as BattlefieldCell | NexusCellObject;
+        if (cell.magnetPoints?.some(p => p.objectId === id)) {
+          const result = removeObjectFromCellMagnet(cell, id, state.objects);
+          if (result) {
+            // Update the cell with new magnet points
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: cell.id,
+                magnetPointCount: result.updatedCell.magnetPointCount,
+                magnetPoints: result.updatedCell.magnetPoints
+              }
+            });
+
+            // Move remaining objects to their new magnet positions
+            for (const movedObj of result.movedObjects) {
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: movedObj.objectId,
+                  x: movedObj.x,
+                  y: movedObj.y
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+  }, [cursorSlot.length, dispatch, v2p, state.viewTransform, state.objects, cursorSlotRef]);
 
   // Drop all items from cursor slot at specified screen coordinates
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
@@ -1188,8 +1229,121 @@ export const Tabletop: React.FC = () => {
     const worldX = p2v(clientX + scrollX);
     const worldY = p2v(clientY + scrollY);
 
-    // Add all items from slot back to the game with same offsets as in cursor display
-    currentSlot.forEach((item) => {
+    // Find cell with snapToGrid enabled under cursor for automatic magnetism
+    const snapRadius = 100; // VU - radius to check for cell
+    let targetCell: (BattlefieldCell | NexusCellObject) | null = null;
+    let targetBoardCellCenter: { x: number; y: number } | null = null;
+
+    // Only tokens use automatic cell magnetism
+    const firstItem = currentSlot[0];
+    if (firstItem && firstItem.type === ItemType.TOKEN) {
+      // Check battlefield cells first
+      for (const obj of Object.values(state.objects)) {
+        if ((obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_CELL) &&
+            obj.snapToGrid &&
+            obj.isOnTable !== false) {
+          const cell = obj as BattlefieldCell | NexusCellObject;
+          const cellCenterX = cell.x + (cell.width ?? 100) / 2;
+          const cellCenterY = cell.y + (cell.height ?? 100) / 2;
+          const distance = Math.sqrt(
+            Math.pow(worldX - cellCenterX, 2) +
+            Math.pow(worldY - cellCenterY, 2)
+          );
+
+          // Use the larger of cell dimensions as snap radius
+          const cellSnapRadius = Math.max(cell.width ?? 100, cell.height ?? 100) / 2 + 50;
+          if (distance <= cellSnapRadius) {
+            targetCell = cell;
+            break;
+          }
+        }
+      }
+
+      // If no battlefield cell found, check Board grid cells
+      if (!targetCell) {
+        for (const obj of Object.values(state.objects)) {
+          if (obj.type === ItemType.BOARD &&
+              (obj as BoardType).snapToGrid &&
+              (obj as BoardType).gridType !== GridType.NONE &&
+              obj.isOnTable !== false) {
+            const board = obj as BoardType;
+            const gridW = board.gridWidth || board.gridSize || 50;
+            const gridH = board.gridHeight || board.gridSize || 50;
+            let cellCenterX: number, cellCenterY: number;
+
+            if (board.gridType === GridType.SQUARE) {
+              const relativeX = worldX - board.x;
+              const relativeY = worldY - board.y;
+              const col = Math.floor(relativeX / gridW);
+              const row = Math.floor(relativeY / gridH);
+
+              // Check if cell is within board bounds
+              if (col >= 0 && col < Math.floor(board.width / gridW) &&
+                  row >= 0 && row < Math.floor(board.height / gridH)) {
+                cellCenterX = board.x + (col * gridW) + (gridW / 2);
+                cellCenterY = board.y + (row * gridH) + (gridH / 2);
+                targetBoardCellCenter = { x: cellCenterX, y: cellCenterY };
+                break;
+              }
+            } else if (board.gridType === GridType.HEX) {
+              // Pointy-top hex grid
+              const hexW = gridW || 100;
+              const hexH = hexW * 1.15;
+              const rowSpacing = hexH * 0.75;
+              const colSpacing = hexW;
+              const rowOffset = hexW / 2;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              const row = Math.round((worldY - board.y - halfH) / rowSpacing);
+              const col = Math.round((worldX - board.x - (row % 2) * rowOffset - halfW) / colSpacing);
+
+              cellCenterX = board.x + col * colSpacing + (row % 2) * rowOffset + halfW;
+              cellCenterY = board.y + row * rowSpacing + halfH;
+
+              // Check if hex center is within board bounds
+              const hexX = cellCenterX - board.x;
+              const hexY = cellCenterY - board.y;
+              if (hexX >= -hexW/2 && hexX <= board.width + hexW/2 &&
+                  hexY >= -halfH && hexY <= board.height + halfH) {
+                targetBoardCellCenter = { x: cellCenterX, y: cellCenterY };
+                break;
+              }
+            } else if (board.gridType === GridType.HEX_HORIZONTAL) {
+              // Flat-top hex grid
+              const hexW = gridW || 115;
+              const hexH = hexW / 1.15;
+              const colSpacing = hexW * 0.75;
+              const rowSpacing = hexH;
+              const colOffset = hexH / 2;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              const col = Math.round((worldX - board.x - halfW) / colSpacing);
+              const row = Math.round((worldY - board.y - (col % 2) * colOffset - halfH) / rowSpacing);
+
+              cellCenterX = board.x + col * colSpacing + halfW;
+              cellCenterY = board.y + row * rowSpacing + (col % 2) * colOffset + halfH;
+
+              // Check if hex center is within board bounds
+              const hexX = cellCenterX - board.x;
+              const hexY = cellCenterY - board.y;
+              if (hexX >= -halfW && hexX <= board.width + halfW &&
+                  hexY >= -hexH/2 && hexY <= board.height + hexH/2) {
+                targetBoardCellCenter = { x: cellCenterX, y: cellCenterY };
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Track cells that need to be updated (to avoid duplicate updates)
+    const updatedCellIds = new Set<string>();
+
+    // Add all items from slot back to the game with automatic magnetism
+    currentSlot.forEach((item, index) => {
       const isCard = item.type === ItemType.CARD;
       let baseWidth = item.width ?? (isCard ? 63 : 50);
       let baseHeight = item.height ?? (isCard ? 88 : 50);
@@ -1204,19 +1358,9 @@ export const Tabletop: React.FC = () => {
       }
 
       // For horizontal cards, swap dimensions to match cursor visualization
-      // (same logic as in cursor slot rendering)
       if (isHorizontal) {
         [baseWidth, baseHeight] = [baseHeight, baseWidth];
       }
-
-      // Calculate offset the SAME WAY as cursor slot rendering
-      // Newest element (highest index) has offset 0, older elements are offset down-right
-      const slotIndex = (item as any).cursorSlotIndex ?? 0;
-      const newestIndex = currentSlot.length - 1;
-      const offsetFromBack = Math.max(0, newestIndex - slotIndex);
-      const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
-      const offsetX = offsetFromBack * offsetAmount;
-      const offsetY = offsetFromBack * offsetAmount;
 
       // Clamp zIndex to hyperscale layer bounds
       const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
@@ -1224,26 +1368,104 @@ export const Tabletop: React.FC = () => {
       const maxZ = itemLayer?.maxZIndex ?? 10000;
 
       // Use original zIndex if preserving, otherwise use stack zIndex (clamped to layer bounds)
-      const stackZ = Math.min(10000 + slotIndex, maxZ);
-      const zIndex = useOriginalZIndex
+      const stackZ = Math.min(10000 + index, maxZ);
+      const defaultZIndex = useOriginalZIndex
         ? ((item as any).originalZIndex ?? minZ)
         : stackZ;
 
-      // Find snap target based on cursor position (worldX, worldY = cursor center)
-      let snapTargetX: number, snapTargetY: number;
-      if (item.type === ItemType.TOKEN) {
-        const snappedPos = getSnappedCoordinates(worldX, worldY, state.objects, item.id);
-        // snappedPos contains top-left coordinates, add half dimensions to get center
-        snapTargetX = snappedPos.x + baseWidth / 2;
-        snapTargetY = snappedPos.y + baseHeight / 2;
-      } else {
-        snapTargetX = worldX;
-        snapTargetY = worldY;
-      }
+      let finalX: number, finalY: number;
+      let finalZIndex: number = defaultZIndex; // Will be overridden if snapped to cell
 
-      // Apply stacking offset to the snapped center position
-      const finalX = snapTargetX - baseWidth / 2 + offsetX;
-      const finalY = snapTargetY - baseHeight / 2 + offsetY;
+      // Use automatic magnetism for tokens dropped on cells
+      if (item.type === ItemType.TOKEN && targetCell && !updatedCellIds.has(targetCell.id)) {
+        const result = addObjectToCellMagnet(targetCell, item.id, state.objects);
+
+        // Calculate zIndex for new object - place it below all already snapped objects
+        // Find minimum zIndex among objects already snapped to this cell
+        const existingSnappedObjectIds = (targetCell.magnetPoints ?? [])
+          .filter(p => p.objectId !== item.id) // Exclude the object being added
+          .map(p => p.objectId);
+
+        let snappedObjectZIndices: number[] = [];
+        for (const snappedId of existingSnappedObjectIds) {
+          const snappedObj = state.objects[snappedId];
+          if (snappedObj) {
+            snappedObjectZIndices.push(snappedObj.zIndex ?? minZ);
+          }
+        }
+
+        // Find the lowest zIndex among snapped objects, and place new object below it
+        if (snappedObjectZIndices.length > 0) {
+          const minSnappedZ = Math.min(...snappedObjectZIndices);
+          // Place new object below the lowest snapped object (subtract 1, but respect minZ)
+          finalZIndex = Math.max(minZ, minSnappedZ - 1);
+        } else {
+          // First object being snapped - use its current zIndex or cell's zIndex - 1
+          finalZIndex = useOriginalZIndex
+            ? ((item as any).originalZIndex ?? minZ)
+            : Math.max(minZ, (targetCell.zIndex ?? minZ + 1) - 1);
+        }
+
+        // Ensure we don't exceed layer bounds
+        finalZIndex = Math.max(minZ, Math.min(maxZ, finalZIndex));
+
+        // Update the cell with new magnet points
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: targetCell.id,
+            magnetPointCount: result.updatedCell.magnetPointCount,
+            magnetPoints: result.updatedCell.magnetPoints
+          }
+        });
+
+        // Move existing objects to their new magnet positions
+        for (const movedObj of result.movedObjects) {
+          if (movedObj.objectId !== item.id) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: movedObj.objectId,
+                x: movedObj.x,
+                y: movedObj.y
+              }
+            });
+          }
+        }
+
+        // Calculate final position for the new object (center to top-left)
+        finalX = result.snapPosition.x - baseWidth / 2;
+        finalY = result.snapPosition.y - baseHeight / 2;
+
+        // Mark cell as updated
+        updatedCellIds.add(targetCell.id);
+      } else if (item.type === ItemType.TOKEN && targetBoardCellCenter) {
+        // Snap to Board grid cell center
+        finalX = targetBoardCellCenter.x - baseWidth / 2;
+        finalY = targetBoardCellCenter.y - baseHeight / 2;
+      } else {
+        // No cell magnetism - use regular snapping
+        let snapTargetX: number, snapTargetY: number;
+        if (item.type === ItemType.TOKEN) {
+          const snappedPos = getSnappedCoordinates(worldX, worldY, state.objects, item.id);
+          snapTargetX = snappedPos.x + baseWidth / 2;
+          snapTargetY = snappedPos.y + baseHeight / 2;
+        } else {
+          snapTargetX = worldX;
+          snapTargetY = worldY;
+        }
+
+        // Apply stacking offset for multiple items
+        const slotIndex = (item as any).cursorSlotIndex ?? 0;
+        const newestIndex = currentSlot.length - 1;
+        const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+        const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
+        const offsetX = offsetFromBack * offsetAmount;
+        const offsetY = offsetFromBack * offsetAmount;
+
+        finalX = snapTargetX - baseWidth / 2 + offsetX;
+        finalY = snapTargetY - baseHeight / 2 + offsetY;
+      }
 
       // Use DROP_FROM_CURSOR_SLOT action with undo tracking
       dispatch({
@@ -1252,7 +1474,7 @@ export const Tabletop: React.FC = () => {
           objectId: item.id,
           x: finalX,
           y: finalY,
-          zIndex,
+          zIndex: finalZIndex,
         },
       });
     });
@@ -1278,7 +1500,7 @@ export const Tabletop: React.FC = () => {
     // Set flag to prevent immediate re-pickup
     justDroppedRef.current = true;
     lastDropTimeRef.current = Date.now();
-  }, [cursorSlot, cursorSlotSource, p2v, state.viewTransform, dispatch, getCardSettings]);
+  }, [cursorSlot, cursorSlotSource, p2v, state.viewTransform, state.objects, state.hyperscaleLayers, dispatch, getCardSettings, getSnappedCoordinates]);
 
   // Listen for drop-cursor-slot-at-position events (from drag-to-place in ToolsPanel)
   useEffect(() => {
@@ -2167,41 +2389,6 @@ export const Tabletop: React.FC = () => {
   // Handle click on battlefield cell for magnetism control
   // Shift+click: add magnet point
   // Ctrl+Shift+click: remove magnet point
-  const handleCellMagnetClick = useCallback((e: React.MouseEvent, cell: BattlefieldCell | NexusCellObject) => {
-    // Prevent default behavior
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Check for Shift key
-    if (!e.shiftKey) {
-      return; // Only handle Shift+click
-    }
-
-    const currentCount = cell.magnetPointCount ?? 1;
-    const currentRotation = cell.magnetRotation ?? 0;
-    let newCount = currentCount;
-
-    // Ctrl+Shift = decrease, Shift only = increase
-    if (e.ctrlKey || e.metaKey) {
-      // Decrease magnet points (min 1)
-      newCount = Math.max(1, currentCount - 1);
-      console.log('[CELL MAGNET] Decrease magnet points:', currentCount, '->', newCount);
-    } else {
-      // Increase magnet points (max 12 for practical reasons)
-      newCount = Math.min(12, currentCount + 1);
-      console.log('[CELL MAGNET] Increase magnet points:', currentCount, '->', newCount);
-    }
-
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: cell.id,
-        magnetPointCount: newCount,
-        magnetRotation: currentRotation
-      }
-    });
-  }, [dispatch]);
-
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     // Always update cursor position for slot visualization (needed when adding token to slot)
     const newCursorPosition = { x: e.clientX, y: e.clientY };
@@ -4327,7 +4514,9 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.BATTLEFIELD_CELL) {
                     const cell = obj as BattlefieldCell;
-                    const magnetPointCount = cell.magnetPointCount ?? 1;
+                    // Use magnetPoints array length to determine actual magnet point count
+                    const actualMagnetPointCount = (cell.magnetPoints?.length ?? 0) || (cell.magnetPointCount ?? 1);
+                    const magnetPointCount = Math.max(1, actualMagnetPointCount);
                     const magnetRotation = cell.magnetRotation ?? 0;
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
@@ -4346,7 +4535,6 @@ export const Tabletop: React.FC = () => {
                         >
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
-                                onClick={(e) => isOwner && handleCellMagnetClick(e, cell)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
@@ -4372,9 +4560,9 @@ export const Tabletop: React.FC = () => {
                                     showThickness={false}
                                 />
 
-                                {/* Magnetism System Visualization */}
+                                {/* Magnetism System Visualization - hidden */}
                                 <svg
-                                    className="absolute pointer-events-none"
+                                    className="absolute pointer-events-none hidden"
                                     width={v2p(obj.width)}
                                     height={v2p(obj.height)}
                                     style={{ overflow: 'visible' }}
@@ -4393,6 +4581,11 @@ export const Tabletop: React.FC = () => {
                                                 return 1 / Math.sqrt((cosA / ellipseRx) ** 2 + (sinA / ellipseRy) ** 2);
                                             };
 
+                                            // Create a set of occupied point indices
+                                            const occupiedPointIndices = new Set(
+                                                (cell.magnetPoints ?? []).map(p => p.pointIndex)
+                                            );
+
                                             return (
                                                 <>
                                                     {/* Inscribed ellipse (green) - magnetism boundary */}
@@ -4408,12 +4601,14 @@ export const Tabletop: React.FC = () => {
                                                     />
 
                                                     {/* Magnet lines (from center to inscribed ellipse) */}
-                                                    {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                    {/* Only show lines for points that have objects snapped OR if snapToGrid is enabled */}
+                                                    {(cell.snapToGrid || cell.magnetPoints?.length > 0) && magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
                                                         const anglePerSlice = 360 / magnetPointCount;
                                                         const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
                                                         const lineLength = calcLineLength(angle);
                                                         const endX = Math.cos(angle) * lineLength;
                                                         const endY = Math.sin(angle) * lineLength;
+                                                        const hasObject = occupiedPointIndices.has(index);
 
                                                         return (
                                                             <line
@@ -4422,14 +4617,14 @@ export const Tabletop: React.FC = () => {
                                                                 y1={0}
                                                                 x2={v2p(endX)}
                                                                 y2={v2p(endY)}
-                                                                stroke="#f59e0b"
-                                                                strokeWidth={v2p(1)}
-                                                                opacity={0.6}
+                                                                stroke={hasObject ? "#22c55e" : "#f59e0b"}
+                                                                strokeWidth={v2p(hasObject ? 1.5 : 1)}
+                                                                opacity={hasObject ? 0.8 : 0.4}
                                                             />
                                                         );
                                                     })}
 
-                                                    {/* Magnet points (red dots at 60% from center along each line) */}
+                                                    {/* Magnet points - different style for occupied vs empty points */}
                                                     {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
                                                         const anglePerSlice = 360 / magnetPointCount;
                                                         const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
@@ -4437,19 +4632,21 @@ export const Tabletop: React.FC = () => {
                                                         const magnetRadius = lineLength * 0.6;
                                                         const magnetX = Math.cos(angle) * magnetRadius;
                                                         const magnetY = Math.sin(angle) * magnetRadius;
+                                                        const hasObject = occupiedPointIndices.has(index);
 
                                                         return (
                                                             <circle
                                                                 key={`magnet-point-${index}`}
                                                                 cx={v2p(magnetX)}
                                                                 cy={v2p(magnetY)}
-                                                                r={v2p(2)}
-                                                                fill="#ef4444"
+                                                                r={v2p(hasObject ? 2.5 : 2)}
+                                                                fill={hasObject ? "#22c55e" : "#ef4444"}
+                                                                opacity={hasObject ? 1 : 0.7}
                                                             />
                                                         );
                                                     })}
 
-                                                    {/* Center point (yellow dot) - only shown when no magnet lines */}
+                                                    {/* Center point (yellow dot) - shown when single point or no objects */}
                                                     {magnetPointCount === 1 && (
                                                         <circle
                                                             cx={0}
@@ -4550,7 +4747,9 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.NEXUS_CELL) {
                     const cell = obj as NexusCellObject;
-                    const magnetPointCount = cell.magnetPointCount ?? 1;
+                    // Use magnetPoints array length to determine actual magnet point count
+                    const actualMagnetPointCount = (cell.magnetPoints?.length ?? 0) || (cell.magnetPointCount ?? 1);
+                    const magnetPointCount = Math.max(1, actualMagnetPointCount);
                     const magnetRotation = cell.magnetRotation ?? 0;
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
@@ -4569,7 +4768,6 @@ export const Tabletop: React.FC = () => {
                         >
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
-                                onClick={(e) => isOwner && handleCellMagnetClick(e, cell)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
@@ -4595,9 +4793,9 @@ export const Tabletop: React.FC = () => {
                                     showThickness={false}
                                 />
 
-                                {/* Magnetism System Visualization */}
+                                {/* Magnetism System Visualization - hidden */}
                                 <svg
-                                    className="absolute pointer-events-none"
+                                    className="absolute pointer-events-none hidden"
                                     width={v2p(obj.width)}
                                     height={v2p(obj.height)}
                                     style={{ overflow: 'visible' }}
@@ -4616,6 +4814,11 @@ export const Tabletop: React.FC = () => {
                                                 return 1 / Math.sqrt((cosA / ellipseRx) ** 2 + (sinA / ellipseRy) ** 2);
                                             };
 
+                                            // Create a set of occupied point indices
+                                            const occupiedPointIndices = new Set(
+                                                (cell.magnetPoints ?? []).map(p => p.pointIndex)
+                                            );
+
                                             return (
                                                 <>
                                                     {/* Inscribed ellipse (green) - magnetism boundary */}
@@ -4631,12 +4834,14 @@ export const Tabletop: React.FC = () => {
                                                     />
 
                                                     {/* Magnet lines (from center to inscribed ellipse) */}
-                                                    {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                    {/* Only show lines for points that have objects snapped OR if snapToGrid is enabled */}
+                                                    {(cell.snapToGrid || cell.magnetPoints?.length > 0) && magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
                                                         const anglePerSlice = 360 / magnetPointCount;
                                                         const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
                                                         const lineLength = calcLineLength(angle);
                                                         const endX = Math.cos(angle) * lineLength;
                                                         const endY = Math.sin(angle) * lineLength;
+                                                        const hasObject = occupiedPointIndices.has(index);
 
                                                         return (
                                                             <line
@@ -4645,14 +4850,14 @@ export const Tabletop: React.FC = () => {
                                                                 y1={0}
                                                                 x2={v2p(endX)}
                                                                 y2={v2p(endY)}
-                                                                stroke="#f59e0b"
-                                                                strokeWidth={v2p(1)}
-                                                                opacity={0.6}
+                                                                stroke={hasObject ? "#22c55e" : "#f59e0b"}
+                                                                strokeWidth={v2p(hasObject ? 1.5 : 1)}
+                                                                opacity={hasObject ? 0.8 : 0.4}
                                                             />
                                                         );
                                                     })}
 
-                                                    {/* Magnet points (red dots at 60% from center along each line) */}
+                                                    {/* Magnet points - different style for occupied vs empty points */}
                                                     {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
                                                         const anglePerSlice = 360 / magnetPointCount;
                                                         const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
@@ -4660,19 +4865,21 @@ export const Tabletop: React.FC = () => {
                                                         const magnetRadius = lineLength * 0.6;
                                                         const magnetX = Math.cos(angle) * magnetRadius;
                                                         const magnetY = Math.sin(angle) * magnetRadius;
+                                                        const hasObject = occupiedPointIndices.has(index);
 
                                                         return (
                                                             <circle
                                                                 key={`magnet-point-${index}`}
                                                                 cx={v2p(magnetX)}
                                                                 cy={v2p(magnetY)}
-                                                                r={v2p(2)}
-                                                                fill="#ef4444"
+                                                                r={v2p(hasObject ? 2.5 : 2)}
+                                                                fill={hasObject ? "#22c55e" : "#ef4444"}
+                                                                opacity={hasObject ? 1 : 0.7}
                                                             />
                                                         );
                                                     })}
 
-                                                    {/* Center point (yellow dot) - only shown when no magnet lines */}
+                                                    {/* Center point (yellow dot) - shown when single point or no objects */}
                                                     {magnetPointCount === 1 && (
                                                         <circle
                                                             cx={0}

@@ -309,6 +309,12 @@ export interface TokenType extends GameItem {
   showName?: boolean; // Show the token name on the token itself
 }
 
+// Magnet point tracking - which objects are snapped to which magnet points
+export interface MagnetPoint {
+  objectId: string;      // ID of the object snapped to this point
+  pointIndex: number;    // Index of this magnet point (0-based)
+}
+
 // Battlefield Cell - single cell for battlefields/tactical maps
 // Can have different shapes (circle, square, hex, triangle) like tokens
 // Designed for creating tactical game areas
@@ -321,6 +327,7 @@ export interface BattlefieldCell extends GameItem {
   // Magnetism system - controls where tokens snap to in this cell
   magnetPointCount?: number; // Number of magnet points (default 1, min 1, max 12)
   magnetRotation?: number; // Rotation of magnet lines in degrees (default 0)
+  magnetPoints?: MagnetPoint[]; // Track which objects are snapped to which points (auto-managed)
 }
 
 // Hex direction for Nexus board cell connections
@@ -350,6 +357,7 @@ export interface NexusCellObject extends GameItem {
   // Magnetism system (same as BattlefieldCell)
   magnetPointCount?: number;     // Number of magnet points (default 1, min 1, max 12)
   magnetRotation?: number;       // Rotation of magnet lines in degrees (default 0)
+  magnetPoints?: MagnetPoint[];  // Track which objects are snapped to which points (auto-managed)
 }
 
 // Nexus Board - connected hexagonal cells that move together
