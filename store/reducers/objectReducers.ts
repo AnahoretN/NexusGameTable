@@ -1,4 +1,5 @@
-import { TableObject, ItemType } from '../../types';
+import { TableObject, ItemType, BattlefieldCell, NexusCellObject } from '../../types';
+import { removeObjectFromCellMagnet } from '../../utils/gridUtils';
 
 /**
  * Reducer functions for object manipulation actions
@@ -69,6 +70,63 @@ export function addObjectReducer(state: any, action: any): any {
       };
     }
 
+    // Check if this object was snapped to a cell's magnet points
+    // If moved far enough from the cell, remove it from magnet points and reposition remaining objects
+    const newObjects = { ...state.objects };
+    let needsMagnetCleanup = false;
+
+    for (const cellObj of Object.values(state.objects)) {
+      if ((cellObj.type === ItemType.BATTLEFIELD_CELL || cellObj.type === ItemType.NEXUS_CELL) && cellObj.magnetPoints) {
+        const cell = cellObj as BattlefieldCell | NexusCellObject;
+        const magnetPoint = cell.magnetPoints.find(p => p.objectId === action.payload.id);
+
+        if (magnetPoint) {
+          // Check if object is still within reasonable distance of the cell
+          const cellCenterX = cell.x + (cell.width ?? 100) / 2;
+          const cellCenterY = cell.y + (cell.height ?? 100) / 2;
+          const objCenterX = action.payload.x + (obj.width ?? 50) / 2;
+          const objCenterY = action.payload.y + (obj.height ?? 50) / 2;
+
+          const distance = Math.sqrt(
+            Math.pow(objCenterX - cellCenterX, 2) +
+            Math.pow(objCenterY - cellCenterY, 2)
+          );
+
+          // Snap radius is the larger of cell dimensions + some margin
+          const snapRadius = Math.max(cell.width ?? 100, cell.height ?? 100) / 2 + 50;
+
+          // If object moved outside snap radius, remove from magnet points and reposition remaining objects
+          if (distance > snapRadius) {
+            const result = removeObjectFromCellMagnet(cell, action.payload.id, newObjects);
+            if (result) {
+              // Update the cell with new magnet points
+              newObjects[cell.id] = { ...cell, ...result.updatedCell };
+
+              // Move remaining objects to their new magnet positions
+              for (const movedObj of result.movedObjects) {
+                newObjects[movedObj.objectId] = {
+                  ...newObjects[movedObj.objectId],
+                  x: movedObj.x,
+                  y: movedObj.y
+                };
+              }
+              needsMagnetCleanup = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (needsMagnetCleanup) {
+      return {
+        ...state,
+        objects: {
+          ...newObjects,
+          [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y }
+        }
+      };
+    }
+
     return {
       ...state,
       objects: {
@@ -100,6 +158,32 @@ export function addObjectReducer(state: any, action: any): any {
             ...deck,
             cardIds: deck.cardIds.filter((id: string) => id !== card.id)
           };
+        }
+      }
+    }
+
+    // Clean up magnet points - remove this object from any cell's magnetPoints
+    // and reposition remaining objects
+    for (const obj of Object.values(state.objects)) {
+      if ((obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_CELL) && obj.magnetPoints) {
+        const cell = obj as BattlefieldCell | NexusCellObject;
+        if (cell.magnetPoints?.some(p => p.objectId === action.payload.id)) {
+          const result = removeObjectFromCellMagnet(cell, action.payload.id, newObjects);
+          if (result) {
+            // Update the cell with new magnet points
+            newObjects[cell.id] = { ...cell, ...result.updatedCell };
+
+            // Move remaining objects to their new magnet positions
+            for (const movedObj of result.movedObjects) {
+              if (movedObj.objectId !== action.payload.id) { // Don't move the object being deleted
+                newObjects[movedObj.objectId] = {
+                  ...newObjects[movedObj.objectId],
+                  x: movedObj.x,
+                  y: movedObj.y
+                };
+              }
+            }
+          }
         }
       }
     }
