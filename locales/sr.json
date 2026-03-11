@@ -332,5 +332,11 @@
 "Done": "Gotovo",
 "Waiting for host to connect...": "Čekanje da se host poveže...",
 "Connection is in progress. Close anyway?": "Povezivanje je u toku. Da ipak zatvorim?",
-"No ICE candidates gathered - try testing on different devices": "Nisu prikupljeni ICE kandidati - probajte da testirate na različitim uređajima"
+"No ICE candidates gathered - try testing on different devices": "Nisu prikupljeni ICE kandidati - probajte da testirate na različitim uređajima",
+"Groups": "Grupe",
+"Create Group": "Napravi grupu",
+"Group Name": "Naziv grupe",
+"Assign Dice to Groups": "Dodeli kocke grupama",
+"No Group": "Bez grupe",
+"Reset to Base Value": "Početna vrednost"
 }
