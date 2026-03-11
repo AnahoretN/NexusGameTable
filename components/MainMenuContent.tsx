@@ -1481,22 +1481,24 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         break;
       }
       case 'TOKEN_TYPE': {
+        // Normalize dimensions for hexagon shape
+        const hexWidth = Math.round(TOKEN_SIZE / 1.155);
         const tokenType: TokenType = {
           id: generateUUID(),
           type: ItemType.TOKEN_TYPE,
           name: item.name,
           x: 0,
           y: 0,
-          width: TOKEN_SIZE,
+          width: hexWidth,
           height: TOKEN_SIZE,
           rotation: 0,
           color: '#3498db',
           isOnTable: false,
           locked: false,
-          shape: TokenShape.SQUARE,
+          shape: TokenShape.HEX,
           content: '',
           // Token type specific properties
-          defaultSize: { width: TOKEN_SIZE, height: TOKEN_SIZE },
+          defaultSize: { width: hexWidth, height: TOKEN_SIZE },
           autoName: false,
           namePrefix: '',
           spawnCount: 0,
@@ -1543,6 +1545,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           sides,
           currentValue: 1,
           shape,
+          actionButtons: ['roll'],
         };
         dispatch({ type: 'ADD_OBJECT', payload: dice });
         break;
@@ -1562,8 +1565,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           content: '',
           isOnTable: true,
           locked: false,
-          value: isLifeCounter ? 20 : 0,
-          baseValue: isLifeCounter ? 20 : 0,
+          value: isLifeCounter ? 30 : 0,
+          baseValue: isLifeCounter ? 30 : 0,
           maxValue: isLifeCounter ? undefined : 30,
           allowNegative: !isLifeCounter,
         };

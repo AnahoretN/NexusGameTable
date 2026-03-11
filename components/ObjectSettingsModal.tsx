@@ -1,7 +1,7 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell } from '../types';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup } from '../types';
 
 import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
@@ -19,6 +19,8 @@ interface ObjectSettingsModalProps {
   onClose: () => void;
   allObjects?: Record<string, TableObject>; // All objects in the game
   language?: AppLanguage; // Language for translations
+  diceGroups?: DiceGroup[]; // Dice groups for grouping dice
+  dispatch?: React.Dispatch<any>; // Dispatch function for updating groups
 }
 
 // Translate GridType value to display name
@@ -109,9 +111,9 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   }
 }
 
-type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite';
+type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite' | 'groups';
 
-export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en' }) => {
+export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
 
@@ -170,6 +172,47 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       }
     ]) : []
   );
+
+  // Groups state
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupColor, setNewGroupColor] = useState('#8b5cf6');
+  const [draggedDiceId, setDraggedDiceId] = useState<string | null>(null);
+
+  // Get all dice objects
+  const allDice: DiceObject[] = Object.values(allObjects).filter(
+    obj => obj.type === ItemType.DICE_OBJECT
+  ) as DiceObject[];
+
+  // Groups handlers
+  const handleCreateGroup = () => {
+    if (!newGroupName.trim() || !dispatch) return;
+    const newGroup: DiceGroup = {
+      id: `group-${Date.now()}`,
+      name: newGroupName.trim(),
+      color: newGroupColor,
+      diceIds: [],
+      visible: true
+    };
+    dispatch({ type: 'ADD_DICE_GROUP', payload: { group: newGroup } });
+    setNewGroupName('');
+    setNewGroupColor('#8b5cf6');
+  };
+
+  const handleUpdateGroup = (groupId: string, updates: Partial<DiceGroup>) => {
+    if (!dispatch) return;
+    dispatch({ type: 'UPDATE_DICE_GROUP', payload: { groupId, updates } });
+  };
+
+  const handleDeleteGroup = (groupId: string) => {
+    if (!dispatch) return;
+    dispatch({ type: 'DELETE_DICE_GROUP', payload: { groupId } });
+  };
+
+  const handleDropDice = (groupId: string | null) => {
+    if (!draggedDiceId || !dispatch) return;
+    dispatch({ type: 'MOVE_DICE_TO_GROUP', payload: { diceId: draggedDiceId, groupId } });
+    setDraggedDiceId(null);
+  };
 
   // Function to normalize dimensions based on shape (keeps width, adjusts height only)
   const normalizeShapeSizes = (shape: TokenShape, currentWidth: number, _currentHeight: number): { width: number; height: number } => {
@@ -685,6 +728,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               <ImageIcon size={16} /> {translate('Import', language as Locale)}
             </button>
           )}
+          {isDice && (
+            <button
+              onClick={() => setActiveTab('groups')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'groups'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Dices size={16} /> {translate('Groups', language as Locale)}
+            </button>
+          )}
         </div>
 
         {/* Content */}
@@ -712,8 +767,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         title={translate('Font Color', language as Locale)}
                       />
 
-                      {/* Show Name Toggle - for tokens and token types */}
-                      {(isToken || isArchetype) && (
+                      {/* Show Name Toggle - for tokens, token types, and counters */}
+                      {(isToken || isArchetype || isCounter) && (
                         <button
                           onClick={() => {
                             const targetProp = isArchetype ? 'showName' : 'showNameOnToken';
@@ -1032,7 +1087,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         <option value={TokenShape.SQUARE}>{translate('Square', language as Locale)}</option>
                         <option value={TokenShape.CIRCLE}>{translate('Circle', language as Locale)}</option>
                         <option value={TokenShape.HEX}>{translate('Hex', language as Locale)}</option>
-                        <option value={TokenShape.HEX_HORIZONTAL}>{translate('Hex (Horizontal)', language as Locale)}</option>
                         <option value={TokenShape.TRIANGLE}>{translate('Triangle', language as Locale)}</option>
                       </select>
                     </div>
@@ -1213,61 +1267,96 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-2">{translate('Shape', language as Locale)}</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        onClick={() => { update('shape', TokenShape.TRIANGLE); update('height', Math.round((data.width || 60) / 1.155)); }}
-                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
-                          (data as DiceObject).shape === TokenShape.TRIANGLE
-                            ? 'border-purple-500 bg-purple-500/20 text-white'
-                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
-                        }`}
+
+                  {/* Color + Border Color + Shape - side by side, equal width */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Color', language as Locale)}</label>
+                      <input
+                        type="color"
+                        value={data.color || '#6366f1'}
+                        onChange={e => update('color', e.target.value)}
+                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border', language as Locale)}</label>
+                      <input
+                        type="color"
+                        value={(data as any).borderColor || '#4f46e5'}
+                        onChange={e => update('borderColor', e.target.value)}
+                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Shape', language as Locale)}</label>
+                      <select
+                        value={(data as DiceObject).shape || TokenShape.SQUARE}
+                        onChange={e => {
+                          const newShape = e.target.value as TokenShape;
+                          update('shape', newShape);
+                          // Adjust height based on shape
+                          if (newShape === TokenShape.CIRCLE || newShape === TokenShape.SQUARE) {
+                            update('height', data.width);
+                          } else if (newShape === TokenShape.HEX) {
+                            update('height', Math.round(data.width * 1.15));
+                          } else if (newShape === TokenShape.TRIANGLE) {
+                            update('height', Math.round(data.width * Math.sqrt(3) / 2));
+                          }
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                          <polygon points="12,2 22,20 2,20" />
-                        </svg>
-                        <span className="text-xs">{translate('Triangle', language as Locale)}</span>
-                      </button>
-                      <button
-                        onClick={() => { update('shape', TokenShape.SQUARE); update('height', data.width); }}
-                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
-                          ((data as DiceObject).shape === TokenShape.SQUARE || !(data as DiceObject).shape)
-                            ? 'border-purple-500 bg-purple-500/20 text-white'
-                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
-                        }`}
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                          <rect x="3" y="3" width="18" height="18" />
-                        </svg>
-                        <span className="text-xs">{translate('Square', language as Locale)}</span>
-                      </button>
-                      <button
-                        onClick={() => { update('shape', TokenShape.HEX); update('width', Math.round((data.height || 60) / 1.155)); }}
-                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
-                          (data as DiceObject).shape === TokenShape.HEX
-                            ? 'border-purple-500 bg-purple-500/20 text-white'
-                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
-                        }`}
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                          <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" />
-                        </svg>
-                        <span className="text-xs">{translate('Hex', language as Locale)}</span>
-                      </button>
-                      <button
-                        onClick={() => { update('shape', TokenShape.HEX_HORIZONTAL); update('width', Math.round((data.height || 60) * 1.155)); }}
-                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
-                          (data as DiceObject).shape === TokenShape.HEX_HORIZONTAL
-                            ? 'border-purple-500 bg-purple-500/20 text-white'
-                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
-                        }`}
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                          <polygon points="2,12 7,3 17,3 22,12 17,21 7,21" />
-                        </svg>
-                        <span className="text-xs">{translate('Hex (Horizontal)', language as Locale)}</span>
-                      </button>
+                        <option value={TokenShape.SQUARE}>{translate('Square', language as Locale)}</option>
+                        <option value={TokenShape.CIRCLE}>{translate('Circle', language as Locale)}</option>
+                        <option value={TokenShape.HEX}>{translate('Hex', language as Locale)}</option>
+                        <option value={TokenShape.TRIANGLE}>{translate('Triangle', language as Locale)}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Opacity, Border Opacity, Border Width */}
+                  <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Opacity', language as Locale)}</label>
+                      <div className="flex items-center">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={(data as any).opacity ?? 100}
+                          onChange={e => update('opacity', parseInt(e.target.value))}
+                          className="flex-1 accent-purple-500"
+                        />
+                        <span className="text-xs text-gray-400 w-6 text-right">{(data as any).opacity ?? 100}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border Opacity', language as Locale)}</label>
+                      <div className="flex items-center">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={(data as any).borderOpacity ?? 100}
+                          onChange={e => update('borderOpacity', parseInt(e.target.value))}
+                          className="flex-1 accent-purple-500"
+                        />
+                        <span className="text-xs text-gray-400 w-6 text-right">{(data as any).borderOpacity ?? 100}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border Width', language as Locale)}</label>
+                      <div className="flex items-center">
+                        <input
+                          type="range"
+                          min="0"
+                          max="20"
+                          value={(data as any).borderWidth ?? 3}
+                          onChange={e => update('borderWidth', parseInt(e.target.value))}
+                          className="flex-1 accent-purple-500"
+                        />
+                        <span className="text-xs text-gray-400 w-6 text-right">{(data as any).borderWidth ?? 3}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2727,6 +2816,125 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'groups' && (
+            <div className="space-y-4">
+              {/* Create New Group Section */}
+              <div className="pt-2 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <Dices size={14} /> {translate('Create Group', language as Locale)}
+                </h4>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    placeholder={translate('Group Name', language as Locale)}
+                  />
+                  <input
+                    type="color"
+                    value={newGroupColor}
+                    onChange={(e) => setNewGroupColor(e.target.value)}
+                    className="w-12 h-10 rounded cursor-pointer"
+                  />
+                  <button
+                    onClick={handleCreateGroup}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded flex items-center gap-2"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Dice Assignment Section with inline group editing */}
+              <div className="pt-4 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <Dices size={14} /> {translate('Assign Dice to Groups', language as Locale)}
+                </h4>
+
+                {/* Group headers as drop targets */}
+                <div className="grid grid-cols-3 gap-2">
+                  {/* No Group */}
+                  <div
+                    className={`p-3 rounded-lg border-2 border-dashed text-center cursor-pointer transition-colors ${
+                      draggedDiceId !== null ? 'border-slate-600 hover:border-slate-500' : 'border-slate-700'
+                    }`}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => handleDropDice(null)}
+                  >
+                    <div className="text-sm text-gray-400 mb-2">{translate('No Group', language as Locale)}</div>
+                    <div className="space-y-1">
+                      {allDice.filter(d => !d.diceGroupId).map(dice => (
+                        <div
+                          key={dice.id}
+                          draggable
+                          onDragStart={() => setDraggedDiceId(dice.id)}
+                          className="bg-slate-700 rounded px-2 py-1 text-xs text-white cursor-move hover:bg-slate-600"
+                        >
+                          {dice.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Groups with inline editing */}
+                  {diceGroups.map(group => (
+                    <div
+                      key={group.id}
+                      className={`p-2 rounded-lg border-2 border-dashed text-center cursor-pointer transition-colors overflow-hidden`}
+                      style={{
+                        borderColor: group.color,
+                        backgroundColor: `${group.color}10`
+                      }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => handleDropDice(group.id)}
+                    >
+                      {/* Header row: color picker, name, delete button */}
+                      <div className="flex items-center gap-1 mb-2 min-w-0">
+                        {/* Color picker */}
+                        <input
+                          type="color"
+                          value={group.color}
+                          onChange={(e) => handleUpdateGroup(group.id, { color: e.target.value })}
+                          className="w-5 h-5 rounded cursor-pointer border-0 p-0 flex-shrink-0"
+                        />
+                        {/* Group name input */}
+                        <input
+                          type="text"
+                          value={group.name}
+                          onChange={(e) => handleUpdateGroup(group.id, { name: e.target.value })}
+                          className="flex-1 min-w-0 bg-transparent border-0 text-white text-xs font-medium text-center focus:outline-none focus:bg-slate-800/50 rounded px-1 truncate"
+                          style={{ color: group.color }}
+                        />
+                        {/* Delete button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}
+                          className="p-0.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded flex-shrink-0"
+                          title={translate('Delete', language as Locale)}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                      {/* Dice list */}
+                      <div className="space-y-1">
+                        {allDice.filter(d => d.diceGroupId === group.id).map(dice => (
+                          <div
+                            key={dice.id}
+                            draggable
+                            onDragStart={() => setDraggedDiceId(dice.id)}
+                            className="bg-slate-700 rounded px-2 py-1 text-xs text-white cursor-move hover:bg-slate-600"
+                          >
+                            {dice.name}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>

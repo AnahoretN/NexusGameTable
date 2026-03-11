@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
-import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer, NexusBoard, NexusCellObject } from '../types';
+import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer, NexusBoard, NexusCellObject, DiceGroup } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
@@ -466,8 +466,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const layer = state.hyperscaleLayers.find(l => l.id === layerId);
       if (updatedObj.zIndex !== undefined) {
         // Use layer bounds or defaults if layer not found
-        const minZ = layer?.minZIndex ?? (layerId === 'boards' ? 1 : layerId === 'cards' ? 1001 : layerId === 'tokens' ? 3001 : layerId === 'interface' ? 9001 : 1);
-        const maxZ = layer?.maxZIndex ?? (layerId === 'boards' ? 1000 : layerId === 'cards' ? 3000 : layerId === 'tokens' ? 6000 : layerId === 'interface' ? 10000 : 10000);
+        const minZ = layer?.minZIndex ?? (layerId === 'boards' ? 1 : layerId === 'cards' ? 1001 : layerId === 'tokens' ? 3001 : layerId === 'drawings' ? 6001 : layerId === 'interface' ? 9001 : 1);
+        const maxZ = layer?.maxZIndex ?? (layerId === 'boards' ? 1000 : layerId === 'cards' ? 3000 : layerId === 'tokens' ? 6000 : layerId === 'drawings' ? 7000 : layerId === 'interface' ? 10000 : 10000);
         // Clamp zIndex to layer bounds
         if (updatedObj.zIndex < minZ) {
           updatedObj.zIndex = minZ;
@@ -3344,6 +3344,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // Calculate bounds from strokes
       const drawingId = `drawing-${Date.now()}`;
+
+      // Get max zIndex in drawings layer
+      const drawingsLayerId = 'drawings';
+      const drawingsLayer = state.hyperscaleLayers.find(l => l.id === drawingsLayerId);
+      const layerMinZ = drawingsLayer?.minZIndex ?? 6001;
+      const layerMaxZ = drawingsLayer?.maxZIndex ?? 7000;
+      const layerObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === drawingsLayerId);
+      const maxLayerZ = layerObjects.length > 0 ? Math.max(...layerObjects.map(o => o.zIndex || 0)) : layerMinZ;
+      const newZ = Math.min(maxLayerZ + 1, layerMaxZ);
+
       const drawing: Drawing = {
         id: drawingId,
         type: ItemType.DRAWING,
@@ -3359,6 +3369,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         strokes,
         bounds: { x: 0, y: 0, width, height },
         opacity,
+        hyperscaleLayerId: drawingsLayerId,
+        zIndex: newZ,
       };
 
       // Add to marker history (max 10)
@@ -4305,6 +4317,72 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       return {
         ...state,
         objects: newObjects
+      };
+    }
+    case 'ADD_DICE_GROUP': {
+      return {
+        ...state,
+        diceGroups: [...state.diceGroups, action.payload.group]
+      };
+    }
+    case 'UPDATE_DICE_GROUP': {
+      return {
+        ...state,
+        diceGroups: state.diceGroups.map(g =>
+          g.id === action.payload.groupId
+            ? { ...g, ...action.payload.updates }
+            : g
+        )
+      };
+    }
+    case 'DELETE_DICE_GROUP': {
+      // Remove group reference from all dice in the group
+      const group = state.diceGroups.find(g => g.id === action.payload.groupId);
+      const newObjects = { ...state.objects };
+      if (group) {
+        group.diceIds.forEach(diceId => {
+          const dice = newObjects[diceId];
+          if (dice && dice.type === 'DICE_OBJECT') {
+            newObjects[diceId] = { ...dice, diceGroupId: undefined };
+          }
+        });
+      }
+      return {
+        ...state,
+        objects: newObjects,
+        diceGroups: state.diceGroups.filter(g => g.id !== action.payload.groupId)
+      };
+    }
+    case 'MOVE_DICE_TO_GROUP': {
+      const { diceId, groupId } = action.payload;
+      const dice = state.objects[diceId];
+      if (!dice || dice.type !== 'DICE_OBJECT') return state;
+
+      const newObjects = { ...state.objects };
+      const newGroups = [...state.diceGroups];
+
+      // Remove dice from previous group
+      if (dice.diceGroupId) {
+        const prevGroup = newGroups.find(g => g.id === dice.diceGroupId);
+        if (prevGroup) {
+          prevGroup.diceIds = prevGroup.diceIds.filter(id => id !== diceId);
+        }
+      }
+
+      // Add dice to new group (if groupId is not null/undefined)
+      if (groupId) {
+        const newGroup = newGroups.find(g => g.id === groupId);
+        if (newGroup && !newGroup.diceIds.includes(diceId)) {
+          newGroup.diceIds = [...newGroup.diceIds, diceId];
+        }
+      }
+
+      newObjects[diceId] = { ...dice, diceGroupId: groupId || undefined };
+
+      return {
+        ...state,
+        objects: newObjects,
+        diceGroups: newGroups
       };
     }
     default:

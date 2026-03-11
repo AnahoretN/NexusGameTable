@@ -1,4 +1,4 @@
-import { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, HyperscaleLayer } from '../types';
+import { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, HyperscaleLayer, DiceGroup } from '../types';
 import { GM_COLOR, getSessionId } from './gameConstants';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
 
@@ -23,6 +23,7 @@ export interface GameState {
   hyperscaleLayers: HyperscaleLayer[]; // Hyperscale layers configuration
   selectedHyperscaleLayerIds: string[]; // IDs of hyperscale layers currently selected for manipulation
   connectionsLocked: boolean; // Whether new player connections are locked (host only)
+  diceGroups: DiceGroup[]; // Dice groups for rolling multiple dice together
 }
 
 /**
@@ -54,6 +55,8 @@ export const initialState: GameState = {
   },
   // Connections are unlocked by default
   connectionsLocked: false,
+  // Dice groups - empty by default
+  diceGroups: [],
   // Load language from localStorage or default to 'en'
   language: (typeof localStorage !== 'undefined' && (localStorage.getItem('app-language') as AppLanguage)) || 'en',
   // Default hyperscale layers
@@ -98,6 +101,19 @@ export const initialState: GameState = {
       order: 2
     },
     {
+      id: 'drawings',
+      name: 'Drawings',
+      minZIndex: 6001,
+      maxZIndex: 7000,
+      color: '#ec4899',
+      playerCanSelect: true,
+      playerCanView: true,
+      individualPosition: true,
+      individualObjects: false,
+      zoomEnabled: true,
+      order: 3
+    },
+    {
       id: 'interface',
       name: 'Interface',
       minZIndex: 9001,
@@ -108,9 +124,9 @@ export const initialState: GameState = {
       individualPosition: true,
       individualObjects: true, // Each player has their own interface objects (panels, windows, etc.)
       zoomEnabled: false, // Interface layer NOT affected by zoom
-      order: 3
+      order: 4
     }
   ],
   // All layers selected by default
-  selectedHyperscaleLayerIds: ['boards', 'cards', 'tokens', 'interface'],
+  selectedHyperscaleLayerIds: ['boards', 'cards', 'tokens', 'drawings', 'interface'],
 };

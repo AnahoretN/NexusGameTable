@@ -329,5 +329,11 @@
 "Done": "Гатова",
 "Waiting for host to connect...": "Чаканне падлучэння хаста...",
 "Connection is in progress. Close anyway?": "Падлучэнне ў працэсе. Усё роўна закрыць?",
-"No ICE candidates gathered - try testing on different devices": "Не сабрана ICE-кандыдатаў - паспрабуйце пратэставаць на розных прыладах"
+"No ICE candidates gathered - try testing on different devices": "Не сабрана ICE-кандыдатаў - паспрабуйце пратэставаць на розных прыладах",
+"Groups": "Групы",
+"Create Group": "Стварыць групу",
+"Group Name": "Назва групы",
+"Assign Dice to Groups": "Прызначыць косткі групам",
+"No Group": "Без групы",
+"Reset to Base Value": "Базавае значэнне"
 }
