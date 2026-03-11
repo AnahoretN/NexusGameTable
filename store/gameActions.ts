@@ -96,6 +96,11 @@ export type Action =
   | BaseAction<'UPDATE_HYPERSCALE_LAYER', { layerId: string; updates: Partial<import('../types').HyperscaleLayer> }>
   | BaseAction<'DELETE_HYPERSCALE_LAYER', { layerId: string }>
   | BaseAction<'SET_HYPERSCALE_LAYERS', { layerIds: string[] }> // Set selected hyperscale layers
+  // Dice group actions
+  | BaseAction<'ADD_DICE_GROUP', { group: import('../types').DiceGroup }>
+  | BaseAction<'UPDATE_DICE_GROUP', { groupId: string; updates: Partial<import('../types').DiceGroup> }>
+  | BaseAction<'DELETE_DICE_GROUP', { groupId: string }>
+  | BaseAction<'MOVE_DICE_TO_GROUP', { diceId: string; groupId: string | null }>
   // Connection lock actions
   | ActionWithoutPayload<'TOGGLE_CONNECTIONS_LOCKED'>
   | BaseAction<'MOVE_OBJECT_TO_HYPERSCALE_LAYER', { objectId: string; layerId: string }>

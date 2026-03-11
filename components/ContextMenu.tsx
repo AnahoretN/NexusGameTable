@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer, NexusCellObject } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, Pin, ImageDown, CornerDownRight, Check, Plus } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, RotateCcw, Pin, ImageDown, CornerDownRight, Check, Plus } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 import { useGame } from '../store/GameContext';
 
@@ -351,7 +351,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         icon: <CornerDownRight size={14} />,
         visible: true,
         hasSubmenu: true,
-        separator: true,
         submenuItems
       }
     ] : [];
@@ -373,6 +372,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       isSeparator: true
     },
     {
+      label: translate('Roll', language as Locale),
+      action: 'roll',
+      icon: <RefreshCw size={14} />,
+      visible: object.type === ItemType.DICE_OBJECT,
+    },
+    {
+      label: translate('Reset to Base Value', language as Locale),
+      action: 'resetToBase',
+      icon: <RotateCcw size={14} />,
+      visible: object.type === ItemType.COUNTER,
+    },
+    {
       label: translate('Set as Card Back', language as Locale),
       action: 'setCardBack',
       icon: <ImageDown size={14} />,
@@ -380,6 +391,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     },
     // "Move to..." section for cards
     ...moveToSection,
+    // Flip for cards
+    {
+      label: translate('Flip', language as Locale),
+      action: 'flip',
+      icon: <RotateCw size={14} />,
+      visible: object.type === ItemType.CARD && can('flip'),
+    },
     // Deck-specific actions
     {
       label: translate('Top Deck', language as Locale),

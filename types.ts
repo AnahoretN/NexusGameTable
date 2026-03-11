@@ -383,6 +383,16 @@ export interface DiceObject extends GameItem {
   currentValue: number;
   shape?: TokenShape;
   rollStartTime?: number; // Timestamp when roll animation started (for syncing across players)
+  diceGroupId?: string; // ID of the dice group this dice belongs to (optional)
+}
+
+// Dice group for rolling multiple dice together
+export interface DiceGroup {
+  id: string;
+  name: string;
+  color: string;
+  diceIds: string[];
+  visible: boolean;
 }
 
 export interface Counter extends GameItem {

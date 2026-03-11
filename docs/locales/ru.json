@@ -338,8 +338,14 @@
 "Copy this answer code and send back to host": "Скопируйте этот код ответа и отправьте хосту",
 "Done": "Готово",
 "Reset": "Сброс",
+"Reset to Base Value": "Базовое значение",
 "Establishing secure connection...": "Установление защищённого соединения...",
 "Waiting for host to connect...": "Ожидание подключения хоста...",
   "Connection is in progress. Close anyway?": "Подключение в процессе. Все равно закрыть?",
-  "No ICE candidates gathered - try testing on different devices": "Не собраны ICE-кандидаты - попробуйте протестировать на разных устройствах"
+  "No ICE candidates gathered - try testing on different devices": "Не собраны ICE-кандидаты - попробуйте протестировать на разных устройствах",
+  "Groups": "Группы",
+  "Create Group": "Создать группу",
+  "Group Name": "Название группы",
+  "Assign Dice to Groups": "Назначить кости группам",
+  "No Group": "Без группы"
 }

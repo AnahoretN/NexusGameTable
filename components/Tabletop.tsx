@@ -819,9 +819,37 @@ export const Tabletop: React.FC = () => {
     dragStartRef.current = { x: e.clientX, y: e.clientY };
   };
 
+  // Roll dice with group support - if dice is in a group, roll all dice in the group
+  const rollDiceWithGroup = useCallback((dice: DiceObject) => {
+    // Check if dice belongs to a group
+    if (dice.diceGroupId) {
+      const group = state.diceGroups.find(g => g.id === dice.diceGroupId);
+      if (group && group.visible) {
+        // Roll all dice in the group
+        group.diceIds.forEach(diceId => {
+          const groupDice = state.objects[diceId];
+          if (groupDice?.type === ItemType.DICE_OBJECT) {
+            animateDiceRoll(groupDice as DiceObject);
+          }
+        });
+      } else {
+        // Group not found or not visible, roll single dice
+        animateDiceRoll(dice);
+      }
+    } else {
+      // Single dice roll (not in a group)
+      animateDiceRoll(dice);
+    }
+  }, [state.diceGroups, state.objects, animateDiceRoll]);
+
   // Execute a click action on an object
   const executeClickAction = useCallback((obj: TableObject, action: string, event?: React.MouseEvent) => {
     if (!action || action === 'none') return;
+
+    // Block all click actions when marker or eraser tool is active
+    if (currentTool === 'marker' || currentTool === 'eraser') {
+      return;
+    }
 
     switch (action) {
       case 'flip':
@@ -1131,8 +1159,13 @@ export const Tabletop: React.FC = () => {
           }, 300);
         }
         break;
+      case 'roll':
+        if (obj.type === ItemType.DICE_OBJECT) {
+          rollDiceWithGroup(obj as DiceObject);
+        }
+        break;
     }
-  }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition]);
+  }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition, rollDiceWithGroup]);
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
@@ -2295,6 +2328,42 @@ export const Tabletop: React.FC = () => {
       return;
     }
 
+    // Check if clicking on a UI object first - UI objects (panels/windows) should always be draggable
+    // even when marker or eraser tool is active
+    if (id && e.button === 0) {
+      e.stopPropagation();
+      const item = state.objects[id];
+
+      // Check if this is a UI object (panel or window) - handled differently
+      if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
+        if (item.locked) return; // Locked objects can't be dragged
+
+        // Note: We DON'T unpin pinned objects on drag - pinned objects stay pinned while dragging
+
+        // UI objects use screen coordinates directly, not world coordinates
+        setDraggingId(id);
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+        dragOffsetRef.current = {
+          x: e.clientX - item.x,
+          y: e.clientY - item.y
+        };
+        // Store initial position for network commit on drag end
+        dragStartPositionRef.current = { id, x: item.x, y: item.y };
+        // Mark object as being dragged by local player (shows as shadow/locked to others)
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id, draggingPlayerId: state.activePlayerId, broadcastX: item.x, broadcastY: item.y }
+        });
+        return;
+      }
+    }
+
+    // Block all other mouse interactions when marker or eraser tool is active
+    // (but UI objects are already handled above)
+    if (currentTool === 'marker' || currentTool === 'eraser') {
+      return;
+    }
+
     // Check if clicking on a UI object - if it has an id, process normally
     // If no id (background), check for panning or dropping cursor slot
     if (!id) {
@@ -2325,26 +2394,8 @@ export const Tabletop: React.FC = () => {
       e.stopPropagation();
       const item = state.objects[id];
 
-      // Check if this is a UI object (panel or window) - handled differently
+      // UI objects (panels/windows) are already handled above, skip them here
       if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
-        if (item.locked) return; // Locked objects can't be dragged
-
-        // Note: We DON'T unpin pinned objects on drag - pinned objects stay pinned while dragging
-
-        // UI objects use screen coordinates directly, not world coordinates
-        setDraggingId(id);
-        dragStartRef.current = { x: e.clientX, y: e.clientY };
-        dragOffsetRef.current = {
-          x: e.clientX - item.x,
-          y: e.clientY - item.y
-        };
-        // Store initial position for network commit on drag end
-        dragStartPositionRef.current = { id, x: item.x, y: item.y };
-        // Mark object as being dragged by local player (shows as shadow/locked to others)
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: { id, draggingPlayerId: state.activePlayerId, broadcastX: item.x, broadcastY: item.y }
-        });
         return;
       }
 
@@ -3262,8 +3313,8 @@ export const Tabletop: React.FC = () => {
   }, [pixelsPerVU, localSettings.zoom, dispatch]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
-      // Don't show context menu when ruler tool is active
-      if (currentTool === 'ruler') {
+      // Don't show context menu when ruler, marker, or eraser tool is active
+      if (currentTool === 'ruler' || currentTool === 'marker' || currentTool === 'eraser') {
           e.preventDefault();
           return;
       }
@@ -3446,6 +3497,17 @@ export const Tabletop: React.FC = () => {
       if (action === 'deleteNexusBoard' && object.type === ItemType.NEXUS_BOARD) {
           setContextMenu(null);
           dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id } });
+          return;
+      }
+
+      // Reset counter to base value
+      if (action === 'resetToBase' && object.type === ItemType.COUNTER) {
+          setContextMenu(null);
+          const counter = object as Counter;
+          dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: object.id, value: counter.baseValue ?? 0 }
+          });
           return;
       }
 
@@ -3904,7 +3966,7 @@ export const Tabletop: React.FC = () => {
             {currentTool === 'ruler' && rulerStart && (
               <svg
                 className="absolute pointer-events-none"
-                style={{ top: 0, left: 0, width: '100%', height: '100%', zIndex: 1000 }}
+                style={{ top: 0, left: 0, width: '100%', height: '100%', zIndex: 8000 }}
               >
                 {/* Start point circle */}
                 <circle
@@ -4254,8 +4316,10 @@ export const Tabletop: React.FC = () => {
                                 height={v2p(dice.height || 60)}
                                 color={obj.color || '#6366f1'}
                                 content={''}
-                                borderColor="#4f46e5"
-                                borderWidth={3}
+                                borderColor={(obj as any).borderColor || '#4f46e5'}
+                                borderWidth={(obj as any).borderWidth ?? 3}
+                                opacity={obj.opacity ?? 100}
+                                borderOpacity={(obj as any).borderOpacity ?? 100}
                             />
                             {/* Dice value - always centered */}
                             <div
@@ -4927,6 +4991,13 @@ export const Tabletop: React.FC = () => {
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+                                            roll: {
+                                                key: 'roll',
+                                                action: () => executeClickAction(obj, 'roll'),
+                                                className: 'bg-purple-600 hover:bg-purple-500',
+                                                title: 'Roll',
+                                                icon: <RefreshCw size={14} />
+                                            },
                                             rotate: {
                                                 key: 'rotate',
                                                 action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
@@ -5147,6 +5218,13 @@ export const Tabletop: React.FC = () => {
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+                                            roll: {
+                                                key: 'roll',
+                                                action: () => executeClickAction(obj, 'roll'),
+                                                className: 'bg-purple-600 hover:bg-purple-500',
+                                                title: 'Roll',
+                                                icon: <RefreshCw size={14} />
+                                            },
                                             rotate: {
                                                 key: 'rotate',
                                                 action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
@@ -5240,9 +5318,9 @@ export const Tabletop: React.FC = () => {
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
                             <span className="text-xl font-bold">{counter.value}</span>
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
-                            {/* Name on top - shown when showNameOnToken is enabled */}
+                            {/* Name on top - shown when showNameOnToken is enabled, 75% width */}
                             {(obj as any).showNameOnToken && (
-                              <div className="absolute -top-5 left-0 right-0 text-center text-[12px] truncate px-1" style={{ color: (obj as any).fontColor || '#ffffff' }}>
+                              <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-center text-[12px] truncate px-1" style={{ color: (obj as any).fontColor || '#ffffff', width: '75%' }}>
                                 {obj.name}
                               </div>
                             )}
@@ -5336,7 +5414,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
+                                onDoubleClick={(e) => { e.stopPropagation(); if (currentTool !== 'marker' && currentTool !== 'eraser') rollDiceWithGroup(dice); }}
                                 className={`absolute flex items-center justify-center group select-none ${draggingClass}`}
                                 style={{
                                     left: v2p(obj.x),
@@ -5354,8 +5432,10 @@ export const Tabletop: React.FC = () => {
                                     height={v2p(dice.height || 60)}
                                     color={obj.color || '#6366f1'}
                                     content={''}
-                                    borderColor="#4f46e5"
-                                    borderWidth={3}
+                                    borderColor={(obj as any).borderColor || '#4f46e5'}
+                                    borderWidth={(obj as any).borderWidth ?? 3}
+                                    opacity={obj.opacity ?? 100}
+                                    borderOpacity={(obj as any).borderOpacity ?? 100}
                                 />
                                 {/* Dice value - always centered */}
                                 <div
@@ -5849,7 +5929,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
+                                onDoubleClick={(e) => { e.stopPropagation(); if (currentTool !== 'marker' && currentTool !== 'eraser') rollDiceWithGroup(dice); }}
                                 className={`flex items-center justify-center group select-none ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     width: v2p(dice.width || 60),
@@ -5863,8 +5943,10 @@ export const Tabletop: React.FC = () => {
                                     height={v2p(dice.height || 60)}
                                     color={obj.color || '#6366f1'}
                                     content={''}
-                                    borderColor="#4f46e5"
-                                    borderWidth={3}
+                                    borderColor={(obj as any).borderColor || '#4f46e5'}
+                                    borderWidth={(obj as any).borderWidth ?? 3}
+                                    opacity={obj.opacity ?? 100}
+                                    borderOpacity={(obj as any).borderOpacity ?? 100}
                                 />
                                 {/* Dice value - always centered */}
                                 <div
@@ -6049,6 +6131,8 @@ export const Tabletop: React.FC = () => {
 
                     dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
                 }}
+                diceGroups={state.diceGroups}
+                dispatch={dispatch}
             />
         )}
 
