@@ -2594,6 +2594,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const deck = state.objects[action.payload.deckId] as Deck;
       if (!deck || deck.type !== ItemType.DECK) return state;
 
+      const { exceptHands = false, shuffleAfter = false } = action.payload;
       const baseCardIds = deck.baseCardIds || [];
       const newObjects = { ...state.objects };
       const spriteConfig = deck.spriteConfig;
@@ -2608,10 +2609,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // 2. Set cardIds = baseCardIds (reset to base)
+      // If exceptHands is true, we'll filter out cards in hands later
       updatedDeck.cardIds = [...baseCardIds];
 
       // 3. Track which base card IDs we've found
       const foundBaseCardIds = new Set<string>();
+      // Track cards that are in hands (when exceptHands is true)
+      const cardsInHands = new Set<string>();
 
       // 4. Process all existing cards
       Object.values(state.objects).forEach(obj => {
@@ -2620,6 +2624,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Cards that belong to THIS deck
         if (card.deckId === deck.id) {
+          // Skip cards in hands if exceptHands is true
+          if (exceptHands && card.location === CardLocation.HAND) {
+            // Track cards that are in hands so we don't recreate them
+            if (baseCardIds.includes(card.id)) {
+              cardsInHands.add(card.id);
+            }
+            return;
+          }
+
           if (baseCardIds.includes(card.id)) {
             // Card is in baseCardIds - move it to THIS deck
             foundBaseCardIds.add(card.id);
@@ -2645,6 +2658,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (spriteConfig && spriteConfig.columns > 0 && spriteConfig.rows > 0) {
         baseCardIds.forEach((cardId, index) => {
           if (!foundBaseCardIds.has(cardId)) {
+            // Check if this card is in a player's hand - if so, don't recreate it
+            if (cardsInHands.has(cardId)) {
+              return;
+            }
             // Card is missing - recreate it
             newObjects[cardId] = {
               id: cardId,
@@ -2670,6 +2687,22 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             };
           }
         });
+      }
+
+      // 5.5. Update deck.cardIds to exclude cards that are in hands (when exceptHands is true)
+      if (exceptHands && cardsInHands.size > 0) {
+        updatedDeck.cardIds = baseCardIds.filter(id => !cardsInHands.has(id));
+      }
+
+      // 6. Shuffle if requested
+      if (shuffleAfter) {
+        // Fisher-Yates shuffle
+        const shuffled = [...updatedDeck.cardIds];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        updatedDeck.cardIds = shuffled;
       }
 
       newObjects[deck.id] = updatedDeck;

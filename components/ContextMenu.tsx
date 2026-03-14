@@ -37,6 +37,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
   const [topDeckSubmenuOpen, setTopDeckSubmenuOpen] = useState(false);
   const [moveSubmenuOpen, setMoveSubmenuOpen] = useState(false);
+  const [returnSubmenuOpen, setReturnSubmenuOpen] = useState(false);
   const submenuRef = React.useRef<HTMLDivElement>(null);
 
   // Store computed positions for main menu and submenus
@@ -53,6 +54,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const pilesSubmenuRef = React.useRef<HTMLDivElement>(null);
   const topDeckSubmenuRef = React.useRef<HTMLDivElement>(null);
   const moveSubmenuRef = React.useRef<HTMLDivElement>(null);
+  const returnSubmenuRef = React.useRef<HTMLDivElement>(null);
 
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = (card: Card) => {
@@ -143,6 +145,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         setPilesSubmenuOpen(false);
         setTopDeckSubmenuOpen(false);
         setMoveSubmenuOpen(false);
+        setReturnSubmenuOpen(false);
         setSubmenuPositions({});
       }
     };
@@ -177,7 +180,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       rotate: rotateSubmenuRef,
       piles: pilesSubmenuRef,
       topDeck: topDeckSubmenuRef,
-      moveTo: moveSubmenuRef
+      moveTo: moveSubmenuRef,
+      returnAll: returnSubmenuRef
     };
 
     const openSubmenus: string[] = [];
@@ -186,6 +190,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     if (pilesSubmenuOpen) openSubmenus.push('piles');
     if (topDeckSubmenuOpen) openSubmenus.push('topDeck');
     if (moveSubmenuOpen) openSubmenus.push('moveTo');
+    if (returnSubmenuOpen) openSubmenus.push('returnAll');
 
     const updateDimensions = () => {
       const dimensions: Record<string, { width: number; height: number }> = {};
@@ -219,7 +224,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       clearTimeout(timeoutId);
       observers.forEach(obs => obs.disconnect());
     };
-  }, [layerSubmenuOpen, rotateSubmenuOpen, pilesSubmenuOpen, topDeckSubmenuOpen, moveSubmenuOpen]);
+  }, [layerSubmenuOpen, rotateSubmenuOpen, pilesSubmenuOpen, topDeckSubmenuOpen, moveSubmenuOpen, returnSubmenuOpen]);
 
   // Calculate main menu position to keep it on screen
   React.useEffect(() => {
@@ -254,6 +259,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     if (pilesSubmenuOpen) openSubmenus.push('piles');
     if (topDeckSubmenuOpen) openSubmenus.push('topDeck');
     if (moveSubmenuOpen) openSubmenus.push('moveTo');
+    if (returnSubmenuOpen) openSubmenus.push('returnAll');
 
     // Clear positions when all submenus are closed
     if (openSubmenus.length === 0) {
@@ -292,7 +298,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     });
 
     setSubmenuPositions(positions);
-  }, [layerSubmenuOpen, rotateSubmenuOpen, pilesSubmenuOpen, topDeckSubmenuOpen, moveSubmenuOpen, submenuDimensions]);
+  }, [layerSubmenuOpen, rotateSubmenuOpen, pilesSubmenuOpen, topDeckSubmenuOpen, moveSubmenuOpen, returnSubmenuOpen, submenuDimensions]);
 
   // "Move to.." section for cards - defined here to be inserted early
   const moveToSection: MenuItem[] = object.type === ItemType.CARD ? (() => {
@@ -431,12 +437,38 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         visible: true
       })) || []
     },
-    {
-      label: translate('Return All', language as Locale),
-      action: 'returnAll',
-      icon: <Undo size={14} />,
-      visible: object.type === ItemType.DECK && can('returnAll'),
-    },
+    // Return All section for decks
+    ...(object.type === ItemType.DECK && can('returnAll') ? (() => {
+      const deck = object as DeckType;
+      const returnSubmenuItems: MenuItem[] = [
+        {
+          label: translate('All', language as Locale),
+          action: 'returnAll',
+          icon: <Undo size={14} />,
+          visible: true
+        },
+        {
+          label: translate('All and Shuffle', language as Locale),
+          action: 'returnAllAndShuffle',
+          icon: <Shuffle size={14} />,
+          visible: true
+        },
+        {
+          label: translate('All Except Hands', language as Locale),
+          action: 'returnAllExceptHands',
+          icon: <RotateCcw size={14} />,
+          visible: true
+        }
+      ];
+      return [{
+        label: translate('Return...', language as Locale),
+        action: 'returnSubmenu',
+        icon: <CornerDownRight size={14} />,
+        visible: true,
+        hasSubmenu: true,
+        submenuItems: returnSubmenuItems
+      }];
+    })() : []),
     {
       label: translate('Edit Board', language as Locale),
       action: 'editNexusBoard',
@@ -694,7 +726,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
               const isPilesSubmenu = item.action === 'piles';
               const isTopDeckSubmenu = item.action === 'topDeck';
               const isMoveSubmenu = item.action === 'moveTo';
-              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : isTopDeckSubmenu ? topDeckSubmenuOpen : isMoveSubmenu ? moveSubmenuOpen : layerSubmenuOpen;
+              const isReturnSubmenu = item.action === 'returnSubmenu';
+              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : isTopDeckSubmenu ? topDeckSubmenuOpen : isMoveSubmenu ? moveSubmenuOpen : isReturnSubmenu ? returnSubmenuOpen : layerSubmenuOpen;
               const deck = object as Deck;
               const toggleSubmenu = () => {
                 if (isRotateSubmenu) {
@@ -703,34 +736,46 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                   setPilesSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
+                  setReturnSubmenuOpen(false);
                 } else if (isPilesSubmenu) {
                   setPilesSubmenuOpen(!pilesSubmenuOpen);
                   setLayerSubmenuOpen(false);
                   setRotateSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
+                  setReturnSubmenuOpen(false);
                 } else if (isTopDeckSubmenu) {
                   setTopDeckSubmenuOpen(!topDeckSubmenuOpen);
                   setLayerSubmenuOpen(false);
                   setRotateSubmenuOpen(false);
                   setPilesSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
+                  setReturnSubmenuOpen(false);
                 } else if (isMoveSubmenu) {
                   setMoveSubmenuOpen(!moveSubmenuOpen);
                   setLayerSubmenuOpen(false);
                   setRotateSubmenuOpen(false);
                   setPilesSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
+                  setReturnSubmenuOpen(false);
+                } else if (isReturnSubmenu) {
+                  setReturnSubmenuOpen(!returnSubmenuOpen);
+                  setLayerSubmenuOpen(false);
+                  setRotateSubmenuOpen(false);
+                  setPilesSubmenuOpen(false);
+                  setTopDeckSubmenuOpen(false);
+                  setMoveSubmenuOpen(false);
                 } else {
                   setLayerSubmenuOpen(!layerSubmenuOpen);
                   setRotateSubmenuOpen(false);
                   setPilesSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
+                  setReturnSubmenuOpen(false);
                 }
               };
 
-              const submenuKey = isRotateSubmenu ? 'rotate' : isPilesSubmenu ? 'piles' : isTopDeckSubmenu ? 'topDeck' : isMoveSubmenu ? 'moveTo' : 'layer';
+              const submenuKey = isRotateSubmenu ? 'rotate' : isPilesSubmenu ? 'piles' : isTopDeckSubmenu ? 'topDeck' : isMoveSubmenu ? 'moveTo' : isReturnSubmenu ? 'returnAll' : 'layer';
               const submenuPos = submenuPositions[submenuKey];
 
               // Get the correct ref for this submenu
@@ -739,6 +784,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                 if (isPilesSubmenu) return pilesSubmenuRef;
                 if (isTopDeckSubmenu) return topDeckSubmenuRef;
                 if (isMoveSubmenu) return moveSubmenuRef;
+                if (isReturnSubmenu) return returnSubmenuRef;
                 return layerSubmenuRef;
               };
 
