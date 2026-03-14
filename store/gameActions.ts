@@ -41,7 +41,7 @@ export type Action =
   | BaseAction<'ADD_CARD_TO_TOP_OF_DECK', { cardId: string; deckId: string }>
   | BaseAction<'ADD_CARD_TO_PILE', { cardId: string; pileId: string; deckId: string }>
   | BaseAction<'DRAW_FROM_PILE', { pileId: string; deckId: string; playerId: string }>
-  | BaseAction<'RETURN_ALL_CARDS_TO_DECK', { deckId: string; fromPile?: boolean; pileId?: string }>
+  | BaseAction<'RETURN_ALL_CARDS_TO_DECK', { deckId: string; fromPile?: boolean; pileId?: string; exceptHands?: boolean; shuffleAfter?: boolean }>
   | BaseAction<'RETURN_CARD_TO_DECK_TOP', { cardId: string; deckId: string }>
   | BaseAction<'RETURN_CARD_TO_DECK_BOTTOM', { cardId: string; deckId: string }>
   | BaseAction<'TOGGLE_PILE_LOCK', { deckId: string; pileId: string }>

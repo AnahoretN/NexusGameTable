@@ -960,6 +960,18 @@ export const Tabletop: React.FC = () => {
           dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: obj.id } });
         }
         break;
+      case 'returnAllAndShuffle':
+        // Return all cards and shuffle the deck
+        if (obj.type === ItemType.DECK) {
+          dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: obj.id, shuffleAfter: true } });
+        }
+        break;
+      case 'returnAllExceptHands':
+        // Return all cards except those in players' hands
+        if (obj.type === ItemType.DECK) {
+          dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: obj.id, exceptHands: true } });
+        }
+        break;
       case 'moveToHand':
         if (obj.type === ItemType.CARD) {
           dispatch({
@@ -3552,7 +3564,9 @@ export const Tabletop: React.FC = () => {
               });
               break;
           case 'returnAll':
-              executeClickAction(deck, 'returnAll');
+          case 'returnAllAndShuffle':
+          case 'returnAllExceptHands':
+              executeClickAction(deck, action);
               break;
           case 'showTop':
               dispatch({
