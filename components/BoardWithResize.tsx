@@ -1,6 +1,8 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { TableObject, Token as TokenType, Board as BoardType, GridType } from '../types';
-import { calculateFlexibleHexGrid, calculateHorizontalHexGrid } from '../utils/gridUtils';
+import { HexGridMemo } from './HexGrid';
+import { SquareGridMemo } from './SquareGrid';
+import { calculateFlatHexHeight } from '../utils/gridUtils';
 
 interface BoardWithResizeProps {
     token: TokenType | BoardType;
@@ -59,6 +61,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     const shouldShowGrid = token.gridType && token.gridType !== GridType.NONE && (token as BoardType).showGrid !== false;
     const isHexGrid = token.gridType === GridType.HEX;
     const isHexHorizontalGrid = token.gridType === GridType.HEX_HORIZONTAL;
+    const isSquareGrid = token.gridType === GridType.SQUARE;
 
     // Hex grid constants
     const HEX_RATIO = 1.15;
@@ -66,68 +69,22 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     const DEFAULT_FLAT_HEX_WIDTH = 115;
 
     // Use gridWidth if provided, otherwise fall back to default hex dimensions
-    // For HEX (pointy-top): default width=100, height = 100 * 1.15 = 115
-    // For HEX_HORIZONTAL (flat-top): default width=115, height = 100
-    const actualGridWidth = gridWidth ?? (isHexGrid ? DEFAULT_HEX_WIDTH : (isHexHorizontalGrid ? DEFAULT_FLAT_HEX_WIDTH : gridSize));
-    const actualGridHeight = gridHeight ?? (isHexGrid ? Math.round(DEFAULT_HEX_WIDTH * HEX_RATIO * 100) / 100 : (isHexHorizontalGrid ? DEFAULT_HEX_WIDTH : gridSize));
+    // Use useMemo to ensure these recalculate when gridType, gridWidth, or gridHeight change
+    const actualGridWidth = useMemo(() => {
+      return gridWidth ?? (isHexGrid ? DEFAULT_HEX_WIDTH : (isHexHorizontalGrid ? DEFAULT_FLAT_HEX_WIDTH : gridSize));
+    }, [gridWidth, isHexGrid, isHexHorizontalGrid, gridSize]);
 
-    // Flexible hex grid calculations
-    let hexGridPattern: React.ReactNode = null;
-    if (isHexGrid) {
-        const hexGrid = calculateFlexibleHexGrid(actualGridWidth);
+    const actualGridHeight = useMemo(() => {
+      if (gridHeight !== undefined) return gridHeight;
 
-        hexGridPattern = (
-            <pattern
-                id={`hex-grid-${obj.id}`}
-                width={hexGrid.patternWidth}
-                height={hexGrid.patternHeight}
-                patternUnits="userSpaceOnUse"
-            >
-                <path
-                    d={hexGrid.path}
-                    fill="none"
-                    stroke="rgba(33,47,60,0.7)"
-                    strokeWidth={1}
-                />
-            </pattern>
-        );
-    } else if (isHexHorizontalGrid) {
-        const hexGrid = calculateHorizontalHexGrid(actualGridWidth);
-
-        hexGridPattern = (
-            <pattern
-                id={`hex-grid-${obj.id}`}
-                width={hexGrid.patternWidth}
-                height={hexGrid.patternHeight}
-                patternUnits="userSpaceOnUse"
-            >
-                <path
-                    d={hexGrid.path}
-                    fill="none"
-                    stroke="rgba(33,47,60,0.7)"
-                    strokeWidth={1}
-                />
-            </pattern>
-        );
-    }
-
-    // Generate square grid pattern (uses actualGridWidth and actualGridHeight)
-    const squareGridPattern = (
-        <pattern
-            id={`square-grid-${obj.id}`}
-            width={actualGridWidth}
-            height={actualGridHeight}
-            patternUnits="userSpaceOnUse"
-        >
-            <rect
-                width={actualGridWidth}
-                height={actualGridHeight}
-                fill="none"
-                stroke="rgba(33,47,60,0.7)"
-                strokeWidth={1}
-            />
-        </pattern>
-    );
+      if (isHexGrid) {
+        return Math.round(actualGridWidth * HEX_RATIO * 100) / 100;
+      } else if (isHexHorizontalGrid) {
+        return Math.round(calculateFlatHexHeight(actualGridWidth) * 100) / 100;
+      } else {
+        return gridSize;
+      }
+    }, [gridHeight, isHexGrid, isHexHorizontalGrid, gridSize, actualGridWidth]);
 
     // Determine cursor based on hover state and action state
     const getCursor = useCallback(() => {
@@ -160,20 +117,35 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
                 transform: `rotate(${obj.rotation}deg)`,
                 cursor: cursor,
+                overflow: 'hidden',
             }}
         >
-            {/* Grid overlay */}
+            {/* Grid overlay - direct rendering for all grid types */}
             {shouldShowGrid && (
-                <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
-                    <defs>
-                        {(isHexGrid || isHexHorizontalGrid) ? hexGridPattern : squareGridPattern}
-                    </defs>
-                    <rect
-                        width="100%"
-                        height="100%"
-                        fill={`url(#${(isHexGrid || isHexHorizontalGrid) ? `hex-grid-${obj.id}` : `square-grid-${obj.id}`})`}
-                    />
-                </svg>
+                <>
+                    {(isHexGrid || isHexHorizontalGrid) ? (
+                        <HexGridMemo
+                            width={obj.width ?? 100}
+                            height={obj.height ?? 100}
+                            orientation={isHexGrid ? 'pointy-top' : 'flat-top'}
+                            hexWidth={actualGridWidth}
+                            hexHeight={actualGridHeight}
+                            stroke="rgba(33,47,60,0.7)"
+                            strokeWidth={1}
+                            zoom={1}
+                        />
+                    ) : isSquareGrid ? (
+                        <SquareGridMemo
+                            width={obj.width ?? 100}
+                            height={obj.height ?? 100}
+                            cellWidth={actualGridWidth}
+                            cellHeight={actualGridHeight}
+                            stroke="rgba(33,47,60,0.7)"
+                            strokeWidth={1}
+                            zoom={1}
+                        />
+                    ) : null}
+                </>
             )}
 
             {/* Resize handle - bottom-right corner */}
@@ -195,4 +167,22 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     );
 };
 
-export const BoardWithResizeMemo = React.memo(BoardWithResize);
+// Custom comparison for BoardWithResize memo
+function arePropsEqual(
+  prevProps: Readonly<BoardWithResizeProps>,
+  nextProps: Readonly<BoardWithResizeProps>
+) {
+  return (
+    prevProps.token.gridType === nextProps.token.gridType &&
+    (prevProps.token as any).gridWidth === (nextProps.token as any).gridWidth &&
+    (prevProps.token as any).gridHeight === (nextProps.token as any).gridHeight &&
+    (prevProps.token as any).showGrid === (nextProps.token as any).showGrid &&
+    prevProps.gridWidth === nextProps.gridWidth &&
+    prevProps.gridHeight === nextProps.gridHeight &&
+    prevProps.gridSize === nextProps.gridSize &&
+    prevProps.obj.width === nextProps.obj.width &&
+    prevProps.obj.height === nextProps.obj.height
+  );
+}
+
+export const BoardWithResizeMemo = React.memo(BoardWithResize, arePropsEqual);

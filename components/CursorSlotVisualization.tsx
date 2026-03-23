@@ -196,7 +196,6 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
                 cardHeight={deck?.cardHeight}
                 cardOrientation={deck?.cardOrientation}
                 cardNamePosition={deck?.cardNamePosition}
-                pixelsPerVU={pixelsPerVU}
                 disableRotationTransform={true}
                 disablePointerEvents={true}
                 showActionButtons={false}
