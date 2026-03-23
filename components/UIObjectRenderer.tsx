@@ -18,7 +18,7 @@ import { vuToPixels } from '../utils/vuSystem';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.6';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.7';
 
 // Support links
 const SUPPORT_LINKS = [
