@@ -328,9 +328,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
     if (object.type === ItemType.BOARD) {
       const board = object as Board;
-      // For hex grids, force link proportions
+      // For pointy-top hex grid, force link proportions
+      // For flat-top hex, allow independent dimensions
       const gridType = board.gridType;
-      if (gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL) {
+      if (gridType === GridType.HEX) {
         setLinkGridSize(true);
       }
     }
@@ -1376,29 +1377,28 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         const newGridType = e.target.value as GridType;
                         const board = data as Board;
                         const isCurrentlyHex = board.gridType === GridType.HEX || board.gridType === GridType.HEX_HORIZONTAL;
-                        // Use same fallback logic as the input field: 100 for HEX grids, gridSize otherwise
-                        const currentWidth = board.gridWidth || (isCurrentlyHex ? DEFAULT_HEX_WIDTH : board.gridSize) || 50;
 
                         update('gridType', newGridType);
 
                         // Always normalize dimensions when switching to HEX grids
                         if (newGridType === GridType.HEX) {
-                          // Pointy-top hex: height = width * 1.15
-                          const height = calculateHexHeight(currentWidth);
+                          // Pointy-top hex: use default width if not already set
+                          const width = board.gridWidth || DEFAULT_HEX_WIDTH;
+                          const height = calculateHexHeight(width);
                           updateMultiple({
-                            gridWidth: currentWidth,
+                            gridWidth: width,
                             gridHeight: Math.round(height * 100) / 100
                           });
-                          setLinkGridSize(true);  // Force link for hex grids
+                          setLinkGridSize(true);  // Force link for pointy-top hex grids
                         } else if (newGridType === GridType.HEX_HORIZONTAL) {
-                          // Flat-top hex: width = currentWidth * 1.15, height = currentWidth
-                          // This makes HEX_HORIZONTAL a 90° rotation of HEX
-                          const newWidth = currentWidth * HEX_RATIO;
+                          // Flat-top hex: use default width if not already set
+                          const width = board.gridWidth || DEFAULT_FLAT_HEX_WIDTH;
+                          const height = calculateFlatHexHeight(width);
                           updateMultiple({
-                            gridWidth: Math.round(newWidth * 100) / 100,
-                            gridHeight: currentWidth
+                            gridWidth: width,
+                            gridHeight: height
                           });
-                          setLinkGridSize(true);  // Force link for hex grids
+                          setLinkGridSize(true);  // Force link for flat-top hex grids
                         } else {
                           // Not a hex grid (SQUARE or NONE) - unlink proportions (allow independent width/height)
                           setLinkGridSize(false);
@@ -1411,8 +1411,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         <option
                           key={v}
                           value={v}
-                          disabled={v === GridType.HEX_HORIZONTAL}
-                          className={v === GridType.HEX_HORIZONTAL ? 'opacity-50 cursor-not-allowed' : ''}
                         >
                           {translateGridType(v, language)}
                         </option>
@@ -1426,16 +1424,23 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           <input
                             type="number"
                             step="0.01"
-                            value={(data as Board).gridWidth || ((data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL ? DEFAULT_HEX_WIDTH : (data as Board).gridSize) || 50}
+                            value={(data as Board).gridWidth || (() => {
+                              const board = data as Board;
+                              if (board.gridType === GridType.HEX) return DEFAULT_HEX_WIDTH;
+                              if (board.gridType === GridType.HEX_HORIZONTAL) return DEFAULT_FLAT_HEX_WIDTH;
+                              return board.gridSize || 50;
+                            })() || 50}
                             onChange={e => {
                           const value = parseFloat(e.target.value);
                           const board = data as Board;
                           const gridType = board.gridType;
-                          const isHexGrid = gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL;
+                          const isPointyHex = gridType === GridType.HEX;
 
-                          if (linkGridSize || isHexGrid) {
-                            // For hex grids, height = width * sqrt(3) / 2 (same formula for both orientations)
-                            const height = calculateHexHeight(value);
+                          if (linkGridSize || isPointyHex) {
+                            // For pointy-top hex, height = width * HEX_RATIO
+                            // For flat-top hex, height = width / HEX_RATIO
+                            const isFlatHex = gridType === GridType.HEX_HORIZONTAL;
+                            const height = isFlatHex ? calculateFlatHexHeight(value) : calculateHexHeight(value);
                             const roundHeight = shouldRound(value);
                             updateMultiple({
                               gridWidth: value,
@@ -1491,12 +1496,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         onChange={e => {
                           const board = data as Board;
                           const gridType = board.gridType;
-                          const isHexGrid = gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL;
+                          const isPointyHex = gridType === GridType.HEX;
 
                           const value = parseFloat(e.target.value);
-                          if (linkGridSize || isHexGrid) {
-                            // For hex grids, calculate width from height
-                            const width = gridType === GridType.HEX ? value / HEX_RATIO : value * HEX_RATIO;
+                          if (linkGridSize || isPointyHex) {
+                            // For pointy-top hex grids: width = height / HEX_RATIO
+                            // For flat-top hex grids: width = height * HEX_RATIO
+                            const isFlatHex = gridType === GridType.HEX_HORIZONTAL;
+                            const width = isFlatHex ? value * HEX_RATIO : value / HEX_RATIO;
                             const roundWidth = shouldRound(value);
                             updateMultiple({
                               gridHeight: value,
@@ -1529,8 +1536,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                               gridHeight: Math.round(height * 100) / 100
                             });
                           } else if (gridType === GridType.HEX_HORIZONTAL) {
-                            // Flat-top hex: height = width * sqrt(3) / 2
-                            const height = calculateHexHeight(currentWidth);
+                            // Flat-top hex: height = width / 1.15
+                            const height = calculateFlatHexHeight(currentWidth);
                             updateMultiple({
                               gridWidth: currentWidth,
                               gridHeight: Math.round(height * 100) / 100

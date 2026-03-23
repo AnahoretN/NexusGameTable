@@ -7,6 +7,7 @@ interface NexusBoardProps {
   board: NexusBoardType;
   isOwner: boolean;
   isDragging: boolean;
+  zoom?: number;
   onMouseDown: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onAddCell: (direction: HexDirection) => void;
@@ -57,25 +58,15 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
   const cellWidthPx = vuToPx(cellWidth);
   const cellHeightPx = vuToPx(cellHeight);
 
-  // Calculate positions for all cells
+  // Calculate positions for all cells using hex grid spacing
   const cellPositions = useMemo(() => {
     const positions: Map<string, { x: number; y: number; direction: HexDirection }> = new Map();
 
     // Main cell at center (0, 0)
     positions.set(board.cells[0]?.id || 'main', { x: 0, y: 0, direction: 'N' as HexDirection });
 
-    // Nexus Board hex grid spacing with decaying extrapolation
-    // Uses asymptotic approach: ratio approaches target ratio as height increases
-    // At height=115 → ratio=0.75, at height=150 → ratio≈0.80833, approaches 0.86 as limit
-    const H1 = 115;
-    const C1 = 0.75;
-    const H2 = 150;
-    const C2 = 121.25 / 150;  // ≈ 0.80833
-    const targetRatio = 0.906;  // Maximum ratio as height → infinity
-    // Solve for k: C2 = targetRatio - (targetRatio - C1) * exp(-k * (H2 - H1))
-    const k = -Math.log((targetRatio - C2) / (targetRatio - C1)) / (H2 - H1);
-    const rowSpacingRatio = targetRatio - (targetRatio - C1) * Math.exp(-k * (cellHeight - H1));
-    const rowSpacing = cellHeight * rowSpacingRatio;
+    // Pointy-top hex spacing
+    const rowSpacing = cellHeight * 0.75;
     const colSpacing = cellWidth;
     const colOffset = cellWidth * 0.5;
 
@@ -150,15 +141,8 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
       {showAddUI && isOwner && (
         <>
           {availableDirections.map(({ direction }) => {
-            // Same spacing calculation as used in cellPositions (with decaying extrapolation)
-            const H1 = 115;
-            const C1 = 0.75;
-            const H2 = 150;
-            const C2 = 121.25 / 150;
-            const targetRatio = 0.86;
-            const k = -Math.log((targetRatio - C2) / (targetRatio - C1)) / (H2 - H1);
-            const rowSpacingRatio = targetRatio - (targetRatio - C1) * Math.exp(-k * (cellHeight - H1));
-            const rowSpacing = cellHeight * rowSpacingRatio;
+            // Use hex grid spacing for consistent positioning
+            const rowSpacing = cellHeight * 0.75;
             const colSpacing = cellWidth;
             const colOffset = cellWidth * 0.5;
 

@@ -165,7 +165,8 @@
       "Read(//c/Users/AnahUsers/Anahoret/Documents/NexusGameTable/components/**)",
       "Bash(perl -i -pe \"s/Card Height \\\\\\(px\\\\\\)/Card Height \\(vu\\)/g\" locales/*.json docs/locales/*.json)",
       "Bash(perl -i -pe 's/\\(<Card\\\\s*\\\\n[^>]*cardOrientation=\\\\{deck\\\\?\\\\.cardOrientation\\\\}\\)/$1\\\\n\\\\s+pixelsPerVU=\\\\{pixelsPerVU\\\\}/g' Tabletop.tsx)",
-      "Bash(npx next build --dry-run)"
+      "Bash(npx next build --dry-run)",
+      "Read(//c/Users/Anahoret/Documents/flexible-hex-grid-calculator/**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Anahoret\\Documents\\NexusGameTable"

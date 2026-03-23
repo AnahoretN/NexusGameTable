@@ -32,7 +32,8 @@ import {
   addObjectToCellMagnet,
   removeObjectFromCellMagnet,
   findCellForSnappedObject,
-  calculateMagnetPointPositions
+  calculateMagnetPointPositions,
+  getHexCenterAtPixel
 } from '../utils/gridUtils';
 
 export const Tabletop: React.FC = () => {
@@ -580,31 +581,34 @@ export const Tabletop: React.FC = () => {
                   nearestCell = { x: cellCenterX, y: cellCenterY, distance };
               }
           } else if (board.gridType === GridType.HEX) {
-              // Pointy-top hex grid snapping
-              // Height is calculated from width: height = width * 1.15
-              // Row spacing = 0.75 * height (tight hex packing)
-              // Column spacing = width
-              // Every other row is offset by width / 2
+              // Pointy-top hex grid snapping - using gridUtils for consistency
               const hexW = gridW || 100;
-              const hexH = hexW * 1.15;  // Fixed aspect ratio for pointy-top hex
-              const rowSpacing = hexH * 0.75;  // Tight packing: 3/4 of height
-              const colSpacing = hexW;
-              const rowOffset = hexW / 2;
-              const halfW = hexW / 2;
-              const halfH = hexH / 2;
+              const hexH = gridH || (hexW * 1.15);  // Use board's gridHeight if available
 
-              // Calculate row and column
-              const row = Math.round((cursorY - board.y - halfH) / rowSpacing);
-              const col = Math.round((cursorX - board.x - (row % 2) * rowOffset - halfW) / colSpacing);
+              // Calculate cursor position relative to board
+              const relativeX = cursorX - board.x;
+              const relativeY = cursorY - board.y;
 
-              // Calculate hex center
-              const hexCenterX = board.x + col * colSpacing + (row % 2) * rowOffset + halfW;
-              const hexCenterY = board.y + row * rowSpacing + halfH;
+              // Use gridUtils to get hex center
+              const hexCenter = getHexCenterAtPixel(
+                  relativeX,
+                  relativeY,
+                  hexW,
+                  hexH,
+                  'pointy-top'
+              );
+
+              // Calculate absolute hex center
+              const hexCenterX = board.x + hexCenter.x;
+              const hexCenterY = board.y + hexCenter.y;
 
               // Check if hex center is within board bounds
               const hexX = hexCenterX - board.x;
               const hexY = hexCenterY - board.y;
-              if (hexX < -hexW/2 || hexX > board.width + hexW/2 ||
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              if (hexX < -halfW || hexX > board.width + halfW ||
                   hexY < -halfH || hexY > board.height + halfH) {
                   continue;
               }
@@ -619,33 +623,35 @@ export const Tabletop: React.FC = () => {
                   nearestCell = { x: hexCenterX, y: hexCenterY, distance };
               }
           } else if (board.gridType === GridType.HEX_HORIZONTAL) {
-              // Flat-top (horizontal) hex grid snapping - 90° rotated from pointy-top
-              // Width is the base dimension, height = width / 1.15
-              // Default: width=115, height=100
-              // Column spacing = 0.75 * width (tight hex packing)
-              // Row spacing = height
-              // Every other column is offset by height/2
+              // Flat-top (horizontal) hex grid snapping - using gridUtils for consistency
               const hexW = gridW || 115;
-              const hexH = hexW / 1.15;  // Fixed aspect ratio for flat-top hex
-              const colSpacing = hexW * 0.75;  // Tight packing: 3/4 of width
-              const rowSpacing = hexH;
-              const colOffset = hexH / 2;
-              const halfW = hexW / 2;
-              const halfH = hexH / 2;
+              const hexH = gridH || (hexW / 1.15);  // Use board's gridHeight if available
 
-              // Calculate column and row (adjusted for hex positioning)
-              const col = Math.round((cursorX - board.x - halfW) / colSpacing);
-              const row = Math.round((cursorY - board.y - (col % 2) * colOffset - halfH) / rowSpacing);
+              // Calculate cursor position relative to board
+              const relativeX = cursorX - board.x;
+              const relativeY = cursorY - board.y;
 
-              // Calculate hex center
-              const hexCenterX = board.x + col * colSpacing + halfW;
-              const hexCenterY = board.y + row * rowSpacing + (col % 2) * colOffset + halfH;
+              // Use gridUtils to get hex center
+              const hexCenter = getHexCenterAtPixel(
+                  relativeX,
+                  relativeY,
+                  hexW,
+                  hexH,
+                  'flat-top'
+              );
+
+              // Calculate absolute hex center
+              const hexCenterX = board.x + hexCenter.x;
+              const hexCenterY = board.y + hexCenter.y;
 
               // Check if hex center is within board bounds
               const hexX = hexCenterX - board.x;
               const hexY = hexCenterY - board.y;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
               if (hexX < -halfW || hexX > board.width + halfW ||
-                  hexY < -hexH/2 || hexY > board.height + hexH/2) {
+                  hexY < -halfH || hexY > board.height + halfH) {
                   continue;
               }
 
@@ -1389,50 +1395,62 @@ export const Tabletop: React.FC = () => {
                 break;
               }
             } else if (board.gridType === GridType.HEX) {
-              // Pointy-top hex grid
+              // Pointy-top hex grid - using gridUtils for consistency
               const hexW = gridW || 100;
-              const hexH = hexW * 1.15;
-              const rowSpacing = hexH * 0.75;
-              const colSpacing = hexW;
-              const rowOffset = hexW / 2;
-              const halfW = hexW / 2;
-              const halfH = hexH / 2;
+              const hexH = gridH || (hexW * 1.15);  // Use board's gridHeight if available
 
-              const row = Math.round((worldY - board.y - halfH) / rowSpacing);
-              const col = Math.round((worldX - board.x - (row % 2) * rowOffset - halfW) / colSpacing);
+              const relativeX = worldX - board.x;
+              const relativeY = worldY - board.y;
 
-              cellCenterX = board.x + col * colSpacing + (row % 2) * rowOffset + halfW;
-              cellCenterY = board.y + row * rowSpacing + halfH;
+              const hexCenter = getHexCenterAtPixel(
+                  relativeX,
+                  relativeY,
+                  hexW,
+                  hexH,
+                  'pointy-top'
+              );
+
+              cellCenterX = board.x + hexCenter.x;
+              cellCenterY = board.y + hexCenter.y;
 
               // Check if hex center is within board bounds
               const hexX = cellCenterX - board.x;
               const hexY = cellCenterY - board.y;
-              if (hexX >= -hexW/2 && hexX <= board.width + hexW/2 &&
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              if (hexX >= -halfW && hexX <= board.width + halfW &&
                   hexY >= -halfH && hexY <= board.height + halfH) {
                 targetBoardCellCenter = { x: cellCenterX, y: cellCenterY };
                 break;
               }
             } else if (board.gridType === GridType.HEX_HORIZONTAL) {
-              // Flat-top hex grid
+              // Flat-top hex grid - using gridUtils for consistency
               const hexW = gridW || 115;
-              const hexH = hexW / 1.15;
-              const colSpacing = hexW * 0.75;
-              const rowSpacing = hexH;
-              const colOffset = hexH / 2;
-              const halfW = hexW / 2;
-              const halfH = hexH / 2;
+              const hexH = gridH || (hexW / 1.15);  // Use board's gridHeight if available
 
-              const col = Math.round((worldX - board.x - halfW) / colSpacing);
-              const row = Math.round((worldY - board.y - (col % 2) * colOffset - halfH) / rowSpacing);
+              const relativeX = worldX - board.x;
+              const relativeY = worldY - board.y;
 
-              cellCenterX = board.x + col * colSpacing + halfW;
-              cellCenterY = board.y + row * rowSpacing + (col % 2) * colOffset + halfH;
+              const hexCenter = getHexCenterAtPixel(
+                  relativeX,
+                  relativeY,
+                  hexW,
+                  hexH,
+                  'flat-top'
+              );
+
+              cellCenterX = board.x + hexCenter.x;
+              cellCenterY = board.y + hexCenter.y;
 
               // Check if hex center is within board bounds
               const hexX = cellCenterX - board.x;
               const hexY = cellCenterY - board.y;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
               if (hexX >= -halfW && hexX <= board.width + halfW &&
-                  hexY >= -hexH/2 && hexY <= board.height + hexH/2) {
+                  hexY >= -halfH && hexY <= board.height + halfH) {
                 targetBoardCellCenter = { x: cellCenterX, y: cellCenterY };
                 break;
               }
@@ -4113,7 +4131,6 @@ export const Tabletop: React.FC = () => {
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
                                 cardNamePosition={deck?.cardNamePosition}
-                                pixelsPerVU={pixelsPerVU}
                                 disableRotationTransform={true}
                                 disablePointerEvents={true}
                                 showActionButtons={false}
@@ -4204,7 +4221,6 @@ export const Tabletop: React.FC = () => {
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
                                 cardNamePosition={deck?.cardNamePosition}
-                                pixelsPerVU={pixelsPerVU}
                                 disableRotationTransform={true}
                                 disablePointerEvents={true}
                                 showActionButtons={false}
@@ -4293,7 +4309,6 @@ export const Tabletop: React.FC = () => {
                                 cardHeight={deck?.cardHeight}
                                 cardOrientation={deck?.cardOrientation}
                                 cardNamePosition={deck?.cardNamePosition}
-                                pixelsPerVU={pixelsPerVU}
                                 disableRotationTransform={true}
                                 disablePointerEvents={true}
                                 showActionButtons={false}
@@ -4929,7 +4944,7 @@ export const Tabletop: React.FC = () => {
 
                                                     {/* Magnet lines (from center to inscribed ellipse) */}
                                                     {/* Only show lines for points that have objects snapped OR if snapToGrid is enabled */}
-                                                    {(cell.snapToGrid || cell.magnetPoints?.length > 0) && magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                    {(cell.snapToGrid || (cell.magnetPoints && cell.magnetPoints.length > 0)) && magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
                                                         const anglePerSlice = 360 / magnetPointCount;
                                                         const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
                                                         const lineLength = calcLineLength(angle);
@@ -5168,7 +5183,7 @@ export const Tabletop: React.FC = () => {
 
                                                     {/* Magnet lines (from center to inscribed ellipse) */}
                                                     {/* Only show lines for points that have objects snapped OR if snapToGrid is enabled */}
-                                                    {(cell.snapToGrid || cell.magnetPoints?.length > 0) && magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                    {(cell.snapToGrid || (cell.magnetPoints && cell.magnetPoints.length > 0)) && magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
                                                         const anglePerSlice = 360 / magnetPointCount;
                                                         const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
                                                         const lineLength = calcLineLength(angle);
@@ -5610,7 +5625,6 @@ export const Tabletop: React.FC = () => {
                                   overrideHeight={v2p(displayHeight)}
                                   cardNamePosition={cardSettings.cardNamePosition}
                                   cardOrientation={cardSettings.cardOrientation}
-                                  pixelsPerVU={pixelsPerVU}
                                   disableRotationTransform={true}
                                   deckSpriteConfig={card.deckId ? (state.objects[card.deckId] as DeckType)?.spriteConfig : undefined}
                                   deckShowTooltipImage={card.deckId ? (state.objects[card.deckId] as DeckType)?.showTooltipImage : undefined}
@@ -6248,6 +6262,7 @@ export const Tabletop: React.FC = () => {
             cursorPosition={cursorPosition}
             cursorPositionRef={cursorPositionRef}
             pixelsPerVU={pixelsPerVU}
+            zoom={state.viewTransform.zoom}
             state={state}
             getCardSettings={getCardSettings}
         />
