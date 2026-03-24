@@ -10,13 +10,14 @@ interface ContextMenuProps {
   y: number;
   object: TableObject;
   isGM: boolean;
-  onAction: (action: string) => void;
+  onAction: (action: string, shiftKey?: boolean) => void;
   onClose: () => void;
   allObjects: Record<string, TableObject>;
   hideCardActions?: boolean;
   isSearchWindow?: boolean;
   language?: AppLanguage;
   nexusBoardEditingId?: string | null; // ID of NexusBoard currently being edited
+  shiftKey?: boolean; // Whether Shift key was pressed when context menu opened
 }
 
 interface MenuItem {
@@ -30,7 +31,7 @@ interface MenuItem {
   isSeparator?: boolean;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey }) => {
   const { state } = useGame();
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
@@ -917,7 +918,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
             return (
                 <React.Fragment key={item.action || idx}>
                     <button
-                        onClick={() => { onAction(item.action); onClose(); }}
+                        onClick={(e) => {
+                          // Pass actual shift key state for delete action
+                          if (item.action === 'delete') {
+                            onAction(item.action, e.shiftKey);
+                          } else {
+                            onAction(item.action);
+                          }
+                          onClose();
+                        }}
                         className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors ${item.action === 'delete' ? 'text-red-400 hover:text-red-300' : 'text-gray-200'}`}
                     >
                         {item.icon}

@@ -1861,16 +1861,19 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     )}
                     {canDeleteObjects && (
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
                           // Token copies (tokens with archetypeId) are deleted immediately without confirmation
                           if (obj.type === ItemType.TOKEN && (obj as any).archetypeId) {
-                            dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } });
+                            dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id }});
+                          } else if (e.shiftKey) {
+                            // If Shift is held, delete immediately without confirmation
+                            dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id }});
                           } else {
                             setDeleteCandidateId(obj.id);
                           }
                         }}
                         className="p-1 hover:bg-red-600 rounded text-red-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
-                        title="Delete"
+                        title="Delete (Shift+Click to skip confirmation)"
                       >
                         <Trash2 size={10} />
                       </button>
