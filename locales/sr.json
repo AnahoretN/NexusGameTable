@@ -203,6 +203,8 @@
   "Pan view (hold + drag)": "Panoramiranje (drži + prevuci)",
   "Move the drawing": "Pomeri crtež",
   "Delete entire drawing": "Obriši ceo crtež",
+  "Delete without confirmation": "Obriši bez potvrde",
+  "Unlock NexusBoard editing": "Otključaj uređivanje NexusBoard",
   "Draw Card": "Povuci kartu",
   "Play Top": "Igraj gornju",
   "Mill": "U gomilu",

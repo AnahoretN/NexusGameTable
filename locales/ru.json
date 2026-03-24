@@ -204,6 +204,8 @@
   "Pan view (hold + drag)": "Панорама (удерживать + перетаскивать)",
   "Move the drawing": "Переместить рисунок",
   "Delete entire drawing": "Удалить весь рисунок",
+  "Delete without confirmation": "Удалить без подтверждения",
+  "Unlock NexusBoard editing": "Разблокировать редактирование NexusBoard",
   "Draw Card": "Взять карту",
   "Play Top": "Сыграть верхнюю",
   "Mill": "В сброс",
