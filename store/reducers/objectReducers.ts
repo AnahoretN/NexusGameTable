@@ -1,5 +1,5 @@
-import { TableObject, ItemType, BattlefieldCell, NexusCellObject } from '../../types';
-import { removeObjectFromCellMagnet } from '../../utils/gridUtils';
+import { TableObject, ItemType, BattlefieldCell, NexusCellObject, Board, GridType } from '../../types';
+import { removeObjectFromCellMagnet, removeObjectFromGridCellMagnet, generateGridCellKey, parseGridCellKey, calculateGridCellCenter } from '../../utils/gridUtils';
 
 /**
  * Reducer functions for object manipulation actions
@@ -8,6 +8,15 @@ import { removeObjectFromCellMagnet } from '../../utils/gridUtils';
 
 export function addObjectReducer(state: any, action: any): any {
   const { type, payload } = action;
+
+  // Debug logging for MOVE_OBJECT
+  if (type === 'MOVE_OBJECT') {
+    console.log('[MOVE_OBJECT] Action received:', {
+      objectId: payload.id,
+      x: payload.x,
+      y: payload.y
+    });
+  }
   const newObjects = { ...state.objects };
 
   if (type === 'ADD_OBJECT') {
@@ -117,6 +126,159 @@ export function addObjectReducer(state: any, action: any): any {
       }
     }
 
+    // Check if this object was snapped to a grid cell's magnet points
+    // If moved far enough from the cell, remove it from magnet points and reposition remaining objects
+
+    // First check if object has gridCellKey for faster lookup
+    const token = obj as any;
+    if (token.gridCellKey) {
+      const [boardId, ...cellParts] = token.gridCellKey.split(':');
+      const cellKey = cellParts.join(':');
+      const board = state.objects[boardId] as Board;
+
+      if (board && board.gridCellMagnetPoints && board.gridCellMagnetPoints[cellKey]) {
+        const cellData = board.gridCellMagnetPoints[cellKey];
+        if (cellData.magnetPoints?.some(p => p.objectId === action.payload.id)) {
+          // Parse cell key to get col and row
+          const { col, row } = parseGridCellKey(cellKey);
+
+          // Calculate cell dimensions
+          const gridW = board.gridWidth || board.gridSize || 50;
+          const gridH = board.gridHeight || board.gridSize || 50;
+
+          // Use helper function to calculate cell center
+          const cellCenter = calculateGridCellCenter(board, col, row);
+
+          // Check if object is still within reasonable distance of the cell
+          const objCenterX = action.payload.x + (obj.width ?? 50) / 2;
+          const objCenterY = action.payload.y + (obj.height ?? 50) / 2;
+
+          const distance = Math.sqrt(
+            Math.pow(objCenterX - cellCenter.x, 2) +
+            Math.pow(objCenterY - cellCenter.y, 2)
+          );
+
+          // Snap radius is the larger of cell dimensions + some margin
+          const snapRadius = Math.max(gridW, gridH) / 2 + 50;
+
+          // If object moved outside snap radius, remove from magnet points and reposition remaining objects
+          if (distance > snapRadius) {
+            const result = removeObjectFromGridCellMagnet(
+              board,
+              col,
+              row,
+              action.payload.id,
+              newObjects,
+              cellCenter.x,
+              cellCenter.y,
+              gridW,
+              gridH
+            );
+
+            if (result) {
+              // Update the board with new grid cell magnet points
+              newObjects[board.id] = {
+                ...board,
+                gridCellMagnetPoints: result.updatedBoard.gridCellMagnetPoints
+              };
+
+              // Move remaining objects to their new magnet positions
+              for (const movedObj of result.movedObjects) {
+                newObjects[movedObj.objectId] = {
+                  ...newObjects[movedObj.objectId],
+                  x: movedObj.x,
+                  y: movedObj.y
+                };
+              }
+
+              // Clear gridCellKey from the moved object
+              newObjects[action.payload.id] = {
+                ...newObjects[action.payload.id],
+                gridCellKey: undefined
+              };
+
+              needsMagnetCleanup = true;
+            }
+          }
+        }
+      }
+    } else {
+      // Fallback to checking all boards if no gridCellKey
+      for (const boardObj of Object.values(state.objects)) {
+        if (boardObj.type === ItemType.BOARD && boardObj.gridCellMagnetPoints) {
+          const board = boardObj as Board;
+
+          for (const [cellKey, cellData] of Object.entries(board.gridCellMagnetPoints)) {
+            if (!cellData.magnetPoints) continue;
+
+            const magnetPoint = cellData.magnetPoints.find(p => p.objectId === action.payload.id);
+            if (!magnetPoint) continue;
+
+            // Parse cell key to get col and row
+            const { col, row } = parseGridCellKey(cellKey);
+
+            // Calculate cell dimensions
+            const gridW = board.gridWidth || board.gridSize || 50;
+            const gridH = board.gridHeight || board.gridSize || 50;
+
+            // Use helper function to calculate cell center
+            const cellCenter = calculateGridCellCenter(board, col, row);
+
+            // Check if object is still within reasonable distance of the cell
+            const objCenterX = action.payload.x + (obj.width ?? 50) / 2;
+            const objCenterY = action.payload.y + (obj.height ?? 50) / 2;
+
+            const distance = Math.sqrt(
+              Math.pow(objCenterX - cellCenter.x, 2) +
+              Math.pow(objCenterY - cellCenter.y, 2)
+            );
+
+            // Snap radius is the larger of cell dimensions + some margin
+            const snapRadius = Math.max(gridW, gridH) / 2 + 50;
+
+            // If object moved outside snap radius, remove from magnet points and reposition remaining objects
+            if (distance > snapRadius) {
+              const result = removeObjectFromGridCellMagnet(
+                board,
+                col,
+                row,
+                action.payload.id,
+                newObjects,
+                cellCenter.x,
+                cellCenter.y,
+                gridW,
+                gridH
+              );
+
+              if (result) {
+                // Update the board with new grid cell magnet points
+                newObjects[board.id] = {
+                  ...board,
+                  gridCellMagnetPoints: result.updatedBoard.gridCellMagnetPoints
+                };
+
+                // Move remaining objects to their new magnet positions
+                for (const movedObj of result.movedObjects) {
+                  newObjects[movedObj.objectId] = {
+                    ...newObjects[movedObj.objectId],
+                    x: movedObj.x,
+                    y: movedObj.y
+                  };
+                }
+
+                // Clear gridCellKey from the moved object
+                newObjects[action.payload.id] = {
+                  ...newObjects[action.payload.id],
+                  gridCellKey: undefined
+                };
+
+                needsMagnetCleanup = true;
+              }
+            }
+        }
+      }
+    }
+
     if (needsMagnetCleanup) {
       return {
         ...state,
@@ -172,6 +334,60 @@ export function addObjectReducer(state: any, action: any): any {
           if (result) {
             // Update the cell with new magnet points
             newObjects[cell.id] = { ...cell, ...result.updatedCell };
+
+            // Move remaining objects to their new magnet positions
+            for (const movedObj of result.movedObjects) {
+              if (movedObj.objectId !== action.payload.id) { // Don't move the object being deleted
+                newObjects[movedObj.objectId] = {
+                  ...newObjects[movedObj.objectId],
+                  x: movedObj.x,
+                  y: movedObj.y
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Clean up grid cell magnet points - remove this object from any board's grid cells
+    for (const obj of Object.values(state.objects)) {
+      if (obj.type === ItemType.BOARD && obj.gridCellMagnetPoints) {
+        const board = obj as Board;
+        for (const [cellKey, cellData] of Object.entries(board.gridCellMagnetPoints)) {
+          if (!cellData.magnetPoints) continue;
+
+          const magnetPoint = cellData.magnetPoints.find(p => p.objectId === action.payload.id);
+          if (!magnetPoint) continue;
+
+          // Parse cell key to get col and row
+          const { col, row } = parseGridCellKey(cellKey);
+
+          // Calculate cell dimensions
+          const gridW = board.gridWidth || board.gridSize || 50;
+          const gridH = board.gridHeight || board.gridSize || 50;
+
+          // Use helper function to calculate cell center
+          const cellCenter = calculateGridCellCenter(board, col, row);
+
+          const result = removeObjectFromGridCellMagnet(
+            board,
+            col,
+            row,
+            action.payload.id,
+            newObjects,
+            cellCenter.x,
+            cellCenter.y,
+            gridW,
+            gridH
+          );
+
+          if (result) {
+            // Update the board with new grid cell magnet points
+            newObjects[board.id] = {
+              ...board,
+              gridCellMagnetPoints: result.updatedBoard.gridCellMagnetPoints
+            };
 
             // Move remaining objects to their new magnet positions
             for (const movedObj of result.movedObjects) {

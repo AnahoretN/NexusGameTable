@@ -1,4 +1,4 @@
-import { Coordinates, MagnetPoint, BattlefieldCell, NexusCellObject } from '../types';
+import { Coordinates, MagnetPoint, BattlefieldCell, NexusCellObject, GridCellKey, GridCellMagnetPoints, Board } from '../types';
 import { GridType, TableObject } from '../types';
 
 export interface GridSnapResult {
@@ -29,6 +29,58 @@ export interface FlexibleHexGrid {
  * HEX_HORIZONTAL: width=115, height = width / 1.15 = 100
  */
 const HEX_RATIO = 1.15;
+
+/**
+ * Calculate grid cell center based on grid type
+ * @param board - The board object
+ * @param col - Column index
+ * @param row - Row index
+ * @returns Cell center coordinates {x, y}
+ */
+export function calculateGridCellCenter(
+  board: Board,
+  col: number,
+  row: number
+): { x: number; y: number } {
+  const gridW = board.gridWidth || board.gridSize || 50;
+  const gridH = board.gridHeight || board.gridSize || 50;
+
+  if (board.gridType === GridType.SQUARE) {
+    return {
+      x: board.x + (col * gridW) + (gridW / 2),
+      y: board.y + (row * gridH) + (gridH / 2)
+    };
+  } else if (board.gridType === GridType.HEX) {
+    const hCapIdeal = gridW / (2 * Math.sqrt(3));
+    const hCap = Math.min(hCapIdeal, gridH / 2);
+    const dx = gridW;
+    const dy = gridH - hCap;
+    const offsetX = gridW / 2;
+
+    return {
+      x: board.x + col * dx + (row % 2 === 1 ? offsetX : 0),
+      y: board.y + row * dy
+    };
+  } else if (board.gridType === GridType.HEX_HORIZONTAL) {
+    const wCapIdeal = gridH / (2 * Math.sqrt(3));
+    const wCap = Math.min(wCapIdeal, gridW / 2);
+    const dx = gridW - wCap;
+    const dy = gridH;
+    const offsetY = gridH / 2;
+
+    return {
+      x: board.x + col * dx,
+      y: board.y + row * dy + (col % 2 === 1 ? offsetY : 0)
+    };
+  } else {
+    // Fallback for other grid types
+    return {
+      x: board.x + (col * gridW) + (gridW / 2),
+      y: board.y + (row * gridH) + (gridH / 2)
+    };
+  }
+}
+
 const DEFAULT_HEX_WIDTH = 100;
 const DEFAULT_FLAT_HEX_WIDTH = 115;
 
@@ -360,8 +412,8 @@ export function calculateMagnetPointPositions(
         (cosA / halfW) ** 2 + (sinA / halfH) ** 2
       );
 
-      // Magnet point is at 60% from center along the line
-      const magnetRadius = lineLength * 0.6;
+      // Magnet point is at 55% from center along the line
+      const magnetRadius = lineLength * 0.55;
       const magnetX = cellCenterX + cosA * magnetRadius;
       const magnetY = cellCenterY + sinA * magnetRadius;
       magnetPoints.push({ x: magnetX, y: magnetY });
@@ -907,4 +959,327 @@ export function getHexCentersInArea(
   }
 
   return centers;
+}
+
+/**
+ * Generate a grid cell key from column and row indices
+ * @param col - Column index
+ * @param row - Row index
+ * @returns Grid cell key string "col,row"
+ */
+export function generateGridCellKey(col: number, row: number): string {
+  return `${col},${row}`;
+}
+
+/**
+ * Parse a grid cell key into column and row indices
+ * @param key - Grid cell key string "col,row"
+ * @returns Grid cell key with col and row
+ */
+export function parseGridCellKey(key: string): GridCellKey {
+  const [col, row] = key.split(',').map(Number);
+  return { col, row };
+}
+
+/**
+ * Get magnet points data for a specific grid cell
+ * @param board - The board object
+ * @param col - Column index
+ * @param row - Row index
+ * @returns Grid cell magnet points or undefined if not set
+ */
+export function getGridCellMagnetPoints(
+  board: Board,
+  col: number,
+  row: number
+): GridCellMagnetPoints | undefined {
+  const key = generateGridCellKey(col, row);
+  return board.gridCellMagnetPoints?.[key];
+}
+
+/**
+ * Calculate magnet point positions for a grid cell
+ * Similar to calculateMagnetPointPositions but for grid cells
+ * @param cellCenterX - Cell center X coordinate
+ * @param cellCenterY - Cell center Y coordinate
+ * @param cellWidth - Cell width
+ * @param cellHeight - Cell height
+ * @param magnetPoints - Grid cell magnet points data
+ * @returns Array of magnet point positions {x, y}
+ */
+export function calculateGridCellMagnetPositions(
+  cellCenterX: number,
+  cellCenterY: number,
+  cellWidth: number,
+  cellHeight: number,
+  magnetPoints: GridCellMagnetPoints
+): { x: number; y: number }[] {
+  const magnetPointCount = magnetPoints.magnetPointCount ?? 1;
+  const magnetRotation = magnetPoints.magnetRotation ?? 0;
+
+  const positions: { x: number; y: number }[] = [];
+
+  if (magnetPointCount === 1) {
+    // Single point at center
+    positions.push({ x: cellCenterX, y: cellCenterY });
+  } else {
+    // Multiple magnet points along lines from center to inscribed ellipse
+    const anglePerSlice = 360 / magnetPointCount;
+    const halfW = cellWidth / 2 - 2; // 2 vu padding
+    const halfH = cellHeight / 2 - 2;
+
+    for (let i = 0; i < magnetPointCount; i++) {
+      const angle = (i * anglePerSlice + magnetRotation) * Math.PI / 180;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+
+      // Calculate distance to inscribed ellipse in this direction
+      const lineLength = 1 / Math.sqrt(
+        (cosA / halfW) ** 2 + (sinA / halfH) ** 2
+      );
+
+      // Magnet point is at 55% from center along the line
+      const magnetRadius = lineLength * 0.55;
+      const magnetX = cellCenterX + cosA * magnetRadius;
+      const magnetY = cellCenterY + sinA * magnetRadius;
+      positions.push({ x: magnetX, y: magnetY });
+    }
+  }
+
+  return positions;
+}
+
+/**
+ * Add an object to a grid cell's magnet points
+ * Automatically increases magnetPointCount if needed
+ * @param board - The board object
+ * @param col - Column index
+ * @param row - Row index
+ * @param objectId - The ID of the object to add
+ * @param objects - All objects to check if object still exists
+ * @param cellCenterX - Cell center X coordinate
+ * @param cellCenterY - Cell center Y coordinate
+ * @param cellWidth - Cell width
+ * @param cellHeight - Cell height
+ * @returns Updated board grid cell magnet points, snap position, and moved objects
+ */
+export function addObjectToGridCellMagnet(
+  board: Board,
+  col: number,
+  row: number,
+  objectId: string,
+  objects: Record<string, TableObject>,
+  cellCenterX: number,
+  cellCenterY: number,
+  cellWidth: number,
+  cellHeight: number
+): {
+  updatedBoard: Partial<Board>;
+  snapPosition: { x: number; y: number };
+  movedObjects: Array<{ objectId: string; x: number; y: number }>;
+} {
+  const key = generateGridCellKey(col, row);
+  const existingCellData = board.gridCellMagnetPoints?.[key] || {};
+
+  // Clean up magnet points - remove references to non-existent objects
+  const existingPoints = (existingCellData.magnetPoints || []).filter((p: MagnetPoint) => p.objectId in objects);
+
+  // Check if this object is already snapped to this cell
+  if (existingPoints.some((p: MagnetPoint) => p.objectId === objectId)) {
+    // Object already in this cell, return current position
+    const positions = calculateGridCellMagnetPositions(
+      cellCenterX, cellCenterY, cellWidth, cellHeight, existingCellData
+    );
+    const existingPoint = existingPoints.find((p: MagnetPoint) => p.objectId === objectId);
+    if (existingPoint) {
+      const pos = positions[existingPoint.pointIndex];
+      return {
+        updatedBoard: {
+          gridCellMagnetPoints: {
+            ...board.gridCellMagnetPoints,
+            [key]: { ...existingCellData, magnetPoints: existingPoints }
+          }
+        },
+        snapPosition: pos,
+        movedObjects: []
+      };
+    }
+  }
+
+  // Add new object
+  const newPointIndex = existingPoints.length;
+  const newPoints: MagnetPoint[] = [
+    ...existingPoints,
+    { objectId, pointIndex: newPointIndex }
+  ];
+
+  // Calculate required magnet point count
+  const requiredPointCount = Math.max(newPoints.length, existingCellData.magnetPointCount ?? 1);
+
+  // Create updated cell data
+  const updatedCellData: GridCellMagnetPoints = {
+    ...existingCellData,
+    magnetPointCount: requiredPointCount,
+    magnetPoints: newPoints,
+    magnetRotation: existingCellData.magnetRotation ?? 0
+  };
+
+  // Calculate all magnet point positions for the updated cell
+  const positions = calculateGridCellMagnetPositions(
+    cellCenterX, cellCenterY, cellWidth, cellHeight, updatedCellData
+  );
+
+  // Calculate moved objects
+  const movedObjects: Array<{ objectId: string; x: number; y: number }> = [];
+
+  for (const point of newPoints) {
+    const obj = objects[point.objectId];
+    if (!obj) continue;
+
+    const newPos = positions[point.pointIndex];
+    const objWidth = obj.width ?? 50;
+    const objHeight = obj.height ?? 50;
+
+    // Calculate top-left position from center position
+    movedObjects.push({
+      objectId: point.objectId,
+      x: newPos.x - objWidth / 2,
+      y: newPos.y - objHeight / 2
+    });
+  }
+
+  // Get snap position for the new object (center position)
+  const snapPosition = positions[newPointIndex];
+
+  return {
+    updatedBoard: {
+      gridCellMagnetPoints: {
+        ...board.gridCellMagnetPoints,
+        [key]: updatedCellData
+      }
+    },
+    snapPosition,
+    movedObjects
+  };
+}
+
+/**
+ * Remove an object from a grid cell's magnet points
+ * @param board - The board object
+ * @param col - Column index
+ * @param row - Row index
+ * @param objectId - The ID of the object to remove
+ * @param objects - All objects to check if object still exists
+ * @param cellCenterX - Cell center X coordinate
+ * @param cellCenterY - Cell center Y coordinate
+ * @param cellWidth - Cell width
+ * @param cellHeight - Cell height
+ * @returns Updated board grid cell magnet points and moved objects, or null if no change
+ */
+export function removeObjectFromGridCellMagnet(
+  board: Board,
+  col: number,
+  row: number,
+  objectId: string,
+  objects: Record<string, TableObject>,
+  cellCenterX: number,
+  cellCenterY: number,
+  cellWidth: number,
+  cellHeight: number
+): {
+  updatedBoard: Partial<Board>;
+  movedObjects: Array<{ objectId: string; x: number; y: number }>;
+} | null {
+  const key = generateGridCellKey(col, row);
+  const existingCellData = board.gridCellMagnetPoints?.[key];
+
+  if (!existingCellData) {
+    return null;
+  }
+
+  const existingPoints = existingCellData.magnetPoints || [];
+
+  // Filter out the object and any non-existent objects
+  const newPoints = existingPoints.filter((p: MagnetPoint) => p.objectId !== objectId && p.objectId in objects);
+
+  // If no change, return null
+  if (newPoints.length === existingPoints.length) {
+    return null;
+  }
+
+  // Re-index the remaining points sequentially
+  const reindexedPoints = newPoints.map((p: MagnetPoint, i: number) => ({ ...p, pointIndex: i }));
+
+  // Calculate new magnet point count (minimum 1)
+  const newPointCount = Math.max(1, reindexedPoints.length);
+
+  // Create updated cell data with new point count and reindexed points
+  const updatedCellData: GridCellMagnetPoints = {
+    magnetPointCount: newPointCount,
+    magnetPoints: reindexedPoints.length > 0 ? reindexedPoints : undefined,
+    magnetRotation: existingCellData.magnetRotation ?? 0
+  };
+
+  // Calculate new magnet point positions
+  const positions = calculateGridCellMagnetPositions(
+    cellCenterX, cellCenterY, cellWidth, cellHeight, updatedCellData
+  );
+
+  // Calculate moved objects - all remaining objects need to move to new positions
+  const movedObjects: Array<{ objectId: string; x: number; y: number }> = [];
+
+  for (const point of reindexedPoints) {
+    const obj = objects[point.objectId];
+    if (!obj) continue;
+
+    const newPos = positions[point.pointIndex];
+    const objWidth = obj.width ?? 50;
+    const objHeight = obj.height ?? 50;
+
+    // Calculate top-left position from center position
+    movedObjects.push({
+      objectId: point.objectId,
+      x: newPos.x - objWidth / 2,
+      y: newPos.y - objHeight / 2
+    });
+  }
+
+  // Build updated board
+  const updatedGridCellMagnetPoints = { ...board.gridCellMagnetPoints };
+  if (reindexedPoints.length === 0) {
+    // Remove the cell entry if no more magnet points
+    delete updatedGridCellMagnetPoints[key];
+  } else {
+    updatedGridCellMagnetPoints[key] = updatedCellData;
+  }
+
+  return {
+    updatedBoard: {
+      gridCellMagnetPoints: updatedGridCellMagnetPoints
+    },
+    movedObjects
+  };
+}
+
+/**
+ * Find which grid cell an object is snapped to
+ * @param objectId - The object ID
+ * @param boards - All boards
+ * @returns The board, column, and row if found, null otherwise
+ */
+export function findGridCellForSnappedObject(
+  objectId: string,
+  boards: Record<string, Board>
+): { board: Board; col: number; row: number } | null {
+  for (const board of Object.values(boards)) {
+    if (board.gridCellMagnetPoints) {
+      for (const [key, cellData] of Object.entries(board.gridCellMagnetPoints)) {
+        if (cellData.magnetPoints?.some((p: MagnetPoint) => p.objectId === objectId)) {
+          const { col, row } = parseGridCellKey(key);
+          return { board, col, row };
+        }
+      }
+    }
+  }
+  return null;
 }
