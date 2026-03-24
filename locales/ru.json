@@ -338,5 +338,13 @@
   "Create Group": "Создать группу",
   "Group Name": "Название группы",
   "Assign Dice to Groups": "Назначить кости группам",
-  "No Group": "Без группы"
+  "No Group": "Без группы",
+  "Grid Cell Magnetism": "Магнетизм ячеек сетки",
+  "Configure magnetism for grid cells. Tokens will snap to configured points within each cell.": "Настройте магнитизм для ячеек сетки. Токены будут привязываться к настроенным точкам внутри каждой ячейки.",
+  "Default Magnet Points per Cell": "Точек магнитизма на ячейку (по умолчанию)",
+  "Number of magnet points": "Количество точек магнитизма",
+  "Default: 1 (center). Range: 1-12": "По умолчанию: 1 (центр). Диапазон: 1-12",
+  "Clear All Grid Cell Magnets": "Очистить все магниты ячеек",
+  "Are you sure you want to clear all grid cell magnet data?": "Вы уверены, что хотите очистить все данные магнитизма ячеек?",
+  "Clear All": "Очистить всё"
 }

@@ -292,6 +292,8 @@ export interface Token extends GameItem {
   archetypeId?: string;
   // Show name on token (inherited from archetype for token-copies)
   showName?: boolean;
+  // Grid cell magnetism optimization - store direct reference to snapped cell
+  gridCellKey?: string; // Format: "boardId:col,row" for quick lookup
 }
 
 // Token Type - a template for creating tokens
@@ -313,6 +315,19 @@ export interface TokenType extends GameItem {
 export interface MagnetPoint {
   objectId: string;      // ID of the object snapped to this point
   pointIndex: number;    // Index of this magnet point (0-based)
+}
+
+// Grid cell identifier for board magnetism system
+export interface GridCellKey {
+  col: number;           // Column index
+  row: number;           // Row index
+}
+
+// Magnet points for a single grid cell
+export interface GridCellMagnetPoints {
+  magnetPointCount?: number;   // Number of magnet points (default 1, min 1, max 12)
+  magnetRotation?: number;     // Rotation of magnet lines in degrees (default 0)
+  magnetPoints?: MagnetPoint[]; // Track which objects are snapped to which points
 }
 
 // Battlefield Cell - single cell for battlefields/tactical maps
@@ -413,6 +428,10 @@ export interface Board extends GameItem {
   showGrid?: boolean;  // Whether to show the grid visually
   snapToGrid: boolean;
   linkGridSize?: boolean; // Remember proportions button state for grid settings
+
+  // Grid cell magnetism system - stores magnet points for each grid cell
+  gridCellMagnetPoints?: Record<string, GridCellMagnetPoints>; // Key: "col,row" string
+  defaultGridCellMagnetPointCount?: number; // Default magnet points per cell (1-12)
 }
 
 export interface Randomizer extends GameItem {

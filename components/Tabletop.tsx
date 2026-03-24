@@ -31,9 +31,15 @@ import {
   calculateHorizontalHexGrid,
   addObjectToCellMagnet,
   removeObjectFromCellMagnet,
+  removeObjectFromGridCellMagnet,
   findCellForSnappedObject,
   calculateMagnetPointPositions,
-  getHexCenterAtPixel
+  getHexCenterAtPixel,
+  calculateGridCellMagnetPositions,
+  addObjectToGridCellMagnet,
+  generateGridCellKey,
+  parseGridCellKey,
+  calculateGridCellCenter
 } from '../utils/gridUtils';
 
 export const Tabletop: React.FC = () => {
@@ -526,6 +532,7 @@ export const Tabletop: React.FC = () => {
 
       // Snap radius = token size (using max dimension)
       const snapRadius = Math.max(objW, objH);
+      const snapRadiusSq = snapRadius * snapRadius; // Use squared distance for comparisons
 
       // Get all boards with snapToGrid enabled
       const boards = Object.values(objects).filter(obj =>
@@ -545,7 +552,7 @@ export const Tabletop: React.FC = () => {
       ) as BattlefieldCell[];
 
       // Find nearest cell center within snap radius
-      let nearestCell: { x: number; y: number; distance: number } | null = null;
+      let nearestCell: { x: number; y: number; distanceSq: number } | null = null;
 
       // Check boards first
       for (const board of boards) {
@@ -571,14 +578,49 @@ export const Tabletop: React.FC = () => {
               const cellCenterX = board.x + (col * gridW) + (gridW / 2);
               const cellCenterY = board.y + (row * gridH) + (gridH / 2);
 
-              // Check if within snap radius
-              const distance = Math.sqrt(
-                  Math.pow(cursorX - cellCenterX, 2) +
-                  Math.pow(cursorY - cellCenterY, 2)
-              );
+              // Check if this cell has custom magnet points or use default
+              const cellKey = `${col},${row}`;
+              let cellMagnetData = board.gridCellMagnetPoints?.[cellKey];
 
-              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
-                  nearestCell = { x: cellCenterX, y: cellCenterY, distance };
+              // If no custom data for this cell, create temporary data using default count
+              if (!cellMagnetData && board.defaultGridCellMagnetPointCount && board.defaultGridCellMagnetPointCount > 1) {
+                cellMagnetData = {
+                  magnetPointCount: board.defaultGridCellMagnetPointCount,
+                  magnetRotation: 0
+                };
+              }
+
+              let snapX = cellCenterX;
+              let snapY = cellCenterY;
+
+              if (cellMagnetData && cellMagnetData.magnetPointCount && cellMagnetData.magnetPointCount > 1) {
+                // Find nearest magnet point in this cell
+                const magnetPositions = calculateGridCellMagnetPositions(
+                  cellCenterX, cellCenterY, gridW, gridH, cellMagnetData
+                );
+
+                let minMagnetDistSq = Infinity;
+                for (const magnetPos of magnetPositions) {
+                  const dx = cursorX - magnetPos.x;
+                  const dy = cursorY - magnetPos.y;
+                  const distSq = dx * dx + dy * dy;
+                  if (distSq < minMagnetDistSq) {
+                    minMagnetDistSq = distSq;
+                    snapX = magnetPos.x;
+                    snapY = magnetPos.y;
+                  }
+                }
+              }
+
+              // Check if within snap radius (using squared distance)
+              const dx = cursorX - snapX;
+              const dy = cursorY - snapY;
+              const distSq = dx * dx + dy * dy;
+
+              if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
+                  nearestCell = { x: snapX, y: snapY, distanceSq: distSq };
+                  // Early exit if we found an exact match
+                  if (distSq === 0) return { x: snapX - objHalfW, y: snapY - objHalfH };
               }
           } else if (board.gridType === GridType.HEX) {
               // Pointy-top hex grid snapping - using gridUtils for consistency
@@ -613,14 +655,15 @@ export const Tabletop: React.FC = () => {
                   continue;
               }
 
-              // Check if within snap radius
-              const distance = Math.sqrt(
-                  Math.pow(cursorX - hexCenterX, 2) +
-                  Math.pow(cursorY - hexCenterY, 2)
-              );
+              // Check if within snap radius (using squared distance)
+              const dx = cursorX - hexCenterX;
+              const dy = cursorY - hexCenterY;
+              const distSq = dx * dx + dy * dy;
 
-              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
-                  nearestCell = { x: hexCenterX, y: hexCenterY, distance };
+              if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
+                  nearestCell = { x: hexCenterX, y: hexCenterY, distanceSq: distSq };
+                  // Early exit if we found an exact match
+                  if (distSq === 0) return { x: hexCenterX - objHalfW, y: hexCenterY - objHalfH };
               }
           } else if (board.gridType === GridType.HEX_HORIZONTAL) {
               // Flat-top (horizontal) hex grid snapping - using gridUtils for consistency
@@ -655,68 +698,34 @@ export const Tabletop: React.FC = () => {
                   continue;
               }
 
-              // Check if within snap radius
-              const distance = Math.sqrt(
-                  Math.pow(cursorX - hexCenterX, 2) +
-                  Math.pow(cursorY - hexCenterY, 2)
-              );
+              // Check if within snap radius (using squared distance)
+              const dx = cursorX - hexCenterX;
+              const dy = cursorY - hexCenterY;
+              const distSq = dx * dx + dy * dy;
 
-              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
-                  nearestCell = { x: hexCenterX, y: hexCenterY, distance };
+              if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
+                  nearestCell = { x: hexCenterX, y: hexCenterY, distanceSq: distSq };
+                  // Early exit if we found an exact match
+                  if (distSq === 0) return { x: hexCenterX - objHalfW, y: hexCenterY - objHalfH };
               }
           }
       }
 
       // Check individual battlefield cells - snap to magnet points
       for (const cell of cells) {
-          const cellCenterX = cell.x + (cell.width ?? 100) / 2;
-          const cellCenterY = cell.y + (cell.height ?? 100) / 2;
-
-          // Get magnetism settings for this cell
-          const magnetPointCount = cell.magnetPointCount ?? 1;
-          const magnetRotation = cell.magnetRotation ?? 0;
-
-          // Calculate magnet point positions
-          const magnetPoints: { x: number; y: number }[] = [];
-
-          if (magnetPointCount === 1) {
-              // Single point at center
-              magnetPoints.push({ x: cellCenterX, y: cellCenterY });
-          } else {
-              // Multiple magnet points along lines from center to inscribed ellipse
-              const anglePerSlice = 360 / magnetPointCount;
-              const halfW = (cell.width ?? 100) / 2 - 2; // 2 vu padding
-              const halfH = (cell.height ?? 100) / 2 - 2;
-
-              for (let i = 0; i < magnetPointCount; i++) {
-                  const angle = (i * anglePerSlice + magnetRotation) * Math.PI / 180;
-                  const cosA = Math.cos(angle);
-                  const sinA = Math.sin(angle);
-
-                  // Calculate distance to inscribed ellipse in this direction
-                  // Ellipse equation: (x/a)² + (y/b)² = 1
-                  // r = 1 / sqrt((cos(a)/a)² + (sin(a)/b)²)
-                  const lineLength = 1 / Math.sqrt(
-                      (cosA / halfW) ** 2 + (sinA / halfH) ** 2
-                  );
-
-                  // Magnet point is at 60% from center along the line
-                  const magnetRadius = lineLength * 0.6;
-                  const magnetX = cellCenterX + cosA * magnetRadius;
-                  const magnetY = cellCenterY + sinA * magnetRadius;
-                  magnetPoints.push({ x: magnetX, y: magnetY });
-              }
-          }
+          // Use utility function to calculate magnet point positions
+          const magnetPoints = calculateMagnetPointPositions(cell);
 
           // Find nearest magnet point
           for (const magnetPoint of magnetPoints) {
-              const distance = Math.sqrt(
-                  Math.pow(cursorX - magnetPoint.x, 2) +
-                  Math.pow(cursorY - magnetPoint.y, 2)
-              );
+              const dx = cursorX - magnetPoint.x;
+              const dy = cursorY - magnetPoint.y;
+              const distSq = dx * dx + dy * dy;
 
-              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
-                  nearestCell = { x: magnetPoint.x, y: magnetPoint.y, distance };
+              if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
+                  nearestCell = { x: magnetPoint.x, y: magnetPoint.y, distanceSq: distSq };
+                  // Early exit if we found an exact match
+                  if (distSq === 0) return { x: magnetPoint.x - objHalfW, y: magnetPoint.y - objHalfH };
               }
           }
       }
@@ -1187,12 +1196,81 @@ export const Tabletop: React.FC = () => {
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
-    console.log(`[DRAG SYSTEM] addToCursorSlot - source: ${source}, item: ${item.name} (${item.type}), slot size before: ${cursorSlot.length}`);
     if (cursorSlot.length >= 100) return; // Max 100 items in slot
 
     // Set source based on how the item was added (only if slot was empty before)
     if (cursorSlot.length === 0) {
       setCursorSlotSource(source);
+    }
+
+    // Check if item is snapped to a grid cell and unhook it - OPTIMIZED
+    const obj = state.objects[id];
+    if (obj && obj.type === ItemType.TOKEN && (obj as Token).gridCellKey) {
+      const token = obj as Token;
+
+      // Parse gridCellKey: "boardId:col,row"
+      const [boardId, ...cellParts] = token.gridCellKey.split(':');
+      const cellKey = cellParts.join(':');
+
+      const board = state.objects[boardId] as Board;
+      if (board && board.gridCellMagnetPoints && board.gridCellMagnetPoints[cellKey]) {
+        // Parse col and row from cellKey instead of calculating from position
+        const { col, row } = parseGridCellKey(cellKey);
+
+        // Calculate cell dimensions for magnet point repositioning
+        const gridW = board.gridWidth || board.gridSize || 50;
+        const gridH = board.gridHeight || board.gridSize || 50;
+
+        // Use helper function to calculate cell center
+        const cellCenter = calculateGridCellCenter(board, col, row);
+
+        const result = removeObjectFromGridCellMagnet(
+          board,
+          col,
+          row,
+          id,
+          state.objects,
+          cellCenter.x,
+          cellCenter.y,
+          gridW,
+          gridH
+        );
+
+        if (result) {
+          // Create updated board object preserving all other properties
+          const updatedBoard = {
+            ...board,
+            gridCellMagnetPoints: result.updatedBoard.gridCellMagnetPoints
+          };
+
+          // Update board with new magnet points
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: updatedBoard
+          });
+
+          // Move remaining objects to their new magnet positions
+          for (const movedObj of result.movedObjects) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: movedObj.objectId,
+                x: movedObj.x,
+                y: movedObj.y
+              }
+            });
+          }
+
+          // Clear gridCellKey from the token being picked up
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: id,
+              gridCellKey: undefined
+            }
+          });
+        }
+      }
     }
 
     // Clone the item to store it in the slot - deep copy to preserve all properties
@@ -1317,7 +1395,6 @@ export const Tabletop: React.FC = () => {
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
-    console.log(`[DRAG SYSTEM] dropCursorSlot - dropping ${currentSlot.length} items`);
     if (currentSlot.length === 0) return;
 
     // Determine if we should preserve original zIndex or use stack zIndex
@@ -1341,7 +1418,7 @@ export const Tabletop: React.FC = () => {
     // Find cell with snapToGrid enabled under cursor for automatic magnetism
     const snapRadius = 100; // VU - radius to check for cell
     let targetCell: (BattlefieldCell | NexusCellObject) | null = null;
-    let targetBoardCellCenter: { x: number; y: number } | null = null;
+    let targetBoardCell: { board: BoardType; col: number; row: number; cellCenterX: number; cellCenterY: number } | null = null;
 
     // Only tokens use automatic cell magnetism
     const firstItem = currentSlot[0];
@@ -1391,13 +1468,16 @@ export const Tabletop: React.FC = () => {
                   row >= 0 && row < Math.floor(board.height / gridH)) {
                 cellCenterX = board.x + (col * gridW) + (gridW / 2);
                 cellCenterY = board.y + (row * gridH) + (gridH / 2);
-                targetBoardCellCenter = { x: cellCenterX, y: cellCenterY };
+                targetBoardCell = { board, col, row, cellCenterX, cellCenterY };
                 break;
               }
             } else if (board.gridType === GridType.HEX) {
               // Pointy-top hex grid - using gridUtils for consistency
               const hexW = gridW || 100;
               const hexH = gridH || (hexW * 1.15);  // Use board's gridHeight if available
+
+              const hCapIdeal = hexW / (2 * Math.sqrt(3));
+              const hCap = Math.min(hCapIdeal, hexH / 2);
 
               const relativeX = worldX - board.x;
               const relativeY = worldY - board.y;
@@ -1413,6 +1493,14 @@ export const Tabletop: React.FC = () => {
               cellCenterX = board.x + hexCenter.x;
               cellCenterY = board.y + hexCenter.y;
 
+              // Calculate col and row from hex center position
+              const dx = hexW;
+              const dy = hexH - hCap;
+              const offsetX = hexW / 2;
+
+              const row = Math.round(hexCenter.y / dy);
+              const col = Math.round((hexCenter.x - (row % 2) * offsetX) / dx);
+
               // Check if hex center is within board bounds
               const hexX = cellCenterX - board.x;
               const hexY = cellCenterY - board.y;
@@ -1421,13 +1509,16 @@ export const Tabletop: React.FC = () => {
 
               if (hexX >= -halfW && hexX <= board.width + halfW &&
                   hexY >= -halfH && hexY <= board.height + halfH) {
-                targetBoardCellCenter = { x: cellCenterX, y: cellCenterY };
+                targetBoardCell = { board, col, row, cellCenterX, cellCenterY };
                 break;
               }
             } else if (board.gridType === GridType.HEX_HORIZONTAL) {
               // Flat-top hex grid - using gridUtils for consistency
               const hexW = gridW || 115;
               const hexH = gridH || (hexW / 1.15);  // Use board's gridHeight if available
+
+              const wCapIdeal = hexH / (2 * Math.sqrt(3));
+              const wCap = Math.min(wCapIdeal, hexW / 2);
 
               const relativeX = worldX - board.x;
               const relativeY = worldY - board.y;
@@ -1443,6 +1534,14 @@ export const Tabletop: React.FC = () => {
               cellCenterX = board.x + hexCenter.x;
               cellCenterY = board.y + hexCenter.y;
 
+              // Calculate col and row from hex center position
+              const dx = hexW - wCap;
+              const dy = hexH;
+              const offsetY = hexH / 2;
+
+              const col = Math.round(hexCenter.x / dx);
+              const row = Math.round((hexCenter.y - (col % 2) * offsetY) / dy);
+
               // Check if hex center is within board bounds
               const hexX = cellCenterX - board.x;
               const hexY = cellCenterY - board.y;
@@ -1451,7 +1550,7 @@ export const Tabletop: React.FC = () => {
 
               if (hexX >= -halfW && hexX <= board.width + halfW &&
                   hexY >= -halfH && hexY <= board.height + halfH) {
-                targetBoardCellCenter = { x: cellCenterX, y: cellCenterY };
+                targetBoardCell = { board, col, row, cellCenterX, cellCenterY };
                 break;
               }
             }
@@ -1560,10 +1659,97 @@ export const Tabletop: React.FC = () => {
 
         // Mark cell as updated
         updatedCellIds.add(targetCell.id);
-      } else if (item.type === ItemType.TOKEN && targetBoardCellCenter) {
-        // Snap to Board grid cell center
-        finalX = targetBoardCellCenter.x - baseWidth / 2;
-        finalY = targetBoardCellCenter.y - baseHeight / 2;
+      } else if (item.type === ItemType.TOKEN && targetBoardCell && !updatedCellIds.has(targetBoardCell.board.id)) {
+        // Snap to Board grid cell with magnetism
+        const { board, col, row, cellCenterX, cellCenterY } = targetBoardCell;
+        const gridW = board.gridWidth || board.gridSize || 50;
+        const gridH = board.gridHeight || board.gridSize || 50;
+
+        // Add object to grid cell magnet points
+        const result = addObjectToGridCellMagnet(
+          board,
+          col,
+          row,
+          item.id,
+          state.objects,
+          cellCenterX,
+          cellCenterY,
+          gridW,
+          gridH
+        );
+
+        // Calculate zIndex for new object - place it below all already snapped objects in this cell
+        const cellKey = generateGridCellKey(col, row);
+        const gridCellKeyForToken = `${board.id}:${cellKey}`; // Store direct reference in token
+
+        const existingSnappedObjectIds = (board.gridCellMagnetPoints?.[cellKey]?.magnetPoints ?? [])
+          .filter(p => p.objectId !== item.id) // Exclude the object being added
+          .map(p => p.objectId);
+
+        let snappedObjectZIndices: number[] = [];
+        for (const snappedId of existingSnappedObjectIds) {
+          const snappedObj = state.objects[snappedId];
+          if (snappedObj) {
+            snappedObjectZIndices.push(snappedObj.zIndex ?? minZ);
+          }
+        }
+
+        // Find the lowest zIndex among snapped objects, and place new object below it
+        if (snappedObjectZIndices.length > 0) {
+          const minSnappedZ = Math.min(...snappedObjectZIndices);
+          // Place new object below the lowest snapped object (subtract 1, but respect minZ)
+          finalZIndex = Math.max(minZ, minSnappedZ - 1);
+        } else {
+          // First object being snapped - use its current zIndex or board's zIndex - 1
+          finalZIndex = useOriginalZIndex
+            ? ((item as any).originalZIndex ?? minZ)
+            : Math.max(minZ, (board.zIndex ?? minZ + 1) - 1);
+        }
+
+        // Ensure we don't exceed layer bounds
+        finalZIndex = Math.max(minZ, Math.min(maxZ, finalZIndex));
+
+        // Create updated board object preserving all other properties
+        const updatedBoardForDrop = {
+          ...board,
+          gridCellMagnetPoints: result.updatedBoard.gridCellMagnetPoints
+        };
+
+        // Update the board with new grid cell magnet points
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: updatedBoardForDrop
+        });
+
+        // Move existing objects to their new magnet positions
+        for (const movedObj of result.movedObjects) {
+          if (movedObj.objectId !== item.id) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: movedObj.objectId,
+                x: movedObj.x,
+                y: movedObj.y
+              }
+            });
+          }
+        }
+
+        // Calculate final position for the new object (center to top-left)
+        finalX = result.snapPosition.x - baseWidth / 2;
+        finalY = result.snapPosition.y - baseHeight / 2;
+
+        // Store gridCellKey in the token for faster lookup when unhooking
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: item.id,
+            gridCellKey: gridCellKeyForToken
+          }
+        });
+
+        // Mark board as updated
+        updatedCellIds.add(board.id);
       } else {
         // No cell magnetism - use regular snapping
         let snapTargetX: number, snapTargetY: number;
@@ -1613,7 +1799,6 @@ export const Tabletop: React.FC = () => {
     }, 500);
 
     // Clear the slot - also update ref immediately for mouseup handler
-    console.log(`[DRAG SYSTEM] Clearing cursor slot - dropped ${currentSlot.length} items`);
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
@@ -2104,16 +2289,14 @@ export const Tabletop: React.FC = () => {
         // Check if we just dropped items - prevent immediate re-pickup
         const timeSinceDrop = Date.now() - lastDropTimeRef.current;
         if (justDroppedRef.current && timeSinceDrop < 200) {
-          console.log(`[DRAG SYSTEM] Ignoring CLICK in mouseup ${timeSinceDrop}ms after drop - preventing re-pickup`);
           return;
         }
 
         // Simple click without drag no longer adds to cursor slot
         // Only Shift+click and drag (5px+) work for adding items
         if (distance < 5) {
-          console.log(`[DRAG SYSTEM] CLICK without drag (${distance.toFixed(1)}px < 5px) - ignored, use Shift+click to add to slot`);
+          // CLICK without drag - ignored, use Shift+click to add to slot
         }
-        console.log(`[DRAG SYSTEM] Mouse up after drag completed (${distance.toFixed(1)}px >= 5px) - tracking already cleared`);
         // If moved 5px or more, the card was already added to slot in mousemove, nothing to do
       }
 
@@ -2171,7 +2354,6 @@ export const Tabletop: React.FC = () => {
               if (pile) {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log(`[DRAG SYSTEM] Dropping ${currentSlot.length} items to pile: ${pile.name}`);
                 dropToPile(pileId, deck.id, currentSlot);
                 // Ensure slot is cleared after dropping to pile
                 cursorSlotRef.current = [];
@@ -2193,7 +2375,6 @@ export const Tabletop: React.FC = () => {
         if (obj && obj.type === ItemType.DECK && objectId) {
           e.preventDefault();
           e.stopPropagation();
-          console.log(`[DRAG SYSTEM] Dropping ${currentSlot.length} items to deck: ${obj.name}`);
           dropToDeck(objectId, currentSlot);
           // Ensure slot is cleared after dropping to deck
           cursorSlotRef.current = [];
@@ -2431,7 +2612,6 @@ export const Tabletop: React.FC = () => {
 
       // Locked objects check - don't send drag messages for locked objects even for GM
       if (item && item.locked) {
-        console.log(`[LAYER DRAG] Object ${item.name} (id: ${id}) is LOCKED - drag prevented`);
         return;
       }
 
@@ -2443,21 +2623,13 @@ export const Tabletop: React.FC = () => {
         const objLayer = item.hyperscaleLayerId || 'none';
         const selectedLayers = state.selectedHyperscaleLayerIds;
         const layerAllowed = objLayer === 'none' || selectedLayers.includes(objLayer);
-        console.log(`[LAYER DRAG] Object: ${item.name} (${item.type})`);
-        console.log(`[LAYER DRAG] Object layer: ${objLayer}`);
-        console.log(`[LAYER DRAG] Selected layers: ${selectedLayers.join(', ')}`);
-        console.log(`[LAYER DRAG] Drag allowed: ${layerAllowed}`);
         if (!layerAllowed) {
-          console.log(`[LAYER DRAG] Drag PREVENTED - layer not selected`);
           return; // Object is in a non-selected hyperscale layer
         }
-      } else {
-        console.log(`[LAYER DRAG] Object ${item.name} is in cursor slot - layer check skipped`);
       }
 
       // Cards and tokens: Shift+click immediately adds to cursor slot
       if (e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
-        console.log(`[DRAG SYSTEM] SHIFT+CLICK - activating SHIFT mode for item: ${item.name} (${item.type})`);
         addToCursorSlot(id, item);
         return;
       }
@@ -2473,7 +2645,6 @@ export const Tabletop: React.FC = () => {
       // Prevent immediate re-pickup after dropping items (within 200ms)
       const timeSinceDrop = Date.now() - lastDropTimeRef.current;
       if (justDroppedRef.current && timeSinceDrop < 200) {
-        console.log(`[DRAG SYSTEM] Ignoring click ${timeSinceDrop}ms after drop - preventing re-pickup`);
         return;
       }
 
@@ -2491,7 +2662,6 @@ export const Tabletop: React.FC = () => {
       // Cards and tokens use cursor slot drag system ONLY (no normal drag)
       if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
         // Store item info for drag threshold detection (no timer, just movement)
-        console.log(`[DRAG SYSTEM] Starting HOLD mode tracking - item: ${item.name} (${item.type})`);
         longPressItemRef.current = {
           id,
           item,
@@ -2591,7 +2761,6 @@ export const Tabletop: React.FC = () => {
         // Mouse moved enough - add to cursor slot for drag
         // Use same positioning logic as Shift+click (WITHOUT mousePosition) to avoid jump
         // The cursor will be positioned at card center, then follow mouse movement
-        console.log(`[DRAG SYSTEM] Drag threshold reached (${distance.toFixed(1)}px) - switching to HOLD mode`);
         addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
         // IMPORTANT: Update cursor position to current mouse position AFTER adding to slot
         // This ensures the card center is at the mouse position from the start
@@ -4971,7 +5140,7 @@ export const Tabletop: React.FC = () => {
                                                         const anglePerSlice = 360 / magnetPointCount;
                                                         const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
                                                         const lineLength = calcLineLength(angle);
-                                                        const magnetRadius = lineLength * 0.6;
+                                                        const magnetRadius = lineLength * 0.55;
                                                         const magnetX = Math.cos(angle) * magnetRadius;
                                                         const magnetY = Math.sin(angle) * magnetRadius;
                                                         const hasObject = occupiedPointIndices.has(index);
@@ -5210,7 +5379,7 @@ export const Tabletop: React.FC = () => {
                                                         const anglePerSlice = 360 / magnetPointCount;
                                                         const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
                                                         const lineLength = calcLineLength(angle);
-                                                        const magnetRadius = lineLength * 0.6;
+                                                        const magnetRadius = lineLength * 0.55;
                                                         const magnetX = Math.cos(angle) * magnetRadius;
                                                         const magnetY = Math.sin(angle) * magnetRadius;
                                                         const hasObject = occupiedPointIndices.has(index);
