@@ -137,7 +137,7 @@ export const Tabletop: React.FC = () => {
   const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
 
   // UI modal/menu state
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>(null);
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   // Pile context menu and search modal
@@ -3522,13 +3522,17 @@ export const Tabletop: React.FC = () => {
       setContextMenu({
           x: e.clientX,
           y: e.clientY,
-          object: obj
+          object: obj,
+          shiftKey: e.shiftKey // Store shift key state
       });
   }, [currentTool]);
 
-  const executeMenuAction = (action: string) => {
+  const executeMenuAction = (action: string, shiftKey?: boolean) => {
       if (!contextMenu) return;
       const { object } = contextMenu;
+
+      // Use shift key from context menu or parameter
+      const isShiftPressed = shiftKey !== undefined ? shiftKey : contextMenu.shiftKey;
 
       // Actions specific to context menu
       switch(action) {
@@ -3542,6 +3546,11 @@ export const Tabletop: React.FC = () => {
               return;
           case 'delete':
               setContextMenu(null);
+              // If Shift is held, delete immediately without confirmation
+              if (isShiftPressed) {
+                  dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
+                  return;
+              }
               // Token-copies are deleted immediately without confirmation
               if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
                   dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
