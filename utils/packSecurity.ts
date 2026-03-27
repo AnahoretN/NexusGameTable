@@ -8,7 +8,7 @@ import { logger } from './logger';
 
 // Security limits
 const MAX_PACK_SIZE = 500 * 1024 * 1024; // 500MB max pack size
-const MAX_IMAGE_SIZE = 2 * 1024 * 1024;   // 2MB max single image (reduced from 50MB)
+const MAX_IMAGE_SIZE = 3 * 1024 * 1024;   // 3MB max single image
 const MAX_IMAGE_COUNT = 1000;              // Maximum number of images
 const MAX_IMAGE_DIMENSION = 16384;        // 16K pixels max dimension
 const MAX_OBJECT_COUNT = 10000;           // Maximum objects in pack

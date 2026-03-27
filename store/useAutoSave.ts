@@ -82,12 +82,24 @@ export function useAutoSave(
     // Don't save during initialization
     if (!isInitialized) return;
 
-    // Fast hash check: count objects + sum positions + deck cardIds count
-    // This catches object moves, drawing cards, deck shuffles WITHOUT expensive JSON.stringify
+    // Fast hash check: count objects + sum positions + deck cardIds count + content length
+    // This catches object moves, drawing cards, deck shuffles, image changes WITHOUT expensive JSON.stringify
     let hash = Object.keys(state.objects).length;
     for (const obj of Object.values(state.objects)) {
       // Add position changes
       hash += (obj.x || 0) + (obj.y || 0);
+      // Add content length (images, URLs, etc.)
+      if ((obj as any).content) {
+        hash += (obj as any).content.length;
+      }
+      // Add name length (for renamed objects)
+      if (obj.name) {
+        hash += obj.name.length;
+      }
+      // Add color string (for colored objects)
+      if ((obj as any).color) {
+        hash += (obj as any).color.length;
+      }
       // Add deck/pile changes (cardIds length)
       if (obj.type === 'DECK') {
         const deck = obj as any;

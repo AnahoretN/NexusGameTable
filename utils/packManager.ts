@@ -417,7 +417,7 @@ export async function createPack(
         try {
           // Check individual image size before processing
           const imgSize = Math.ceil(img.data.length * 0.75); // base64 is ~33% larger
-          if (imgSize > 2 * 1024 * 1024) { // 2MB limit per image
+          if (imgSize > 3 * 1024 * 1024) { // 3MB limit per image
             logger.warn(`[PACK] Skipping large image: ${img.filename} (${Math.round(imgSize / 1024 / 1024)}MB)`);
             imagesSkipped++;
             continue;
