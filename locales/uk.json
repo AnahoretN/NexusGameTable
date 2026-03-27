@@ -338,5 +338,22 @@
 "Group Name": "Назва групи",
 "Assign Dice to Groups": "Призначити кубики групам",
 "No Group": "Без групи",
-"Reset to Base Value": "Базове значення"
+"Reset to Base Value": "Базове значення",
+"Pack": "Пак",
+"Create Pack": "Створити пак",
+"Load Pack": "Завантажити пак",
+"Pack Name": "Назва пака",
+"Pack Description (optional)": "Опис пака (необов'язково)",
+"Creating pack...": "Створення пака...",
+"Loading pack...": "Завантаження пака...",
+"Pack saved successfully!": "Пак успішно збережено!",
+"Pack loaded successfully!": "Пак успішно завантажено!",
+"Error creating pack": "Помилка створення пака",
+"Error loading pack": "Помилка завантаження пака",
+"Invalid pack file": "Невірний файл пака",
+"Pack contains {count} objects and {images} images": "Пак містить {count} об'єктів та {images} зображень",
+"Create Pack": "Створити пак",
+"A pack contains your game state and all custom images in a single file": "Пак містить стан гри та всі користувацькі зображення в одному файлі",
+"Create a pack file from the current game state": "Створити файл пака з поточного стану гри",
+"Load a pack file to restore the game": "Завантажити файл пака для відновлення гри"
 }

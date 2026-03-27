@@ -343,5 +343,22 @@
 "Group Name": "Назва групы",
 "Assign Dice to Groups": "Прызначыць косткі групам",
 "No Group": "Без групы",
-"Reset to Base Value": "Базавае значэнне"
+"Reset to Base Value": "Базавае значэнне",
+"Pack": "Пак",
+"Create Pack": "Стварыць пак",
+"Load Pack": "Загрузіць пак",
+"Pack Name": "Назва пака",
+"Pack Description (optional)": "Апісанне пака (неабавязкова)",
+"Creating pack...": "Стварэнне пака...",
+"Loading pack...": "Загрузка пака...",
+"Pack saved successfully!": "Пак паспяхова захаваны!",
+"Pack loaded successfully!": "Пак паспяхова загружаны!",
+"Error creating pack": "Памылка стварэння пака",
+"Error loading pack": "Памылка загрузкі пака",
+"Invalid pack file": "Няправільны файл пака",
+"Pack contains {count} objects and {images} images": "Пак змяшчае {count} аб'ектаў і {images} выяў",
+"Create Pack": "Стварыць пак",
+"A pack contains your game state and all custom images in a single file": "Пак змяшчае стан гульні і ўсе карыстацкія выявы ў адным файле",
+"Create a pack file from the current game state": "Стварыць файл пака з бягучага стану гульні",
+"Load a pack file to restore the game": "Загрузіць файл пака для аднаўлення гульні"
 }
