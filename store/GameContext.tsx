@@ -1,17 +1,19 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState } from 'react';
 import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer, NexusBoard, NexusCellObject, DiceGroup } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
+import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
 import { generateUUID } from '../utils/uuid';
-import { loadGameState, clearAllData, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
+import { loadGameState, restoreImagesInState, clearAllData, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, LocalSettings } from '../utils/localSettings';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
 import { Action } from './gameActions';
 import { useAutoSave } from './useAutoSave';
 import { usePeerConnection } from './usePeerConnection';
-import { restoreImagesFromCache, extractImagesFromState, getNewImages } from '../utils/imageCache';
+import { restoreImagesFromCache, extractImagesFromState, getNewImages, loadImageCacheFromIDB } from '../utils/imageCache';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
+import { logger } from '../utils/logger';
 
 const GameContext = createContext<{
   state: GameState;
@@ -299,29 +301,49 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             pixelsPerVU: calculatePixelsPerVU(window.innerWidth, window.innerHeight)
         };
 
-        // Ensure players array has required properties
-        const players = (action.payload.players || []).map(p => ({
-            ...p,
-            handCardOrder: p.handCardOrder || undefined
-        }));
+        // CRITICAL: Merge players from pack with current players to preserve GM status
+        // Pack may not have the same players, so we need to preserve current players
+        const packPlayers = action.payload.players || [];
+        const mergedPlayers = [...state.players];
+
+        // Add players from pack that don't exist in current state
+        packPlayers.forEach(packPlayer => {
+            const existingIndex = mergedPlayers.findIndex(p => p.id === packPlayer.id);
+            if (existingIndex === -1) {
+                // Player doesn't exist - add from pack
+                mergedPlayers.push({
+                    ...packPlayer,
+                    handCardOrder: packPlayer.handCardOrder || undefined
+                });
+            } else {
+                // Player exists - update handCardOrder only (preserve other properties like isGM)
+                if (packPlayer.handCardOrder) {
+                    mergedPlayers[existingIndex] = {
+                        ...mergedPlayers[existingIndex],
+                        handCardOrder: packPlayer.handCardOrder
+                    };
+                }
+            }
+        });
 
         // Ensure diceRolls array exists
         const diceRolls = action.payload.diceRolls || [];
 
-        // activePlayerId will use the current one from SYNC_STATE logic, not from save
-        // This prevents accidentally becoming someone else after loading
-        // sessionId from save is preserved (don't generate new one)
+        // CRITICAL: Keep current activePlayerId to prevent losing GM status after loading pack
+        // This ensures GM stays GM after loading a pack
+        const currentActiveId = state.activePlayerId;
 
         return {
             ...action.payload,
             objects: migratedObjects,
-            players,
+            players: mergedPlayers,
             undo,
             drawings,
             viewTransform,
             diceRolls,
-            // Keep current activePlayerId from state, not from save (handled by spread above)
-            // sessionId from save is preserved if exists
+            // Preserve current activePlayerId - don't use the one from pack/save
+            activePlayerId: currentActiveId,
+            // sessionId from save is preserved if exists (handled by spread above)
         };
     }
     case 'SET_ACTIVE_ID': {
@@ -339,6 +361,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         return {
             ...state,
             players: state.players.filter(p => p.id !== action.payload.id)
+        };
+    }
+    case 'UPDATE_PLAYER': {
+        return {
+            ...state,
+            players: state.players.map(p =>
+                p.id === action.payload.id ? { ...p, ...action.payload } : p
+            )
         };
     }
     case 'UPDATE_PLAYER_NAME': {
@@ -453,6 +483,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       return {
         ...state,
         objects: { ...state.objects, [action.payload.id]: newObj },
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
     }
     case 'UPDATE_OBJECT': {
@@ -785,7 +816,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         saveLocalSettings(localSettings);
       }
 
-      return { ...state, objects: newObjects };
+      return {
+        ...state,
+        objects: newObjects,
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId
+      };
     }
     case 'MOVE_OBJECT': {
       const obj = state.objects[action.payload.id];
@@ -881,6 +916,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           ...state,
           objects: { ...state.objects, ...updatedObjects },
           undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
         };
       }
 
@@ -1048,6 +1084,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           ...state,
           objects: { ...state.objects, ...updatedObjects },
           undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
         };
       }
 
@@ -1291,7 +1328,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             };
         }
 
-        return { ...state, objects: newObjects, undo: updatedUndo };
+        return {
+          ...state,
+          objects: newObjects,
+          undo: updatedUndo,
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'DRAW_CARD': {
       const deck = state.objects[action.payload.deckId] as Deck;
@@ -1337,6 +1379,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             : p
         ),
         undo: { ...state.undo, generalHistory: newGeneralHistory },
+        lastModifiedBy: action.payload.playerId || state.activePlayerId,
       };
     }
     case 'PLAY_CARD': {
@@ -1675,6 +1718,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...state,
             objects: { ...state.objects, [action.payload.deckId]: { ...deck, cardIds: shuffled } },
             undo: { ...state.undo, generalHistory: newGeneralHistory },
+            lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
         };
     }
     case 'FLIP_CARD': {
@@ -2096,7 +2140,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...state, objects: newObjects, undo: { ...state.undo, generalHistory: newGeneralHistory } };
+        return {
+          ...state,
+          objects: newObjects,
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'RETURN_CARD_TO_DECK_BOTTOM': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -2193,7 +2242,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...state, objects: newObjects, undo: { ...state.undo, generalHistory: newGeneralHistory } };
+        return {
+          ...state,
+          objects: newObjects,
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'ADD_CARD_TO_TOP_OF_DECK': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -2271,7 +2325,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...updatedState.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...updatedState, objects: { ...updatedState.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard }, undo: { ...updatedState.undo, generalHistory: newGeneralHistory } };
+        return {
+          ...updatedState,
+          objects: { ...updatedState.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard },
+          undo: { ...updatedState.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'ADD_CARD_TO_PILE': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -2364,7 +2423,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard }, undo: { ...state.undo, generalHistory: newGeneralHistory } };
+        return {
+          ...state,
+          objects: { ...state.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard },
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'UPDATE_PERMISSIONS': {
         const obj = state.objects[action.payload.id] as any;
@@ -2588,6 +2652,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         ...state,
         objects: { ...state.objects, [deck.id]: updatedDeck, [drawnCardId]: updatedCard },
         undo: { ...state.undo, generalHistory: newGeneralHistory },
+        lastModifiedBy: action.payload.playerId || state.activePlayerId,
       };
     }
     case 'RETURN_ALL_CARDS_TO_DECK': {
@@ -2707,7 +2772,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       newObjects[deck.id] = updatedDeck;
 
-      return { ...state, objects: newObjects };
+      return {
+        ...state,
+        objects: newObjects,
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+      };
     }
     case 'TOGGLE_PILE_LOCK': {
       const deck = state.objects[action.payload.deckId] as Deck;
@@ -2725,7 +2794,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         objects: {
           ...state.objects,
           [deck.id]: { ...deck, piles: updatedPiles }
-        }
+        },
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
     }
     case 'UPDATE_PILE_POSITION': {
@@ -2744,7 +2814,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         objects: {
           ...state.objects,
           [deck.id]: { ...deck, piles: updatedPiles }
-        }
+        },
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
     }
     case 'UPDATE_DECK_CARD_DIMENSIONS': {
@@ -2880,6 +2951,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
         },
         undo: { ...state.undo, generalHistory: newGeneralHistory },
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
     }
     case 'TOGGLE_SHOW_TOP_CARD': {
@@ -4426,6 +4498,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, localDispatch] = useReducer(gameReducer, initialState);
 
+  // Initial loading state - only for slow operations
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
+  const [initialLoadSteps, setInitialLoadSteps] = useState<InitialLoadStep[]>([]);
+
+  const addInitialLoadStep = (message: string, status: 'loading' | 'success' | 'warning' | 'error' = 'loading') => {
+    setInitialLoadSteps(prev => {
+      const lastStep = prev[prev.length - 1];
+      if (lastStep && lastStep.status === 'loading') {
+        return [...prev.slice(0, -1), { message, status }];
+      }
+      return [...prev, { message, status }];
+    });
+  };
+
   // Ref to track latest state for event listeners
   const stateRef = useRef(state);
   const initializedRef = useRef(false);
@@ -4451,7 +4537,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, hostConnectionRef, connectionsRef, imageCachesRef } = usePeerConnection(localDispatch, stateRef);
 
   // Auto-save game state to localStorage (debounced)
-  useAutoSave(state, isHost);
+  useAutoSave(state, isHost, initializedRef.current);
 
   // Update pixelsPerVU when window size changes
   useEffect(() => {
@@ -4480,13 +4566,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Only initialize once we're sure about host status and haven't initialized yet
     if (!initializedRef.current && Object.keys(state.objects).length === 0) {
-        initializedRef.current = true;
-
         const isGuest = !isHost;
 
         // Guests don't load from localStorage - they receive state from host
         if (isGuest) {
+          initializedRef.current = true; // Set initialized flag for guests
           createMainMenu(localDispatch);
+          setIsInitialLoading(false); // Guests don't need loading screen - they wait for host
           return;
         }
 
@@ -4494,61 +4580,133 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const savedState = loadGameState(false);
 
         if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
-          // Create a batch of updates to restore all state
-          const updates: any[] = [];
+          // Check if images need restoration (metadata or img_ref:// instead of actual images)
+          const needsRestoration = Object.values(savedState.objects).some((obj: any) =>
+            obj.content && (obj.content === 'B' || obj.content === 'D' ||
+             obj.content.startsWith('{"t":') || obj.content.startsWith('{"type":') ||
+             obj.content.startsWith('img_ref://'))
+          );
 
-          // Load all saved objects (except MAIN_MENU - it's handled separately)
-          Object.values(savedState.objects).forEach(obj => {
-            // Skip main menu - it will be created from local settings
-            if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
-              return;
-            }
-            updates.push({ type: 'ADD_OBJECT', payload: obj });
-          });
-
-          // Restore drawings
-          if (savedState.drawings) {
-            updates.push({ type: 'SYNC_STATE', payload: { drawings: savedState.drawings } });
-          }
-
-          // Restore player permissions
-          if (savedState.playerPermissions) {
-            updates.push({ type: 'UPDATE_PLAYER_PERMISSIONS', payload: savedState.playerPermissions });
-          }
-
-          // Restore language
-          if (savedState.language) {
-            updates.push({ type: 'UPDATE_LANGUAGE', payload: savedState.language });
-          }
-
-          // Restore active player ID if different
-          if (savedState.activePlayerId && savedState.activePlayerId !== state.activePlayerId) {
-            updates.push({ type: 'SET_ACTIVE_ID', payload: savedState.activePlayerId });
-          }
-
-          // Restore view transform (zoom/pan) - only for host or single player
-          if (savedState.viewTransform && !isGuest) {
-            updates.push({ type: 'UPDATE_VIEW_TRANSFORM', payload: savedState.viewTransform });
-          }
-
-          // Restore players (merge with default players)
-          if (savedState.players && savedState.players.length > 0) {
-            const currentPlayers = state.players || [];
-            savedState.players.forEach((player: Player) => {
-              // Only add players that don't already exist (don't overwrite GM)
-              if (player.id !== 'gm' && player.id !== 'gm-player' &&
-                  !currentPlayers.find(p => p.id === player.id)) {
-                updates.push({ type: 'ADD_PLAYER', payload: player });
+          // Function to add objects to state
+          const addObjects = (objects: Record<string, TableObject>) => {
+            Object.values(objects).forEach(obj => {
+              if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+                return;
               }
+              localDispatch({ type: 'ADD_OBJECT', payload: obj });
             });
+          };
+
+          // Restore other state (drawings, players, etc.)
+          const restoreOtherState = () => {
+            const updates: any[] = [];
+
+            // Restore drawings
+            if (savedState.drawings) {
+              updates.push({ type: 'SYNC_STATE', payload: { drawings: savedState.drawings } });
+            }
+
+            // Restore player permissions
+            if (savedState.playerPermissions) {
+              updates.push({ type: 'UPDATE_PLAYER_PERMISSIONS', payload: savedState.playerPermissions });
+            }
+
+            // Restore language
+            if (savedState.language) {
+              updates.push({ type: 'UPDATE_LANGUAGE', payload: savedState.language });
+            }
+
+            // Restore active player ID if different
+            if (savedState.activePlayerId && savedState.activePlayerId !== state.activePlayerId) {
+              updates.push({ type: 'SET_ACTIVE_ID', payload: savedState.activePlayerId });
+            }
+
+            // Restore view transform (zoom/pan) - only for host or single player
+            if (savedState.viewTransform && !isGuest) {
+              updates.push({ type: 'UPDATE_VIEW_TRANSFORM', payload: savedState.viewTransform });
+            }
+
+            // Restore players (merge with default players)
+            if (savedState.players && savedState.players.length > 0) {
+              const currentPlayers = state.players || [];
+              savedState.players.forEach((player: Player) => {
+                // Only add players that don't already exist (don't overwrite GM)
+                if (player.id !== 'gm' && player.id !== 'gm-player' &&
+                    !currentPlayers.find(p => p.id === player.id)) {
+                  updates.push({ type: 'ADD_PLAYER', payload: player });
+                } else if (player.id !== 'gm' && player.id !== 'gm-player') {
+                  // Update existing player with saved state (especially handCardOrder)
+                  updates.push({ type: 'UPDATE_PLAYER', payload: player });
+                }
+              });
+            }
+
+            // Apply all updates
+            updates.forEach(update => localDispatch(update));
+
+            // Create main menu from local settings
+            createMainMenu(localDispatch);
+          };
+
+          if (needsRestoration) {
+            // Only show loading modal for IndexedDB operations
+            setIsInitialLoading(true);
+            addInitialLoadStep('Loading saved game...', 'loading');
+
+            // Load images from IndexedDB in background
+            loadImageCacheFromIDB().then(imageCache => {
+              if (Object.keys(imageCache).length > 0) {
+                addInitialLoadStep(`Restoring ${Object.keys(imageCache).length} images...`, 'loading');
+
+                // Restore images in objects BEFORE adding them
+                const restoredObjects: Record<string, TableObject> = {};
+                Object.entries(savedState.objects || {}).forEach(([id, obj]) => {
+                  restoredObjects[id] = restoreImagesFromCache(obj, imageCache);
+                });
+
+                // Add restored objects
+                addObjects(restoredObjects);
+                addInitialLoadStep('Images restored', 'success');
+              } else {
+                // Just add objects without restoration
+                addObjects(savedState.objects || {});
+              }
+
+              // After objects are added, restore other state
+              restoreOtherState();
+
+              // Check if we need to reconnect to host (for guests)
+              if (!isHost) {
+                setIsInitialLoading(false);
+                initializedRef.current = true;
+              } else {
+                // Host is ready immediately
+                setIsInitialLoading(false);
+                initializedRef.current = true;
+              }
+            }).catch(error => {
+              logger.error('[LOAD] Failed to load images from IndexedDB:', error);
+              // Just add objects without restoration
+              addObjects(savedState.objects || {});
+              // Still restore other state
+              restoreOtherState();
+
+              // IMPORTANT: Mark as initialized even on error
+              setIsInitialLoading(false);
+              initializedRef.current = true;
+            });
+          } else {
+            // No restoration needed - add objects directly
+            addObjects(savedState.objects || {});
+
+            // Restore other state
+            restoreOtherState();
+
+            // Mark as initialized
+            initializedRef.current = true;
           }
 
-          // Apply all updates in a single batch
-          updates.forEach(update => localDispatch(update));
-
-          // Create main menu from local settings
-          createMainMenu(localDispatch);
-          return;
+          return; // IMPORTANT: Return after async operations complete
         }
 
         // No saved state or empty saved state, create default game board (only for host)
@@ -4597,6 +4755,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
           // Then add the deck
           localDispatch({ type: 'ADD_OBJECT', payload: deck });
+
+          // IMPORTANT: Mark as initialized AFTER default objects are created
+          initializedRef.current = true;
         }
 
         // Create main menu (for everyone)
@@ -4943,6 +5104,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, stateRef }}>
       {children}
+      <InitialLoadModal
+        steps={initialLoadSteps}
+        isVisible={isInitialLoading}
+      />
       <PlayerNameModal
         isOpen={waitingForPlayerName !== null}
         onSubmit={setPlayerName}

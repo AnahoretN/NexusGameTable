@@ -7,7 +7,7 @@ import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -19,6 +19,8 @@ import { useDrawingTool } from './ToolsPanel';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
 import { useManualConnection } from '../store/useManualConnection';
+import { createPack, loadPack } from '../utils/packManager';
+import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 
 /**
  * Convert blob URL to base64 data URL
@@ -138,6 +140,16 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom'>('none');
+  // Pack modal state
+  const [packModalOpen, setPackModalOpen] = useState(false);
+  const [packName, setPackName] = useState('');
+  const [packDescription, setPackDescription] = useState('');
+  const [isCreatingPack, setIsCreatingPack] = useState(false);
+
+  // Pack loading modal state
+  const [packLoadingSteps, setPackLoadingSteps] = useState<PackLoadingStep[]>([]);
+  const [isPackLoading, setIsPackLoading] = useState(false);
+  const packFileInputRef = useRef<HTMLInputElement>(null);
   // Manual connection modal state
   const [showManualConnection, setShowManualConnection] = useState(false);
   const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
@@ -528,6 +540,125 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     reader.readAsText(file);
   };
 
+  const handleSavePack = () => {
+    setPackModalOpen(true);
+    setPackName(`nexus_pack_${new Date().toISOString().slice(0, 10)}`);
+    setPackDescription('');
+  };
+
+  const handleCreatePack = async () => {
+    if (!packName.trim()) {
+      alert(translate('Pack Name', language as Locale) + ' ' + 'is required');
+      return;
+    }
+
+    // Simple check: count objects instead of trying to serialize huge state
+    const objectCount = Object.keys(state.objects).length;
+    if (objectCount > 500) {
+      const confirmed = confirm(
+        `Warning: Your game has ${objectCount} objects.\n\n` +
+        `This may take a while to process and create a large pack file.\n\n` +
+        `Continue anyway?`
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setIsCreatingPack(true);
+    try {
+      await createPack(state, packName.trim(), packDescription.trim() || undefined);
+      logger.log(translate('Pack saved successfully!', language as Locale));
+      setPackModalOpen(false);
+      setPackName('');
+      setPackDescription('');
+    } catch (error) {
+      logger.error(translate('Error creating pack', language as Locale), error);
+      alert(translate('Error creating pack', language as Locale) + ': ' + (error as Error).message);
+    } finally {
+      setIsCreatingPack(false);
+    }
+  };
+
+  const handleLoadPack = () => {
+    packFileInputRef.current?.click();
+  };
+
+  // Helper function to add pack loading steps
+  const addPackLoadingStep = (message: string, status: PackLoadingStep['status'] = 'loading') => {
+    setPackLoadingSteps(prev => {
+      // Update existing step if message matches
+      const existingIndex = prev.findIndex(step => step.message === message);
+      if (existingIndex !== -1) {
+        const updated = [...prev];
+        updated[existingIndex] = { message, status };
+        return updated;
+      }
+      // Add new step
+      return [...prev, { message, status }];
+    });
+  };
+
+  const handlePackFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.nexuspack')) {
+      alert(translate('Invalid pack file', language as Locale));
+      return;
+    }
+
+    try {
+      // Show loading modal
+      setIsPackLoading(true);
+      setPackLoadingSteps([{ message: `Loading pack: ${file.name}`, status: 'loading' }]);
+
+      const packData = await loadPack(file, (step, status) => {
+        addPackLoadingStep(step, status);
+      });
+
+      // Validate pack data structure
+      if (!packData.objects || typeof packData.objects !== 'object') {
+        throw new Error("Invalid pack: missing or invalid 'objects' field");
+      }
+      if (!packData.players || !Array.isArray(packData.players)) {
+        throw new Error("Invalid pack: missing or invalid 'players' field");
+      }
+
+      // Dispatch load action
+      dispatch({ type: 'LOAD_GAME', payload: packData as GameState });
+
+      const objectCount = Object.keys(packData.objects || {}).length;
+      const playerCount = packData.players?.length || 0;
+
+      // Add final success step
+      addPackLoadingStep(`Pack loaded successfully! (${objectCount} objects, ${playerCount} players)`, 'success');
+
+      // Hide modal after short delay
+      setTimeout(() => {
+        setIsPackLoading(false);
+        setPackLoadingSteps([]);
+      }, 1500);
+
+      // Reset file input
+      if (packFileInputRef.current) {
+        packFileInputRef.current.value = '';
+      }
+    } catch (error) {
+      // Add error step to modal
+      addPackLoadingStep(`Error loading pack: ${(error as Error).message}`, 'error');
+
+      // Keep modal visible longer to show error
+      setTimeout(() => {
+        setIsPackLoading(false);
+        setPackLoadingSteps([]);
+      }, 3000);
+
+      logger.error(translate('Error loading pack', language as Locale), error);
+    }
+  };
+
   const handleSendChat = () => {
     if (!chatInput.trim()) return;
     const userMsg = chatInput;
@@ -840,6 +971,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   <Network size={16} />
                   {translate('Direct Connection', language as Locale)}
                 </button>
+
+                {/* Divider line before save/load buttons */}
+                <div className="border-t border-slate-600 my-2"></div>
+
                 <button
                   onClick={handleSaveGame}
                   className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
@@ -856,11 +991,34 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     {translate('Load Session', language as Locale)}
                   </button>
                 )}
+                <button
+                  onClick={handleSavePack}
+                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                >
+                  <Package size={16} />
+                  {translate('Create Pack', language as Locale)}
+                </button>
+                {isGM && (
+                  <button
+                    onClick={handleLoadPack}
+                    className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                  >
+                    <Package size={16} />
+                    {translate('Load Pack', language as Locale)}
+                  </button>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept=".json"
                   onChange={handleLoadGame}
+                  className="hidden"
+                />
+                <input
+                  ref={packFileInputRef}
+                  type="file"
+                  accept=".nexuspack"
+                  onChange={handlePackFileChange}
                   className="hidden"
                 />
               </div>
@@ -966,6 +1124,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
             setSettingsObject(null);
           }}
+        />
+      )}
+
+      {/* Pack Loading Modal */}
+      {isPackLoading && (
+        <PackLoadingModal
+          steps={packLoadingSteps}
+          isVisible={isPackLoading}
         />
       )}
 
@@ -1251,6 +1417,100 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 className="w-full py-2 px-4 bg-red-900/50 hover:bg-red-900/70 text-red-200 rounded font-medium transition-colors"
               >
                 {translate('Reset', language as Locale)}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Pack Creation Modal */}
+      {packModalOpen && createPortal(
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10001]">
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center py-3 px-4 border-b border-slate-700">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Package size={20} />
+                {translate('Create Pack', language as Locale)}
+              </h3>
+              <button
+                onClick={() => setPackModalOpen(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-gray-300">
+                {translate('A pack contains your game state and all custom images in a single file', language as Locale)}
+              </p>
+
+              {/* Pack Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {translate('Pack Name', language as Locale)} *
+                </label>
+                <input
+                  type="text"
+                  value={packName}
+                  onChange={(e) => setPackName(e.target.value)}
+                  placeholder="nexus_pack_2026-03-26"
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  autoFocus
+                />
+              </div>
+
+              {/* Pack Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {translate('Pack Description (optional)', language as Locale)}
+                </label>
+                <textarea
+                  value={packDescription}
+                  onChange={(e) => setPackDescription(e.target.value)}
+                  placeholder="Description of your pack..."
+                  rows={3}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                />
+              </div>
+
+              {/* Info */}
+              {isCreatingPack && (
+                <div className="flex items-center justify-center gap-2 text-blue-400 py-2">
+                  <Loader2 size={16} className="animate-spin" />
+                  {translate('Creating pack...', language as Locale)}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 py-3 px-4 border-t border-slate-700 bg-slate-900/50">
+              <button
+                onClick={() => setPackModalOpen(false)}
+                disabled={isCreatingPack}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-white rounded font-medium transition-colors"
+              >
+                {translate('Cancel', language as Locale)}
+              </button>
+              <button
+                onClick={handleCreatePack}
+                disabled={isCreatingPack || !packName.trim()}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-400 text-white rounded font-medium transition-colors flex items-center gap-2"
+              >
+                {isCreatingPack ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    {translate('Creating pack...', language as Locale)}
+                  </>
+                ) : (
+                  <>
+                    <Package size={16} />
+                    {translate('Create Pack', language as Locale)}
+                  </>
+                )}
               </button>
             </div>
           </div>

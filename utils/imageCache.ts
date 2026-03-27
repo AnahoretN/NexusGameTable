@@ -55,14 +55,21 @@ export function getImageIdFromRef(ref: string): string {
  * Recursively extract base64 images from an object and build cache
  * Returns the object with base64 strings replaced by references
  */
-export function extractImagesToCache(obj: any, cache: ImageCache = {}, existingCache: ImageCache = {}): any {
+export function extractImagesToCache(obj: any, cache: ImageCache = {}, existingCache: ImageCache = {}, existingCacheMap?: Map<string, string>): any {
   if (!obj || typeof obj !== 'object') {
     return obj;
   }
 
+  // Build reverse lookup map for O(1) search (only once per extraction)
+  if (!existingCacheMap && Object.keys(existingCache).length > 0) {
+    existingCacheMap = new Map(
+      Object.entries(existingCache).map(([id, data]) => [data, id])
+    );
+  }
+
   // Handle arrays
   if (Array.isArray(obj)) {
-    return obj.map(item => extractImagesToCache(item, cache, existingCache));
+    return obj.map(item => extractImagesToCache(item, cache, existingCache, existingCacheMap));
   }
 
   const result: any = {};
@@ -76,13 +83,13 @@ export function extractImagesToCache(obj: any, cache: ImageCache = {}, existingC
 
     // Handle nested objects
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      result[key] = extractImagesToCache(value, cache, existingCache);
+      result[key] = extractImagesToCache(value, cache, existingCache, existingCacheMap);
     }
-    // Check for base64 data URLs in content fields
-    else if ((key === 'content' || key === 'url' || key === 'cardBackUrl' || key === 'alternativeBackUrl') && typeof value === 'string') {
+    // Check for base64 data URLs in ANY string field (not just specific keys)
+    else if (typeof value === 'string') {
       if (isBase64DataURL(value)) {
-        // Check if we already have this image cached
-        const existingId = Object.entries(existingCache).find(([_, data]) => data === value)?.[0];
+        // Check if we already have this image cached (O(1) lookup with Map)
+        const existingId = existingCacheMap?.get(value);
 
         if (existingId) {
           // Use existing cache entry
@@ -98,48 +105,13 @@ export function extractImagesToCache(obj: any, cache: ImageCache = {}, existingC
         result[key] = value;
       }
     }
-    // Check spriteConfig for images
+    // Check spriteConfig for images (special handling - needs to preserve structure)
     else if (key === 'spriteConfig' && value && typeof value === 'object') {
-      const spriteConfig: any = { ...value };
-      if (typeof spriteConfig.spriteUrl === 'string' && isBase64DataURL(spriteConfig.spriteUrl)) {
-        const existingId = Object.entries(existingCache).find(([_, data]) => data === spriteConfig.spriteUrl)?.[0];
-        if (existingId) {
-          spriteConfig.spriteUrl = createImageRef(existingId);
-          cache[existingId] = existingCache[existingId];
-        } else {
-          const imageId = generateImageId();
-          spriteConfig.spriteUrl = createImageRef(imageId);
-          cache[imageId] = (value as any).spriteUrl;
-        }
-      }
-      if (typeof spriteConfig.cardBackUrl === 'string' && isBase64DataURL(spriteConfig.cardBackUrl)) {
-        const existingId = Object.entries(existingCache).find(([_, data]) => data === spriteConfig.cardBackUrl)?.[0];
-        if (existingId) {
-          spriteConfig.cardBackUrl = createImageRef(existingId);
-          cache[existingId] = existingCache[existingId];
-        } else {
-          const imageId = generateImageId();
-          spriteConfig.cardBackUrl = createImageRef(imageId);
-          cache[imageId] = (value as any).cardBackUrl;
-        }
-      }
-      result[key] = spriteConfig;
+      result[key] = extractImagesToCache(value, cache, existingCache, existingCacheMap);
     }
-    // Check alternativeBack object
+    // Check alternativeBack object (special handling - needs to preserve structure)
     else if (key === 'alternativeBack' && value && typeof value === 'object') {
-      const altBack: any = { ...value };
-      if (typeof altBack.url === 'string' && isBase64DataURL(altBack.url)) {
-        const existingId = Object.entries(existingCache).find(([_, data]) => data === altBack.url)?.[0];
-        if (existingId) {
-          altBack.url = createImageRef(existingId);
-          cache[existingId] = existingCache[existingId];
-        } else {
-          const imageId = generateImageId();
-          altBack.url = createImageRef(imageId);
-          cache[imageId] = (value as any).url;
-        }
-      }
-      result[key] = altBack;
+      result[key] = extractImagesToCache(value, cache, existingCache, existingCacheMap);
     }
     // Keep other values as-is
     else {
@@ -163,18 +135,26 @@ export function restoreImagesFromCache(obj: any, cache: ImageCache): any {
   }
 
   const result: any = {};
+  let restoredCount = 0;
 
   for (const [key, value] of Object.entries(obj)) {
     if (value && typeof value === 'object') {
       result[key] = restoreImagesFromCache(value, cache);
     } else if (typeof value === 'string' && isImageRef(value)) {
       const imageId = getImageIdFromRef(value);
-      result[key] = cache[imageId] || value; // Fallback to original if not in cache
+      if (cache[imageId]) {
+        result[key] = cache[imageId];
+        restoredCount++;
+      } else {
+        // Silently skip missing images - don't spam console
+        result[key] = value; // Fallback to original if not in cache
+      }
     } else {
       result[key] = value;
     }
   }
 
+  // Remove verbose logging for better performance
   return result;
 }
 
@@ -184,6 +164,11 @@ export function restoreImagesFromCache(obj: any, cache: ImageCache): any {
 export function extractImagesFromState(state: any, existingCache: ImageCache = {}): StateWithImageCache {
   const cache: ImageCache = { ...existingCache };
 
+  // Build reverse lookup map for O(1) search
+  const existingCacheMap = Object.keys(existingCache).length > 0
+    ? new Map(Object.entries(existingCache).map(([id, data]) => [data, id]))
+    : undefined;
+
   // Process objects (but skip main menu - each player has their own)
   const processedObjects: any = {};
   Object.entries(state.objects || {}).forEach(([id, obj]) => {
@@ -191,7 +176,7 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
     if (obj.type === 'PANEL' && obj.panelType === 'MAIN_MENU') {
       return;
     }
-    processedObjects[id] = extractImagesToCache(obj, cache, existingCache);
+    processedObjects[id] = extractImagesToCache(obj, cache, existingCache, existingCacheMap);
   });
 
   // Debug: check if extraction worked
@@ -201,6 +186,39 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
 
   if (hasBase64) {
     console.warn('[P2P Debug] extractImagesFromState: State still has base64 data! Extraction failed.');
+    console.warn('[P2P Debug] Objects with remaining base64:', Object.values(processedObjects).filter(obj => {
+      const json = JSON.stringify(obj);
+      return json.includes('data:image/');
+    }).map(obj => {
+      // Log which fields have base64
+      const fieldsWithBase64: string[] = [];
+      const findBase64 = (item: any, path = '') => {
+        if (typeof item === 'string' && item.startsWith('data:image/')) {
+          fieldsWithBase64.push(path || 'unknown');
+        } else if (typeof item === 'object' && item !== null) {
+          Object.entries(item).forEach(([key, value]) => {
+            findBase64(value, path ? `${path}.${key}` : key);
+          });
+        }
+      };
+      findBase64(obj);
+      return { id: obj.id, type: obj.type, fields: fieldsWithBase64 };
+    }));
+  }
+
+  console.log(`[ImageCache] Extracted ${Object.keys(cache).length} images (${Object.keys(cache).length - Object.keys(existingCache).length} new) from ${Object.keys(processedObjects).length} objects`);
+
+  // Debug: check DECK objects specifically
+  const decks = Object.values(processedObjects).filter((obj: any) => obj.type === 'DECK');
+  if (decks.length > 0) {
+    console.log(`[ImageCache] Processed ${decks.length} decks:`, decks.map((deck: any) => ({
+      id: deck.id,
+      name: deck.name,
+      hasSpriteConfig: !!deck.spriteConfig,
+      hasSpriteUrl: !!deck.spriteConfig?.spriteUrl,
+      spriteUrlType: deck.spriteConfig?.spriteUrl?.substring(0, 20),
+      hasCardBackUrl: !!deck.spriteConfig?.cardBackUrl
+    })));
   }
 
   // Filter out viewTransform from sync (pixelsPerVU is screen-specific)
@@ -235,4 +253,251 @@ export function getNewImages(currentCache: ImageCache, existingCache: ImageCache
     }
   }
   return newImages;
+}
+
+// ============================================================
+// INDEXEDDB PERSISTENT STORAGE (for page reload recovery)
+// ============================================================
+
+const IDB_DB_NAME = 'NexusGameTable_Images';
+const IDB_DB_VERSION = 1;
+const IDB_STORE_NAME = 'cachedImages';
+
+interface IDBImageEntry {
+  id: string;
+  data: string; // base64 data URL
+  timestamp: number;
+}
+
+let idbDatabase: IDBDatabase | null = null;
+
+/**
+ * Initialize IndexedDB for persistent image storage
+ */
+async function initIDB(): Promise<IDBDatabase> {
+  if (idbDatabase) return idbDatabase;
+
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_DB_NAME, IDB_DB_VERSION);
+
+    request.onerror = () => reject(new Error('Failed to open IndexedDB'));
+    request.onsuccess = () => {
+      idbDatabase = request.result;
+      resolve(idbDatabase);
+    };
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+
+      if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+        const store = db.createObjectStore(IDB_STORE_NAME, { keyPath: 'id' });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+    };
+  });
+}
+
+/**
+ * Save image cache to IndexedDB for persistence
+ */
+export async function saveImageCacheToIDB(cache: ImageCache): Promise<void> {
+  try {
+    const db = await initIDB();
+    const transaction = db.transaction([IDB_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(IDB_STORE_NAME);
+
+    // Save each image to IndexedDB
+    const promises = Object.entries(cache).map(([id, data]) => {
+      return new Promise<void>((resolve, reject) => {
+        const entry: IDBImageEntry = {
+          id,
+          data,
+          timestamp: Date.now()
+        };
+
+        const request = store.put(entry);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    });
+
+    await Promise.all(promises);
+    console.log(`[ImageCache] Saved ${Object.keys(cache).length} images to IndexedDB`);
+  } catch (error) {
+    console.error('[ImageCache] Failed to save to IndexedDB:', error);
+  }
+}
+
+/**
+ * Save single image to IndexedDB (call when user uploads an image)
+ */
+export async function saveSingleImageToIDB(imageId: string, dataUrl: string): Promise<void> {
+  try {
+    const db = await initIDB();
+    const transaction = db.transaction([IDB_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(IDB_STORE_NAME);
+
+    const entry: IDBImageEntry = {
+      id: imageId,
+      data: dataUrl,
+      timestamp: Date.now()
+    };
+
+    return new Promise((resolve, reject) => {
+      const request = store.put(entry);
+
+      request.onsuccess = () => {
+        console.log(`[ImageCache] Saved image ${imageId} to IndexedDB`);
+        resolve();
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('[ImageCache] Failed to save single image:', error);
+  }
+}
+
+/**
+ * Load image cache from IndexedDB
+ */
+export async function loadImageCacheFromIDB(): Promise<ImageCache> {
+  try {
+    const db = await initIDB();
+    const transaction = db.transaction([IDB_STORE_NAME], 'readonly');
+    const store = transaction.objectStore(IDB_STORE_NAME);
+
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const entries: IDBImageEntry[] = request.result;
+        const cache: ImageCache = {};
+
+        entries.forEach(entry => {
+          cache[entry.id] = entry.data;
+        });
+
+        console.log(`[ImageCache] Loaded ${Object.keys(cache).length} images from IndexedDB`);
+        resolve(cache);
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('[ImageCache] Failed to load from IndexedDB:', error);
+    return {};
+  }
+}
+
+/**
+ * Get specific image from IndexedDB
+ */
+export async function getImageFromIDB(imageId: string): Promise<string | null> {
+  try {
+    const db = await initIDB();
+    const transaction = db.transaction([IDB_STORE_NAME], 'readonly');
+    const store = transaction.objectStore(IDB_STORE_NAME);
+
+    return new Promise((resolve, reject) => {
+      const request = store.get(imageId);
+
+      request.onsuccess = () => {
+        const entry: IDBImageEntry = request.result;
+        resolve(entry ? entry.data : null);
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('[ImageCache] Failed to get image from IndexedDB:', error);
+    return null;
+  }
+}
+
+/**
+ * Clear all images from IndexedDB
+ */
+export async function clearImageCacheIDB(): Promise<void> {
+  try {
+    const db = await initIDB();
+    const transaction = db.transaction([IDB_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(IDB_STORE_NAME);
+
+    return new Promise((resolve, reject) => {
+      const request = store.clear();
+
+      request.onsuccess = () => {
+        console.log('[ImageCache] Cleared all images from IndexedDB');
+        resolve();
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('[ImageCache] Failed to clear IndexedDB:', error);
+  }
+}
+
+/**
+ * Clean old images from IndexedDB (older than specified days)
+ */
+export async function cleanOldImagesFromIDB(daysOld: number = 30): Promise<number> {
+  try {
+    const db = await initIDB();
+    const cutoffTime = Date.now() - (daysOld * 24 * 60 * 60 * 1000);
+
+    const transaction = db.transaction([IDB_STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(IDB_STORE_NAME);
+    const index = store.index('timestamp');
+
+    return new Promise((resolve, reject) => {
+      const request = index.openCursor(IDBKeyRange.upperBound(cutoffTime));
+      let deletedCount = 0;
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result;
+        if (cursor) {
+          cursor.delete();
+          deletedCount++;
+          cursor.continue();
+        } else {
+          console.log(`[ImageCache] Cleaned ${deletedCount} old images from IndexedDB`);
+          resolve(deletedCount);
+        }
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('[ImageCache] Failed to clean old images:', error);
+    return 0;
+  }
+}
+
+/**
+ * Get IndexedDB cache size info
+ */
+export async function getIDBCacheInfo(): Promise<{ count: number; totalSize: number }> {
+  try {
+    const db = await initIDB();
+    const transaction = db.transaction([IDB_STORE_NAME], 'readonly');
+    const store = transaction.objectStore(IDB_STORE_NAME);
+
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const entries: IDBImageEntry[] = request.result;
+        const totalSize = entries.reduce((sum, entry) => sum + entry.data.length, 0);
+        resolve({ count: entries.length, totalSize });
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('[ImageCache] Failed to get cache info:', error);
+    return { count: 0, totalSize: 0 };
+  }
 }

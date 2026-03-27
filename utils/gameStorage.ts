@@ -2,9 +2,49 @@ import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, Und
 import type { GameState, ViewTransform } from '../store/GameContext';
 import { SCROLLBAR_WIDTH } from '../constants';
 import { logger } from './logger';
+import {
+  convertImagesToPathMetadata,
+  restoreImagesFromPathMetadata,
+  getImagePathVersion
+} from './imagePathStorage';
+import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache } from './imageCache';
 
 const STORAGE_KEY = 'nexus-game-state';
-const STORAGE_VERSION = 6; // Version with hyperscale layers saving
+const STORAGE_VERSION = 7; // Version with image path storage (no actual image data)
+
+// In-memory cache for IDB images to avoid repeated reads
+let cachedIDBCache: ImageCache | null = null;
+let cacheLoadPromise: Promise<ImageCache> | null = null;
+
+/**
+ * Get IDB cache from memory or load it once (cached for performance)
+ */
+async function getOrLoadIDBCache(): Promise<ImageCache> {
+  if (cachedIDBCache) {
+    logger.log(`[SAVE] Using cached IDB cache (${Object.keys(cachedIDBCache).length} images)`);
+    return cachedIDBCache;
+  }
+
+  if (cacheLoadPromise) {
+    logger.log('[SAVE] Waiting for IDB cache load...');
+    return cacheLoadPromise;
+  }
+
+  logger.log('[SAVE] Loading IDB cache...');
+  cacheLoadPromise = loadImageCacheFromIDB();
+  const cache = await cacheLoadPromise;
+  cachedIDBCache = cache;
+  cacheLoadPromise = null;
+
+  return cache;
+}
+
+/**
+ * Invalidate IDB cache (call after saving new images)
+ */
+function invalidateIDBCache(): void {
+  cachedIDBCache = null;
+}
 
 interface ViewportInfo {
   width: number;
@@ -17,66 +57,6 @@ export interface StoredGameState {
   viewport: ViewportInfo;
   state: Partial<GameState>;
 }
-
-/**
- * Convert blob URL to base64 data URL
- */
-const convertBlobToBase64 = async (blobUrl: string): Promise<string> => {
-  if (!blobUrl.startsWith('blob:')) {
-    return blobUrl; // Not a blob URL, return as is
-  }
-
-  try {
-    const response = await fetch(blobUrl);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    logger.warn('Failed to convert blob to base64:', error);
-    return blobUrl; // Return original on error
-  }
-};
-
-/**
- * Convert all blob URLs in objects to base64 data URLs
- */
-const convertBlobsInObjects = async (objects: Record<string, TableObject>): Promise<Record<string, TableObject>> => {
-  const convertedObjects: Record<string, TableObject> = {};
-
-  for (const [id, obj] of Object.entries(objects)) {
-    const convertedObj = { ...obj };
-
-    // Convert content (image URL) if it's a blob URL (only for objects that have content property)
-    if ('content' in convertedObj && convertedObj.content && convertedObj.content.startsWith('blob:')) {
-      convertedObj.content = await convertBlobToBase64(convertedObj.content);
-    }
-
-    // Convert alternativeBack URL if present
-    if ((convertedObj as any).alternativeBack?.url?.startsWith('blob:')) {
-      (convertedObj as any).alternativeBack.url = await convertBlobToBase64((convertedObj as any).alternativeBack.url);
-    }
-
-    // Convert spriteConfig URLs if present
-    if ((convertedObj as any).spriteConfig) {
-      const spriteConfig = { ...(convertedObj as any).spriteConfig };
-      if (spriteConfig.spriteUrl?.startsWith('blob:')) {
-        spriteConfig.spriteUrl = await convertBlobToBase64(spriteConfig.spriteUrl);
-      }
-      if (spriteConfig.cardBackUrl?.startsWith('blob:')) {
-        spriteConfig.cardBackUrl = await convertBlobToBase64(spriteConfig.cardBackUrl);
-      }
-      (convertedObj as any).spriteConfig = spriteConfig;
-    }
-
-    convertedObjects[id] = convertedObj;
-  }
-
-  return convertedObjects;
-};
 
 /**
  * Save the current game state to localStorage with viewport info
@@ -95,9 +75,52 @@ export const saveGameState = async (state: GameState): Promise<void> => {
       objectsToSave[id] = obj;
     });
 
-    // Convert blob URLs to base64 before saving
-    const convertedObjects = await convertBlobsInObjects(objectsToSave);
+    // First: Extract images to cache and save to IndexedDB BEFORE converting to metadata
+    // Get existing IDB cache to avoid re-saving images we already have (cached in memory)
+    const existingIDBCache = await getOrLoadIDBCache();
+    const { state: extractedState, imageCache } = extractImagesFromState({ objects: objectsToSave }, existingIDBCache);
 
+    // Save ONLY NEW images to IndexedDB (async - don't await to avoid blocking save)
+    const newImages = getNewImages(imageCache, existingIDBCache);
+    if (Object.keys(newImages).length > 0) {
+      saveImageCacheToIDB(newImages)
+        .then(() => {
+          // Update cache after successful save
+          if (cachedIDBCache) {
+            Object.assign(cachedIDBCache, newImages);
+          }
+        })
+        .catch(error => {
+          logger.error('[SAVE] Failed to save images to IndexedDB:', error);
+        });
+      logger.log(`[SAVE] Saved ${Object.keys(newImages).length} new images to IndexedDB (skipped ${Object.keys(existingIDBCache).length} existing)`);
+    }
+
+    // Then: Convert EXTRACTED objects (with img_ref://) to path metadata for localStorage
+    const convertedObjects = convertImagesToPathMetadata(extractedState.objects || {});
+
+    // Debug: Check if any blob URLs remain after conversion
+    let blobCount = 0;
+    let dataUrlCount = 0;
+    Object.values(convertedObjects).forEach(obj => {
+      const checkForBlobs = (item: any) => {
+        if (typeof item === 'string') {
+          if (item.startsWith('blob:')) blobCount++;
+          if (item.startsWith('data:image/')) dataUrlCount++;
+        } else if (typeof item === 'object' && item !== null) {
+          Object.values(item).forEach(checkForBlobs);
+        }
+      };
+      checkForBlobs(obj);
+    });
+
+    if (blobCount > 0 || dataUrlCount > 0) {
+      logger.error(`[SAVE] ERROR: ${blobCount} blob URLs and ${dataUrlCount} data URLs remain after conversion!`);
+    } else {
+      logger.log('[SAVE] All images successfully converted to metadata');
+    }
+
+    // Create stored data structure
     const storedData: StoredGameState = {
       version: STORAGE_VERSION,
       timestamp: Date.now(),
@@ -106,7 +129,7 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         height: window.innerHeight
       },
       state: {
-        // Save objects (the main game data)
+        // Save objects (the main game data) - keeping original URLs
         objects: convertedObjects,
         // Save players
         players: state.players,
@@ -131,17 +154,43 @@ export const saveGameState = async (state: GameState): Promise<void> => {
       }
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(storedData));
+    // Save to localStorage (keeping blob URLs as-is)
+    try {
+      const json = JSON.stringify(storedData);
+
+      // Debug: log size of each component
+      const size = new Blob([json]).size;
+      const objectsSize = new Blob([JSON.stringify(storedData.state.objects)]).size;
+      const drawingsSize = storedData.state.drawings ? new Blob([JSON.stringify(storedData.state.drawings)]).size : 0;
+      const playersSize = storedData.state.players ? new Blob([JSON.stringify(storedData.state.players)]).size : 0;
+
+      logger.log(`[SAVE] Total size: ${Math.round(size / 1024)}KB (objects: ${Math.round(objectsSize / 1024)}KB, drawings: ${Math.round(drawingsSize / 1024)}KB, players: ${Math.round(playersSize / 1024)}KB)`);
+
+      localStorage.setItem(STORAGE_KEY, json);
+      logger.log(`[SAVE] Game saved successfully (${Math.round(size / 1024)}KB)`);
+    } catch (error) {
+      logger.error('Failed to save game state:', error);
+    }
   } catch (error) {
     logger.error('Failed to save game state:', error);
   }
 };
 
 /**
+ * Callback function type for loading images from packs
+ */
+type PackImageLoader = (filename: string) => Promise<string>;
+
+/**
  * Load the game state from localStorage
  * Adapts objects only if user is HOST or playing SOLO
+ * @param isGuest Whether the current user is a guest
+ * @param loadPackImage Optional callback to load images from packs
  */
-export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
+export const loadGameState = (
+  isGuest: boolean,
+  loadPackImage?: PackImageLoader
+): Partial<GameState> | null => {
   if (typeof window === 'undefined') return null;
 
   try {
@@ -150,7 +199,23 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
       return null;
     }
 
-    const parsed = JSON.parse(stored);
+    // Check size before parsing
+    const storedSize = stored.length;
+    if (storedSize > 50 * 1024 * 1024) { // 50MB limit (string length)
+      logger.warn(`[LOAD] Saved state too large: ${Math.round(storedSize / 1024 / 1024)}MB. Clearing and returning null.`);
+      clearGameState();
+      return null;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(stored);
+    } catch (parseError) {
+      logger.error('[LOAD] Failed to parse saved state:', parseError);
+      logger.warn('[LOAD] Clearing corrupted save data.');
+      clearGameState();
+      return null;
+    }
 
     // Migrate old formats
     if (!parsed.version || parsed.version < 3) {
@@ -219,6 +284,8 @@ export const loadGameState = (isGuest: boolean): Partial<GameState> | null => {
       ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
       : data.state;
 
+    // Restore images from path metadata (async but we'll update state later)
+    // For now, return the state and let the caller handle image restoration
     return adaptedState;
   } catch (error) {
     logger.error('[LOAD_STATE] Failed to load game state:', error);
@@ -435,6 +502,30 @@ function adaptStateToViewport(
 }
 
 /**
+ * Restore images from path metadata in loaded game state
+ * Call this after loadGameState to restore actual image URLs
+ * @param state The loaded game state
+ * @param loadPackImage Optional callback to load images from packs
+ */
+export const restoreImagesInState = async (
+  state: Partial<GameState>,
+  loadPackImage?: PackImageLoader
+): Promise<Partial<GameState>> => {
+  if (!state.objects) return state;
+
+  try {
+    const restoredObjects = await restoreImagesFromPathMetadata(state.objects, loadPackImage);
+    return {
+      ...state,
+      objects: restoredObjects
+    };
+  } catch (error) {
+    logger.error('[RESTORE] Failed to restore images:', error);
+    return state; // Return original state on error
+  }
+};
+
+/**
  * Clear the saved game state from localStorage
  */
 export const clearGameState = (): void => {
@@ -492,6 +583,30 @@ export const hasSavedGameState = (): boolean => {
     return !!stored;
   } catch (error) {
     return false;
+  }
+};
+
+/**
+ * Check if game state is too large for localStorage (simplified check)
+ */
+export const isGameStateTooLarge = (state: GameState): { tooLarge: boolean; reason?: string; recommendation?: string } => {
+  if (typeof window === 'undefined') return { tooLarge: false };
+
+  try {
+    const objectCount = Object.keys(state.objects).length;
+
+    // Simple check: too many objects might indicate large images
+    if (objectCount > 1000) {
+      return {
+        tooLarge: true,
+        reason: `Too many objects (${objectCount}). Consider using packs for large games.`,
+        recommendation: 'Use "Create Pack" for large games with many images'
+      };
+    }
+
+    return { tooLarge: false };
+  } catch (error) {
+    return { tooLarge: true, reason: 'Cannot analyze game state' };
   }
 };
 

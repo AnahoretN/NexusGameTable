@@ -24,6 +24,7 @@ export interface GameState {
   selectedHyperscaleLayerIds: string[]; // IDs of hyperscale layers currently selected for manipulation
   connectionsLocked: boolean; // Whether new player connections are locked (host only)
   diceGroups: DiceGroup[]; // Dice groups for rolling multiple dice together
+  lastModifiedBy?: string; // ID of player who last modified the game state
 }
 
 /**
@@ -59,6 +60,8 @@ export const initialState: GameState = {
   diceGroups: [],
   // Load language from localStorage or default to 'en'
   language: (typeof localStorage !== 'undefined' && (localStorage.getItem('app-language') as AppLanguage)) || 'en',
+  // Track who last modified the game state (for auto-save timers)
+  lastModifiedBy: 'gm',
   // Default hyperscale layers
   hyperscaleLayers: [
     {
