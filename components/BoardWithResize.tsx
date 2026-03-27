@@ -181,7 +181,9 @@ function arePropsEqual(
     prevProps.gridHeight === nextProps.gridHeight &&
     prevProps.gridSize === nextProps.gridSize &&
     prevProps.obj.width === nextProps.obj.width &&
-    prevProps.obj.height === nextProps.obj.height
+    prevProps.obj.height === nextProps.obj.height &&
+    (prevProps.obj as any).content === (nextProps.obj as any).content &&
+    (prevProps.obj as any).color === (nextProps.obj as any).color
   );
 }
 

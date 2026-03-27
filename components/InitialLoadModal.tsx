@@ -1,6 +1,5 @@
 import React from 'react';
 import { MAIN_MENU_WIDTH } from '../constants';
-import { clearAllData } from '../utils/gameStorage';
 
 export interface InitialLoadStep {
   message: string;
@@ -14,14 +13,6 @@ interface InitialLoadModalProps {
 
 export const InitialLoadModal: React.FC<InitialLoadModalProps> = ({ steps, isVisible }) => {
   if (!isVisible) return null;
-
-  const hasErrors = steps.some(step => step.status === 'error');
-  const handleClearCache = () => {
-    if (confirm('Are you sure you want to clear all saved data? This will delete your game progress and cannot be undone.')) {
-      clearAllData();
-      window.location.reload();
-    }
-  };
 
   return (
     <div style={{
@@ -108,37 +99,6 @@ export const InitialLoadModal: React.FC<InitialLoadModalProps> = ({ steps, isVis
           ))}
         </div>
 
-        {hasErrors && (
-          <button
-            onClick={handleClearCache}
-            style={{
-              marginTop: '20px',
-              padding: '12px 24px',
-              backgroundColor: '#f38ba8',
-              color: '#1e1e2e',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              ':hover': {
-                backgroundColor: '#ef4444',
-                transform: 'scale(1.05)'
-              }
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#ef4444';
-              e.currentTarget.style.transform = 'scale(1.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#f38ba8';
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-          >
-            ⚠️ Clear Cache & Reset
-          </button>
-        )}
 
         <style>{`
           @keyframes spin {

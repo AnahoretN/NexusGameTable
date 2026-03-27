@@ -38,7 +38,7 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [sizeWarning, setSizeWarning] = useState<string>('');
 
-  const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
+  const MAX_FILE_SIZE = 3 * 1024 * 1024; // 3MB
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,7 +46,7 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
       // Check file size
       if (file.size > MAX_FILE_SIZE) {
         const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-        setSizeWarning(`⚠️ File size: ${sizeMB}MB exceeds 2MB limit. Please use smaller images for better performance.`);
+        setSizeWarning(`⚠️ File size: ${sizeMB}MB exceeds 3MB limit.`);
         // Reset input
         e.target.value = '';
         return;
@@ -55,7 +55,7 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
       // Show warning for files > 1MB (but allow them)
       if (file.size > 1024 * 1024) {
         const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-        setSizeWarning(`⚠️ Large file: ${sizeMB}MB. This may cause performance issues. Recommended: < 1MB`);
+        setSizeWarning(`⚠️ Large file: ${sizeMB}MB. Recommended: <3MB`);
       } else {
         setSizeWarning('');
       }
