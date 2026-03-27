@@ -36,10 +36,30 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [sizeWarning, setSizeWarning] = useState<string>('');
+
+  const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Check file size
+      if (file.size > MAX_FILE_SIZE) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+        setSizeWarning(`⚠️ File size: ${sizeMB}MB exceeds 2MB limit. Please use smaller images for better performance.`);
+        // Reset input
+        e.target.value = '';
+        return;
+      }
+
+      // Show warning for files > 1MB (but allow them)
+      if (file.size > 1024 * 1024) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+        setSizeWarning(`⚠️ Large file: ${sizeMB}MB. This may cause performance issues. Recommended: < 1MB`);
+      } else {
+        setSizeWarning('');
+      }
+
       setIsLoading(true);
       try {
         // Convert to base64 for P2P sharing
@@ -107,10 +127,30 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
     return (
       <div>
         <label className="block text-xs font-bold text-gray-400 mb-1">{label}</label>
+        {sizeWarning && (
+          <div className="text-xs text-purple-400 font-semibold mb-2" style={{
+            color: '#a78bfa',
+            fontWeight: 'bold'
+          }}>
+            {sizeWarning}
+          </div>
+        )}
         {inputElement}
       </div>
     );
   }
 
-  return inputElement;
+  return (
+    <div>
+      {sizeWarning && (
+        <div className="text-xs text-purple-400 font-semibold mb-2" style={{
+          color: '#a78bfa',
+          fontWeight: 'bold'
+        }}>
+          {sizeWarning}
+        </div>
+      )}
+      {inputElement}
+    </div>
+  );
 };
