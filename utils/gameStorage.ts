@@ -7,7 +7,7 @@ import {
   restoreImagesFromPathMetadata,
   getImagePathVersion
 } from './imagePathStorage';
-import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache } from './imageCache';
+import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache, clearImageCacheIDB } from './imageCache';
 
 const STORAGE_KEY = 'nexus-game-state';
 const STORAGE_VERSION = 7; // Version with image path storage (no actual image data)
@@ -562,11 +562,18 @@ export const clearAllData = (): void => {
       }
     });
 
+    // Clear IndexedDB (this is where large images are cached!)
+    clearImageCacheIDB().catch(error => {
+      logger.error('[CLEAR] Failed to clear IndexedDB:', error);
+    });
+
     // Clear URL parameters to reset guest/host state
     if (window.location.search.includes('hostId')) {
       const cleanUrl = window.location.pathname + window.location.hash;
       window.history.replaceState({}, '', cleanUrl);
     }
+
+    logger.log('[CLEAR] All data cleared successfully');
   } catch (error) {
     logger.error('[CLEAR] Failed to clear all data:', error);
   }
