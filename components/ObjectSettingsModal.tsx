@@ -1,10 +1,17 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell } from '../types';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup } from '../types';
 
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2 } from 'lucide-react';
+import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Magnet } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
+import { calculateHexHeight, calculateFlatHexHeight } from '../utils/gridUtils';
+import { CARD_SHAPE_DIMS } from '../constants';
+
+// Hex grid constants
+const HEX_RATIO = 1.15;
+const DEFAULT_HEX_WIDTH = 100;  // Pointy-top default width
+const DEFAULT_FLAT_HEX_WIDTH = 115;  // Flat-top default width
 
 interface ObjectSettingsModalProps {
   object: TableObject;
@@ -12,6 +19,8 @@ interface ObjectSettingsModalProps {
   onClose: () => void;
   allObjects?: Record<string, TableObject>; // All objects in the game
   language?: AppLanguage; // Language for translations
+  diceGroups?: DiceGroup[]; // Dice groups for grouping dice
+  dispatch?: React.Dispatch<any>; // Dispatch function for updating groups
 }
 
 // Translate GridType value to display name
@@ -20,7 +29,8 @@ function translateGridType(gridType: GridType, language: AppLanguage = 'en'): st
   const lookupKey: Record<typeof gridType, string> = {
     [GridType.NONE]: 'None',
     [GridType.SQUARE]: 'Square',
-    [GridType.HEX]: 'Hex'
+    [GridType.HEX]: 'Hex',
+    [GridType.HEX_HORIZONTAL]: 'Hex (Horizontal)'
   };
   return translate(lookupKey[gridType], language as Locale);
 }
@@ -28,13 +38,12 @@ function translateGridType(gridType: GridType, language: AppLanguage = 'en'): st
 // Get available actions with translated labels
 function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
   return [
+    { id: 'topDeck', label: translate('Top Deck (section)', language as Locale) },
     { id: 'draw', label: translate('Draw Card', language as Locale) },
     { id: 'playTopCard', label: translate('Play Top', language as Locale) },
     { id: 'millTopCard', label: translate('Mill', language as Locale) },
-    { id: 'millToBottom', label: translate('To Bottom', language as Locale) },
     { id: 'toBottom', label: translate('To Bottom', language as Locale) },
     { id: 'showTop', label: translate('Show Top', language as Locale) },
-    { id: 'topDeck', label: translate('Top Deck (section)', language as Locale) },
     { id: 'searchDeck', label: translate('Search', language as Locale) },
     { id: 'shuffleDeck', label: translate('Shuffle', language as Locale) },
     { id: 'piles', label: translate('Piles', language as Locale) },
@@ -44,17 +53,11 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
     { id: 'delete', label: translate('Delete Object', language as Locale) },
     { id: 'flip', label: translate('Flip Card', language as Locale) },
     { id: 'layer', label: translate('Change Layer (section)', language as Locale) },
-    { id: 'layerUp', label: translate('Layer Up', language as Locale) },
-    { id: 'layerDown', label: translate('Layer Down', language as Locale) },
-    { id: 'bringToFront', label: translate('To Top', language as Locale) },
-    { id: 'sendToBack', label: translate('To Bottom', language as Locale) },
-    { id: 'lock', label: translate('Lock/Unlock Position', language as Locale) },
-    { id: 'pin', label: translate('Pin/Unpin to Screen', language as Locale) },
+    { id: 'lock', label: translate('Lock/Unlock', language as Locale) },
+    { id: 'pin', label: translate('Pin/Unpin', language as Locale) },
     { id: 'rotate', label: translate('Rotation (section)', language as Locale) },
-    { id: 'rotateClockwise', label: translate('Rotate Clockwise', language as Locale) },
-    { id: 'rotateCounterClockwise', label: translate('Rotate Counter-Clockwise', language as Locale) },
-    { id: 'swingClockwise', label: translate('Swing Clockwise', language as Locale) },
-    { id: 'swingCounterClockwise', label: translate('Swing Counter-Clockwise', language as Locale) },
+    { id: 'swingClockwise', label: translate('Swing CW', language as Locale) },
+    { id: 'swingCounterClockwise', label: translate('Swing CCW', language as Locale) },
   ];
 }
 
@@ -70,7 +73,8 @@ function getMoveToActions(language: AppLanguage = 'en'): { id: ContextAction; la
 }
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'showTop', 'topDeck', 'piles', 'bringToFront', 'sendToBack'];
+// Submenu actions are excluded since they depend on their parent section (layer/rotate/topDeck)
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'topDeck', 'piles'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -83,24 +87,19 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   if (!isActionButtonAllowed(action)) return [];
 
   switch (action) {
-    case 'draw':
-    case 'playTopCard':
     case 'shuffleDeck':
     case 'searchDeck':
+    case 'draw':
+    case 'playTopCard':
     case 'millTopCard':
     case 'toBottom':
+    case 'showTop':
       return [ItemType.DECK];
-    case 'rotateClockwise':
-    case 'rotateCounterClockwise':
-    case 'swingClockwise':
-    case 'swingCounterClockwise':
-    case 'layerUp':
-    case 'layerDown':
-      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
     case 'flip':
       return [ItemType.CARD, ItemType.TOKEN];
-    case 'rotate':
-      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
+    case 'swingClockwise':
+    case 'swingCounterClockwise':
+      return [ItemType.CARD];
     // "Move to" actions for cards
     case 'moveToHand':
     case 'moveToTopDeck':
@@ -112,32 +111,43 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   }
 }
 
-type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite';
+type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite' | 'groups';
 
-export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en' }) => {
+export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
+
+  // Proportional resize states - initialize from object data, default to true
+  const getInitialLinkState = (value?: boolean) => value !== undefined ? value : true;
+  const [linkObjectSize, setLinkObjectSize] = useState(getInitialLinkState((object as any).linkObjectSize));
+  const [linkGridSize, setLinkGridSize] = useState(getInitialLinkState((object as any).linkGridSize));
+  const [linkCardSize, setLinkCardSize] = useState(getInitialLinkState((object as any).linkCardSize));
+  const [objectRatio, setObjectRatio] = useState(1);
+  const [cardRatio, setCardRatio] = useState(1);
 
   // Translation helper
 
   // Get translated action labels
   const AVAILABLE_ACTIONS = getAvailableActions(language);
   const MOVE_TO_ACTIONS = getMoveToActions(language);
+  // Exclude section headers from click actions (note: showTop is NOT a section, it's a concrete action)
+  const SECTION_ACTIONS: ContextAction[] = ['layer', 'rotate', 'topDeck', 'piles', 'moveTo'];
   const CLICK_ACTIONS = [
     { id: 'none' as const, label: translate('None', language as Locale) },
-    ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+    ...AVAILABLE_ACTIONS.filter(a => !SECTION_ACTIONS.includes(a.id)).map(a => ({ id: a.id, label: a.label }))
   ];
   const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
     { id: 'none' as const, label: translate('None', language as Locale) },
     { id: 'showTooltipImage' as const, label: translate('Card Tooltip Image', language as Locale) },
-    ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+    ...[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS].map(a => ({ id: a.id, label: a.label }))
       .filter(action => {
         // Exclude deck-specific and section actions
-        if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-            action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'hide' ||
+        if (action.id === 'hide' ||
             action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
             action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-            action.id === 'rotate' || action.id === 'showTop' || action.id === 'layer') {
+            action.id === 'rotate' || action.id === 'layer' ||
+            action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+            action.id === 'toBottom' || action.id === 'showTop') {
           return false;
         }
         // Exclude section headers
@@ -163,30 +173,68 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     ]) : []
   );
 
-  // Function to normalize dimensions based on shape (make it a "perfect" shape)
-  const normalizeShapeSizes = (shape: TokenShape, currentWidth: number, currentHeight: number): { width: number; height: number } => {
-    const avgSize = (currentWidth + currentHeight) / 2;
+  // Groups state
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupColor, setNewGroupColor] = useState('#8b5cf6');
+  const [draggedDiceId, setDraggedDiceId] = useState<string | null>(null);
 
+  // Get all dice objects
+  const allDice: DiceObject[] = Object.values(allObjects).filter(
+    obj => obj.type === ItemType.DICE_OBJECT
+  ) as DiceObject[];
+
+  // Groups handlers
+  const handleCreateGroup = () => {
+    if (!newGroupName.trim() || !dispatch) return;
+    const newGroup: DiceGroup = {
+      id: `group-${Date.now()}`,
+      name: newGroupName.trim(),
+      color: newGroupColor,
+      diceIds: [],
+      visible: true
+    };
+    dispatch({ type: 'ADD_DICE_GROUP', payload: { group: newGroup } });
+    setNewGroupName('');
+    setNewGroupColor('#8b5cf6');
+  };
+
+  const handleUpdateGroup = (groupId: string, updates: Partial<DiceGroup>) => {
+    if (!dispatch) return;
+    dispatch({ type: 'UPDATE_DICE_GROUP', payload: { groupId, updates } });
+  };
+
+  const handleDeleteGroup = (groupId: string) => {
+    if (!dispatch) return;
+    dispatch({ type: 'DELETE_DICE_GROUP', payload: { groupId } });
+  };
+
+  const handleDropDice = (groupId: string | null) => {
+    if (!draggedDiceId || !dispatch) return;
+    dispatch({ type: 'MOVE_DICE_TO_GROUP', payload: { diceId: draggedDiceId, groupId } });
+    setDraggedDiceId(null);
+  };
+
+  // Function to normalize dimensions based on shape (keeps width, adjusts height only)
+  const normalizeShapeSizes = (shape: TokenShape, currentWidth: number, _currentHeight: number): { width: number; height: number } => {
     switch (shape) {
       case TokenShape.CIRCLE:
-        // For circle, width = height
-        return { width: avgSize, height: avgSize };
+        // For circle, height = width (keep width, make height equal)
+        return { width: currentWidth, height: currentWidth };
       case TokenShape.SQUARE:
-        // For square, width = height
-        return { width: avgSize, height: avgSize };
+        // For square, height = width (keep width, make height equal)
+        return { width: currentWidth, height: currentWidth };
       case TokenShape.HEX:
-        // For regular hexagon: height / width = 1.1547
-        return { width: avgSize, height: Math.round(avgSize * 1.1547) };
+        // For pointy-top hexagon: height = width * 1.15
+        return { width: currentWidth, height: Math.round(currentWidth * 1.15) };
       case TokenShape.HEX_HORIZONTAL:
-        // For horizontal hexagon (rotated 90°): width / height = 1.1547
-        return { width: avgSize, height: Math.round(avgSize / 1.1547) };
+        // For flat-top hexagon: height = width / 1.15
+        return { width: currentWidth, height: Math.round(currentWidth / 1.15) };
       case TokenShape.TRIANGLE:
-        // For equilateral triangle: height / width = sqrt(3)/2 ≈ 0.866
-        // Use avgSize as width, calculate height
-        return { width: avgSize, height: Math.round(avgSize * 0.866) };
+        // For equilateral triangle: height = width * √3 / 2
+        return { width: currentWidth, height: Math.round(currentWidth * Math.sqrt(3) / 2) };
       default:
-        // For unknown shapes, just make them equal (square)
-        return { width: avgSize, height: avgSize };
+        // For unknown shapes, just make height equal to width
+        return { width: currentWidth, height: currentWidth };
     }
   };
 
@@ -206,6 +254,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     searchFaceUp?: boolean;
     playTopFaceUp?: boolean;
     searchWindowVisibility?: SearchWindowVisibility;
+    linkCardSize?: boolean; // Remember proportions button state
   }
 
   const [cardSettings, setCardSettings] = useState<CardSettings>(() => {
@@ -224,6 +273,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         searchFaceUp: deck.searchFaceUp ?? true,
         playTopFaceUp: deck.playTopFaceUp ?? true,
         searchWindowVisibility: deck.searchWindowVisibility,
+        linkCardSize: deck.linkCardSize,
       };
     }
     return {};
@@ -270,10 +320,45 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       // Initialize sprite config
       setSpriteConfig(deckObj.spriteConfig || null);
     }
+
+    // Initialize ratios for proportional resize
+    const objWidth = object.width || 50;
+    const objHeight = object.height || 50;
+    setObjectRatio(objHeight / objWidth);
+
+    if (object.type === ItemType.BOARD) {
+      const board = object as Board;
+      // For pointy-top hex grid, force link proportions
+      // For flat-top hex, allow independent dimensions
+      const gridType = board.gridType;
+      if (gridType === GridType.HEX) {
+        setLinkGridSize(true);
+      }
+    }
+
+    if (object.type === ItemType.DECK) {
+      const deckObj = object as Deck;
+      const cardW = deckObj.cardWidth || deckObj.width || 50;
+      const cardH = deckObj.cardHeight || deckObj.height || 50;
+      setCardRatio(cardH / cardW);
+    }
   }, [object]);
 
   const update = (field: string, value: any) => {
     setData(prev => ({ ...prev, [field]: value } as TableObject));
+  };
+
+  const updateMultiple = (fields: Record<string, any>) => {
+    setData(prev => ({ ...prev, ...fields } as TableObject));
+  };
+
+  // Check if value should trigger rounding (only if more than 1 digit)
+  const shouldRound = (value: number): boolean => {
+    if (isNaN(value)) return false;
+    const absValue = Math.abs(value);
+    // Single digit integers (0-9) don't trigger rounding
+    if (absValue < 10 && Number.isInteger(value)) return false;
+    return true;
   };
 
   const toggleActionButton = (action: ContextAction) => {
@@ -297,10 +382,74 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         if (value === CardShape.SQUARE || value === CardShape.CIRCLE) {
           updated.cardOrientation = CardOrientation.VERTICAL;
         }
+
+        // Auto-normalize dimensions when card shape changes
+        // Keep the current width, adjust height based on new shape's aspect ratio
+        const currentWidth = prev.cardWidth ?? deck.width;
+        const currentOrientation = prev.cardOrientation ?? CardOrientation.VERTICAL;
+        const newShape = value as CardShape;
+
+        // For standard card shapes (POKER, BRIDGE, MINI_US, MINI_EURO)
+        if (newShape === CardShape.POKER || newShape === CardShape.BRIDGE ||
+            newShape === CardShape.MINI_US || newShape === CardShape.MINI_EURO) {
+          const baseDims = CARD_SHAPE_DIMS[newShape];
+          const baseRatio = baseDims.height / baseDims.width;
+          // VERTICAL: normal ratio, HORIZONTAL: inverted ratio
+          const ratio = currentOrientation === CardOrientation.VERTICAL ? baseRatio : 1 / baseRatio;
+          const newHeight = Math.round(currentWidth * ratio);
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = newHeight;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', newHeight);
+        }
+        // For HEX_HORIZONTAL, use exact formula: height = width / 1.15
+        else if (newShape === CardShape.HEX_HORIZONTAL) {
+          const newHeight = Math.round(currentWidth / 1.15);
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = newHeight;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', newHeight);
+        }
+        // For HEX, normalization depends on orientation
+        else if (newShape === CardShape.HEX) {
+          // VERTICAL (pointy-top): height = width × 1.15
+          // HORIZONTAL (flat-top): height = width / 1.15
+          const newHeight = currentOrientation === CardOrientation.VERTICAL
+            ? Math.round(currentWidth * 1.15)
+            : Math.round(currentWidth / 1.15);
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = newHeight;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', newHeight);
+        }
+        // For TRIANGLE, use equilateral triangle ratio
+        else if (newShape === CardShape.TRIANGLE) {
+          const newHeight = Math.round(currentWidth * Math.sqrt(3) / 2);
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = newHeight;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', newHeight);
+        }
+        // For SQUARE and CIRCLE, make height equal to width
+        else if (newShape === CardShape.SQUARE || newShape === CardShape.CIRCLE) {
+          updated.cardWidth = currentWidth;
+          updated.cardHeight = currentWidth;
+          // Also update deck dimensions to match
+          update('width', currentWidth);
+          update('height', currentWidth);
+        }
       }
 
       return updated;
     });
+  };
+
+  const updateCardSettingsMultiple = (fields: Partial<CardSettings>) => {
+    setCardSettings(prev => ({ ...prev, ...fields }));
   };
 
   const toggleCardActionButton = (action: ContextAction) => {
@@ -310,33 +459,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     } else {
       setCardSettings(prev => ({ ...prev, actionButtons: [...current, action] }));
     }
-  };
-
-  const toggleCardAllowedAction = (action: ContextAction, forGM: boolean) => {
-    const field = forGM ? 'allowedActionsForGM' : 'allowedActions';
-    const current = cardSettings[field];
-
-    if (current === undefined) {
-      // Currently all allowed, switch to "all except this one"
-      const allExcept = AVAILABLE_ACTIONS.filter(a => a.id !== action).map(a => a.id);
-      setCardSettings(prev => ({ ...prev, [field]: allExcept }));
-    } else if (current.includes(action)) {
-      // Remove this action
-      const updated = current.filter(a => a !== action);
-      // Keep empty array as empty array (none allowed)
-      setCardSettings(prev => ({ ...prev, [field]: updated }));
-    } else {
-      // Add this action
-      const updated = [...current, action];
-      setCardSettings(prev => ({ ...prev, [field]: updated }));
-    }
-  };
-
-  const isCardActionAllowed = (action: ContextAction, forGM: boolean) => {
-    const field = forGM ? 'allowedActionsForGM' : 'allowedActions';
-    const current = cardSettings[field];
-    // undefined = all allowed, [] = none allowed, specific array = only those allowed
-    return current === undefined || (current.length > 0 && current.includes(action));
   };
 
   const handleSave = () => {
@@ -374,7 +496,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     if (toSave.type === ItemType.DECK) {
       (toSave as Deck).piles = piles;
       // Normalize card settings - cards can only use card-specific actions, not deck-specific ones
-      const deckOnlyActions = ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'hide', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'];
+      const deckOnlyActions = ['hide', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'];
       const cardOnlyActions = allActionIds.filter(id => !deckOnlyActions.includes(id));
 
       let normalizedCardAllowedActions: ContextAction[] | undefined = cardSettings.allowedActions;
@@ -402,6 +524,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       (toSave as Deck).searchFaceUp = cardSettings.searchFaceUp;
       (toSave as Deck).playTopFaceUp = cardSettings.playTopFaceUp;
       (toSave as Deck).searchWindowVisibility = cardSettings.searchWindowVisibility;
+      (toSave as Deck).linkCardSize = cardSettings.linkCardSize;
       (toSave as Deck).spriteConfig = spriteConfig || undefined;
     }
 
@@ -455,17 +578,54 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     }
 
     onSave(toSave);
+
+    // After saving, update all cards in the deck when cardWidth/cardHeight/cardOrientation changed
+    if (isDeck) {
+      const deckId = data.id;
+      const cardsInDeck = Object.values(allObjects).filter(obj =>
+        obj.type === ItemType.CARD && (obj as Card).deckId === deckId
+      ) as Card[];
+
+      // Check if card dimensions or orientation changed
+      const oldCardWidth = (data as Deck).cardWidth;
+      const oldCardHeight = (data as Deck).cardHeight;
+      const oldCardOrientation = (data as Deck).cardOrientation;
+      const newCardWidth = cardSettings.cardWidth;
+      const newCardHeight = cardSettings.cardHeight;
+      const newCardOrientation = cardSettings.cardOrientation;
+
+      const dimensionsChanged = oldCardWidth !== newCardWidth || oldCardHeight !== newCardHeight || oldCardOrientation !== newCardOrientation;
+
+      if (dimensionsChanged && cardsInDeck.length > 0) {
+        // Use cardWidth/cardHeight from settings, fallback to deck's width/height
+        const finalCardWidth = newCardWidth ?? (data as Deck).width;
+        const finalCardHeight = newCardHeight ?? (data as Deck).height;
+
+        // Dispatch event to update all cards in this deck
+        window.dispatchEvent(new CustomEvent('update-deck-cards-dimensions', {
+          detail: {
+            deckId,
+            cardWidth: finalCardWidth,
+            cardHeight: finalCardHeight
+          }
+        }));
+      }
+    }
+
     onClose();
   };
 
   const isToken = data.type === ItemType.TOKEN;
   const isArchetype = data.type === ItemType.TOKEN_TYPE;
   const isBoard = data.type === ItemType.BOARD;
+  const isNexusBoard = data.type === ItemType.NEXUS_BOARD;
+  const isNexusCell = data.type === ItemType.NEXUS_CELL;
   const isDeck = data.type === ItemType.DECK;
   const isCard = data.type === ItemType.CARD; // Cards don't have their own settings
   const isDice = data.type === ItemType.DICE_OBJECT;
   const isCounter = data.type === ItemType.COUNTER;
   const isDrawing = data.type === ItemType.DRAWING;
+  const isPanel = data.type === ItemType.PANEL;
   const isBattlefieldCell = data.type === ItemType.BATTLEFIELD_CELL;
 
   // Pile management functions
@@ -521,7 +681,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
           >
             <Settings size={16} /> {translate('General', language as Locale)}
           </button>
-          {!isCard && !isDice && !isCounter && !isBattlefieldCell && (
+          {!isCard && !isDice && !isCounter && !isBattlefieldCell && !isPanel && (
             <button
               onClick={() => setActiveTab('actions')}
               className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
@@ -569,6 +729,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               <ImageIcon size={16} /> {translate('Import', language as Locale)}
             </button>
           )}
+          {isDice && (
+            <button
+              onClick={() => setActiveTab('groups')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'groups'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Dices size={16} /> {translate('Groups', language as Locale)}
+            </button>
+          )}
         </div>
 
         {/* Content */}
@@ -596,8 +768,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         title={translate('Font Color', language as Locale)}
                       />
 
-                      {/* Show Name Toggle - for tokens and token types */}
-                      {(isToken || isArchetype) && (
+                      {/* Show Name Toggle - for tokens, token types, and counters */}
+                      {(isToken || isArchetype || isCounter) && (
                         <button
                           onClick={() => {
                             const targetProp = isArchetype ? 'showName' : 'showNameOnToken';
@@ -627,36 +799,36 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 )}
 
                 {/* Size */}
-                <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-end">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Width', language as Locale)}</label>
                     <input
                       type="number"
+                      step="0.01"
                       value={isArchetype ? (data as any).defaultSize?.width || data.width : data.width}
                       onChange={e => {
-                        const value = Number(e.target.value);
-                        if (isArchetype) {
+                        const value = parseFloat(e.target.value);
+                        const roundHeight = shouldRound(value);
+                        if (isNexusCell) {
+                          // Nexus cells always have 1:1.15 proportion
+                          updateMultiple({ width: value, height: roundHeight ? Math.round(value * 1.15 * 100) / 100 : value * 1.15 });
+                        } else if (isArchetype) {
                           // For token types, update defaultSize
-                          update('defaultSize', { ...(data as any).defaultSize, width: value });
+                          const currentHeight = (data as any).defaultSize?.height || data.height || 50;
+                          update('defaultSize', {
+                            ...(data as any).defaultSize,
+                            width: value,
+                            height: linkObjectSize ? (roundHeight ? Math.round(value * objectRatio * 100) / 100 : value * objectRatio) : currentHeight
+                          });
                         } else {
-                          update('width', value);
-                        }
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Height', language as Locale)}</label>
-                    <input
-                      type="number"
-                      value={isArchetype ? (data as any).defaultSize?.height || data.height : data.height}
-                      onChange={e => {
-                        const value = Number(e.target.value);
-                        if (isArchetype) {
-                          // For token types, update defaultSize
-                          update('defaultSize', { ...(data as any).defaultSize, height: value });
-                        } else {
-                          update('height', value);
+                          if (linkObjectSize) {
+                            updateMultiple({
+                              width: value,
+                              height: roundHeight ? Math.round(value * objectRatio * 100) / 100 : value * objectRatio
+                            });
+                          } else {
+                            update('width', value);
+                          }
                         }
                       }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
@@ -665,10 +837,134 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div className="flex items-end pb-0.5">
                     <button
                       onClick={() => {
+                        if (isNexusCell) return; // Locked for Nexus cells
+                        const newState = !linkObjectSize;
+                        if (!linkObjectSize) {
+                          // Turning on - save current ratio
+                          const currentWidth = isArchetype ? (data as any).defaultSize?.width || data.width : data.width;
+                          const currentHeight = isArchetype ? (data as any).defaultSize?.height || data.height : data.height;
+                          setObjectRatio(currentHeight / currentWidth);
+                        }
+                        setLinkObjectSize(newState);
+                        // Save to object
+                        updateMultiple({ linkObjectSize: newState });
+                      }}
+                      disabled={isNexusCell}
+                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                        isNexusCell
+                          ? 'bg-purple-600 border-purple-500 cursor-not-allowed'
+                          : linkObjectSize
+                            ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
+                            : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                      }`}
+                      title={isNexusCell ? translate('Proportions locked (1:1.15)', language as Locale) : (linkObjectSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale))}
+                    >
+                      <Link size={14} />
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Height', language as Locale)}</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      disabled={isNexusCell}
+                      value={isArchetype ? (data as any).defaultSize?.height || data.height : data.height}
+                      onChange={e => {
+                        const value = parseFloat(e.target.value);
+                        const roundWidth = shouldRound(value);
+                        if (isArchetype) {
+                          // For token types, update defaultSize
+                          const currentWidth = (data as any).defaultSize?.width || data.width || 50;
+                          update('defaultSize', {
+                            ...(data as any).defaultSize,
+                            height: value,
+                            width: linkObjectSize ? (roundWidth ? Math.round(value / objectRatio * 100) / 100 : value / objectRatio) : currentWidth
+                          });
+                        } else {
+                          if (linkObjectSize) {
+                            updateMultiple({
+                              height: value,
+                              width: roundWidth ? Math.round(value / objectRatio * 100) / 100 : value / objectRatio
+                            });
+                          } else {
+                            update('height', value);
+                          }
+                        }
+                      }}
+                      className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${
+                        isNexusCell ? 'cursor-not-allowed opacity-60' : ''
+                      }`}
+                    />
+                  </div>
+                  <div className="flex items-end pb-0.5">
+                    <button
+                      onClick={() => {
                         const currentWidth = isArchetype ? (data as any).defaultSize?.width || data.width : data.width;
                         const currentHeight = isArchetype ? (data as any).defaultSize?.height || data.height : data.height;
-                        const currentShape = (data as any).shape || TokenShape.SQUARE;
-                        const { width, height } = normalizeShapeSizes(currentShape, currentWidth, currentHeight);
+
+                        let width: number;
+                        let height: number;
+
+                        // For decks/archetypes with card shape, use card normalization
+                        if (isDeck || (isArchetype && (data as any).cardShape)) {
+                          const cardShape = (data as any).cardShape || CardShape.POKER;
+                          const cardWidthSetting = (data as any).cardWidth;
+                          const cardHeightSetting = (data as any).cardHeight;
+
+                          // For card shapes with standard aspect ratios (POKER, BRIDGE, MINI_US, MINI_EURO)
+                          if (cardShape === CardShape.POKER || cardShape === CardShape.BRIDGE ||
+                              cardShape === CardShape.MINI_US || cardShape === CardShape.MINI_EURO) {
+                            if (cardWidthSetting && cardHeightSetting) {
+                              // Use the card's aspect ratio from settings: height = width * (cardHeight / cardWidth)
+                              width = currentWidth;
+                              height = Math.round(currentWidth * cardHeightSetting / cardWidthSetting);
+                            } else {
+                              // Use default aspect ratio from CARD_SHAPE_DIMS
+                              const baseDims = CARD_SHAPE_DIMS[cardShape as CardShape];
+                              const ratio = baseDims.height / baseDims.width;
+                              width = currentWidth;
+                              height = Math.round(currentWidth * ratio);
+                            }
+                          } else if (cardShape === CardShape.HEX_HORIZONTAL) {
+                            // For HEX_HORIZONTAL, use exact formula: height = width / 1.15
+                            if (cardWidthSetting && cardHeightSetting) {
+                              width = currentWidth;
+                              height = Math.round(currentWidth / 1.15);
+                            } else {
+                              width = currentWidth;
+                              height = Math.round(currentWidth / 1.15);
+                            }
+                          } else if (cardShape === CardShape.HEX) {
+                            // For HEX, normalization depends on cardOrientation
+                            // Read from cardSettings to get the current (unsaved) orientation value
+                            const orientation = cardSettings.cardOrientation ?? CardOrientation.VERTICAL;
+                            // VERTICAL (pointy-top): height = width × 1.15
+                            // HORIZONTAL (flat-top): height = width / 1.15
+                            width = currentWidth;
+                            height = orientation === CardOrientation.VERTICAL
+                              ? Math.round(currentWidth * 1.15)
+                              : Math.round(currentWidth / 1.15);
+                          } else {
+                            // For other geometric shapes (TRIANGLE, CIRCLE), use existing normalization logic
+                            let tokenShapeForNorm: TokenShape;
+                            if (cardShape === CardShape.TRIANGLE) {
+                              tokenShapeForNorm = TokenShape.TRIANGLE;
+                            } else if (cardShape === CardShape.CIRCLE) {
+                              tokenShapeForNorm = TokenShape.CIRCLE;
+                            } else {
+                              tokenShapeForNorm = TokenShape.SQUARE;
+                            }
+                            const normalized = normalizeShapeSizes(tokenShapeForNorm, currentWidth, currentHeight);
+                            width = normalized.width;
+                            height = normalized.height;
+                          }
+                        } else {
+                          // For tokens, use shape
+                          const tokenShapeForNorm = (data as any).shape || TokenShape.SQUARE;
+                          const normalized = normalizeShapeSizes(tokenShapeForNorm, currentWidth, currentHeight);
+                          width = normalized.width;
+                          height = normalized.height;
+                        }
 
                         if (isArchetype) {
                           update('defaultSize', { ...(data as any).defaultSize, width, height });
@@ -792,7 +1088,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         <option value={TokenShape.SQUARE}>{translate('Square', language as Locale)}</option>
                         <option value={TokenShape.CIRCLE}>{translate('Circle', language as Locale)}</option>
                         <option value={TokenShape.HEX}>{translate('Hex', language as Locale)}</option>
-                        <option value={TokenShape.HEX_HORIZONTAL}>{translate('Hex (Horizontal)', language as Locale)}</option>
                         <option value={TokenShape.TRIANGLE}>{translate('Triangle', language as Locale)}</option>
                       </select>
                     </div>
@@ -871,7 +1166,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <FilePickerInput
                   value={data.content || ''}
                   onChange={value => update('content', value)}
-                  label={translate('Text shown on hover...' , language as Locale)}
+                  label={translate('Image URL', language as Locale)}
                   className="w-full"
                 />
               )}
@@ -973,61 +1268,96 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-2">{translate('Shape', language as Locale)}</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        onClick={() => { update('shape', TokenShape.TRIANGLE); update('height', Math.round((data.width || 60) / 1.155)); }}
-                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
-                          (data as DiceObject).shape === TokenShape.TRIANGLE
-                            ? 'border-purple-500 bg-purple-500/20 text-white'
-                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
-                        }`}
+
+                  {/* Color + Border Color + Shape - side by side, equal width */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Color', language as Locale)}</label>
+                      <input
+                        type="color"
+                        value={data.color || '#6366f1'}
+                        onChange={e => update('color', e.target.value)}
+                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border', language as Locale)}</label>
+                      <input
+                        type="color"
+                        value={(data as any).borderColor || '#4f46e5'}
+                        onChange={e => update('borderColor', e.target.value)}
+                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Shape', language as Locale)}</label>
+                      <select
+                        value={(data as DiceObject).shape || TokenShape.SQUARE}
+                        onChange={e => {
+                          const newShape = e.target.value as TokenShape;
+                          update('shape', newShape);
+                          // Adjust height based on shape
+                          if (newShape === TokenShape.CIRCLE || newShape === TokenShape.SQUARE) {
+                            update('height', data.width);
+                          } else if (newShape === TokenShape.HEX) {
+                            update('height', Math.round(data.width * 1.15));
+                          } else if (newShape === TokenShape.TRIANGLE) {
+                            update('height', Math.round(data.width * Math.sqrt(3) / 2));
+                          }
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                          <polygon points="12,2 22,20 2,20" />
-                        </svg>
-                        <span className="text-xs">{translate('Triangle', language as Locale)}</span>
-                      </button>
-                      <button
-                        onClick={() => { update('shape', TokenShape.SQUARE); update('height', data.width); }}
-                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
-                          ((data as DiceObject).shape === TokenShape.SQUARE || !(data as DiceObject).shape)
-                            ? 'border-purple-500 bg-purple-500/20 text-white'
-                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
-                        }`}
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                          <rect x="3" y="3" width="18" height="18" />
-                        </svg>
-                        <span className="text-xs">{translate('Square', language as Locale)}</span>
-                      </button>
-                      <button
-                        onClick={() => { update('shape', TokenShape.HEX); update('width', Math.round((data.height || 60) / 1.155)); }}
-                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
-                          (data as DiceObject).shape === TokenShape.HEX
-                            ? 'border-purple-500 bg-purple-500/20 text-white'
-                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
-                        }`}
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                          <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" />
-                        </svg>
-                        <span className="text-xs">{translate('Hex', language as Locale)}</span>
-                      </button>
-                      <button
-                        onClick={() => { update('shape', TokenShape.HEX_HORIZONTAL); update('width', Math.round((data.height || 60) * 1.155)); }}
-                        className={`p-2 rounded border-2 flex flex-col items-center gap-1 transition-colors ${
-                          (data as DiceObject).shape === TokenShape.HEX_HORIZONTAL
-                            ? 'border-purple-500 bg-purple-500/20 text-white'
-                            : 'border-slate-700 bg-slate-900 text-gray-400 hover:border-slate-600'
-                        }`}
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                          <polygon points="2,12 7,3 17,3 22,12 17,21 7,21" />
-                        </svg>
-                        <span className="text-xs">{translate('Hex (Horizontal)', language as Locale)}</span>
-                      </button>
+                        <option value={TokenShape.SQUARE}>{translate('Square', language as Locale)}</option>
+                        <option value={TokenShape.CIRCLE}>{translate('Circle', language as Locale)}</option>
+                        <option value={TokenShape.HEX}>{translate('Hex', language as Locale)}</option>
+                        <option value={TokenShape.TRIANGLE}>{translate('Triangle', language as Locale)}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Opacity, Border Opacity, Border Width */}
+                  <div className="grid grid-cols-3 gap-x-2 gap-y-0.5">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Opacity', language as Locale)}</label>
+                      <div className="flex items-center">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={(data as any).opacity ?? 100}
+                          onChange={e => update('opacity', parseInt(e.target.value))}
+                          className="flex-1 accent-purple-500"
+                        />
+                        <span className="text-xs text-gray-400 w-6 text-right">{(data as any).opacity ?? 100}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border Opacity', language as Locale)}</label>
+                      <div className="flex items-center">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={(data as any).borderOpacity ?? 100}
+                          onChange={e => update('borderOpacity', parseInt(e.target.value))}
+                          className="flex-1 accent-purple-500"
+                        />
+                        <span className="text-xs text-gray-400 w-6 text-right">{(data as any).borderOpacity ?? 100}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border Width', language as Locale)}</label>
+                      <div className="flex items-center">
+                        <input
+                          type="range"
+                          min="0"
+                          max="20"
+                          value={(data as any).borderWidth ?? 3}
+                          onChange={e => update('borderWidth', parseInt(e.target.value))}
+                          className="flex-1 accent-purple-500"
+                        />
+                        <span className="text-xs text-gray-400 w-6 text-right">{(data as any).borderWidth ?? 3}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1039,44 +1369,275 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
                     <Grid3x3 size={14} /> {translate('Grid Settings', language as Locale)}
                   </h4>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Type', language as Locale)}</label>
+                    <select
+                      value={(data as Board).gridType || GridType.NONE}
+                      onChange={e => {
+                        const newGridType = e.target.value as GridType;
+                        const board = data as Board;
+                        const isCurrentlyHex = board.gridType === GridType.HEX || board.gridType === GridType.HEX_HORIZONTAL;
+
+                        update('gridType', newGridType);
+
+                        // Always normalize dimensions when switching to HEX grids
+                        if (newGridType === GridType.HEX) {
+                          // Pointy-top hex: use default width if not already set
+                          const width = board.gridWidth || DEFAULT_HEX_WIDTH;
+                          const height = calculateHexHeight(width);
+                          updateMultiple({
+                            gridWidth: width,
+                            gridHeight: Math.round(height * 100) / 100
+                          });
+                          setLinkGridSize(true);  // Force link for pointy-top hex grids
+                        } else if (newGridType === GridType.HEX_HORIZONTAL) {
+                          // Flat-top hex: use default width if not already set
+                          const width = board.gridWidth || DEFAULT_FLAT_HEX_WIDTH;
+                          const height = calculateFlatHexHeight(width);
+                          updateMultiple({
+                            gridWidth: width,
+                            gridHeight: height
+                          });
+                          setLinkGridSize(true);  // Force link for flat-top hex grids
+                        } else {
+                          // Not a hex grid (SQUARE or NONE) - unlink proportions (allow independent width/height)
+                          setLinkGridSize(false);
+                          updateMultiple({ linkGridSize: false });
+                        }
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      {Object.values(GridType).map(v => (
+                        <option
+                          key={v}
+                          value={v}
+                        >
+                          {translateGridType(v, language)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Grid Cell Width and Height with Normalize button */}
+                  <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-end">
                     <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Type', language as Locale)}</label>
-                      <select
-                        value={(data as Board).gridType || GridType.NONE}
-                        onChange={e => update('gridType', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                      >
-                        {Object.values(GridType).map(v => (
-                          <option key={v} value={v}>{translateGridType(v, language)}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Size (vu)', language as Locale)}</label>
-                      <input
-                        type="number"
-                        value={(data as Board).gridSize || 50}
-                        onChange={e => update('gridSize', Number(e.target.value))}
+                          <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Width (vu)', language as Locale)}</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={(data as Board).gridWidth || (() => {
+                              const board = data as Board;
+                              if (board.gridType === GridType.HEX) return DEFAULT_HEX_WIDTH;
+                              if (board.gridType === GridType.HEX_HORIZONTAL) return DEFAULT_FLAT_HEX_WIDTH;
+                              return board.gridSize || 50;
+                            })() || 50}
+                            onChange={e => {
+                          const value = parseFloat(e.target.value);
+                          const board = data as Board;
+                          const gridType = board.gridType;
+                          const isPointyHex = gridType === GridType.HEX;
+
+                          if (linkGridSize || isPointyHex) {
+                            // For pointy-top hex, height = width * HEX_RATIO
+                            // For flat-top hex, height = width / HEX_RATIO
+                            const isFlatHex = gridType === GridType.HEX_HORIZONTAL;
+                            const height = isFlatHex ? calculateFlatHexHeight(value) : calculateHexHeight(value);
+                            const roundHeight = shouldRound(value);
+                            updateMultiple({
+                              gridWidth: value,
+                              gridHeight: roundHeight ? Math.round(height * 100) / 100 : height
+                            });
+                          } else {
+                            update('gridWidth', value);
+                          }
+                        }}
                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       />
                     </div>
+                    <div className="flex items-end pb-0.5">
+                      <button
+                        onClick={() => {
+                          const board = data as Board;
+                          const gridType = board.gridType;
+                          const isHexGrid = gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL;
+
+                          // Cannot unlink proportions for hex grids
+                          if (isHexGrid) return;
+
+                          const newState = !linkGridSize;
+                          setLinkGridSize(newState);
+                          // Save to object
+                          updateMultiple({ linkGridSize: newState });
+                        }}
+                        disabled={(data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL}
+                        className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                          (data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL
+                            ? 'bg-purple-600 border-purple-500 cursor-not-allowed'
+                            : linkGridSize
+                            ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
+                            : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                        }`}
+                        title={linkGridSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale)}
+                      >
+                        <Link size={14} />
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Grid Height (vu)', language as Locale)}</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        disabled={(data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL}
+                        value={(data as Board).gridHeight || (() => {
+                          const board = data as Board;
+                          if (board.gridType === GridType.HEX) return Math.round(DEFAULT_HEX_WIDTH * HEX_RATIO * 100) / 100;  // 115
+                          if (board.gridType === GridType.HEX_HORIZONTAL) return DEFAULT_HEX_WIDTH;  // 100
+                          return board.gridSize || 50;
+                        })() || 50}
+                        onChange={e => {
+                          const board = data as Board;
+                          const gridType = board.gridType;
+                          const isPointyHex = gridType === GridType.HEX;
+
+                          const value = parseFloat(e.target.value);
+                          if (linkGridSize || isPointyHex) {
+                            // For pointy-top hex grids: width = height / HEX_RATIO
+                            // For flat-top hex grids: width = height * HEX_RATIO
+                            const isFlatHex = gridType === GridType.HEX_HORIZONTAL;
+                            const width = isFlatHex ? value * HEX_RATIO : value / HEX_RATIO;
+                            const roundWidth = shouldRound(value);
+                            updateMultiple({
+                              gridHeight: value,
+                              gridWidth: roundWidth ? Math.round(width * 100) / 100 : width
+                            });
+                          } else {
+                            update('gridHeight', value);
+                          }
+                        }}
+                        className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${
+                          (data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL
+                            ? 'opacity-50 cursor-not-allowed'
+                            : ''
+                        }`}
+                      />
+                    </div>
+                    <div className="flex items-end pb-0.5">
+                      <button
+                        onClick={() => {
+                          const board = data as Board;
+                          const gridType = board.gridType;
+                          const currentWidth = board.gridWidth || board.gridSize || 50;
+
+                          // Normalize based on grid type
+                          if (gridType === GridType.HEX) {
+                            // Pointy-top hex: height = width * sqrt(3) / 2
+                            const height = calculateHexHeight(currentWidth);
+                            updateMultiple({
+                              gridWidth: currentWidth,
+                              gridHeight: Math.round(height * 100) / 100
+                            });
+                          } else if (gridType === GridType.HEX_HORIZONTAL) {
+                            // Flat-top hex: height = width / 1.15
+                            const height = calculateFlatHexHeight(currentWidth);
+                            updateMultiple({
+                              gridWidth: currentWidth,
+                              gridHeight: Math.round(height * 100) / 100
+                            });
+                          } else {
+                            // Square grid: make both equal
+                            const avgSize = ((board.gridWidth || board.gridSize || 50) + (board.gridHeight || board.gridSize || 50)) / 2;
+                            updateMultiple({
+                              gridWidth: avgSize,
+                              gridHeight: avgSize
+                            });
+                          }
+                        }}
+                        className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500`}
+                        title={translate('Normalize to perfect shape', language as Locale)}
+                      >
+                        <Maximize2 size={14} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
-                    <label className="text-xs text-gray-400 flex items-center gap-2">
-                      <Grid3x3 size={12} />
-                      {translate('Snap Objects to Grid', language as Locale)}
-                    </label>
-                    <button
-                      onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
-                      className={`w-10 h-5 rounded-full transition-colors ${
-                        (data as Board).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
-                      }`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                        (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
-                      }`} />
-                    </button>
+                  {/* Show Grid and Snap Objects to Grid on same line */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Eye size={12} />
+                        {translate('Show Grid', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('showGrid', (data as Board).showGrid === false ? true : false)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Board).showGrid !== false ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Board).showGrid !== false ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Grid3x3 size={12} />
+                        {translate('Snap Objects to Grid', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Board).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Cell Size Settings (for NexusBoard) */}
+              {isNexusBoard && (
+                <div className="pt-4 space-y-3">
+                  <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                    <Grid3x3 size={14} /> {translate('Cell Size Settings', language as Locale)}
+                  </h4>
+                  <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Cell Width (vu)', language as Locale)}</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={(data as any).cellWidth || 100}
+                        onChange={e => {
+                          const value = parseFloat(e.target.value);
+                          // Update both width and height to maintain 1:1.15 proportion
+                          const roundHeight = shouldRound(value);
+                          updateMultiple({ cellWidth: value, cellHeight: roundHeight ? Math.round(value * 1.15 * 100) / 100 : value * 1.15 });
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                      />
+                    </div>
+                    <div className="flex items-end pb-0.5">
+                      <button
+                        disabled={true}
+                        className="w-9 h-9 rounded border-2 flex items-center justify-center bg-purple-600 border-purple-500 cursor-not-allowed opacity-100"
+                        title={translate('Proportions locked (1:1.15)', language as Locale)}
+                      >
+                        <Link size={14} />
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Cell Height (vu)', language as Locale)}</label>
+                      <input
+                        type="number"
+                        step="1"
+                        disabled={true}
+                        value={Math.round(((data as any).cellHeight ?? 150) * 100) / 100}
+                        onChange={() => {}}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm cursor-not-allowed opacity-60"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1194,8 +1755,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
           {activeTab === 'actions' && (
             <div className="space-y-4">
-              {/* Context Menu Actions - with PL and GM toggle buttons - not for drawings */}
-              {!isDrawing && (
+              {/* Context Menu Actions - with PL and GM toggle buttons - not for drawings or panels */}
+              {!isDrawing && !isPanel && (
               <div className="pt-2">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Shield size={14} /> {translate('Context Menu Actions', language as Locale)}
@@ -1208,23 +1769,23 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       if (isDrawing) return false;
                       // Cards should ONLY use "Context Menu Actions for Cards" from deck settings
                       // Skip all card-specific actions in the general Context Menu Actions section
-                      if (isCard && ['flip', 'layer', 'layerUp', 'layerDown', 'pin'].includes(action.id)) {
+                      if (isCard && ['flip', 'layer', 'pin'].includes(action.id)) {
                         return false;
                       }
                       // Deck-specific actions - only for decks, not cards, tokens, or battlefield cells
-                      if ((isCard || isToken || isBattlefieldCell) && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'hide', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if ((isCard || isToken || isBattlefieldCell) && ['hide', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles', 'draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop'].includes(action.id)) {
                         return false;
                       }
                       // Board-specific actions - only decks, not boards
-                      if (isBoard && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'millToBottom', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                      if (isBoard && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles', 'draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop'].includes(action.id)) {
+                        return false;
+                      }
+                      // For decks: exclude individual Top Deck actions (they're controlled by 'topDeck' section)
+                      if (isDeck && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
                       if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip'].includes(action.id)) {
-                        return false;
-                      }
-                      // Rotation/swing actions - only for dice/counters/boards/tokens/battlefield cells, not for cards
-                      if (isCard && ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
                         return false;
                       }
                       // 'flip' only applies to cards (not tokens, decks, boards, or battlefield cells)
@@ -1346,8 +1907,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               </div>
 
-              {/* Click Actions - not for drawings */}
-              {!isDrawing && (
+              {/* Click Actions - not for drawings or panels */}
+              {!isDrawing && !isPanel && (
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <MousePointer size={14} /> {translate('Mouse Click Actions', language as Locale)}
@@ -1368,16 +1929,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if (action.id === 'none') return true;
 
                           // Deck-specific actions - only for decks, not cards, boards, or battlefield cells
-                          if ((isCard || isBoard || isBattlefieldCell) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                          if ((isCard || isBoard || isBattlefieldCell) && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
                           }
                           // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
                           if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip', 'moveTo'].includes(action.id)) {
                             return false;
                           }
-                          // For boards and battlefield cells, only allow rotate/swing/layer actions
+                          // For boards and battlefield cells, only allow rotate/layer section actions
                           if (isBoard || isBattlefieldCell) {
-                            const boardAllowedActions = ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layerUp', 'layerDown'];
+                            const boardAllowedActions = ['rotate', 'layer'];
                             if (!boardAllowedActions.includes(action.id)) {
                               return false;
                             }
@@ -1404,16 +1965,16 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if (action.id === 'none') return true;
 
                           // Deck-specific actions - only for decks, not cards, boards, or battlefield cells
-                          if ((isCard || isBoard || isBattlefieldCell) && ['draw', 'playTopCard', 'showTop', 'topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
+                          if ((isCard || isBoard || isBattlefieldCell) && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
                           }
                           // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
                           if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip', 'moveTo'].includes(action.id)) {
                             return false;
                           }
-                          // For boards and battlefield cells, only allow rotate/swing/layer actions
+                          // For boards and battlefield cells, only allow rotate/layer section actions
                           if (isBoard || isBattlefieldCell) {
-                            const boardAllowedActions = ['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layerUp', 'layerDown'];
+                            const boardAllowedActions = ['rotate', 'layer'];
                             if (!boardAllowedActions.includes(action.id)) {
                               return false;
                             }
@@ -1604,7 +2165,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       onChange={(e) => updateCardSettings('cardShape', e.target.value as CardShape)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
-                      {Object.keys(CardShape).map(key => (
+                      {Object.keys(CardShape).filter(key => key !== 'HEX_HORIZONTAL').map(key => (
                         <option key={key} value={key}>{key}</option>
                       ))}
                     </select>
@@ -1615,7 +2176,72 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Orientation', language as Locale)}</label>
                     <select
                       value={cardSettings.cardOrientation ?? CardOrientation.VERTICAL}
-                      onChange={(e) => updateCardSettings('cardOrientation', e.target.value as CardOrientation)}
+                      onChange={(e) => {
+                        const newOrientation = e.target.value as CardOrientation;
+                        const currentWidth = cardSettings.cardWidth ?? deck.width;
+                        const currentShape = cardSettings.cardShape ?? CardShape.POKER;
+
+                        // Auto-normalize dimensions when orientation changes
+                        // Keep the current width, adjust height based on shape and new orientation
+                        if (currentShape === CardShape.POKER || currentShape === CardShape.BRIDGE ||
+                            currentShape === CardShape.MINI_US || currentShape === CardShape.MINI_EURO) {
+                          const baseDims = CARD_SHAPE_DIMS[currentShape];
+                          const baseRatio = baseDims.height / baseDims.width;
+                          // VERTICAL: normal ratio, HORIZONTAL: inverted ratio
+                          const ratio = newOrientation === CardOrientation.VERTICAL ? baseRatio : 1 / baseRatio;
+                          const newHeight = Math.round(currentWidth * ratio);
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation,
+                            cardWidth: currentWidth,
+                            cardHeight: newHeight
+                          });
+                          // Also update deck dimensions to match
+                          update('width', currentWidth);
+                          update('height', newHeight);
+                        } else if (currentShape === CardShape.HEX_HORIZONTAL) {
+                          // HEX_HORIZONTAL: exact formula height = width / 1.15 (always flat-top)
+                          const newHeight = Math.round(currentWidth / 1.15);
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation,
+                            cardWidth: currentWidth,
+                            cardHeight: newHeight
+                          });
+                          // Also update deck dimensions to match
+                          update('width', currentWidth);
+                          update('height', newHeight);
+                        } else if (currentShape === CardShape.HEX) {
+                          // HEX: normalize based on orientation
+                          // VERTICAL (pointy-top): height = width × 1.15
+                          // HORIZONTAL (flat-top): height = width / 1.15
+                          const newHeight = newOrientation === CardOrientation.VERTICAL
+                            ? Math.round(currentWidth * 1.15)
+                            : Math.round(currentWidth / 1.15);
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation,
+                            cardWidth: currentWidth,
+                            cardHeight: newHeight
+                          });
+                          // Also update deck dimensions to match
+                          update('width', currentWidth);
+                          update('height', newHeight);
+                        } else if (currentShape === CardShape.TRIANGLE) {
+                          // TRIANGLE: swap width/height for orientation
+                          const currentHeight = cardSettings.cardHeight ?? deck.height;
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation,
+                            cardWidth: currentHeight,
+                            cardHeight: currentWidth
+                          });
+                          // Also update deck dimensions to match
+                          update('width', currentHeight);
+                          update('height', currentWidth);
+                        } else {
+                          // For SQUARE and CIRCLE, orientation doesn't change dimensions
+                          updateCardSettingsMultiple({
+                            cardOrientation: newOrientation
+                          });
+                        }
+                      }}
                       disabled={cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE}
                       className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${
                         cardSettings.cardShape === CardShape.SQUARE || cardSettings.cardShape === CardShape.CIRCLE
@@ -1629,26 +2255,75 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 </div>
 
-                <div className="grid grid-cols-[1fr_1fr_auto] gap-3 mb-2">
+                <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-3 mb-2">
                   {/* Card Width */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Width (px)', language as Locale)}</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Width (vu)', language as Locale)}</label>
                     <input
                       type="number"
+                      step="0.01"
                       value={cardSettings.cardWidth ?? deck.width}
-                      onChange={(e) => updateCardSettings('cardWidth', e.target.value ? parseInt(e.target.value) : undefined)}
+                      onChange={(e) => {
+                        const value = e.target.value ? parseFloat(e.target.value) : undefined;
+                        if (linkCardSize && value !== undefined) {
+                          const roundHeight = shouldRound(value);
+                          updateCardSettingsMultiple({
+                            cardWidth: value,
+                            cardHeight: roundHeight ? Math.round(value * cardRatio * 100) / 100 : value * cardRatio
+                          });
+                        } else {
+                          updateCardSettings('cardWidth', value);
+                        }
+                      }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       placeholder={translate('Default', language as Locale)}
                     />
                   </div>
 
+                  <div className="flex items-end pb-0.5">
+                    <button
+                      onClick={() => {
+                        const newState = !linkCardSize;
+                        if (!linkCardSize) {
+                          // Turning on - save current ratio
+                          const currentWidth = cardSettings.cardWidth ?? deck.width;
+                          const currentHeight = cardSettings.cardHeight ?? deck.height;
+                          setCardRatio(currentHeight / currentWidth);
+                        }
+                        setLinkCardSize(newState);
+                        // Save to object
+                        updateCardSettingsMultiple({ linkCardSize: newState });
+                      }}
+                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                        linkCardSize
+                          ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
+                          : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                      }`}
+                      title={linkCardSize ? translate('Unlink proportions', language as Locale) : translate('Link proportions', language as Locale)}
+                    >
+                      {linkCardSize ? <Link size={14} /> : <Unlink size={14} />}
+                    </button>
+                  </div>
+
                   {/* Card Height */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Height (px)', language as Locale)}</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Card Height (vu)', language as Locale)}</label>
                     <input
                       type="number"
+                      step="0.01"
                       value={cardSettings.cardHeight ?? deck.height}
-                      onChange={(e) => updateCardSettings('cardHeight', e.target.value ? parseInt(e.target.value) : undefined)}
+                      onChange={(e) => {
+                        const value = e.target.value ? parseFloat(e.target.value) : undefined;
+                        if (linkCardSize && value !== undefined) {
+                          const roundWidth = shouldRound(value);
+                          updateCardSettingsMultiple({
+                            cardHeight: value,
+                            cardWidth: roundWidth ? Math.round((value / cardRatio) * 100) / 100 : value / cardRatio
+                          });
+                        } else {
+                          updateCardSettings('cardHeight', value);
+                        }
+                      }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       placeholder={translate('Default', language as Locale)}
                     />
@@ -1661,16 +2336,72 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         const currentWidth = cardSettings.cardWidth ?? deck.width;
                         const currentHeight = cardSettings.cardHeight ?? deck.height;
                         const currentShape = cardSettings.cardShape ?? CardShape.POKER;
+                        const currentOrientation = cardSettings.cardOrientation ?? CardOrientation.VERTICAL;
+
+                        // For card shapes with standard aspect ratios (POKER, BRIDGE, MINI_US, MINI_EURO)
+                        // Always keep width, adjust height only based on orientation
+                        if (currentShape === CardShape.POKER || currentShape === CardShape.BRIDGE ||
+                            currentShape === CardShape.MINI_US || currentShape === CardShape.MINI_EURO) {
+                          const baseDims = CARD_SHAPE_DIMS[currentShape];
+                          // Calculate aspect ratio (height/width) from the base dimensions
+                          const baseRatio = baseDims.height / baseDims.width;
+
+                          // VERTICAL: use normal ratio (tall portrait)
+                          // HORIZONTAL: use inverted ratio (wide landscape)
+                          const ratio = currentOrientation === CardOrientation.VERTICAL ? baseRatio : 1 / baseRatio;
+                          const normalizedHeight = Math.round(currentWidth * ratio);
+                          updateCardSettingsMultiple({
+                            cardWidth: currentWidth,
+                            cardHeight: normalizedHeight
+                          });
+                          return;
+                        }
+
+                        // For HEX_HORIZONTAL, use its specific aspect ratio (wider than tall, flat-top)
+                        // Orientation setting doesn't affect HEX_HORIZONTAL shape (always flat-top)
+                        // Use exact formula: height = width / 1.15
+                        if (currentShape === CardShape.HEX_HORIZONTAL) {
+                          const normalizedHeight = Math.round(currentWidth / 1.15);
+                          updateCardSettingsMultiple({
+                            cardWidth: currentWidth,
+                            cardHeight: normalizedHeight
+                          });
+                          return;
+                        }
+
+                        // For HEX, normalization depends on orientation
+                        if (currentShape === CardShape.HEX) {
+                          // VERTICAL (pointy-top): height = width × 1.15
+                          // HORIZONTAL (flat-top): height = width / 1.15
+                          const normalizedHeight = currentOrientation === CardOrientation.VERTICAL
+                            ? Math.round(currentWidth * 1.15)
+                            : Math.round(currentWidth / 1.15);
+                          updateCardSettingsMultiple({
+                            cardWidth: currentWidth,
+                            cardHeight: normalizedHeight
+                          });
+                          return;
+                        }
+
+                        // For other shapes (TRIANGLE, CIRCLE, SQUARE), use existing normalization logic
+                        let tokenShapeForNorm: TokenShape;
+                        if (currentShape === CardShape.TRIANGLE) {
+                          tokenShapeForNorm = TokenShape.TRIANGLE;
+                        } else if (currentShape === CardShape.CIRCLE) {
+                          tokenShapeForNorm = TokenShape.CIRCLE;
+                        } else {
+                          tokenShapeForNorm = TokenShape.SQUARE;
+                        }
+
                         const { width, height } = normalizeShapeSizes(
-                          currentShape === CardShape.HEX ? TokenShape.HEX :
-                          currentShape === CardShape.TRIANGLE ? TokenShape.TRIANGLE :
-                          currentShape === CardShape.CIRCLE ? TokenShape.CIRCLE :
-                          TokenShape.SQUARE,
+                          tokenShapeForNorm,
                           currentWidth,
                           currentHeight
                         );
-                        updateCardSettings('cardWidth', width);
-                        updateCardSettings('cardHeight', height);
+                        updateCardSettingsMultiple({
+                          cardWidth: width,
+                          cardHeight: height
+                        });
                       }}
                       className="w-9 h-9 rounded border-2 flex items-center justify-center transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-500"
                       title={translate('Normalize to perfect shape', language as Locale)}
@@ -1760,8 +2491,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               </div>
 
-              {/* Context Menu Actions - with PL and GM toggle buttons */}
-              <div className="pt-2">
+              {/* Context Menu Actions for Cards - with PL and GM toggle buttons */}
+              <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Shield size={14} /> {translate('Context Menu Actions for Cards', language as Locale)}
                 </h4>
@@ -1769,26 +2500,97 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-1">
                   {[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
                     .filter(action => {
-                      // Only show card-applicable actions (exclude deck-specific actions)
-                      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-                          action.id === 'toBottom' || action.id === 'millToBottom' || action.id === 'hide' ||
-                          action.id === 'showTop' ||
+                      // Exclude deck-specific and section actions
+                      if (action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'piles') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
+                          action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+                          action.id === 'toBottom' || action.id === 'showTop') return false;
+                      // Exclude individual Move To actions (keep moveTo section only)
+                      if (action.id === 'moveToHand' || action.id === 'moveToTopDeck' ||
+                          action.id === 'moveToBottomDeck' || action.id === 'moveToDiscard') return false;
+                      // Exclude swing actions (only for Action Buttons, not Context Menu)
+                      if (action.id === 'swingClockwise' || action.id === 'swingCounterClockwise') return false;
                       return true;
                     })
                     .map((action) => {
-                    const isPlayerAllowed = isCardActionAllowed(action.id, false);
-                    const isGMAllowed = isCardActionAllowed(action.id, true);
+                    const isPlayerAllowed = cardSettings.allowedActions === undefined || cardSettings.allowedActions.includes(action.id as ContextAction);
+                    const isGMAllowed = cardSettings.allowedActionsForGM === undefined || cardSettings.allowedActionsForGM.includes(action.id as ContextAction);
+
+                    const togglePlayer = () => {
+                      const current = cardSettings.allowedActions;
+                      const cardActions = [...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
+                        .filter(a => {
+                          if (a.id === 'hide' ||
+                              a.id === 'shuffleDeck' || a.id === 'searchDeck' ||
+                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles' ||
+                              a.id === 'draw' || a.id === 'playTopCard' || a.id === 'millTopCard' ||
+                              a.id === 'toBottom' || a.id === 'showTop') return false;
+                          // Exclude individual Move To actions (keep moveTo section only)
+                          if (a.id === 'moveToHand' || a.id === 'moveToTopDeck' ||
+                              a.id === 'moveToBottomDeck' || a.id === 'moveToDiscard') return false;
+                          // Exclude swing actions (only for Action Buttons, not Context Menu)
+                          if (a.id === 'swingClockwise' || a.id === 'swingCounterClockwise') return false;
+                          return true;
+                        })
+                        .map(a => a.id);
+
+                      if (isPlayerAllowed) {
+                        // Remove from player's allowed actions
+                        if (current && current.includes(action.id as ContextAction)) {
+                          const newActions = current.filter((a: ContextAction) => a !== action.id);
+                          setCardSettings(prev => ({ ...prev, allowedActions: newActions }));
+                        } else if (current === undefined) {
+                          setCardSettings(prev => ({ ...prev, allowedActions: cardActions.filter((a: string) => a !== action.id) as ContextAction[] }));
+                        }
+                      } else {
+                        // Add to player's allowed actions
+                        const updated = current ? [...current, action.id as ContextAction] : [action.id as ContextAction];
+                        setCardSettings(prev => ({ ...prev, allowedActions: updated }));
+                      }
+                    };
+
+                    const toggleGM = () => {
+                      const current = cardSettings.allowedActionsForGM;
+                      const cardActions = [...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
+                        .filter(a => {
+                          if (a.id === 'hide' ||
+                              a.id === 'shuffleDeck' || a.id === 'searchDeck' ||
+                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles' ||
+                              a.id === 'draw' || a.id === 'playTopCard' || a.id === 'millTopCard' ||
+                              a.id === 'toBottom' || a.id === 'showTop') return false;
+                          // Exclude individual Move To actions (keep moveTo section only)
+                          if (a.id === 'moveToHand' || a.id === 'moveToTopDeck' ||
+                              a.id === 'moveToBottomDeck' || a.id === 'moveToDiscard') return false;
+                          // Exclude swing actions (only for Action Buttons, not Context Menu)
+                          if (a.id === 'swingClockwise' || a.id === 'swingCounterClockwise') return false;
+                          return true;
+                        })
+                        .map(a => a.id);
+
+                      if (isGMAllowed) {
+                        // Remove from GM's allowed actions
+                        if (current && current.includes(action.id as ContextAction)) {
+                          const newActions = current.filter((a: ContextAction) => a !== action.id);
+                          setCardSettings(prev => ({ ...prev, allowedActionsForGM: newActions }));
+                        } else if (current === undefined) {
+                          setCardSettings(prev => ({ ...prev, allowedActionsForGM: cardActions.filter((a: string) => a !== action.id) as ContextAction[] }));
+                        }
+                      } else {
+                        // Add to GM's allowed actions
+                        const updated = current ? [...current, action.id as ContextAction] : [action.id as ContextAction];
+                        setCardSettings(prev => ({ ...prev, allowedActionsForGM: updated }));
+                      }
+                    };
 
                     return (
                       <div
-                        key={`card-${action.id}`}
+                        key={`card-action-${action.id}`}
                         className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-700 transition-colors bg-slate-800 border border-slate-700"
                       >
                         <span className="text-gray-200 text-xs font-medium leading-tight flex-1 truncate">{action.label}</span>
                         <button
-                          onClick={() => toggleCardAllowedAction(action.id, false)}
+                          onClick={togglePlayer}
                           className={`w-7 h-7 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
                             isPlayerAllowed
                               ? 'bg-blue-600 text-white'
@@ -1799,7 +2601,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           PL
                         </button>
                         <button
-                          onClick={() => toggleCardAllowedAction(action.id, true)}
+                          onClick={toggleGM}
                           className={`w-7 h-7 rounded text-[10px] font-bold transition-colors flex-shrink-0 ${
                             isGMAllowed
                               ? 'bg-purple-600 text-white'
@@ -1825,13 +2627,14 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <div className="grid grid-cols-2 gap-2">
                   {[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
                     .filter(action => {
-                      // Only card-applicable actions
-                      if (action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' || action.id === 'toBottom' ||
-                          action.id === 'millToBottom' || action.id === 'hide' ||
+                      // Only card-applicable actions (exclude all deck-specific actions)
+                      if (action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
+                          action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
+                          action.id === 'toBottom' || action.id === 'showTop') return false;
                       // Exclude section headers only
-                      if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate' || action.id === 'showTop') return false;
+                      if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate') return false;
                       return true;
                     })
                     .map((action) => {
@@ -2020,6 +2823,125 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'groups' && (
+            <div className="space-y-4">
+              {/* Create New Group Section */}
+              <div className="pt-2 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <Dices size={14} /> {translate('Create Group', language as Locale)}
+                </h4>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    placeholder={translate('Group Name', language as Locale)}
+                  />
+                  <input
+                    type="color"
+                    value={newGroupColor}
+                    onChange={(e) => setNewGroupColor(e.target.value)}
+                    className="w-12 h-10 rounded cursor-pointer"
+                  />
+                  <button
+                    onClick={handleCreateGroup}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded flex items-center gap-2"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Dice Assignment Section with inline group editing */}
+              <div className="pt-4 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <Dices size={14} /> {translate('Assign Dice to Groups', language as Locale)}
+                </h4>
+
+                {/* Group headers as drop targets */}
+                <div className="grid grid-cols-3 gap-2">
+                  {/* No Group */}
+                  <div
+                    className={`p-3 rounded-lg border-2 border-dashed text-center cursor-pointer transition-colors ${
+                      draggedDiceId !== null ? 'border-slate-600 hover:border-slate-500' : 'border-slate-700'
+                    }`}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => handleDropDice(null)}
+                  >
+                    <div className="text-sm text-gray-400 mb-2">{translate('No Group', language as Locale)}</div>
+                    <div className="space-y-1">
+                      {allDice.filter(d => !d.diceGroupId).map(dice => (
+                        <div
+                          key={dice.id}
+                          draggable
+                          onDragStart={() => setDraggedDiceId(dice.id)}
+                          className="bg-slate-700 rounded px-2 py-1 text-xs text-white cursor-move hover:bg-slate-600"
+                        >
+                          {dice.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Groups with inline editing */}
+                  {diceGroups.map(group => (
+                    <div
+                      key={group.id}
+                      className={`p-2 rounded-lg border-2 border-dashed text-center cursor-pointer transition-colors overflow-hidden`}
+                      style={{
+                        borderColor: group.color,
+                        backgroundColor: `${group.color}10`
+                      }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => handleDropDice(group.id)}
+                    >
+                      {/* Header row: color picker, name, delete button */}
+                      <div className="flex items-center gap-1 mb-2 min-w-0">
+                        {/* Color picker */}
+                        <input
+                          type="color"
+                          value={group.color}
+                          onChange={(e) => handleUpdateGroup(group.id, { color: e.target.value })}
+                          className="w-5 h-5 rounded cursor-pointer border-0 p-0 flex-shrink-0"
+                        />
+                        {/* Group name input */}
+                        <input
+                          type="text"
+                          value={group.name}
+                          onChange={(e) => handleUpdateGroup(group.id, { name: e.target.value })}
+                          className="flex-1 min-w-0 bg-transparent border-0 text-white text-xs font-medium text-center focus:outline-none focus:bg-slate-800/50 rounded px-1 truncate"
+                          style={{ color: group.color }}
+                        />
+                        {/* Delete button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}
+                          className="p-0.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded flex-shrink-0"
+                          title={translate('Delete', language as Locale)}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                      {/* Dice list */}
+                      <div className="space-y-1">
+                        {allDice.filter(d => d.diceGroupId === group.id).map(dice => (
+                          <div
+                            key={dice.id}
+                            draggable
+                            onDragStart={() => setDraggedDiceId(dice.id)}
+                            className="bg-slate-700 rounded px-2 py-1 text-xs text-white cursor-move hover:bg-slate-600"
+                          >
+                            {dice.name}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>

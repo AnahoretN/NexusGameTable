@@ -71,3 +71,12 @@ export function updateHandCardOrderReducer(state: any, action: any): any {
     )
   };
 }
+
+export function toggleConnectionsLockedReducer(state: any, action: any): any {
+  if (action.type !== 'TOGGLE_CONNECTIONS_LOCKED') return state;
+
+  return {
+    ...state,
+    connectionsLocked: !state.connectionsLocked
+  };
+}

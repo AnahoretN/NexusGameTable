@@ -5,6 +5,7 @@ import { snapToGrid, getSnappedCenter, GridSnapOptions } from '../utils/gridUtil
 interface UseGridSnappingOptions {
   enabled: boolean;
   gridSize?: number;
+  gridHeight?: number; // For hex grids
   gridType?: GridType;
   offset?: Coordinates;
 }
@@ -20,11 +21,11 @@ interface UseGridSnappingResult {
  * Custom hook for grid snapping functionality
  */
 export function useGridSnapping(options: UseGridSnappingOptions): UseGridSnappingResult {
-  const { enabled, gridSize = 50, gridType = GridType.SQUARE, offset = { x: 0, y: 0 } } = options;
+  const { enabled, gridSize = 50, gridHeight, gridType = GridType.SQUARE, offset = { x: 0, y: 0 } } = options;
 
   const snapOptions: GridSnapOptions = useMemo(
-    () => ({ gridSize, gridType, offsetX: offset.x, offsetY: offset.y }),
-    [gridSize, gridType, offset.x, offset.y]
+    () => ({ gridSize, gridHeight, gridType, offsetX: offset.x, offsetY: offset.y }),
+    [gridSize, gridHeight, gridType, offset.x, offset.y]
   );
 
   const getSnappedCoordinates = useMemo(
@@ -64,6 +65,17 @@ export function useGridSnapping(options: UseGridSnappingOptions): UseGridSnappin
     () => (x: number, y: number, threshold: number = 5): boolean => {
       if (!enabled) return false;
 
+      // For hex grids, use snapToGrid to find nearest center
+      if (gridType === GridType.HEX || gridType === GridType.HEX_HORIZONTAL) {
+        const snappedCenter = snapToGrid(x, y, snapOptions);
+        const distance = Math.sqrt(
+          Math.pow(x - snappedCenter.x, 2) +
+          Math.pow(y - snappedCenter.y, 2)
+        );
+        return distance < threshold;
+      }
+
+      // For square grid, use the original logic
       const xMod = x % gridSize;
       const yMod = y % gridSize;
 
@@ -72,7 +84,7 @@ export function useGridSnapping(options: UseGridSnappingOptions): UseGridSnappin
 
       return distToX < threshold || distToY < threshold;
     },
-    [enabled, gridSize]
+    [enabled, gridSize, gridType, snapOptions]
   );
 
   return {

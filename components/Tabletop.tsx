@@ -2,7 +2,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { useLocalSettings } from '../hooks/useLocalSettings';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board as BoardType } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board, Board as BoardType, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -17,6 +17,7 @@ import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
+import { NexusBoardMemo } from './NexusBoard';
 import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown } from 'lucide-react';
 import { CARD_SHAPE_DIMS, WORLD_SIZE_VU } from '../constants';
 import { generateUUID } from '../utils/uuid';
@@ -25,27 +26,93 @@ import { CursorSlotVisualization } from './CursorSlotVisualization';
 // import { RemoteObjectAnimation, useRemoteObjectAnimation } from './RemoteObjectAnimation';
 import { PinnedIndicator } from './PinnedIndicator';
 import { ObjectActionButtons } from './ObjectActionButtons';
+import {
+  calculateFlexibleHexGrid,
+  calculateHorizontalHexGrid,
+  addObjectToCellMagnet,
+  removeObjectFromCellMagnet,
+  removeObjectFromGridCellMagnet,
+  findCellForSnappedObject,
+  calculateMagnetPointPositions,
+  getHexCenterAtPixel,
+  calculateGridCellMagnetPositions,
+  addObjectToGridCellMagnet,
+  generateGridCellKey,
+  parseGridCellKey,
+  calculateGridCellCenter
+} from '../utils/gridUtils';
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
   const { settings: localSettings } = useLocalSettings();
 
-  // Get the pixelsPerVU conversion factor
-  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+  // Get the base pixelsPerVU conversion factor
+  const basePixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+  // Local zoom multiplier (100 = default, 150 = 50% larger objects, etc.)
+  const zoomMultiplier = (localSettings.zoom ?? 100) / 100;
 
-  // Helper functions for vu ↔ pixel conversion
+  // Helper to get zoom scale for a specific layer (returns 1 if zoom disabled for layer)
+  const getLayerZoomScale = useCallback((layerId: string): number => {
+    const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+    const zoomEnabled = layer?.zoomEnabled ?? true;
+    return zoomEnabled ? zoomMultiplier : 1;
+  }, [zoomMultiplier, state.hyperscaleLayers]);
+
+  // Helper to get inverse scale for layers without zoom (to cancel out global zoom)
+  const getLayerInverseScale = useCallback((layerId: string): number => {
+    const scale = getLayerZoomScale(layerId);
+    return scale !== zoomMultiplier ? (1 / zoomMultiplier) : 1;
+  }, [getLayerZoomScale, zoomMultiplier]);
+
+  // Helper to create positioning styles with layer zoom consideration
+  const createPositionedStyle = useCallback(((
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    zIndex: number,
+    layerId: string,
+    additionalStyle: React.CSSProperties = {}
+  ): React.CSSProperties => {
+    const inverseScale = getLayerInverseScale(layerId);
+    return {
+      position: 'absolute' as const,
+      left: x,
+      top: y,
+      width,
+      height,
+      zIndex,
+      ...(inverseScale !== 1 && {
+        transform: `scale(${inverseScale})`,
+        transformOrigin: 'top left',
+      }),
+      ...additionalStyle,
+    };
+  }), [getLayerInverseScale]);
+
+  // Apply zoom multiplier to pixelsPerVU (affects all calculations)
+  const pixelsPerVU = useMemo(() => basePixelsPerVU * zoomMultiplier, [basePixelsPerVU, zoomMultiplier]);
+
+  // Helper functions for vu ↔ pixel conversion (with zoom applied)
   const v2p = useCallback((vu: number) => vuToPixels(vu ?? 0, pixelsPerVU), [pixelsPerVU]);
   const p2v = useCallback((px: number) => pixelsToVu(px ?? 0, pixelsPerVU), [pixelsPerVU]);
 
   // Viewport state (offset is always 0,0 since native scroll handles panning)
   const offset = useMemo(() => ({ x: 0, y: 0 }), []);
-  const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [currentTool, setCurrentTool] = useState<string>('none');
 
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [draggingPile, setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
+
+  // Shift key state for delete cursor
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
+
+  // Ruler state
+  const [rulerStart, setRulerStart] = useState<{ x: number; y: number } | null>(null);
+  const [rulerCurrent, setRulerCurrent] = useState<{ x: number; y: number } | null>(null);
+  const [isRulerRightClick, setIsRulerRightClick] = useState(false);
 
   // Resizing state for boards
   const [resizingId, setResizingId] = useState<string | null>(null);
@@ -70,7 +137,7 @@ export const Tabletop: React.FC = () => {
   const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
 
   // UI modal/menu state
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>(null);
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   // Pile context menu and search modal
@@ -79,6 +146,8 @@ export const Tabletop: React.FC = () => {
   const [searchModalPile, setSearchModalPile] = useState<CardPile | undefined>(undefined);
   const [topDeckModalDeck, setTopDeckModalDeck] = useState<DeckType | null>(null);
   const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: DeckType } | null>(null);
+  // NexusBoard add-cell UI state
+  const [nexusBoardAddingCell, setNexusBoardAddingCell] = useState<string | null>(null);
 
   // Click-to-show tooltip state for cards
   const [clickTooltip, setClickTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
@@ -313,7 +382,14 @@ export const Tabletop: React.FC = () => {
   useEffect(() => {
     const handleToolChanged = (e: Event) => {
       const customEvent = e as CustomEvent<{ tool: string }>;
-      setCurrentTool(customEvent.detail.tool);
+      const newTool = customEvent.detail.tool;
+      setCurrentTool(newTool);
+      // Clear ruler state when switching away from ruler tool
+      if (newTool !== 'ruler') {
+        setRulerStart(null);
+        setRulerCurrent(null);
+        setIsRulerRightClick(false);
+      }
     };
     window.addEventListener('drawing-tool-changed', handleToolChanged);
     return () => window.removeEventListener('drawing-tool-changed', handleToolChanged);
@@ -334,6 +410,35 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('update-token-copy-from-archetype', handleUpdateTokenCopy);
     return () => window.removeEventListener('update-token-copy-from-archetype', handleUpdateTokenCopy);
+  }, [dispatch]);
+
+  // Listen for deck card dimensions updates from deck settings changes
+  useEffect(() => {
+    const handleUpdateDeckCardsDimensions = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        deckId: string;
+        cardWidth: number;
+        cardHeight: number;
+      }>;
+      const { deckId, cardWidth, cardHeight } = customEvent.detail;
+
+      // Update all cards in this deck with new dimensions
+      Object.values(state.objects).forEach(obj => {
+        if (obj.type === ItemType.CARD && (obj as CardType).deckId === deckId) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: obj.id,
+              width: cardWidth,
+              height: cardHeight
+            }
+          });
+        }
+      });
+    };
+
+    window.addEventListener('update-deck-cards-dimensions', handleUpdateDeckCardsDimensions);
+    return () => window.removeEventListener('update-deck-cards-dimensions', handleUpdateDeckCardsDimensions);
   }, [dispatch]);
 
   // Helper to get card settings from deck (cards always inherit from deck)
@@ -427,6 +532,7 @@ export const Tabletop: React.FC = () => {
 
       // Snap radius = token size (using max dimension)
       const snapRadius = Math.max(objW, objH);
+      const snapRadiusSq = snapRadius * snapRadius; // Use squared distance for comparisons
 
       // Get all boards with snapToGrid enabled
       const boards = Object.values(objects).filter(obj =>
@@ -446,21 +552,22 @@ export const Tabletop: React.FC = () => {
       ) as BattlefieldCell[];
 
       // Find nearest cell center within snap radius
-      let nearestCell: { x: number; y: number; distance: number } | null = null;
+      let nearestCell: { x: number; y: number; distanceSq: number } | null = null;
 
       // Check boards first
       for (const board of boards) {
           // All values are in vu (virtual units)
-          const size = board.gridSize || 50;
-          const boardCols = Math.floor(board.width / size);
-          const boardRows = Math.floor(board.height / size);
+          const gridW = board.gridWidth || board.gridSize || 50;
+          const gridH = board.gridHeight || board.gridSize || 50;
+          const boardCols = Math.floor(board.width / gridW);
+          const boardRows = Math.floor(board.height / gridH);
 
           if (board.gridType === GridType.SQUARE) {
               // Find the cell under cursor
               const relativeX = cursorX - board.x;
               const relativeY = cursorY - board.y;
-              const col = Math.floor(relativeX / size);
-              const row = Math.floor(relativeY / size);
+              const col = Math.floor(relativeX / gridW);
+              const row = Math.floor(relativeY / gridH);
 
               // Check if cell is within board bounds
               if (col < 0 || col >= boardCols || row < 0 || row >= boardRows) {
@@ -468,129 +575,157 @@ export const Tabletop: React.FC = () => {
               }
 
               // Calculate cell center
-              const cellCenterX = board.x + (col * size) + (size / 2);
-              const cellCenterY = board.y + (row * size) + (size / 2);
+              const cellCenterX = board.x + (col * gridW) + (gridW / 2);
+              const cellCenterY = board.y + (row * gridH) + (gridH / 2);
 
-              // Check if within snap radius
-              const distance = Math.sqrt(
-                  Math.pow(cursorX - cellCenterX, 2) +
-                  Math.pow(cursorY - cellCenterY, 2)
-              );
+              // Check if this cell has custom magnet points or use default
+              const cellKey = `${col},${row}`;
+              let cellMagnetData = board.gridCellMagnetPoints?.[cellKey];
 
-              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
-                  nearestCell = { x: cellCenterX, y: cellCenterY, distance };
+              // If no custom data for this cell, create temporary data using default count
+              if (!cellMagnetData && board.defaultGridCellMagnetPointCount && board.defaultGridCellMagnetPointCount > 1) {
+                cellMagnetData = {
+                  magnetPointCount: board.defaultGridCellMagnetPointCount,
+                  magnetRotation: 0
+                };
+              }
+
+              let snapX = cellCenterX;
+              let snapY = cellCenterY;
+
+              if (cellMagnetData && cellMagnetData.magnetPointCount && cellMagnetData.magnetPointCount > 1) {
+                // Find nearest magnet point in this cell
+                const magnetPositions = calculateGridCellMagnetPositions(
+                  cellCenterX, cellCenterY, gridW, gridH, cellMagnetData
+                );
+
+                let minMagnetDistSq = Infinity;
+                for (const magnetPos of magnetPositions) {
+                  const dx = cursorX - magnetPos.x;
+                  const dy = cursorY - magnetPos.y;
+                  const distSq = dx * dx + dy * dy;
+                  if (distSq < minMagnetDistSq) {
+                    minMagnetDistSq = distSq;
+                    snapX = magnetPos.x;
+                    snapY = magnetPos.y;
+                  }
+                }
+              }
+
+              // Check if within snap radius (using squared distance)
+              const dx = cursorX - snapX;
+              const dy = cursorY - snapY;
+              const distSq = dx * dx + dy * dy;
+
+              if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
+                  nearestCell = { x: snapX, y: snapY, distanceSq: distSq };
+                  // Early exit if we found an exact match
+                  if (distSq === 0) return { x: snapX - objHalfW, y: snapY - objHalfH };
               }
           } else if (board.gridType === GridType.HEX) {
-              // Hex grid snapping
-              const hexR = size;
-              const hexW = hexR * Math.sqrt(3);
-              const originOffsetX = hexW / 2;
-              const originOffsetY = hexR;
+              // Pointy-top hex grid snapping - using gridUtils for consistency
+              const hexW = gridW || 100;
+              const hexH = gridH || (hexW * 1.15);  // Use board's gridHeight if available
 
-              const relativeX = cursorX - board.x - originOffsetX;
-              const relativeY = cursorY - board.y - originOffsetY;
+              // Calculate cursor position relative to board
+              const relativeX = cursorX - board.x;
+              const relativeY = cursorY - board.y;
 
-              // Convert to hex coordinates
-              const q_raw = (Math.sqrt(3)/3 * relativeX - 1/3 * relativeY) / hexR;
-              const r_raw = (2/3 * relativeY) / hexR;
+              // Use gridUtils to get hex center
+              const hexCenter = getHexCenterAtPixel(
+                  relativeX,
+                  relativeY,
+                  hexW,
+                  hexH,
+                  'pointy-top'
+              );
 
-              let rx = Math.round(q_raw);
-              let ry = Math.round(r_raw);
-              let rz = Math.round(-q_raw - r_raw);
-
-              // Round to nearest hex
-              const x_diff = Math.abs(rx - q_raw);
-              const y_diff = Math.abs(ry - r_raw);
-              const z_diff = Math.abs(rz - (-q_raw - r_raw));
-
-              if (x_diff > y_diff && x_diff > z_diff) {
-                  rx = -ry - rz;
-              } else if (y_diff > z_diff) {
-                  ry = -rx - rz;
-              } else {
-                  rz = -rx - ry;
-              }
-
-              const q = rx;
-              const r = ry;
-
-              // Calculate hex center
-              const centerDx = hexR * Math.sqrt(3) * (q + r/2);
-              const centerDy = hexR * 3/2 * r;
-
-              const hexCenterX = board.x + originOffsetX + centerDx;
-              const hexCenterY = board.y + originOffsetY + centerDy;
+              // Calculate absolute hex center
+              const hexCenterX = board.x + hexCenter.x;
+              const hexCenterY = board.y + hexCenter.y;
 
               // Check if hex center is within board bounds
               const hexX = hexCenterX - board.x;
               const hexY = hexCenterY - board.y;
-              if (hexX < -hexW/2 || hexX > board.width + hexW/2 ||
-                  hexY < -hexR || hexY > board.height + hexR) {
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              if (hexX < -halfW || hexX > board.width + halfW ||
+                  hexY < -halfH || hexY > board.height + halfH) {
                   continue;
               }
 
-              // Check if within snap radius
-              const distance = Math.sqrt(
-                  Math.pow(cursorX - hexCenterX, 2) +
-                  Math.pow(cursorY - hexCenterY, 2)
+              // Check if within snap radius (using squared distance)
+              const dx = cursorX - hexCenterX;
+              const dy = cursorY - hexCenterY;
+              const distSq = dx * dx + dy * dy;
+
+              if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
+                  nearestCell = { x: hexCenterX, y: hexCenterY, distanceSq: distSq };
+                  // Early exit if we found an exact match
+                  if (distSq === 0) return { x: hexCenterX - objHalfW, y: hexCenterY - objHalfH };
+              }
+          } else if (board.gridType === GridType.HEX_HORIZONTAL) {
+              // Flat-top (horizontal) hex grid snapping - using gridUtils for consistency
+              const hexW = gridW || 115;
+              const hexH = gridH || (hexW / 1.15);  // Use board's gridHeight if available
+
+              // Calculate cursor position relative to board
+              const relativeX = cursorX - board.x;
+              const relativeY = cursorY - board.y;
+
+              // Use gridUtils to get hex center
+              const hexCenter = getHexCenterAtPixel(
+                  relativeX,
+                  relativeY,
+                  hexW,
+                  hexH,
+                  'flat-top'
               );
 
-              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
-                  nearestCell = { x: hexCenterX, y: hexCenterY, distance };
+              // Calculate absolute hex center
+              const hexCenterX = board.x + hexCenter.x;
+              const hexCenterY = board.y + hexCenter.y;
+
+              // Check if hex center is within board bounds
+              const hexX = hexCenterX - board.x;
+              const hexY = hexCenterY - board.y;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              if (hexX < -halfW || hexX > board.width + halfW ||
+                  hexY < -halfH || hexY > board.height + halfH) {
+                  continue;
+              }
+
+              // Check if within snap radius (using squared distance)
+              const dx = cursorX - hexCenterX;
+              const dy = cursorY - hexCenterY;
+              const distSq = dx * dx + dy * dy;
+
+              if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
+                  nearestCell = { x: hexCenterX, y: hexCenterY, distanceSq: distSq };
+                  // Early exit if we found an exact match
+                  if (distSq === 0) return { x: hexCenterX - objHalfW, y: hexCenterY - objHalfH };
               }
           }
       }
 
       // Check individual battlefield cells - snap to magnet points
       for (const cell of cells) {
-          const cellCenterX = cell.x + (cell.width ?? 100) / 2;
-          const cellCenterY = cell.y + (cell.height ?? 100) / 2;
-
-          // Get magnetism settings for this cell
-          const magnetPointCount = cell.magnetPointCount ?? 1;
-          const magnetRotation = cell.magnetRotation ?? 0;
-
-          // Calculate magnet point positions
-          const magnetPoints: { x: number; y: number }[] = [];
-
-          if (magnetPointCount === 1) {
-              // Single point at center
-              magnetPoints.push({ x: cellCenterX, y: cellCenterY });
-          } else {
-              // Multiple magnet points along lines from center to inscribed ellipse
-              const anglePerSlice = 360 / magnetPointCount;
-              const halfW = (cell.width ?? 100) / 2 - 2; // 2 vu padding
-              const halfH = (cell.height ?? 100) / 2 - 2;
-
-              for (let i = 0; i < magnetPointCount; i++) {
-                  const angle = (i * anglePerSlice + magnetRotation) * Math.PI / 180;
-                  const cosA = Math.cos(angle);
-                  const sinA = Math.sin(angle);
-
-                  // Calculate distance to inscribed ellipse in this direction
-                  // Ellipse equation: (x/a)² + (y/b)² = 1
-                  // r = 1 / sqrt((cos(a)/a)² + (sin(a)/b)²)
-                  const lineLength = 1 / Math.sqrt(
-                      (cosA / halfW) ** 2 + (sinA / halfH) ** 2
-                  );
-
-                  // Magnet point is at 60% from center along the line
-                  const magnetRadius = lineLength * 0.6;
-                  const magnetX = cellCenterX + cosA * magnetRadius;
-                  const magnetY = cellCenterY + sinA * magnetRadius;
-                  magnetPoints.push({ x: magnetX, y: magnetY });
-              }
-          }
+          // Use utility function to calculate magnet point positions
+          const magnetPoints = calculateMagnetPointPositions(cell);
 
           // Find nearest magnet point
           for (const magnetPoint of magnetPoints) {
-              const distance = Math.sqrt(
-                  Math.pow(cursorX - magnetPoint.x, 2) +
-                  Math.pow(cursorY - magnetPoint.y, 2)
-              );
+              const dx = cursorX - magnetPoint.x;
+              const dy = cursorY - magnetPoint.y;
+              const distSq = dx * dx + dy * dy;
 
-              if (distance <= snapRadius && (!nearestCell || distance < nearestCell.distance)) {
-                  nearestCell = { x: magnetPoint.x, y: magnetPoint.y, distance };
+              if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
+                  nearestCell = { x: magnetPoint.x, y: magnetPoint.y, distanceSq: distSq };
+                  // Early exit if we found an exact match
+                  if (distSq === 0) return { x: magnetPoint.x - objHalfW, y: magnetPoint.y - objHalfH };
               }
           }
       }
@@ -699,9 +834,37 @@ export const Tabletop: React.FC = () => {
     dragStartRef.current = { x: e.clientX, y: e.clientY };
   };
 
+  // Roll dice with group support - if dice is in a group, roll all dice in the group
+  const rollDiceWithGroup = useCallback((dice: DiceObject) => {
+    // Check if dice belongs to a group
+    if (dice.diceGroupId) {
+      const group = state.diceGroups.find(g => g.id === dice.diceGroupId);
+      if (group && group.visible) {
+        // Roll all dice in the group
+        group.diceIds.forEach(diceId => {
+          const groupDice = state.objects[diceId];
+          if (groupDice?.type === ItemType.DICE_OBJECT) {
+            animateDiceRoll(groupDice as DiceObject);
+          }
+        });
+      } else {
+        // Group not found or not visible, roll single dice
+        animateDiceRoll(dice);
+      }
+    } else {
+      // Single dice roll (not in a group)
+      animateDiceRoll(dice);
+    }
+  }, [state.diceGroups, state.objects, animateDiceRoll]);
+
   // Execute a click action on an object
   const executeClickAction = useCallback((obj: TableObject, action: string, event?: React.MouseEvent) => {
     if (!action || action === 'none') return;
+
+    // Block all click actions when marker or eraser tool is active
+    if (currentTool === 'marker' || currentTool === 'eraser') {
+      return;
+    }
 
     switch (action) {
       case 'flip':
@@ -812,6 +975,18 @@ export const Tabletop: React.FC = () => {
           dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: obj.id } });
         }
         break;
+      case 'returnAllAndShuffle':
+        // Return all cards and shuffle the deck
+        if (obj.type === ItemType.DECK) {
+          dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: obj.id, shuffleAfter: true } });
+        }
+        break;
+      case 'returnAllExceptHands':
+        // Return all cards except those in players' hands
+        if (obj.type === ItemType.DECK) {
+          dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: obj.id, exceptHands: true } });
+        }
+        break;
       case 'moveToHand':
         if (obj.type === ItemType.CARD) {
           dispatch({
@@ -876,8 +1051,8 @@ export const Tabletop: React.FC = () => {
           const isPinned = (obj as any).isPinnedToViewport || false;
           if (isPinned) {
             // Unpin: convert viewport coordinates to world coordinates
-            const worldX = obj.x / zoom + offset.x;
-            const worldY = obj.y / zoom + offset.y;
+            const worldX = obj.x + offset.x;
+            const worldY = obj.y + offset.y;
             dispatch({
               type: 'UPDATE_OBJECT',
               payload: { id: obj.id, x: worldX, y: worldY, isPinnedToViewport: false }
@@ -886,8 +1061,8 @@ export const Tabletop: React.FC = () => {
             // Pin: use current screen position
             const worldX = obj.x;
             const worldY = obj.y;
-            const screenX = (worldX - offset.x) * zoom;
-            const screenY = (worldY - offset.y) * zoom;
+            const screenX = worldX - offset.x;
+            const screenY = worldY - offset.y;
             // For dice and counters, also store pinnedScreenPosition
             const isDiceOrCounter = obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER;
             dispatch({
@@ -1011,17 +1186,91 @@ export const Tabletop: React.FC = () => {
           }, 300);
         }
         break;
+      case 'roll':
+        if (obj.type === ItemType.DICE_OBJECT) {
+          rollDiceWithGroup(obj as DiceObject);
+        }
+        break;
     }
-  }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition]);
+  }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition, rollDiceWithGroup]);
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
-    console.log(`[DRAG SYSTEM] addToCursorSlot - source: ${source}, item: ${item.name} (${item.type}), slot size before: ${cursorSlot.length}`);
     if (cursorSlot.length >= 100) return; // Max 100 items in slot
 
     // Set source based on how the item was added (only if slot was empty before)
     if (cursorSlot.length === 0) {
       setCursorSlotSource(source);
+    }
+
+    // Check if item is snapped to a grid cell and unhook it - OPTIMIZED
+    const obj = state.objects[id];
+    if (obj && obj.type === ItemType.TOKEN && (obj as Token).gridCellKey) {
+      const token = obj as Token;
+
+      // Parse gridCellKey: "boardId:col,row"
+      const [boardId, ...cellParts] = (token.gridCellKey ?? '').split(':');
+      const cellKey = cellParts.join(':');
+
+      const board = state.objects[boardId] as Board;
+      if (board && board.gridCellMagnetPoints && board.gridCellMagnetPoints[cellKey]) {
+        // Parse col and row from cellKey instead of calculating from position
+        const { col, row } = parseGridCellKey(cellKey);
+
+        // Calculate cell dimensions for magnet point repositioning
+        const gridW = board.gridWidth || board.gridSize || 50;
+        const gridH = board.gridHeight || board.gridSize || 50;
+
+        // Use helper function to calculate cell center
+        const cellCenter = calculateGridCellCenter(board, col, row);
+
+        const result = removeObjectFromGridCellMagnet(
+          board,
+          col,
+          row,
+          id,
+          state.objects,
+          cellCenter.x,
+          cellCenter.y,
+          gridW,
+          gridH
+        );
+
+        if (result) {
+          // Create updated board object preserving all other properties
+          const updatedBoard = {
+            ...board,
+            gridCellMagnetPoints: result.updatedBoard.gridCellMagnetPoints
+          };
+
+          // Update board with new magnet points
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: updatedBoard
+          });
+
+          // Move remaining objects to their new magnet positions
+          for (const movedObj of result.movedObjects) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: movedObj.objectId,
+                x: movedObj.x,
+                y: movedObj.y
+              }
+            });
+          }
+
+          // Clear gridCellKey from the token being picked up
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: id,
+              gridCellKey: undefined
+            }
+          });
+        }
+      }
     }
 
     // Clone the item to store it in the slot - deep copy to preserve all properties
@@ -1106,13 +1355,46 @@ export const Tabletop: React.FC = () => {
 
     // Mark the item as inCursorSlot (keeps it in objects list but hidden from tabletop)
     dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
-  }, [cursorSlot.length, dispatch, v2p, state.viewTransform, cursorSlotRef]);
+
+    // Clean up magnet points - when picking up an object, remove it from any cell's magnet points
+    // and reposition remaining objects
+    for (const obj of Object.values(state.objects)) {
+      if ((obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_CELL) && obj.magnetPoints) {
+        const cell = obj as BattlefieldCell | NexusCellObject;
+        if (cell.magnetPoints?.some(p => p.objectId === id)) {
+          const result = removeObjectFromCellMagnet(cell, id, state.objects);
+          if (result) {
+            // Update the cell with new magnet points
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: cell.id,
+                magnetPointCount: result.updatedCell.magnetPointCount,
+                magnetPoints: result.updatedCell.magnetPoints
+              }
+            });
+
+            // Move remaining objects to their new magnet positions
+            for (const movedObj of result.movedObjects) {
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: movedObj.objectId,
+                  x: movedObj.x,
+                  y: movedObj.y
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+  }, [cursorSlot.length, dispatch, v2p, state.viewTransform, state.objects, cursorSlotRef]);
 
   // Drop all items from cursor slot at specified screen coordinates
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
-    console.log(`[DRAG SYSTEM] dropCursorSlot - dropping ${currentSlot.length} items`);
     if (currentSlot.length === 0) return;
 
     // Determine if we should preserve original zIndex or use stack zIndex
@@ -1133,8 +1415,155 @@ export const Tabletop: React.FC = () => {
     const worldX = p2v(clientX + scrollX);
     const worldY = p2v(clientY + scrollY);
 
-    // Add all items from slot back to the game with same offsets as in cursor display
-    currentSlot.forEach((item) => {
+    // Find cell with snapToGrid enabled under cursor for automatic magnetism
+    const snapRadius = 100; // VU - radius to check for cell
+    let targetCell: (BattlefieldCell | NexusCellObject) | null = null;
+    let targetBoardCell: { board: BoardType; col: number; row: number; cellCenterX: number; cellCenterY: number } | null = null;
+
+    // Only tokens use automatic cell magnetism
+    const firstItem = currentSlot[0];
+    if (firstItem && firstItem.type === ItemType.TOKEN) {
+      // Check battlefield cells first
+      for (const obj of Object.values(state.objects)) {
+        if ((obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_CELL) &&
+            obj.snapToGrid &&
+            obj.isOnTable !== false) {
+          const cell = obj as BattlefieldCell | NexusCellObject;
+          const cellCenterX = cell.x + (cell.width ?? 100) / 2;
+          const cellCenterY = cell.y + (cell.height ?? 100) / 2;
+          const distance = Math.sqrt(
+            Math.pow(worldX - cellCenterX, 2) +
+            Math.pow(worldY - cellCenterY, 2)
+          );
+
+          // Use the larger of cell dimensions as snap radius
+          const cellSnapRadius = Math.max(cell.width ?? 100, cell.height ?? 100) / 2 + 50;
+          if (distance <= cellSnapRadius) {
+            targetCell = cell;
+            break;
+          }
+        }
+      }
+
+      // If no battlefield cell found, check Board grid cells
+      if (!targetCell) {
+        for (const obj of Object.values(state.objects)) {
+          if (obj.type === ItemType.BOARD &&
+              (obj as BoardType).snapToGrid &&
+              (obj as BoardType).gridType !== GridType.NONE &&
+              obj.isOnTable !== false) {
+            const board = obj as BoardType;
+            const gridW = board.gridWidth || board.gridSize || 50;
+            const gridH = board.gridHeight || board.gridSize || 50;
+            let cellCenterX: number, cellCenterY: number;
+
+            if (board.gridType === GridType.SQUARE) {
+              const relativeX = worldX - board.x;
+              const relativeY = worldY - board.y;
+              const col = Math.floor(relativeX / gridW);
+              const row = Math.floor(relativeY / gridH);
+
+              // Check if cell is within board bounds
+              if (col >= 0 && col < Math.floor(board.width / gridW) &&
+                  row >= 0 && row < Math.floor(board.height / gridH)) {
+                cellCenterX = board.x + (col * gridW) + (gridW / 2);
+                cellCenterY = board.y + (row * gridH) + (gridH / 2);
+                targetBoardCell = { board, col, row, cellCenterX, cellCenterY };
+                break;
+              }
+            } else if (board.gridType === GridType.HEX) {
+              // Pointy-top hex grid - using gridUtils for consistency
+              const hexW = gridW || 100;
+              const hexH = gridH || (hexW * 1.15);  // Use board's gridHeight if available
+
+              const hCapIdeal = hexW / (2 * Math.sqrt(3));
+              const hCap = Math.min(hCapIdeal, hexH / 2);
+
+              const relativeX = worldX - board.x;
+              const relativeY = worldY - board.y;
+
+              const hexCenter = getHexCenterAtPixel(
+                  relativeX,
+                  relativeY,
+                  hexW,
+                  hexH,
+                  'pointy-top'
+              );
+
+              cellCenterX = board.x + hexCenter.x;
+              cellCenterY = board.y + hexCenter.y;
+
+              // Calculate col and row from hex center position
+              const dx = hexW;
+              const dy = hexH - hCap;
+              const offsetX = hexW / 2;
+
+              const row = Math.round(hexCenter.y / dy);
+              const col = Math.round((hexCenter.x - (row % 2) * offsetX) / dx);
+
+              // Check if hex center is within board bounds
+              const hexX = cellCenterX - board.x;
+              const hexY = cellCenterY - board.y;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              if (hexX >= -halfW && hexX <= board.width + halfW &&
+                  hexY >= -halfH && hexY <= board.height + halfH) {
+                targetBoardCell = { board, col, row, cellCenterX, cellCenterY };
+                break;
+              }
+            } else if (board.gridType === GridType.HEX_HORIZONTAL) {
+              // Flat-top hex grid - using gridUtils for consistency
+              const hexW = gridW || 115;
+              const hexH = gridH || (hexW / 1.15);  // Use board's gridHeight if available
+
+              const wCapIdeal = hexH / (2 * Math.sqrt(3));
+              const wCap = Math.min(wCapIdeal, hexW / 2);
+
+              const relativeX = worldX - board.x;
+              const relativeY = worldY - board.y;
+
+              const hexCenter = getHexCenterAtPixel(
+                  relativeX,
+                  relativeY,
+                  hexW,
+                  hexH,
+                  'flat-top'
+              );
+
+              cellCenterX = board.x + hexCenter.x;
+              cellCenterY = board.y + hexCenter.y;
+
+              // Calculate col and row from hex center position
+              const dx = hexW - wCap;
+              const dy = hexH;
+              const offsetY = hexH / 2;
+
+              const col = Math.round(hexCenter.x / dx);
+              const row = Math.round((hexCenter.y - (col % 2) * offsetY) / dy);
+
+              // Check if hex center is within board bounds
+              const hexX = cellCenterX - board.x;
+              const hexY = cellCenterY - board.y;
+              const halfW = hexW / 2;
+              const halfH = hexH / 2;
+
+              if (hexX >= -halfW && hexX <= board.width + halfW &&
+                  hexY >= -halfH && hexY <= board.height + halfH) {
+                targetBoardCell = { board, col, row, cellCenterX, cellCenterY };
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Track cells that need to be updated (to avoid duplicate updates)
+    const updatedCellIds = new Set<string>();
+
+    // Add all items from slot back to the game with automatic magnetism
+    currentSlot.forEach((item, index) => {
       const isCard = item.type === ItemType.CARD;
       let baseWidth = item.width ?? (isCard ? 63 : 50);
       let baseHeight = item.height ?? (isCard ? 88 : 50);
@@ -1149,19 +1578,9 @@ export const Tabletop: React.FC = () => {
       }
 
       // For horizontal cards, swap dimensions to match cursor visualization
-      // (same logic as in cursor slot rendering)
       if (isHorizontal) {
         [baseWidth, baseHeight] = [baseHeight, baseWidth];
       }
-
-      // Calculate offset the SAME WAY as cursor slot rendering
-      // Newest element (highest index) has offset 0, older elements are offset down-right
-      const slotIndex = (item as any).cursorSlotIndex ?? 0;
-      const newestIndex = currentSlot.length - 1;
-      const offsetFromBack = Math.max(0, newestIndex - slotIndex);
-      const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
-      const offsetX = offsetFromBack * offsetAmount;
-      const offsetY = offsetFromBack * offsetAmount;
 
       // Clamp zIndex to hyperscale layer bounds
       const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
@@ -1169,26 +1588,191 @@ export const Tabletop: React.FC = () => {
       const maxZ = itemLayer?.maxZIndex ?? 10000;
 
       // Use original zIndex if preserving, otherwise use stack zIndex (clamped to layer bounds)
-      const stackZ = Math.min(10000 + slotIndex, maxZ);
-      const zIndex = useOriginalZIndex
+      const stackZ = Math.min(10000 + index, maxZ);
+      const defaultZIndex = useOriginalZIndex
         ? ((item as any).originalZIndex ?? minZ)
         : stackZ;
 
-      // Find snap target based on cursor position (worldX, worldY = cursor center)
-      let snapTargetX: number, snapTargetY: number;
-      if (item.type === ItemType.TOKEN) {
-        const snappedPos = getSnappedCoordinates(worldX, worldY, state.objects, item.id);
-        // snappedPos contains top-left coordinates, add half dimensions to get center
-        snapTargetX = snappedPos.x + baseWidth / 2;
-        snapTargetY = snappedPos.y + baseHeight / 2;
-      } else {
-        snapTargetX = worldX;
-        snapTargetY = worldY;
-      }
+      let finalX: number, finalY: number;
+      let finalZIndex: number = defaultZIndex; // Will be overridden if snapped to cell
 
-      // Apply stacking offset to the snapped center position
-      const finalX = snapTargetX - baseWidth / 2 + offsetX;
-      const finalY = snapTargetY - baseHeight / 2 + offsetY;
+      // Use automatic magnetism for tokens dropped on cells
+      if (item.type === ItemType.TOKEN && targetCell && !updatedCellIds.has(targetCell.id)) {
+        const result = addObjectToCellMagnet(targetCell, item.id, state.objects);
+
+        // Calculate zIndex for new object - place it below all already snapped objects
+        // Find minimum zIndex among objects already snapped to this cell
+        const existingSnappedObjectIds = (targetCell.magnetPoints ?? [])
+          .filter(p => p.objectId !== item.id) // Exclude the object being added
+          .map(p => p.objectId);
+
+        let snappedObjectZIndices: number[] = [];
+        for (const snappedId of existingSnappedObjectIds) {
+          const snappedObj = state.objects[snappedId];
+          if (snappedObj) {
+            snappedObjectZIndices.push(snappedObj.zIndex ?? minZ);
+          }
+        }
+
+        // Find the lowest zIndex among snapped objects, and place new object below it
+        if (snappedObjectZIndices.length > 0) {
+          const minSnappedZ = Math.min(...snappedObjectZIndices);
+          // Place new object below the lowest snapped object (subtract 1, but respect minZ)
+          finalZIndex = Math.max(minZ, minSnappedZ - 1);
+        } else {
+          // First object being snapped - use its current zIndex or cell's zIndex - 1
+          finalZIndex = useOriginalZIndex
+            ? ((item as any).originalZIndex ?? minZ)
+            : Math.max(minZ, (targetCell.zIndex ?? minZ + 1) - 1);
+        }
+
+        // Ensure we don't exceed layer bounds
+        finalZIndex = Math.max(minZ, Math.min(maxZ, finalZIndex));
+
+        // Update the cell with new magnet points
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: targetCell.id,
+            magnetPointCount: result.updatedCell.magnetPointCount,
+            magnetPoints: result.updatedCell.magnetPoints
+          }
+        });
+
+        // Move existing objects to their new magnet positions
+        for (const movedObj of result.movedObjects) {
+          if (movedObj.objectId !== item.id) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: movedObj.objectId,
+                x: movedObj.x,
+                y: movedObj.y
+              }
+            });
+          }
+        }
+
+        // Calculate final position for the new object (center to top-left)
+        finalX = result.snapPosition.x - baseWidth / 2;
+        finalY = result.snapPosition.y - baseHeight / 2;
+
+        // Mark cell as updated
+        updatedCellIds.add(targetCell.id);
+      } else if (item.type === ItemType.TOKEN && targetBoardCell && !updatedCellIds.has(targetBoardCell.board.id)) {
+        // Snap to Board grid cell with magnetism
+        const { board, col, row, cellCenterX, cellCenterY } = targetBoardCell;
+        const gridW = board.gridWidth || board.gridSize || 50;
+        const gridH = board.gridHeight || board.gridSize || 50;
+
+        // Add object to grid cell magnet points
+        const result = addObjectToGridCellMagnet(
+          board,
+          col,
+          row,
+          item.id,
+          state.objects,
+          cellCenterX,
+          cellCenterY,
+          gridW,
+          gridH
+        );
+
+        // Calculate zIndex for new object - place it below all already snapped objects in this cell
+        const cellKey = generateGridCellKey(col, row);
+        const gridCellKeyForToken = `${board.id}:${cellKey}`; // Store direct reference in token
+
+        const existingSnappedObjectIds = (board.gridCellMagnetPoints?.[cellKey]?.magnetPoints ?? [])
+          .filter(p => p.objectId !== item.id) // Exclude the object being added
+          .map(p => p.objectId);
+
+        let snappedObjectZIndices: number[] = [];
+        for (const snappedId of existingSnappedObjectIds) {
+          const snappedObj = state.objects[snappedId];
+          if (snappedObj) {
+            snappedObjectZIndices.push(snappedObj.zIndex ?? minZ);
+          }
+        }
+
+        // Find the lowest zIndex among snapped objects, and place new object below it
+        if (snappedObjectZIndices.length > 0) {
+          const minSnappedZ = Math.min(...snappedObjectZIndices);
+          // Place new object below the lowest snapped object (subtract 1, but respect minZ)
+          finalZIndex = Math.max(minZ, minSnappedZ - 1);
+        } else {
+          // First object being snapped - use its current zIndex or board's zIndex - 1
+          finalZIndex = useOriginalZIndex
+            ? ((item as any).originalZIndex ?? minZ)
+            : Math.max(minZ, (board.zIndex ?? minZ + 1) - 1);
+        }
+
+        // Ensure we don't exceed layer bounds
+        finalZIndex = Math.max(minZ, Math.min(maxZ, finalZIndex));
+
+        // Create updated board object preserving all other properties
+        const updatedBoardForDrop = {
+          ...board,
+          gridCellMagnetPoints: result.updatedBoard.gridCellMagnetPoints
+        };
+
+        // Update the board with new grid cell magnet points
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: updatedBoardForDrop
+        });
+
+        // Move existing objects to their new magnet positions
+        for (const movedObj of result.movedObjects) {
+          if (movedObj.objectId !== item.id) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: movedObj.objectId,
+                x: movedObj.x,
+                y: movedObj.y
+              }
+            });
+          }
+        }
+
+        // Calculate final position for the new object (center to top-left)
+        finalX = result.snapPosition.x - baseWidth / 2;
+        finalY = result.snapPosition.y - baseHeight / 2;
+
+        // Store gridCellKey in the token for faster lookup when unhooking
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: item.id,
+            gridCellKey: gridCellKeyForToken
+          }
+        });
+
+        // Mark board as updated
+        updatedCellIds.add(board.id);
+      } else {
+        // No cell magnetism - use regular snapping
+        let snapTargetX: number, snapTargetY: number;
+        if (item.type === ItemType.TOKEN) {
+          const snappedPos = getSnappedCoordinates(worldX, worldY, state.objects, item.id);
+          snapTargetX = snappedPos.x + baseWidth / 2;
+          snapTargetY = snappedPos.y + baseHeight / 2;
+        } else {
+          snapTargetX = worldX;
+          snapTargetY = worldY;
+        }
+
+        // Apply stacking offset for multiple items
+        const slotIndex = (item as any).cursorSlotIndex ?? 0;
+        const newestIndex = currentSlot.length - 1;
+        const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+        const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
+        const offsetX = offsetFromBack * offsetAmount;
+        const offsetY = offsetFromBack * offsetAmount;
+
+        finalX = snapTargetX - baseWidth / 2 + offsetX;
+        finalY = snapTargetY - baseHeight / 2 + offsetY;
+      }
 
       // Use DROP_FROM_CURSOR_SLOT action with undo tracking
       dispatch({
@@ -1197,7 +1781,7 @@ export const Tabletop: React.FC = () => {
           objectId: item.id,
           x: finalX,
           y: finalY,
-          zIndex,
+          zIndex: finalZIndex,
         },
       });
     });
@@ -1215,7 +1799,6 @@ export const Tabletop: React.FC = () => {
     }, 500);
 
     // Clear the slot - also update ref immediately for mouseup handler
-    console.log(`[DRAG SYSTEM] Clearing cursor slot - dropped ${currentSlot.length} items`);
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
@@ -1223,7 +1806,7 @@ export const Tabletop: React.FC = () => {
     // Set flag to prevent immediate re-pickup
     justDroppedRef.current = true;
     lastDropTimeRef.current = Date.now();
-  }, [cursorSlot, cursorSlotSource, p2v, state.viewTransform, dispatch, getCardSettings]);
+  }, [cursorSlot, cursorSlotSource, p2v, state.viewTransform, state.objects, state.hyperscaleLayers, dispatch, getCardSettings, getSnappedCoordinates]);
 
   // Listen for drop-cursor-slot-at-position events (from drag-to-place in ToolsPanel)
   useEffect(() => {
@@ -1706,16 +2289,14 @@ export const Tabletop: React.FC = () => {
         // Check if we just dropped items - prevent immediate re-pickup
         const timeSinceDrop = Date.now() - lastDropTimeRef.current;
         if (justDroppedRef.current && timeSinceDrop < 200) {
-          console.log(`[DRAG SYSTEM] Ignoring CLICK in mouseup ${timeSinceDrop}ms after drop - preventing re-pickup`);
           return;
         }
 
         // Simple click without drag no longer adds to cursor slot
         // Only Shift+click and drag (5px+) work for adding items
         if (distance < 5) {
-          console.log(`[DRAG SYSTEM] CLICK without drag (${distance.toFixed(1)}px < 5px) - ignored, use Shift+click to add to slot`);
+          // CLICK without drag - ignored, use Shift+click to add to slot
         }
-        console.log(`[DRAG SYSTEM] Mouse up after drag completed (${distance.toFixed(1)}px >= 5px) - tracking already cleared`);
         // If moved 5px or more, the card was already added to slot in mousemove, nothing to do
       }
 
@@ -1773,7 +2354,6 @@ export const Tabletop: React.FC = () => {
               if (pile) {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log(`[DRAG SYSTEM] Dropping ${currentSlot.length} items to pile: ${pile.name}`);
                 dropToPile(pileId, deck.id, currentSlot);
                 // Ensure slot is cleared after dropping to pile
                 cursorSlotRef.current = [];
@@ -1795,7 +2375,6 @@ export const Tabletop: React.FC = () => {
         if (obj && obj.type === ItemType.DECK && objectId) {
           e.preventDefault();
           e.stopPropagation();
-          console.log(`[DRAG SYSTEM] Dropping ${currentSlot.length} items to deck: ${obj.name}`);
           dropToDeck(objectId, currentSlot);
           // Ensure slot is cleared after dropping to deck
           cursorSlotRef.current = [];
@@ -1814,8 +2393,187 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [cursorSlotSource, dropCursorSlot, dropToDeck, dropToPile, state.objects, dispatch, addToCursorSlot]);
 
+  // Handler for adding a cell to a NexusBoard - creates a standalone NexusCellObject
+  const handleAddNexusCell = useCallback((boardId: string, direction: HexDirection) => {
+    const board = state.objects[boardId] as NexusBoard;
+
+    if (!board || board.type !== ItemType.NEXUS_BOARD) {
+      return;
+    }
+
+    // Find main cell to use its position and size
+    const mainCellId = board.cells[0]?.id;
+    const mainCell = mainCellId ? (state.objects[mainCellId] as NexusCellObject) : null;
+
+    // Use actual main cell dimensions, or fall back to board defaults
+    const cellWidth = mainCell?.width || board.cellWidth || 100;
+    const cellHeight = mainCell?.height || board.cellHeight || 150;
+
+    // Hex grid spacing (same as used in NexusBoard.tsx for UI)
+    // Uses decaying extrapolation: height=115→coeff=0.75, height=150→coeff=0.80833, approaches 0.86
+    const H1 = 115;
+    const C1 = 0.75;
+    const H2 = 150;
+    const C2 = 121.25 / 150;
+    const targetRatio = 0.906;
+    const k = -Math.log((targetRatio - C2) / (targetRatio - C1)) / (H2 - H1);
+    const rowSpacingRatio = targetRatio - (targetRatio - C1) * Math.exp(-k * (cellHeight - H1));
+    const rowSpacing = cellHeight * rowSpacingRatio;
+    const colSpacing = cellWidth;
+    const colOffset = cellWidth * 0.5;
+
+    let offsetX = 0;
+    let offsetY = 0;
+
+    switch (direction) {
+      case 'NE':
+        offsetX = colOffset;
+        offsetY = -rowSpacing;
+        break;
+      case 'SE':
+        offsetX = colSpacing;
+        offsetY = 0;
+        break;
+      case 'NW':
+        offsetX = -colOffset;
+        offsetY = -rowSpacing;
+        break;
+      case 'SW':
+        offsetX = -colSpacing;
+        offsetY = 0;
+        break;
+      case 'N':
+        offsetX = 0;
+        offsetY = -rowSpacing;
+        break;
+      case 'S':
+        offsetX = 0;
+        offsetY = rowSpacing;
+        break;
+    }
+
+    // Main cell position is top-left corner, but green buttons are positioned from center
+    // The container is centered on main cell, so:
+    // Green button at: left: calc(50% + offsetX - cellWidth/2) from center
+    // In absolute coords: mainCell.x + cellWidth/2 + offsetX - cellWidth/2 = mainCell.x + offsetX
+    const cellX = (mainCell?.x ?? board.x) + offsetX;
+    const cellY = (mainCell?.y ?? board.y) + offsetY;
+
+    // Create new NexusCellObject (similar to BattlefieldCell)
+    const newCell: NexusCellObject = {
+      id: generateUUID(),
+      type: ItemType.NEXUS_CELL,
+      shape: TokenShape.HEX,
+      x: cellX,
+      y: cellY,
+      rotation: 0,
+      width: cellWidth,
+      height: cellHeight,
+      content: '',
+      name: `${board.name} - ${direction}`,
+      isOnTable: true,
+      locked: false,
+      color: board.color || '#496179',
+      borderColor: board.borderColor || '#212f3c',
+      borderWidth: 3,
+      opacity: board.opacity || 100,
+      borderOpacity: board.borderOpacity || 100,
+      snapToGrid: true,
+      gridSize: board.gridSize || 50,
+      zIndex: board.zIndex,
+      hyperscaleLayerId: board.hyperscaleLayerId,
+      nexusBoardId: board.id,
+      direction: direction,
+      offset: { x: offsetX, y: offsetY },
+      gridType: board.gridType,
+      magnetPointCount: 1,
+      magnetRotation: 0,
+    };
+
+    // Add the cell object to the table
+    dispatch({ type: 'ADD_OBJECT', payload: newCell });
+
+    // Also update board's cells array for reference
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: boardId,
+        cells: [...board.cells, { id: newCell.id, direction }]
+      }
+    });
+
+    // Keep editing mode open for adding more cells
+  }, [state.objects, dispatch]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent, id?: string) => {
     if (contextMenu) setContextMenu(null);
+
+    // Block all mouse interactions when ruler tool is active (except ruler-specific handling)
+    if (currentTool === 'ruler') {
+      // Only handle left click for ruler functionality
+      if (e.button === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Get world coordinates from screen coordinates
+        const scrollContainer = scrollContainerRef.current;
+        if (scrollContainer) {
+          const rect = scrollContainer.getBoundingClientRect();
+          const worldX = (e.clientX - rect.left + scrollContainer.scrollLeft) / pixelsPerVU;
+          const worldY = (e.clientY - rect.top + scrollContainer.scrollTop) / pixelsPerVU;
+
+          if (rulerStart) {
+            // If we have a start point, clear it (reset ruler)
+            setRulerStart(null);
+            setRulerCurrent(null);
+            setIsRulerRightClick(false);
+          } else {
+            // Set the start point and current position (so the point appears immediately)
+            const startPos = { x: worldX, y: worldY };
+            setRulerStart(startPos);
+            setRulerCurrent(startPos);
+          }
+        }
+      }
+      // Block all other buttons when ruler is active
+      return;
+    }
+
+    // Check if clicking on a UI object first - UI objects (panels/windows) should always be draggable
+    // even when marker or eraser tool is active
+    if (id && e.button === 0) {
+      e.stopPropagation();
+      const item = state.objects[id];
+
+      // Check if this is a UI object (panel or window) - handled differently
+      if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
+        if (item.locked) return; // Locked objects can't be dragged
+
+        // Note: We DON'T unpin pinned objects on drag - pinned objects stay pinned while dragging
+
+        // UI objects use screen coordinates directly, not world coordinates
+        setDraggingId(id);
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+        dragOffsetRef.current = {
+          x: e.clientX - item.x,
+          y: e.clientY - item.y
+        };
+        // Store initial position for network commit on drag end
+        dragStartPositionRef.current = { id, x: item.x, y: item.y };
+        // Mark object as being dragged by local player (shows as shadow/locked to others)
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id, draggingPlayerId: state.activePlayerId, broadcastX: item.x, broadcastY: item.y }
+        });
+        return;
+      }
+    }
+
+    // Block all other mouse interactions when marker or eraser tool is active
+    // (but UI objects are already handled above)
+    if (currentTool === 'marker' || currentTool === 'eraser') {
+      return;
+    }
 
     // Check if clicking on a UI object - if it has an id, process normally
     // If no id (background), check for panning or dropping cursor slot
@@ -1847,32 +2605,13 @@ export const Tabletop: React.FC = () => {
       e.stopPropagation();
       const item = state.objects[id];
 
-      // Check if this is a UI object (panel or window) - handled differently
+      // UI objects (panels/windows) are already handled above, skip them here
       if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
-        if (item.locked) return; // Locked objects can't be dragged
-
-        // Note: We DON'T unpin pinned objects on drag - pinned objects stay pinned while dragging
-
-        // UI objects use screen coordinates directly, not world coordinates
-        setDraggingId(id);
-        dragStartRef.current = { x: e.clientX, y: e.clientY };
-        dragOffsetRef.current = {
-          x: e.clientX - item.x,
-          y: e.clientY - item.y
-        };
-        // Store initial position for network commit on drag end
-        dragStartPositionRef.current = { id, x: item.x, y: item.y };
-        // Mark object as being dragged by local player (shows as shadow/locked to others)
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: { id, draggingPlayerId: state.activePlayerId, broadcastX: item.x, broadcastY: item.y }
-        });
         return;
       }
 
       // Locked objects check - don't send drag messages for locked objects even for GM
       if (item && item.locked) {
-        console.log(`[LAYER DRAG] Object ${item.name} (id: ${id}) is LOCKED - drag prevented`);
         return;
       }
 
@@ -1884,21 +2623,13 @@ export const Tabletop: React.FC = () => {
         const objLayer = item.hyperscaleLayerId || 'none';
         const selectedLayers = state.selectedHyperscaleLayerIds;
         const layerAllowed = objLayer === 'none' || selectedLayers.includes(objLayer);
-        console.log(`[LAYER DRAG] Object: ${item.name} (${item.type})`);
-        console.log(`[LAYER DRAG] Object layer: ${objLayer}`);
-        console.log(`[LAYER DRAG] Selected layers: ${selectedLayers.join(', ')}`);
-        console.log(`[LAYER DRAG] Drag allowed: ${layerAllowed}`);
         if (!layerAllowed) {
-          console.log(`[LAYER DRAG] Drag PREVENTED - layer not selected`);
           return; // Object is in a non-selected hyperscale layer
         }
-      } else {
-        console.log(`[LAYER DRAG] Object ${item.name} is in cursor slot - layer check skipped`);
       }
 
       // Cards and tokens: Shift+click immediately adds to cursor slot
       if (e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
-        console.log(`[DRAG SYSTEM] SHIFT+CLICK - activating SHIFT mode for item: ${item.name} (${item.type})`);
         addToCursorSlot(id, item);
         return;
       }
@@ -1914,7 +2645,6 @@ export const Tabletop: React.FC = () => {
       // Prevent immediate re-pickup after dropping items (within 200ms)
       const timeSinceDrop = Date.now() - lastDropTimeRef.current;
       if (justDroppedRef.current && timeSinceDrop < 200) {
-        console.log(`[DRAG SYSTEM] Ignoring click ${timeSinceDrop}ms after drop - preventing re-pickup`);
         return;
       }
 
@@ -1932,7 +2662,6 @@ export const Tabletop: React.FC = () => {
       // Cards and tokens use cursor slot drag system ONLY (no normal drag)
       if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
         // Store item info for drag threshold detection (no timer, just movement)
-        console.log(`[DRAG SYSTEM] Starting HOLD mode tracking - item: ${item.name} (${item.type})`);
         longPressItemRef.current = {
           id,
           item,
@@ -1995,52 +2724,31 @@ export const Tabletop: React.FC = () => {
         });
       }
     }
-  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, state.selectedHyperscaleLayerIds, dispatch, addToCursorSlot, offset, zoom, setDraggingId, setIsPanning]);
+  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, state.selectedHyperscaleLayerIds, dispatch, addToCursorSlot, offset, setDraggingId, setIsPanning]);
 
   // Handle click on battlefield cell for magnetism control
   // Shift+click: add magnet point
   // Ctrl+Shift+click: remove magnet point
-  const handleCellMagnetClick = useCallback((e: React.MouseEvent, cell: BattlefieldCell) => {
-    // Prevent default behavior
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Check for Shift key
-    if (!e.shiftKey) {
-      return; // Only handle Shift+click
-    }
-
-    const currentCount = cell.magnetPointCount ?? 1;
-    const currentRotation = cell.magnetRotation ?? 0;
-    let newCount = currentCount;
-
-    // Ctrl+Shift = decrease, Shift only = increase
-    if (e.ctrlKey || e.metaKey) {
-      // Decrease magnet points (min 1)
-      newCount = Math.max(1, currentCount - 1);
-      console.log('[CELL MAGNET] Decrease magnet points:', currentCount, '->', newCount);
-    } else {
-      // Increase magnet points (max 12 for practical reasons)
-      newCount = Math.min(12, currentCount + 1);
-      console.log('[CELL MAGNET] Increase magnet points:', currentCount, '->', newCount);
-    }
-
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: cell.id,
-        magnetPointCount: newCount,
-        magnetRotation: currentRotation
-      }
-    });
-  }, [dispatch]);
-
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     // Always update cursor position for slot visualization (needed when adding token to slot)
     const newCursorPosition = { x: e.clientX, y: e.clientY };
     setCursorPosition(newCursorPosition);
     // Also update ref immediately for synchronous access during render
     cursorPositionRef.current = newCursorPosition;
+
+    // Update ruler current position when ruler is active
+    if (currentTool === 'ruler' && rulerStart) {
+      const scrollContainer = scrollContainerRef.current;
+      if (scrollContainer) {
+        const rect = scrollContainer.getBoundingClientRect();
+        const worldX = (e.clientX - rect.left + scrollContainer.scrollLeft) / pixelsPerVU;
+        const worldY = (e.clientY - rect.top + scrollContainer.scrollTop) / pixelsPerVU;
+        setRulerCurrent({ x: worldX, y: worldY });
+      }
+    } else if (currentTool !== 'ruler') {
+      // Clear ruler current when tool is not ruler
+      setRulerCurrent(null);
+    }
 
     // Check for drag movement - if mouse moves 5px while holding on a card/token, add to slot immediately
     if (longPressItemRef.current) {
@@ -2053,7 +2761,6 @@ export const Tabletop: React.FC = () => {
         // Mouse moved enough - add to cursor slot for drag
         // Use same positioning logic as Shift+click (WITHOUT mousePosition) to avoid jump
         // The cursor will be positioned at card center, then follow mouse movement
-        console.log(`[DRAG SYSTEM] Drag threshold reached (${distance.toFixed(1)}px) - switching to HOLD mode`);
         addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
         // IMPORTANT: Update cursor position to current mouse position AFTER adding to slot
         // This ensures the card center is at the mouse position from the start
@@ -2260,7 +2967,7 @@ export const Tabletop: React.FC = () => {
         _localOnly: true // Don't send over network during drag
       });
     }
-  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, zoom, dispatch, cursorSlot, isPointInRotatedRect]);
+  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, dispatch, cursorSlot, isPointInRotatedRect, currentTool, rulerStart, scrollContainerRef]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
     // Clear long-press timer if mouse is released before timeout
@@ -2412,8 +3119,8 @@ export const Tabletop: React.FC = () => {
 
         // Convert cursor screen coordinates to world coordinates
         // CSS transform is: translate(offset) scale(zoom)
-        const worldX = dropClientX / zoom - offset.x;
-        const worldY = dropClientY / zoom - offset.y;
+        const worldX = dropClientX - offset.x;
+        const worldY = dropClientY - offset.y;
 
         // First check if dropping on a pile (piles should take priority over decks)
         type PileInfo = { pile: CardPile; deck: DeckType };
@@ -2494,9 +3201,8 @@ export const Tabletop: React.FC = () => {
             if (obj.type === ItemType.DECK) {
               const deck = obj as DeckType;
               // Convert cursor screen coordinates to world coordinates
-              // CSS transform is: translate(offset) scale(zoom)
-              const worldX = dropClientX / zoom - offset.x;
-              const worldY = dropClientY / zoom - offset.y;
+              const worldX = dropClientX - offset.x;
+              const worldY = dropClientY - offset.y;
 
               // Check if cursor is within deck bounds (accounting for rotation)
               if (isPointInRotatedRect(worldX, worldY, deck.x, deck.y, deck.width, deck.height, deck.rotation || 0)) {
@@ -2639,6 +3345,12 @@ export const Tabletop: React.FC = () => {
           setClickTooltip(null);
           clickTooltipBoundsRef.current = null;
         }
+        // Clear ruler on ESC
+        if (currentTool === 'ruler' && rulerStart) {
+          setRulerStart(null);
+          setRulerCurrent(null);
+          setIsRulerRightClick(false);
+        }
       }
 
       // Ctrl+Z / Cmd+Z for undo (use 'code' to work with any keyboard layout)
@@ -2665,8 +3377,8 @@ export const Tabletop: React.FC = () => {
           // For pinned objects: convert screen position to world position
           // CSS transform is: translate(offset) scale(zoom)
           // So: worldX = screenX / zoom - offset.x
-          const newRenderX = (pinnedDeck as any).pinnedScreenPosition.x / zoom - offset.x;
-          const newRenderY = (pinnedDeck as any).pinnedScreenPosition.y / zoom - offset.y;
+          const newRenderX = (pinnedDeck as any).pinnedScreenPosition.x - offset.x;
+          const newRenderY = (pinnedDeck as any).pinnedScreenPosition.y - offset.y;
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -2680,7 +3392,66 @@ export const Tabletop: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state.objects, offset, zoom, clickTooltip, currentTool, dispatch]);
+  }, [state.objects, offset, clickTooltip, currentTool, dispatch, rulerStart]);
+
+  // Track Shift key state for delete cursor when eraser tool is active
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Track right mouse button for ruler circle display
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button === 2 && currentTool === 'ruler' && rulerStart) {
+        setIsRulerRightClick(true);
+      }
+    };
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.button === 2) {
+        setIsRulerRightClick(false);
+      }
+    };
+    // Also clear on leaving the window
+    const handleMouseLeave = () => {
+      setIsRulerRightClick(false);
+    };
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mouseleave', handleMouseLeave);
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [currentTool, rulerStart]);
+
+  // Prevent context menu when right-clicking with ruler tool
+  useEffect(() => {
+    if (currentTool !== 'ruler') return;
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => window.removeEventListener('contextmenu', handleContextMenu);
+  }, [currentTool]);
 
   // Global mouseup handler for drag operations - ALWAYS active, checks state internally
   useEffect(() => {
@@ -2726,42 +3497,42 @@ export const Tabletop: React.FC = () => {
     // Zoom disabled - keeping scale at 1
   }, []);
 
-  // Sync local state from global state when it changes externally (e.g., loading saved games)
-  // Note: offset is always kept at (0,0) since we use native scroll for panning now
-  React.useEffect(() => {
-    const globalZoom = state.viewTransform.zoom;
-
-    // Only sync zoom, keep offset at (0,0)
-    const zoomChanged = Math.abs(globalZoom - zoom) > 0.01;
-
-    if (zoomChanged) {
-      setZoom(globalZoom);
-    }
-  }, [state.viewTransform]);
-
-  // Sync zoom changes to global state (preserve current scroll, offset always 0)
+  // Sync scroll and pixelsPerVU to global state (for save/load)
   React.useEffect(() => {
     const currentScroll = scrollContainerRef.current?.scrollLeft || 0;
     const currentScrollTop = scrollContainerRef.current?.scrollTop || 0;
+    // Calculate base pixelsPerVU without local zoom multiplier
+    const zoomMultiplier = (localSettings.zoom ?? 100) / 100;
+    const basePixelsPerVU = pixelsPerVU / zoomMultiplier;
+
     dispatch({
       type: 'UPDATE_VIEW_TRANSFORM',
-      payload: { offset: { x: 0, y: 0 }, zoom, scroll: { x: currentScroll, y: currentScrollTop }, pixelsPerVU }
+      payload: { offset: { x: 0, y: 0 }, zoom: 1, scroll: { x: currentScroll, y: currentScrollTop }, pixelsPerVU: basePixelsPerVU }
     });
-  }, [zoom, dispatch, pixelsPerVU]);
+  }, [pixelsPerVU, localSettings.zoom, dispatch]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
+      // Don't show context menu when ruler, marker, or eraser tool is active
+      if (currentTool === 'ruler' || currentTool === 'marker' || currentTool === 'eraser') {
+          e.preventDefault();
+          return;
+      }
       e.preventDefault();
       e.stopPropagation();
       setContextMenu({
           x: e.clientX,
           y: e.clientY,
-          object: obj
+          object: obj,
+          shiftKey: e.shiftKey // Store shift key state
       });
-  }, []);
+  }, [currentTool]);
 
-  const executeMenuAction = (action: string) => {
+  const executeMenuAction = (action: string, shiftKey?: boolean) => {
       if (!contextMenu) return;
       const { object } = contextMenu;
+
+      // Use shift key from context menu or parameter
+      const isShiftPressed = shiftKey !== undefined ? shiftKey : contextMenu.shiftKey;
 
       // Actions specific to context menu
       switch(action) {
@@ -2775,6 +3546,11 @@ export const Tabletop: React.FC = () => {
               return;
           case 'delete':
               setContextMenu(null);
+              // If Shift is held, delete immediately without confirmation
+              if (isShiftPressed) {
+                  dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
+                  return;
+              }
               // Token-copies are deleted immediately without confirmation
               if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
                   dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
@@ -2801,8 +3577,8 @@ export const Tabletop: React.FC = () => {
                   // For game objects (decks, etc.) in transform container
                   // CSS transform is: translate(offset) scale(zoom)
                   // So: screenX = (worldX + offset.x) * zoom
-                  screenX = (object.x + offset.x) * zoom;
-                  screenY = (object.y + offset.y) * zoom;
+                  screenX = object.x + offset.x;
+                  screenY = object.y + offset.y;
               }
 
               setContextMenu(null);
@@ -2827,8 +3603,8 @@ export const Tabletop: React.FC = () => {
                   // To convert to world coordinates for unpinned: worldX = screenX / zoom + offset.x
                   // But for UI objects, they use position: absolute with left: object.x (no transform)
                   // So: worldX = object.x * zoom + offset.x
-                  worldX = object.x * zoom + offset.x;
-                  worldY = object.y * zoom + offset.y;
+                  worldX = object.x + offset.x;
+                  worldY = object.y + offset.y;
               } else {
                   // Game objects (decks, etc.): render in transform container
                   // For pinned game objects, visual position comes from pinnedScreenPosition
@@ -2840,8 +3616,8 @@ export const Tabletop: React.FC = () => {
                   } else {
                       // pinnedPos contains current viewport coordinates
                       // Convert to world coordinates: worldX = screenX / zoom - offset.x
-                      worldX = pinnedPos.x / zoom - offset.x;
-                      worldY = pinnedPos.y / zoom - offset.y;
+                      worldX = pinnedPos.x - offset.x;
+                      worldY = pinnedPos.y - offset.y;
                   }
               }
 
@@ -2886,6 +3662,63 @@ export const Tabletop: React.FC = () => {
           return;
       }
 
+      // Handle editNexusBoard action for NexusBoard - start editing mode
+      if (action === 'editNexusBoard' && object.type === ItemType.NEXUS_BOARD) {
+          setContextMenu(null);
+          setNexusBoardAddingCell(object.id);
+          return;
+      }
+
+      // Handle editNexusBoard action for NexusCellObject - use linked board
+      if (action === 'editNexusBoard' && object.type === ItemType.NEXUS_CELL) {
+          setContextMenu(null);
+          setNexusBoardAddingCell((object as NexusCellObject).nexusBoardId);
+          return;
+      }
+
+      // Handle closeNexusBoardEditing action for NexusBoard - stop editing mode
+      if (action === 'closeNexusBoardEditing' && object.type === ItemType.NEXUS_BOARD) {
+          setContextMenu(null);
+          setNexusBoardAddingCell(null);
+          return;
+      }
+
+      // Handle closeNexusBoardEditing action for NexusCellObject - use linked board
+      if (action === 'closeNexusBoardEditing' && object.type === ItemType.NEXUS_CELL) {
+          setContextMenu(null);
+          setNexusBoardAddingCell(null);
+          return;
+      }
+
+      // Handle deleteNexusBoard action for NexusCellObject - delete the whole board
+      if (action === 'deleteNexusBoard' && object.type === ItemType.NEXUS_CELL) {
+          setContextMenu(null);
+          const cell = object as NexusCellObject;
+          const boardId = cell.nexusBoardId;
+
+          // Delete the NexusBoard (this will cascade to all cells)
+          dispatch({ type: 'DELETE_OBJECT', payload: { id: boardId } });
+          return;
+      }
+
+      // Handle deleteNexusBoard action for NexusBoard - delete the whole board
+      if (action === 'deleteNexusBoard' && object.type === ItemType.NEXUS_BOARD) {
+          setContextMenu(null);
+          dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id } });
+          return;
+      }
+
+      // Reset counter to base value
+      if (action === 'resetToBase' && object.type === ItemType.COUNTER) {
+          setContextMenu(null);
+          const counter = object as Counter;
+          dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: object.id, value: counter.baseValue ?? 0 }
+          });
+          return;
+      }
+
       // All other actions use the unified executeClickAction
       executeClickAction(object, action);
   };
@@ -2927,7 +3760,9 @@ export const Tabletop: React.FC = () => {
               });
               break;
           case 'returnAll':
-              executeClickAction(deck, 'returnAll');
+          case 'returnAllAndShuffle':
+          case 'returnAllExceptHands':
+              executeClickAction(deck, action);
               break;
           case 'showTop':
               dispatch({
@@ -3142,10 +3977,10 @@ export const Tabletop: React.FC = () => {
 
   const worldBounds = useMemo(() => {
     // Fixed world size: WORLD_SIZE_VU × WORLD_SIZE_VU (in virtual units)
-    // Convert to pixels for rendering
-    const sizePx = vuToPixels(WORLD_SIZE_VU, state.viewTransform.pixelsPerVU);
+    // Convert to pixels for rendering (using local zoom-adjusted pixelsPerVU)
+    const sizePx = vuToPixels(WORLD_SIZE_VU, pixelsPerVU);
     return { width: sizePx, height: sizePx };
-  }, [state.viewTransform.pixelsPerVU]);
+  }, [pixelsPerVU]);
 
   const confirmDelete = () => {
     if (deleteCandidateId) {
@@ -3158,8 +3993,24 @@ export const Tabletop: React.FC = () => {
     <div
       ref={scrollContainerRef}
       data-tabletop="true"
-      className={`w-full h-full bg-table overflow-auto relative ${cursorSlot.length > 0 ? 'cursor-grabbing' : 'cursor-default'}`}
-      style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}
+      className={`w-full h-full bg-table overflow-auto relative ${
+        currentTool === 'eraser' && isShiftPressed
+          ? 'cursor-eraser-delete'
+          : currentTool === 'marker' && isShiftPressed
+            ? 'cursor-move'
+            : cursorSlot.length > 0
+              ? 'cursor-grabbing'
+              : 'cursor-default'
+      }`}
+      style={{
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+        cursor: currentTool === 'eraser' && isShiftPressed
+          ? `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18' /><path d='M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6' /><path d='M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2' /><line x1='10' y1='11' x2='10' y2='17' /><line x1='14' y1='11' x2='14' y2='17' /></svg>") 12 12, auto`
+          : undefined
+      }}
       onMouseDown={(e) => handleMouseDown(e)}
       onMouseMove={handleMouseMove}
       onWheel={handleWheel}
@@ -3197,8 +4048,8 @@ export const Tabletop: React.FC = () => {
               // For game objects in transform container: screenX = (obj.x + offset.x) * zoom
               // We want: screenX = pinnedPosition.x
               // So: obj.x = pinnedPosition.x / zoom - offset.x
-              const newX = pinnedPosition.x / zoom - offset.x;
-              const newY = pinnedPosition.y / zoom - offset.y;
+              const newX = pinnedPosition.x - offset.x;
+              const newY = pinnedPosition.y - offset.y;
 
               // Only dispatch if position actually changed significantly
               if (Math.abs(newX - obj.x) > 0.5 || Math.abs(newY - obj.y) > 0.5) {
@@ -3306,7 +4157,6 @@ export const Tabletop: React.FC = () => {
         <DrawingCanvas
           width={worldBounds.width}
           height={worldBounds.height}
-          zoom={zoom}
           offsetX={state.viewTransform.scroll.x}
           offsetY={state.viewTransform.scroll.y}
           cursorSlotLength={cursorSlot.length}
@@ -3322,6 +4172,66 @@ export const Tabletop: React.FC = () => {
                 height: worldBounds.height,
             }}
         >
+            {/* Ruler overlay - inside world container for correct coordinate system */}
+            {currentTool === 'ruler' && rulerStart && (
+              <svg
+                className="absolute pointer-events-none"
+                style={{ top: 0, left: 0, width: '100%', height: '100%', zIndex: 8000 }}
+              >
+                {/* Start point circle */}
+                <circle
+                  cx={v2p(rulerStart.x)}
+                  cy={v2p(rulerStart.y)}
+                  r={v2p(1.5)}
+                  fill="white"
+                />
+                {/* Dashed line from start to current */}
+                {rulerCurrent && (
+                  <>
+                    <line
+                      x1={v2p(rulerStart.x)}
+                      y1={v2p(rulerStart.y)}
+                      x2={v2p(rulerCurrent.x)}
+                      y2={v2p(rulerCurrent.y)}
+                      stroke="white"
+                      strokeWidth={v2p(1)}
+                      strokeDasharray={`${v2p(6)},${v2p(4)}`}
+                    />
+                    {/* Circle around start point when right-click is held (radius = line length) */}
+                    {isRulerRightClick && (() => {
+                      const lineLength = Math.sqrt(Math.pow(rulerCurrent.x - rulerStart.x, 2) + Math.pow(rulerCurrent.y - rulerStart.y, 2));
+                      return lineLength > 0 ? (
+                        <circle
+                          cx={v2p(rulerStart.x)}
+                          cy={v2p(rulerStart.y)}
+                          r={v2p(lineLength)}
+                          fill="none"
+                          stroke="white"
+                          strokeWidth={v2p(0.5)}
+                          strokeDasharray={`${v2p(6)},${v2p(4)}`}
+                        />
+                      ) : null;
+                    })()}
+                    {/* Length label in the middle */}
+                    <text
+                      x={v2p((rulerStart.x + rulerCurrent.x) / 2)}
+                      y={v2p((rulerStart.y + rulerCurrent.y) / 2)}
+                      fill="white"
+                      fontSize={12}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      style={{
+                        textShadow: '1px 1px 2px black, -1px -1px 2px black, 1px -1px 2px black, -1px 1px 2px black',
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      {Math.sqrt(Math.pow(rulerCurrent.x - rulerStart.x, 2) + Math.pow(rulerCurrent.y - rulerStart.y, 2)).toFixed(1)}vu
+                    </text>
+                  </>
+                )}
+              </svg>
+            )}
+
             {/* Objects in another player's cursor slot - darkened, semi-transparent, non-interactive */}
             {remoteCursorSlotObjects.map((obj) => {
                 if (obj.type === ItemType.BOARD) return null; // Boards shouldn't be in cursor slot
@@ -3613,8 +4523,10 @@ export const Tabletop: React.FC = () => {
                                 height={v2p(dice.height || 60)}
                                 color={obj.color || '#6366f1'}
                                 content={''}
-                                borderColor="#4f46e5"
-                                borderWidth={3}
+                                borderColor={(obj as any).borderColor || '#4f46e5'}
+                                borderWidth={(obj as any).borderWidth ?? 3}
+                                opacity={obj.opacity ?? 100}
+                                borderOpacity={(obj as any).borderOpacity ?? 100}
                             />
                             {/* Dice value - always centered */}
                             <div
@@ -3835,6 +4747,10 @@ export const Tabletop: React.FC = () => {
                 const layerMinZ = layer?.minZIndex ?? 3001;
                 const globalZIndex = layerMinZ + (obj.zIndex ?? 0);
 
+                // Get local zoom scale for this object's layer
+                const objLayerId = obj.hyperscaleLayerId || 'tokens';
+                const layerZoomScale = getLayerZoomScale(objLayerId);
+
                 if (obj.type === ItemType.BOARD) {
                     // Skip pinned boards - they are rendered separately in fixed container
                     if ((obj as any).isPinnedToViewport === true) {
@@ -3846,17 +4762,73 @@ export const Tabletop: React.FC = () => {
                     const isDragging = draggingId === obj.id;
                     const canResize = !obj.locked;
                     const gridSize = v2p(board.gridSize || 50); // Convert vu to pixels
+                    const gridW_px = v2p(board.gridWidth || board.gridSize || 50);
+                    const gridH_px = v2p(board.gridHeight || board.gridSize || 50);
 
-                    const hexR = gridSize;
-                    const hexW = hexR * Math.sqrt(3);
-                    const hexPath =
-                      `M 0 ${hexR/2} ` +
-                      `L ${hexW/2} 0 ` +
-                      `L ${hexW} ${hexR/2} ` +
-                      `L ${hexW} ${hexR*1.5} ` +
-                      `L ${hexW/2} ${hexR*2} ` +
-                      `L 0 ${hexR*1.5} Z ` +
-                      `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+                    return (
+                        <Tooltip
+                            key={obj.id}
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
+                        >
+                            {(() => {
+                                const objLayer = obj.hyperscaleLayerId || 'none';
+                                const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                                const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                                const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+                                return (
+                                    <div
+                                        className={isPermeable ? '' : 'pointer-events-auto'}
+                                        style={createPositionedStyle(
+                                            v2p(obj.x),
+                                            v2p(obj.y),
+                                            v2p(board.width),
+                                            v2p(board.height),
+                                            globalZIndex,
+                                            objLayer,
+                                            { pointerEvents: isPermeable ? 'none' : 'auto' }
+                                        )}
+                                    >
+                                    <BoardWithResizeMemo
+                                        token={board}
+                                        obj={obj}
+                                        isOwner={isOwner}
+                                        isDragging={isDragging}
+                                        isResizing={isResizing}
+                                        canResize={canResize}
+                                        onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                        onContextMenu={(e) => handleContextMenu(e, obj)}
+                                        onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
+                                        gridSize={gridSize}
+                                        gridWidth={gridW_px}
+                                        gridHeight={gridH_px}
+                                        showGrid={board.showGrid}
+                                        currentTool={currentTool}
+                                    />
+                                    </div>
+                                );
+                            })()}
+                        </Tooltip>
+                    );
+                }
+
+                if (obj.type === ItemType.NEXUS_BOARD) {
+                    const nexusBoard = obj as NexusBoard;
+                    const isDragging = draggingId === obj.id;
+                    const showAddUI = nexusBoardAddingCell === obj.id;
+
+                    // Find main cell to position the board correctly
+                    const mainCellId = nexusBoard.cells[0]?.id;
+                    const mainCell = mainCellId ? (state.objects[mainCellId] as NexusCellObject) : null;
+
+                    // Use main cell's position and size for proper centering of green + buttons
+                    const boardX = mainCell?.x ?? obj.x;
+                    const boardY = mainCell?.y ?? obj.y;
+                    const boardWidth = mainCell?.width ?? nexusBoard.cellWidth ?? 100;
+                    const boardHeight = mainCell?.height ?? nexusBoard.cellHeight ?? 150;
 
                     return (
                         <Tooltip
@@ -3867,32 +4839,31 @@ export const Tabletop: React.FC = () => {
                             scale={obj.tooltipScale}
                         >
                             <div
-                                className="pointer-events-auto"
-                                style={{
-                                    position: 'absolute',
-                                    left: v2p(obj.x),
-                                    top: v2p(obj.y),
-                                    width: v2p(board.width),
-                                    height: v2p(board.height),
-                                    zIndex: globalZIndex,
-                                }}
+                                className="absolute"
+                                style={createPositionedStyle(
+                                    v2p(boardX),
+                                    v2p(boardY),
+                                    v2p(boardWidth),
+                                    v2p(boardHeight),
+                                    globalZIndex,
+                                    obj.hyperscaleLayerId || 'none',
+                                    {
+                                        transform: `rotate(${obj.rotation || 0}deg)${getLayerInverseScale(obj.hyperscaleLayerId || 'none') !== 1 ? ` scale(${getLayerInverseScale(obj.hyperscaleLayerId || 'none')})` : ''}`,
+                                        transformOrigin: 'center center',
+                                    }
+                                )}
                             >
-                                <BoardWithResizeMemo
-                                    token={board}
-                                    obj={obj}
+                                <NexusBoardMemo
+                                    board={nexusBoard}
                                     isOwner={isOwner}
                                     isDragging={isDragging}
-                                    isResizing={isResizing}
-                                    canResize={canResize}
-                                    zoom={zoom}
                                     onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                     onContextMenu={(e) => handleContextMenu(e, obj)}
-                                    onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
-                                    gridSize={gridSize}
-                                    hexR={hexR}
-                                    hexW={hexW}
-                                    hexPath={hexPath}
-                                    currentTool={currentTool}
+                                    onAddCell={(direction) => handleAddNexusCell(obj.id, direction)}
+                                    showAddUI={showAddUI}
+                                    mainCellWidth={mainCell?.width}
+                                    mainCellHeight={mainCell?.height}
+                                    pixelsPerVU={pixelsPerVU}
                                 />
                             </div>
                         </Tooltip>
@@ -3904,16 +4875,25 @@ export const Tabletop: React.FC = () => {
                     const showGrid = token.gridType && token.gridType !== GridType.NONE;
                     const gridSize = v2p(token.gridSize || 50); // Convert vu to pixels
 
-                    const hexR = gridSize;
-                    const hexW = hexR * Math.sqrt(3);
-                    const hexPath =
-                      `M 0 ${hexR/2} ` +
-                      `L ${hexW/2} 0 ` +
-                      `L ${hexW} ${hexR/2} ` +
-                      `L ${hexW} ${hexR*1.5} ` +
-                      `L ${hexW/2} ${hexR*2} ` +
-                      `L 0 ${hexR*1.5} Z ` +
-                      `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+                    // Flexible hexagon grid
+                    // Height is calculated from width for proper hex proportions
+                    // For HEX (pointy-top): default width=100, height=115
+                    // For HEX_HORIZONTAL (flat-top): default width=115, height=100
+                    const isHexHorizontal = token.gridType === GridType.HEX_HORIZONTAL;
+                    const tokenGridWidth = (obj as any).gridWidth ?? (isHexHorizontal ? 115 : 100);
+
+                    const hexGrid = isHexHorizontal
+                        ? calculateHorizontalHexGrid(tokenGridWidth)
+                        : calculateFlexibleHexGrid(tokenGridWidth);
+                    const patternW = hexGrid.patternWidth;
+                    const patternH = hexGrid.patternHeight;
+                    const hexPath = hexGrid.path;
 
                     return (
                         <Tooltip
@@ -3927,14 +4907,18 @@ export const Tabletop: React.FC = () => {
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
-                                style={{
-                                    left: v2p(obj.x),
-                                    top: v2p(obj.y),
-                                    width: v2p(obj.width),
-                                    height: v2p(obj.height),
-                                    transform: `rotate(${obj.rotation}deg)`,
-                                    zIndex: globalZIndex,
-                                }}
+                                style={createPositionedStyle(
+                                    v2p(obj.x),
+                                    v2p(obj.y),
+                                    v2p(obj.width),
+                                    v2p(obj.height),
+                                    globalZIndex,
+                                    objLayer,
+                                    {
+                                        transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+                                        pointerEvents: isPermeable ? 'none' : 'auto',
+                                    }
+                                )}
                             >
                                 {/* Render SVG token for all tokens */}
                                 <SvgTokenShape
@@ -3953,7 +4937,7 @@ export const Tabletop: React.FC = () => {
                                     fontColor={(obj as any).fontColor || 'white'}
                                 />
 
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             {showGrid && (
                                 <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
                                     <defs>
@@ -3962,8 +4946,8 @@ export const Tabletop: React.FC = () => {
                                                 <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="black" strokeWidth="1"/>
                                             </pattern>
                                         )}
-                                        {token.gridType === GridType.HEX && (
-                                            <pattern id={`grid-hex-${obj.id}`} width={hexW} height={gridSize * 3} patternUnits="userSpaceOnUse">
+                                        {(token.gridType === GridType.HEX || token.gridType === GridType.HEX_HORIZONTAL) && (
+                                            <pattern id={`grid-hex-${obj.id}`} width={patternW} height={patternH} patternUnits="userSpaceOnUse">
                                                 <path d={hexPath} fill="none" stroke="black" strokeWidth="1"/>
                                             </pattern>
                                         )}
@@ -4047,8 +5031,16 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.BATTLEFIELD_CELL) {
                     const cell = obj as BattlefieldCell;
-                    const magnetPointCount = cell.magnetPointCount ?? 1;
+                    // Use magnetPoints array length to determine actual magnet point count
+                    const actualMagnetPointCount = (cell.magnetPoints?.length ?? 0) || (cell.magnetPointCount ?? 1);
+                    const magnetPointCount = Math.max(1, actualMagnetPointCount);
                     const magnetRotation = cell.magnetRotation ?? 0;
+
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
 
                     return (
                         <Tooltip
@@ -4060,17 +5052,20 @@ export const Tabletop: React.FC = () => {
                         >
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
-                                onClick={(e) => isOwner && handleCellMagnetClick(e, cell)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
-                                style={{
-                                    left: v2p(obj.x),
-                                    top: v2p(obj.y),
-                                    width: v2p(obj.width),
-                                    height: v2p(obj.height),
-                                    transform: `rotate(${obj.rotation}deg)`,
-                                    zIndex: globalZIndex,
-                                }}
+                                style={createPositionedStyle(
+                                    v2p(obj.x),
+                                    v2p(obj.y),
+                                    v2p(obj.width),
+                                    v2p(obj.height),
+                                    globalZIndex,
+                                    objLayer,
+                                    {
+                                        transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+                                        pointerEvents: isPermeable ? 'none' : 'auto',
+                                    }
+                                )}
                             >
                                 <SvgTokenShape
                                     shape={cell.shape}
@@ -4086,12 +5081,113 @@ export const Tabletop: React.FC = () => {
                                 />
 
                                 {/* Magnetism System Visualization - hidden */}
+<<<<<<< HEAD
+=======
+                                <svg
+                                    className="absolute pointer-events-none hidden"
+                                    width={v2p(obj.width)}
+                                    height={v2p(obj.height)}
+                                    style={{ overflow: 'visible' }}
+                                >
+                                    <g transform={`translate(${v2p(obj.width) / 2}, ${v2p(obj.height) / 2})`}>
+                                        {/* Calculate ellipse radii - simple version (inscribed in bounding box) */}
+                                        {(() => {
+                                            // For all shapes, use the same simple approach: ellipse in bounding box
+                                            const ellipseRx = obj.width / 2 - 2;
+                                            const ellipseRy = obj.height / 2 - 2;
+
+                                            // Helper to calculate line length to ellipse at given angle
+                                            const calcLineLength = (angleRad: number) => {
+                                                const cosA = Math.cos(angleRad);
+                                                const sinA = Math.sin(angleRad);
+                                                return 1 / Math.sqrt((cosA / ellipseRx) ** 2 + (sinA / ellipseRy) ** 2);
+                                            };
+
+                                            // Create a set of occupied point indices
+                                            const occupiedPointIndices = new Set(
+                                                (cell.magnetPoints ?? []).map(p => p.pointIndex)
+                                            );
+
+                                            return (
+                                                <>
+                                                    {/* Inscribed ellipse (green) - magnetism boundary */}
+                                                    <ellipse
+                                                        cx={0}
+                                                        cy={0}
+                                                        rx={v2p(ellipseRx)}
+                                                        ry={v2p(ellipseRy)}
+                                                        fill="none"
+                                                        stroke="#22c55e"
+                                                        strokeWidth={v2p(1.5)}
+                                                        opacity={0.7}
+                                                    />
+
+                                                    {/* Magnet lines (from center to inscribed ellipse) */}
+                                                    {/* Only show lines for points that have objects snapped OR if snapToGrid is enabled */}
+                                                    {(cell.snapToGrid || (cell.magnetPoints && cell.magnetPoints.length > 0)) && magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                        const anglePerSlice = 360 / magnetPointCount;
+                                                        const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+                                                        const lineLength = calcLineLength(angle);
+                                                        const endX = Math.cos(angle) * lineLength;
+                                                        const endY = Math.sin(angle) * lineLength;
+                                                        const hasObject = occupiedPointIndices.has(index);
+
+                                                        return (
+                                                            <line
+                                                                key={`magnet-line-${index}`}
+                                                                x1={0}
+                                                                y1={0}
+                                                                x2={v2p(endX)}
+                                                                y2={v2p(endY)}
+                                                                stroke={hasObject ? "#22c55e" : "#f59e0b"}
+                                                                strokeWidth={v2p(hasObject ? 1.5 : 1)}
+                                                                opacity={hasObject ? 0.8 : 0.4}
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Magnet points - different style for occupied vs empty points */}
+                                                    {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                        const anglePerSlice = 360 / magnetPointCount;
+                                                        const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+                                                        const lineLength = calcLineLength(angle);
+                                                        const magnetRadius = lineLength * 0.55;
+                                                        const magnetX = Math.cos(angle) * magnetRadius;
+                                                        const magnetY = Math.sin(angle) * magnetRadius;
+                                                        const hasObject = occupiedPointIndices.has(index);
+
+                                                        return (
+                                                            <circle
+                                                                key={`magnet-point-${index}`}
+                                                                cx={v2p(magnetX)}
+                                                                cy={v2p(magnetY)}
+                                                                r={v2p(hasObject ? 2.5 : 2)}
+                                                                fill={hasObject ? "#22c55e" : "#ef4444"}
+                                                                opacity={hasObject ? 1 : 0.7}
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Center point (yellow dot) - shown when single point or no objects */}
+                                                    {magnetPointCount === 1 && (
+                                                        <circle
+                                                            cx={0}
+                                                            cy={0}
+                                                            r={v2p(3)}
+                                                            fill="#fbbf24"
+                                                        />
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </g>
+                                </svg>
+>>>>>>> 0.1.6
 
                                 {(obj as any).isPinnedToViewport && (
                                     <div
                                         className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
                                         title="Pinned to screen"
-                                        style={{ transform: `scale(${1/zoom})` }}
                                     >
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                                             <line x1="12" y1="17" x2="12" y2="22"></line>
@@ -4105,6 +5201,13 @@ export const Tabletop: React.FC = () => {
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+                                            roll: {
+                                                key: 'roll',
+                                                action: () => executeClickAction(obj, 'roll'),
+                                                className: 'bg-purple-600 hover:bg-purple-500',
+                                                title: 'Roll',
+                                                icon: <RefreshCw size={14} />
+                                            },
                                             rotate: {
                                                 key: 'rotate',
                                                 action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
@@ -4171,12 +5274,234 @@ export const Tabletop: React.FC = () => {
                     );
                 }
 
+                if (obj.type === ItemType.NEXUS_CELL) {
+                    const cell = obj as NexusCellObject;
+                    // Use magnetPoints array length to determine actual magnet point count
+                    const actualMagnetPointCount = (cell.magnetPoints?.length ?? 0) || (cell.magnetPointCount ?? 1);
+                    const magnetPointCount = Math.max(1, actualMagnetPointCount);
+                    const magnetRotation = cell.magnetRotation ?? 0;
+
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+                    return (
+                        <Tooltip
+                            key={obj.id}
+                            text={obj.tooltipText}
+                            showImage={obj.showTooltipImage}
+                            imageSrc={obj.content}
+                            scale={obj.tooltipScale}
+                        >
+                            <div
+                                onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                                style={{
+                                    left: v2p(obj.x),
+                                    top: v2p(obj.y),
+                                    width: v2p(obj.width),
+                                    height: v2p(obj.height),
+                                    transform: `rotate(${obj.rotation}deg)`,
+                                    zIndex: globalZIndex,
+                                    pointerEvents: isPermeable ? 'none' : 'auto',
+                                }}
+                            >
+                                <SvgTokenShape
+                                    shape={cell.shape}
+                                    width={v2p(obj.width)}
+                                    height={v2p(obj.height)}
+                                    color={obj.color || '#4ade80'}
+                                    borderWidth={obj.borderWidth ?? 2}
+                                    borderColor={obj.borderColor || '#166534'}
+                                    opacity={obj.opacity ?? 100}
+                                    borderOpacity={obj.borderOpacity ?? 100}
+                                    rotation={0}
+                                    showThickness={false}
+                                />
+
+                                {/* Magnetism System Visualization - hidden */}
+                                <svg
+                                    className="absolute pointer-events-none hidden"
+                                    width={v2p(obj.width)}
+                                    height={v2p(obj.height)}
+                                    style={{ overflow: 'visible' }}
+                                >
+                                    <g transform={`translate(${v2p(obj.width) / 2}, ${v2p(obj.height) / 2})`}>
+                                        {/* Calculate ellipse radii - simple version (inscribed in bounding box) */}
+                                        {(() => {
+                                            // For all shapes, use the same simple approach: ellipse in bounding box
+                                            const ellipseRx = obj.width / 2 - 2;
+                                            const ellipseRy = obj.height / 2 - 2;
+
+                                            // Helper to calculate line length to ellipse at given angle
+                                            const calcLineLength = (angleRad: number) => {
+                                                const cosA = Math.cos(angleRad);
+                                                const sinA = Math.sin(angleRad);
+                                                return 1 / Math.sqrt((cosA / ellipseRx) ** 2 + (sinA / ellipseRy) ** 2);
+                                            };
+
+                                            // Create a set of occupied point indices
+                                            const occupiedPointIndices = new Set(
+                                                (cell.magnetPoints ?? []).map(p => p.pointIndex)
+                                            );
+
+                                            return (
+                                                <>
+                                                    {/* Inscribed ellipse (green) - magnetism boundary */}
+                                                    <ellipse
+                                                        cx={0}
+                                                        cy={0}
+                                                        rx={v2p(ellipseRx)}
+                                                        ry={v2p(ellipseRy)}
+                                                        fill="none"
+                                                        stroke="#22c55e"
+                                                        strokeWidth={v2p(1.5)}
+                                                        opacity={0.7}
+                                                    />
+
+                                                    {/* Magnet lines (from center to inscribed ellipse) */}
+                                                    {/* Only show lines for points that have objects snapped OR if snapToGrid is enabled */}
+                                                    {(cell.snapToGrid || (cell.magnetPoints && cell.magnetPoints.length > 0)) && magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                        const anglePerSlice = 360 / magnetPointCount;
+                                                        const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+                                                        const lineLength = calcLineLength(angle);
+                                                        const endX = Math.cos(angle) * lineLength;
+                                                        const endY = Math.sin(angle) * lineLength;
+                                                        const hasObject = occupiedPointIndices.has(index);
+
+                                                        return (
+                                                            <line
+                                                                key={`magnet-line-${index}`}
+                                                                x1={0}
+                                                                y1={0}
+                                                                x2={v2p(endX)}
+                                                                y2={v2p(endY)}
+                                                                stroke={hasObject ? "#22c55e" : "#f59e0b"}
+                                                                strokeWidth={v2p(hasObject ? 1.5 : 1)}
+                                                                opacity={hasObject ? 0.8 : 0.4}
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Magnet points - different style for occupied vs empty points */}
+                                                    {magnetPointCount > 1 && Array.from({ length: magnetPointCount }).map((_, index) => {
+                                                        const anglePerSlice = 360 / magnetPointCount;
+                                                        const angle = (index * anglePerSlice + magnetRotation) * Math.PI / 180;
+                                                        const lineLength = calcLineLength(angle);
+                                                        const magnetRadius = lineLength * 0.55;
+                                                        const magnetX = Math.cos(angle) * magnetRadius;
+                                                        const magnetY = Math.sin(angle) * magnetRadius;
+                                                        const hasObject = occupiedPointIndices.has(index);
+
+                                                        return (
+                                                            <circle
+                                                                key={`magnet-point-${index}`}
+                                                                cx={v2p(magnetX)}
+                                                                cy={v2p(magnetY)}
+                                                                r={v2p(hasObject ? 2.5 : 2)}
+                                                                fill={hasObject ? "#22c55e" : "#ef4444"}
+                                                                opacity={hasObject ? 1 : 0.7}
+                                                            />
+                                                        );
+                                                    })}
+
+                                                    {/* Center point (yellow dot) - shown when single point or no objects */}
+                                                    {magnetPointCount === 1 && (
+                                                        <circle
+                                                            cx={0}
+                                                            cy={0}
+                                                            r={v2p(3)}
+                                                            fill="#fbbf24"
+                                                        />
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </g>
+                                </svg>
+
+                                {/* Action buttons */}
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100' : ''}`}>
+                                    {(() => {
+                                        const actionButtons = obj.actionButtons || [];
+                                        const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+                                            roll: {
+                                                key: 'roll',
+                                                action: () => executeClickAction(obj, 'roll'),
+                                                className: 'bg-purple-600 hover:bg-purple-500',
+                                                title: 'Roll',
+                                                icon: <RefreshCw size={14} />
+                                            },
+                                            rotate: {
+                                                key: 'rotate',
+                                                action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-green-600 hover:bg-green-500',
+                                                title: 'Rotate',
+                                                icon: <RefreshCw size={14} />
+                                            },
+                                            delete: {
+                                                key: 'delete',
+                                                action: () => dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-red-600 hover:bg-red-500',
+                                                title: 'Delete',
+                                                icon: <Trash2 size={14} />
+                                            },
+                                            clone: {
+                                                key: 'clone',
+                                                action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
+                                                className: 'bg-cyan-600 hover:bg-cyan-500',
+                                                title: 'Clone',
+                                                icon: <Copy size={14} />
+                                            },
+                                            layerUp: {
+                                                key: 'layerUp',
+                                                action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+                                                className: 'bg-blue-600 hover:bg-blue-500',
+                                                title: 'Layer Up',
+                                                icon: <ChevronsUpDown size={14} />
+                                            },
+                                            layerDown: {
+                                                key: 'layerDown',
+                                                action: () => dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } }),
+                                                className: 'bg-blue-700 hover:bg-blue-600',
+                                                title: 'Layer Down',
+                                                icon: <ChevronsUpDown size={14} />
+                                            },
+                                        };
+                                        return actionButtons.map(action => buttonConfigs[action]).filter(Boolean).map(config => (
+                                            <button
+                                                key={config.key}
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                                onClick={config.action}
+                                                className={`${config.className} text-white rounded p-1 shadow-lg hover:scale-110 transition-transform pointer-events-auto`}
+                                                title={config.title}
+                                            >
+                                                {config.icon}
+                                            </button>
+                                        ));
+                                    })()}
+                                </div>
+                            </div>
+                        </Tooltip>
+                    );
+                }
+
                 if (obj.type === ItemType.COUNTER) {
                     // Skip pinned counters - they are rendered separately in fixed container
                     if ((obj as any).isPinnedToViewport === true) {
                         return null;
                     }
                     const counter = obj as Counter;
+
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                     return (
                         <Tooltip
                             key={obj.id}
@@ -4196,15 +5521,16 @@ export const Tabletop: React.FC = () => {
                                     height: v2p(50),
                                     transform: `rotate(${obj.rotation}deg)`,
                                     zIndex: globalZIndex,
+                                    pointerEvents: isPermeable ? 'none' : 'auto',
                                 }}
                             >
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
                             <span className="text-xl font-bold">{counter.value}</span>
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
-                            {/* Name on top - shown when showNameOnToken is enabled */}
+                            {/* Name on top - shown when showNameOnToken is enabled, 75% width */}
                             {(obj as any).showNameOnToken && (
-                              <div className="absolute -top-5 left-0 right-0 text-center text-[12px] truncate px-1" style={{ color: (obj as any).fontColor || '#ffffff' }}>
+                              <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-center text-[12px] truncate px-1" style={{ color: (obj as any).fontColor || '#ffffff', width: '75%' }}>
                                 {obj.name}
                               </div>
                             )}
@@ -4281,6 +5607,12 @@ export const Tabletop: React.FC = () => {
                     const dice = obj as DiceObject;
                     const diceShape = dice.shape || TokenShape.SQUARE;
 
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                     return (
                         <Tooltip
                             key={obj.id}
@@ -4292,7 +5624,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
+                                onDoubleClick={(e) => { e.stopPropagation(); if (currentTool !== 'marker' && currentTool !== 'eraser') rollDiceWithGroup(dice); }}
                                 className={`absolute flex items-center justify-center group select-none ${draggingClass}`}
                                 style={{
                                     left: v2p(obj.x),
@@ -4300,6 +5632,7 @@ export const Tabletop: React.FC = () => {
                                     width: v2p(dice.width || 60),
                                     height: v2p(dice.height || 60),
                                     transform: `rotate(${obj.rotation}deg)`,
+                                    pointerEvents: isPermeable ? 'none' : 'auto',
                                     zIndex: globalZIndex,
                                 }}
                             >
@@ -4309,8 +5642,10 @@ export const Tabletop: React.FC = () => {
                                     height={v2p(dice.height || 60)}
                                     color={obj.color || '#6366f1'}
                                     content={''}
-                                    borderColor="#4f46e5"
-                                    borderWidth={3}
+                                    borderColor={(obj as any).borderColor || '#4f46e5'}
+                                    borderWidth={(obj as any).borderWidth ?? 3}
+                                    opacity={obj.opacity ?? 100}
+                                    borderOpacity={(obj as any).borderOpacity ?? 100}
                                 />
                                 {/* Dice value - always centered */}
                                 <div
@@ -4348,7 +5683,6 @@ export const Tabletop: React.FC = () => {
                                     <div
                                         className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
                                         title="Pinned to screen"
-                                        style={{ transform: `scale(${1/zoom})` }}
                                     >
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                                             <line x1="12" y1="17" x2="12" y2="22"></line>
@@ -4422,34 +5756,45 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.CARD) {
                     const card = obj as CardType;
                     const cardSettings = getCardSettings(card);
-                    // For horizontal orientation, swap width and height for display
-                    const isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
-                    const actualCardWidth = card.width ?? cardSettings.cardWidth ?? 100;
-                    const actualCardHeight = card.height ?? cardSettings.cardHeight ?? 140;
-                    const displayWidth = isHorizontal ? actualCardHeight : actualCardWidth;
-                    const displayHeight = isHorizontal ? actualCardWidth : actualCardHeight;
+                    // Card dimensions now reflect the orientation (no swap needed)
+                    const displayWidth = card.width ?? cardSettings.cardWidth ?? 100;
+                    const displayHeight = card.height ?? cardSettings.cardHeight ?? 140;
 
                     const isDragging = draggingId === obj.id;
                     const isCardHidden = (card as any).hidden === true;
+
+                    // Check if object's layer is selected - if not, make it permeable to clicks
+                    const objLayer = obj.hyperscaleLayerId || 'none';
+                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    // Objects in non-selected layers are permeable (let clicks pass through)
+                    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+                    // Get inverse scale if zoom is disabled for this layer
+                    const inverseScale = getLayerInverseScale(objLayer);
 
                     return (
                         <div
                             key={obj.id}
                             data-tabletop-card="true"
-                            style={{
-                                left: v2p(obj.x),
-                                top: v2p(obj.y),
-                                position: 'absolute',
-                                transform: `rotate(${obj.rotation}deg)`,
-                                opacity: isCardHidden && isGM ? 0.5 : 1,
-                                pointerEvents: isDragging ? 'none' : 'auto', // Allow mouse events to pass through when dragging
-                                zIndex: globalZIndex, // Apply global z-index for proper layer ordering
-                            }}
+                            style={createPositionedStyle(
+                                v2p(obj.x),
+                                v2p(obj.y),
+                                v2p(displayWidth),
+                                v2p(displayHeight),
+                                globalZIndex,
+                                objLayer,
+                                {
+                                    transform: `rotate(${obj.rotation}deg)${inverseScale !== 1 ? ` scale(${inverseScale})` : ''}`,
+                                    opacity: isCardHidden && isGM ? 0.5 : 1,
+                                    pointerEvents: isDragging || isPermeable ? 'none' : 'auto',
+                                }
+                            )}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}
                             className={`rounded-lg ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                         >
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             <div>
                               <Card
                                   card={card}
@@ -4556,9 +5901,20 @@ export const Tabletop: React.FC = () => {
                 const layer = state.hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
                 const layerMinZ = layer?.minZIndex ?? 1001;
                 const globalZIndex = layerMinZ + (deckObj.zIndex ?? 0);
+                const objLayerId = deckObj.hyperscaleLayerId || 'cards';
 
                 return (
-                    <div key={deckObj.id} style={{ position: 'absolute', left: v2p(deckObj.x), top: v2p(deckObj.y), zIndex: globalZIndex }}>
+                    <div
+                        key={deckObj.id}
+                        style={createPositionedStyle(
+                            v2p(deckObj.x),
+                            v2p(deckObj.y),
+                            0,
+                            0,
+                            globalZIndex,
+                            objLayerId
+                        )}
+                    >
                         <DeckComponent
                             deck={deckObj}
                             draggingId={draggingId}
@@ -4599,7 +5955,6 @@ export const Tabletop: React.FC = () => {
                     isDragging={draggingId === uiObj.id}
                     onMouseDown={handleMouseDown}
                     offset={offset}
-                    zoom={zoom}
                     isPinnedMode={false}
                 />
             ))}
@@ -4615,7 +5970,6 @@ export const Tabletop: React.FC = () => {
                     isDragging={draggingId === uiObj.id}
                     onMouseDown={handleMouseDown}
                     offset={{ x: 0, y: 0 }}
-                    zoom={1}
                     isPinnedMode={true}
                 />
             ))}
@@ -4697,16 +6051,8 @@ export const Tabletop: React.FC = () => {
                 if (!pinnedPosition) return null;
 
                 const gridSize = v2p(board.gridSize || 50); // Convert vu to pixels
-                const hexR = gridSize;
-                const hexW = hexR * Math.sqrt(3);
-                const hexPath =
-                  `M 0 ${hexR/2} ` +
-                  `L ${hexW/2} 0 ` +
-                  `L ${hexW} ${hexR/2} ` +
-                  `L ${hexW} ${hexR*1.5} ` +
-                  `L ${hexW/2} ${hexR*2} ` +
-                  `L 0 ${hexR*1.5} Z ` +
-                  `M ${hexW/2} ${hexR*2} L ${hexW/2} ${hexR*3}`;
+                const gridW_px = v2p(board.gridWidth || board.gridSize || 50);
+                const gridH_px = v2p(board.gridHeight || board.gridSize || 50);
 
                 const isDragging = draggingId === board.id;
                 const isResizing = resizingId === board.id;
@@ -4735,14 +6081,13 @@ export const Tabletop: React.FC = () => {
                             isDragging={isDragging}
                             isResizing={isResizing}
                             canResize={!board.locked}
-                            zoom={zoom}
                             onMouseDown={(e) => handleMouseDown(e, board.id)}
                             onContextMenu={(e) => handleContextMenu(e, board)}
                             onResizeStart={(e) => !board.locked && handleResizeStart(e, board.id)}
                             gridSize={gridSize}
-                            hexR={hexR}
-                            hexW={hexW}
-                            hexPath={hexPath}
+                            gridWidth={gridW_px}
+                            gridHeight={gridH_px}
+                            showGrid={board.showGrid}
                         />
                         {/* Pinned indicator - top-right corner */}
                         <div
@@ -4770,6 +6115,12 @@ export const Tabletop: React.FC = () => {
                 const canDrag = !obj.locked;
                 const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
+                // Check if object's layer is selected - if not, make it permeable to clicks
+                const objLayer = obj.hyperscaleLayerId || 'none';
+                const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
+                const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                const isPermeable = hasSelectedLayers && !isLayerSelected;
+
                 // Render dice
                 if (obj.type === ItemType.DICE_OBJECT) {
                     const dice = obj as DiceObject;
@@ -4777,13 +6128,17 @@ export const Tabletop: React.FC = () => {
                     return (
                         <div
                             key={obj.id}
-                            className="pointer-events-auto absolute"
-                            style={{ left: pinnedPosition.x, top: pinnedPosition.y }}
+                            className={isPermeable ? '' : 'pointer-events-auto'}
+                            style={{
+                                left: pinnedPosition.x,
+                                top: pinnedPosition.y,
+                                pointerEvents: isPermeable ? 'none' : 'auto',
+                            }}
                         >
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                onDoubleClick={(e) => { e.stopPropagation(); animateDiceRoll(dice); }}
+                                onDoubleClick={(e) => { e.stopPropagation(); if (currentTool !== 'marker' && currentTool !== 'eraser') rollDiceWithGroup(dice); }}
                                 className={`flex items-center justify-center group select-none ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     width: v2p(dice.width || 60),
@@ -4797,8 +6152,10 @@ export const Tabletop: React.FC = () => {
                                     height={v2p(dice.height || 60)}
                                     color={obj.color || '#6366f1'}
                                     content={''}
-                                    borderColor="#4f46e5"
-                                    borderWidth={3}
+                                    borderColor={(obj as any).borderColor || '#4f46e5'}
+                                    borderWidth={(obj as any).borderWidth ?? 3}
+                                    opacity={obj.opacity ?? 100}
+                                    borderOpacity={(obj as any).borderOpacity ?? 100}
                                 />
                                 {/* Dice value - always centered */}
                                 <div
@@ -4843,8 +6200,12 @@ export const Tabletop: React.FC = () => {
                     return (
                         <div
                             key={obj.id}
-                            className="pointer-events-auto absolute"
-                            style={{ left: pinnedPosition.x, top: pinnedPosition.y }}
+                            className={isPermeable ? '' : 'pointer-events-auto'}
+                            style={{
+                                left: pinnedPosition.x,
+                                top: pinnedPosition.y,
+                                pointerEvents: isPermeable ? 'none' : 'auto',
+                            }}
                         >
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
@@ -4883,6 +6244,7 @@ export const Tabletop: React.FC = () => {
                 onClose={() => setContextMenu(null)}
                 allObjects={state.objects}
                 language={state.language}
+                nexusBoardEditingId={nexusBoardAddingCell}
             />
         )}
 
@@ -4978,6 +6340,8 @@ export const Tabletop: React.FC = () => {
 
                     dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
                 }}
+                diceGroups={state.diceGroups}
+                dispatch={dispatch}
             />
         )}
 
@@ -5078,8 +6442,8 @@ export const Tabletop: React.FC = () => {
             cursorSlot={cursorSlot}
             cursorPosition={cursorPosition}
             cursorPositionRef={cursorPositionRef}
-            zoom={zoom}
             pixelsPerVU={pixelsPerVU}
+            zoom={state.viewTransform.zoom}
             state={state}
             getCardSettings={getCardSettings}
         />

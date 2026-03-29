@@ -1,47 +1,6 @@
 import React from 'react';
 import { CardShape, CardOrientation } from '../types';
-
-// SVG paths for deck shapes
-const SHAPE_PATHS: Record<CardShape, { path: string; viewBox: string; horizontalPath?: string }> = {
-  [CardShape.HEX]: {
-    // Hexagon with point at top (vertical orientation)
-    path: 'M 50 0 L 93.3 25 L 93.3 75 L 50 100 L 6.7 75 L 6.7 25 Z',
-    viewBox: '0 0 100 100',
-    // Horizontal: points at left/right
-    horizontalPath: 'M 25 6.7 L 75 6.7 L 100 50 L 75 93.3 L 25 93.3 L 0 50 Z'
-  },
-  [CardShape.TRIANGLE]: {
-    // Triangle with point at top
-    path: 'M 50 5 L 95 95 L 5 95 Z',
-    viewBox: '0 0 100 100',
-    // Horizontal: point at right
-    horizontalPath: 'M 5 50 L 95 5 L 95 95 Z'
-  },
-  [CardShape.CIRCLE]: {
-    path: 'M 50 0 A 50 50 0 1 1 50 100 A 50 50 0 1 1 50 0',
-    viewBox: '0 0 100 100'
-  },
-  [CardShape.SQUARE]: {
-    path: 'M 0 0 L 100 0 L 100 100 L 0 100 Z',
-    viewBox: '0 0 100 100'
-  },
-  [CardShape.POKER]: {
-    path: 'M 0 0 L 100 0 L 100 100 L 0 100 Z',
-    viewBox: '0 0 100 100'
-  },
-  [CardShape.BRIDGE]: {
-    path: 'M 0 0 L 100 0 L 100 100 L 0 100 Z',
-    viewBox: '0 0 100 100'
-  },
-  [CardShape.MINI_US]: {
-    path: 'M 0 0 L 100 0 L 100 100 L 0 100 Z',
-    viewBox: '0 0 100 100'
-  },
-  [CardShape.MINI_EURO]: {
-    path: 'M 0 0 L 100 0 L 100 100 L 0 100 Z',
-    viewBox: '0 0 100 100'
-  }
-};
+import { getCardShapePath } from '../utils/shapePaths';
 
 interface SvgDeckShapeProps {
   shape: CardShape;
@@ -58,7 +17,8 @@ interface SvgDeckShapeProps {
 
 /**
  * SVG-based deck shape with proper border/stroke
- * Used for HEX and TRIANGLE decks to get proper border that follows the shape
+ * Uses universal path generation for consistent shapes across the app
+ * For HEX shapes, the path adjusts dynamically based on aspect ratio
  */
 export const SvgDeckShape: React.FC<SvgDeckShapeProps> = ({
   shape,
@@ -72,19 +32,18 @@ export const SvgDeckShape: React.FC<SvgDeckShapeProps> = ({
   style = {},
   orientation = CardOrientation.VERTICAL
 }) => {
-  const shapeData = SHAPE_PATHS[shape] || SHAPE_PATHS[CardShape.POKER];
+  // Calculate aspect ratio for dynamic shapes
+  const aspectRatio = width / height;
 
-  // For geometric shapes (HEX, TRIANGLE), use horizontal path if orientation is horizontal
-  const isGeometric = shape === CardShape.HEX || shape === CardShape.TRIANGLE;
-  const useHorizontalPath = isGeometric && orientation === CardOrientation.HORIZONTAL;
-  const path = useHorizontalPath && shapeData.horizontalPath ? shapeData.horizontalPath : shapeData.path;
-  const viewBox = shapeData.viewBox;
+  // Get shape path using universal path generation
+  const { path, viewBox } = getCardShapePath(shape, orientation, aspectRatio);
 
   const uniqueId = React.useId();
 
-  // For triangle decks, we need to wrap text more aggressively
-  // Calculate better positioning for triangle text
-  const isTriangle = shape === CardShape.TRIANGLE;
+  // Parse viewBox to get dimensions for foreignObject
+  const viewBoxValues = viewBox.split(' ').map(Number);
+  const vbWidth = viewBoxValues[2];
+  const vbHeight = viewBoxValues[3];
 
   return (
     <svg
@@ -116,9 +75,13 @@ export const SvgDeckShape: React.FC<SvgDeckShapeProps> = ({
         vectorEffect="non-scaling-stroke"
       />
 
-      {/* Content container with clip path */}
+      {/* Content container with clip path - use actual viewBox dimensions */}
       <g clipPath={`url(#deck-clip-${uniqueId})`}>
-        {children}
+        <foreignObject x="0" y="0" width={vbWidth} height={vbHeight}>
+          <div className="w-full h-full flex flex-col items-center justify-center">
+            {children}
+          </div>
+        </foreignObject>
       </g>
     </svg>
   );
@@ -142,9 +105,9 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
   shape,
   isTriangle = shape === CardShape.TRIANGLE
 }) => {
-  // For geometric shapes (HEX, CIRCLE, TRIANGLE), the foreignObject scaling makes text appear larger
+  // For geometric shapes (HEX, HEX_HORIZONTAL, CIRCLE, TRIANGLE), the foreignObject scaling makes text appear larger
   // We need to use smaller font sizes to compensate
-  const isGeometric = shape === CardShape.HEX || shape === CardShape.CIRCLE;
+  const isGeometric = shape === CardShape.HEX || shape === CardShape.HEX_HORIZONTAL || shape === CardShape.CIRCLE;
 
   if (isTriangle) {
     // For triangle: wrap text more aggressively to fit within the triangle
@@ -179,12 +142,12 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
           <span
             key={i}
             className="text-slate-300 font-bold select-none drop-shadow-md leading-tight"
-            style={{ fontSize: '9px' }}
+            style={{ fontSize: '11px' }}
           >
             {line}
           </span>
         ))}
-        <span className="text-slate-500 select-none drop-shadow-md mt-0.5" style={{ fontSize: '9px' }}>
+        <span className="text-slate-500 select-none drop-shadow-md mt-0.5" style={{ fontSize: '11px' }}>
           {count} / {totalCount}
         </span>
       </div>
@@ -197,13 +160,13 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
       <div className="flex flex-col items-center justify-center text-center px-2">
         <span
           className="text-slate-300 font-bold select-none drop-shadow-md leading-tight"
-          style={{ fontSize: '9px' }}
+          style={{ fontSize: '11px' }}
         >
           {name}
         </span>
         <span
           className="text-slate-500 select-none drop-shadow-md mt-0.5"
-          style={{ fontSize: '9px' }}
+          style={{ fontSize: '11px' }}
         >
           {count} / {totalCount}
         </span>
@@ -228,7 +191,7 @@ export const DeckLabel: React.FC<DeckLabelProps> = ({
  * Check if a card shape should use SVG rendering for decks
  */
 export function shouldUseSvgForDeck(shape: CardShape): boolean {
-  return shape === CardShape.HEX || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
+  return shape === CardShape.HEX || shape === CardShape.HEX_HORIZONTAL || shape === CardShape.TRIANGLE || shape === CardShape.CIRCLE;
 }
 
 // Memoize SvgDeckShape to prevent unnecessary re-renders

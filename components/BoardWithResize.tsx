@@ -1,5 +1,8 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { TableObject, Token as TokenType, Board as BoardType, GridType } from '../types';
+import { HexGridMemo } from './HexGrid';
+import { SquareGridMemo } from './SquareGrid';
+import { calculateFlatHexHeight } from '../utils/gridUtils';
 
 interface BoardWithResizeProps {
     token: TokenType | BoardType;
@@ -8,14 +11,13 @@ interface BoardWithResizeProps {
     isDragging: boolean;
     isResizing: boolean;
     canResize: boolean;
-    zoom: number;
     onMouseDown: (e: React.MouseEvent) => void;
     onContextMenu: (e: React.MouseEvent) => void;
     onResizeStart: (e: React.MouseEvent) => void;
     gridSize: number;
-    hexR: number;
-    hexW: number;
-    hexPath: string;
+    gridWidth?: number;
+    gridHeight?: number;
+    showGrid?: boolean;
     currentTool?: string;
 }
 
@@ -26,14 +28,13 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     isDragging,
     isResizing,
     canResize,
-    zoom,
     onMouseDown,
     onContextMenu,
     onResizeStart,
     gridSize,
-    hexR,
-    hexW,
-    hexPath,
+    gridWidth,
+    gridHeight,
+    showGrid,
 }) => {
     const [isHoveringCorner, setIsHoveringCorner] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -56,7 +57,34 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         setIsHoveringCorner(false);
     }, []);
 
-    const showGrid = token.gridType && token.gridType !== GridType.NONE;
+    // Check if grid should be shown (grid type exists AND showGrid is not false)
+    const shouldShowGrid = token.gridType && token.gridType !== GridType.NONE && (token as BoardType).showGrid !== false;
+    const isHexGrid = token.gridType === GridType.HEX;
+    const isHexHorizontalGrid = token.gridType === GridType.HEX_HORIZONTAL;
+    const isSquareGrid = token.gridType === GridType.SQUARE;
+
+    // Hex grid constants
+    const HEX_RATIO = 1.15;
+    const DEFAULT_HEX_WIDTH = 100;
+    const DEFAULT_FLAT_HEX_WIDTH = 115;
+
+    // Use gridWidth if provided, otherwise fall back to default hex dimensions
+    // Use useMemo to ensure these recalculate when gridType, gridWidth, or gridHeight change
+    const actualGridWidth = useMemo(() => {
+      return gridWidth ?? (isHexGrid ? DEFAULT_HEX_WIDTH : (isHexHorizontalGrid ? DEFAULT_FLAT_HEX_WIDTH : gridSize));
+    }, [gridWidth, isHexGrid, isHexHorizontalGrid, gridSize]);
+
+    const actualGridHeight = useMemo(() => {
+      if (gridHeight !== undefined) return gridHeight;
+
+      if (isHexGrid) {
+        return Math.round(actualGridWidth * HEX_RATIO * 100) / 100;
+      } else if (isHexHorizontalGrid) {
+        return Math.round(calculateFlatHexHeight(actualGridWidth) * 100) / 100;
+      } else {
+        return gridSize;
+      }
+    }, [gridHeight, isHexGrid, isHexHorizontalGrid, gridSize, actualGridWidth]);
 
     // Determine cursor based on hover state and action state
     const getCursor = useCallback(() => {
@@ -89,26 +117,35 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
                 transform: `rotate(${obj.rotation}deg)`,
                 cursor: cursor,
+                overflow: 'hidden',
             }}
         >
-            {/* Grid overlay */}
-            {showGrid && (
-                <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
-                    <defs>
-                        {token.gridType === GridType.SQUARE && (
-                            <pattern id={`grid-square-${obj.id}`} width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                                {/* Draw complete square: top, left, right, bottom edges */}
-                                <rect x="0" y="0" width={gridSize} height={gridSize} fill="none" stroke="black" strokeWidth="1"/>
-                            </pattern>
-                        )}
-                        {token.gridType === GridType.HEX && (
-                            <pattern id={`grid-hex-${obj.id}`} width={hexW} height={gridSize * 3} patternUnits="userSpaceOnUse">
-                                <path d={hexPath} fill="none" stroke="black" strokeWidth="1"/>
-                            </pattern>
-                        )}
-                    </defs>
-                    <rect width="100%" height="100%" fill={`url(#grid-${token.gridType === GridType.SQUARE ? 'square' : 'hex'}-${obj.id})`} />
-                </svg>
+            {/* Grid overlay - direct rendering for all grid types */}
+            {shouldShowGrid && (
+                <>
+                    {(isHexGrid || isHexHorizontalGrid) ? (
+                        <HexGridMemo
+                            width={obj.width ?? 100}
+                            height={obj.height ?? 100}
+                            orientation={isHexGrid ? 'pointy-top' : 'flat-top'}
+                            hexWidth={actualGridWidth}
+                            hexHeight={actualGridHeight}
+                            stroke="rgba(33,47,60,0.7)"
+                            strokeWidth={1}
+                            zoom={1}
+                        />
+                    ) : isSquareGrid ? (
+                        <SquareGridMemo
+                            width={obj.width ?? 100}
+                            height={obj.height ?? 100}
+                            cellWidth={actualGridWidth}
+                            cellHeight={actualGridHeight}
+                            stroke="rgba(33,47,60,0.7)"
+                            strokeWidth={1}
+                            zoom={1}
+                        />
+                    ) : null}
+                </>
             )}
 
             {/* Resize handle - bottom-right corner */}
@@ -130,4 +167,24 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     );
 };
 
-export const BoardWithResizeMemo = React.memo(BoardWithResize);
+// Custom comparison for BoardWithResize memo
+function arePropsEqual(
+  prevProps: Readonly<BoardWithResizeProps>,
+  nextProps: Readonly<BoardWithResizeProps>
+) {
+  return (
+    prevProps.token.gridType === nextProps.token.gridType &&
+    (prevProps.token as any).gridWidth === (nextProps.token as any).gridWidth &&
+    (prevProps.token as any).gridHeight === (nextProps.token as any).gridHeight &&
+    (prevProps.token as any).showGrid === (nextProps.token as any).showGrid &&
+    prevProps.gridWidth === nextProps.gridWidth &&
+    prevProps.gridHeight === nextProps.gridHeight &&
+    prevProps.gridSize === nextProps.gridSize &&
+    prevProps.obj.width === nextProps.obj.width &&
+    prevProps.obj.height === nextProps.obj.height &&
+    (prevProps.obj as any).content === (nextProps.obj as any).content &&
+    (prevProps.obj as any).color === (nextProps.obj as any).color
+  );
+}
+
+export const BoardWithResizeMemo = React.memo(BoardWithResize, arePropsEqual);
