@@ -476,7 +476,7 @@ export function addObjectToCellMagnet(
   };
 
   // Calculate all magnet point positions for the updated cell
-  const positions = calculateMagnetPointPositions({ ...cell, ...updatedCell });
+  const positions = calculateMagnetPointPositions({ ...cell, ...updatedCell } as BattlefieldCell | NexusCellObject);
 
   // Calculate moved objects - objects that were already snapped need to move to new positions
   const movedObjects: Array<{ objectId: string; x: number; y: number }> = [];
@@ -546,7 +546,7 @@ export function removeObjectFromCellMagnet(
   };
 
   // Calculate new magnet point positions
-  const tempCell = { ...cell, ...updatedCell };
+  const tempCell = { ...cell, ...updatedCell } as BattlefieldCell | NexusCellObject;
   const newPositions = calculateMagnetPointPositions(tempCell);
 
   // Calculate moved objects - all remaining objects need to move to new positions

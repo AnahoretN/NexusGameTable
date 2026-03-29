@@ -3,7 +3,7 @@
  * Protects against malicious packs, XSS, and other attacks
  */
 
-import type { PackManifest, PartialGameState } from './packManager';
+import type { PackManifest } from './packManager';
 import { logger } from './logger';
 
 // Security limits
@@ -244,9 +244,11 @@ export function sanitizePackData(data: any): any {
   if (sanitized.objects) {
     for (const obj of Object.values(sanitized.objects)) {
       // Remove any function properties
-      for (const key in obj) {
-        if (typeof (obj as any)[key] === 'function') {
-          delete (obj as any)[key];
+      if (obj && typeof obj === 'object') {
+        for (const key in obj) {
+          if (typeof (obj as any)[key] === 'function') {
+            delete (obj as any)[key];
+          }
         }
       }
     }

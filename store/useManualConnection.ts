@@ -74,7 +74,7 @@ class DataChannelAdapter {
       }
     };
 
-    this.dc.onclose = (event) => {
+    this.dc.onclose = (event: any) => {
       console.log('[DataChannelAdapter] Data channel CLOSED', 'peer:', this.peer,
                   'wasClean:', event?.wasClean,
                   'code:', event?.code,
@@ -277,7 +277,7 @@ export function useManualConnection() {
       await iceGatheringComplete;
 
       // Now get the updated SDP with all ICE candidates
-      const finalSdp = pc.localDescription?.sdp || offer.sdp;
+      const finalSdp = pc.localDescription?.sdp || offer.sdp || '';
       console.log('[Manual P2P] ICE gathering complete');
       console.log('[Manual P2P] Final SDP length:', finalSdp.length);
       console.log('[Manual P2P] SDP contains data channel:', finalSdp.includes('application'));
@@ -289,7 +289,7 @@ export function useManualConnection() {
       // Generate final code with all candidates
       const message: SDPMessage = {
         type: 'offer',
-        sdp: finalSdp,
+        sdp: finalSdp || '',
         playerName
       };
 
@@ -472,7 +472,7 @@ export function useManualConnection() {
       const answer = await pc.createAnswer();
 
       // Guest must use 'setup:active' to initiate the DTLS connection
-      let sdp = answer.sdp;
+      let sdp = answer.sdp || '';
 
       // Log original setup attribute for debugging
       const originalSetup = sdp.match(/a=setup:(\w+)/);
@@ -499,7 +499,7 @@ export function useManualConnection() {
       await iceGatheringComplete;
 
       // Get the updated SDP with all ICE candidates
-      let finalSdp = pc.localDescription?.sdp || answer.sdp;
+      let finalSdp = pc.localDescription?.sdp || answer.sdp || '';
       console.log('[Manual P2P] Guest ICE gathering complete');
       console.log('[Manual P2P] Guest Answer SDP length:', finalSdp.length);
 
@@ -520,7 +520,7 @@ export function useManualConnection() {
       // Generate answer code
       const message: SDPMessage = {
         type: 'answer',
-        sdp: finalSdp
+        sdp: finalSdp || ''
       };
 
       const code = btoa(JSON.stringify(message));

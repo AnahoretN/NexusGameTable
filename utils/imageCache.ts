@@ -170,10 +170,10 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
     : undefined;
 
   // Process objects (but skip main menu - each player has their own)
-  const processedObjects: any = {};
+  const processedObjects: Record<string, any> = {};
   Object.entries(state.objects || {}).forEach(([id, obj]) => {
     // Skip main menu panel - it's recreated locally for each player
-    if (obj.type === 'PANEL' && obj.panelType === 'MAIN_MENU') {
+    if ((obj as any).type === 'PANEL' && (obj as any).panelType === 'MAIN_MENU') {
       return;
     }
     processedObjects[id] = extractImagesToCache(obj, cache, existingCache, existingCacheMap);
@@ -186,10 +186,10 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
 
   if (hasBase64) {
     console.warn('[P2P Debug] extractImagesFromState: State still has base64 data! Extraction failed.');
-    console.warn('[P2P Debug] Objects with remaining base64:', Object.values(processedObjects).filter(obj => {
+    console.warn('[P2P Debug] Objects with remaining base64:', Object.values(processedObjects).filter((obj: any) => {
       const json = JSON.stringify(obj);
       return json.includes('data:image/');
-    }).map(obj => {
+    }).map((obj: any) => {
       // Log which fields have base64
       const fieldsWithBase64: string[] = [];
       const findBase64 = (item: any, path = '') => {

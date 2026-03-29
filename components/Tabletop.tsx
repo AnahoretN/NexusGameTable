@@ -2,7 +2,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { useLocalSettings } from '../hooks/useLocalSettings';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board as BoardType, NexusBoard, NexusCellObject, HexDirection } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board, Board as BoardType, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
@@ -1209,7 +1209,7 @@ export const Tabletop: React.FC = () => {
       const token = obj as Token;
 
       // Parse gridCellKey: "boardId:col,row"
-      const [boardId, ...cellParts] = token.gridCellKey.split(':');
+      const [boardId, ...cellParts] = (token.gridCellKey ?? '').split(':');
       const cellKey = cellParts.join(':');
 
       const board = state.objects[boardId] as Board;

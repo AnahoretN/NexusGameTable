@@ -84,10 +84,10 @@ export function addObjectReducer(state: any, action: any): any {
     const newObjects = { ...state.objects };
     let needsMagnetCleanup = false;
 
-    for (const cellObj of Object.values(state.objects)) {
+    for (const cellObj of Object.values(state.objects) as any[]) {
       if ((cellObj.type === ItemType.BATTLEFIELD_CELL || cellObj.type === ItemType.NEXUS_CELL) && cellObj.magnetPoints) {
         const cell = cellObj as BattlefieldCell | NexusCellObject;
-        const magnetPoint = cell.magnetPoints.find(p => p.objectId === action.payload.id);
+        const magnetPoint = cell.magnetPoints?.find(p => p.objectId === action.payload.id);
 
         if (magnetPoint) {
           // Check if object is still within reasonable distance of the cell
@@ -204,11 +204,11 @@ export function addObjectReducer(state: any, action: any): any {
       }
     } else {
       // Fallback to checking all boards if no gridCellKey
-      for (const boardObj of Object.values(state.objects)) {
+      for (const boardObj of Object.values(state.objects) as any[]) {
         if (boardObj.type === ItemType.BOARD && boardObj.gridCellMagnetPoints) {
           const board = boardObj as Board;
 
-          for (const [cellKey, cellData] of Object.entries(board.gridCellMagnetPoints)) {
+          for (const [cellKey, cellData] of Object.entries(board.gridCellMagnetPoints || {})) {
             if (!cellData.magnetPoints) continue;
 
             const magnetPoint = cellData.magnetPoints.find(p => p.objectId === action.payload.id);
@@ -326,7 +326,7 @@ export function addObjectReducer(state: any, action: any): any {
 
     // Clean up magnet points - remove this object from any cell's magnetPoints
     // and reposition remaining objects
-    for (const obj of Object.values(state.objects)) {
+    for (const obj of Object.values(state.objects) as any[]) {
       if ((obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_CELL) && obj.magnetPoints) {
         const cell = obj as BattlefieldCell | NexusCellObject;
         if (cell.magnetPoints?.some(p => p.objectId === action.payload.id)) {
@@ -351,10 +351,10 @@ export function addObjectReducer(state: any, action: any): any {
     }
 
     // Clean up grid cell magnet points - remove this object from any board's grid cells
-    for (const obj of Object.values(state.objects)) {
+    for (const obj of Object.values(state.objects) as any[]) {
       if (obj.type === ItemType.BOARD && obj.gridCellMagnetPoints) {
         const board = obj as Board;
-        for (const [cellKey, cellData] of Object.entries(board.gridCellMagnetPoints)) {
+        for (const [cellKey, cellData] of Object.entries(board.gridCellMagnetPoints || {})) {
           if (!cellData.magnetPoints) continue;
 
           const magnetPoint = cellData.magnetPoints.find(p => p.objectId === action.payload.id);
@@ -450,6 +450,7 @@ export function addObjectReducer(state: any, action: any): any {
   }
 
   return state;
+}
 }
 
 export function toggleLockReducer(state: any, action: any): any {

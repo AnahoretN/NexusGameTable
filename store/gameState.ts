@@ -16,6 +16,7 @@ export interface GameState {
   diceRolls: DiceRoll[];
   viewTransform: ViewTransform;
   sessionId?: string; // Unique session identifier
+  version?: number; // Save file version for migration purposes
   drawings: DrawingData; // Drawing layers for board and objects
   undo: UndoState; // Undo/redo history
   playerPermissions: PlayerPermissions; // Permissions for non-GM players
