@@ -13,6 +13,93 @@ const DEFAULT_MODAL_WIDTH = 75.75; // vw
 const MIN_MODAL_WIDTH = 50; // vw
 const MAX_MODAL_WIDTH = 95; // vw
 
+// Lazy card component - renders sequentially one by one for smooth visual fill effect
+// Cards are rendered in order with a small delay between each (16ms per card index)
+const LazyCard = React.memo(({
+  card,
+  cardWidth,
+  cardHeight,
+  displayFaceUp,
+  cardActionButtons,
+  buttons,
+  commonDeckProps,
+  onContextMenu,
+  onActionButtonClick,
+  isGM,
+  index
+}: {
+  card: Card;
+  cardWidth: number;
+  cardHeight: number;
+  displayFaceUp: boolean;
+  cardActionButtons: ContextAction[];
+  buttons: ReturnType<typeof getCardButtonConfigs>;
+  commonDeckProps: any;
+  onContextMenu: (e: React.MouseEvent, card: Card) => void;
+  onActionButtonClick: (card: Card, action: ContextAction) => void;
+  isGM: boolean;
+  index: number; // Position in the list for sequential rendering
+}) => {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    // Calculate delay based on index: 16ms per card (60 cards ≈ 1 second total)
+    // First card (index 0) renders immediately, last card renders after ~1s
+    const delay = index * 16;
+
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, delay);
+
+    return () => clearTimeout(timer);
+  }, [index]);
+
+  const displayCard = useMemo(() => ({ ...card, faceUp: displayFaceUp }), [card, displayFaceUp]);
+
+  return (
+    <div
+      data-card-id={card.id}
+      onContextMenu={(e) => onContextMenu(e, displayCard)}
+      className="relative flex-shrink-0 group transition-all"
+      style={{
+        width: cardWidth,
+        height: cardHeight,
+        opacity: card.hidden && isGM ? 0.5 : 1,
+        // Reserve space even when not visible
+        minHeight: isVisible ? undefined : cardHeight,
+      }}
+    >
+      {isVisible ? (
+        <>
+          <CardComponent
+            card={displayCard}
+            overrideWidth={cardWidth}
+            overrideHeight={cardHeight}
+            {...commonDeckProps}
+          />
+
+          {buttons.length > 0 && (
+            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+              {buttons.map(btn => (
+                <button
+                  key={btn.action}
+                  onClick={(e) => { e.stopPropagation(); onActionButtonClick(card, btn.action as ContextAction); }}
+                  className={`p-1.5 rounded-lg text-white shadow ${btn.className} pointer-events-auto`}
+                  title={btn.title}
+                >
+                  {btn.icon}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+});
+
+LazyCard.displayName = 'LazyCard';
+
 interface SearchDeckModalProps {
   deck: Deck;
   pile?: CardPile;
@@ -231,13 +318,33 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const getCardDimensions = useCallback((card: Card) => {
     const actualCardWidth = card.width ?? DEFAULT_DECK_WIDTH;
     const actualCardHeight = card.height ?? DEFAULT_DECK_HEIGHT;
-    const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
-    const layoutWidth = isHorizontal ? actualCardHeight : actualCardWidth;
-    const layoutHeight = isHorizontal ? actualCardWidth : actualCardHeight;
-    const aspectRatio = layoutWidth / layoutHeight;
+    // Card dimensions now reflect the orientation (swapped when horizontal)
+    // No need to manually swap based on deck.cardOrientation
+    const aspectRatio = actualCardWidth / actualCardHeight;
     const cardHeight = scaledBaseCardWidth / aspectRatio;
     return { width: scaledBaseCardWidth, height: cardHeight };
-  }, [deck.cardOrientation, scaledBaseCardWidth]);
+  }, [scaledBaseCardWidth]);
+
+  // Memoize common deck props to avoid creating new objects on every render
+  // This is critical for performance when rendering 60+ cards
+  const commonDeckProps = useMemo(() => ({
+    cardNamePosition: deck.cardNamePosition,
+    cardOrientation: deck.cardOrientation,
+    disableRotationTransform: true,
+    deckSpriteConfig: deck.spriteConfig,
+    // Note: deck.showTooltipImage controls image display in tooltips
+    // Individual cards may have their own tooltipText that should be displayed
+    deckShowTooltipImage: deck.showTooltipImage,
+    deckTooltipScale: deck.tooltipScale,
+    language
+  }), [
+    deck.cardNamePosition,
+    deck.cardOrientation,
+    deck.spriteConfig,
+    deck.showTooltipImage,
+    deck.tooltipScale,
+    language
+  ]);
 
   const handleFlip = useCallback((cardId: string) => {
     if (isGM) {
@@ -589,51 +696,26 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             </div>
           ) : (
             <div className="flex flex-wrap gap-[2px] w-full">
-              {cards.map((card) => {
+              {cards.map((card, index) => {
                 const buttons = getCardButtonConfigs(card, cardActionButtons, language);
                 const { width: cardWidth, height: cardHeight } = getCardDimensions(card);
                 const displayFaceUp = getCardFaceUp(card);
-                const displayCard = { ...card, faceUp: displayFaceUp };
 
                 return (
-                  <div
+                  <LazyCard
                     key={card.id}
-                    onContextMenu={(e) => handleContextMenu(e, displayCard)}
-                    className="relative flex-shrink-0 group transition-all"
-                    style={{
-                      width: cardWidth,
-                      height: cardHeight,
-                      opacity: card.hidden && isGM ? 0.5 : 1
-                    }}
-                  >
-                    <CardComponent
-                      card={displayCard}
-                      overrideWidth={cardWidth}
-                      overrideHeight={cardHeight}
-                      cardNamePosition={deck.cardNamePosition}
-                      cardOrientation={deck.cardOrientation}
-                      disableRotationTransform={true}
-                      deckSpriteConfig={deck.spriteConfig}
-                      deckShowTooltipImage={deck.showTooltipImage}
-                      deckTooltipScale={deck.tooltipScale}
-                      language={language}
-                    />
-
-                    {buttons.length > 0 && (
-                      <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-                        {buttons.map(btn => (
-                          <button
-                            key={btn.action}
-                            onClick={(e) => { e.stopPropagation(); handleActionButtonClick(card, btn.action as ContextAction); }}
-                            className={`p-1.5 rounded-lg text-white shadow ${btn.className} pointer-events-auto`}
-                            title={btn.title}
-                          >
-                            {btn.icon}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                    card={card}
+                    cardWidth={cardWidth}
+                    cardHeight={cardHeight}
+                    displayFaceUp={displayFaceUp}
+                    cardActionButtons={cardActionButtons}
+                    buttons={buttons}
+                    commonDeckProps={commonDeckProps}
+                    onContextMenu={handleContextMenu}
+                    onActionButtonClick={handleActionButtonClick}
+                    isGM={isGM}
+                    index={index}
+                  />
                 );
               })}
             </div>

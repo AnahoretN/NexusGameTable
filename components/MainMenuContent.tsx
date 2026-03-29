@@ -1,13 +1,15 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useHandCardScale } from '../hooks/useHandCardScale';
+import { useLocalSettings } from '../hooks/useLocalSettings';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
-import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench } from 'lucide-react';
+import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
+import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanel } from './HandPanel';
@@ -16,6 +18,9 @@ import { generateUUID } from '../utils/uuid';
 import { useDrawingTool } from './ToolsPanel';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
+import { useManualConnection } from '../store/useManualConnection';
+import { createPack, loadPack } from '../utils/packManager';
+import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 
 /**
  * Convert blob URL to base64 data URL
@@ -112,11 +117,14 @@ interface MainMenuContentProps {
 }
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
-  const { state, dispatch, peerId } = useGame();
+  const { state, dispatch, peerId, isHost, stateRef } = useGame();
+  const { settings: localSettings, updateSetting } = useLocalSettings();
   const language: AppLanguage = state.language || 'en';
 
-  // Translation helper
-  const t = (key: { en: string; ru: string; be?: string; uk?: string; sr?: string }): string => key[language] || key.en;
+  // Translation helper - must be memoized to update when language changes
+  const t = useMemo(() => (key: { en: string; ru: string; be?: string; uk?: string; sr?: string }): string => {
+    return key[language] || key.en;
+  }, [language]);
 
   const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [chatInput, setChatInput] = useState('');
@@ -131,7 +139,51 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [previousTab, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
-  const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass'>('none');
+  const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom'>('none');
+  // Pack modal state
+  const [packModalOpen, setPackModalOpen] = useState(false);
+  const [packName, setPackName] = useState('');
+  const [packDescription, setPackDescription] = useState('');
+  const [isCreatingPack, setIsCreatingPack] = useState(false);
+
+  // Pack loading modal state
+  const [packLoadingSteps, setPackLoadingSteps] = useState<PackLoadingStep[]>([]);
+  const [isPackLoading, setIsPackLoading] = useState(false);
+  const packFileInputRef = useRef<HTMLInputElement>(null);
+  // Manual connection modal state
+  const [showManualConnection, setShowManualConnection] = useState(false);
+  const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
+  const [guestNameInput, setGuestNameInput] = useState('');
+  const manualConnection = useManualConnection();
+
+  // Read offer code from URL on mount (for invite links)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const offerCode = urlParams.get('offer');
+    if (offerCode) {
+      console.log('[MainMenuContent] Found offer code in URL');
+      setManualConnectionTab('join');
+      manualConnection.setLocalOffer(offerCode);
+      setShowManualConnection(true);
+      // Remove only the offer parameter, keep others (like hostId)
+      urlParams.delete('offer');
+      const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
+
+  // Set manual connection ref for GameContext to use
+  useEffect(() => {
+    if ((window as any).__setManualConnection) {
+      const conn = manualConnection.connectionRef.current;
+      // Only update if there's actually a connection (don't clear existing connection)
+      if (conn) {
+        console.log('[MainMenuContent] Setting manual connection for GameContext');
+        (window as any).__setManualConnection(conn);
+      }
+    }
+  }, [manualConnection.state.step]);
+
   // Drawing settings (shared via events with drawing components)
   const [markerColor, setMarkerColor] = useState('#ff0000');
   const [markerThickness, setMarkerThickness] = useState(10);
@@ -153,6 +205,46 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     window.addEventListener('hand-card-scale-change', handleScaleChange);
     return () => window.removeEventListener('hand-card-scale-change', handleScaleChange);
   }, [setHandCardScale]);
+
+  // Nexus Board unlock via Shift+3 pressed 3 times
+  const [nexusBoardUnlocked, setNexusBoardUnlocked] = useState(false);
+  const shiftThreeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressCountRef = useRef(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Use e.code instead of e.key to work with any keyboard layout
+      // Digit3 is the physical key '3' regardless of layout
+      if (e.code === 'Digit3' && e.shiftKey) {
+        // Increment press count using ref to avoid closure issues
+        pressCountRef.current += 1;
+
+        // Clear existing timeout
+        if (shiftThreeTimeoutRef.current) {
+          clearTimeout(shiftThreeTimeoutRef.current);
+        }
+
+        // Set timeout to reset count after 2 seconds
+        shiftThreeTimeoutRef.current = setTimeout(() => {
+          pressCountRef.current = 0;
+        }, 2000);
+
+        // Unlock after 3 presses
+        if (pressCountRef.current >= 3) {
+          setNexusBoardUnlocked(true);
+          pressCountRef.current = 0;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (shiftThreeTimeoutRef.current) {
+        clearTimeout(shiftThreeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Sync marker settings with drawing components via events
   useEffect(() => {
@@ -448,11 +540,149 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     reader.readAsText(file);
   };
 
+  const handleSavePack = () => {
+    setPackModalOpen(true);
+    setPackName(`nexus_pack_${new Date().toISOString().slice(0, 10)}`);
+    setPackDescription('');
+  };
+
+  const handleCreatePack = async () => {
+    if (!packName.trim()) {
+      alert(translate('Pack Name', language as Locale) + ' ' + 'is required');
+      return;
+    }
+
+    // Simple check: count objects instead of trying to serialize huge state
+    const objectCount = Object.keys(state.objects).length;
+    if (objectCount > 500) {
+      const confirmed = confirm(
+        `Warning: Your game has ${objectCount} objects.\n\n` +
+        `This may take a while to process and create a large pack file.\n\n` +
+        `Continue anyway?`
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setIsCreatingPack(true);
+    try {
+      await createPack(state, packName.trim(), packDescription.trim() || undefined);
+      logger.log(translate('Pack saved successfully!', language as Locale));
+      setPackModalOpen(false);
+      setPackName('');
+      setPackDescription('');
+    } catch (error) {
+      logger.error(translate('Error creating pack', language as Locale), error);
+      alert(translate('Error creating pack', language as Locale) + ': ' + (error as Error).message);
+    } finally {
+      setIsCreatingPack(false);
+    }
+  };
+
+  const handleLoadPack = () => {
+    packFileInputRef.current?.click();
+  };
+
+  // Helper function to add pack loading steps
+  const addPackLoadingStep = (message: string, status: PackLoadingStep['status'] = 'loading') => {
+    setPackLoadingSteps(prev => {
+      // Update existing step if message matches
+      const existingIndex = prev.findIndex(step => step.message === message);
+      if (existingIndex !== -1) {
+        const updated = [...prev];
+        updated[existingIndex] = { message, status };
+        return updated;
+      }
+      // Add new step
+      return [...prev, { message, status }];
+    });
+  };
+
+  const handlePackFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.nexuspack')) {
+      alert(translate('Invalid pack file', language as Locale));
+      return;
+    }
+
+    try {
+      // Show loading modal
+      setIsPackLoading(true);
+      setPackLoadingSteps([{ message: `Loading pack: ${file.name}`, status: 'loading' }]);
+
+      const packData = await loadPack(file, (step, status) => {
+        addPackLoadingStep(step, status);
+      });
+
+      // Validate pack data structure
+      if (!packData.objects || typeof packData.objects !== 'object') {
+        throw new Error("Invalid pack: missing or invalid 'objects' field");
+      }
+      if (!packData.players || !Array.isArray(packData.players)) {
+        throw new Error("Invalid pack: missing or invalid 'players' field");
+      }
+
+      // Dispatch load action
+      dispatch({ type: 'LOAD_GAME', payload: packData as GameState });
+
+      const objectCount = Object.keys(packData.objects || {}).length;
+      const playerCount = packData.players?.length || 0;
+
+      // Add final success step
+      addPackLoadingStep(`Pack loaded successfully! (${objectCount} objects, ${playerCount} players)`, 'success');
+
+      // Hide modal after short delay
+      setTimeout(() => {
+        setIsPackLoading(false);
+        setPackLoadingSteps([]);
+      }, 1500);
+
+      // Reset file input
+      if (packFileInputRef.current) {
+        packFileInputRef.current.value = '';
+      }
+    } catch (error) {
+      // Add error step to modal
+      addPackLoadingStep(`Error loading pack: ${(error as Error).message}`, 'error');
+
+      // Keep modal visible longer to show error
+      setTimeout(() => {
+        setIsPackLoading(false);
+        setPackLoadingSteps([]);
+      }, 3000);
+
+      logger.error(translate('Error loading pack', language as Locale), error);
+    }
+  };
+
   const handleSendChat = () => {
     if (!chatInput.trim()) return;
     const userMsg = chatInput;
     setChatHistory(prev => [...prev, { sender: 'You', text: userMsg }]);
     setChatInput('');
+  };
+
+  // Manual connection handlers
+  const handleCreateManualOffer = async () => {
+    const name = guestNameInput.trim() || 'Host';
+    await manualConnection.createOffer(name);
+  };
+
+  const handleJoinManualConnection = async (code: string) => {
+    const guestName = guestNameInput.trim() || 'Guest Player';
+    await manualConnection.connectToHost(code, guestName, dispatch);
+  };
+
+  const handleManualAnswer = async (code: string) => {
+    await manualConnection.handleGuestAnswer(code);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
   };
 
   // Create categories with proper order and labels
@@ -462,8 +692,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       items: [
         { name: translate('Standard Board', language as Locale), type: 'BOARD', gridType: GridType.SQUARE },
         { name: translate('Cell', language as Locale), type: 'BATTLEFIELD_CELL' },
+        { name: translate('Nexus Board', language as Locale), type: 'NEXUS_BOARD', disabled: !nexusBoardUnlocked },
       ],
-      matcher: (obj: TableObject) => obj.type === ItemType.BOARD || obj.type === ItemType.BATTLEFIELD_CELL
+      matcher: (obj: TableObject) => obj.type === ItemType.BOARD || obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_BOARD
     },
     {
       id: 'decks', label: translate('Decks', language as Locale), icon: <Library size={16}/>,
@@ -580,53 +811,33 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               {/* Drawing Tools Section */}
               <div>
                 <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
-                <div className="grid grid-cols-4 gap-2">
-                  <DrawingToolButton tool="none" icon={<MousePointer2 size={20} />} label={translate('Cursor', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="marker" icon={<Pen size={20} />} label={translate('Marker', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="eraser" icon={<Eraser size={20} />} label={translate('Eraser', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="compass" icon={<Ruler size={20} />} label={translate('Ruler', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                <div className="grid grid-cols-5 gap-2">
+                  <DrawingToolButton tool="none" icon={<MousePointer2 size={15} />} label={translate('Cursor', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="marker" icon={<Pen size={15} />} label={translate('Marker', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="eraser" icon={<Eraser size={15} />} label={translate('Eraser', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="ruler" icon={<Ruler size={15} />} label={translate('Ruler', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="zoom" icon={<Search size={15} />} label={translate('Zoom', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
                 </div>
               </div>
 
               {/* Marker Settings (shown when marker or eraser is selected) */}
               {(selectedTool === 'marker' || selectedTool === 'eraser') && (
                 <div className="p-3 bg-slate-800 rounded-lg space-y-3">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase">
-                    {selectedTool === 'marker' ? translate('Marker Settings', language as Locale) : translate('Eraser Settings', language as Locale)}
-                  </h4>
-
                   {/* Color picker */}
                   {selectedTool === 'marker' && (
                     <div>
-                      <label className="block text-[10px] text-gray-400 mb-2">{translate('Color', language as Locale)}</label>
-                      <div className="grid grid-cols-8 gap-1">
-                        {[
-                          // Basic colors (first row)
-                          '#ff0000', '#ff8000', '#ffff00', '#80ff00',
-                          '#00ff00', '#00ff80', '#00ffff', '#0080ff',
-                          '#0000ff', '#8000ff', '#ff00ff', '#ff0080',
-                          // Light/Dark variants
-                          '#ffffff', '#c0c0c0', '#808080', '#404040',
-                          '#000000', '#800000', '#008000', '#000080',
-                          '#808000', '#008080', '#800080', '#ff8080',
-                        ].map((color) => (
-                          <button
-                            key={color}
-                            onClick={() => updateMarkerColor(color)}
-                            className={`w-6 h-6 rounded border transition-all ${
-                              markerColor === color ? 'border-white scale-110' : 'border-slate-600 hover:border-slate-400'
-                            }`}
-                            style={{ backgroundColor: color }}
-                            title={color}
-                          />
-                        ))}
-                      </div>
+                      <input
+                        type="color"
+                        value={markerColor}
+                        onChange={(e) => updateMarkerColor(e.target.value)}
+                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                      />
                     </div>
                   )}
 
                   {/* Thickness slider */}
                   <div>
-                    <label className="block text-[10px] text-gray-400 mb-2">
+                    <label className="block text-[10px] text-gray-400 mb-1">
                       {translate('Size', language as Locale)}: {markerThickness}px
                     </label>
                     <input
@@ -637,7 +848,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       onChange={(e) => updateMarkerThickness(Number(e.target.value))}
                       className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                     />
-                    <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
                       <span>1px</span>
                       <span>50px</span>
                       <span>100px</span>
@@ -647,7 +858,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   {/* Opacity slider - only for marker, not eraser */}
                   {currentDrawingTool === 'marker' && (
                     <div>
-                      <label className="block text-[10px] text-gray-400 mb-2">
+                      <label className="block text-[10px] text-gray-400 mb-1">
                         {translate('Opacity', language as Locale)}: {markerOpacity}%
                       </label>
                       <input
@@ -658,13 +869,43 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                         onChange={(e) => updateMarkerOpacity(Number(e.target.value))}
                         className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                       />
-                      <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                      <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
                         <span>1%</span>
                         <span>50%</span>
                         <span>100%</span>
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Zoom Settings (shown when zoom tool is selected) */}
+              {selectedTool === 'zoom' && (
+                <div className="p-3 bg-slate-800 rounded-lg space-y-3">
+                  {/* Zoom slider */}
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-1">
+                      {t({ en: 'Zoom', ru: 'Масштаб', be: 'Маштаб', uk: 'Масштаб', sr: 'Zum' })}: {localSettings.zoom ?? 100}%
+                    </label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="200"
+                      step="5"
+                      value={localSettings.zoom ?? 100}
+                      onChange={(e) => updateSetting('zoom', Number(e.target.value))}
+                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                    />
+                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                      <span>50%</span>
+                      <span>100%</span>
+                      <span>200%</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[9px] text-gray-500 italic">
+                    {t({ en: 'Configure layer zoom in Layer Settings', ru: 'Настройте зум слоя в настройках слоя', be: 'Наладзьце зум слоя ў наладах слоя', uk: 'Налаштуйте зум шару в налаштуваннях шару', sr: 'Podesite zum sloja u postavkama sloja' })}
+                  </p>
                 </div>
               )}
 
@@ -724,6 +965,17 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   {inviteCopied ? translate('Link Copied!', language as Locale) : translate('Invite Player', language as Locale)}
                 </button>
                 <button
+                  onClick={() => setShowManualConnection(true)}
+                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all"
+                >
+                  <Network size={16} />
+                  {translate('Direct Connection', language as Locale)}
+                </button>
+
+                {/* Divider line before save/load buttons */}
+                <div className="border-t border-slate-600 my-2"></div>
+
+                <button
                   onClick={handleSaveGame}
                   className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
                 >
@@ -739,11 +991,34 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     {translate('Load Session', language as Locale)}
                   </button>
                 )}
+                <button
+                  onClick={handleSavePack}
+                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                >
+                  <Package size={16} />
+                  {translate('Create Pack', language as Locale)}
+                </button>
+                {isGM && (
+                  <button
+                    onClick={handleLoadPack}
+                    className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                  >
+                    <Package size={16} />
+                    {translate('Load Pack', language as Locale)}
+                  </button>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept=".json"
                   onChange={handleLoadGame}
+                  className="hidden"
+                />
+                <input
+                  ref={packFileInputRef}
+                  type="file"
+                  accept=".nexuspack"
+                  onChange={handlePackFileChange}
                   className="hidden"
                 />
               </div>
@@ -851,6 +1126,397 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           }}
         />
       )}
+
+      {/* Pack Loading Modal */}
+      {isPackLoading && (
+        <PackLoadingModal
+          steps={packLoadingSteps}
+          isVisible={isPackLoading}
+        />
+      )}
+
+      {/* Manual P2P Connection Modal */}
+      {showManualConnection && createPortal(
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000]">
+          <div className="bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white">{translate('Direct Connection', language as Locale)}</h2>
+              <button
+                onClick={() => {
+                  // Don't allow closing if connection is in progress
+                  if (manualConnection.state.step === 'connecting' ||
+                      manualConnection.state.step === 'waiting_for_answer' ||
+                      (manualConnection.state.step === 'connected' && !manualConnection.state.channelOpen)) {
+                    if (!confirm(translate('Connection is in progress. Close anyway?', language as Locale))) {
+                      return;
+                    }
+                  }
+                  setShowManualConnection(false);
+                  manualConnection.reset();
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Tab selector */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setManualConnectionTab('create')}
+                className={`flex-1 py-2 px-4 rounded font-medium transition-colors ${
+                  manualConnectionTab === 'create'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                }`}
+              >
+                {translate('Create (Host)', language as Locale)}
+              </button>
+              <button
+                onClick={() => setManualConnectionTab('join')}
+                className={`flex-1 py-2 px-4 rounded font-medium transition-colors ${
+                  manualConnectionTab === 'join'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                }`}
+              >
+                {translate('Join (Guest)', language as Locale)}
+              </button>
+            </div>
+
+            {/* Status indicator */}
+            {manualConnection.state.error && (
+              <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-200">
+                {translate('Error', language as Locale)}: {manualConnection.state.error}
+              </div>
+            )}
+
+            {manualConnection.state.noCandidates && (manualConnection.state.error || manualConnection.state.step === 'failed') && (
+              <div className="mb-4 p-3 bg-yellow-900/50 border border-yellow-700 rounded text-yellow-200">
+                {translate('No ICE candidates gathered - try testing on different devices', language as Locale)}
+              </div>
+            )}
+
+            {manualConnection.state.step === 'connected' && manualConnection.state.channelOpen && (
+              <div className="mb-4 p-3 bg-green-900/50 border border-green-700 rounded text-green-200">
+                {translate('Connected successfully!', language as Locale)}
+              </div>
+            )}
+
+            {/* Show connecting message if step is connected but channel not yet open */}
+            {manualConnection.state.step === 'connected' && !manualConnection.state.channelOpen && (
+              <div className="mb-4 p-3 bg-blue-900/50 border border-blue-700 rounded text-blue-200">
+                {translate('Establishing secure connection...', language as Locale)}
+              </div>
+            )}
+
+            {/* Create (Host) Tab */}
+            {manualConnectionTab === 'create' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    {translate('Your Name', language as Locale)}
+                  </label>
+                  <input
+                    type="text"
+                    defaultValue={state.players.find(p => p.id === state.activePlayerId)?.name || 'Host'}
+                    id="host-name-input"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  />
+                </div>
+
+                {manualConnection.state.step === 'idle' && (
+                  <button
+                    onClick={() => {
+                      const name = (document.getElementById('host-name-input') as HTMLInputElement)?.value || 'Host';
+                      manualConnection.createOffer(name);
+                    }}
+                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium transition-colors"
+                  >
+                    {translate('Generate Connection Code', language as Locale)}
+                  </button>
+                )}
+
+                {(manualConnection.state.step === 'creating' || manualConnection.state.step === 'waiting_for_answer') && (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-blue-900/30 border border-blue-700 rounded text-blue-200">
+                      {translate('Step 1: Copy this code and send to your guest', language as Locale)}
+                    </div>
+
+                    <textarea
+                      readOnly
+                      value={manualConnection.state.generatedCode}
+                      className="w-full h-32 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
+                    />
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(manualConnection.state.generatedCode);
+                        }}
+                        className="flex-1 py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Copy size={16} />
+                        {translate('Copy to Clipboard', language as Locale)}
+                      </button>
+                    </div>
+
+                    {manualConnection.state.step === 'waiting_for_answer' && (
+                      <div className="space-y-4 pt-4 border-t border-slate-700">
+                        <div className="p-3 bg-green-900/30 border border-green-700 rounded text-green-200">
+                          {translate('Step 2: Paste the answer code from your guest', language as Locale)}
+                        </div>
+
+                        <textarea
+                          placeholder={translate('Paste answer code here...', language as Locale)}
+                          value={manualConnection.state.remoteAnswer}
+                          onChange={(e) => manualConnection.setRemoteAnswer(e.target.value)}
+                          className="w-full h-24 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
+                        />
+
+                        <button
+                          onClick={() => {
+                            manualConnection.handleGuestAnswer(manualConnection.state.remoteAnswer);
+                          }}
+                          disabled={!manualConnection.state.remoteAnswer}
+                          className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors"
+                        >
+                          {translate('Connect', language as Locale)}
+                        </button>
+                      </div>
+                    )}
+
+                    {manualConnection.state.step === 'creating' && (
+                      <div className="flex items-center justify-center gap-2 text-blue-400">
+                        <Loader2 size={20} className="animate-spin" />
+                        {translate('Generating code...', language as Locale)}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {manualConnection.state.step === 'connected' && manualConnection.state.channelOpen && (
+                  <button
+                    onClick={() => {
+                      setShowManualConnection(false);
+                      manualConnection.reset();
+                    }}
+                    className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 text-white rounded font-medium transition-colors"
+                  >
+                    {translate('Close', language as Locale)}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Join (Guest) Tab */}
+            {manualConnectionTab === 'join' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    {translate('Your Name', language as Locale)}
+                  </label>
+                  <input
+                    type="text"
+                    value={guestNameInput}
+                    onChange={(e) => setGuestNameInput(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  />
+                </div>
+
+                {manualConnection.state.step === 'idle' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        {translate('Host Connection Code', language as Locale)}
+                      </label>
+                      <textarea
+                        placeholder={translate('Paste the code from host here...', language as Locale)}
+                        value={manualConnection.state.localOffer}
+                        onChange={(e) => manualConnection.setLocalOffer(e.target.value)}
+                        className="w-full h-32 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => manualConnection.connectToHost(manualConnection.state.localOffer, guestNameInput.trim() || 'Guest Player', dispatch)}
+                      disabled={!manualConnection.state.localOffer || !guestNameInput}
+                      className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors"
+                    >
+                      {translate('Connect to Host', language as Locale)}
+                    </button>
+                  </>
+                )}
+
+                {(manualConnection.state.step === 'connecting' || manualConnection.state.step === 'connected') && (
+                  <div className="space-y-4">
+                    {/* Show answer code when it's been generated */}
+                    {manualConnection.state.generatedCode && (
+                      <>
+                        <div className="p-3 bg-green-900/30 border border-green-700 rounded text-green-200">
+                          {translate('Copy this answer code and send back to host', language as Locale)}
+                        </div>
+
+                        <textarea
+                          readOnly
+                          value={manualConnection.state.generatedCode}
+                          className="w-full h-32 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-xs font-mono"
+                        />
+
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(manualConnection.state.generatedCode);
+                          }}
+                          className="w-full py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Copy size={16} />
+                          {translate('Copy to Clipboard', language as Locale)}
+                        </button>
+
+                        {!manualConnection.state.channelOpen && (
+                          <div className="flex items-center justify-center gap-2 text-blue-400">
+                            <Loader2 size={20} className="animate-spin" />
+                            {translate('Waiting for host to connect...', language as Locale)}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Show connecting message if no code yet */}
+                    {!manualConnection.state.generatedCode && (
+                      <div className="flex items-center justify-center gap-2 text-blue-400">
+                        <Loader2 size={20} className="animate-spin" />
+                        {translate('Connecting...', language as Locale)}
+                      </div>
+                    )}
+
+                    {/* Show Done button only when fully connected */}
+                    {manualConnection.state.step === 'connected' && manualConnection.state.channelOpen && (
+                      <button
+                        onClick={() => {
+                          setShowManualConnection(false);
+                          manualConnection.reset();
+                        }}
+                        className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 text-white rounded font-medium transition-colors"
+                      >
+                        {translate('Done', language as Locale)}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Reset button */}
+            <div className="mt-6 pt-4 border-t border-slate-700">
+              <button
+                onClick={() => {
+                  manualConnection.reset();
+                  setGuestNameInput('');
+                }}
+                className="w-full py-2 px-4 bg-red-900/50 hover:bg-red-900/70 text-red-200 rounded font-medium transition-colors"
+              >
+                {translate('Reset', language as Locale)}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Pack Creation Modal */}
+      {packModalOpen && createPortal(
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10001]">
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center py-3 px-4 border-b border-slate-700">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Package size={20} />
+                {translate('Create Pack', language as Locale)}
+              </h3>
+              <button
+                onClick={() => setPackModalOpen(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-gray-300">
+                {translate('A pack contains your game state and all custom images in a single file', language as Locale)}
+              </p>
+
+              {/* Pack Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {translate('Pack Name', language as Locale)} *
+                </label>
+                <input
+                  type="text"
+                  value={packName}
+                  onChange={(e) => setPackName(e.target.value)}
+                  placeholder="nexus_pack_2026-03-26"
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                  autoFocus
+                />
+              </div>
+
+              {/* Pack Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {translate('Pack Description (optional)', language as Locale)}
+                </label>
+                <textarea
+                  value={packDescription}
+                  onChange={(e) => setPackDescription(e.target.value)}
+                  placeholder="Description of your pack..."
+                  rows={3}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                />
+              </div>
+
+              {/* Info */}
+              {isCreatingPack && (
+                <div className="flex items-center justify-center gap-2 text-blue-400 py-2">
+                  <Loader2 size={16} className="animate-spin" />
+                  {translate('Creating pack...', language as Locale)}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 py-3 px-4 border-t border-slate-700 bg-slate-900/50">
+              <button
+                onClick={() => setPackModalOpen(false)}
+                disabled={isCreatingPack}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-white rounded font-medium transition-colors"
+              >
+                {translate('Cancel', language as Locale)}
+              </button>
+              <button
+                onClick={handleCreatePack}
+                disabled={isCreatingPack || !packName.trim()}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-400 text-white rounded font-medium transition-colors flex items-center gap-2"
+              >
+                {isCreatingPack ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    {translate('Creating pack...', language as Locale)}
+                  </>
+                ) : (
+                  <>
+                    <Package size={16} />
+                    {translate('Create Pack', language as Locale)}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
@@ -935,14 +1601,19 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     const screenX = window.innerWidth / 2;
     const screenY = window.innerHeight / 2;
 
-    // Convert screen coordinates to world coordinates
+    // Convert screen coordinates to world coordinates (in pixels first)
     // Objects are rendered inside transform container with: translate(offset.x, offset.y) scale(zoom)
     const zoom = state.viewTransform.zoom;
     const offsetX = state.viewTransform.offset.x;
     const offsetY = state.viewTransform.offset.y;
 
-    const worldX = (screenX - offsetX) / zoom;
-    const worldY = (screenY - offsetY) / zoom;
+    const worldX_px = (screenX - offsetX) / zoom;
+    const worldY_px = (screenY - offsetY) / zoom;
+
+    // Convert pixels to VU (Virtual Units) for consistent positioning across different screen sizes
+    const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
+    const worldX = pixelsToVu(worldX_px, pixelsPerVU);
+    const worldY = pixelsToVu(worldY_px, pixelsPerVU);
 
     switch (item.type) {
       case 'DECK': {
@@ -986,7 +1657,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardDoubleClickAction: undefined,
           cardNamePosition: 'none' as const,
           // Deck actions (for the deck itself, not cards)
-          actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
+          actionButtons: ['draw', 'playTopCard', 'millTopCard', 'shuffleDeck'],
           allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
           allowedActionsForGM: undefined, // undefined = all actions allowed for GM
         };
@@ -1039,7 +1710,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardDoubleClickAction: undefined,
           cardNamePosition: 'none' as const,
           // Deck actions (for the deck itself, not cards)
-          actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
+          actionButtons: ['draw', 'playTopCard', 'millTopCard', 'shuffleDeck'],
           allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
           allowedActionsForGM: undefined, // undefined = all actions allowed for GM
         };
@@ -1070,22 +1741,24 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         break;
       }
       case 'TOKEN_TYPE': {
+        // Normalize dimensions for hexagon shape
+        const hexWidth = Math.round(TOKEN_SIZE / 1.155);
         const tokenType: TokenType = {
           id: generateUUID(),
           type: ItemType.TOKEN_TYPE,
           name: item.name,
           x: 0,
           y: 0,
-          width: TOKEN_SIZE,
+          width: hexWidth,
           height: TOKEN_SIZE,
           rotation: 0,
           color: '#3498db',
           isOnTable: false,
           locked: false,
-          shape: TokenShape.SQUARE,
+          shape: TokenShape.HEX,
           content: '',
           // Token type specific properties
-          defaultSize: { width: TOKEN_SIZE, height: TOKEN_SIZE },
+          defaultSize: { width: hexWidth, height: TOKEN_SIZE },
           autoName: false,
           namePrefix: '',
           spawnCount: 0,
@@ -1132,6 +1805,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           sides,
           currentValue: 1,
           shape,
+          actionButtons: ['roll'],
         };
         dispatch({ type: 'ADD_OBJECT', payload: dice });
         break;
@@ -1151,8 +1825,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           content: '',
           isOnTable: true,
           locked: false,
-          value: isLifeCounter ? 20 : 0,
-          baseValue: isLifeCounter ? 20 : 0,
+          value: isLifeCounter ? 30 : 0,
+          baseValue: isLifeCounter ? 30 : 0,
           maxValue: isLifeCounter ? undefined : 30,
           allowNegative: !isLifeCounter,
         };
@@ -1176,7 +1850,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           shape: TokenShape.HEX,
           gridType: GridType.HEX,
           gridSize: 65,
+          gridWidth: 100,  // Must match DEFAULT_HEX_WIDTH for HEX grids
+          gridHeight: 115, // Must match DEFAULT_HEX_WIDTH * 1.15 for HEX grids
           snapToGrid: true,
+          hyperscaleLayerId: 'boards',  // Place on boards hyperscale layer
         };
         dispatch({ type: 'ADD_OBJECT', payload: board });
         break;
@@ -1224,6 +1901,90 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           hyperscaleLayerId: targetLayerId, // Place on boards layer or top selected layer
         };
         dispatch({ type: 'ADD_OBJECT', payload: cell });
+        break;
+      }
+      case 'NEXUS_BOARD': {
+        // Find target hyperscale layer
+        let targetLayerId: string | undefined = undefined;
+        const selectedLayers = state.hyperscaleLayers.filter(l =>
+          state.selectedHyperscaleLayerIds.includes(l.id)
+        ).sort((a, b) => a.order - b.order);
+        if (selectedLayers.length > 0) {
+          targetLayerId = selectedLayers[0].id;
+        }
+
+        const boardId = generateUUID();
+        const mainCellId = generateUUID();
+        const cellWidth = 100;
+        const cellHeight = 150;
+
+        // Create main cell as a separate NexusCellObject
+        const mainCell: NexusCellObject = {
+          id: mainCellId,
+          type: ItemType.NEXUS_CELL,
+          shape: TokenShape.HEX,
+          x: screenX - 50,
+          y: screenY - 75,
+          rotation: 0,
+          width: cellWidth,
+          height: cellHeight,
+          content: '',
+          name: 'Main Cell',
+          isOnTable: true,
+          locked: false,
+          color: '#496179',
+          borderColor: '#212f3c',
+          borderWidth: 3,
+          opacity: 100,
+          borderOpacity: 100,
+          snapToGrid: true,
+          gridSize: 50,
+          zIndex: 0,
+          hyperscaleLayerId: targetLayerId,
+          nexusBoardId: boardId,
+          direction: 'N' as HexDirection,
+          offset: { x: 0, y: 0 },
+          gridType: GridType.HEX,
+          magnetPointCount: 1,
+          magnetRotation: 0,
+        };
+
+        // Create the NexusBoard (smaller, just a container)
+        const nexusBoard: NexusBoard = {
+          id: boardId,
+          type: ItemType.NEXUS_BOARD,
+          shape: TokenShape.HEX,
+          x: screenX - 50,
+          y: screenY - 75,
+          rotation: 0,
+          width: 0,  // Board itself doesn't render, just a container
+          height: 0,
+          content: '',
+          name: item.name || 'Nexus Board',
+          isOnTable: true,
+          locked: false,
+          color: '#496179',
+          borderColor: '#212f3c',
+          borderWidth: 0,
+          opacity: 100,
+          borderOpacity: 100,
+          zIndex: 0,
+          hyperscaleLayerId: targetLayerId,
+          gridType: GridType.HEX,
+          gridSize: 50,
+          cells: [
+            {
+              id: mainCellId,
+              direction: 'N' as HexDirection,
+            }
+          ],
+          cellWidth: cellWidth,
+          cellHeight: cellHeight,
+        };
+
+        // Add both objects - board first, then cell
+        dispatch({ type: 'ADD_OBJECT', payload: nexusBoard });
+        dispatch({ type: 'ADD_OBJECT', payload: mainCell });
         break;
       }
       case 'PANEL': {
@@ -1360,16 +2121,19 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     )}
                     {canDeleteObjects && (
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
                           // Token copies (tokens with archetypeId) are deleted immediately without confirmation
                           if (obj.type === ItemType.TOKEN && (obj as any).archetypeId) {
-                            dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } });
+                            dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id }});
+                          } else if (e.shiftKey) {
+                            // If Shift is held, delete immediately without confirmation
+                            dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id }});
                           } else {
                             setDeleteCandidateId(obj.id);
                           }
                         }}
                         className="p-1 hover:bg-red-600 rounded text-red-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
-                        title="Delete"
+                        title="Delete (Shift+Click to skip confirmation)"
                       >
                         <Trash2 size={10} />
                       </button>
@@ -1404,7 +2168,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 };
 
 // Drawing tool types
-type DrawingTool = 'none' | 'marker' | 'eraser' | 'compass';
+type DrawingTool = 'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom';
 
 // Drawing tool button component
 interface DrawingToolButtonProps {

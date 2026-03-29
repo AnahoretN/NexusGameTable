@@ -18,7 +18,7 @@ import { vuToPixels } from '../utils/vuSystem';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.5';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.7';
 
 // Support links
 const SUPPORT_LINKS = [
@@ -33,6 +33,12 @@ const SUPPORT_LINKS = [
     url: 'https://discord.gg/U5zKADsZZY',
     icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764190408/discord-icon_nhgjyx.svg',
     color: 'bg-indigo-500'
+  },
+  {
+    name: 'GitHub',
+    url: 'https://github.com/AnahoretN/NexusGameTable',
+    icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1773145441/github_xcc4uw.png',
+    color: 'bg-gray-700'
   },
   {
     name: 'Boosty',
@@ -442,7 +448,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 }}
                 className="text-sm text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
               >
-                [{translate('Support Project', state.language as Locale)}]
+                [{translate('Links', state.language as Locale)}]
               </button>
             )}
           </div>
@@ -653,7 +659,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {/* Version Info */}
               <div className="text-sm text-gray-400 pb-3 border-b border-slate-700">
                 <p>{APP_NAME} v{APP_VERSION}</p>
@@ -661,9 +667,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
               {/* Language Settings */}
               <div className="pt-2">
-                <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Language', state.language as Locale)}</h4>
+                <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Language', state.language as Locale)}</h4>
                 <select
-                  value={localStorage.getItem('app-language') || 'en'}
+                  value={state.language || 'en'}
                   onChange={async (e) => {
                     const newLang = e.target.value as AppLanguage;
                     localStorage.setItem('app-language', newLang);
@@ -682,8 +688,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
               {/* Player Permissions */}
               {isGM && (
-                <div className="pt-4 pb-2 border-t border-slate-700">
-                  <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Player Permissions', state.language as Locale)}</h4>
+                <div className="pt-3 pb-2 border-t border-slate-700">
+                  <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Player Permissions', state.language as Locale)}</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
                       <span className="text-xs text-gray-300">{translate('Create Objects', state.language as Locale)}</span>
@@ -770,8 +776,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               )}
 
               {/* Effects Section */}
-              <div className="pt-4 pb-2 border-t border-slate-700">
-                <h4 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
+              <div className="pt-3 pb-2 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Eye size={14} />
                   {translate('Effects', state.language as Locale)}
                 </h4>
@@ -798,47 +804,55 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               </div>
 
               {/* Hotkeys Section */}
-              <div className="pt-4 pb-2 border-t border-slate-700">
-                <h4 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
+              <div className="pt-3 pb-2 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Keyboard size={14} />
                   {translate('Hotkeys', state.language as Locale)}
                 </h4>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   <div className="bg-slate-900 rounded-lg overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
                       <span className="text-xs text-gray-300">{translate('Undo', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Z</kbd>
                     </div>
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
                       <span className="text-xs text-gray-300">{translate('Close tooltip/menu', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Esc</kbd>
                     </div>
-                    <div className="flex items-center justify-between px-3 py-2">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
                       <span className="text-xs text-gray-300">{translate('Add to cursor slot', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Click</kbd>
                     </div>
+                    <div className="flex items-center justify-between px-3 py-1.5">
+                      <span className="text-xs text-gray-300">{translate('Delete without confirmation', state.language as Locale)}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Delete</kbd>
+                    </div>
                   </div>
                   <div className="bg-slate-900 rounded-lg overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
                       <span className="text-xs text-gray-300">{translate('Pan view (hold + drag)', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Drag</kbd>
                     </div>
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
                       <span className="text-xs text-gray-300">{translate('Move the drawing', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Marker</kbd>
                     </div>
-                    <div className="flex items-center justify-between px-3 py-2">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
                       <span className="text-xs text-gray-300">{translate('Delete entire drawing', state.language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Eraser</kbd>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-1.5">
+                      <span className="text-xs text-gray-300">{translate('Normal cursor mode', state.language as Locale)}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Alt+Marker</kbd>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Storage & Cache Section */}
-              <div className="pt-4 pb-2 border-t border-slate-700">
-                <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Storage & Cache', state.language as Locale)}</h4>
+              <div className="pt-3 pb-2 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Storage & Cache', state.language as Locale)}</h4>
 
                 {hasSavedGameState() && (
                   <div className="bg-slate-900 rounded px-3 py-2 mb-3">
@@ -882,7 +896,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       {/* Support Modal */}
       {isMainMenu && showSupportModal && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70" onClick={() => setShowSupportModal(false)}>
-          <div className="bg-slate-800 rounded-lg shadow-xl w-[420px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[540px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
               <h3 className="text-base font-bold text-white">{translate('Links', state.language as Locale)}</h3>
             </div>
@@ -890,7 +904,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               <p className="text-sm text-gray-400 text-center mb-6">
                 {translate('Follow me on social media or support my work through donations!', state.language as Locale)}
               </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 {SUPPORT_LINKS.map((link) => (
                   <a
                     key={link.name}

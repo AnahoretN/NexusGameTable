@@ -1,4 +1,4 @@
-import { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, HyperscaleLayer } from '../types';
+import { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, HyperscaleLayer, DiceGroup } from '../types';
 import { GM_COLOR, getSessionId } from './gameConstants';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
 
@@ -16,12 +16,16 @@ export interface GameState {
   diceRolls: DiceRoll[];
   viewTransform: ViewTransform;
   sessionId?: string; // Unique session identifier
+  version?: number; // Save file version for migration purposes
   drawings: DrawingData; // Drawing layers for board and objects
   undo: UndoState; // Undo/redo history
   playerPermissions: PlayerPermissions; // Permissions for non-GM players
   language: AppLanguage; // Application language
   hyperscaleLayers: HyperscaleLayer[]; // Hyperscale layers configuration
   selectedHyperscaleLayerIds: string[]; // IDs of hyperscale layers currently selected for manipulation
+  connectionsLocked: boolean; // Whether new player connections are locked (host only)
+  diceGroups: DiceGroup[]; // Dice groups for rolling multiple dice together
+  lastModifiedBy?: string; // ID of player who last modified the game state
 }
 
 /**
@@ -51,8 +55,14 @@ export const initialState: GameState = {
     deleteObjects: false,
     hideObjects: false,
   },
+  // Connections are unlocked by default
+  connectionsLocked: false,
+  // Dice groups - empty by default
+  diceGroups: [],
   // Load language from localStorage or default to 'en'
   language: (typeof localStorage !== 'undefined' && (localStorage.getItem('app-language') as AppLanguage)) || 'en',
+  // Track who last modified the game state (for auto-save timers)
+  lastModifiedBy: 'gm',
   // Default hyperscale layers
   hyperscaleLayers: [
     {
@@ -65,6 +75,7 @@ export const initialState: GameState = {
       playerCanView: true,
       individualPosition: false,
       individualObjects: false,
+      zoomEnabled: true,
       order: 0
     },
     {
@@ -77,6 +88,7 @@ export const initialState: GameState = {
       playerCanView: true,
       individualPosition: false,
       individualObjects: false,
+      zoomEnabled: true,
       order: 1
     },
     {
@@ -89,7 +101,21 @@ export const initialState: GameState = {
       playerCanView: true,
       individualPosition: false,
       individualObjects: false,
+      zoomEnabled: true,
       order: 2
+    },
+    {
+      id: 'drawings',
+      name: 'Drawings',
+      minZIndex: 6001,
+      maxZIndex: 7000,
+      color: '#ec4899',
+      playerCanSelect: true,
+      playerCanView: true,
+      individualPosition: true,
+      individualObjects: false,
+      zoomEnabled: true,
+      order: 3
     },
     {
       id: 'interface',
@@ -101,9 +127,10 @@ export const initialState: GameState = {
       playerCanView: false,
       individualPosition: true,
       individualObjects: true, // Each player has their own interface objects (panels, windows, etc.)
-      order: 3
+      zoomEnabled: false, // Interface layer NOT affected by zoom
+      order: 4
     }
   ],
   // All layers selected by default
-  selectedHyperscaleLayerIds: ['boards', 'cards', 'tokens', 'interface'],
+  selectedHyperscaleLayerIds: ['boards', 'cards', 'tokens', 'drawings', 'interface'],
 };

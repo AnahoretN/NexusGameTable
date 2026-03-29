@@ -1,32 +1,6 @@
 import React from 'react';
 import { TokenShape } from '../types';
-
-// SVG paths for shapes that fill the entire viewBox
-// Rounded corners achieved via stroke-linejoin="round" with thicker stroke
-const SHAPE_PATHS: Record<TokenShape, { path: string; viewBox: string; useRect?: boolean }> = {
-  [TokenShape.HEX]: {
-    path: 'M 30 0 L 60 16 L 60 48 L 30 64 L 0 48 L 0 16 Z',
-    viewBox: '0 0 60 64'
-  },
-  [TokenShape.HEX_HORIZONTAL]: {
-    // Horizontal hexagon (rotated 90°) - pointy top/bottom, flat sides on left/right
-    path: 'M 18 0 L 46 0 L 62 30 L 46 60 L 18 60 L 2 30 Z',
-    viewBox: '0 0 64 60'
-  },
-  [TokenShape.TRIANGLE]: {
-    path: 'M 30 0 L 60 60 L 0 60 Z',
-    viewBox: '0 0 60 60'
-  },
-  [TokenShape.CIRCLE]: {
-    path: 'M 30 0 A 30 30 0 1 1 30 60 A 30 30 0 1 1 30 0',
-    viewBox: '0 0 60 60'
-  },
-  [TokenShape.SQUARE]: {
-    path: '',
-    viewBox: '0 0 60 60',
-    useRect: true
-  }
-};
+import { getTokenShapePath, generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
 
 // Border radius in viewBox units (scales with the SVG)
 const BORDER_RADIUS = 4;
@@ -52,18 +26,34 @@ interface SvgTokenShapeProps {
 
 /**
  * Calculate dynamic font size based on text length and token dimensions
+ * Also considers longest word to ensure it fits
  */
-function calculateFontSize(textLength: number, tokenWidth: number, tokenHeight: number): number {
-  const baseSize = Math.min(tokenWidth, tokenHeight) / 6; // Reduced from /3 to /6 (half)
-  if (textLength <= 3) return baseSize;
-  if (textLength <= 6) return baseSize * 0.7;
-  if (textLength <= 10) return baseSize * 0.5;
-  return baseSize * 0.656; // +25% more (was 0.525)
+function calculateFontSize(textLength: number, tokenWidth: number, tokenHeight: number, longestWordLength: number): number {
+  const baseSize = Math.min(tokenWidth, tokenHeight) / 6;
+
+  // Reduce font size based on total text length
+  let size = baseSize;
+  if (textLength <= 3) size = baseSize;
+  else if (textLength <= 6) size = baseSize * 0.7;
+  else if (textLength <= 10) size = baseSize * 0.5;
+  else size = baseSize * 0.656;
+
+  // Further reduce if a single word is too long (more than 8-9 chars)
+  if (longestWordLength > 9) {
+    size = size * 0.75;
+  } else if (longestWordLength > 12) {
+    size = size * 0.6;
+  } else if (longestWordLength > 15) {
+    size = size * 0.5;
+  }
+
+  return size;
 }
 
 /**
  * SVG-based token shape with rounded corners and proper stroke
- * Used for HEX and TRIANGLE tokens that need rounded corners and proper border
+ * Uses universal path generation for consistent shapes across the app
+ * For HEX shapes, the path adjusts dynamically based on aspect ratio
  */
 export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   shape,
@@ -83,16 +73,40 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   tokenName,
   fontColor = 'white',
 }) => {
-  const shapeData = SHAPE_PATHS[shape] || SHAPE_PATHS[TokenShape.SQUARE];
-  const { path, viewBox, useRect } = shapeData;
+  // For HEX and HEX_HORIZONTAL, generate dynamic path based on aspect ratio
+  let shapeData;
+  if (shape === TokenShape.HEX) {
+    const aspectRatio = width / height;
+    const hexWidth = 60;
+    const hexHeight = Math.round(60 / aspectRatio);
+    shapeData = generatePointyTopHexPath(hexWidth, hexHeight);
+  } else if (shape === TokenShape.HEX_HORIZONTAL) {
+    const aspectRatio = width / height;
+    const hexHeight = 60;
+    const hexWidth = Math.round(60 * aspectRatio);
+    shapeData = generateFlatTopHexPath(hexWidth, hexHeight);
+  } else {
+    // For basic shapes, use static paths
+    const aspectRatio = width / height;
+    shapeData = getTokenShapePath(shape, aspectRatio);
+  }
+
+  const { path, viewBox } = shapeData;
+  // Use rect rendering for SQUARE shape only
+  const useRect = shape === TokenShape.SQUARE;
 
   // Generate unique ID for this instance
   const uniqueId = React.useId();
 
-  // Consistent 3px stroke width for all shapes
+  // Parse viewBox to get actual dimensions
+  const viewBoxMatch = viewBox.match(/[\d.]+/g);
+  const viewBoxWidth = viewBoxMatch ? parseFloat(viewBoxMatch[2]) : 60;
+  const viewBoxHeight = viewBoxMatch ? parseFloat(viewBoxMatch[3]) : 60;
+
+  // Consistent stroke width for all shapes
   const strokeWidth = borderWidth;
-  // Thicker stroke in fill color creates rounded corners for path shapes
-  const cornerRadiusStroke = useRect ? 0 : 6;
+  // Minimal stroke for rounded corners - don't waste space
+  const cornerRadiusStroke = useRect ? 0 : 2;
 
   // Convert opacity (0-100) to (0-1)
   const fillOpacity = opacity / 100;
@@ -118,8 +132,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   const rectProps = {
     x: 0,
     y: 0,
-    width: 60,
-    height: 60,
+    width: viewBoxWidth,
+    height: viewBoxHeight,
     rx: BORDER_RADIUS,
     ry: BORDER_RADIUS,
   };
@@ -171,7 +185,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
               y="0"
               width="100%"
               height="100%"
-              preserveAspectRatio="xMidYMid slice"
+              preserveAspectRatio="none"
             />
             {/* Border stroke on top */}
             {useRect ? (
@@ -260,8 +274,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
         <foreignObject
           x="0"
           y="0"
-          width="60"
-          height="60"
+          width={viewBoxWidth}
+          height={viewBoxHeight}
         >
           <div
             style={{
@@ -279,7 +293,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
             {tokenName && !children && (
               <span
                 style={{
-                  fontSize: `${calculateFontSize(tokenName.length, width, height)}px`,
+                  fontSize: `${calculateFontSize(tokenName.length, width, height, Math.max(...tokenName.split(' ').map(w => w.length)))}px`,
                   fontWeight: 'bold',
                   color: fontColor,
                   textShadow: '0 1px 3px rgba(0,0,0,0.8)',
@@ -292,6 +306,9 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
                   WebkitBoxOrient: 'vertical',
                   lineHeight: 1.1,
                   wordWrap: 'break-word',
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
+                  hyphens: 'auto',
                 }}
               >
                 {tokenName}
@@ -314,6 +331,10 @@ export function shouldUseSvgForToken(shape: TokenShape): boolean {
 
 // Memoize SvgTokenShape to prevent unnecessary re-renders
 export const SvgTokenShapeMemo = React.memo(SvgTokenShape, (prevProps, nextProps) => {
+  // Compare tokenName as well since fontSize calculation depends on its content
+  const prevLongestWord = prevProps.tokenName ? Math.max(...prevProps.tokenName.split(' ').map(w => w.length)) : 0;
+  const nextLongestWord = nextProps.tokenName ? Math.max(...nextProps.tokenName.split(' ').map(w => w.length)) : 0;
+
   return (
     prevProps.shape === nextProps.shape &&
     prevProps.width === nextProps.width &&
@@ -327,6 +348,7 @@ export const SvgTokenShapeMemo = React.memo(SvgTokenShape, (prevProps, nextProps
     prevProps.rotation === nextProps.rotation &&
     prevProps.showThickness === nextProps.showThickness &&
     prevProps.tokenName === nextProps.tokenName &&
-    prevProps.fontColor === nextProps.fontColor
+    prevProps.fontColor === nextProps.fontColor &&
+    prevLongestWord === nextLongestWord
   );
 });

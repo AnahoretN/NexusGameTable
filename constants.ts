@@ -38,6 +38,8 @@ export const CARD_SHAPE_DIMS: Record<CardShape, { width: number; height: number 
   // Hexagon Ratio: width = height * (sqrt(3)/2) approx 0.866
   // 144 * 0.866 = 124.7 -> 125
   [CardShape.HEX]: { width: 125, height: 144 },
+  // HEX_HORIZONTAL is flat-top (rotated 90° from HEX)
+  [CardShape.HEX_HORIZONTAL]: { width: 144, height: 125 },
   [CardShape.CIRCLE]: { width: 128, height: 128 },
   [CardShape.TRIANGLE]: { width: 128, height: 128 },
 };

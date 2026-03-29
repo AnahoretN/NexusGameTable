@@ -35,6 +35,7 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
   const [playerCanView, setPlayerCanView] = React.useState(layer.playerCanView);
   const [individualPosition, setIndividualPosition] = React.useState(layer.individualPosition ?? false);
   const [individualObjects, setIndividualObjects] = React.useState(layer.individualObjects ?? false);
+  const [zoomEnabled, setZoomEnabled] = React.useState(layer.zoomEnabled ?? true);
   const [error, setError] = React.useState<string | null>(null);
 
   const validateRange = (min: number, max: number): string | null => {
@@ -85,7 +86,8 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
           playerCanSelect,
           playerCanView,
           individualPosition,
-          individualObjects
+          individualObjects,
+          zoomEnabled
         }
       }
     });
@@ -278,14 +280,33 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
                   }`} />
                 </button>
               </label>
+
+              {/* Zoom Enabled */}
+              <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer col-span-2">
+                <span className="text-xs text-gray-300">{translate('Affected by zoom', language as Locale) ?? 'Affected by zoom'}</span>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setZoomEnabled(!zoomEnabled);
+                  }}
+                  className={`w-10 h-5 rounded-full transition-colors ${
+                    zoomEnabled ? 'bg-green-600' : 'bg-slate-700'
+                  }`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                    zoomEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </label>
             </div>
 
             {/* Info text for individual settings */}
             {(individualPosition || individualObjects) && (
               <div className="mt-3 p-2 bg-slate-700/50 border border-slate-600 rounded text-xs text-gray-400">
                 {individualObjects
-                  ? translate('Objects in this layer are individual for each player. Host can save but other players cannot see changes.', language as Locale)
-                  : translate('Object positions in this layer are individual for each player. Host can save but other players cannot see position changes.', language as Locale)
+                  ? translate('Objects in this layer are individual for each player.', language as Locale)
+                  : translate('Object positions in this layer are individual for each player.', language as Locale)
                 }
               </div>
             )}

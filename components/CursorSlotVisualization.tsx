@@ -63,13 +63,9 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
           isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
         }
 
-        // Convert vu to pixels
-        let width = baseWidth * pixelsPerVU;
-        let height = baseHeight * pixelsPerVU;
-
-        if (isHorizontal) {
-          [width, height] = [height, width];
-        }
+        // Convert vu to pixels (card dimensions already reflect orientation, no swap needed)
+        const width = baseWidth * pixelsPerVU;
+        const height = baseHeight * pixelsPerVU;
 
         return {
           item,
@@ -162,13 +158,9 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
           isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
         }
 
-        // Convert vu to pixels
-        let width = baseWidth * pixelsPerVU;
-        let height = baseHeight * pixelsPerVU;
-
-        if (isHorizontal) {
-          [width, height] = [height, width];
-        }
+        // Convert vu to pixels (card dimensions already reflect orientation, no swap needed)
+        const width = baseWidth * pixelsPerVU;
+        const height = baseHeight * pixelsPerVU;
 
         const slotIndex = (item as any).cursorSlotIndex ?? 0;
         const newestIndex = cursorSlot.length - 1;
@@ -280,7 +272,7 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
                 overrideHeight={height}
                 cardWidth={deck?.cardWidth}
                 cardHeight={deck?.cardHeight}
-                cardOrientation={heldItem.isHorizontal ? deck?.cardOrientation : undefined}
+                cardOrientation={deck?.cardOrientation}
                 cardNamePosition={deck?.cardNamePosition}
                 disableRotationTransform={true}
                 disablePointerEvents={true}
@@ -331,11 +323,9 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
       {/* Stack counter badge - only show if more than 1 item */}
       {cursorSlot.length > 1 && (() => {
         const firstItem = cursorSlot[0];
-        let badgeWidth = firstItem?.width ?? 63;
-        let badgeHeight = firstItem?.height ?? 88;
-        if (firstItem?.type === ItemType.CARD && (firstItem as any).isHorizontal) {
-          [badgeWidth, badgeHeight] = [badgeHeight, badgeWidth];
-        }
+        // Card dimensions already reflect orientation, no swap needed
+        const badgeWidth = firstItem?.width ?? 63;
+        const badgeHeight = firstItem?.height ?? 88;
         // Convert vu to pixels for badge positioning
         const badgeWidthPx = badgeWidth * pixelsPerVU;
         const badgeHeightPx = badgeHeight * pixelsPerVU;

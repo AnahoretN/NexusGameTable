@@ -1,6 +1,7 @@
 import React from 'react';
-import { Token as TokenType, Board as BoardType } from '../../types';
+import { Token as TokenType, Board as BoardType, GridType } from '../../types';
 import { Lock } from 'lucide-react';
+import { calculateFlexibleHexGrid, calculateHorizontalHexGrid } from '../../utils/gridUtils';
 
 interface BoardWithResizeProps {
     token: TokenType | BoardType;
@@ -14,9 +15,9 @@ interface BoardWithResizeProps {
     onContextMenu: (e: React.MouseEvent) => void;
     onResizeStart: (e: React.MouseEvent) => void;
     gridSize: number;
-    hexR: number;
-    hexW: number;
-    hexPath: string;
+    gridWidth?: number;
+    gridHeight?: number;
+    showGrid?: boolean;
     currentTool?: string;
 }
 
@@ -32,47 +33,78 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     onContextMenu,
     onResizeStart,
     gridSize,
-    hexR,
-    hexW,
-    hexPath,
+    gridWidth,
+    gridHeight,
+    showGrid,
     currentTool = 'none',
 }) => {
-    const showGrid = token.gridType && token.gridType !== 'NONE';
-    const isHexGrid = token.gridType === 'HEX';
+    // Check if grid should be shown (grid type exists AND showGrid is not false)
+    const shouldShowGrid = token.gridType && token.gridType !== 'NONE' && (token as BoardType).showGrid !== false;
+    const isHexGrid = token.gridType === GridType.HEX;
+    const isHexHorizontalGrid = token.gridType === GridType.HEX_HORIZONTAL;
 
-    // Generate hex grid pattern
-    const hexGridPattern = (
-        <pattern
-            id={`hex-grid-${token.id}`}
-            width={hexW}
-            height={hexR * 3}
-            patternUnits="userSpaceOnUse"
-            patternTransform={`scale(${zoom})`}
-        >
-            <path
-                d={hexPath}
-                fill="none"
-                stroke="rgba(128,128,128,0.3)"
-                strokeWidth="1"
-            />
-        </pattern>
-    );
+    // Hex grid constants
+    const HEX_RATIO = 1.15;
 
-    // Generate square grid pattern
+    // Use gridWidth if provided, otherwise fall back to gridSize
+    // This ensures the grid matches the snapping behavior which uses gridSize
+    const actualGridWidth = gridWidth ?? gridSize;
+    const actualGridHeight = gridHeight ?? (isHexGrid ? Math.round(gridSize * HEX_RATIO * 100) / 100 : (isHexHorizontalGrid ? gridSize / HEX_RATIO : gridSize));
+
+    // Flexible hex grid calculations
+    let hexGridPattern: React.ReactNode = null;
+    if (isHexGrid) {
+        const hexGrid = calculateFlexibleHexGrid(actualGridWidth);
+
+        hexGridPattern = (
+            <pattern
+                id={`hex-grid-${token.id}`}
+                width={hexGrid.patternWidth}
+                height={hexGrid.patternHeight}
+                patternUnits="userSpaceOnUse"
+            >
+                <path
+                    d={hexGrid.path}
+                    fill="none"
+                    stroke="rgba(100,100,100,0.7)"
+                    strokeWidth={1 / zoom}
+                />
+            </pattern>
+        );
+    } else if (isHexHorizontalGrid) {
+        const hexGrid = calculateHorizontalHexGrid(actualGridWidth);
+
+        hexGridPattern = (
+            <pattern
+                id={`hex-grid-${token.id}`}
+                width={hexGrid.patternWidth}
+                height={hexGrid.patternHeight}
+                patternUnits="userSpaceOnUse"
+            >
+                <path
+                    d={hexGrid.path}
+                    fill="none"
+                    stroke="rgba(100,100,100,0.7)"
+                    strokeWidth={1 / zoom}
+                />
+            </pattern>
+        );
+    }
+
+    // Generate square grid pattern (uses actualGridWidth and actualGridHeight)
     const squareGridPattern = (
         <pattern
             id={`square-grid-${token.id}`}
-            width={gridSize}
-            height={gridSize}
+            width={actualGridWidth}
+            height={actualGridHeight}
             patternUnits="userSpaceOnUse"
-            patternTransform={`scale(${zoom})`}
         >
             <rect
-                width={gridSize}
-                height={gridSize}
+                width={actualGridWidth}
+                height={actualGridHeight}
                 fill="none"
-                stroke="rgba(128,128,128,0.3)"
-                strokeWidth="1"
+                stroke="rgba(100,100,100,0.7)"
+                strokeWidth={1 / zoom}
             />
         </pattern>
     );
@@ -83,12 +115,12 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             style={{ zIndex: 0 }}
         >
             <defs>
-                {isHexGrid ? hexGridPattern : squareGridPattern}
+                {(isHexGrid || isHexHorizontalGrid) ? hexGridPattern : squareGridPattern}
             </defs>
             <rect
                 width="100%"
                 height="100%"
-                fill={`url(#${isHexGrid ? `hex-grid-${token.id}` : `square-grid-${token.id}`})`}
+                fill={`url(#${(isHexGrid || isHexHorizontalGrid) ? `hex-grid-${token.id}` : `square-grid-${token.id}`})`}
             />
         </svg>
     );
@@ -113,8 +145,8 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 borderRadius: '4px',
             }}
         >
-            {/* Grid overlay */}
-            {showGrid && gridContent}
+            {/* Grid overlay with magnetism points */}
+            {shouldShowGrid && gridContent}
 
             {/* Resize handle - bottom right corner */}
             {canResize && !obj.locked && (

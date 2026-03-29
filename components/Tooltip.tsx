@@ -34,7 +34,8 @@ export const Tooltip: React.FC<TooltipProps> = ({
 
   const handleMouseEnter = () => {
     // Only show if we have tooltip content
-    if (!text && !showImage) return;
+    // Show if there's text OR if showImage is enabled with a valid image source
+    if (!text && (!showImage || !imageSrc)) return;
 
     // Clear any existing timeout
     if (timeoutRef.current) {
@@ -71,7 +72,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
 
   // Only show tooltip if we have actual content to display
   const hasImageContent = showImage && imageSrc;
-  const hasTextContent = text && !showImage;
+  const hasTextContent = text && text.trim().length > 0;
   const hasContent = hasImageContent || hasTextContent;
 
   // Calculate sprite position if sprite sheet is used
@@ -98,13 +99,18 @@ export const Tooltip: React.FC<TooltipProps> = ({
       <div
         className="bg-slate-900/95 border border-slate-600 rounded-lg overflow-hidden shadow-xl"
         style={{
-          // For image tooltips: use calculated dimensions
+          // For image tooltips (with or without text): use calculated dimensions
           // For text-only tooltips: size based on content
           ...(hasImageContent ? {
             minWidth: tooltipWidth,
             maxWidth: tooltipWidth,
-            minHeight: tooltipHeight,
-            maxHeight: tooltipHeight,
+            ...(hasTextContent ? {
+              // If both image and text, let height be determined by content
+              minHeight: tooltipHeight,
+            } : {
+              minHeight: tooltipHeight,
+              maxHeight: tooltipHeight,
+            }),
           } : {
             // Text-only: let content determine size, with max constraints
             maxWidth: Math.min(400, window.innerWidth - 20),
@@ -118,7 +124,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
             <div
               style={{
                 width: tooltipWidth,
-                height: tooltipHeight,
+                height: hasTextContent ? tooltipHeight : tooltipHeight,
                 backgroundImage: `url(${imageSrc})`,
                 backgroundSize: `${spriteColumns! * 100}% ${spriteRows! * 100}%`,
                 backgroundPosition: `${spriteColPercent}% ${spriteRowPercent}%`,
@@ -134,7 +140,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
               className="block w-full h-full object-cover"
               style={{
                 width: tooltipWidth,
-                height: tooltipHeight,
+                height: hasTextContent ? tooltipHeight : tooltipHeight,
                 imageRendering: 'auto',
               }}
             />

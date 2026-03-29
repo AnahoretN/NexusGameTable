@@ -8,6 +8,8 @@ export enum ItemType {
   COUNTER = 'COUNTER',
   BOARD = 'BOARD',        // Game boards/tables with grids
   BATTLEFIELD_CELL = 'BATTLEFIELD_CELL', // Single battlefield cell (square, hex, circle, triangle)
+  NEXUS_BOARD = 'NEXUS_BOARD', // Nexus board with connected hex cells
+  NEXUS_CELL = 'NEXUS_CELL', // Single cell connected to a Nexus board
   RANDOMIZER = 'RANDOMIZER', // Randomizers (spinners, etc.)
   PANEL = 'PANEL',        // UI panels (hand, deck search, etc.)
   WINDOW = 'WINDOW',      // Modal windows
@@ -31,6 +33,7 @@ export enum CardShape {
   MINI_EURO = 'MINI_EURO',
   SQUARE = 'SQUARE',
   HEX = 'HEX',
+  HEX_HORIZONTAL = 'HEX_HORIZONTAL',
   CIRCLE = 'CIRCLE',
   TRIANGLE = 'TRIANGLE'
 }
@@ -51,7 +54,8 @@ export enum SearchWindowVisibility {
 export enum GridType {
   NONE = 'NONE',
   SQUARE = 'SQUARE',
-  HEX = 'HEX'
+  HEX = 'HEX',
+  HEX_HORIZONTAL = 'HEX_HORIZONTAL'
 }
 
 export enum CardLocation {
@@ -81,7 +85,7 @@ export interface CardPile {
   showTopCard?: boolean; // Whether to show the top card face on the pile itself
 }
 
-export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'lock' | 'clone' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'hide' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard';
+export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'lock' | 'clone' | 'roll' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'hide' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard';
 export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
 // Alternative card back settings (per-card)
@@ -176,6 +180,8 @@ export interface GameItem {
   tooltipText?: string;
   showTooltipImage?: boolean;
   tooltipScale?: number; // Default 125 (1.25x)
+  // Remember proportions button state
+  linkObjectSize?: boolean;
 }
 
 // Where to show the card name
@@ -270,6 +276,9 @@ export interface Deck extends GameItem {
 
   // Sprite sheet configuration for importing cards from a single image
   spriteConfig?: CardSpriteConfig;
+
+  // Remember proportions button state
+  linkCardSize?: boolean;
 }
 
 export interface Token extends GameItem {
@@ -283,6 +292,8 @@ export interface Token extends GameItem {
   archetypeId?: string;
   // Show name on token (inherited from archetype for token-copies)
   showName?: boolean;
+  // Grid cell magnetism optimization - store direct reference to snapped cell
+  gridCellKey?: string; // Format: "boardId:col,row" for quick lookup
 }
 
 // Token Type - a template for creating tokens
@@ -300,6 +311,25 @@ export interface TokenType extends GameItem {
   showName?: boolean; // Show the token name on the token itself
 }
 
+// Magnet point tracking - which objects are snapped to which magnet points
+export interface MagnetPoint {
+  objectId: string;      // ID of the object snapped to this point
+  pointIndex: number;    // Index of this magnet point (0-based)
+}
+
+// Grid cell identifier for board magnetism system
+export interface GridCellKey {
+  col: number;           // Column index
+  row: number;           // Row index
+}
+
+// Magnet points for a single grid cell
+export interface GridCellMagnetPoints {
+  magnetPointCount?: number;   // Number of magnet points (default 1, min 1, max 12)
+  magnetRotation?: number;     // Rotation of magnet lines in degrees (default 0)
+  magnetPoints?: MagnetPoint[]; // Track which objects are snapped to which points
+}
+
 // Battlefield Cell - single cell for battlefields/tactical maps
 // Can have different shapes (circle, square, hex, triangle) like tokens
 // Designed for creating tactical game areas
@@ -312,6 +342,54 @@ export interface BattlefieldCell extends GameItem {
   // Magnetism system - controls where tokens snap to in this cell
   magnetPointCount?: number; // Number of magnet points (default 1, min 1, max 12)
   magnetRotation?: number; // Rotation of magnet lines in degrees (default 0)
+  magnetPoints?: MagnetPoint[]; // Track which objects are snapped to which points (auto-managed)
+}
+
+// Hex direction for Nexus board cell connections
+export type HexDirection = 'N' | 'NE' | 'SE' | 'S' | 'SW' | 'NW';
+
+// Single cell in a Nexus board
+export interface NexusCell {
+  id: string;                    // Unique ID for this cell
+  direction: HexDirection;       // Position relative to parent/center
+  color?: string;                // Cell color (inherits from board if not set)
+  locked?: boolean;              // Whether this specific cell is locked
+}
+
+// Nexus Cell Object - a standalone cell on the tabletop connected to a Nexus board
+export interface NexusCellObject extends GameItem {
+  type: ItemType.NEXUS_CELL;
+  shape: TokenShape.HEX; // Always hex shape for now
+  nexusBoardId: string;  // ID of the parent Nexus board
+  direction: HexDirection; // Position relative to parent board center
+  offset: { x: number; y: number }; // Offset from parent board center
+
+  // Grid settings (inherited from parent board)
+  gridType: GridType.HEX | GridType.HEX_HORIZONTAL;
+  gridSize: number;              // Grid size (default 100x150 for hex)
+  snapToGrid?: boolean;          // When enabled, other objects snap to this cell
+
+  // Magnetism system (same as BattlefieldCell)
+  magnetPointCount?: number;     // Number of magnet points (default 1, min 1, max 12)
+  magnetRotation?: number;       // Rotation of magnet lines in degrees (default 0)
+  magnetPoints?: MagnetPoint[];  // Track which objects are snapped to which points (auto-managed)
+}
+
+// Nexus Board - connected hexagonal cells that move together
+export interface NexusBoard extends GameItem {
+  type: ItemType.NEXUS_BOARD;
+  shape: TokenShape.HEX | TokenShape.HEX_HORIZONTAL; // Always hex shape
+
+  // Grid settings for the board (for snapping and display)
+  gridType: GridType.HEX | GridType.HEX_HORIZONTAL;
+  gridSize: number;              // Default cell size (100x150 for hex)
+
+  // Connected cells in this board
+  cells: NexusCell[];            // Array of connected cells (main cell is always first)
+
+  // Cell dimensions
+  cellWidth: number;             // Default 100
+  cellHeight: number;            // Default 150
 }
 
 export interface DiceObject extends GameItem {
@@ -320,6 +398,16 @@ export interface DiceObject extends GameItem {
   currentValue: number;
   shape?: TokenShape;
   rollStartTime?: number; // Timestamp when roll animation started (for syncing across players)
+  diceGroupId?: string; // ID of the dice group this dice belongs to (optional)
+}
+
+// Dice group for rolling multiple dice together
+export interface DiceGroup {
+  id: string;
+  name: string;
+  color: string;
+  diceIds: string[];
+  visible: boolean;
 }
 
 export interface Counter extends GameItem {
@@ -335,7 +423,15 @@ export interface Board extends GameItem {
   shape: TokenShape;
   gridType: GridType;
   gridSize: number;
+  gridWidth?: number;  // Width of grid cell (for non-square cells)
+  gridHeight?: number; // Height of grid cell (for non-square cells)
+  showGrid?: boolean;  // Whether to show the grid visually
   snapToGrid: boolean;
+  linkGridSize?: boolean; // Remember proportions button state for grid settings
+
+  // Grid cell magnetism system - stores magnet points for each grid cell
+  gridCellMagnetPoints?: Record<string, GridCellMagnetPoints>; // Key: "col,row" string
+  defaultGridCellMagnetPointCount?: number; // Default magnet points per cell (1-12)
 }
 
 export interface Randomizer extends GameItem {
@@ -360,7 +456,7 @@ export interface Drawing extends GameItem {
   opacity?: number;
 }
 
-export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell;
+export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell | NexusBoard | NexusCellObject;
 
 // Language settings
 export type AppLanguage = 'en' | 'ru' | 'be' | 'uk' | 'sr';
@@ -386,6 +482,7 @@ export interface HyperscaleLayer {
   playerCanView: boolean;    // Can players see this layer in context menu
   individualPosition: boolean;  // Objects shared, but position is local per player (host knows for saving)
   individualObjects: boolean;    // Layer is completely local - objects and positions individual per player (host knows for saving)
+  zoomEnabled: boolean;  // Whether local zoom affects objects in this layer
   order: number;       // Display order (lower = higher priority in list)
 }
 

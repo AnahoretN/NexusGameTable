@@ -113,6 +113,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
         playerCanView: true,
         individualPosition: false,
         individualObjects: false,
+        zoomEnabled: true,
         order
       }
     });

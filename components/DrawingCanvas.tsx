@@ -6,7 +6,6 @@ import { ItemType, TableObject, Card as CardType, TokenShape, Stroke, StrokePoin
 interface DrawingCanvasProps {
   width: number;
   height: number;
-  zoom: number;
   offsetX: number;
   offsetY: number;
   cursorSlotLength: number; // Number of items in cursor slot
@@ -168,7 +167,6 @@ const findDrawingAtPosition = (x: number, y: number, drawings: Drawing[]): Drawi
 export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   width,
   height,
-  zoom,
   offsetX,
   offsetY,
   cursorSlotLength = 0
@@ -297,15 +295,15 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
         ctx.beginPath();
         ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = stroke.thickness * zoom;
+        ctx.lineWidth = stroke.thickness;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
         // Transform and draw each point (relative to drawing position)
         // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
         stroke.points.forEach((point, index) => {
-          const screenX = (point.x + drawing.x - offsetX) * zoom;
-          const screenY = (point.y + drawing.y - offsetY) * zoom;
+          const screenX = point.x + drawing.x - offsetX;
+          const screenY = point.y + drawing.y - offsetY;
 
           if (index === 0) {
             ctx.moveTo(screenX, screenY);
@@ -325,7 +323,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     // Don't draw custom cursor when Shift is pressed (move mode)
     if ((currentTool === 'marker' || currentTool === 'eraser') && cursorPosition && !isOverPanel && !isAltPressed && !isShiftPressed) {
       ctx.beginPath();
-      const cursorRadius = (markerThickness / 2) * zoom;
+      const cursorRadius = markerThickness / 2;
       ctx.arc(cursorPosition.x, cursorPosition.y, cursorRadius, 0, Math.PI * 2);
       if (currentTool === 'marker') {
         // Marker: filled circle with semi-transparent color
@@ -343,14 +341,14 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (isDrawing && currentStroke.length > 0 && currentTool === 'marker') {
       ctx.beginPath();
       ctx.strokeStyle = markerColor;
-      ctx.lineWidth = markerThickness * zoom;
+      ctx.lineWidth = markerThickness;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
       currentStroke.forEach((point, index) => {
         // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-        const screenX = (point.x - offsetX) * zoom;
-        const screenY = (point.y - offsetY) * zoom;
+        const screenX = point.x - offsetX;
+        const screenY = point.y - offsetY;
 
         if (index === 0) {
           ctx.moveTo(screenX, screenY);
@@ -361,7 +359,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
       ctx.stroke();
     }
-  }, [drawings, zoom, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
+  }, [drawings, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
 
   const getWorldPosition = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -374,10 +372,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     // Convert screen position to world position
     // NOTE: offsetX/Y are scroll positions - add to convert screen to world
     return {
-      x: screenX / zoom + offsetX,
-      y: screenY / zoom + offsetY
+      x: screenX + offsetX,
+      y: screenY + offsetY
     };
-  }, [zoom, offsetX, offsetY]);
+  }, [offsetX, offsetY]);
 
   // Global mouse move handler to track cursor position even when over panels (canvas has pointer-events: none)
   useEffect(() => {
@@ -419,14 +417,14 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       // Update cursor position first
       const pos = getWorldPosition(e.clientX, e.clientY);
       // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-      const screenX = (pos.x - offsetX) * zoom;
-      const screenY = (pos.y - offsetY) * zoom;
+      const screenX = pos.x - offsetX;
+      const screenY = pos.y - offsetY;
       setCursorPosition({ x: screenX, y: screenY });
     };
 
     window.addEventListener('mousemove', handleGlobalMouseMove);
     return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
-  }, [currentTool, zoom, offsetX, offsetY, getWorldPosition, isAltPressed, isOverPanel]);
+  }, [currentTool, offsetX, offsetY, getWorldPosition, isAltPressed, isOverPanel]);
 
   // Redraw canvas when cursor position or shift state changes (for cursor rendering)
   useEffect(() => {
@@ -454,7 +452,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         redrawCanvasRef.current(ctx);
       }
     }
-  }, [state.objects, zoom, offsetX, offsetY]); // Only depend on things that affect drawing display
+  }, [state.objects, offsetX, offsetY]); // Only depend on things that affect drawing display
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (currentTool !== 'marker' && currentTool !== 'eraser') return;
@@ -558,8 +556,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     // Convert world position to screen position for cursor display
     // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-    const screenX = (pos.x - offsetX) * zoom;
-    const screenY = (pos.y - offsetY) * zoom;
+    const screenX = pos.x - offsetX;
+    const screenY = pos.y - offsetY;
     setCursorPosition({ x: screenX, y: screenY });
 
     // Handle drawing dragging
@@ -600,12 +598,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (currentTool === 'eraser') {
       // Eraser implementation for Drawing objects
       // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-      const screenX = (pos.x - offsetX) * zoom;
-      const screenY = (pos.y - offsetY) * zoom;
+      const screenX = pos.x - offsetX;
+      const screenY = pos.y - offsetY;
 
       // Show eraser cursor (fully opaque white circle)
       ctx.beginPath();
-      ctx.arc(screenX, screenY, (markerThickness / 2) * zoom, 0, Math.PI * 2);
+      ctx.arc(screenX, screenY, markerThickness / 2, 0, Math.PI * 2);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.stroke();
@@ -705,15 +703,15 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       // Marker: draw current stroke preview
       ctx.beginPath();
       ctx.strokeStyle = markerColor;
-      ctx.lineWidth = markerThickness * zoom;
+      ctx.lineWidth = markerThickness;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
       const allPoints = [...currentStroke, { x: pos.x, y: pos.y }];
       allPoints.forEach((point, index) => {
         // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-        const screenX = (point.x - offsetX) * zoom;
-        const screenY = (point.y - offsetY) * zoom;
+        const screenX = point.x - offsetX;
+        const screenY = point.y - offsetY;
 
         if (index === 0) {
           ctx.moveTo(screenX, screenY);
@@ -724,7 +722,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
       ctx.stroke();
     }
-  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartPos, dragStartDrawingPos, currentTool, getWorldPosition, currentStroke, redrawCanvas, markerColor, markerThickness, zoom, offsetX, offsetY, dispatch]);
+  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartPos, dragStartDrawingPos, currentTool, getWorldPosition, currentStroke, redrawCanvas, markerColor, markerThickness, offsetX, offsetY, dispatch]);
 
   const handleMouseUp = useCallback(() => {
     // Handle drawing drag end
@@ -973,13 +971,22 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   // When tool is 'none', disable pointer events so canvas doesn't block other interactions
   const pointerEvents = currentTool === 'none' ? 'none' : 'auto';
-  // Show move cursor when Shift+marker AND cursor slot has items, hide custom marker cursor otherwise
-  // When ALT is pressed, always show default cursor (normal cursor mode)
+  // Cursor logic:
+  // - ALT pressed or over panel: default cursor (normal cursor mode)
+  // - Shift+marker: move cursor (for moving drawings)
+  // - Shift+eraser: trash cursor (for deleting drawings)
+  // - marker/eraser without Shift: none (custom cursor drawn on canvas)
   const canvasCursor = isAltPressed || isOverPanel || !(currentTool === 'marker' || currentTool === 'eraser')
     ? 'default'
-    : isShiftPressed && cursorSlotLength > 0
+    : currentTool === 'marker' && isShiftPressed
       ? 'move'
-      : 'none';
+      : currentTool === 'eraser' && isShiftPressed
+        ? 'default' // Will be overridden by inline style
+        : 'none';
+  // Custom cursor for eraser+shift (trash icon)
+  const eraserShiftCursor = currentTool === 'eraser' && isShiftPressed
+    ? `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18' /><path d='M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6' /><path d='M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2' /><line x1='10' y1='11' x2='10' y2='17' /><line x1='14' y1='11' x2='14' y2='17' /></svg>") 12 12, auto`
+    : undefined;
   // Also disable pointer events when over UI or when ALT is pressed (normal cursor mode)
   const finalPointerEvents = isOverPanel || isAltPressed ? 'none' : pointerEvents;
 
@@ -991,7 +998,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       className="absolute top-0 left-0"
       style={{
         zIndex: 100, // Below panels (1000) and windows (10000), above most game objects
-        cursor: canvasCursor,
+        cursor: eraserShiftCursor || canvasCursor,
         pointerEvents: finalPointerEvents,
       }}
       onMouseDown={handleMouseDown}
@@ -1002,8 +1009,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         // Update cursor position on enter using world-to-screen conversion
         const pos = getWorldPosition(e.clientX, e.clientY);
         // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-        const screenX = (pos.x - offsetX) * zoom;
-        const screenY = (pos.y - offsetY) * zoom;
+        const screenX = pos.x - offsetX;
+        const screenY = pos.y - offsetY;
         setCursorPosition({ x: screenX, y: screenY });
       }}
     />

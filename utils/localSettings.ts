@@ -23,6 +23,8 @@ export interface LocalSettings {
     // Show shadow/ghost version of objects held by other players in their cursor slot
     showRemoteCursorSlotObjects: boolean;
   };
+  // Zoom level for game space (100 = default, affects object sizes)
+  zoom: number;
 }
 
 const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
@@ -39,6 +41,7 @@ const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   effects: {
     showRemoteCursorSlotObjects: true, // Enabled by default
   },
+  zoom: 100, // Default 100%
 };
 
 /**

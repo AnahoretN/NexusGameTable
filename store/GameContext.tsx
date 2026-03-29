@@ -1,18 +1,19 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
-import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer } from '../types';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState } from 'react';
+import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer, NexusBoard, NexusCellObject, DiceGroup } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
+import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
 import { generateUUID } from '../utils/uuid';
-import { loadGameState, clearGameState as clearStorageGameState, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
-import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, clearLocalSettings, LocalSettings } from '../utils/localSettings';
-import { logger } from '../utils/logger';
+import { loadGameState, restoreImagesInState, clearAllData, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
+import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, LocalSettings } from '../utils/localSettings';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
 import { Action } from './gameActions';
 import { useAutoSave } from './useAutoSave';
 import { usePeerConnection } from './usePeerConnection';
-import { restoreImagesFromCache, extractImagesFromState, getNewImages } from '../utils/imageCache';
+import { restoreImagesFromCache, extractImagesFromState, getNewImages, loadImageCacheFromIDB } from '../utils/imageCache';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
+import { logger } from '../utils/logger';
 
 const GameContext = createContext<{
   state: GameState;
@@ -22,6 +23,7 @@ const GameContext = createContext<{
   connectionStatus: 'disconnected' | 'connecting' | 'connected';
   waitingForPlayerName: { hostId: string } | null;
   setPlayerName: (name: string) => void;
+  stateRef: React.RefObject<GameState>;
 } | null>(null);
 
 const gameReducer = (state: GameState, action: Action): GameState => {
@@ -31,10 +33,40 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // ensuring we don't accidentally become someone else visually
         const currentActiveId = state.activePlayerId;
         const currentViewTransform = state.viewTransform;
+
+        // Keep our local main menu panel (each player has their own)
+        const localMainMenu = Object.values(state.objects).find(
+          obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
+        );
+
+        // Only process objects if they're in the payload
+        let finalObjects = state.objects; // Default to current objects
+        if (action.payload.objects) {
+            // Filter out main menu from incoming state to preserve local position
+            const incomingObjects = { ...action.payload.objects };
+            const incomingMainMenuId = Object.keys(incomingObjects).find(id => {
+              const obj = incomingObjects[id];
+              return obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU;
+            });
+            if (incomingMainMenuId) {
+              delete incomingObjects[incomingMainMenuId];
+            }
+
+            // Merge incoming objects with local main menu (if exists)
+            finalObjects = localMainMenu
+              ? { ...incomingObjects, [localMainMenu.id]: localMainMenu }
+              : incomingObjects;
+        }
+
+        // Remove viewTransform from payload to prevent any cross-contamination
+        const { viewTransform, ...payloadWithoutViewTransform } = action.payload;
+
         return {
             ...state, // Keep existing state as base
-            ...action.payload, // Merge with payload (only override provided properties)
+            ...payloadWithoutViewTransform, // Merge with payload (excluding viewTransform)
+            objects: finalObjects, // Use merged objects (or current if none in payload)
             activePlayerId: currentActiveId,
+            // CRITICAL: Never use viewTransform from remote state - always keep local
             viewTransform: currentViewTransform
         };
     }
@@ -269,29 +301,49 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             pixelsPerVU: calculatePixelsPerVU(window.innerWidth, window.innerHeight)
         };
 
-        // Ensure players array has required properties
-        const players = (action.payload.players || []).map(p => ({
-            ...p,
-            handCardOrder: p.handCardOrder || undefined
-        }));
+        // CRITICAL: Merge players from pack with current players to preserve GM status
+        // Pack may not have the same players, so we need to preserve current players
+        const packPlayers = action.payload.players || [];
+        const mergedPlayers = [...state.players];
+
+        // Add players from pack that don't exist in current state
+        packPlayers.forEach(packPlayer => {
+            const existingIndex = mergedPlayers.findIndex(p => p.id === packPlayer.id);
+            if (existingIndex === -1) {
+                // Player doesn't exist - add from pack
+                mergedPlayers.push({
+                    ...packPlayer,
+                    handCardOrder: packPlayer.handCardOrder || undefined
+                });
+            } else {
+                // Player exists - update handCardOrder only (preserve other properties like isGM)
+                if (packPlayer.handCardOrder) {
+                    mergedPlayers[existingIndex] = {
+                        ...mergedPlayers[existingIndex],
+                        handCardOrder: packPlayer.handCardOrder
+                    };
+                }
+            }
+        });
 
         // Ensure diceRolls array exists
         const diceRolls = action.payload.diceRolls || [];
 
-        // activePlayerId will use the current one from SYNC_STATE logic, not from save
-        // This prevents accidentally becoming someone else after loading
-        // sessionId from save is preserved (don't generate new one)
+        // CRITICAL: Keep current activePlayerId to prevent losing GM status after loading pack
+        // This ensures GM stays GM after loading a pack
+        const currentActiveId = state.activePlayerId;
 
         return {
             ...action.payload,
             objects: migratedObjects,
-            players,
+            players: mergedPlayers,
             undo,
             drawings,
             viewTransform,
             diceRolls,
-            // Keep current activePlayerId from state, not from save (handled by spread above)
-            // sessionId from save is preserved if exists
+            // Preserve current activePlayerId - don't use the one from pack/save
+            activePlayerId: currentActiveId,
+            // sessionId from save is preserved if exists (handled by spread above)
         };
     }
     case 'SET_ACTIVE_ID': {
@@ -309,6 +361,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         return {
             ...state,
             players: state.players.filter(p => p.id !== action.payload.id)
+        };
+    }
+    case 'UPDATE_PLAYER': {
+        return {
+            ...state,
+            players: state.players.map(p =>
+                p.id === action.payload.id ? { ...p, ...action.payload } : p
+            )
         };
     }
     case 'UPDATE_PLAYER_NAME': {
@@ -423,6 +483,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       return {
         ...state,
         objects: { ...state.objects, [action.payload.id]: newObj },
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
     }
     case 'UPDATE_OBJECT': {
@@ -436,8 +497,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const layer = state.hyperscaleLayers.find(l => l.id === layerId);
       if (updatedObj.zIndex !== undefined) {
         // Use layer bounds or defaults if layer not found
-        const minZ = layer?.minZIndex ?? (layerId === 'boards' ? 1 : layerId === 'cards' ? 1001 : layerId === 'tokens' ? 3001 : layerId === 'interface' ? 9001 : 1);
-        const maxZ = layer?.maxZIndex ?? (layerId === 'boards' ? 1000 : layerId === 'cards' ? 3000 : layerId === 'tokens' ? 6000 : layerId === 'interface' ? 10000 : 10000);
+        const minZ = layer?.minZIndex ?? (layerId === 'boards' ? 1 : layerId === 'cards' ? 1001 : layerId === 'tokens' ? 3001 : layerId === 'drawings' ? 6001 : layerId === 'interface' ? 9001 : 1);
+        const maxZ = layer?.maxZIndex ?? (layerId === 'boards' ? 1000 : layerId === 'cards' ? 3000 : layerId === 'tokens' ? 6000 : layerId === 'drawings' ? 7000 : layerId === 'interface' ? 10000 : 10000);
         // Clamp zIndex to layer bounds
         if (updatedObj.zIndex < minZ) {
           updatedObj.zIndex = minZ;
@@ -514,6 +575,210 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
       }
 
+      // Handle NexusCellObject updates - propagate to all cells in the same board
+      if (updatedObj.type === ItemType.NEXUS_CELL) {
+          const cell = updatedObj as NexusCellObject;
+          const oldCell = obj as NexusCellObject;
+          const boardId = cell.nexusBoardId;
+
+          // Properties that should be synced across all cells (NOT including opacity)
+          const syncableProps = ['locked', 'isPinnedToViewport', 'hyperscaleLayerId', 'zIndex'];
+          const hasSyncableChange = syncableProps.some(prop => action.payload[prop as keyof typeof action.payload] !== undefined);
+
+          if (hasSyncableChange) {
+              const payload = action.payload as any;
+              Object.values(state.objects).forEach(o => {
+                  if (o.type === ItemType.NEXUS_CELL && o.id !== cell.id) {
+                      const otherCell = o as NexusCellObject;
+                      if (otherCell.nexusBoardId === boardId) {
+                          const updates: any = {};
+                          if (payload.locked !== undefined) updates.locked = payload.locked;
+                          if (payload.isPinnedToViewport !== undefined) updates.isPinnedToViewport = payload.isPinnedToViewport;
+                          if (payload.hyperscaleLayerId !== undefined) updates.hyperscaleLayerId = payload.hyperscaleLayerId;
+                          if (payload.zIndex !== undefined) updates.zIndex = payload.zIndex;
+
+                          (newObjects as any)[o.id] = { ...otherCell, ...updates };
+                      }
+                  }
+              });
+
+              // Also sync to the NexusBoard itself
+              const board = state.objects[boardId];
+              if (board && board.type === ItemType.NEXUS_BOARD) {
+                  const boardUpdates: any = {};
+                  if (payload.locked !== undefined) boardUpdates.locked = payload.locked;
+                  if (payload.isPinnedToViewport !== undefined) boardUpdates.isPinnedToViewport = payload.isPinnedToViewport;
+                  if (payload.hyperscaleLayerId !== undefined) boardUpdates.hyperscaleLayerId = payload.hyperscaleLayerId;
+                  if (payload.zIndex !== undefined) boardUpdates.zIndex = payload.zIndex;
+
+                  if (Object.keys(boardUpdates).length > 0) {
+                      (newObjects as any)[boardId] = { ...board, ...boardUpdates };
+                  }
+              }
+          }
+
+          // Handle width/height changes - resize all cells and update positions
+          if ((action.payload.width !== undefined || action.payload.height !== undefined) &&
+              (action.payload.width !== oldCell.width || action.payload.height !== oldCell.height)) {
+
+              const newWidth = action.payload.width ?? oldCell.width;
+              const newHeight = action.payload.height ?? oldCell.height;
+              const oldWidth = oldCell.width;
+              const oldHeight = oldCell.height;
+
+              // Update all cells in the board
+              Object.values(state.objects).forEach(o => {
+                  if (o.type === ItemType.NEXUS_CELL) {
+                      const otherCell = o as NexusCellObject;
+                      if (otherCell.nexusBoardId === boardId) {
+                          // Calculate new position based on size change
+                          // The offset is stored in VU, so we need to recalculate
+                          const storedOffset = otherCell.offset; // { x, y } in VU
+
+                          // Recalculate offset based on new dimensions
+                          let newOffsetX = storedOffset.x;
+                          let newOffsetY = storedOffset.y;
+
+                          // Scale offsets proportionally to size change
+                          const widthRatio = newWidth / oldWidth;
+                          const heightRatio = newHeight / oldHeight;
+
+                          if (storedOffset.x !== 0) newOffsetX = storedOffset.x * widthRatio;
+                          if (storedOffset.y !== 0) newOffsetY = storedOffset.y * heightRatio;
+
+                          // Find the main cell (direction 'N') to use as reference
+                          const mainCell = Object.values(state.objects).find(
+                              obj => obj.type === ItemType.NEXUS_CELL &&
+                                     (obj as NexusCellObject).nexusBoardId === boardId &&
+                                     (obj as NexusCellObject).direction === 'N'
+                          ) as NexusCellObject;
+
+                          if (mainCell) {
+                              // Calculate position relative to main cell
+                              const relativeX = otherCell.x - mainCell.x;
+                              const relativeY = otherCell.y - mainCell.y;
+
+                              // Recalculate relative position
+                              const newRelativeX = relativeX * widthRatio;
+                              const newRelativeY = relativeY * heightRatio;
+
+                              newObjects[o.id] = {
+                                  ...otherCell,
+                                  width: newWidth,
+                                  height: newHeight,
+                                  x: mainCell.x + newRelativeX,
+                                  y: mainCell.y + newRelativeY,
+                                  offset: { x: newOffsetX, y: newOffsetY }
+                              };
+                          } else {
+                              // Fallback: just update size
+                              newObjects[o.id] = {
+                                  ...otherCell,
+                                  width: newWidth,
+                                  height: newHeight
+                              };
+                          }
+                      }
+                  }
+              });
+          }
+      }
+
+      // Handle NexusBoard updates - propagate to all cells
+      if (updatedObj.type === ItemType.NEXUS_BOARD) {
+          const board = updatedObj as NexusBoard;
+          const payload = action.payload as any;
+
+          // Sync properties to all cells
+          const syncableProps = ['opacity', 'locked', 'isPinnedToViewport', 'hyperscaleLayerId', 'zIndex', 'cellWidth', 'cellHeight'];
+          const hasSyncableChange = syncableProps.some(prop => payload[prop] !== undefined);
+
+          if (hasSyncableChange) {
+              // Get main cell for position reference
+              const mainCellId = board.cells[0]?.id;
+              const mainCell = mainCellId ? (state.objects[mainCellId] as NexusCellObject) : null;
+              const mainCellX = mainCell?.x ?? board.x;
+              const mainCellY = mainCell?.y ?? board.y;
+
+              // Check if cell dimensions changed - need to recalculate positions
+              const sizeChanged = payload.cellWidth !== undefined || payload.cellHeight !== undefined;
+              const newCellWidth = payload.cellWidth ?? board.cellWidth ?? 100;
+              const newCellHeight = payload.cellHeight ?? board.cellHeight ?? 150;
+
+              // Calculate row spacing ratio (same formula as in NexusBoard.tsx)
+              // Uses decaying extrapolation: height=115→coeff=0.75, height=150→coeff=0.80833, approaches 0.86
+              const H1 = 115;
+              const C1 = 0.75;
+              const H2 = 150;
+              const C2 = 121.25 / 150;
+              const targetRatio = 0.906;
+              const k = -Math.log((targetRatio - C2) / (targetRatio - C1)) / (H2 - H1);
+              const rowSpacingRatio = targetRatio - (targetRatio - C1) * Math.exp(-k * (newCellHeight - H1));
+              const rowSpacing = newCellHeight * rowSpacingRatio;
+              const colSpacing = newCellWidth;
+              const colOffset = newCellWidth * 0.5;
+
+              Object.values(state.objects).forEach(o => {
+                  if (o.type === ItemType.NEXUS_CELL) {
+                      const cell = o as NexusCellObject;
+                      if (cell.nexusBoardId === board.id) {
+                          const updates: any = {};
+                          if (payload.opacity !== undefined) updates.opacity = payload.opacity;
+                          if (payload.locked !== undefined) updates.locked = payload.locked;
+                          if (payload.isPinnedToViewport !== undefined) updates.isPinnedToViewport = payload.isPinnedToViewport;
+                          if (payload.hyperscaleLayerId !== undefined) updates.hyperscaleLayerId = payload.hyperscaleLayerId;
+                          if (payload.zIndex !== undefined) updates.zIndex = payload.zIndex;
+                          if (payload.cellWidth !== undefined) updates.width = payload.cellWidth;
+                          if (payload.cellHeight !== undefined) updates.height = payload.cellHeight;
+
+                          // Recalculate position if size changed and cell has a direction
+                          if (sizeChanged && cell.direction && cell.id !== mainCellId) {
+                              // Get potentially updated main cell position
+                              const updatedMainCell = mainCellId ? (newObjects[mainCellId] as NexusCellObject) : null;
+                              const baseX = updatedMainCell?.x ?? mainCellX;
+                              const baseY = updatedMainCell?.y ?? mainCellY;
+
+                              let offsetX = 0;
+                              let offsetY = 0;
+
+                              switch (cell.direction) {
+                                  case 'NE':
+                                      offsetX = colOffset;
+                                      offsetY = -rowSpacing;
+                                      break;
+                                  case 'SE':
+                                      offsetX = colSpacing;
+                                      offsetY = 0;
+                                      break;
+                                  case 'NW':
+                                      offsetX = -colOffset;
+                                      offsetY = -rowSpacing;
+                                      break;
+                                  case 'SW':
+                                      offsetX = -colSpacing;
+                                      offsetY = 0;
+                                      break;
+                                  case 'N':
+                                      offsetX = 0;
+                                      offsetY = -rowSpacing;
+                                      break;
+                                  case 'S':
+                                      offsetX = 0;
+                                      offsetY = rowSpacing;
+                                      break;
+                              }
+
+                              updates.x = baseX + offsetX;
+                              updates.y = baseY + offsetY;
+                          }
+
+                          (newObjects as any)[o.id] = { ...cell, ...updates };
+                      }
+                  }
+              });
+          }
+      }
+
       // Handle drawing updates - when color changes, update all strokes
       if (updatedObj.type === ItemType.DRAWING) {
         const drawing = obj as Drawing;
@@ -551,11 +816,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         saveLocalSettings(localSettings);
       }
 
-      return { ...state, objects: newObjects };
+      return {
+        ...state,
+        objects: newObjects,
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId
+      };
     }
     case 'MOVE_OBJECT': {
       const obj = state.objects[action.payload.id];
       if (!obj || obj.locked) return state;
+
+      // Calculate position delta
+      const deltaX = action.payload.x - obj.x;
+      const deltaY = action.payload.y - obj.y;
 
       // Don't track history for drawings (they use marker history), objects in cursor slot, or local-only moves
       const isDrawing = obj.type === ItemType.DRAWING;
@@ -588,13 +861,62 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             undo: { ...state.undo, generalHistory: newGeneralHistory },
           };
         }
+
+        // Build updated objects including NexusCellObjects linked to moved NexusBoard
+        const updatedObjects: Record<string, TableObject> = {
+          [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
+        };
+
+        // If moving a NexusBoard, also move all linked NexusCellObjects
+        if (obj.type === ItemType.NEXUS_BOARD) {
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.NEXUS_CELL) {
+              const cell = o as NexusCellObject;
+              if (cell.nexusBoardId === obj.id) {
+                updatedObjects[cell.id] = {
+                  ...cell,
+                  x: cell.x + deltaX,
+                  y: cell.y + deltaY,
+                };
+              }
+            }
+          });
+        }
+
+        // If moving a NexusCellObject, also move all other cells in the same board
+        if (obj.type === ItemType.NEXUS_CELL) {
+          const movedCell = obj as NexusCellObject;
+          const boardId = movedCell.nexusBoardId;
+
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+              const cell = o as NexusCellObject;
+              if (cell.nexusBoardId === boardId) {
+                updatedObjects[cell.id] = {
+                  ...cell,
+                  x: cell.x + deltaX,
+                  y: cell.y + deltaY,
+                };
+              }
+            }
+          });
+
+          // Also move the NexusBoard itself
+          const board = state.objects[boardId];
+          if (board && board.type === ItemType.NEXUS_BOARD) {
+            updatedObjects[boardId] = {
+              ...board,
+              x: board.x + deltaX,
+              y: board.y + deltaY,
+            };
+          }
+        }
+
         return {
           ...state,
-          objects: {
-            ...state.objects,
-            [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
-          },
+          objects: { ...state.objects, ...updatedObjects },
           undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
         };
       }
 
@@ -613,12 +935,60 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           },
         };
       }
+
+      // Build updated objects including NexusCellObjects linked to moved NexusBoard (local-only moves)
+      const updatedObjects: Record<string, TableObject> = {
+        [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
+      };
+
+      // If moving a NexusBoard, also move all linked NexusCellObjects
+      if (obj.type === ItemType.NEXUS_BOARD) {
+        Object.values(state.objects).forEach(o => {
+          if (o.type === ItemType.NEXUS_CELL) {
+            const cell = o as NexusCellObject;
+            if (cell.nexusBoardId === obj.id) {
+              updatedObjects[cell.id] = {
+                ...cell,
+                x: cell.x + deltaX,
+                y: cell.y + deltaY,
+              };
+            }
+          }
+        });
+      }
+
+      // If moving a NexusCellObject, also move all other cells in the same board
+      if (obj.type === ItemType.NEXUS_CELL) {
+        const movedCell = obj as NexusCellObject;
+        const boardId = movedCell.nexusBoardId;
+
+        Object.values(state.objects).forEach(o => {
+          if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+            const cell = o as NexusCellObject;
+            if (cell.nexusBoardId === boardId) {
+              updatedObjects[cell.id] = {
+                ...cell,
+                x: cell.x + deltaX,
+                y: cell.y + deltaY,
+              };
+            }
+          }
+        });
+
+        // Also move the NexusBoard itself
+        const board = state.objects[boardId];
+        if (board && board.type === ItemType.NEXUS_BOARD) {
+          updatedObjects[boardId] = {
+            ...board,
+            x: board.x + deltaX,
+            y: board.y + deltaY,
+          };
+        }
+      }
+
       return {
         ...state,
-        objects: {
-          ...state.objects,
-          [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
-        },
+        objects: { ...state.objects, ...updatedObjects },
       };
     }
     case 'MOVE_OBJECT_COMMIT': {
@@ -626,6 +996,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const { id, x, y, previousX, previousY } = action.payload;
       const obj = state.objects[id];
       if (!obj || obj.locked) return state;
+
+      // Calculate position delta
+      const deltaX = x - obj.x;
+      const deltaY = y - obj.y;
 
       const isDrawing = obj.type === ItemType.DRAWING;
       const isInCursorSlot = (obj as any).inCursorSlot;
@@ -655,13 +1029,62 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             undo: { ...state.undo, generalHistory: newGeneralHistory },
           };
         }
+
+        // Build updated objects including NexusCellObjects linked to moved NexusBoard
+        const updatedObjects: Record<string, TableObject> = {
+          [id]: { ...obj, x, y },
+        };
+
+        // If moving a NexusBoard, also move all linked NexusCellObjects
+        if (obj.type === ItemType.NEXUS_BOARD) {
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.NEXUS_CELL) {
+              const cell = o as NexusCellObject;
+              if (cell.nexusBoardId === obj.id) {
+                updatedObjects[cell.id] = {
+                  ...cell,
+                  x: cell.x + deltaX,
+                  y: cell.y + deltaY,
+                };
+              }
+            }
+          });
+        }
+
+        // If moving a NexusCellObject, also move all other cells in the same board
+        if (obj.type === ItemType.NEXUS_CELL) {
+          const movedCell = obj as NexusCellObject;
+          const boardId = movedCell.nexusBoardId;
+
+          Object.values(state.objects).forEach(o => {
+            if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+              const cell = o as NexusCellObject;
+              if (cell.nexusBoardId === boardId) {
+                updatedObjects[cell.id] = {
+                  ...cell,
+                  x: cell.x + deltaX,
+                  y: cell.y + deltaY,
+                };
+              }
+            }
+          });
+
+          // Also move the NexusBoard itself
+          const board = state.objects[boardId];
+          if (board && board.type === ItemType.NEXUS_BOARD) {
+            updatedObjects[boardId] = {
+              ...board,
+              x: board.x + deltaX,
+              y: board.y + deltaY,
+            };
+          }
+        }
+
         return {
           ...state,
-          objects: {
-            ...state.objects,
-            [id]: { ...obj, x, y },
-          },
+          objects: { ...state.objects, ...updatedObjects },
           undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
         };
       }
 
@@ -680,12 +1103,60 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           },
         };
       }
+
+      // Build updated objects including NexusCellObjects linked to moved NexusBoard (drawings/local-only)
+      const updatedObjects: Record<string, TableObject> = {
+        [id]: { ...obj, x, y },
+      };
+
+      // If moving a NexusBoard, also move all linked NexusCellObjects
+      if (obj.type === ItemType.NEXUS_BOARD) {
+        Object.values(state.objects).forEach(o => {
+          if (o.type === ItemType.NEXUS_CELL) {
+            const cell = o as NexusCellObject;
+            if (cell.nexusBoardId === obj.id) {
+              updatedObjects[cell.id] = {
+                ...cell,
+                x: cell.x + deltaX,
+                y: cell.y + deltaY,
+              };
+            }
+          }
+        });
+      }
+
+      // If moving a NexusCellObject, also move all other cells in the same board
+      if (obj.type === ItemType.NEXUS_CELL) {
+        const movedCell = obj as NexusCellObject;
+        const boardId = movedCell.nexusBoardId;
+
+        Object.values(state.objects).forEach(o => {
+          if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+            const cell = o as NexusCellObject;
+            if (cell.nexusBoardId === boardId) {
+              updatedObjects[cell.id] = {
+                ...cell,
+                x: cell.x + deltaX,
+                y: cell.y + deltaY,
+              };
+            }
+          }
+        });
+
+        // Also move the NexusBoard itself
+        const board = state.objects[boardId];
+        if (board && board.type === ItemType.NEXUS_BOARD) {
+          updatedObjects[boardId] = {
+            ...board,
+            x: board.x + deltaX,
+            y: board.y + deltaY,
+          };
+        }
+      }
+
       return {
         ...state,
-        objects: {
-          ...state.objects,
-          [id]: { ...obj, x, y },
-        },
+        objects: { ...state.objects, ...updatedObjects },
       };
     }
     case 'FINISH_DRAWING_STROKE': {
@@ -778,6 +1249,39 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             });
         }
 
+        // If deleting a NexusBoard, delete all its NexusCellObjects
+        if (objectToDelete.type === ItemType.NEXUS_BOARD) {
+            const board = objectToDelete as NexusBoard;
+            Object.keys(newObjects).forEach(cellId => {
+                const cell = newObjects[cellId];
+                if (cell.type === ItemType.NEXUS_CELL) {
+                    const nexusCell = cell as NexusCellObject;
+                    if (nexusCell.nexusBoardId === board.id) {
+                        cascadedDeletes.push(cell);
+                        delete newObjects[cellId];
+                    }
+                }
+            });
+        }
+
+        // If deleting a NexusCellObject, only delete this cell (not the whole board)
+        // But remove it from the board's cells array
+        if (objectToDelete.type === ItemType.NEXUS_CELL) {
+            const deletedCell = objectToDelete as NexusCellObject;
+            const boardId = deletedCell.nexusBoardId;
+
+            // Remove cell from board's cells array
+            const board = newObjects[boardId];
+            if (board && board.type === ItemType.NEXUS_BOARD) {
+                const nexusBoard = board as NexusBoard;
+                const updatedCells = nexusBoard.cells.filter(c => c.id !== deletedCell.id);
+                newObjects[boardId] = {
+                    ...nexusBoard,
+                    cells: updatedCells
+                };
+            }
+        }
+
         // If deleting a card, remove it from deck's cardIds and update initialCardCount
         if (objectToDelete.type === ItemType.CARD) {
             const card = objectToDelete as Card;
@@ -824,7 +1328,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             };
         }
 
-        return { ...state, objects: newObjects, undo: updatedUndo };
+        return {
+          ...state,
+          objects: newObjects,
+          undo: updatedUndo,
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'DRAW_CARD': {
       const deck = state.objects[action.payload.deckId] as Deck;
@@ -870,6 +1379,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             : p
         ),
         undo: { ...state.undo, generalHistory: newGeneralHistory },
+        lastModifiedBy: action.payload.playerId || state.activePlayerId,
       };
     }
     case 'PLAY_CARD': {
@@ -1208,6 +1718,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...state,
             objects: { ...state.objects, [action.payload.deckId]: { ...deck, cardIds: shuffled } },
             undo: { ...state.undo, generalHistory: newGeneralHistory },
+            lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
         };
     }
     case 'FLIP_CARD': {
@@ -1288,6 +1799,30 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const obj = state.objects[action.payload.id];
         if (!obj) return state;
 
+        const newLocked = !obj.locked;
+        const newObjects = { ...state.objects, [action.payload.id]: { ...obj, locked: newLocked } };
+
+        // If toggling lock on a NexusCellObject, sync to all other cells in the same board
+        if (obj.type === ItemType.NEXUS_CELL) {
+            const cell = obj as NexusCellObject;
+            const boardId = cell.nexusBoardId;
+
+            Object.values(state.objects).forEach(o => {
+                if (o.type === ItemType.NEXUS_CELL && o.id !== cell.id) {
+                    const otherCell = o as NexusCellObject;
+                    if (otherCell.nexusBoardId === boardId) {
+                        (newObjects as any)[o.id] = { ...otherCell, locked: newLocked };
+                    }
+                }
+            });
+
+            // Also sync to the NexusBoard itself
+            const board = state.objects[boardId];
+            if (board && board.type === ItemType.NEXUS_BOARD) {
+                (newObjects as any)[boardId] = { ...board, locked: newLocked };
+            }
+        }
+
         // Don't track history for drawings (they use marker history)
         if (obj.type !== ItemType.DRAWING) {
             const historyEntry: GeneralHistoryEntry = {
@@ -1299,12 +1834,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
             return {
                 ...state,
-                objects: { ...state.objects, [action.payload.id]: { ...obj, locked: !obj.locked } },
+                objects: newObjects,
                 undo: { ...state.undo, generalHistory: newGeneralHistory },
             };
         }
 
-        return { ...state, objects: { ...state.objects, [action.payload.id]: { ...obj, locked: !obj.locked } } };
+        return { ...state, objects: newObjects };
     }
     case 'TOGGLE_ON_TABLE': {
         const obj = state.objects[action.payload.id] as any;
@@ -1394,21 +1929,97 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const maxZInLayer = layerZ.length ? Math.max(...layerZ) : layerMinZ;
         const newZ = Math.min(maxZInLayer + 1, layerMaxZ);
 
-        const clonedObj: any = {
-            ...obj,
-            id: newId,
-            x: obj.x + 30,
-            y: obj.y + 30,
-            name: `${obj.name} (Copy)`,
-            locked: false,
-            isOnTable: true,
-            zIndex: newZ,
-            hyperscaleLayerId,
-        };
-        if (clonedObj.type === ItemType.DECK) {
-            clonedObj.cardIds = [];
-            clonedObj.initialCardCount = 0;
+        // Prepare new objects map for deck cloning
+        const newObjects: Record<string, TableObject> = {};
+        let clonedObj: any;
+
+        if (obj.type === ItemType.DECK) {
+            // Deep clone deck with new cards and piles
+            const deck = obj as Deck;
+            const oldCardIdToNew: Map<string, string> = new Map();
+            const oldPileIdToNew: Map<string, string> = new Map();
+            const newBaseCardIds: string[] = [];
+            const newCardIds: string[] = [];
+
+            // Clone all cards from baseCardIds
+            for (const oldCardId of deck.baseCardIds || []) {
+                const oldCard = state.objects[oldCardId] as Card;
+                if (oldCard) {
+                    const newCardId = generateUUID();
+                    oldCardIdToNew.set(oldCardId, newCardId);
+
+                    newObjects[newCardId] = {
+                        ...oldCard,
+                        id: newCardId,
+                        deckId: newId,
+                        location: CardLocation.DECK,
+                        isOnTable: false,
+                        x: deck.x,
+                        y: deck.y,
+                    } as Card;
+
+                    newBaseCardIds.push(newCardId);
+                    newCardIds.push(newCardId);
+                }
+            }
+
+            // Clone piles with new IDs and new card references
+            const newPiles: CardPile[] = [];
+            for (const oldPile of deck.piles || []) {
+                const newPileId = generateUUID();
+                oldPileIdToNew.set(oldPile.id, newPileId);
+
+                const newPileCardIds: string[] = [];
+                for (const oldCardId of oldPile.cardIds || []) {
+                    const newCardId = oldCardIdToNew.get(oldCardId);
+                    if (newCardId) {
+                        newPileCardIds.push(newCardId);
+                        // Update card location to pile
+                        (newObjects[newCardId] as Card).location = CardLocation.PILE;
+                    }
+                }
+
+                newPiles.push({
+                    ...oldPile,
+                    id: newPileId,
+                    deckId: newId,
+                    cardIds: newPileCardIds,
+                });
+            }
+
+            // Create the cloned deck
+            clonedObj = {
+                ...obj,
+                id: newId,
+                x: obj.x + 30,
+                y: obj.y + 30,
+                name: `${obj.name} (Copy)`,
+                locked: false,
+                isOnTable: true,
+                zIndex: newZ,
+                hyperscaleLayerId,
+                baseCardIds: newBaseCardIds,
+                cardIds: newCardIds,
+                initialCardCount: newBaseCardIds.length,
+                piles: newPiles,
+            };
+        } else {
+            // Simple clone for non-deck objects
+            clonedObj = {
+                ...obj,
+                id: newId,
+                x: obj.x + 30,
+                y: obj.y + 30,
+                name: `${obj.name} (Copy)`,
+                locked: false,
+                isOnTable: true,
+                zIndex: newZ,
+                hyperscaleLayerId,
+            };
         }
+
+        // Add cloned object and any new cards to the result
+        const updatedObjects = { ...state.objects, [newId]: clonedObj, ...newObjects };
 
         // Add to general history (max 100)
         const historyEntry: GeneralHistoryEntry = {
@@ -1420,7 +2031,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         return {
             ...state,
-            objects: { ...state.objects, [newId]: clonedObj },
+            objects: updatedObjects,
             undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
@@ -1529,7 +2140,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...state, objects: newObjects, undo: { ...state.undo, generalHistory: newGeneralHistory } };
+        return {
+          ...state,
+          objects: newObjects,
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'RETURN_CARD_TO_DECK_BOTTOM': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -1626,7 +2242,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...state, objects: newObjects, undo: { ...state.undo, generalHistory: newGeneralHistory } };
+        return {
+          ...state,
+          objects: newObjects,
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'ADD_CARD_TO_TOP_OF_DECK': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -1704,7 +2325,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...updatedState.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...updatedState, objects: { ...updatedState.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard }, undo: { ...updatedState.undo, generalHistory: newGeneralHistory } };
+        return {
+          ...updatedState,
+          objects: { ...updatedState.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard },
+          undo: { ...updatedState.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'ADD_CARD_TO_PILE': {
         const card = state.objects[action.payload.cardId] as Card;
@@ -1797,7 +2423,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
-        return { ...state, objects: { ...state.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard }, undo: { ...state.undo, generalHistory: newGeneralHistory } };
+        return {
+          ...state,
+          objects: { ...state.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard },
+          undo: { ...state.undo, generalHistory: newGeneralHistory },
+          lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+        };
     }
     case 'UPDATE_PERMISSIONS': {
         const obj = state.objects[action.payload.id] as any;
@@ -2021,12 +2652,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         ...state,
         objects: { ...state.objects, [deck.id]: updatedDeck, [drawnCardId]: updatedCard },
         undo: { ...state.undo, generalHistory: newGeneralHistory },
+        lastModifiedBy: action.payload.playerId || state.activePlayerId,
       };
     }
     case 'RETURN_ALL_CARDS_TO_DECK': {
       const deck = state.objects[action.payload.deckId] as Deck;
       if (!deck || deck.type !== ItemType.DECK) return state;
 
+      const { exceptHands = false, shuffleAfter = false } = action.payload;
       const baseCardIds = deck.baseCardIds || [];
       const newObjects = { ...state.objects };
       const spriteConfig = deck.spriteConfig;
@@ -2041,10 +2674,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // 2. Set cardIds = baseCardIds (reset to base)
+      // If exceptHands is true, we'll filter out cards in hands later
       updatedDeck.cardIds = [...baseCardIds];
 
       // 3. Track which base card IDs we've found
       const foundBaseCardIds = new Set<string>();
+      // Track cards that are in hands (when exceptHands is true)
+      const cardsInHands = new Set<string>();
 
       // 4. Process all existing cards
       Object.values(state.objects).forEach(obj => {
@@ -2053,6 +2689,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Cards that belong to THIS deck
         if (card.deckId === deck.id) {
+          // Skip cards in hands if exceptHands is true
+          if (exceptHands && card.location === CardLocation.HAND) {
+            // Track cards that are in hands so we don't recreate them
+            if (baseCardIds.includes(card.id)) {
+              cardsInHands.add(card.id);
+            }
+            return;
+          }
+
           if (baseCardIds.includes(card.id)) {
             // Card is in baseCardIds - move it to THIS deck
             foundBaseCardIds.add(card.id);
@@ -2078,6 +2723,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (spriteConfig && spriteConfig.columns > 0 && spriteConfig.rows > 0) {
         baseCardIds.forEach((cardId, index) => {
           if (!foundBaseCardIds.has(cardId)) {
+            // Check if this card is in a player's hand - if so, don't recreate it
+            if (cardsInHands.has(cardId)) {
+              return;
+            }
             // Card is missing - recreate it
             newObjects[cardId] = {
               id: cardId,
@@ -2105,9 +2754,29 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         });
       }
 
+      // 5.5. Update deck.cardIds to exclude cards that are in hands (when exceptHands is true)
+      if (exceptHands && cardsInHands.size > 0) {
+        updatedDeck.cardIds = baseCardIds.filter(id => !cardsInHands.has(id));
+      }
+
+      // 6. Shuffle if requested
+      if (shuffleAfter) {
+        // Fisher-Yates shuffle
+        const shuffled = [...updatedDeck.cardIds];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        updatedDeck.cardIds = shuffled;
+      }
+
       newObjects[deck.id] = updatedDeck;
 
-      return { ...state, objects: newObjects };
+      return {
+        ...state,
+        objects: newObjects,
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+      };
     }
     case 'TOGGLE_PILE_LOCK': {
       const deck = state.objects[action.payload.deckId] as Deck;
@@ -2125,7 +2794,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         objects: {
           ...state.objects,
           [deck.id]: { ...deck, piles: updatedPiles }
-        }
+        },
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
     }
     case 'UPDATE_PILE_POSITION': {
@@ -2144,7 +2814,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         objects: {
           ...state.objects,
           [deck.id]: { ...deck, piles: updatedPiles }
-        }
+        },
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
     }
     case 'UPDATE_DECK_CARD_DIMENSIONS': {
@@ -2280,6 +2951,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
         },
         undo: { ...state.undo, generalHistory: newGeneralHistory },
+        lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
     }
     case 'TOGGLE_SHOW_TOP_CARD': {
@@ -2777,6 +3449,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // Calculate bounds from strokes
       const drawingId = `drawing-${Date.now()}`;
+
+      // Get max zIndex in drawings layer
+      const drawingsLayerId = 'drawings';
+      const drawingsLayer = state.hyperscaleLayers.find(l => l.id === drawingsLayerId);
+      const layerMinZ = drawingsLayer?.minZIndex ?? 6001;
+      const layerMaxZ = drawingsLayer?.maxZIndex ?? 7000;
+      const layerObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === drawingsLayerId);
+      const maxLayerZ = layerObjects.length > 0 ? Math.max(...layerObjects.map(o => o.zIndex || 0)) : layerMinZ;
+      const newZ = Math.min(maxLayerZ + 1, layerMaxZ);
+
       const drawing: Drawing = {
         id: drawingId,
         type: ItemType.DRAWING,
@@ -2792,6 +3474,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         strokes,
         bounds: { x: 0, y: 0, width, height },
         opacity,
+        hyperscaleLayerId: drawingsLayerId,
+        zIndex: newZ,
       };
 
       // Add to marker history (max 10)
@@ -3648,16 +4332,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
     }
     case 'CLEAR_SAVED_STATE': {
-      // Clear all saved data from localStorage
-      clearStorageGameState(); // Game state
-      clearLocalSettings(); // Local settings (menu position, etc.)
-      localStorage.removeItem('nexus-session-id'); // Session ID
+      // Clear ALL saved data from localStorage including URL parameters
+      clearAllData();
 
       // Reset to initial state but preserve current language
-      return {
+      const resetState = {
         ...initialState,
         language: state.language, // Preserve language setting
       };
+      return resetState;
     }
     case 'ADD_HYPERSCALE_LAYER': {
       const newLayer: HyperscaleLayer = {
@@ -3741,6 +4424,72 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         objects: newObjects
       };
     }
+    case 'ADD_DICE_GROUP': {
+      return {
+        ...state,
+        diceGroups: [...state.diceGroups, action.payload.group]
+      };
+    }
+    case 'UPDATE_DICE_GROUP': {
+      return {
+        ...state,
+        diceGroups: state.diceGroups.map(g =>
+          g.id === action.payload.groupId
+            ? { ...g, ...action.payload.updates }
+            : g
+        )
+      };
+    }
+    case 'DELETE_DICE_GROUP': {
+      // Remove group reference from all dice in the group
+      const group = state.diceGroups.find(g => g.id === action.payload.groupId);
+      const newObjects = { ...state.objects };
+      if (group) {
+        group.diceIds.forEach(diceId => {
+          const dice = newObjects[diceId];
+          if (dice && dice.type === 'DICE_OBJECT') {
+            newObjects[diceId] = { ...dice, diceGroupId: undefined };
+          }
+        });
+      }
+      return {
+        ...state,
+        objects: newObjects,
+        diceGroups: state.diceGroups.filter(g => g.id !== action.payload.groupId)
+      };
+    }
+    case 'MOVE_DICE_TO_GROUP': {
+      const { diceId, groupId } = action.payload;
+      const dice = state.objects[diceId];
+      if (!dice || dice.type !== 'DICE_OBJECT') return state;
+
+      const newObjects = { ...state.objects };
+      const newGroups = [...state.diceGroups];
+
+      // Remove dice from previous group
+      if (dice.diceGroupId) {
+        const prevGroup = newGroups.find(g => g.id === dice.diceGroupId);
+        if (prevGroup) {
+          prevGroup.diceIds = prevGroup.diceIds.filter(id => id !== diceId);
+        }
+      }
+
+      // Add dice to new group (if groupId is not null/undefined)
+      if (groupId) {
+        const newGroup = newGroups.find(g => g.id === groupId);
+        if (newGroup && !newGroup.diceIds.includes(diceId)) {
+          newGroup.diceIds = [...newGroup.diceIds, diceId];
+        }
+      }
+
+      newObjects[diceId] = { ...dice, diceGroupId: groupId || undefined };
+
+      return {
+        ...state,
+        objects: newObjects,
+        diceGroups: newGroups
+      };
+    }
     default:
       return state;
   }
@@ -3749,9 +4498,36 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, localDispatch] = useReducer(gameReducer, initialState);
 
+  // Initial loading state - only for slow operations
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
+  const [initialLoadSteps, setInitialLoadSteps] = useState<InitialLoadStep[]>([]);
+
+  const addInitialLoadStep = (message: string, status: 'loading' | 'success' | 'warning' | 'error' = 'loading') => {
+    setInitialLoadSteps(prev => {
+      const lastStep = prev[prev.length - 1];
+      if (lastStep && lastStep.status === 'loading') {
+        return [...prev.slice(0, -1), { message, status }];
+      }
+      return [...prev, { message, status }];
+    });
+  };
+
   // Ref to track latest state for event listeners
   const stateRef = useRef(state);
   const initializedRef = useRef(false);
+  const creatingMenuRef = useRef(false); // Track if menu creation is in progress
+  // Manual P2P connection (PeerJS-compatible adapter for direct connection without PeerJS)
+  const manualConnectionRef = useRef<any>(null);
+  // Track which connection we've set up handlers for to prevent duplicates
+  const manualConnectionSetupRef = useRef<string | null>(null);
+  // Expose manual connection ref globally so MainMenuContent can set it
+  (window as any).__setManualConnection = (conn: any) => {
+    // Only update if it's a different connection
+    if (conn && conn.peer !== manualConnectionSetupRef.current) {
+      console.log('[GameContext] __setManualConnection called with new connection:', conn?.peer);
+      manualConnectionRef.current = conn;
+    }
+  };
 
   useEffect(() => {
       stateRef.current = state;
@@ -3761,7 +4537,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, hostConnectionRef, connectionsRef, imageCachesRef } = usePeerConnection(localDispatch, stateRef);
 
   // Auto-save game state to localStorage (debounced)
-  useAutoSave(state, isHost);
+  useAutoSave(state, isHost, initializedRef.current);
 
   // Update pixelsPerVU when window size changes
   useEffect(() => {
@@ -3773,6 +4549,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     };
 
+    // Recalculate on mount using requestAnimationFrame to ensure layout is stable
+    // This fixes the issue where initial window.innerHeight is incorrect
+    requestAnimationFrame(() => {
+      // Double-check with another RAF to ensure browser has painted
+      requestAnimationFrame(() => {
+        handleResize();
+      });
+    });
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -3781,82 +4566,161 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Only initialize once we're sure about host status and haven't initialized yet
     if (!initializedRef.current && Object.keys(state.objects).length === 0) {
-        initializedRef.current = true;
-
         const isGuest = !isHost;
 
-        // Try to load saved game state from localStorage
-        const savedState = loadGameState(isGuest);
-        if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
-          logger.log('Restoring game state from localStorage');
-
-          // Create a batch of updates to restore all state
-          const updates: any[] = [];
-
-          // Load all saved objects (except MAIN_MENU - it's handled separately)
-          Object.values(savedState.objects).forEach(obj => {
-            // Skip main menu - it will be created from local settings
-            if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
-              return;
-            }
-            updates.push({ type: 'ADD_OBJECT', payload: obj });
-          });
-
-          // Restore drawings
-          if (savedState.drawings) {
-            updates.push({ type: 'SYNC_STATE', payload: { drawings: savedState.drawings } });
-          }
-
-          // Restore player permissions
-          if (savedState.playerPermissions) {
-            updates.push({ type: 'UPDATE_PLAYER_PERMISSIONS', payload: savedState.playerPermissions });
-          }
-
-          // Restore language
-          if (savedState.language) {
-            updates.push({ type: 'UPDATE_LANGUAGE', payload: savedState.language });
-          }
-
-          // Restore active player ID if different
-          if (savedState.activePlayerId && savedState.activePlayerId !== state.activePlayerId) {
-            updates.push({ type: 'SET_ACTIVE_ID', payload: savedState.activePlayerId });
-          }
-
-          // Restore view transform (zoom/pan) - only for host or single player
-          if (savedState.viewTransform && !isGuest) {
-            updates.push({ type: 'UPDATE_VIEW_TRANSFORM', payload: savedState.viewTransform });
-          }
-
-          // Restore players (merge with default players)
-          if (savedState.players && savedState.players.length > 0) {
-            const currentPlayers = state.players || [];
-            savedState.players.forEach((player: Player) => {
-              // Only add players that don't already exist (don't overwrite GM)
-              if (player.id !== 'gm' && player.id !== 'gm-player' &&
-                  !currentPlayers.find(p => p.id === player.id)) {
-                updates.push({ type: 'ADD_PLAYER', payload: player });
-              }
-            });
-          }
-
-          // Apply all updates in a single batch
-          updates.forEach(update => localDispatch(update));
-
-          // Create main menu from local settings
+        // Guests don't load from localStorage - they receive state from host
+        if (isGuest) {
+          initializedRef.current = true; // Set initialized flag for guests
           createMainMenu(localDispatch);
+          setIsInitialLoading(false); // Guests don't need loading screen - they wait for host
           return;
+        }
+
+        // Try to load saved game state from localStorage (host only)
+        const savedState = loadGameState(false);
+
+        if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
+          // Check if images need restoration (metadata or img_ref:// instead of actual images)
+          const needsRestoration = Object.values(savedState.objects).some((obj: any) =>
+            obj.content && (obj.content === 'B' || obj.content === 'D' ||
+             obj.content.startsWith('{"t":') || obj.content.startsWith('{"type":') ||
+             obj.content.startsWith('img_ref://'))
+          );
+
+          // Function to add objects to state
+          const addObjects = (objects: Record<string, TableObject>) => {
+            Object.values(objects).forEach(obj => {
+              if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+                return;
+              }
+              localDispatch({ type: 'ADD_OBJECT', payload: obj });
+            });
+          };
+
+          // Restore other state (drawings, players, etc.)
+          const restoreOtherState = () => {
+            const updates: any[] = [];
+
+            // Restore drawings
+            if (savedState.drawings) {
+              updates.push({ type: 'SYNC_STATE', payload: { drawings: savedState.drawings } });
+            }
+
+            // Restore player permissions
+            if (savedState.playerPermissions) {
+              updates.push({ type: 'UPDATE_PLAYER_PERMISSIONS', payload: savedState.playerPermissions });
+            }
+
+            // Restore language
+            if (savedState.language) {
+              updates.push({ type: 'UPDATE_LANGUAGE', payload: savedState.language });
+            }
+
+            // Restore active player ID if different
+            if (savedState.activePlayerId && savedState.activePlayerId !== state.activePlayerId) {
+              updates.push({ type: 'SET_ACTIVE_ID', payload: savedState.activePlayerId });
+            }
+
+            // Restore view transform (zoom/pan) - only for host or single player
+            if (savedState.viewTransform && !isGuest) {
+              updates.push({ type: 'UPDATE_VIEW_TRANSFORM', payload: savedState.viewTransform });
+            }
+
+            // Restore players (merge with default players)
+            if (savedState.players && savedState.players.length > 0) {
+              const currentPlayers = state.players || [];
+              savedState.players.forEach((player: Player) => {
+                // Only add players that don't already exist (don't overwrite GM)
+                if (player.id !== 'gm' && player.id !== 'gm-player' &&
+                    !currentPlayers.find(p => p.id === player.id)) {
+                  updates.push({ type: 'ADD_PLAYER', payload: player });
+                } else if (player.id !== 'gm' && player.id !== 'gm-player') {
+                  // Update existing player with saved state (especially handCardOrder)
+                  updates.push({ type: 'UPDATE_PLAYER', payload: player });
+                }
+              });
+            }
+
+            // Apply all updates
+            updates.forEach(update => localDispatch(update));
+
+            // Create main menu from local settings
+            createMainMenu(localDispatch);
+          };
+
+          if (needsRestoration) {
+            // Only show loading modal for IndexedDB operations
+            setIsInitialLoading(true);
+            addInitialLoadStep('Loading saved game...', 'loading');
+
+            // Load images from IndexedDB in background
+            loadImageCacheFromIDB().then(imageCache => {
+              if (Object.keys(imageCache).length > 0) {
+                addInitialLoadStep(`Restoring ${Object.keys(imageCache).length} images...`, 'loading');
+
+                // Restore images in objects BEFORE adding them
+                const restoredObjects: Record<string, TableObject> = {};
+                Object.entries(savedState.objects || {}).forEach(([id, obj]) => {
+                  restoredObjects[id] = restoreImagesFromCache(obj, imageCache);
+                });
+
+                // Add restored objects
+                addObjects(restoredObjects);
+                addInitialLoadStep('Images restored', 'success');
+              } else {
+                // Just add objects without restoration
+                addObjects(savedState.objects || {});
+              }
+
+              // After objects are added, restore other state
+              restoreOtherState();
+
+              // Check if we need to reconnect to host (for guests)
+              if (!isHost) {
+                setIsInitialLoading(false);
+                initializedRef.current = true;
+              } else {
+                // Host is ready immediately
+                setIsInitialLoading(false);
+                initializedRef.current = true;
+              }
+            }).catch(error => {
+              logger.error('[LOAD] Failed to load images from IndexedDB:', error);
+              // Just add objects without restoration
+              addObjects(savedState.objects || {});
+              // Still restore other state
+              restoreOtherState();
+
+              // IMPORTANT: Mark as initialized even on error
+              setIsInitialLoading(false);
+              initializedRef.current = true;
+            });
+          } else {
+            // No restoration needed - add objects directly
+            addObjects(savedState.objects || {});
+
+            // Restore other state
+            restoreOtherState();
+
+            // Mark as initialized
+            initializedRef.current = true;
+          }
+
+          return; // IMPORTANT: Return after async operations complete
         }
 
         // No saved state or empty saved state, create default game board (only for host)
         if (isHost) {
-          // Create game board on 'boards' layer
+          // Create game board on 'boards' layer - ALL VALUES IN VU
           const boardId = 'demo-board';
           const board: Board = {
                id: boardId,
                type: ItemType.BOARD,
                shape: TokenShape.SQUARE,
-               x: 100, y: 100,
-               width: 800, height: 600,
+               x: 100,    // VU: centered position
+               y: 100,    // VU: centered position
+               width: 1200,  // VU: 120% of screen width
+               height: 800, // VU: 80% of screen height
                rotation: 0,
                name: 'Game Board',
                content: '',
@@ -3864,7 +4728,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                locked: true,
                isOnTable: true,
                gridType: GridType.HEX,
-               gridSize: 60,
+               gridSize: 60,  // Grid cell size in VU
+               gridWidth: 100,  // Hex width in VU
+               gridHeight: 115, // Hex height in VU
                snapToGrid: true,
                hyperscaleLayerId: 'boards',
           };
@@ -3889,15 +4755,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
           // Then add the deck
           localDispatch({ type: 'ADD_OBJECT', payload: deck });
+
+          // IMPORTANT: Mark as initialized AFTER default objects are created
+          initializedRef.current = true;
         }
 
         // Create main menu (for everyone)
         createMainMenu(localDispatch);
     }
-  }, [isHost, connectionStatus]); // Add connectionStatus to ensure peer is ready
+  }, [isHost]); // Only depend on isHost - connectionStatus changes should NOT re-trigger initialization
 
   // Function to create main menu from local settings
   const createMainMenu = useCallback((dispatch: React.Dispatch<Action>) => {
+    // Prevent duplicate menu creation
+    if (creatingMenuRef.current) {
+      return;
+    }
+    creatingMenuRef.current = true;
+
     // ALWAYS use calculated position - main menu is fixed at right side, full height
     const calculatedPosition = calculateMainMenuPosition();
 
@@ -3932,6 +4807,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         title: 'Main Menu'
       }
     });
+
+    // Reset flag after a short delay to allow dispatch to process
+    setTimeout(() => {
+      creatingMenuRef.current = false;
+    }, 100);
   }, []);
 
   // Update main menu on window resize
@@ -3971,6 +4851,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('resize', handleResize);
   }, [state.objects, localDispatch]);
 
+  // Ensure main menu exists (create it if missing)
+  // This handles edge cases where the main menu might be accidentally removed
+  useEffect(() => {
+    // Only run after initialization is complete to avoid race conditions
+    if (!initializedRef.current) {
+      return;
+    }
+
+    // Skip if menu creation is already in progress
+    if (creatingMenuRef.current) {
+      return;
+    }
+
+    const hasMainMenu = Object.values(state.objects).some(
+      obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
+    );
+
+    if (!hasMainMenu) {
+      // Small delay to ensure DOM is ready and calculateMainMenuPosition works
+      setTimeout(() => {
+        createMainMenu(localDispatch);
+      }, 0);
+    }
+  }, [state.objects]); // Only depend on state.objects, NOT connectionStatus
+
   // Middleware Dispatcher - memoized with useCallback to prevent infinite loops
   const dispatch = useCallback((action: Action) => {
       // Local-only actions are executed locally but never sent over network
@@ -3985,7 +4890,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // State broadcast handled by useEffect to ensure updated state is sent
       } else {
           // Guest sends action to Host
-          if (hostConnectionRef.current && connectionStatus === 'connected') {
+          // Filter out local-only actions that should not be sent to host
+          const localOnlyActions = [
+              'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
+              'SET_PIXELS_PER_VU'       // Pixels per VU is screen-specific
+          ];
+
+          if (localOnlyActions.includes(action.type)) {
+              // Local-only actions - execute locally only, don't send to host
+              localDispatch(action);
+              return;
+          }
+
+          const hasPeerJSConnection = hostConnectionRef.current && connectionStatus === 'connected';
+          const hasManualConnection = manualConnectionRef.current && manualConnectionRef.current.open === true;
+
+          if (hasPeerJSConnection) {
               // UPDATE_PLAYER_NAME is sent as a separate message type for clarity
               if (action.type === 'UPDATE_PLAYER_NAME') {
                   hostConnectionRef.current.send({ type: 'UPDATE_PLAYER_NAME', payload: action });
@@ -4001,6 +4921,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               } else {
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
                   // Wait for sync to avoid desync
+              }
+          } else if (hasManualConnection) {
+              // Using manual P2P connection (DataChannelAdapter has PeerJS-compatible interface)
+              console.log('[Manual P2P] Sending action to host:', action.type);
+              if (action.type === 'UPDATE_PLAYER_NAME') {
+                  manualConnectionRef.current.send({ type: 'UPDATE_PLAYER_NAME', payload: action });
+                  localDispatch(action);  // Optimistic update
+              } else {
+                  manualConnectionRef.current.send({ type: 'ACTION', payload: action });
               }
           }
       }
@@ -4069,11 +4998,116 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
           });
       }
+
+      // Also broadcast to manual P2P connection guest
+      if (isHost && manualConnectionRef.current && manualConnectionRef.current.open === true) {
+          console.log('[Manual P2P] Broadcasting state change to manual connection guest');
+          const { state: stateWithRefs, imageCache } = extractImagesFromState(state);
+          try {
+              manualConnectionRef.current.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+              if (Object.keys(imageCache).length > 0) {
+                  manualConnectionRef.current.send({ type: 'IMAGE_CACHE', payload: imageCache });
+              }
+          } catch (e) {
+              console.error('[Manual P2P] Error broadcasting state:', e);
+          }
+      }
   }, [state, isHost]);
 
+  // Handle incoming data from manual P2P connection
+  useEffect(() => {
+      const conn = manualConnectionRef.current;
+      if (!conn) return;
+
+      // Only set up handlers once per connection (tracked by peer ID)
+      if (manualConnectionSetupRef.current === conn.peer) {
+          console.log('[Manual P2P] Handlers already set up for:', conn.peer, 'skipping');
+          return;
+      }
+
+      console.log('[Manual P2P] Setting up connection handlers for:', conn.peer, 'open:', conn.open);
+
+      const handleData = (data: any) => {
+          console.log('[Manual P2P] Received data:', data.type);
+          if (data.type === 'SYNC_STATE') {
+              // Restore images from local cache before dispatching
+              const restoredState = restoreImagesFromCache(data.payload, {});
+              localDispatch({ type: 'SYNC_STATE', payload: restoredState });
+          } else if (data.type === 'IMAGE_CACHE') {
+              localDispatch({ type: 'RESTORE_IMAGES', payload: data.payload });
+          } else if (data.type === 'HELO') {
+              // Host received HELO from guest - add player and send current state
+              const newPlayer = data.payload;
+              console.log('[Manual P2P] Received HELO from player:', newPlayer.name);
+              localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
+
+              // Send current state to new player
+              setTimeout(() => {
+                  if (conn && conn.open) {
+                      const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
+                      conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+                      if (Object.keys(imageCache).length > 0) {
+                          conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+                      }
+                  }
+              }, 100);
+          } else if (data.type === 'UPDATE_PLAYER_NAME') {
+              localDispatch(data.payload);
+          } else if (data.type === 'ACTION') {
+              localDispatch(data.payload);
+          }
+      };
+
+      const handleOpen = () => {
+          console.log('[Manual P2P] Connection opened');
+          // HELO is now handled by useManualConnection with proper guest name
+      };
+
+      const handleClose = () => {
+          console.log('[Manual P2P] Connection closed');
+          // Reset the setup ref when connection closes so we can re-connect if needed
+          manualConnectionSetupRef.current = null;
+      };
+
+      const handleError = (error: any) => {
+          console.error('[Manual P2P] Connection error:', error);
+      };
+
+      // Register event handlers
+      conn.on('data', handleData);
+      conn.on('open', handleOpen);
+      conn.on('close', handleClose);
+      conn.on('error', handleError);
+
+      // Mark this connection as set up
+      manualConnectionSetupRef.current = conn.peer;
+
+      // If connection is already open when we set up handlers, trigger handleOpen manually
+      // This handles the case where the data channel opened before GameContext registered handlers
+      if (conn.open) {
+          console.log('[Manual P2P] Connection already open, triggering handleOpen manually');
+          setTimeout(() => handleOpen(), 0);
+      }
+
+      // IMPORTANT: Clean up handlers only when connection actually changes or closes
+      return () => {
+          console.log('[Manual P2P] Cleaning up connection handlers for:', conn.peer);
+          conn.off('data', handleData);
+          conn.off('open', handleOpen);
+          conn.off('close', handleClose);
+          conn.off('error', handleError);
+          // Don't reset the setup ref here - it will be reset when connection actually closes
+          // This prevents the effect from re-running unnecessarily
+      };
+  }, [localDispatch, isHost]);
+
   return (
-    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName }}>
+    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, stateRef }}>
       {children}
+      <InitialLoadModal
+        steps={initialLoadSteps}
+        isVisible={isInitialLoading}
+      />
       <PlayerNameModal
         isOpen={waitingForPlayerName !== null}
         onSubmit={setPlayerName}
