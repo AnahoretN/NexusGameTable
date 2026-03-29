@@ -59,6 +59,79 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   // Calculate aspect ratio for tooltip (width/height)
   const aspectRatio = displayWidth / displayHeight;
 
+  // Memoized sprite background styles calculation to avoid duplication
+  // This is computed once and reused in both geometric and non-geometric rendering paths
+  const spriteBackgroundStyles = React.useMemo(() => {
+    const getBackgroundImage = (): string | undefined => {
+      if (card.faceUp) {
+        // Use card's spriteUrl, or deck's spriteConfig spriteUrl, or card's content
+        const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl || card.content;
+        return spriteUrl ? `url(${spriteUrl})` : undefined;
+      }
+      // Card is face down - check for alternative back first
+      const altBack = (card as any).alternativeBack;
+      if (altBack?.url) {
+        // Check if location matches (if locations array is empty or undefined, show everywhere)
+        const locationMatch = !altBack.locations || altBack.locations.length === 0 || altBack.locations?.includes(card.location as any);
+        // Check if current user should see it (if visibleToOthers is false, only show to those who can see card face)
+        const shouldShow = altBack.visibleToOthers || shouldSeeCardFace;
+        if (locationMatch && shouldShow) {
+          return `url(${altBack.url})`;
+        }
+      }
+      // Card is face down - check for custom sprite back
+      if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
+        return `url(${deckSpriteConfig.cardBackSpriteUrl})`;
+      }
+      // Default pattern
+      return 'repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)';
+    };
+
+    const getBackgroundSize = (): string => {
+      // Use card's sprite dimensions or fall back to deck's spriteConfig
+      const spriteCols = card.spriteColumns || deckSpriteConfig?.columns;
+      const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
+      const hasSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
+
+      if (card.faceUp && hasSpriteUrl && spriteCols && spriteRows) {
+        return `${spriteCols * 100}% ${spriteRows * 100}%`;
+      }
+      if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
+        return `${deckSpriteConfig.cardBackSpriteColumns * 100}% ${deckSpriteConfig.cardBackSpriteRows * 100}%`;
+      }
+      return '100% 100%'; // Stretch to fill entire shape
+    };
+
+    const getBackgroundPosition = (): string => {
+      // Use card's sprite index or fall back to deck's spriteConfig
+      const spriteIdx = card.spriteIndex !== undefined ? card.spriteIndex : deckSpriteConfig?.spriteIndex;
+      const spriteCols = card.spriteColumns || deckSpriteConfig?.columns;
+      const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
+      const hasSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
+
+      if (card.faceUp && hasSpriteUrl && spriteIdx !== undefined && spriteCols && spriteRows) {
+        const col = spriteIdx % spriteCols;
+        const row = Math.floor(spriteIdx / spriteCols);
+        const colPercent = spriteCols > 1 ? (col / (spriteCols - 1)) * 100 : 0;
+        const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
+        return `${colPercent}% ${rowPercent}%`;
+      }
+      if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
+        const idx = deckSpriteConfig.cardBackSpriteIndex;
+        const cols = deckSpriteConfig.cardBackSpriteColumns;
+        const rows = deckSpriteConfig.cardBackSpriteRows;
+        return `${(idx % cols) * (100 / (cols - 1 || 1))}% ${Math.floor(idx / cols) * (100 / ((rows || 1) - 1 || 1))}%`;
+      }
+      return 'center';
+    };
+
+    return {
+      backgroundImage: getBackgroundImage(),
+      backgroundSize: getBackgroundSize(),
+      backgroundPosition: getBackgroundPosition(),
+    };
+  }, [card.faceUp, card.spriteUrl, card.spriteIndex, card.spriteColumns, card.spriteRows, card.content, card.location, (card as any).alternativeBack, deckSpriteConfig, shouldSeeCardFace]);
+
   // Define button configurations for cards using shared utility
   const getCardButtonConfigs = (): CardButtonConfig[] => {
     const buttons = actionButtons || [];
@@ -197,68 +270,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               orientation={orientation}
             >
               <div
-                style={{ width: '100%', height: '100%', position: 'relative',
-                  backgroundImage: (() => {
-                    if (card.faceUp) {
-                      // Use card's spriteUrl, or deck's spriteConfig spriteUrl, or card's content
-                      const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl || card.content;
-                      return spriteUrl ? `url(${spriteUrl})` : undefined;
-                    }
-                    // Card is face down - check for alternative back first
-                    const altBack = (card as any).alternativeBack;
-                    if (altBack?.url) {
-                      // Check if location matches (if locations array is empty or undefined, show everywhere)
-                      const locationMatch = !altBack.locations || altBack.locations.length === 0 || altBack.locations?.includes(card.location as any);
-                      // Check if current user should see it (if visibleToOthers is false, only show to those who can see card face)
-                      const shouldShow = altBack.visibleToOthers || shouldSeeCardFace;
-                      if (locationMatch && shouldShow) {
-                        return `url(${altBack.url})`;
-                      }
-                    }
-                    // Card is face down - check for custom sprite back
-                    if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
-                      return `url(${deckSpriteConfig.cardBackSpriteUrl})`;
-                    }
-                    // Default pattern
-                    return `repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)`;
-                  })(),
-                  backgroundSize: (() => {
-                    // Use card's sprite dimensions or fall back to deck's spriteConfig
-                    const spriteCols = card.spriteColumns || deckSpriteConfig?.columns;
-                    const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
-                    const hasSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
-
-                    if (card.faceUp && hasSpriteUrl && spriteCols && spriteRows) {
-                      return `${spriteCols * 100}% ${spriteRows * 100}%`;
-                    }
-                    if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
-                      return `${deckSpriteConfig.cardBackSpriteColumns * 100}% ${deckSpriteConfig.cardBackSpriteRows * 100}%`;
-                    }
-                    return '100% 100%'; // Stretch to fill entire shape
-                  })(),
-                  backgroundPosition: (() => {
-                    // Use card's sprite index or fall back to deck's spriteConfig
-                    const spriteIdx = card.spriteIndex !== undefined ? card.spriteIndex : deckSpriteConfig?.spriteIndex;
-                    const spriteCols = card.spriteColumns || deckSpriteConfig?.columns;
-                    const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
-                    const hasSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
-
-                    if (card.faceUp && hasSpriteUrl && spriteIdx !== undefined && spriteCols && spriteRows) {
-                      const col = spriteIdx % spriteCols;
-                      const row = Math.floor(spriteIdx / spriteCols);
-                      const colPercent = spriteCols > 1 ? (col / (spriteCols - 1)) * 100 : 0;
-                      const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
-                      return `${colPercent}% ${rowPercent}%`;
-                    }
-                    if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
-                      const idx = deckSpriteConfig.cardBackSpriteIndex;
-                      const cols = deckSpriteConfig.cardBackSpriteColumns;
-                      const rows = deckSpriteConfig.cardBackSpriteRows;
-                      return `${(idx % cols) * (100 / (cols - 1 || 1))}% ${Math.floor(idx / cols) * (100 / ((rows || 1) - 1 || 1))}%`;
-                    }
-                    return 'center';
-                  })(),
-                }}
+                style={{ width: '100%', height: '100%', position: 'relative', ...spriteBackgroundStyles }}
               >
                 {/* Card Back Design Element if Face Down */}
                 {!card.faceUp && (
@@ -305,67 +317,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                 style={{
                   position: 'absolute',
                   inset: 0,
-                  backgroundImage: (() => {
-                    if (card.faceUp) {
-                      // Use card's spriteUrl, or deck's spriteConfig spriteUrl, or card's content
-                      const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl || card.content;
-                      return spriteUrl ? `url(${spriteUrl})` : undefined;
-                    }
-                    // Card is face down - check for alternative back first
-                    const altBack = (card as any).alternativeBack;
-                    if (altBack?.url) {
-                      // Check if location matches (if locations array is empty or undefined, show everywhere)
-                      const locationMatch = !altBack.locations || altBack.locations.length === 0 || altBack.locations?.includes(card.location as any);
-                      // Check if current user should see it (if visibleToOthers is false, only show to those who can see card face)
-                      const shouldShow = altBack.visibleToOthers || shouldSeeCardFace;
-                      if (locationMatch && shouldShow) {
-                        return `url(${altBack.url})`;
-                      }
-                    }
-                    // Card is face down - check for custom sprite back
-                    if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
-                      return `url(${deckSpriteConfig.cardBackSpriteUrl})`;
-                    }
-                    // Default pattern
-                    return `repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)`;
-                  })(),
-                  backgroundSize: (() => {
-                    // Stretch to fill entire shape regardless of aspect ratio
-                    // Use card's sprite dimensions or fall back to deck's spriteConfig
-                    const spriteCols = card.spriteColumns || deckSpriteConfig?.columns;
-                    const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
-                    const hasSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
-
-                    if (card.faceUp && hasSpriteUrl && spriteCols && spriteRows) {
-                      return `${spriteCols * 100}% ${spriteRows * 100}%`;
-                    }
-                    if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
-                      return `${deckSpriteConfig.cardBackSpriteColumns * 100}% ${deckSpriteConfig.cardBackSpriteRows * 100}%`;
-                    }
-                    return '100% 100%'; // Stretch to fill entire shape
-                  })(),
-                  backgroundPosition: (() => {
-                    // Use card's sprite index or fall back to deck's spriteConfig
-                    const spriteIdx = card.spriteIndex !== undefined ? card.spriteIndex : deckSpriteConfig?.spriteIndex;
-                    const spriteCols = card.spriteColumns || deckSpriteConfig?.columns;
-                    const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
-                    const hasSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
-
-                    if (card.faceUp && hasSpriteUrl && spriteIdx !== undefined && spriteCols && spriteRows) {
-                      const col = spriteIdx % spriteCols;
-                      const row = Math.floor(spriteIdx / spriteCols);
-                      const colPercent = spriteCols > 1 ? (col / (spriteCols - 1)) * 100 : 0;
-                      const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
-                      return `${colPercent}% ${rowPercent}%`;
-                    }
-                    if (!card.faceUp && deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined && deckSpriteConfig.cardBackSpriteColumns && deckSpriteConfig.cardBackSpriteRows) {
-                      const idx = deckSpriteConfig.cardBackSpriteIndex;
-                      const cols = deckSpriteConfig.cardBackSpriteColumns;
-                      const rows = deckSpriteConfig.cardBackSpriteRows;
-                      return `${(idx % cols) * (100 / (cols - 1 || 1))}% ${Math.floor(idx / cols) * (100 / ((rows || 1) - 1 || 1))}%`;
-                    }
-                    return 'center';
-                  })(),
+                  ...spriteBackgroundStyles,
               }}
           >
               {/* Card Back Design Element if Face Down */}
@@ -450,20 +402,56 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
 
 // Memoize Card component to prevent unnecessary re-renders
 // Only re-render when props actually change
+// This optimization is critical for performance when rendering 60+ cards in SearchDeckModal
 export default React.memo(Card, (prevProps, nextProps) => {
-  return (
-    prevProps.card.id === nextProps.card.id &&
-    prevProps.card.faceUp === nextProps.card.faceUp &&
-    prevProps.card.rotation === nextProps.card.rotation &&
-    prevProps.card.location === nextProps.card.location &&
-    prevProps.card.hidden === nextProps.card.hidden &&
-    prevProps.isHovered === nextProps.isHovered &&
-    prevProps.showActionButtons === nextProps.showActionButtons &&
-    prevProps.overrideWidth === nextProps.overrideWidth &&
-    prevProps.overrideHeight === nextProps.overrideHeight &&
-    prevProps.disablePointerEvents === nextProps.disablePointerEvents &&
-    prevProps.card.spriteUrl === nextProps.card.spriteUrl &&
-    prevProps.card.spriteIndex === nextProps.card.spriteIndex &&
-    prevProps.deckSpriteConfig?.cardBackSpriteUrl === nextProps.deckSpriteConfig?.cardBackSpriteUrl
-  );
+  // Quick ID check first - different cards should always re-render
+  if (prevProps.card.id !== nextProps.card.id) return false;
+
+  // Compare critical card properties that affect rendering
+  const prevCard = prevProps.card;
+  const nextCard = nextProps.card;
+
+  // Visual properties that affect what the card looks like
+  if (prevCard.faceUp !== nextCard.faceUp) return false;
+  if (prevCard.rotation !== nextCard.rotation) return false;
+  if (prevCard.hidden !== nextCard.hidden) return false;
+
+  // Sprite-related properties (critical for sprite sheet rendering)
+  if (prevCard.spriteUrl !== nextCard.spriteUrl) return false;
+  if (prevCard.spriteIndex !== nextCard.spriteIndex) return false;
+  if (prevCard.spriteColumns !== nextCard.spriteColumns) return false;
+  if (prevCard.spriteRows !== nextCard.spriteRows) return false;
+
+  // Content URL (fallback when sprite not used)
+  if (prevCard.content !== nextCard.content) return false;
+
+  // Alternative back card
+  const prevAltBack = (prevCard as any).alternativeBack;
+  const nextAltBack = (nextCard as any).alternativeBack;
+  if (prevAltBack?.url !== nextAltBack?.url) return false;
+  if (prevAltBack?.locations?.length !== nextAltBack?.locations?.length) return false;
+  if (prevAltBack?.visibleToOthers !== nextAltBack?.visibleToOthers) return false;
+
+  // Compare component props
+  if (prevProps.isHovered !== nextProps.isHovered) return false;
+  if (prevProps.showActionButtons !== nextProps.showActionButtons) return false;
+  if (prevProps.overrideWidth !== nextProps.overrideWidth) return false;
+  if (prevProps.overrideHeight !== nextProps.overrideHeight) return false;
+  if (prevProps.disablePointerEvents !== nextProps.disablePointerEvents) return false;
+  if (prevProps.shouldSeeCardFace !== nextProps.shouldSeeCardFace) return false;
+
+  // Compare deck sprite config (affects card back rendering)
+  const prevConfig = prevProps.deckSpriteConfig;
+  const nextConfig = nextProps.deckSpriteConfig;
+  if (prevConfig?.cardBackSpriteUrl !== nextConfig?.cardBackSpriteUrl) return false;
+  if (prevConfig?.cardBackSpriteIndex !== nextConfig?.cardBackSpriteIndex) return false;
+  if (prevConfig?.cardBackSpriteColumns !== nextConfig?.cardBackSpriteColumns) return false;
+  if (prevConfig?.cardBackSpriteRows !== nextConfig?.cardBackSpriteRows) return false;
+
+  // Compare tooltip settings
+  if (prevProps.deckShowTooltipImage !== nextProps.deckShowTooltipImage) return false;
+  if (prevProps.deckTooltipScale !== nextProps.deckTooltipScale) return false;
+
+  // All compared properties are equal - skip re-render
+  return true;
 });

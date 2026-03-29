@@ -32,7 +32,7 @@ export function useAutoSave(
 ): void {
   const lastSaveTimeRef = useRef<number>(0);
   const playerTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const prevStateRef = useRef<string>('');
+  const prevStateRef = useRef<number>(0);
 
   // Only cleanup timers on unmount, not on every state change
   useEffect(() => {

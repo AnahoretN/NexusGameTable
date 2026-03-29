@@ -444,7 +444,7 @@ export async function createPack(
           }
 
           // Add to ZIP with proper MIME type
-          imagesFolder.file(img.filename, bytes, { binary: true, mimeType: mimeType });
+          imagesFolder.file(img.filename, bytes, { binary: true });
           imagesProcessed++;
         } catch (error) {
           logger.error(`[PACK] Failed to process image ${img.filename}:`, error);

@@ -208,7 +208,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
   // Nexus Board unlock via Shift+3 pressed 3 times
   const [nexusBoardUnlocked, setNexusBoardUnlocked] = useState(false);
-  const shiftThreeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shiftThreeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressCountRef = useRef(0);
 
   useEffect(() => {
@@ -1276,7 +1276,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
                         <button
                           onClick={() => {
-                            manualConnection.handleGuestAnswer(manualConnection.state.remoteAnswer, 'Guest');
+                            manualConnection.handleGuestAnswer(manualConnection.state.remoteAnswer);
                           }}
                           disabled={!manualConnection.state.remoteAnswer}
                           className="w-full py-3 px-4 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors"
@@ -1657,7 +1657,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardDoubleClickAction: undefined,
           cardNamePosition: 'none' as const,
           // Deck actions (for the deck itself, not cards)
-          actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
+          actionButtons: ['draw', 'playTopCard', 'millTopCard', 'shuffleDeck'],
           allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
           allowedActionsForGM: undefined, // undefined = all actions allowed for GM
         };
@@ -1710,7 +1710,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           cardDoubleClickAction: undefined,
           cardNamePosition: 'none' as const,
           // Deck actions (for the deck itself, not cards)
-          actionButtons: ['draw', 'millTopCard', 'toBottom', 'shuffleDeck'],
+          actionButtons: ['draw', 'playTopCard', 'millTopCard', 'shuffleDeck'],
           allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
           allowedActionsForGM: undefined, // undefined = all actions allowed for GM
         };

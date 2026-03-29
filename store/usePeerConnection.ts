@@ -290,9 +290,9 @@ export function usePeerConnection(
       const originalEmit = conn.emit;
       conn.emit = function(...args: any[]) {
         if (args[0] === 'iceStateChange') {
-          console.log(`[P2P Guest] 🧊 ICE State changed:`, args[1]);
+          console.log(`[P2P Guest] 🧊 ICE State changed:`, args[1] as string);
         }
-        return originalEmit.apply(this, args);
+        return originalEmit.apply(this, args as any);
       };
     });
 
@@ -437,13 +437,13 @@ export function usePeerConnection(
         const originalEmit = conn.emit;
         conn.emit = function(...args: any[]) {
           if (args[0] === 'iceStateChange') {
-            const state = args[1];
+            const state = args[1] as string;
             console.log(`[P2P Host] 🧊 ICE State changed for ${guestPeerId}:`, state);
             if (state === 'failed' || state === 'disconnected') {
               console.warn(`[P2P Host] ⚠️ ICE connection ${state} for guest ${guestPeerId} - may indicate NAT/Firewall issues`);
             }
           }
-          return originalEmit.apply(this, args);
+          return originalEmit.apply(this, args as any);
         };
       });
 

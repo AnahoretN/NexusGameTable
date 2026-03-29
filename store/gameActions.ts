@@ -55,6 +55,7 @@ export type Action =
   | BaseAction<'LOAD_GAME', GameState>
   | BaseAction<'ADD_PLAYER', Player>
   | BaseAction<'REMOVE_PLAYER', { id: string }>
+  | BaseAction<'UPDATE_PLAYER', { id: string; [key: string]: any }>
   | BaseAction<'UPDATE_PLAYER_NAME', { playerId: string; name: string }>
   | BaseAction<'UPDATE_PLAYER_PERMISSIONS', PlayerPermissions>
   | BaseAction<'UPDATE_LANGUAGE', AppLanguage>
