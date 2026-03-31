@@ -47,6 +47,67 @@ export function useAutoSave(
     if (!isHost || !isInitialized) return;
 
     const emergencyTimer = setInterval(async () => {
+      // Check if safe to save - same logic as main auto-save
+      let hash = Object.keys(state.objects).length;
+      for (const obj of Object.values(state.objects)) {
+        hash += (obj.x || 0) + (obj.y || 0);
+        if ((obj as any).content) {
+          hash += (obj as any).content.length;
+        }
+        if (obj.name) {
+          hash += obj.name.length;
+        }
+        if ((obj as any).color) {
+          hash += (obj as any).color.length;
+        }
+        if (obj.type === 'DECK') {
+          const deck = obj as any;
+          hash += deck.cardIds?.length || 0;
+          if (deck.piles) {
+            hash += deck.piles.reduce((sum: number, pile: any) => sum + pile.cardIds.length, 0);
+          }
+        }
+        // Add character data changes (for character panels)
+        if ((obj as any).characterData) {
+          const charData = (obj as any).characterData;
+          hash += charData.characters?.length || 0;
+          if (charData.characters) {
+            charData.characters.forEach((char: any) => {
+              hash += char.blocks?.length || 0;
+              hash += char.columns || 1;
+              hash += char.characterName?.length || 0;
+              char.blocks?.forEach((block: any) => {
+                if (block.data?.rows) {
+                  hash += block.data.rows.length;
+                  block.data.rows.forEach((row: any) => {
+                    hash += Object.keys(row.cells || {}).length;
+                  });
+                }
+                if (block.data?.columns) {
+                  hash += block.data.columns.length;
+                }
+                if (block.data?.sliders) {
+                  hash += block.data.sliders.length;
+                }
+                if (block.data?.items) {
+                  hash += block.data.items.length;
+                }
+                if (block.data?.counters) {
+                  hash += block.data.counters.length;
+                }
+                if (block.data?.content) {
+                  hash += block.data.content.length;
+                }
+              });
+            });
+          }
+        }
+      }
+
+      if (hash === prevStateRef.current) {
+        return; // No changes detected
+      }
+
       // Check if safe to save
       const isAnyDragging = Object.values(state.objects).some(
         obj => (obj as any).draggingPlayerId !== undefined && (obj as any).draggingPlayerId !== null
@@ -106,6 +167,45 @@ export function useAutoSave(
         hash += deck.cardIds?.length || 0;
         if (deck.piles) {
           hash += deck.piles.reduce((sum: number, pile: any) => sum + pile.cardIds.length, 0);
+        }
+      }
+      // Add character data changes (for character panels)
+      if ((obj as any).characterData) {
+        const charData = (obj as any).characterData;
+        // Count characters
+        hash += charData.characters?.length || 0;
+        // Count blocks across all characters
+        if (charData.characters) {
+          charData.characters.forEach((char: any) => {
+            hash += char.blocks?.length || 0;
+            hash += char.columns || 1;
+            // Add character name length
+            hash += char.characterName?.length || 0;
+            // Count total cells in tables
+            char.blocks?.forEach((block: any) => {
+              if (block.data?.rows) {
+                hash += block.data.rows.length;
+                block.data.rows.forEach((row: any) => {
+                  hash += Object.keys(row.cells || {}).length;
+                });
+              }
+              if (block.data?.columns) {
+                hash += block.data.columns.length;
+              }
+              if (block.data?.sliders) {
+                hash += block.data.sliders.length;
+              }
+              if (block.data?.items) {
+                hash += block.data.items.length;
+              }
+              if (block.data?.counters) {
+                hash += block.data.counters.length;
+              }
+              if (block.data?.content) {
+                hash += block.data.content.length;
+              }
+            });
+          });
         }
       }
     }
