@@ -512,6 +512,7 @@ export enum PanelType {
   MAIN_MENU = 'MAIN_MENU',  // Main right menu panel
   TABLEAU = 'TABLEAU',  // Tableau panel for card tableau
   POOL = 'POOL',        // Pool panel for drawing cards
+  CHARACTER = 'CHARACTER',  // Character panel for RPG games
 }
 
 // Window types for modal windows
@@ -578,6 +579,138 @@ export interface PanelObject extends UIObject {
   playerId?: string;
   // Dual position mode: when true, panel has separate positions for collapsed and expanded states
   dualPosition?: boolean;
+  // Optional: character panel data for CHARACTER panel type
+  characterData?: CharacterPanelData;
+}
+
+// ============================================================================
+// CHARACTER PANEL TYPES
+// ============================================================================
+
+// Block types for character panels
+export enum CharacterBlockType {
+  TEXT = 'TEXT',
+  TABLE = 'TABLE',
+  SLIDER = 'SLIDER',
+  INVENTORY = 'INVENTORY',
+  AVATAR = 'AVATAR',
+  COUNTER = 'COUNTER',
+}
+
+// Base character block interface
+export interface CharacterBlock {
+  id: string;
+  type: CharacterBlockType;
+  title: string;
+  visible: boolean;
+  order: number;
+  columnId: string; // ID of the column this block belongs to
+  data: TextBlockData | TableBlockData | SliderBlockData | InventoryBlockData | AvatarBlockData | CounterBlockData;
+}
+
+// Text block data
+export interface TextBlockData {
+  content: string;
+  editable: boolean;
+  maxLength?: number;
+}
+
+// Table block data
+export interface TableBlockData {
+  columns: TableColumn[];
+  rows: TableRow[];
+  editable: boolean;
+  addRowAllowed: boolean;
+  addColumnAllowed: boolean;
+}
+
+export interface TableColumn {
+  id: string;
+  title: string;
+  width: number;
+  type: 'text' | 'number';
+}
+
+export interface TableRow {
+  id: string;
+  cells: Record<string, string | number>;
+}
+
+// Slider block data
+export interface SliderItem {
+  id: string;
+  label: string;
+  value: number;
+  maxValue: number;
+  minValue: number;
+  color: string;
+  showValue: boolean;
+  showPercentage: boolean;
+}
+
+export interface SliderBlockData {
+  sliders: SliderItem[];
+}
+
+// Inventory block data
+export interface InventoryBlockData {
+  gridColumns: number;
+  items: InventoryItem[];
+  maxItems?: number;
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  imageUrl?: string;
+  quantity: number;
+}
+
+// Avatar block data
+export interface AvatarBlockData {
+  imageUrl: string;
+  name: string;
+  showName: boolean;
+}
+
+// Counter block data
+export interface CounterItem {
+  id: string;
+  name: string;
+  value: number;
+}
+
+export interface CounterBlockData {
+  counters: CounterItem[];
+}
+
+// Character tab data
+export interface CharacterTab {
+  id: string;
+  characterName: string;
+  playerId?: string;
+  blocks: CharacterBlock[];
+  columns: number; // Number of columns (default: 1)
+  visibleToPlayerIds: string[];
+  manageableByPlayerIds: string[]; // Can change values but not structure
+  editableByPlayerIds: string[];
+  avatarUrl?: string;
+}
+
+// Character preset
+export interface CharacterPreset {
+  id: string;
+  name: string;
+  description?: string;
+  blocks: Omit<CharacterBlock, 'id'>[];
+}
+
+// Character panel data
+export interface CharacterPanelData {
+  characters: CharacterTab[];
+  presets: CharacterPreset[];
+  activeCharacterId: string;
+  isUniversal: boolean;
 }
 
 // Window object - modal dialogs on the game board

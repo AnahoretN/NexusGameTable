@@ -3210,6 +3210,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         (panel as any).dualPosition = true; // Enable dual position mode by default
       }
 
+      // Initialize character data for CHARACTER panels
+      if (panelType === PanelType.CHARACTER) {
+        (panel as any).characterData = {
+          characters: [],
+          presets: [],
+          activeCharacterId: '',
+          isUniversal: false
+        };
+      }
+
       return {
         ...state,
         objects: { ...state.objects, [panelId]: panel },

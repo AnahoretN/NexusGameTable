@@ -731,6 +731,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       id: 'panels', label: translate('Panels', language as Locale), icon: <Layers size={16}/>,
       items: [
         { name: translate('Hand Panel', language as Locale), type: 'PANEL', panelType: PanelType.HAND },
+        { name: translate('Character Panel', language as Locale), type: 'PANEL', panelType: PanelType.CHARACTER },
         { name: translate('Tableau Panel', language as Locale), type: 'PANEL', panelType: PanelType.TABLEAU, disabled: true },
         { name: translate('Pool Panel', language as Locale), type: 'PANEL', panelType: PanelType.POOL, disabled: true },
       ],
@@ -991,13 +992,15 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     {translate('Load Session', language as Locale)}
                   </button>
                 )}
-                <button
-                  onClick={handleSavePack}
-                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
-                >
-                  <Package size={16} />
-                  {translate('Create Pack', language as Locale)}
-                </button>
+                {isGM && (
+                  <button
+                    onClick={handleSavePack}
+                    className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                  >
+                    <Package size={16} />
+                    {translate('Create Pack', language as Locale)}
+                  </button>
+                )}
                 {isGM && (
                   <button
                     onClick={handleLoadPack}
