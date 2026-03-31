@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
 import { X, Minus, Plus, Eye, EyeOff, Pin, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
 import { HandPanel } from './HandPanel';
+import { CharacterPanel } from './CharacterPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -416,7 +417,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       data-ui-object={uiObject.id}
       data-main-menu={isMainMenu ? "true" : undefined}
       style={containerStyle}
-      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col`}
+      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col w-full`}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -627,7 +628,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
       {/* Content */}
       {!minimized && (
-        <div ref={contentRef} className="flex-1 overflow-hidden">
+        <div ref={contentRef} className="flex-1 overflow-hidden w-full">
           {isResizing ? (
             // Show resize indicator during resize
             <div className="h-full flex items-center justify-center text-slate-400">
@@ -949,6 +950,8 @@ const PanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
       return <MainMenuContent width={panel.width} />;
     case PanelType.HAND:
       return <HandPanelWithDragDetection panel={panel} />;
+    case PanelType.CHARACTER:
+      return <CharacterPanel panel={panel} />;
     case PanelType.TABLEAU:
       return <TableauPanelContent panel={panel} />;
     case PanelType.POOL:
