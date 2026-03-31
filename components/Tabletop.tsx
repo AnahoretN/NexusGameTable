@@ -5081,8 +5081,6 @@ export const Tabletop: React.FC = () => {
                                 />
 
                                 {/* Magnetism System Visualization - hidden */}
-<<<<<<< HEAD
-=======
                                 <svg
                                     className="absolute pointer-events-none hidden"
                                     width={v2p(obj.width)}
@@ -5182,7 +5180,6 @@ export const Tabletop: React.FC = () => {
                                         })()}
                                     </g>
                                 </svg>
->>>>>>> 0.1.6
 
                                 {(obj as any).isPinnedToViewport && (
                                     <div
