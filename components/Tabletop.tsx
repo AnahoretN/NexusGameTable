@@ -118,14 +118,14 @@ export const Tabletop: React.FC = () => {
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
-  // Cursor slot state - holds cards and tokens picked up with Shift+click (max 100 items)
+  // Cursor slot state - holds cards and tokens picked up with Ctrl+click (max 100 items)
   // Stores full object data and removes objects from their original position
   const [cursorSlot, setCursorSlot] = useState<(CardType | TokenType)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   // Ref for immediate cursor position updates (synchronous, for rendering slot items)
   const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
   // Track how items were added to cursor slot:
-  // - 'shift' = Shift+click on board (drop only on click, not on mouseup)
+  // - 'shift' = Ctrl+click on board (drop only on click, not on mouseup)
   // - 'hold' = Long press or drag (drop on mouseup)
   // - 'archetype' = Click on token archetype in ToolsPanel (don't drop on normal click)
   const [cursorSlotSource, setCursorSlotSource] = useState<'shift' | 'hold' | 'archetype' | null>(null);
@@ -169,6 +169,8 @@ export const Tabletop: React.FC = () => {
   const resizingIdRef = useRef<string | null>(null);
   const draggingPileRef = useRef<{ pile: CardPile; deck: DeckType } | null>(null);
   const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
+  // Track items currently being processed for adding to cursor slot to prevent duplicates
+  const processingAddToSlotRef = useRef<Set<string>>(new Set());
   // Track objects that were recently in local cursor slot to prevent showing their shadow version
   // when another player hasn't synced the inCursorSlot: false state yet
   const [recentlyInMyCursorSlot, setRecentlyInMyCursorSlot] = useState<Set<string>>(new Set());
@@ -241,8 +243,36 @@ export const Tabletop: React.FC = () => {
         source?: 'shift' | 'hold';
       }>;
       const { cardId, clientX, clientY, source = 'shift' } = customEvent.detail;
+      console.log('Tabletop: add-to-cursor-slot event received:', {
+        cardId,
+        clientX,
+        clientY,
+        source,
+        itemExists: !!state.objects[cardId],
+        cursorSlotLength: cursorSlot.length
+      });
+
       const item = state.objects[cardId];
       if (item && cursorSlot.length < 100) {
+        // Check if item is already being processed
+        if (processingAddToSlotRef.current.has(cardId)) {
+          console.log('Tabletop: Item already being processed, skipping:', cardId);
+          return;
+        }
+
+        // Check if item is already in cursor slot or already marked as inCursorSlot
+        const alreadyInSlot = cursorSlot.some(slotItem => slotItem.id === cardId);
+        const alreadyMarked = (item as any).inCursorSlot;
+
+        if (alreadyInSlot || alreadyMarked) {
+          console.log('Tabletop: Item already in cursor slot, skipping:', cardId);
+          return;
+        }
+
+        // Mark as being processed
+        processingAddToSlotRef.current.add(cardId);
+
+        console.log('Tabletop: Adding item to cursor slot:', item.name);
         // Set source based on how the item was added (only if slot was empty before)
         if (cursorSlot.length === 0) {
           setCursorSlotSource(source);
@@ -283,16 +313,29 @@ export const Tabletop: React.FC = () => {
             spriteRows: card.spriteRows,
             spriteUrl: card.spriteUrl,
             shape: card.shape,
+            // IMPORTANT: Preserve zIndex to maintain layer relationships
+            zIndex: card.zIndex ?? 0,
+            hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
           } as CardType;
         } else {
           itemClone = { ...item } as TokenType;
         }
+
+        // IMPORTANT: Store original zIndex and source for proper layer relationships
+        (itemClone as any).originalZIndex = item.zIndex ?? 0;
+        (itemClone as any).source = source;
+        (itemClone as any).cursorSlotIndex = cursorSlot.length;
 
         setCursorSlot(prev => [...prev, itemClone]);
         dispatch({ type: 'UPDATE_OBJECT', payload: { id: cardId, inCursorSlot: true } });
         const pos = { x: clientX, y: clientY };
         setCursorPosition(pos);
         cursorPositionRef.current = pos;
+
+        // Remove from processing set after a short delay to ensure state updates
+        setTimeout(() => {
+          processingAddToSlotRef.current.delete(cardId);
+        }, 100);
       }
     };
 
@@ -346,6 +389,9 @@ export const Tabletop: React.FC = () => {
         // Store settings from archetype
         showName: (archetype as any).showName || false,
         fontColor: (archetype as any).fontColor,
+        // IMPORTANT: Set zIndex to maintain layer relationships
+        zIndex: archetype.zIndex ?? 3000,
+        hyperscaleLayerId: archetype.hyperscaleLayerId ?? 'tokens',
       };
 
       // Add token to objects list
@@ -354,6 +400,9 @@ export const Tabletop: React.FC = () => {
       // Create clone for cursor slot
       const tokenClone: TokenType = { ...newToken };
       (tokenClone as any).cursorSlotIndex = cursorSlot.length;
+      // IMPORTANT: Store original zIndex for proper restoration when dropping
+      (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
+      (tokenClone as any).source = 'archetype';
 
       // Add to cursor slot
       setCursorSlot(prev => [...prev, tokenClone]);
@@ -1194,7 +1243,7 @@ export const Tabletop: React.FC = () => {
     }
   }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition, rollDiceWithGroup]);
 
-  // Add object to cursor slot (Shift+click or long-press on card/token)
+  // Add object to cursor slot (Ctrl+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
     if (cursorSlot.length >= 100) return; // Max 100 items in slot
 
@@ -1313,6 +1362,9 @@ export const Tabletop: React.FC = () => {
         spriteColumns: card.spriteColumns,
         spriteRows: card.spriteRows,
         shape: card.shape,
+        // IMPORTANT: Preserve zIndex to maintain layer relationships
+        zIndex: card.zIndex ?? 0,
+        hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
       } as CardType;
     } else {
       itemClone = { ...item } as TokenType;
@@ -1323,8 +1375,11 @@ export const Tabletop: React.FC = () => {
     (itemClone as any).cursorSlotIndex = cursorSlot.length;
 
     // IMPORTANT: Store original zIndex for proper restoration when dropping
-    // For shift mode: use new stack zIndex (10000+), for hold mode: preserve original
+    // This preserves layer relationships between objects
     (itemClone as any).originalZIndex = item.zIndex ?? 0;
+
+    // Keep original zIndex in clone - sorting happens during render/drop
+    itemClone.zIndex = item.zIndex ?? 0;
 
     // Store source in each item so we can determine the mode even when slotItems is passed
     (itemClone as any).source = source;
@@ -1337,7 +1392,7 @@ export const Tabletop: React.FC = () => {
       cursorPositionRef.current = newPos;
       setCursorPosition(newPos);
     } else {
-      // Calculate screen position of object center (world -> screen) for Shift+click
+      // Calculate screen position of object center (world -> screen) for Ctrl+click
       // IMPORTANT: Use v2p to convert vu to pixels, and account for scroll position
       const itemCenterX = item.x + (item.width ?? 63) / 2;
       const itemCenterY = item.y + (item.height ?? 88) / 2;
@@ -1562,8 +1617,19 @@ export const Tabletop: React.FC = () => {
     // Track cells that need to be updated (to avoid duplicate updates)
     const updatedCellIds = new Set<string>();
 
+    // Sort by originalZIndex in DESCENDING order to preserve layer relationships when dropping
+    // Items with higher originalZIndex (top) should be processed first
+    const sortedSlot = [...currentSlot].sort((a, b) => {
+      const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+      const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+      return zB - zA; // Descending order - higher Z first
+    });
+
+    // Calculate base Z for preserving layer proportions from original zIndex
+    const minOriginalZ = Math.min(...currentSlot.map(item => (item as any).originalZIndex ?? 0));
+
     // Add all items from slot back to the game with automatic magnetism
-    currentSlot.forEach((item, index) => {
+    sortedSlot.forEach((item, sortedIndex) => {
       const isCard = item.type === ItemType.CARD;
       let baseWidth = item.width ?? (isCard ? 63 : 50);
       let baseHeight = item.height ?? (isCard ? 88 : 50);
@@ -1587,11 +1653,19 @@ export const Tabletop: React.FC = () => {
       const minZ = itemLayer?.minZIndex ?? 1;
       const maxZ = itemLayer?.maxZIndex ?? 10000;
 
-      // Use original zIndex if preserving, otherwise use stack zIndex (clamped to layer bounds)
-      const stackZ = Math.min(10000 + index, maxZ);
-      const defaultZIndex = useOriginalZIndex
-        ? ((item as any).originalZIndex ?? minZ)
-        : stackZ;
+      // Use original zIndex if preserving, otherwise preserve relative layer proportions
+      const originalZIndex = (item as any).originalZIndex ?? item.zIndex ?? 0;
+      let stackZ: number;
+      if (useOriginalZIndex) {
+        // Hold mode: use original zIndex directly
+        stackZ = originalZIndex;
+      } else {
+        // Shift mode: preserve relative proportions starting from 10000
+        // Calculate offset from minimum original Z and add to base 10000
+        const relativeZ = originalZIndex - minOriginalZ;
+        stackZ = Math.min(10000 + relativeZ, maxZ);
+      }
+      const defaultZIndex = Math.max(minZ, Math.min(maxZ, stackZ));
 
       let finalX: number, finalY: number;
       let finalZIndex: number = defaultZIndex; // Will be overridden if snapped to cell
@@ -1763,12 +1837,12 @@ export const Tabletop: React.FC = () => {
         }
 
         // Apply stacking offset for multiple items
-        const slotIndex = (item as any).cursorSlotIndex ?? 0;
-        const newestIndex = currentSlot.length - 1;
-        const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+        // Use sortedIndex to ensure offset matches zIndex order
+        // Highest zIndex (top, sortedIndex=0) gets no offset, lower gets more offset
+        const offsetFromFront = sortedIndex;
         const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
-        const offsetX = offsetFromBack * offsetAmount;
-        const offsetY = offsetFromBack * offsetAmount;
+        const offsetX = offsetFromFront * offsetAmount;
+        const offsetY = offsetFromFront * offsetAmount;
 
         finalX = snapTargetX - baseWidth / 2 + offsetX;
         finalY = snapTargetY - baseHeight / 2 + offsetY;
@@ -1862,23 +1936,33 @@ export const Tabletop: React.FC = () => {
     // For non-card items (tokens), drop them on the tabletop at deck position
     const nonCardsInSlot = currentSlot.filter(item => item.type !== ItemType.CARD);
     if (nonCardsInSlot.length > 0) {
-      nonCardsInSlot.forEach((item) => {
+      // Sort by originalZIndex in DESCENDING order to preserve layer relationships
+      const sortedTokens = [...nonCardsInSlot].sort((a, b) => {
+        const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+        const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+        return zB - zA; // Descending order - higher Z first
+      });
+
+      // Calculate base Z for preserving layer proportions
+      const minOriginalZ = Math.min(...nonCardsInSlot.map(item => (item as any).originalZIndex ?? 0));
+
+      sortedTokens.forEach((item, sortedIndex) => {
         const baseWidth = item.width ?? 50;
         const baseHeight = item.height ?? 50;
 
-        // Calculate offset the SAME WAY as cursor slot rendering
-        // Newest element (highest index) has offset 0, older elements are offset down-right
-        const slotIndex = (item as any).cursorSlotIndex ?? 0;
-        const newestIndex = currentSlot.length - 1;
-        const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+        // Calculate offset using sortedIndex to match zIndex order
+        // Highest zIndex (top, sortedIndex=0) gets no offset, lower gets more offset
+        const offsetFromFront = sortedIndex;
         const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
-        const offsetX = offsetFromBack * offsetAmount;
-        const offsetY = offsetFromBack * offsetAmount;
+        const offsetX = offsetFromFront * offsetAmount;
+        const offsetY = offsetFromFront * offsetAmount;
 
         // Clamp zIndex to hyperscale layer bounds
         const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
         const maxZ = itemLayer?.maxZIndex ?? 10000;
-        const stackZ = Math.min(10000 + slotIndex, maxZ);
+        const originalZIndex = (item as any).originalZIndex ?? item.zIndex ?? 0;
+        const relativeZ = originalZIndex - minOriginalZ;
+        const stackZ = Math.min(10000 + relativeZ, maxZ);
 
         // Use DROP_FROM_CURSOR_SLOT action with undo tracking
         dispatch({
@@ -1972,29 +2056,42 @@ export const Tabletop: React.FC = () => {
         pileY = deck.y;
       }
 
-      nonCardsInSlot.forEach((item) => {
+      // Sort by originalZIndex in DESCENDING order to preserve layer relationships
+      const sortedTokens = [...nonCardsInSlot].sort((a, b) => {
+        const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+        const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+        return zB - zA; // Descending order - higher Z first
+      });
+
+      // Calculate base Z for preserving layer proportions
+      const minOriginalZ = Math.min(...nonCardsInSlot.map(item => (item as any).originalZIndex ?? 0));
+
+      sortedTokens.forEach((item, sortedIndex) => {
         const baseWidth = item.width ?? 50;
         const baseHeight = item.height ?? 50;
 
-        // Calculate offset the SAME WAY as cursor slot rendering
-        // Newest element (highest index) has offset 0, older elements are offset down-right
-        const slotIndex = (item as any).cursorSlotIndex ?? 0;
-        const newestIndex = currentSlot.length - 1;
-        const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+        // Calculate offset using sortedIndex to match zIndex order
+        // Highest zIndex (top, sortedIndex=0) gets no offset, lower gets more offset
+        const offsetFromFront = sortedIndex;
         const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
-        const offsetX = offsetFromBack * offsetAmount;
-        const offsetY = offsetFromBack * offsetAmount;
+        const offsetX = offsetFromFront * offsetAmount;
+        const offsetY = offsetFromFront * offsetAmount;
 
         // Clamp zIndex to hyperscale layer bounds
         const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
         const minZ = itemLayer?.minZIndex ?? 1;
         const maxZ = itemLayer?.maxZIndex ?? 10000;
-        const stackZ = Math.min(10000 + slotIndex, maxZ);
 
-        // Use original zIndex if preserving, otherwise use stack zIndex (clamped to layer bounds)
-        const zIndex = useOriginalZIndex
-          ? ((item as any).originalZIndex ?? minZ)
-          : stackZ;
+        // Use original zIndex if preserving, otherwise preserve relative proportions
+        const originalZIndex = (item as any).originalZIndex ?? item.zIndex ?? 0;
+        let stackZ: number;
+        if (useOriginalZIndex) {
+          stackZ = originalZIndex;
+        } else {
+          const relativeZ = originalZIndex - minOriginalZ;
+          stackZ = Math.min(10000 + relativeZ, maxZ);
+        }
+        const zIndex = Math.max(minZ, Math.min(maxZ, stackZ));
 
         // Calculate center position (without offset for snapping)
         const pileCenterX = pileX + deck.width * pileSize / 2;
@@ -2066,8 +2163,8 @@ export const Tabletop: React.FC = () => {
         return; // Don't drop cursor slot when clicking on archetype cards
       }
 
-      // Check if Shift is pressed
-      if (e.shiftKey) return;
+      // Check if Shift/Ctrl/Meta is pressed
+      if (e.shiftKey || e.ctrlKey || e.metaKey) return;
 
       // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
       const toolsPanel = target.closest('[data-tools-panel]');
@@ -2099,6 +2196,110 @@ export const Tabletop: React.FC = () => {
         e.preventDefault();
         e.stopPropagation();
         return;
+      }
+
+      // Check if clicking inside pool panel - dispatch event to add objects to pool
+      const poolPanel = target.closest('[data-pool-panel]');
+      console.log('Tabletop: Checking for pool panel:', {
+        poolPanel: poolPanel?.outerHTML,
+        hasDataAttribute: poolPanel?.hasAttribute('data-pool-panel'),
+        panelId: poolPanel?.getAttribute('data-pool-panel')
+      });
+      if (poolPanel) {
+        console.log('Tabletop: Pool panel found!');
+        // Get panel ID
+        const panelId = poolPanel.getAttribute('data-pool-panel');
+        console.log('Tabletop: Panel ID:', panelId);
+        if (panelId) {
+          // Get pool panel data to calculate drop position
+          const panelObj = state.objects[panelId] as any;
+          console.log('Tabletop: Panel object:', panelObj);
+          if (panelObj && panelObj.poolData) {
+            console.log('Tabletop: Pool data found, dropping items to pool');
+            // Get pool zone coordinates
+            const poolOffsetX = panelObj.poolData.offsetX || 0;
+            const poolOffsetY = panelObj.poolData.offsetY || 0;
+            const poolWidth = panelObj.poolData.width || 1000;
+            const poolHeight = panelObj.poolData.height || 1000;
+
+            // Get the pool panel's visual rectangle to calculate relative position (same as drag mode)
+            const panelRect = poolPanel.getBoundingClientRect();
+            const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+
+            // Calculate position relative to the pool panel's visual position
+            const relativePixelX = e.clientX - panelRect.left;
+            const relativePixelY = e.clientY - panelRect.top;
+
+            // Convert to virtual units
+            const relativeVUX = relativePixelX / pixelsPerVU;
+            const relativeVUY = relativePixelY / pixelsPerVU;
+
+            // Base position in pool zone
+            const baseX = poolOffsetX + relativeVUX;
+            const baseY = poolOffsetY + relativeVUY;
+
+            console.log('Tabletop: Drop position (Ctrl+Click):', {
+              clientX: e.clientX,
+              clientY: e.clientY,
+              panelRect: { left: panelRect.left, top: panelRect.top, width: panelRect.width, height: panelRect.height },
+              relativePixelX, relativePixelY,
+              relativeVUX, relativeVUY,
+              poolOffsetX, poolOffsetY,
+              baseX, baseY
+            });
+
+            // Drop items in pool zone with offset based on layer position (5 VU)
+            // Sort by originalZIndex in DESCENDING order to preserve layer relationships
+            const sortedSlot = [...cursorSlot].sort((a, b) => {
+              const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+              const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+              return zB - zA; // Descending order - higher Z first
+            });
+
+            sortedSlot.forEach((item, sortedIndex) => {
+              const itemWidth = item.width || 100;
+              const itemHeight = item.height || 100;
+
+              // Calculate offset based on sorted position
+              // Highest zIndex (top, sortedIndex=0) gets no offset, lower gets more offset
+              const offsetFromFront = sortedIndex;
+              const offsetAmount = Math.min(itemWidth, itemHeight) * 0.05; // 5 VU offset
+              const offsetX = offsetFromFront * offsetAmount;
+              const offsetY = offsetFromFront * offsetAmount;
+
+              // Calculate position (cursor is at center of object, so subtract half dimensions)
+              let itemX = baseX - (itemWidth / 2) + offsetX;
+              let itemY = baseY - (itemHeight / 2) + offsetY;
+
+              // Constrain to pool zone bounds
+              itemX = Math.max(poolOffsetX, Math.min(itemX, poolOffsetX + poolWidth - itemWidth));
+              itemY = Math.max(poolOffsetY, Math.min(itemY, poolOffsetY + poolHeight - itemHeight));
+
+              console.log('Tabletop: Dropping item to pool (Ctrl+Click):', item.id, { itemX, itemY, itemWidth, itemHeight });
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: item.id,
+                  x: itemX,
+                  y: itemY,
+                  inCursorSlot: false
+                }
+              });
+            });
+
+            // Clear the slot
+            cursorSlotRef.current = [];
+            setCursorSlot([]);
+            setCursorPosition(null);
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          } else {
+            console.log('Tabletop: No pool data found in panel object');
+          }
+        }
+      } else {
+        console.log('Tabletop: No pool panel found at cursor position');
       }
 
       // Check if clicking on a deck - only drop if source='shift' (not for drag/drop)
@@ -2293,15 +2494,15 @@ export const Tabletop: React.FC = () => {
         }
 
         // Simple click without drag no longer adds to cursor slot
-        // Only Shift+click and drag (5px+) work for adding items
+        // Only Ctrl+click and drag (5px+) work for adding items
         if (distance < 5) {
-          // CLICK without drag - ignored, use Shift+click to add to slot
+          // CLICK without drag - ignored, use Ctrl+click to add to slot
         }
         // If moved 5px or more, the card was already added to slot in mousemove, nothing to do
       }
 
       // Use cursorSlotRef.current to get the immediate value (avoid closure stale data)
-      // Only process if cursor slot has items with source='hold' (drag, not Shift+click)
+      // Only process if cursor slot has items with source='hold' (drag, not Ctrl+click)
       const currentSlot = cursorSlotRef.current;
       if (currentSlot.length === 0 || cursorSlotSource !== 'hold') return;
 
@@ -2335,6 +2536,109 @@ export const Tabletop: React.FC = () => {
         e.stopPropagation();
         e.preventDefault();
         return;
+      }
+
+      // Check if we're over pool panel
+      const poolPanel = target.closest('[data-pool-panel]');
+      console.log('Tabletop (drag mode): Checking for pool panel:', {
+        poolPanel: poolPanel?.outerHTML,
+        hasDataAttribute: poolPanel?.hasAttribute('data-pool-panel'),
+        panelId: poolPanel?.getAttribute('data-pool-panel'),
+        clientX, clientY
+      });
+      if (poolPanel) {
+        console.log('Tabletop (drag mode): Pool panel found!');
+        const panelId = poolPanel.getAttribute('data-pool-panel');
+        if (panelId) {
+          const panelObj = state.objects[panelId] as any;
+          console.log('Tabletop (drag mode): Panel object:', panelObj);
+          if (panelObj && panelObj.poolData) {
+            console.log('Tabletop (drag mode): Pool data found, dropping items to pool');
+
+            // Get pool zone coordinates
+            const poolOffsetX = panelObj.poolData.offsetX || 0;
+            const poolOffsetY = panelObj.poolData.offsetY || 0;
+            const poolWidth = panelObj.poolData.width || 1000;
+            const poolHeight = panelObj.poolData.height || 1000;
+
+            // Get the pool panel's visual rectangle to calculate relative position
+            const panelRect = poolPanel.getBoundingClientRect();
+            const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+
+            // Calculate position relative to the pool panel's visual position
+            const relativePixelX = clientX - panelRect.left;
+            const relativePixelY = clientY - panelRect.top;
+
+            // Convert to virtual units
+            const relativeVUX = relativePixelX / pixelsPerVU;
+            const relativeVUY = relativePixelY / pixelsPerVU;
+
+            // Final position in pool zone
+            const finalX = poolOffsetX + relativeVUX;
+            const finalY = poolOffsetY + relativeVUY;
+
+            console.log('Tabletop (drag mode): Drop position:', {
+              clientX, clientY,
+              panelRect: { left: panelRect.left, top: panelRect.top, width: panelRect.width, height: panelRect.height },
+              relativePixelX, relativePixelY,
+              relativeVUX, relativeVUY,
+              poolOffsetX, poolOffsetY,
+              finalX, finalY
+            });
+
+            // Drop items in pool zone with offset based on layer position (5 VU)
+            // Sort by originalZIndex in DESCENDING order to preserve layer relationships
+            const sortedSlot = [...currentSlot].sort((a, b) => {
+              const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+              const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+              return zB - zA; // Descending order - higher Z first
+            });
+
+            sortedSlot.forEach((item, sortedIndex) => {
+              const itemWidth = item.width || 100;
+              const itemHeight = item.height || 100;
+
+              // Calculate offset based on sorted position
+              // Highest zIndex (top, sortedIndex=0) gets no offset, lower gets more offset
+              const offsetFromFront = sortedIndex;
+              const offsetAmount = Math.min(itemWidth, itemHeight) * 0.05; // 5 VU offset
+              const offsetX = offsetFromFront * offsetAmount;
+              const offsetY = offsetFromFront * offsetAmount;
+
+              // Calculate position (cursor is at center of object, so subtract half dimensions)
+              let itemX = finalX - (itemWidth / 2) + offsetX;
+              let itemY = finalY - (itemHeight / 2) + offsetY;
+
+              // Constrain to pool zone bounds
+              itemX = Math.max(poolOffsetX, Math.min(itemX, poolOffsetX + poolWidth - itemWidth));
+              itemY = Math.max(poolOffsetY, Math.min(itemY, poolOffsetY + poolHeight - itemHeight));
+
+              console.log('Tabletop (drag mode): Dropping item to pool:', item.id, { itemX, itemY, itemWidth, itemHeight });
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: item.id,
+                  x: itemX,
+                  y: itemY,
+                  inCursorSlot: false
+                }
+              });
+            });
+
+            // Clear the slot
+            cursorSlotRef.current = [];
+            setCursorSlot([]);
+            setCursorPosition(null);
+            setCursorSlotSource(null);
+            e.stopPropagation();
+            e.preventDefault();
+            return;
+          } else {
+            console.log('Tabletop (drag mode): No pool data found in panel object');
+          }
+        }
+      } else {
+        console.log('Tabletop (drag mode): No pool panel found at cursor position');
       }
 
       // Check if clicking on a deck or pile - handle it directly here
@@ -2575,25 +2879,30 @@ export const Tabletop: React.FC = () => {
       return;
     }
 
-    // Check if clicking on a UI object - if it has an id, process normally
-    // If no id (background), check for panning or dropping cursor slot
-    if (!id) {
-      if (e.button === 0 && e.shiftKey && currentTool !== 'marker') {
-        setIsPanning(true);
-        // Store initial mouse position AND scroll position for direct scroll manipulation
-        dragStartRef.current = {
-          x: e.clientX,
-          y: e.clientY,
-          scrollLeft: scrollContainerRef.current?.scrollLeft || 0,
-          scrollTop: scrollContainerRef.current?.scrollTop || 0
-        };
-        return;
-      }
+    // Pan view with Shift+drag - works on empty space AND objects (but not UI objects)
+    // UI objects (panels/windows) should handle their own drag
+    const item = id ? state.objects[id] : null;
+    const isUIObject = item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW);
 
-      // If cursor slot has items and we click without shift, drop all items
+    if (e.button === 0 && e.shiftKey && currentTool !== 'marker' && !isUIObject) {
+      setIsPanning(true);
+      // Store initial mouse position AND scroll position for direct scroll manipulation
+      dragStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: scrollContainerRef.current?.scrollLeft || 0,
+        scrollTop: scrollContainerRef.current?.scrollTop || 0
+      };
+      return;
+    }
+
+    // Check if clicking on a UI object - if it has an id, process normally
+    // If no id (background), check for dropping cursor slot
+    if (!id) {
+      // If cursor slot has items and we click without shift/ctrl/meta, drop all items
       // Exception: if source is 'archetype' (tokens from archetype click), don't drop - treat like Shift is held
       // Use cursorSlotRef.current to check synchronously (state update is async)
-      if (e.button === 0 && !e.shiftKey && cursorSlotRef.current.length > 0 && cursorSlotSource !== 'archetype') {
+      if (e.button === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey && cursorSlotRef.current.length > 0 && cursorSlotSource !== 'archetype') {
         e.preventDefault(); // Prevent native browser drag-and-drop
         e.stopPropagation();
         dropCursorSlot(e.clientX, e.clientY);
@@ -2618,8 +2927,10 @@ export const Tabletop: React.FC = () => {
       // Hyperscale layer check - only allow dragging objects in selected hyperscale layers
       // This applies to all players including GM
       // EXCEPTION: Objects in current player's cursor slot can always be moved
+      // EXCEPTION: Objects in pool zones can always be moved (ignore hyperscale restrictions)
       const isInCursorSlot = item.draggingPlayerId === state.activePlayerId;
-      if (!isInCursorSlot) {
+      const isInPoolZone = item.x >= 2500; // Simple check if object is in pool zone
+      if (!isInCursorSlot && !isInPoolZone) {
         const objLayer = item.hyperscaleLayerId || 'none';
         const selectedLayers = state.selectedHyperscaleLayerIds;
         const layerAllowed = objLayer === 'none' || selectedLayers.includes(objLayer);
@@ -2628,16 +2939,16 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      // Cards and tokens: Shift+click immediately adds to cursor slot
-      if (e.shiftKey && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
+      // Cards and tokens: Ctrl+click or Shift+click immediately adds to cursor slot
+      if ((e.shiftKey || e.ctrlKey || e.metaKey) && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
         addToCursorSlot(id, item);
         return;
       }
 
-      // If cursor slot has items and we click without shift, drop all items first
+      // If cursor slot has items and we click without shift/ctrl/meta, drop all items first
       // Exception: if source is 'archetype' (tokens from archetype click), don't drop
       // Use cursorSlotRef.current to check synchronously (state update is async)
-      if (!e.shiftKey && cursorSlotRef.current.length > 0 && cursorSlotSource !== 'archetype') {
+      if (!e.shiftKey && !e.ctrlKey && !e.metaKey && cursorSlotRef.current.length > 0 && cursorSlotSource !== 'archetype') {
         dropCursorSlot(e.clientX, e.clientY);
         return; // Don't proceed with normal drag handling
       }
@@ -2653,8 +2964,8 @@ export const Tabletop: React.FC = () => {
         justDroppedRef.current = false;
       }
 
-      // For cards and tokens: Shift+click immediately adds to cursor slot
-      // Without Shift: track mouse movement, add to slot after 5px drag threshold
+      // For cards and tokens: Ctrl+click immediately adds to cursor slot
+      // Without Ctrl: track mouse movement, add to slot after 5px drag threshold
 
       // Store click start position for click detection
       dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -2759,7 +3070,7 @@ export const Tabletop: React.FC = () => {
 
       if (distance >= moveThreshold) {
         // Mouse moved enough - add to cursor slot for drag
-        // Use same positioning logic as Shift+click (WITHOUT mousePosition) to avoid jump
+        // Use same positioning logic as Ctrl+click (WITHOUT mousePosition) to avoid jump
         // The cursor will be positioned at card center, then follow mouse movement
         addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
         // IMPORTANT: Update cursor position to current mouse position AFTER adding to slot
@@ -3223,16 +3534,17 @@ export const Tabletop: React.FC = () => {
       }
     }
 
-    // Notify that drag ended (for main menu and hand panel)
-    // Only send card-drag-end if card was NOT added to a deck or pile
+    // Notify that drag ended (for main menu, hand panel, and pool panel)
+    // Send object-drag-end for cards and tokens that were NOT added to a deck or pile
     if (draggingId && !cardAddedToDeckOrPile) {
       const draggingObj = state.objects[draggingId];
-      if (draggingObj && draggingObj.type === ItemType.CARD) {
-        // Send card-drag-end for hand panel to receive cards
-        window.dispatchEvent(new CustomEvent('card-drag-end', {
+      if (draggingObj && (draggingObj.type === ItemType.CARD || draggingObj.type === ItemType.TOKEN)) {
+        // Send object-drag-end for panels to receive objects
+        window.dispatchEvent(new CustomEvent('object-drag-end', {
           detail: {
             wasDragging: true,
-            cardId: draggingId,
+            objectId: draggingId,
+            objectType: draggingObj.type,
             source: 'tabletop',
             x: dropClientX,
             y: dropClientY,
@@ -3241,8 +3553,23 @@ export const Tabletop: React.FC = () => {
           }
         }));
 
+        // Also send card-drag-end for backward compatibility with hand panel
+        if (draggingObj.type === ItemType.CARD) {
+          window.dispatchEvent(new CustomEvent('card-drag-end', {
+            detail: {
+              wasDragging: true,
+              cardId: draggingId,
+              source: 'tabletop',
+              x: dropClientX,
+              y: dropClientY,
+              offsetX: 0,
+              offsetY: 0,
+            }
+          }));
+        }
+
         // Also send tabletop-drag-end for main menu
-        if ((draggingObj as CardType).location === CardLocation.TABLE) {
+        if (draggingObj.type === ItemType.CARD && (draggingObj as CardType).location === CardLocation.TABLE) {
           window.dispatchEvent(new CustomEvent('tabletop-drag-end'));
         }
       }

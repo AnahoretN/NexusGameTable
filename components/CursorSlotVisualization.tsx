@@ -144,7 +144,15 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
       }}
     >
       {/* Render active cursor slot items */}
-      {cursorSlot.length > 0 && cursorSlot.map((item, index) => {
+      {cursorSlot.length > 0 && (() => {
+        // Sort by originalZIndex in DESCENDING order to preserve layer relationships
+        // Items with higher originalZIndex (top) should be rendered first (on top in stack)
+        const sortedSlot = [...cursorSlot].sort((a, b) => {
+          const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+          const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+          return zB - zA; // Descending order - higher Z first
+        });
+        return sortedSlot.map((item, sortedIndex) => {
         const isCard = item.type === ItemType.CARD;
 
         let baseWidth = item.width ?? (isCard ? 63 : 50);
@@ -162,13 +170,16 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
         const width = baseWidth * pixelsPerVU;
         const height = baseHeight * pixelsPerVU;
 
-        const slotIndex = (item as any).cursorSlotIndex ?? 0;
-        const newestIndex = cursorSlot.length - 1;
-        const offsetFromBack = Math.max(0, newestIndex - slotIndex);
+        // Calculate offset based on sorted position
+        // Highest originalZIndex (top, sortedIndex=0) gets no offset, lower gets more offset
+        const offsetFromFront = sortedIndex;
         const offsetAmount = Math.min(width, height) * 0.05;
-        const offsetX = offsetFromBack * offsetAmount;
-        const offsetY = offsetFromBack * offsetAmount;
-        const zIndex = isCard ? index : index + 1000;
+        const offsetX = offsetFromFront * offsetAmount;
+        const offsetY = offsetFromFront * offsetAmount;
+        // Use sequential zIndex for proper stacking in visualization
+        // First item (top) gets highest zIndex
+        const totalItems = sortedSlot.length;
+        const zIndex = isCard ? (totalItems - sortedIndex) : (totalItems - sortedIndex) + 1000;
 
         if (isCard) {
           const card = item as CardType;
@@ -240,7 +251,8 @@ export const CursorSlotVisualization: React.FC<CursorSlotVisualizationProps> = (
             />
           </div>
         );
-      })}
+      });
+      })()}
 
       {/* Render held items (transition after drop, no fade) */}
       {cursorSlot.length === 0 && heldItems.map((heldItem, index) => {
