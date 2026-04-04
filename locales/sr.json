@@ -364,5 +364,6 @@
 "Create Pack": "Napravi pak",
 "A pack contains your game state and all custom images in a single file": "Pak sadrži stanje igre i sve prilagođene slike u jednom fajlu",
 "Create a pack file from the current game state": "Napravi fajl paka iz trenutnog stanja igre",
-"Load a pack file to restore the game": "Učitaj fajl paka za vraćanje igre"
+"Load a pack file to restore the game": "Učitaj fajl paka za vraćanje igre",
+"Destroy": "Uništi"
 }
