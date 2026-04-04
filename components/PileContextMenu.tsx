@@ -84,7 +84,7 @@ export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, de
 
       {/* Menu container - higher z-index than overlay */}
       <div
-        className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100 pointer-events-auto"
+        className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[175px] text-sm animate-in fade-in zoom-in-95 duration-100 pointer-events-auto"
         style={menuStyle}
         onMouseDown={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.stopPropagation()}

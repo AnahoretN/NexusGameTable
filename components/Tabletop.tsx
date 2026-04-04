@@ -582,6 +582,32 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('add-to-cursor-slot', handleAddToSlot);
   }, [cursorSlot.length, dispatch, state.objects]);
 
+  // Auto-add objects to cursor slot when their location changes to CURSOR_SLOT
+  // This handles actions like PLAY_TOP_CARD that change location directly
+  useEffect(() => {
+    const cursorSlotObjects = Object.values(state.objects).filter(obj => {
+      const item = obj as any;
+      return item.location === CardLocation.CURSOR_SLOT &&
+             !cursorSlot.some(slotItem => slotItem.id === obj.id);
+    });
+
+    if (cursorSlotObjects.length > 0) {
+      console.log('[Tabletop] Auto-adding objects to cursor slot:', cursorSlotObjects.map(obj => ({ id: obj.id, type: obj.type, name: obj.name })));
+
+      // Add each object to cursor slot
+      cursorSlotObjects.forEach(obj => {
+        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+          detail: {
+            cardId: obj.id,
+            clientX: cursorPosition?.x || window.innerWidth / 2,
+            clientY: cursorPosition?.y || window.innerHeight / 2,
+            source: 'hold'
+          }
+        }));
+      });
+    }
+  }, [state.objects, cursorSlot, cursorPosition]);
+
   // Listen for add-token-to-cursor-slot events from ToolsPanel
   useEffect(() => {
     const handleAddTokenToSlot = (e: Event) => {
@@ -1426,6 +1452,10 @@ export const Tabletop: React.FC = () => {
       case 'returnAllAndShuffle':
         // Return all cards and shuffle the deck
         if (obj.type === ItemType.DECK) {
+          // Dispatch event for shuffle animation before returning cards
+          window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
+            detail: { deckId: obj.id }
+          }));
           dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: obj.id, shuffleAfter: true } });
         }
         break;
@@ -2701,6 +2731,7 @@ export const Tabletop: React.FC = () => {
       // This prevents interference with context menu button clicks in both Tabletop and Pool panels
       const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
       const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
+      const submenuElement = target.closest('[data-submenu="true"]');
       const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
       const topDeckModalElement = target.closest('[data-modal="top-deck"]');
 
@@ -2709,12 +2740,13 @@ export const Tabletop: React.FC = () => {
         targetClasses: target.className,
         foundTableMenu: !!tableContextMenuElement,
         foundPoolMenu: !!poolContextMenuElement,
+        foundSubmenu: !!submenuElement,
         foundSearchDeckModal: !!searchDeckModalElement,
         foundTopDeckModal: !!topDeckModalElement,
         targetDataAttr: target.getAttribute('data-context-menu')
       });
 
-      if (tableContextMenuElement || poolContextMenuElement || searchDeckModalElement || topDeckModalElement) {
+      if (tableContextMenuElement || poolContextMenuElement || submenuElement || searchDeckModalElement || topDeckModalElement) {
         console.log('[Tabletop] Click inside protected element, ignoring global click');
         return;
       }
@@ -2994,9 +3026,10 @@ export const Tabletop: React.FC = () => {
       // This prevents interference with context menu button clicks in both Tabletop and Pool panels
       const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
       const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
+      const submenuElement = target.closest('[data-submenu="true"]');
       const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
       const topDeckModalElement = target.closest('[data-modal="top-deck"]');
-      if (tableContextMenuElement || poolContextMenuElement || searchDeckModalElement || topDeckModalElement) {
+      if (tableContextMenuElement || poolContextMenuElement || submenuElement || searchDeckModalElement || topDeckModalElement) {
         console.log('[Tabletop] Mouseup inside protected element, ignoring global mouseup');
         return;
       }
@@ -4417,9 +4450,10 @@ export const Tabletop: React.FC = () => {
       // This prevents interference with context menu button clicks in both Tabletop and Pool panels
       const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
       const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
+      const submenuElement = target.closest('[data-submenu="true"]');
       const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
       const topDeckModalElement = target.closest('[data-modal="top-deck"]');
-      if (tableContextMenuElement || poolContextMenuElement || searchDeckModalElement || topDeckModalElement) {
+      if (tableContextMenuElement || poolContextMenuElement || submenuElement || searchDeckModalElement || topDeckModalElement) {
         console.log('[Tabletop] Mouseup inside protected element, ignoring drag handler');
         return;
       }
@@ -7092,6 +7126,7 @@ export const Tabletop: React.FC = () => {
                 onClose={() => setContextMenu(null)}
                 allObjects={state.objects}
                 language={state.language}
+                shiftKey={contextMenu.shiftKey}
                 nexusBoardEditingId={nexusBoardAddingCell}
                 contextMenuType="tabletop"
             />

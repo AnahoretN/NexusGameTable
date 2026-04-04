@@ -7,12 +7,12 @@ import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, 
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
-import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
+import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_MODAL_WIDTH_VU, DEFAULT_MODAL_MIN_WIDTH_VU, DEFAULT_MODAL_MAX_WIDTH_VU, DEFAULT_MODAL_HEIGHT_VU } from '../constants';
 
-const DEFAULT_MODAL_WIDTH = 1400; // px
-const MIN_MODAL_WIDTH = 900; // px
-const MAX_MODAL_WIDTH = 1800; // px
-const DEFAULT_MODAL_HEIGHT = 900; // px
+const DEFAULT_MODAL_WIDTH = DEFAULT_MODAL_WIDTH_VU; // vu
+const MIN_MODAL_WIDTH = DEFAULT_MODAL_MIN_WIDTH_VU; // vu
+const MAX_MODAL_WIDTH = DEFAULT_MODAL_MAX_WIDTH_VU; // vu
+const DEFAULT_MODAL_HEIGHT = DEFAULT_MODAL_HEIGHT_VU; // vu
 
 // Lazy card component - renders sequentially one by one for smooth visual fill effect
 // Cards are rendered in order with a small delay between each (16ms per card index)
@@ -190,12 +190,15 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const gmInitializedRef = useRef(false);
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
+  // Get pixelsPerVU for converting vu to pixels
+  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+  const vuToPx = useCallback((vu: number) => vu * pixelsPerVU, [pixelsPerVU]);
 
   const [cardOrder, setCardOrder] = useState<string[]>(
     pile ? pile.cardIds : deck.cardIds
   );
 
-  // Modal width state
+  // Modal width state (stored in vu)
   const [modalWidth, setModalWidth] = useState(DEFAULT_MODAL_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ mouseX: number; startWidth: number } | null>(null);
@@ -448,7 +451,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
-    console.log('[SearchDeckModal] handleContextMenu called for card:', card.name);
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({
@@ -456,7 +458,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       y: e.clientY,
       object: card
     });
-    console.log('[SearchDeckModal] Context menu state set');
   }, []);
 
   const executeMenuAction = useCallback((action: string) => {
@@ -685,9 +686,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       if (!isResizing || !resizeStartRef.current) return;
 
       const deltaX = resizeStartRef.current.mouseX - e.clientX;
-      const windowWidth = window.innerWidth;
-      const deltaVw = (deltaX / windowWidth) * 100;
-      const newWidth = resizeStartRef.current.startWidth + deltaVw;
+      const deltaVU = deltaX / pixelsPerVU;
+      const newWidth = resizeStartRef.current.startWidth + deltaVU;
 
       setModalWidth(Math.max(MIN_MODAL_WIDTH, Math.min(MAX_MODAL_WIDTH, newWidth)));
     };
@@ -705,7 +705,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isResizing]);
+  }, [isResizing, pixelsPerVU]);
 
   return createPortal(
     <div className="fixed inset-0 z-[100002] flex items-center justify-center">
@@ -713,7 +713,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         ref={modalContainerRef}
         data-modal="search-deck"
         className="bg-slate-900 border border-slate-700 flex flex-col relative overflow-hidden"
-        style={{ width: `${modalWidth}px`, height: `${DEFAULT_MODAL_HEIGHT}px` }}
+        style={{ width: `${vuToPx(modalWidth)}px`, height: `${vuToPx(DEFAULT_MODAL_HEIGHT)}px` }}
       >
         {/* Header - minimal style */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">

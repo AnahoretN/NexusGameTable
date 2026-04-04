@@ -126,8 +126,9 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       if (deck) {
         const pile = deck.piles?.find(p => p.id === pileId);
         if (pile) {
-          // For now, just log - we could implement pile modal later
-          console.log('[PoolTabletop] Open pile modal:', { pileId, pileName: pile.name });
+          console.log('[PoolTabletop] Opening pile search modal:', { pileId, pileName: pile.name });
+          setSearchModalDeck(deck);
+          setSearchModalPile(pile);
         }
       }
     };
@@ -207,30 +208,6 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       // Exclude UI objects (panels and windows) - they have their own rendering
       if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
         return false;
-      }
-
-      // Debug logging for cards
-      if (obj.type === ItemType.CARD) {
-        const card = obj as any;
-        const objX = obj.x || 0;
-        const objY = obj.y || 0;
-
-        // Check if card is in pool bounds
-        const isInBounds = objX < poolMaxX && objX + (obj.width || 100) > poolMinX &&
-                           objY < poolMaxY && objY + (obj.height || 100) > poolMinY;
-
-        if (isInBounds) {
-          console.log('[PoolTabletop] Card in pool bounds:', {
-            id: obj.id,
-            name: obj.name,
-            location: card.location,
-            isOnTable: card.isOnTable,
-            inCursorSlot: card.inCursorSlot,
-            x: objX,
-            y: objY,
-            poolBounds: { minX: poolMinX, maxX: poolMaxX, minY: poolMinY, maxY: poolMaxY }
-          });
-        }
       }
 
       // Exclude hidden objects (isOnTable: false)
@@ -533,10 +510,8 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     ];
 
     const isSpecialAction = specialActions.some(specialAction => action.startsWith(specialAction));
-    console.log('[PoolTabletop] Is special action:', isSpecialAction);
 
     if (isSpecialAction) {
-      console.log('[PoolTabletop] Executing via executeContextMenuAction...');
       try {
         executeContextMenuAction(action, {
           object: targetObject,
@@ -915,7 +890,8 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     const target = e.target as HTMLElement;
     const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
     const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
-    if (tableContextMenuElement || poolContextMenuElement) {
+    const submenuElement = target.closest('[data-submenu="true"]');
+    if (tableContextMenuElement || poolContextMenuElement || submenuElement) {
       console.log('[PoolTabletop] Mouseup inside context menu, ignoring drop handler');
       return;
     }
@@ -1550,7 +1526,6 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
           onClose={() => setContextMenu(null)}
           allObjects={state.objects}
           language={state.language}
-          hideCardActions={false}
           shiftKey={contextMenu.shiftKey}
           nexusBoardEditingId={null} // Pool panels don't support Nexus Board editing
           contextMenuType="pool"
