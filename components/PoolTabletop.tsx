@@ -330,6 +330,14 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
   const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
   const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
 
+  // Check if cursor slot has cards (for deck hover highlight)
+  const cursorSlotHasCards = useMemo(() => {
+    return getCursorSlotObjects(state.objects).length > 0;
+  }, [state.objects]);
+
+  // Check if dragging a card from table
+  const isDraggingCardFromTable = false; // Pool panels don't support dragging from table
+
   // Calculate pixels per VU
   const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
 
@@ -1762,7 +1770,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
                 <DeckComponent
                   key={obj.id}
                   deck={deckObj}
-                  draggingId={isDraggingDeck ? obj.id : null}
+                  draggingId={isDraggingCardFromTable ? obj.id : null}
                   hoveredDeckId={hoveredDeckId}
                   hoveredPileId={hoveredPileId}
                   setHoveredDeckId={setHoveredDeckId}
@@ -1781,7 +1789,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
                   setPilesButtonMenu={() => {}}
                   setDeleteCandidateId={setDeleteCandidateId}
                   executeClickAction={executeClickAction}
-                  cursorSlotHasCards={false}
+                  cursorSlotHasCards={cursorSlotHasCards}
                   allObjects={state.objects}
                   currentTool={'none'}
                   pixelsPerVU={pixelsPerVU}
