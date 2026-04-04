@@ -1,6 +1,7 @@
 import { t as translate, Locale } from '../utils/translations';
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { logger } from '../utils/logger';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType, AppLanguage, Player } from '../types';
@@ -105,7 +106,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       if (cardsToAdd.length > 0) {
         const player = state.players.find(p => p.id === selectedPlayerId);
         if (!player) {
-          console.warn('[HandPanel] Player not found:', selectedPlayerId);
+          logger.warn('[HandPanel] Player not found:', selectedPlayerId);
           setIsCursorOverHand(false);
           return;
         }
@@ -132,7 +133,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
             type: 'UPDATE_OBJECT',
             payload: {
               id: card.id,
-              location: 'HAND',
+              location: CardLocation.HAND,
               ownerId: selectedPlayerId,
               inCursorSlot: false,
               isOnTable: true  // CRITICAL: Cards in hand must be visible (isOnTable=true)
@@ -845,6 +846,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
+    return undefined;
   }, [contextMenu, scaleMenu]);
 
   return (
@@ -1242,3 +1244,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     </div>
   );
 };
+
+// Memoize HandPanel to prevent unnecessary re-renders
+export const HandPanelMemo = React.memo(HandPanel, (prevProps, nextProps) => {
+  return prevProps.panel.id === nextProps.panel.id;
+});

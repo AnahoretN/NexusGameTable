@@ -214,6 +214,7 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
 
   // Additional card properties
   isHorizontal?: boolean; // Used internally for cursor slot rendering
+  fromPoolPanel?: string; // ID of pool panel this card was picked up from (if any)
   __pendingPlayTop?: { // Internal: stores pending play-top data for undo when card is dropped
     deckId: string;
     previousCardIds: string[];
@@ -279,6 +280,7 @@ export interface Deck extends GameItem {
 
   // Remember proportions button state
   linkCardSize?: boolean;
+  fromPoolPanel?: string; // ID of pool panel this deck was picked up from (if any)
 }
 
 export interface Token extends GameItem {
@@ -294,6 +296,7 @@ export interface Token extends GameItem {
   showName?: boolean;
   // Grid cell magnetism optimization - store direct reference to snapped cell
   gridCellKey?: string; // Format: "boardId:col,row" for quick lookup
+  fromPoolPanel?: string; // ID of pool panel this token was picked up from (if any)
 }
 
 // Token Type - a template for creating tokens
@@ -398,7 +401,9 @@ export interface DiceObject extends GameItem {
   currentValue: number;
   shape?: TokenShape;
   rollStartTime?: number; // Timestamp when roll animation started (for syncing across players)
+  rolling?: boolean; // Whether the dice is currently rolling (for animation)
   diceGroupId?: string; // ID of the dice group this dice belongs to (optional)
+  fromPoolPanel?: string; // ID of pool panel this dice was picked up from (if any)
 }
 
 // Dice group for rolling multiple dice together
@@ -414,8 +419,11 @@ export interface Counter extends GameItem {
   type: ItemType.COUNTER;
   value: number;
   baseValue?: number;
+  minValue?: number; // Minimum value for counter
   maxValue?: number;
   allowNegative?: boolean;
+  wrapAround?: boolean; // Whether counter wraps around when reaching min/max
+  fromPoolPanel?: string; // ID of pool panel this counter was picked up from (if any)
 }
 
 export interface Board extends GameItem {
@@ -428,6 +436,7 @@ export interface Board extends GameItem {
   showGrid?: boolean;  // Whether to show the grid visually
   snapToGrid: boolean;
   linkGridSize?: boolean; // Remember proportions button state for grid settings
+  fromPoolPanel?: string; // ID of pool panel this board was picked up from (if any)
 
   // Grid cell magnetism system - stores magnet points for each grid cell
   gridCellMagnetPoints?: Record<string, GridCellMagnetPoints>; // Key: "col,row" string
@@ -439,6 +448,7 @@ export interface Randomizer extends GameItem {
   randomizerType: 'spinner' | 'coin' | 'custom';
   currentValue?: string;
   options?: string[]; // For custom randomizers
+  fromPoolPanel?: string; // ID of pool panel this randomizer was picked up from (if any)
 }
 
 // Drawing object - contains strokes created with marker tool
@@ -755,6 +765,8 @@ export interface PoolPanelData {
   offsetX: number; // X position of pool zone in game space
   offsetY: number; // Y position of pool zone in game space
   // Pool zone is always fixed at 1000x1000 vu
+  width?: number; // Width of pool zone (default 1000)
+  height?: number; // Height of pool zone (default 1000)
   territoryId?: string; // Unique identifier for this pool's territory
   zoom?: number; // Zoom level for each tab (stored per tab in tabs array)
 }

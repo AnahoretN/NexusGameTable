@@ -24,7 +24,6 @@ interface BoardWithResizeProps {
 export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     token,
     obj,
-    isOwner,
     isDragging,
     isResizing,
     canResize,
@@ -34,7 +33,6 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     gridSize,
     gridWidth,
     gridHeight,
-    showGrid,
 }) => {
     const [isHoveringCorner, setIsHoveringCorner] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);

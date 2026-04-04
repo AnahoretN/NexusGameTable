@@ -4,6 +4,7 @@ import { SvgTokenShape } from './SvgTokenShape';
 import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp, ArrowDown, Lock, Unlock, Shuffle, Search, Hand, Layers, Pin, Undo, Plus } from 'lucide-react';
 import { getCardSettings } from '../utils/cardUtils';
 import { executeActionButtonUniversal } from '../utils/actionButtonsHandler';
+import { logger } from '../utils/logger';
 
 interface ObjectRendererProps {
   obj: TableObject;
@@ -75,7 +76,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
             backgroundSize: `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`,
             backgroundPosition: `${colPercent}% ${rowPercent}%`,
             backgroundRepeat: 'no-repeat',
-            imageRendering: 'pixelated'
+            imageRendering: 'pixelated' as const
           };
         } else if (card.content) {
           return {
@@ -104,7 +105,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
                 backgroundSize: `${altBack.columns * 100}% ${altBack.rows * 100}%`,
                 backgroundPosition: `${colPercent}% ${rowPercent}%`,
                 backgroundRepeat: 'no-repeat',
-                imageRendering: 'pixelated'
+                imageRendering: 'pixelated' as const
               };
             } else {
               return {
@@ -133,7 +134,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
               backgroundSize: `${cols * 100}% ${rows * 100}%`,
               backgroundPosition: `${colPercent}% ${rowPercent}%`,
               backgroundRepeat: 'no-repeat',
-              imageRendering: 'pixelated'
+              imageRendering: 'pixelated' as const
             };
           } else {
             return {
@@ -155,14 +156,14 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
 
     const backgroundStyles = getBackgroundStyles();
 
-    console.log('[ObjectRenderer] Rendering CARD:', {
+    logger.log('[ObjectRenderer] Rendering CARD:', {
       cardId: obj.id,
       cardName: card.name,
       faceUp: card.faceUp,
       isGM: isGM
     });
 
-    console.log('[ObjectRenderer] CARD action buttons:', {
+    logger.log('[ObjectRenderer] CARD action buttons:', {
       cardId: obj.id,
       cardName: card.name,
       deckId: card.deckId,
@@ -172,10 +173,10 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
 
     // Log each button being rendered
     if (actionButtons && actionButtons.length > 0) {
-      console.log('[ObjectRenderer] Rendering buttons:', actionButtons);
+      logger.log('[ObjectRenderer] Rendering buttons:', actionButtons);
       actionButtons.forEach(action => {
         const hasConfig = !!getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects);
-        console.log(`[ObjectRenderer] Button ${action}:`, hasConfig ? 'WILL RENDER' : 'MISSING CONFIG');
+        logger.log(`[ObjectRenderer] Button ${action}:`, hasConfig ? 'WILL RENDER' : 'MISSING CONFIG');
       });
     }
 
@@ -238,7 +239,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
               {actionButtons.map((action) => {
                 const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects);
                 if (!buttonConfig) {
-                  console.log('[ObjectRenderer] No button config for action:', action);
+                  logger.log('[ObjectRenderer] No button config for action:', action);
                   return null;
                 }
                 return (
@@ -536,8 +537,24 @@ function getActionButtonConfig(
 
   const config = configs[action];
   if (!config) {
-    console.log('[ObjectRenderer] No config for action:', action, 'available actions:', Object.keys(configs));
+    logger.log('[ObjectRenderer] No config for action:', action, 'available actions:', Object.keys(configs));
     return null;
   }
   return config;
 }
+
+// Memoize ObjectRenderer to prevent unnecessary re-renders
+export const ObjectRendererMemo = React.memo(ObjectRenderer, (prevProps, nextProps) => {
+  // Compare critical props to determine if re-render is needed
+  return (
+    prevProps.obj.id === nextProps.obj.id &&
+    prevProps.obj.rotation === nextProps.obj.rotation &&
+    prevProps.obj.type === nextProps.obj.type &&
+    prevProps.obj.locked === nextProps.obj.locked &&
+    prevProps.obj.isOnTable === nextProps.obj.isOnTable &&
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.isDragging === nextProps.isDragging &&
+    prevProps.isGM === nextProps.isGM &&
+    prevProps.showTokenName === nextProps.showTokenName
+  );
+});

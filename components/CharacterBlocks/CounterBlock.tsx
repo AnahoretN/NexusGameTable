@@ -21,8 +21,6 @@ export const CounterBlock: React.FC<CounterBlockProps> = ({ block, editable, onC
   const data = block.data as CounterBlockData;
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [editInput, setEditInput] = useState('');
-  const [editName, setEditName] = useState(false);
-  const [nameInput, setNameInput] = useState('');
 
   const handleValueChange = useCallback((counterId: string, newValue: number) => {
     if (!editable) return;
@@ -35,22 +33,6 @@ export const CounterBlock: React.FC<CounterBlockProps> = ({ block, editable, onC
 
     onChange({ ...data, counters: updatedCounters });
   }, [data, editable, onChange]);
-
-  const handleStartEditName = useCallback(() => {
-    if (!editable) return;
-    setNameInput(data.counters[0]?.name || 'Counter');
-    setEditName(true);
-  }, [editable, data.counters]);
-
-  const handleSaveName = useCallback((newName: string) => {
-    const trimmedName = newName.trim() || 'Counter';
-    const updatedCounters = data.counters.map(counter => ({
-      ...counter,
-      name: trimmedName
-    }));
-    onChange({ ...data, counters: updatedCounters });
-    setEditName(false);
-  }, [data, onChange]);
 
   const handleStartEditCounterName = useCallback((counterId: string, currentName: string) => {
     if (!editable) return;

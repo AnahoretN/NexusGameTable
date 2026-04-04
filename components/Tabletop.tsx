@@ -194,7 +194,7 @@ export const Tabletop: React.FC = () => {
   const isPanningRef = useRef(false);
   const resizingIdRef = useRef<string | null>(null);
   const draggingPileRef = useRef<{ pile: CardPile; deck: DeckType } | null>(null);
-  const cursorSlotRef = useRef<(CardType | TokenType)[]>([]);
+  const cursorSlotRef = useRef<(CardType | TokenType | BoardType)[]>([]);
   // Track items currently being processed for adding to cursor slot to prevent duplicates
   const processingAddToSlotRef = useRef<Set<string>>(new Set());
   // Track objects that were recently in local cursor slot to prevent showing their shadow version
@@ -295,7 +295,7 @@ export const Tabletop: React.FC = () => {
         const panelId = contentArea.getAttribute('data-pool-content');
         if (!panelId) continue;
 
-        const panelObj = state.objects[panelId as string];
+        const panelObj = state.objects[panelId as string] as PanelObject | WindowObject | undefined;
         if (panelObj?.minimized) continue;
 
         // IMPORTANT: Skip the source pool panel ONLY if there are other panels available
@@ -346,14 +346,14 @@ export const Tabletop: React.FC = () => {
     };
 
     const container = scrollContainerRef.current;
-    if (container) {
-      container.addEventListener('dragstart', handleDragStart);
-      container.addEventListener('selectstart', handleSelectStart);
-      return () => {
-        container.removeEventListener('dragstart', handleDragStart);
-        container.removeEventListener('selectstart', handleSelectStart);
-      };
-    }
+    if (!container) return;
+
+    container.addEventListener('dragstart', handleDragStart);
+    container.addEventListener('selectstart', handleSelectStart);
+    return () => {
+      container.removeEventListener('dragstart', handleDragStart);
+      container.removeEventListener('selectstart', handleSelectStart);
+    };
   }, []);
 
   // Listen for add-to-cursor-slot events from other components (e.g., HandPanel)
@@ -367,8 +367,9 @@ export const Tabletop: React.FC = () => {
         clientY: number;
         source?: 'shift' | 'hold';
         fromPoolPanel?: string;
+        cardOverride?: any;
       }>;
-      const { cardId, clientX, clientY, source = 'shift', fromPoolPanel } = customEvent.detail;
+      const { cardId, clientX, clientY, source = 'shift', fromPoolPanel, cardOverride } = customEvent.detail;
 
 
       const itemLookupStart = performance.now();
@@ -380,7 +381,8 @@ export const Tabletop: React.FC = () => {
 
       // IMPORTANT: Set dragThresholdRef.addedToSlot = true for events from pool panel/hand panel
       // This ensures wasThresholdReached is true when handleGlobalMouseUp processes the drop
-      if (source === 'hold' && (fromPoolPanel || (item as any).location === CardLocation.HAND)) {
+      // Support both 'hold' (drag from panel) and 'shift' (Ctrl+click)
+      if ((source === 'hold' || source === 'shift') && (fromPoolPanel || (item as any).location === CardLocation.HAND || (item as any).location === CardLocation.TABLE || (item as any).location === CardLocation.DECK)) {
         dragThresholdRef.current = {
           initialX: clientX,
           initialY: clientY,
@@ -435,7 +437,7 @@ export const Tabletop: React.FC = () => {
         let itemClone: TableObject;
 
         if (item.type === ItemType.CARD) {
-          const card = item as CardType;
+          const card = cardOverride || item as CardType;
           // Get deck to check orientation
           const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
           const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
@@ -485,9 +487,16 @@ export const Tabletop: React.FC = () => {
             id: randomizer.id,
             type: ItemType.RANDOMIZER,
             name: randomizer.name,
+            x: randomizer.x,
+            y: randomizer.y,
+            rotation: randomizer.rotation,
             width: randomizer.width,
             height: randomizer.height,
-            currentFace: randomizer.currentFace,
+            content: randomizer.content,
+            locked: randomizer.locked,
+            isOnTable: randomizer.isOnTable,
+            randomizerType: randomizer.randomizerType,
+            currentValue: randomizer.currentValue,
             zIndex: randomizer.zIndex ?? 0,
             hyperscaleLayerId: randomizer.hyperscaleLayerId ?? 'tokens',
           } as Randomizer;
@@ -576,12 +585,12 @@ export const Tabletop: React.FC = () => {
 
 
         const updateStart = performance.now();
-        setCursorSlot(prev => [...prev, itemClone]);
+        setCursorSlot(prev => [...prev, itemClone as CardType | TokenType | BoardType]);
 
         const dispatchStart = performance.now();
-        const updatePayload: any = { id: cardId, inCursorSlot: true };
+        const updatePayload: any = { id: cardId, inCursorSlot: true, isOnTable: false };
         if (fromPoolPanel) {
-          updatePayload.cursorSlotSourcePanel = fromPoolPanel;
+          updatePayload.fromPoolPanel = fromPoolPanel;
         }
         dispatch({ type: 'UPDATE_OBJECT', payload: updatePayload });
 
@@ -607,19 +616,28 @@ export const Tabletop: React.FC = () => {
   }, [cursorSlot.length, dispatch, state.objects]);
 
   // Auto-add objects to cursor slot when their location changes to CURSOR_SLOT
-  // This handles actions like PLAY_TOP_CARD that change location directly
+  // This handles PLAY_TOP_CARD which sets location to CURSOR_SLOT but doesn't fire event
   useEffect(() => {
     const cursorSlotObjects = Object.values(state.objects).filter(obj => {
       const item = obj as any;
-      return item.location === CardLocation.CURSOR_SLOT &&
-             !cursorSlot.some(slotItem => slotItem.id === obj.id);
+      // Skip if already in cursor slot
+      if (cursorSlot.some(slotItem => slotItem.id === obj.id)) return false;
+      // Skip if already being processed
+      if (processingAddToSlotRef.current.has(obj.id)) return false;
+      // Skip if explicitly handled via add-to-cursor-slot event
+      // (these objects are added via event handler, not auto-add)
+      // Only auto-add objects with __pendingPlayTop (PLAY_TOP_CARD action)
+      if (!item.__pendingPlayTop) return false;
+      return item.location === CardLocation.CURSOR_SLOT;
     });
 
     if (cursorSlotObjects.length > 0) {
-      console.log('[Tabletop] Auto-adding objects to cursor slot:', cursorSlotObjects.map(obj => ({ id: obj.id, type: obj.type, name: obj.name })));
+      console.log('[Tabletop] Auto-adding PLAY_TOP_CARD objects to cursor slot:', cursorSlotObjects.map(obj => ({ id: obj.id, type: obj.type, name: obj.name })));
 
-      // Add each object to cursor slot
       cursorSlotObjects.forEach(obj => {
+        // Mark as processing BEFORE dispatching to prevent race conditions
+        processingAddToSlotRef.current.add(obj.id);
+
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: obj.id,
@@ -658,7 +676,7 @@ export const Tabletop: React.FC = () => {
       // Find ALL existing tokens with this archetypeId
       const existingTokens = Object.values(state.objects)
         .filter(obj => obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetypeId)
-        .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)); // Sort by zIndex to maintain order
+        .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)) as Token[]; // Sort by zIndex to maintain order
 
       if (existingTokens.length === 0) {
         // If no existing tokens, create one new token (backward compatibility)
@@ -713,8 +731,7 @@ export const Tabletop: React.FC = () => {
             type: 'UPDATE_OBJECT',
             payload: {
               id: token.id,
-              inCursorSlot: true,
-              cursorSlotSourcePanel: undefined
+              inCursorSlot: true
             }
           });
 
@@ -1849,8 +1866,8 @@ export const Tabletop: React.FC = () => {
       itemClone = {
         ...randomizer, // Deep copy to preserve all randomizer properties
         // Preserve all randomizer-specific settings
-        faces: randomizer.faces ? [...randomizer.faces] : [],
-        currentFace: randomizer.currentFace,
+        currentValue: randomizer.currentValue,
+        options: randomizer.options ? [...randomizer.options] : [],
         // IMPORTANT: Preserve zIndex to maintain layer relationships
         zIndex: randomizer.zIndex ?? 0,
         hyperscaleLayerId: randomizer.hyperscaleLayerId ?? 'tokens',
@@ -1864,9 +1881,9 @@ export const Tabletop: React.FC = () => {
         ...counter, // Deep copy to preserve all counter properties
         // Preserve all counter-specific settings
         value: counter.value,
-        minValue: counter.minValue,
+        baseValue: counter.baseValue,
         maxValue: counter.maxValue,
-        wrapAround: counter.wrapAround,
+        allowNegative: counter.allowNegative,
         // IMPORTANT: Preserve zIndex to maintain layer relationships
         zIndex: counter.zIndex ?? 0,
         hyperscaleLayerId: counter.hyperscaleLayerId ?? 'tokens',
@@ -1879,9 +1896,9 @@ export const Tabletop: React.FC = () => {
       itemClone = {
         ...dice, // Deep copy to preserve all dice properties
         // Preserve all dice-specific settings
-        value: dice.value,
+        currentValue: dice.currentValue,
         sides: dice.sides,
-        rolling: dice.rolling,
+        rollStartTime: dice.rollStartTime,
         // IMPORTANT: Preserve zIndex to maintain layer relationships
         zIndex: dice.zIndex ?? 0,
         hyperscaleLayerId: dice.hyperscaleLayerId ?? 'tokens',
@@ -1945,9 +1962,9 @@ export const Tabletop: React.FC = () => {
     }
 
     // NOW update cursor slot state (triggers re-render)
-    setCursorSlot(prev => [...prev, itemClone]);
+    setCursorSlot(prev => [...prev, itemClone as CardType | TokenType | BoardType]);
     // Also update ref immediately for consistent state
-    cursorSlotRef.current = [...cursorSlotRef.current, itemClone];
+    cursorSlotRef.current = [...cursorSlotRef.current, itemClone as CardType | TokenType | BoardType];
 
     // Mark the item as inCursorSlot immediately (no delay for smoother pickup)
     dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
@@ -1989,7 +2006,7 @@ export const Tabletop: React.FC = () => {
   }, [cursorSlot.length, dispatch, v2p, state.viewTransform, state.objects, cursorSlotRef]);
 
   // Drop all items from cursor slot at specified screen coordinates
-  const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType)[]) => {
+  const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType | BoardType)[]) => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
     if (currentSlot.length === 0) return;
@@ -2488,7 +2505,7 @@ export const Tabletop: React.FC = () => {
   }, [dropCursorSlot]);
 
   // Drop cursor slot items to a specific deck (called from handleGlobalClick when clicking on deck)
-  const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType)[]) => {
+  const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType | BoardType)[]) => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
 
@@ -2523,7 +2540,7 @@ export const Tabletop: React.FC = () => {
       cardsInSlot.forEach((item) => {
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: item.id, inCursorSlot: false, cursorSlotSourcePanel: undefined }
+          payload: { id: item.id, inCursorSlot: false, fromPoolPanel: undefined }
         });
       });
 
@@ -2599,7 +2616,7 @@ export const Tabletop: React.FC = () => {
   }, [cursorSlot, dispatch, state.objects]);
 
   // Drop cursor slot items to a specific pile (called from handleGlobalClick when clicking on pile)
-  const dropToPile = useCallback((pileId: string, deckId: string, slotItems?: (CardType | TokenType)[]) => {
+  const dropToPile = useCallback((pileId: string, deckId: string, slotItems?: (CardType | TokenType | BoardType)[]) => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
 
@@ -2614,7 +2631,7 @@ export const Tabletop: React.FC = () => {
       cardsInSlot.forEach((item) => {
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: item.id, inCursorSlot: false, cursorSlotSourcePanel: undefined }
+          payload: { id: item.id, inCursorSlot: false, fromPoolPanel: undefined }
         });
       });
 
@@ -2718,7 +2735,7 @@ export const Tabletop: React.FC = () => {
           payload: {
             id: item.id,
             inCursorSlot: false,
-            cursorSlotSourcePanel: undefined,
+            fromPoolPanel: undefined,
             x: finalX,
             y: finalY,
             zIndex,
@@ -3095,12 +3112,19 @@ export const Tabletop: React.FC = () => {
       const handPanel = elementUnderCursor?.closest('[data-hand-panel]');
 
       if (handPanel) {
+        // CRITICAL: Clear cursor slot FIRST to prevent visual flicker
+        // Copy items before clearing slot for the event
+        const itemsToDrop = [...currentSlot];
+        setCursorSlot([]);
+        setCursorPosition(null);
+        setCursorSlotSource(null);
+
         // Over hand panel - dispatch event to add cards to hand
         window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
-          detail: { items: currentSlot }
+          detail: { items: itemsToDrop }
         }));
         // Track recently dropped objects to prevent showing shadow version
-        const droppedIds = new Set(currentSlot.map(item => item.id));
+        const droppedIds = new Set(itemsToDrop.map(item => item.id));
         setRecentlyInMyCursorSlot(droppedIds);
         setTimeout(() => {
           setRecentlyInMyCursorSlot(prev => {
@@ -3109,10 +3133,6 @@ export const Tabletop: React.FC = () => {
             return next;
           });
         }, 500);
-        // Clear the slot
-        setCursorSlot([]);
-        setCursorPosition(null);
-        setCursorSlotSource(null);
 
         // CRITICAL: Stop propagation IMMEDIATELY to prevent other mouseup handlers from running
         e.stopPropagation();
@@ -3151,13 +3171,16 @@ export const Tabletop: React.FC = () => {
                 pixelsPerVU
               );
 
-              // Drop objects using utility function
-              dropObjectsToPool(currentSlot, dropPosition, poolZone, dispatch);
-
-              // Clear the slot
+              // CRITICAL: Clear cursor slot FIRST to prevent visual flicker
+              // This ensures CursorSlotVisualization stops rendering items before they're updated
+              const itemsToDrop = [...currentSlot]; // Copy before clearing
               setCursorSlot([]);
               setCursorPosition(null);
               setCursorSlotSource(null);
+
+              // Then drop objects using utility function
+              dropObjectsToPool(itemsToDrop, dropPosition, poolZone, dispatch, state.objects);
+
               e.stopPropagation();
               e.preventDefault();
               return;
@@ -4280,7 +4303,7 @@ export const Tabletop: React.FC = () => {
                   x: constrainedX,
                   y: constrainedY,
                   inCursorSlot: false,
-                  cursorSlotSourcePanel: undefined,
+                  fromPoolPanel: undefined,
                   draggingPlayerId: null,
                   broadcastX: undefined,
                   broadcastY: undefined

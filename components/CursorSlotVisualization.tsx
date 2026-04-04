@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ItemType, Card as CardType, Token as TokenType, CardOrientation, Deck as DeckType, Randomizer, Counter, DiceObject, Board as BoardType } from '../types';
-import { Card } from './Card';
-import { SvgTokenShape } from './SvgTokenShape';
 import { renderCursorSlotItem } from './CursorSlotItems';
 
 interface CursorSlotVisualizationProps {
@@ -86,7 +84,7 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
   cursorSlot,
   cursorPosition,
   cursorPositionRef,
-  zoom,
+  zoom: _zoom,
   pixelsPerVU,
   state,
   getCardSettings,

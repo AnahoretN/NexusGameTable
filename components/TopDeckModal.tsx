@@ -293,6 +293,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
+    return undefined;
   }, [isResizing, pixelsPerVU]);
 
   // Action buttons for each card - based on deck.cardActionButtons
@@ -325,7 +326,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         icon: <ArrowDown size={12} />,
         onClick: () => handleMoveToBottomDeck(card.id)
       },
-      mill: {
+      moveToDiscard: {
         className: 'bg-red-600 hover:bg-red-500',
         title: translate('Mill', language as Locale),
         icon: <Trash2 size={12} />,
@@ -453,7 +454,6 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
                       deckShowTooltipImage={deck.showTooltipImage}
                       deckTooltipScale={deck.tooltipScale}
                       language={language}
-                      onContextMenu={(e: React.MouseEvent) => handleContextMenu(e, card)}
                     />
 
                     {/* Custom action buttons for Top Deck */}

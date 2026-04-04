@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext, useRef, useMemo, useCallback } from 'react';
 import { LocalSettings, loadLocalSettings, saveLocalSettings } from '../utils/localSettings';
+import { logger } from '../utils/logger';
 
 const LOCAL_SETTINGS_EVENT = 'local-settings-changed';
 
@@ -27,7 +28,7 @@ export function LocalSettingsProvider({ children }: { children: React.ReactNode 
           const newSettings = JSON.parse(e.newValue);
           setSettings(newSettings);
         } catch (err) {
-          console.error('Failed to parse settings from storage event:', err);
+          logger.error('Failed to parse settings from storage event:', err);
         }
       }
     };

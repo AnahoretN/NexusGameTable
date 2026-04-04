@@ -1,29 +1,25 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType, AppLanguage } from '../types';
+import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType } from '../types';
 import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload, X } from 'lucide-react';
-import { t as translate, Locale } from '../utils/translations';
 import { TextBlock, SliderBlock, TableBlock, InventoryBlock, AvatarBlock, CounterBlock } from './CharacterBlocks';
 import { SimpleContextMenu } from './SimpleContextMenu';
 import { CharacterSettingsModal } from './CharacterSettingsModal';
+import { logger } from '../utils/logger';
 
 interface CharacterPanelProps {
-  width?: number;
   isCollapsed?: boolean;
   panel: PanelObject;
-  language?: AppLanguage;
 }
 
 export const CharacterPanel: React.FC<CharacterPanelProps> = ({
-  width = 400,
   isCollapsed = false,
-  panel,
-  language = 'en'
+  panel
 }) => {
   const { state, dispatch } = useGame();
 
   // Get character data from panel - use latest from state to ensure reactivity
-  const characterData = state.objects[panel.id]?.characterData || panel.characterData;
+  const characterData = (state.objects[panel.id] as PanelObject)?.characterData || panel.characterData;
   const [activeCharacterId, setActiveCharacterId] = useState<string>(
     characterData?.activeCharacterId || ''
   );
@@ -33,7 +29,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   // Get active character - use characterData from state for reactivity
   const activeCharacter = useMemo(() => {
     if (!characterData) return null;
-    return characterData.characters.find(c => c.id === activeCharacterId) || null;
+    return characterData.characters.find((c: CharacterTab) => c.id === activeCharacterId) || null;
   }, [characterData, activeCharacterId]);
 
   // Get active sub-tab
@@ -41,7 +37,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     if (!activeCharacter?.subTabs) return null;
     // Use character's activeSubTabId if available, otherwise use local state
     const tabId = activeCharacter.activeSubTabId || activeSubTabId;
-    return activeCharacter.subTabs.find(st => st.id === tabId) || activeCharacter.subTabs[0] || null;
+    return activeCharacter.subTabs.find((st: any) => st.id === tabId) || activeCharacter.subTabs[0] || null;
   }, [activeCharacter, activeSubTabId]);
 
   // Update local activeSubTabId when character changes
@@ -99,7 +95,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
       // Ensure all blocks in all sub-tabs have columnId
       if (char.subTabs) {
-        const subTabsWithColumnIds = char.subTabs.map(subTab => {
+        const subTabsWithColumnIds = char.subTabs.map((subTab: any) => {
           const hasBlocksWithoutColumnId = subTab.blocks.some((block: CharacterBlock) => !block.columnId);
           if (hasBlocksWithoutColumnId) {
             needsUpdate = true;
@@ -227,10 +223,10 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   }, [activeCharacter, isGM, state.activePlayerId]);
 
   const handleSaveCharacterName = useCallback(() => {
-    if (!characterData) return;
+    if (!characterData || !activeCharacter) return;
 
     const newName = characterNameInput.trim() || 'Unnamed Character';
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return { ...char, characterName: newName };
       }
@@ -267,7 +263,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     if (!characterData || !activeCharacter || !activeSubTab) return;
 
     const newTitle = blockTitleInput.trim() || 'Untitled Block';
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
@@ -275,7 +271,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             subTab.id === activeSubTab.id
               ? {
                   ...subTab,
-                  blocks: subTab.blocks.map(block =>
+                  blocks: subTab.blocks.map((block: any) =>
                     block.id === blockId ? { ...block, title: newTitle } : block
                   )
                 }
@@ -406,7 +402,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     setActiveSubTabId(subTabId);
 
     if (characterData && activeCharacter) {
-      const updatedCharacters = characterData.characters.map(char => {
+      const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
         if (char.id === activeCharacter.id) {
           return {
             ...char,
@@ -452,7 +448,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const handleSaveCharacterSettings = useCallback((updatedCharacter: CharacterTab) => {
     if (!characterData) return;
 
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === settingsModal?.characterId) {
         return updatedCharacter;
       }
@@ -503,7 +499,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       try {
         const importedData = JSON.parse(e.target?.result as string);
 
-        const updatedCharacters = characterData.characters.map(char => {
+        const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
           if (char.id === settingsModal.characterId) {
             return {
               ...char,
@@ -529,7 +525,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
         setSettingsModal(null);
       } catch (error) {
-        console.error('Failed to import character:', error);
+        logger.error('Failed to import character:', error);
         alert('Ошибка при загрузке файла. Проверьте формат JSON.');
       }
     };
@@ -621,7 +617,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       data: blockData
     };
 
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
@@ -654,7 +650,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     const currentColumns = activeSubTab.columns || 1;
     const newColumnId = `column-${currentColumns + 1}`;
 
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
@@ -695,7 +691,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     const newColumnCount = currentColumns - 1;
 
     // Shift blocks: remove blocks from deleted column and shift columns after it
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
@@ -741,7 +737,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const handleUpdateBlock = useCallback((blockId: string, newData: any) => {
     if (!characterData || !activeCharacter || !activeSubTab) return;
 
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
@@ -749,7 +745,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             subTab.id === activeSubTab.id
               ? {
                   ...subTab,
-                  blocks: subTab.blocks.map(block =>
+                  blocks: subTab.blocks.map((block: any) =>
                     block.id === blockId ? { ...block, data: newData } : block
                   )
                 }
@@ -776,7 +772,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const handleRemoveBlock = useCallback((blockId: string) => {
     if (!characterData || !activeCharacter || !activeSubTab || !canEditCharacter) return;
 
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
@@ -820,7 +816,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       order: index
     }));
 
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
@@ -863,7 +859,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       order: index
     }));
 
-    const updatedCharacters = characterData.characters.map(char => {
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
@@ -988,7 +984,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
               {/* Sub-tabs */}
               {activeCharacter.subTabs && activeCharacter.subTabs.length > 0 && (
                 <div className="flex gap-1">
-                  {activeCharacter.subTabs.map(subTab => {
+                  {activeCharacter.subTabs.map((subTab: any) => {
                     const isActive = subTab.id === (activeCharacter.activeSubTabId || activeSubTabId);
                     return (
                       <button
@@ -1155,7 +1151,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                           <TableBlock
                             block={block}
                             editable={canManageCharacter}
-                            canEditStructure={canEditCharacter}
                             onChange={(newData) => handleUpdateBlock(block.id, newData)}
                           />
                         );
@@ -1164,7 +1159,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                           <InventoryBlock
                             block={block}
                             editable={canManageCharacter}
-                            canEditStructure={canEditCharacter}
                             onChange={(newData) => handleUpdateBlock(block.id, newData)}
                           />
                         );
@@ -1181,7 +1175,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                           <CounterBlock
                             block={block}
                             editable={canManageCharacter}
-                            canEditStructure={canEditCharacter}
                             onChange={(newData) => handleUpdateBlock(block.id, newData)}
                           />
                         );
@@ -1347,9 +1340,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             <CharacterSettingsModal
               character={settingsModal.character}
               players={state.players}
-              activePlayerId={state.activePlayerId}
-              isGM={isGM}
-              canEditCharacter={canEditCharacter}
               onSave={handleSaveCharacterSettings}
             />
           </div>

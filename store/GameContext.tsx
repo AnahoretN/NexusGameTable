@@ -1531,7 +1531,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 y: action.payload.y,
                 zIndex: cardZ,
                 inCursorSlot: false,
-                cursorSlotSourcePanel: undefined,
+                fromPoolPanel: undefined,
                 location: CardLocation.TABLE,
                 isOnTable: true,
                 hyperscaleLayerId: deckHyperscaleLayerId,
@@ -1582,7 +1582,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 y: action.payload.y,
                 zIndex: tokenZ,
                 inCursorSlot: false,
-                cursorSlotSourcePanel: undefined,
+                fromPoolPanel: undefined,
                 isOnTable: true,
             };
 
@@ -1617,7 +1617,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 y: action.payload.y,
                 zIndex: boardZ,
                 inCursorSlot: false,
-                cursorSlotSourcePanel: undefined,
+                fromPoolPanel: undefined,
                 isOnTable: true,
             };
 
@@ -1710,7 +1710,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             y: action.payload.y,
             zIndex: objZ,
             inCursorSlot: false,
-            cursorSlotSourcePanel: undefined,
+            fromPoolPanel: undefined,
             isOnTable: true, // Always set isOnTable: true when dropping from cursor slot
             ...(hyperscaleLayerId && { hyperscaleLayerId }),
         };
@@ -2114,7 +2114,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const newCardIds = [card.id, ...deck.cardIds];
         const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
         // Card is face up by default (GM sees actual state, players see based on deck settings)
-        const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true };
+        const updatedCard: Card = {
+            ...card,
+            location: CardLocation.DECK,
+            faceUp: true,
+            x: deck.x,
+            y: deck.y,
+            isOnTable: true,
+            // Clear cursor slot state to allow card to be added to cursor slot again
+            inCursorSlot: false,
+            fromPoolPanel: undefined,
+            // Clear any pending play top state
+            __pendingPlayTop: undefined,
+        };
         return {
             ...state,
             objects: { ...state.objects, [deck.id]: updatedDeck, [card.id]: updatedCard },
@@ -2177,7 +2189,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const targetDeck = newObjects[deck.id] as Deck;
         const newCardIds = [card.id, ...targetDeck.cardIds];
         const updatedDeck: Deck = { ...targetDeck, cardIds: newCardIds };
-        const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true, deckId: deck.id };
+        const updatedCard: Card = {
+            ...card,
+            location: CardLocation.DECK,
+            faceUp: true,
+            x: deck.x,
+            y: deck.y,
+            isOnTable: true,
+            deckId: deck.id,
+            // Clear cursor slot state to allow card to be added to cursor slot again
+            inCursorSlot: false,
+            fromPoolPanel: undefined,
+            // Clear any pending play top state
+            __pendingPlayTop: undefined,
+        };
         newObjects[deck.id] = updatedDeck;
         newObjects[card.id] = updatedCard;
 
@@ -2279,7 +2304,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...targetDeck.cardIds.slice(insertIndex)
         ];
         const updatedDeck: Deck = { ...targetDeck, cardIds: newCardIds };
-        const updatedCard: Card = { ...card, location: CardLocation.DECK, faceUp: true, x: deck.x, y: deck.y, isOnTable: true, deckId: deck.id };
+        const updatedCard: Card = {
+            ...card,
+            location: CardLocation.DECK,
+            faceUp: true,
+            x: deck.x,
+            y: deck.y,
+            isOnTable: true,
+            deckId: deck.id,
+            // Clear cursor slot state to allow card to be added to cursor slot again
+            inCursorSlot: false,
+            fromPoolPanel: undefined,
+            // Clear any pending play top state
+            __pendingPlayTop: undefined,
+        };
         newObjects[deck.id] = updatedDeck;
         newObjects[card.id] = updatedCard;
 
@@ -2316,6 +2354,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // and we need to handle it differently (it will be added back to objects)
         if (!card) {
           console.warn('[ADD_CARD_TO_TOP_OF_DECK] Card not found in state:', action.payload.cardId);
+          return state;
+        }
+
+        // Prevent duplicate additions - if card is already in this deck, skip
+        if (deck.cardIds.includes(card.id)) {
+          console.log('[ADD_CARD_TO_TOP_OF_DECK] Card already in deck, skipping:', card.id);
           return state;
         }
 
@@ -2379,7 +2423,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             faceUp: false,  // Cards are face down in deck
             x: deck.x,
             y: deck.y,
-            isOnTable: true
+            isOnTable: true,
+            // Clear cursor slot state to allow card to be added to cursor slot again
+            inCursorSlot: false,
+            fromPoolPanel: undefined,
+            // Clear any pending play top state
+            __pendingPlayTop: undefined,
         };
 
         // Add to general history (max 25)

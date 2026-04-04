@@ -77,7 +77,6 @@ const SimplifiedBoard: React.FC<{
                         onResizeStart={onResizeStart}
                         onMouseEnter={onResizeHandleEnter || (() => {})}
                         onMouseLeave={onResizeHandleLeave || (() => {})}
-                        showOnHover={false}
                     />
                 </div>
             )}
@@ -144,10 +143,11 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     const boardCursor = 'default';
 
     // Check if grid should be shown
-    const shouldShowGrid = token.gridType && token.gridType !== GridType.NONE && (token as BoardType).showGrid !== false;
-    const isHexGrid = token.gridType === GridType.HEX;
-    const isHexHorizontalGrid = token.gridType === GridType.HEX_HORIZONTAL;
-    const isSquareGrid = token.gridType === GridType.SQUARE;
+    const boardToken = token as BoardType;
+    const shouldShowGrid = boardToken.gridType && boardToken.gridType !== GridType.NONE && boardToken.showGrid !== false;
+    const isHexGrid = boardToken.gridType === GridType.HEX;
+    const isHexHorizontalGrid = boardToken.gridType === GridType.HEX_HORIZONTAL;
+    const isSquareGrid = boardToken.gridType === GridType.SQUARE;
 
     // Hex grid constants
     const HEX_RATIO = 1.15;
@@ -157,11 +157,12 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     // Use gridWidth if provided, otherwise fall back to default hex dimensions
     // Use useMemo to ensure these recalculate when gridType, gridWidth, or gridHeight change
     const actualGridWidth = useMemo(() => {
-        return gridWidth ?? (isHexGrid ? DEFAULT_HEX_WIDTH : (isHexHorizontalGrid ? DEFAULT_FLAT_HEX_WIDTH : gridSize));
-    }, [gridWidth, isHexGrid, isHexHorizontalGrid, gridSize]);
+        return gridWidth ?? boardToken.gridWidth ?? (isHexGrid ? DEFAULT_HEX_WIDTH : (isHexHorizontalGrid ? DEFAULT_FLAT_HEX_WIDTH : gridSize));
+    }, [gridWidth, boardToken.gridWidth, isHexGrid, isHexHorizontalGrid, gridSize]);
 
     const actualGridHeight = useMemo(() => {
         if (gridHeight !== undefined) return gridHeight;
+        if (boardToken.gridHeight !== undefined) return boardToken.gridHeight;
 
         if (isHexGrid) {
             return Math.round(actualGridWidth * HEX_RATIO * 100) / 100;
@@ -170,7 +171,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         } else {
             return gridSize;
         }
-    }, [gridHeight, isHexGrid, isHexHorizontalGrid, gridSize, actualGridWidth]);
+    }, [gridHeight, boardToken.gridHeight, isHexGrid, isHexHorizontalGrid, gridSize, actualGridWidth]);
 
     // Grid overlay - use proper grid components for better rendering
     // Hide grid overlay during resize for performance
@@ -261,7 +262,6 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                         onResizeStart={onResizeStart}
                         onMouseEnter={onResizeHandleEnter || (() => {})}
                         onMouseLeave={onResizeHandleLeave || (() => {})}
-                        showOnHover={false}
                     />
                 </div>
             )}

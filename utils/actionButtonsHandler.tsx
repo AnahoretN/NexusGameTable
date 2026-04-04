@@ -1,4 +1,5 @@
 import { TableObject, ItemType, Deck as DeckType, CardLocation } from '../types';
+import { logger } from './logger';
 
 /**
  * Universal action buttons handler that works for both pool panels and main tabletop
@@ -24,7 +25,7 @@ export function executeActionButtonUniversal(
   action: string,
   context: ActionButtonsHandlerContext
 ) {
-  console.log('[executeActionButtonUniversal] Action:', action, 'for object:', obj.id, 'type:', obj.type, 'activePlayerId:', context.activePlayerId);
+  logger.log('[executeActionButtonUniversal] Action:', action, 'for object:', obj.id, 'type:', obj.type, 'activePlayerId:', context.activePlayerId);
 
   const { dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, objects } = context;
 
@@ -172,25 +173,8 @@ export function executeActionButtonUniversal(
 
     case 'playTopCard':
       if (obj.type === ItemType.DECK && activePlayerId) {
-        // Take the top card out of deck and add to cursor slot
-        const deck = obj as DeckType;
-        if (deck.cardIds && deck.cardIds.length > 0) {
-          const topCardId = deck.cardIds[0];
-          const card = objects ? objects[topCardId] : null;
-
-          // Take the top card out
-          dispatch({ type: 'TAKE_TOP_CARD', payload: { deckId: deck.id } });
-
-          // Add to cursor slot
-          window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-            detail: {
-              cardId: topCardId,
-              clientX: window.innerWidth / 2,
-              clientY: window.innerHeight / 2,
-              source: 'shift'
-            }
-          }));
-        }
+        // Use PLAY_TOP_CARD action which properly handles playTopFaceUp setting
+        dispatch({ type: 'PLAY_TOP_CARD', payload: { deckId: obj.id } });
       }
       break;
 
@@ -230,7 +214,7 @@ export function executeActionButtonUniversal(
     case 'piles':
       if (obj.type === ItemType.DECK) {
         // Open piles modal or context menu
-        console.log('[executeActionButtonUniversal] Piles action for deck:', obj.id);
+        logger.log('[executeActionButtonUniversal] Piles action for deck:', obj.id);
       }
       break;
 
@@ -258,6 +242,6 @@ export function executeActionButtonUniversal(
       break;
 
     default:
-      console.log('[executeActionButtonUniversal] Action not implemented:', action);
+      logger.log('[executeActionButtonUniversal] Action not implemented:', action);
   }
 }

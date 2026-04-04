@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { Layers, Lock, Unlock, Shuffle, Hand, Eye, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react';
+import { Layers, Lock, Unlock, Shuffle, Hand, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react';
 import { useGame } from '../store/GameContext';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation, ContextAction } from '../types';
 import { DECK_OFFSET } from '../constants';
@@ -194,7 +194,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   }, [deck.spriteConfig]);
 
   // Memoize piles grouping by position
-  const { pilesByPosition, getPilePosition } = useMemo(() => {
+  const { getPilePosition } = useMemo(() => {
     const visiblePiles = deck.piles?.filter(p => p.visible) || [];
     const pilesByPosition: Record<string, CardPile[]> = {
       left: [],
@@ -258,7 +258,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
       }
     };
 
-    return { pilesByPosition, getPilePosition };
+    return { getPilePosition };
   }, [deck.piles, deck.x, deck.y, deck.width, deck.height, effectiveWidth, effectiveHeight]);
 
   const handlePilesButtonClick = useCallback((e: React.MouseEvent) => {

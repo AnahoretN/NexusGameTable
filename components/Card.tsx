@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition, CardSpriteConfig, CardLocation, AppLanguage } from '../types';
-import { Layers, Undo, ChevronRight, ArrowUp, ArrowDown, Hand, Eye, EyeOff } from 'lucide-react';
+import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition, CardSpriteConfig, AppLanguage } from '../types';
+import { Layers, Hand, Eye, EyeOff } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { getCardButtonConfig, ButtonAction, CardButtonConfig } from '../utils/buttonConfig';
-import { getCardShapeStyles, isGeometricCardShape } from '../utils/shapeUtils';
+import { isGeometricCardShape } from '../utils/shapeUtils';
 import { SvgDeckShape, shouldUseSvgForDeck } from './SvgDeckShape';
 
 interface CardProps {
@@ -214,11 +214,10 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     return null;
   };
 
-  const styles = getCardShapeStyles(shape, orientation);
   const isGeometric = isGeometricCardShape(shape);
 
   // Calculate transform for card rotation
-  const getCardTransform = (orientation: CardOrientation, disableRotation: boolean | undefined, cardRotation: number) => {
+  const getCardTransform = (disableRotation: boolean | undefined, cardRotation: number) => {
     const transforms: string[] = [];
 
     // Apply card's rotation property (custom rotation from rotate actions)
@@ -251,7 +250,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           // Apply rotation for horizontal orientation (90 degrees clockwise = -90deg CSS)
           // Geometric shapes use clip-path instead of rotation
           // Plus the card's own rotation property for custom rotation
-          transform: getCardTransform(orientation, disableRotationTransform, card.rotation),
+          transform: getCardTransform(disableRotationTransform, card.rotation),
           // Drop shadow for depth
           filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))',
           // Disable pointer events when dragging in cursor slot to allow mouse events to pass through to decks/piles

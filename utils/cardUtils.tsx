@@ -1,8 +1,12 @@
 import { Card, Deck as DeckType, CardOrientation, CardShape, CardNamePosition, ContextAction } from '../types';
 import { isGeometricCardShape } from './shapeUtils';
 
+// Cache for card dimensions to avoid repeated calculations
+const cardDimensionsCache = new Map<string, { width: number; height: number }>();
+
 /**
  * Get card dimensions based on deck settings and display scale
+ * Results are cached to avoid repeated calculations
  */
 export function getCardDimensions(
   card: Card,
@@ -10,6 +14,14 @@ export function getCardDimensions(
   displayScale: number,
   baseScale: number = 0.9
 ): { width: number; height: number } {
+  // Create cache key from card properties
+  const cacheKey = `${card.id}-${deck?.id || 'nodeck'}-${displayScale}-${baseScale}`;
+
+  // Check cache first
+  if (cardDimensionsCache.has(cacheKey)) {
+    return cardDimensionsCache.get(cacheKey)!;
+  }
+
   const actualScale = displayScale * baseScale;
   // Use card's own dimensions first, then fall back to deck settings
   const cardWidth = card.width ?? deck?.cardWidth ?? 100;
@@ -49,7 +61,19 @@ export function getCardDimensions(
   const finalWidth = scaledBaseWidth;
   const finalHeight = scaledBaseWidth / aspectRatio;
 
-  return { width: finalWidth, height: finalHeight };
+  const result = { width: finalWidth, height: finalHeight };
+
+  // Cache the result
+  cardDimensionsCache.set(cacheKey, result);
+
+  return result;
+}
+
+/**
+ * Clear the card dimensions cache (useful for memory management)
+ */
+export function clearCardDimensionsCache() {
+  cardDimensionsCache.clear();
 }
 
 /**

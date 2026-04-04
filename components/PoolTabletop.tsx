@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
-import { TableObject, ItemType, Deck as DeckType, CardPile, Counter, DiceObject, TokenShape, Board as BoardType, CardLocation } from '../types';
+import { TableObject, ItemType, Deck as DeckType, CardPile, Counter, DiceObject, TokenShape, Board as BoardType, CardLocation, Card } from '../types';
 import { ObjectRenderer } from './ObjectRenderer';
 import { DeckComponent } from './DeckComponent';
 import { ContextMenu } from './ContextMenu';
@@ -8,6 +8,7 @@ import { PileContextMenu } from './PileContextMenu';
 import { executeContextMenuAction } from '../utils/contextMenuActions';
 import { SvgTokenShape } from './SvgTokenShape';
 import { Tooltip } from './Tooltip';
+import { logger } from '../utils/logger';
 import { Plus, Minus } from 'lucide-react';
 import { BoardWithResizeMemo } from './Tabletop/BoardWithResize';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -185,13 +186,8 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
               ? { x: event.clientX, y: event.clientY }
               : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 
-            // Take the top card out of deck
-            dispatch({
-              type: 'TAKE_TOP_CARD',
-              payload: { deckId: deck.id }
-            });
-
-            // Add to cursor slot
+            // Prepare card for cursor slot FIRST (before dispatch)
+            // This ensures we use the correct faceUp value
             const cardForSlot: Card = {
               ...card,
               location: CardLocation.CURSOR_SLOT,
@@ -199,20 +195,39 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
               isOnTable: false
             };
 
+            // Add to cursor slot BEFORE dispatch (prevents race condition)
             window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
               detail: {
                 cardId: card.id,
                 clientX: mousePos.x,
                 clientY: mousePos.y,
-                source: 'shift'
+                source: 'shift',
+                cardOverride: cardForSlot  // Pass the correct card state
               }
             }));
+
+            // Then dispatch to update state
+            dispatch({
+              type: 'PLAY_TOP_CARD',
+              payload: { deckId: deck.id }
+            });
           }
         }
         break;
       case 'millTopCard':
         if (obj.type === ItemType.DECK) {
-          dispatch({ type: 'MILL_TOP_CARD', payload: { deckId: obj.id, playerId: state.activePlayerId } });
+          const deck = obj as DeckType;
+          // Mill top card: move it to the mill pile (discard pile)
+          if (deck.piles) {
+            const millPile = deck.piles.find(p => p.isMillPile);
+            if (millPile && deck.cardIds.length > 0) {
+              const topCardId = deck.cardIds[0];
+              dispatch({
+                type: 'ADD_CARD_TO_PILE',
+                payload: { deckId: deck.id, pileId: millPile.id, cardId: topCardId }
+              });
+            }
+          }
         }
         break;
       case 'shuffleDeck':
@@ -235,7 +250,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
         }
         break;
       default:
-        console.warn('[PoolTabletop] Unknown action:', action);
+        logger.warn('[PoolTabletop] Unknown action:', action);
     }
   }, [dispatch, state.activePlayerId, state.objects]);
 
@@ -260,7 +275,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       if (deck) {
         const pile = deck.piles?.find(p => p.id === pileId);
         if (pile) {
-          console.log('[PoolTabletop] Opening pile search modal:', { pileId, pileName: pile.name });
+          logger.log('[PoolTabletop] Opening pile search modal:', { pileId, pileName: pile.name });
           setSearchModalDeck(deck);
           setSearchModalPile(pile);
         }
@@ -270,19 +285,19 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     const handleOpenSearchDeckModal = (e: Event) => {
       const customEvent = e as CustomEvent<{ deckId: string; pileId?: string }>;
       const { deckId, pileId } = customEvent.detail;
-      console.log('[PoolTabletop] handleOpenSearchDeckModal called:', { deckId, pileId });
+      logger.log('[PoolTabletop] handleOpenSearchDeckModal called:', { deckId, pileId });
 
       const deck = state.objects[deckId] as DeckType;
       if (deck) {
-        console.log('[PoolTabletop] Deck found:', deck.name);
+        logger.log('[PoolTabletop] Deck found:', deck.name);
         setSearchModalDeck(deck);
         if (pileId) {
           const pile = deck.piles?.find(p => p.id === pileId);
-          console.log('[PoolTabletop] Pile found:', pile?.name);
+          logger.log('[PoolTabletop] Pile found:', pile?.name);
           setSearchModalPile(pile);
         }
       } else {
-        console.warn('[PoolTabletop] Deck not found:', deckId);
+        logger.warn('[PoolTabletop] Deck not found:', deckId);
       }
     };
 
@@ -354,6 +369,11 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       const inCursorSlot = (obj as any).inCursorSlot;
 
       if (inCursorSlot) {
+        return false;
+      }
+
+      // Exclude cards that are in deck (location: DECK) - they are part of the deck
+      if (obj.type === ItemType.CARD && (obj as any).location === CardLocation.DECK) {
         return false;
       }
 
@@ -605,19 +625,19 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
 
   // Execute context menu action using shared utility
   const executeMenuAction = (action: string, shiftKey?: boolean) => {
-    console.log('[PoolTabletop] ===== executeMenuAction CALLED =====');
-    console.log('[PoolTabletop] Action:', action);
-    console.log('[PoolTabletop] Shift key:', shiftKey);
-    console.log('[PoolTabletop] Has context menu:', !!contextMenu);
+    logger.log('[PoolTabletop] ===== executeMenuAction CALLED =====');
+    logger.log('[PoolTabletop] Action:', action);
+    logger.log('[PoolTabletop] Shift key:', shiftKey);
+    logger.log('[PoolTabletop] Has context menu:', !!contextMenu);
 
     if (!contextMenu) {
-      console.warn('[PoolTabletop] ERROR: No context menu exists!');
+      logger.warn('[PoolTabletop] ERROR: No context menu exists!');
       return;
     }
 
     // Always get fresh object from state to ensure we have latest data
     const targetObject = state.objects[contextMenu.object.id] || contextMenu.object;
-    console.log('[PoolTabletop] Target object:', {
+    logger.log('[PoolTabletop] Target object:', {
       id: targetObject.id,
       type: targetObject.type,
       name: targetObject.name
@@ -664,26 +684,26 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
           isPoolPanel: true
         });
         wasHandled = true;
-        console.log('[PoolTabletop] executeContextMenuAction completed');
+        logger.log('[PoolTabletop] executeContextMenuAction completed');
 
         // Close menu after executing special action (except for modals)
         if (setContextMenu && action !== 'configure' && action !== 'delete') {
-          console.log('[PoolTabletop] Closing context menu');
+          logger.log('[PoolTabletop] Closing context menu');
           setContextMenu(null);
         } else {
-          console.log('[PoolTabletop] Not closing menu for action:', action);
+          logger.log('[PoolTabletop] Not closing menu for action:', action);
         }
       } catch (error) {
-        console.error('[PoolTabletop] ERROR in executeContextMenuAction:', error);
+        logger.error('[PoolTabletop] ERROR in executeContextMenuAction:', error);
       }
     }
 
     // Handle basic actions that weren't handled by executeContextMenuAction
     if (!wasHandled) {
-      console.log('[PoolTabletop] Handling basic action in switch...');
+      logger.log('[PoolTabletop] Handling basic action in switch...');
       switch (action) {
         case 'roll':
-          console.log('[PoolTabletop] Rolling dice');
+          logger.log('[PoolTabletop] Rolling dice');
           // Roll dice - handled by double-click, but also available from context menu
           if (targetObject.type === ItemType.DICE_OBJECT) {
             animateDiceRoll(targetObject as DiceObject);
@@ -691,7 +711,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
           break;
 
         default:
-          console.log('[PoolTabletop] Default case for action:', action);
+          logger.log('[PoolTabletop] Default case for action:', action);
           // Handle dynamic actions that can't be in switch cases
           if (action.startsWith('moveToHyperscaleLayer:')) {
             const layerId = action.split(':')[1];
@@ -704,11 +724,11 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       }
 
       // Close menu after executing action
-      console.log('[PoolTabletop] Closing context menu after basic action');
+      logger.log('[PoolTabletop] Closing context menu after basic action');
       if (setContextMenu) setContextMenu(null);
     }
 
-    console.log('[PoolTabletop] ===== executeMenuAction FINISHED =====');
+    logger.log('[PoolTabletop] ===== executeMenuAction FINISHED =====');
   };
 
   // Handle pile context menu
@@ -725,10 +745,10 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
 
   // Execute pile context menu action
   const executePileMenuAction = useCallback((action: string) => {
-    console.log('[PoolTabletop] executePileMenuAction called:', action);
+    logger.log('[PoolTabletop] executePileMenuAction called:', action);
     if (!pileContextMenu) return;
     const { pile, deck } = pileContextMenu;
-    console.log('[PoolTabletop] Pile context menu:', { pileName: pile.name, deckName: deck.name });
+    logger.log('[PoolTabletop] Pile context menu:', { pileName: pile.name, deckName: deck.name });
 
     switch(action) {
       case 'lock':
@@ -746,7 +766,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
         setPileContextMenu(null);
         break;
       case 'searchDeck':
-        console.log('[PoolTabletop] Dispatching open-search-deck-modal event:', { deckId: deck.id, pileId: pile.id });
+        logger.log('[PoolTabletop] Dispatching open-search-deck-modal event:', { deckId: deck.id, pileId: pile.id });
         // Open search deck modal - dispatch event to main app
         window.dispatchEvent(new CustomEvent('open-search-deck-modal', {
           detail: { deckId: deck.id, pileId: pile.id }
@@ -1005,6 +1025,178 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     setDraggingObject(null);
   }, [draggingObject, dragStartPos, currentZoom, pixelsPerVU, dispatch, poolZone, state.objects, handleRollDice, poolZone.panelId]);
 
+  // Drop cards to deck in pool panel
+  const dropToDeck = useCallback((deckId: string, slotItems?: (Card | TableObject)[]) => {
+    const cursorSlotObjects = slotItems ?? getCursorSlotObjects(state.objects);
+
+    if (cursorSlotObjects.length === 0) {
+      return;
+    }
+
+    const deck = state.objects[deckId] as DeckType;
+    if (!deck) {
+      return;
+    }
+
+    // Only add cards to deck (not tokens)
+    const cardsInSlot = cursorSlotObjects.filter(item => item.type === ItemType.CARD);
+    if (cardsInSlot.length > 0) {
+      console.log('[PoolTabletop] Dropping cards to deck:', {
+        cardsCount: cardsInSlot.length,
+        cardIds: cardsInSlot.map(c => c.id),
+        deckId: deckId
+      });
+
+      // Add cards to deck in reverse order (last in slot = first to be added = ends up on top)
+      // ADD_CARD_TO_TOP_OF_DECK will handle setting inCursorSlot: false and updating position
+      // It also prevents duplicate additions by checking if card is already in deck
+      [...cardsInSlot].reverse().forEach((item) => {
+        dispatch({
+          type: 'ADD_CARD_TO_TOP_OF_DECK',
+          payload: { cardId: item.id, deckId }
+        });
+      });
+    }
+
+    // For non-card items (tokens), drop them on the pool tabletop at deck position
+    const nonCardsInSlot = cursorSlotObjects.filter(item => item.type !== ItemType.CARD);
+    if (nonCardsInSlot.length > 0) {
+      const sortedTokens = [...nonCardsInSlot].sort((a, b) => {
+        const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+        const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+        return zB - zA; // Descending order - higher Z first
+      });
+
+      const minOriginalZ = Math.min(...nonCardsInSlot.map(item => (item as any).originalZIndex ?? 0));
+
+      sortedTokens.forEach((item, sortedIndex) => {
+        const baseWidth = item.width ?? 50;
+        const baseHeight = item.height ?? 50;
+
+        const offsetFromFront = sortedIndex;
+        const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
+        const offsetX = offsetFromFront * offsetAmount;
+        const offsetY = offsetFromFront * offsetAmount;
+
+        // Use DROP_FROM_CURSOR_SLOT action
+        dispatch({
+          type: 'DROP_FROM_CURSOR_SLOT',
+          payload: {
+            objectId: item.id,
+            x: deck.x + deck.width / 2 - baseWidth / 2 + offsetX,
+            y: deck.y + deck.height / 2 - baseHeight / 2 + offsetY,
+            zIndex: Math.min(10000 + ((item as any).originalZIndex ?? item.zIndex ?? 0) - minOriginalZ, 10000),
+          }
+        });
+      });
+    }
+
+    // Clear cursor slot after successful drop
+    window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
+      detail: { reason: 'pool-deck-drop' }
+    }));
+  }, [state.objects, dispatch]);
+
+  // Drop cards to pile in pool panel
+  const dropToPile = useCallback((pileId: string, deckId: string, slotItems?: (Card | TableObject)[]) => {
+    const cursorSlotObjects = slotItems ?? getCursorSlotObjects(state.objects);
+
+    if (cursorSlotObjects.length === 0) {
+      return;
+    }
+
+    // Only add cards to pile (not tokens)
+    const cardsInSlot = cursorSlotObjects.filter(item => item.type === ItemType.CARD);
+    if (cardsInSlot.length > 0) {
+      console.log('[PoolTabletop] Dropping cards to pile:', {
+        cardsCount: cardsInSlot.length,
+        cardIds: cardsInSlot.map(c => c.id),
+        pileId: pileId,
+        deckId: deckId
+      });
+
+      // First, restore cards from cursor slot (set inCursorSlot: false)
+      // Use _localOnly to prevent visual flicker - card will be updated again by ADD_CARD_TO_TOP_OF_DECK/ADD_CARD_TO_PILE
+      cardsInSlot.forEach((item) => {
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: item.id, inCursorSlot: false, fromPoolPanel: undefined, _localOnly: true }
+        });
+      });
+
+      // Then add them to the pile in reverse order (last in slot = first to be added = ends up on top)
+      [...cardsInSlot].reverse().forEach((item) => {
+        dispatch({
+          type: 'ADD_CARD_TO_PILE',
+          payload: { cardId: item.id, pileId, deckId }
+        });
+      });
+    }
+
+    // For non-card items (tokens), drop them on the pool tabletop near the pile
+    const deck = state.objects[deckId] as DeckType;
+    const pile = deck?.piles?.find(p => p.id === pileId);
+    const nonCardsInSlot = cursorSlotObjects.filter(item => item.type !== ItemType.CARD);
+    if (nonCardsInSlot.length > 0 && deck && pile) {
+      // Calculate pile position
+      const pileSize = pile.size ?? 1;
+      let pileX: number, pileY: number;
+
+      if (pile.position === 'free') {
+        pileX = pile.x ?? 0;
+        pileY = pile.y ?? 0;
+      } else if (pile.position === 'right') {
+        pileX = deck.x + deck.width + 4;
+        pileY = deck.y;
+      } else if (pile.position === 'left') {
+        pileX = deck.x - deck.width - 4;
+        pileY = deck.y;
+      } else if (pile.position === 'top') {
+        pileX = deck.x;
+        pileY = deck.y - deck.height - 4;
+      } else if (pile.position === 'bottom') {
+        pileX = deck.x;
+        pileY = deck.y + deck.height + 4;
+      } else {
+        pileX = deck.x;
+        pileY = deck.y;
+      }
+
+      const sortedTokens = [...nonCardsInSlot].sort((a, b) => {
+        const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+        const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+        return zB - zA; // Descending order - higher Z first
+      });
+
+      const minOriginalZ = Math.min(...nonCardsInSlot.map(item => (item as any).originalZIndex ?? 0));
+
+      sortedTokens.forEach((item, sortedIndex) => {
+        const baseWidth = item.width ?? 50;
+        const baseHeight = item.height ?? 50;
+
+        const offsetFromFront = sortedIndex;
+        const offsetAmount = Math.min(baseWidth, baseHeight) * 0.05;
+        const offsetX = offsetFromFront * offsetAmount;
+        const offsetY = offsetFromFront * offsetAmount;
+
+        dispatch({
+          type: 'DROP_FROM_CURSOR_SLOT',
+          payload: {
+            objectId: item.id,
+            x: pileX + offsetX,
+            y: pileY + offsetY,
+            zIndex: Math.min(10000 + ((item as any).originalZIndex ?? item.zIndex ?? 0) - minOriginalZ, 10000),
+          }
+        });
+      });
+    }
+
+    // Clear cursor slot after successful drop
+    window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
+      detail: { reason: 'pool-pile-drop' }
+    }));
+  }, [state.objects, dispatch]);
+
   // Add global mouse listeners for object dragging (for both non-draggable items and draggable objects)
   useEffect(() => {
     if (draggingObject || isDraggingDice || isDraggingGeneric) {
@@ -1015,6 +1207,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
         window.removeEventListener('mouseup', handleObjectMouseUp);
       };
     }
+    return undefined;
   }, [draggingObject, isDraggingDice, isDraggingGeneric, handleObjectMouseMove, handleObjectMouseUp]);
 
   // Handle drop from cursor slot (local handler for mouseup on PoolTabletop)
@@ -1026,7 +1219,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
     const submenuElement = target.closest('[data-submenu="true"]');
     if (tableContextMenuElement || poolContextMenuElement || submenuElement) {
-      console.log('[PoolTabletop] Mouseup inside context menu, ignoring drop handler');
+      logger.log('[PoolTabletop] Mouseup inside context menu, ignoring drop handler');
       return;
     }
 
@@ -1039,14 +1232,37 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     if (e.ctrlKey || e.metaKey) return;
 
     // IMPORTANT: Check if cursor is over a deck or pile FIRST
-    // If yes, let the main Tabletop handle it (don't drop to pool)
+    // If the deck/pile is in THIS pool panel, handle it locally
     const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
 
     // Check for piles FIRST (before deck) - piles are more specific targets
     const pileElement = elementUnderCursor?.closest('[data-pile-id]');
     if (pileElement) {
-      console.log('[PoolTabletop] Cursor over pile, letting main handler process it');
-      return; // Let main Tabletop handle it
+      const pileId = pileElement.getAttribute('data-pile-id');
+      const deckElement = pileElement.closest('[data-object-id]');
+      const deckId = deckElement?.getAttribute('data-object-id');
+
+      if (pileId && deckId) {
+        const deck = state.objects[deckId] as DeckType;
+        // Check if this deck is in the current pool panel
+        if (deck && deck.x >= poolZone.offsetX && deck.x < poolZone.offsetX + poolZone.width &&
+            deck.y >= poolZone.offsetY && deck.y < poolZone.offsetY + poolZone.height) {
+          // Check if cursor is actually over the pile element's bounding box
+          const pileRect = pileElement.getBoundingClientRect();
+          const isOverPile = e.clientX >= pileRect.left && e.clientX <= pileRect.right &&
+                           e.clientY >= pileRect.top && e.clientY <= pileRect.bottom;
+
+          if (isOverPile) {
+            logger.log('[PoolTabletop] Dropping to pile in pool panel:', { pileId, deckId });
+            dropToPile(pileId, deckId);
+            return;
+          }
+        }
+        // Pile is in main tabletop - let main handler process it
+        logger.log('[PoolTabletop] Cursor over pile in main tabletop, letting main handler process it');
+        return;
+      }
+      // If not a valid pile, ignore and continue
     }
 
     // Check for deck
@@ -1055,9 +1271,27 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       const objectId = deckElement.getAttribute('data-object-id');
       const obj = objectId ? state.objects[objectId] : undefined;
       if (obj && obj.type === ItemType.DECK) {
-        console.log('[PoolTabletop] Cursor over deck, letting main handler process it:', objectId);
-        return; // Let main Tabletop handle it
+        const deck = obj as DeckType;
+        // Check if this deck is in the current pool panel
+        if (deck.x >= poolZone.offsetX && deck.x < poolZone.offsetX + poolZone.width &&
+            deck.y >= poolZone.offsetY && deck.y < poolZone.offsetY + poolZone.height) {
+          // Check if cursor is actually over the deck element's bounding box
+          const deckRect = deckElement.getBoundingClientRect();
+          const isOverDeck = e.clientX >= deckRect.left && e.clientX <= deckRect.right &&
+                            e.clientY >= deckRect.top && e.clientY <= deckRect.bottom;
+
+          if (isOverDeck) {
+            logger.log('[PoolTabletop] Dropping to deck in pool panel:', objectId);
+            dropToDeck(objectId);
+            return;
+          }
+        }
+        // Deck is in main tabletop - let main handler process it
+        logger.log('[PoolTabletop] Cursor over deck in main tabletop, letting main handler process it:', objectId);
+        return;
       }
+      // If not a deck, ignore this element and continue to check for pool drop
+      logger.log('[PoolTabletop] Cursor over non-deck object, ignoring for deck drop check');
     }
 
     const cursorSlotObjects = getCursorSlotObjects(state.objects);
@@ -1075,7 +1309,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       // Get scroll parent to account for scroll position
       const scrollParent = container.closest('.overflow-auto');
       if (!scrollParent) {
-        console.warn('Scroll parent not found for pool drop operation');
+        logger.warn('Scroll parent not found for pool drop operation');
         return;
       }
 
@@ -1099,7 +1333,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       // Get the visible content area (data-pool-content)
       const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
       if (!visibleContentArea) {
-        console.warn('[PoolTabletop] Visible content area not found');
+        logger.warn('[PoolTabletop] Visible content area not found');
         return;
       }
 
@@ -1147,7 +1381,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
         detail: { reason: 'pool-drop' }
       }));
     }
-  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, contextMenu]);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, contextMenu, dropToDeck, dropToPile]);
 
   // Global mouseup handler for cursor slot drop (handles all mouseup events)
   // This ensures objects are dropped even if mouseup happens outside PoolTabletop
@@ -1171,7 +1405,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       // Get the visible content area (data-pool-content) - this is the VISIBLE window
       const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
       if (!visibleContentArea) {
-        console.warn('[PoolTabletop] Visible content area not found');
+        logger.warn('[PoolTabletop] Visible content area not found');
         return;
       }
 
@@ -1184,6 +1418,70 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
                                      y >= visibleRect.top && y <= visibleRect.bottom;
 
       if (isCursorOverVisibleArea) {
+        // IMPORTANT: Check if cursor is over a deck or pile FIRST
+        // If the deck/pile is in THIS pool panel, handle it locally
+        const elementUnderCursor = document.elementFromPoint(x, y);
+
+        // Check for piles FIRST (before deck) - piles are more specific targets
+        const pileElement = elementUnderCursor?.closest('[data-pile-id]');
+        if (pileElement) {
+          const pileId = pileElement.getAttribute('data-pile-id');
+          const deckElement = pileElement.closest('[data-object-id]');
+          const deckId = deckElement?.getAttribute('data-object-id');
+
+          if (pileId && deckId) {
+            const deck = state.objects[deckId] as DeckType;
+            // Check if this deck is in the current pool panel
+            if (deck && deck.x >= poolZone.offsetX && deck.x < poolZone.offsetX + poolZone.width &&
+                deck.y >= poolZone.offsetY && deck.y < poolZone.offsetY + poolZone.height) {
+              // Check if cursor is actually over the pile element's bounding box
+              const pileRect = pileElement.getBoundingClientRect();
+              const isOverPile = x >= pileRect.left && x <= pileRect.right &&
+                               y >= pileRect.top && y <= pileRect.bottom;
+
+              if (isOverPile) {
+                logger.log('[PoolTabletop] Global mouseup - dropping to pile in pool panel:', { pileId, deckId });
+                dropToPile(pileId, deckId);
+                e.stopPropagation();
+                e.preventDefault();
+                return;
+              }
+            }
+            // Pile is in main tabletop - let main handler process it
+            return;
+          }
+          // If not a valid pile, ignore and continue
+        }
+
+        // Check for deck
+        const deckElement = elementUnderCursor?.closest('[data-object-id]');
+        if (deckElement) {
+          const objectId = deckElement.getAttribute('data-object-id');
+          const obj = objectId ? state.objects[objectId] : undefined;
+          if (obj && obj.type === ItemType.DECK) {
+            const deck = obj as DeckType;
+            // Check if this deck is in the current pool panel
+            if (deck.x >= poolZone.offsetX && deck.x < poolZone.offsetX + poolZone.width &&
+                deck.y >= poolZone.offsetY && deck.y < poolZone.offsetY + poolZone.height) {
+              // Check if cursor is actually over the deck element's bounding box
+              const deckRect = deckElement.getBoundingClientRect();
+              const isOverDeck = x >= deckRect.left && x <= deckRect.right &&
+                                y >= deckRect.top && y <= deckRect.bottom;
+
+              if (isOverDeck) {
+                logger.log('[PoolTabletop] Global mouseup - dropping to deck in pool panel:', objectId);
+                dropToDeck(objectId);
+                e.stopPropagation();
+                e.preventDefault();
+                return;
+              }
+            }
+            // Deck is in main tabletop - let main handler process it
+            return;
+          }
+          // If not a deck, ignore this element and continue to check for pool drop
+        }
+
         // Get the scroll parent (PoolGameSpace) to account for scroll position
         const scrollParent = container.closest('.overflow-auto') as HTMLElement;
         const scrollLeft = scrollParent?.scrollLeft || 0;
@@ -1252,7 +1550,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
 
     window.addEventListener('mouseup', handleGlobalMouseUp, { capture: true });
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp, { capture: true } as any);
-  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects]);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, dropToDeck, dropToPile]);
 
   // Listen for object-drag-end event from main tabletop (for both cards and tokens)
   useEffect(() => {
@@ -1274,7 +1572,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       // Get the visible content area (data-pool-content) - this is the VISIBLE window
       const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
       if (!visibleContentArea) {
-        console.warn('[PoolTabletop] Visible content area not found');
+        logger.warn('[PoolTabletop] Visible content area not found');
         return;
       }
 
@@ -1736,3 +2034,8 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     </div>
   );
 };
+
+// Memoize PoolTabletop to prevent unnecessary re-renders
+export const PoolTabletopMemo = React.memo(PoolTabletop, (prevProps, nextProps) => {
+  return prevProps.panel.id === nextProps.panel.id;
+});

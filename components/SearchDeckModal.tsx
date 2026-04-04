@@ -705,6 +705,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
+    return undefined;
   }, [isResizing, pixelsPerVU]);
 
   return createPortal(
