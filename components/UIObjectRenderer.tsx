@@ -7,6 +7,8 @@ import { CharacterPanel } from './CharacterPanel';
 import { PoolPanel } from './PoolPanel';
 import { TableauPanel } from './TableauPanel';
 import { MainMenuContent } from './MainMenuContent';
+import { DrawingToolsPanel } from './DrawingToolsPanel';
+import { TokensPanel } from './TokensPanel';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { TopDeckModal } from './TopDeckModal';
@@ -1089,6 +1091,10 @@ const PanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
       return <TableauPanelWithDragDetection panel={panel} />;
     case PanelType.POOL:
       return <PoolPanelWithDragDetection panel={panel} />;
+    case PanelType.DRAWING_TOOLS:
+      return <DrawingToolsPanelWithDragDetection panel={panel} />;
+    case PanelType.TOKENS:
+      return <TokensPanelWithDragDetection panel={panel} />;
     // TODO: Add other panel types
     // case PanelType.CHAT:
     //   return <ChatPanel />;

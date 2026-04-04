@@ -527,6 +527,8 @@ export enum PanelType {
   TABLEAU = 'TABLEAU',  // Tableau panel for card tableau
   POOL = 'POOL',        // Pool panel for drawing cards
   CHARACTER = 'CHARACTER',  // Character panel for RPG games
+  DRAWING_TOOLS = 'DRAWING_TOOLS',  // Drawing tools panel
+  TOKENS = 'TOKENS',  // Tokens panel for quick access
 }
 
 // Window types for modal windows

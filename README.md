@@ -118,9 +118,21 @@ NexusGameTable/
 
 ## Documentation
 
+### 📚 User Guides
 - 📖 [Full Documentation](./DOCUMENTATION.md) — complete description of all mechanics
 - 🚀 [Quick Start](./QUICK_START.md) — short guide for players
-- 👨‍💻 [Developer Guide](./DEVELOPER_GUIDE.md) — for contributors
+- 📋 [Changelog](./CHANGELOG.md) — version history and new features
+
+### 📖 Features & Systems
+- 🎴 [Pool Panels](./docs/POOL_PANELS.md) — separate game spaces per tab
+- 🖼️ [Image System](./docs/IMAGES.md) — image persistence and storage
+- 📦 [Packs](./docs/PACKS.md) — card packs for large decks
+- 🗺️ [Game Space Architecture](./docs/GAME_SPACE_ARCHITECTURE.md) — world layout and coordinates
+
+### 👨‍💻 Developer Resources
+- 🔧 [Developer Guide](./DEVELOPER_GUIDE.md) — contributing to the project
+- 🔄 [Refactoring Guide](./docs/REFACTORING_GUIDE.md) — code organization patterns
+- 🖱️ [Drag & Drop](./docs/DRAG_DROP_POOL_PANELS.md) — drag-drop system technical details
 
 ## Multiplayer
 
