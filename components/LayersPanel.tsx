@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../store/GameContext';
 import { HyperscaleLayer } from '../types';
-import { Plus, Trash2, Settings, ChevronDown, ChevronUp, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Settings } from 'lucide-react';
 import { Locale, t as translate } from '../utils/translations';
 
 interface LayersPanelProps {
@@ -68,11 +68,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
 
     // Find the highest maxZIndex and lowest minZIndex to determine position
     const maxMaxZ = Math.max(...sortedLayers.map(l => l.maxZIndex));
-    const minMinZ = Math.min(...sortedLayers.map(l => l.minZIndex));
 
     // Default to placing above highest layer
-    const minZ = maxMaxZ + 1;
-    const maxZ = maxMaxZ + 1000;
+    const newLayerMin = maxMaxZ + 1;
+    const newLayerMax = maxMaxZ + 1000;
 
     // Clamp to valid range
     const clampedMinZ = Math.max(1, Math.min(10000, newLayerMin));
@@ -139,14 +138,6 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
     if (confirm(translate('Delete this layer?', language as Locale))) {
       dispatch({ type: 'DELETE_HYPERSCALE_LAYER', payload: { layerId } });
     }
-  };
-
-  // Update layer settings
-  const updateLayer = (layerId: string, updates: Partial<HyperscaleLayer>) => {
-    dispatch({
-      type: 'UPDATE_HYPERSCALE_LAYER',
-      payload: { layerId, updates }
-    });
   };
 
   // Open settings modal for layer
@@ -235,9 +226,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
       <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
         {sortedLayers.map((layer) => {
           const isSelected = isLayerSelected(layer.id);
-          const isEditing = editingLayerId === layer.id;
           const canSelect = canSelectLayer(layer);
-          const isVisibleInMenu = isLayerVisibleInContextMenu(layer);
 
           return (
             <div

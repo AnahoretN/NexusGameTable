@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
 import { useDrawingTool } from './ToolsPanel';
-import { ItemType, TableObject, Card as CardType, TokenShape, Stroke, StrokePoint, Drawing } from '../types';
+import { ItemType, Stroke, StrokePoint, Drawing } from '../types';
 
 interface DrawingCanvasProps {
   width: number;
@@ -10,18 +10,6 @@ interface DrawingCanvasProps {
   offsetY: number;
   cursorSlotLength: number; // Number of items in cursor slot
 }
-
-// Helper to check if a point is near a stroke
-const isPointNearStroke = (x: number, y: number, stroke: Stroke, threshold: number = 10): boolean => {
-  for (const point of stroke.points) {
-    const dx = point.x - x;
-    const dy = point.y - y;
-    if (Math.sqrt(dx * dx + dy * dy) < threshold + stroke.thickness / 2) {
-      return true;
-    }
-  }
-  return false;
-};
 
 // Calculate bounding box of a stroke
 const getStrokeBounds = (stroke: Stroke): { minX: number; minY: number; maxX: number; maxY: number } => {
@@ -46,25 +34,6 @@ const getStrokesBounds = (strokes: Stroke[]): { minX: number; minY: number; maxX
     maxY = Math.max(maxY, bounds.maxY);
   }
   return { minX, minY, maxX, maxY };
-};
-
-// Check if two drawing objects overlap
-const doDrawingsOverlap = (drawing1: Drawing, drawing2: Drawing, threshold: number = 20): boolean => {
-  const bounds1 = getStrokesBounds(drawing1.strokes);
-  const bounds2 = getStrokesBounds(drawing2.strokes);
-
-  // Check if bounding boxes overlap (with threshold)
-  return !(bounds1.maxX + drawing1.x < bounds2.minX + drawing2.x - threshold ||
-           bounds2.maxX + drawing2.x < bounds1.minX + drawing1.x - threshold ||
-           bounds1.maxY + drawing1.y < bounds2.minY + drawing2.y - threshold ||
-           bounds2.maxY + drawing2.y < bounds1.minY + drawing1.y - threshold);
-};
-
-// Check if a stroke actually overlaps with strokes of the same color in a drawing
-// (not just bounding box overlap, but actual pixel/coordinate intersection)
-const findOverlappingDrawing = (stroke: Stroke, drawings: Drawing[]): Drawing | null => {
-  const overlapping = findOverlappingDrawings(stroke, drawings);
-  return overlapping.length > 0 ? overlapping[0] : null;
 };
 
 // Find ALL drawings that overlap with the given stroke (same color only)
@@ -617,7 +586,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
         drawing.strokes.forEach((stroke) => {
           // Find points that should be erased (within eraser radius)
-          const survivingPoints: StrokePoint[] = [];
           const segments: StrokePoint[][] = [];
           let currentSegment: StrokePoint[] = [];
 

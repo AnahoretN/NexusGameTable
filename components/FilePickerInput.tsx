@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { logger } from '../utils/logger';
 
 interface FilePickerInputProps {
   value: string;
@@ -66,7 +67,7 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
         const base64Url = await fileToBase64(file);
         onChange(base64Url);
       } catch (error) {
-        console.error('Failed to convert file to base64:', error);
+        logger.error('Failed to convert file to base64:', error);
       } finally {
         setIsLoading(false);
       }

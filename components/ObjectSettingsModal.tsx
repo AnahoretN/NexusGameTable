@@ -62,13 +62,13 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
 }
 
 // Get move to actions with translated labels
-function getMoveToActions(language: AppLanguage = 'en'): { id: ContextAction | 'mill'; label: string }[] {
+function getMoveToActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
   return [
     { id: 'moveTo', label: translate('Move to... (section)', language as Locale) },
     { id: 'moveToHand', label: translate('Move to Hand', language as Locale) },
     { id: 'moveToTopDeck', label: translate('Move to Top Deck', language as Locale) },
     { id: 'moveToBottomDeck', label: translate('Move to Bottom Deck', language as Locale) },
-    { id: 'mill' as any, label: translate('Mill', language as Locale) },
+    { id: 'moveToDiscard', label: translate('Mill', language as Locale) },
   ];
 }
 
@@ -2508,7 +2508,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           action.id === 'toBottom' || action.id === 'showTop') return false;
                       // Exclude individual Move To actions (keep moveTo section only)
                       if (action.id === 'moveToHand' || action.id === 'moveToTopDeck' ||
-                          action.id === 'moveToBottomDeck' || action.id === 'mill') return false;
+                          action.id === 'moveToBottomDeck' || action.id === 'moveToDiscard') return false;
                       // Exclude swing actions (only for Action Buttons, not Context Menu)
                       if (action.id === 'swingClockwise' || action.id === 'swingCounterClockwise') return false;
                       return true;
@@ -2528,7 +2528,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                               a.id === 'toBottom' || a.id === 'showTop') return false;
                           // Exclude individual Move To actions (keep moveTo section only)
                           if (a.id === 'moveToHand' || a.id === 'moveToTopDeck' ||
-                              a.id === 'moveToBottomDeck' || a.id === 'mill') return false;
+                              a.id === 'moveToBottomDeck' || a.id === 'moveToDiscard') return false;
                           // Exclude swing actions (only for Action Buttons, not Context Menu)
                           if (a.id === 'swingClockwise' || a.id === 'swingCounterClockwise') return false;
                           return true;
@@ -2561,7 +2561,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                               a.id === 'toBottom' || a.id === 'showTop') return false;
                           // Exclude individual Move To actions (keep moveTo section only)
                           if (a.id === 'moveToHand' || a.id === 'moveToTopDeck' ||
-                              a.id === 'moveToBottomDeck' || a.id === 'mill') return false;
+                              a.id === 'moveToBottomDeck' || a.id === 'moveToDiscard') return false;
                           // Exclude swing actions (only for Action Buttons, not Context Menu)
                           if (a.id === 'swingClockwise' || a.id === 'swingCounterClockwise') return false;
                           return true;

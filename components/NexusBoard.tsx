@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { NexusBoard as NexusBoardType, HexDirection, NexusCell, TokenShape } from '../types';
+import { NexusBoard as NexusBoardType, HexDirection, TokenShape } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 import { Plus } from 'lucide-react';
 
@@ -33,13 +33,13 @@ const HEX_DIRECTIONS: { direction: HexDirection; x: number; y: number }[] = [
 export const NexusBoard: React.FC<NexusBoardProps> = ({
   board,
   isOwner,
-  isDragging,
-  zoom,
+  isDragging: _isDragging,
+  zoom: _zoom,
   onMouseDown,
   onContextMenu,
   onAddCell,
   showAddUI = false,
-  selectedCellIds = [],
+  selectedCellIds: _selectedCellIds,
   onCellSelect,
   mainCellWidth,
   mainCellHeight,
@@ -116,12 +116,6 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
     onAddCell(direction);
     setHoveredDirection(null);
   }, [onAddCell]);
-
-  // Handle cell click
-  const handleCellClick = useCallback((e: React.MouseEvent, cellId: string) => {
-    e.stopPropagation();
-    onCellSelect?.(cellId);
-  }, [onCellSelect]);
 
   return (
     <div

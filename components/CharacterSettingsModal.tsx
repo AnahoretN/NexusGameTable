@@ -5,9 +5,6 @@ import { User, Users, X as XIcon } from 'lucide-react';
 interface CharacterSettingsModalProps {
   character: CharacterTab;
   players: Player[];
-  activePlayerId: string;
-  isGM: boolean;
-  canEditCharacter: boolean;
   onSave: (updatedCharacter: CharacterTab) => void;
 }
 
@@ -16,10 +13,7 @@ type AccessType = 'visible' | 'manageable' | 'editable';
 export const CharacterSettingsModal: React.FC<CharacterSettingsModalProps> = ({
   character,
   players,
-  activePlayerId,
-  isGM,
-  canEditCharacter,
-  onSave
+  onSave: _onSave
 }) => {
   const [tempCharacter, setTempCharacter] = useState<CharacterTab>(character);
 

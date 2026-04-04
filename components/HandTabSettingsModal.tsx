@@ -16,9 +16,9 @@ type AccessType = 'visible' | 'manageable';
 export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
   player,
   players,
-  activePlayerId,
-  isGM,
-  onSave,
+  activePlayerId: _activePlayerId,
+  isGM: _isGM,
+  onSave: _onSave,
   onScaleChange
 }) => {
   const [tempPlayer, setTempPlayer] = useState<Player>({

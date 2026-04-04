@@ -225,7 +225,7 @@ export const TableBlock: React.FC<TableBlockProps> = ({ block, editable, onChang
             </tr>
           </thead>
           <tbody>
-            {data.rows.map((row, rowIndex) => (
+            {data.rows.map((row) => (
               <tr
                 key={row.id}
                 onContextMenu={(e) => {

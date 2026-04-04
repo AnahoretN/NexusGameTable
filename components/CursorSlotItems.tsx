@@ -5,7 +5,7 @@ import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { Layers } from 'lucide-react';
 import { DECK_OFFSET } from '../constants';
-import { BoardWithResizeMemo } from './Tabletop/BoardWithResize';
+import { logger } from '../utils/logger';
 
 interface CursorSlotItemProps {
   item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType;
@@ -275,7 +275,7 @@ const CursorSlotDice: React.FC<CursorSlotItemProps & { item: DiceObject }> = ({ 
 /**
  * Renders a board in the cursor slot
  */
-const CursorSlotBoard: React.FC<CursorSlotItemProps & { item: BoardType }> = ({ item, width, height, offsetX, offsetY, zIndex, state }) => {
+const CursorSlotBoard: React.FC<CursorSlotItemProps & { item: BoardType }> = ({ item, width, height, offsetX, offsetY, zIndex, state: _state }) => {
   return (
     <div
       style={{
@@ -344,7 +344,7 @@ export const renderCursorSlotItem = (props: CursorSlotItemProps, key: string) =>
       return <CursorSlotBoard key={key} {...props} item={item as BoardType} />;
 
     default:
-      console.warn('[renderCursorSlotItem] Unknown item type:', (item as any).type);
+      logger.warn('[renderCursorSlotItem] Unknown item type:', (item as any).type);
       return null;
   }
 };

@@ -4,6 +4,8 @@
  * to avoid re-sending large image data on every update
  */
 
+import { logger } from './logger';
+
 export interface ImageCache {
   [imageId: string]: string; // imageId -> base64 data
 }
@@ -185,8 +187,8 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
   const hasRefs = stateJson.includes('img_ref://');
 
   if (hasBase64) {
-    console.warn('[P2P Debug] extractImagesFromState: State still has base64 data! Extraction failed.');
-    console.warn('[P2P Debug] Objects with remaining base64:', Object.values(processedObjects).filter((obj: any) => {
+    logger.warn('[P2P Debug] extractImagesFromState: State still has base64 data! Extraction failed.');
+    logger.warn('[P2P Debug] Objects with remaining base64:', Object.values(processedObjects).filter((obj: any) => {
       const json = JSON.stringify(obj);
       return json.includes('data:image/');
     }).map((obj: any) => {
@@ -206,12 +208,12 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
     }));
   }
 
-  console.log(`[ImageCache] Extracted ${Object.keys(cache).length} images (${Object.keys(cache).length - Object.keys(existingCache).length} new) from ${Object.keys(processedObjects).length} objects`);
+  logger.log(`[ImageCache] Extracted ${Object.keys(cache).length} images (${Object.keys(cache).length - Object.keys(existingCache).length} new) from ${Object.keys(processedObjects).length} objects`);
 
   // Debug: check DECK objects specifically
   const decks = Object.values(processedObjects).filter((obj: any) => obj.type === 'DECK');
   if (decks.length > 0) {
-    console.log(`[ImageCache] Processed ${decks.length} decks:`, decks.map((deck: any) => ({
+    logger.log(`[ImageCache] Processed ${decks.length} decks:`, decks.map((deck: any) => ({
       id: deck.id,
       name: deck.name,
       hasSpriteConfig: !!deck.spriteConfig,
@@ -323,9 +325,9 @@ export async function saveImageCacheToIDB(cache: ImageCache): Promise<void> {
     });
 
     await Promise.all(promises);
-    console.log(`[ImageCache] Saved ${Object.keys(cache).length} images to IndexedDB`);
+    logger.log(`[ImageCache] Saved ${Object.keys(cache).length} images to IndexedDB`);
   } catch (error) {
-    console.error('[ImageCache] Failed to save to IndexedDB:', error);
+    logger.error('[ImageCache] Failed to save to IndexedDB:', error);
   }
 }
 
@@ -348,14 +350,14 @@ export async function saveSingleImageToIDB(imageId: string, dataUrl: string): Pr
       const request = store.put(entry);
 
       request.onsuccess = () => {
-        console.log(`[ImageCache] Saved image ${imageId} to IndexedDB`);
+        logger.log(`[ImageCache] Saved image ${imageId} to IndexedDB`);
         resolve();
       };
 
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    console.error('[ImageCache] Failed to save single image:', error);
+    logger.error('[ImageCache] Failed to save single image:', error);
   }
 }
 
@@ -379,14 +381,14 @@ export async function loadImageCacheFromIDB(): Promise<ImageCache> {
           cache[entry.id] = entry.data;
         });
 
-        console.log(`[ImageCache] Loaded ${Object.keys(cache).length} images from IndexedDB`);
+        logger.log(`[ImageCache] Loaded ${Object.keys(cache).length} images from IndexedDB`);
         resolve(cache);
       };
 
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    console.error('[ImageCache] Failed to load from IndexedDB:', error);
+    logger.error('[ImageCache] Failed to load from IndexedDB:', error);
     return {};
   }
 }
@@ -411,7 +413,7 @@ export async function getImageFromIDB(imageId: string): Promise<string | null> {
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    console.error('[ImageCache] Failed to get image from IndexedDB:', error);
+    logger.error('[ImageCache] Failed to get image from IndexedDB:', error);
     return null;
   }
 }
@@ -429,14 +431,14 @@ export async function clearImageCacheIDB(): Promise<void> {
       const request = store.clear();
 
       request.onsuccess = () => {
-        console.log('[ImageCache] Cleared all images from IndexedDB');
+        logger.log('[ImageCache] Cleared all images from IndexedDB');
         resolve();
       };
 
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    console.error('[ImageCache] Failed to clear IndexedDB:', error);
+    logger.error('[ImageCache] Failed to clear IndexedDB:', error);
   }
 }
 
@@ -463,7 +465,7 @@ export async function cleanOldImagesFromIDB(daysOld: number = 30): Promise<numbe
           deletedCount++;
           cursor.continue();
         } else {
-          console.log(`[ImageCache] Cleaned ${deletedCount} old images from IndexedDB`);
+          logger.log(`[ImageCache] Cleaned ${deletedCount} old images from IndexedDB`);
           resolve(deletedCount);
         }
       };
@@ -471,7 +473,7 @@ export async function cleanOldImagesFromIDB(daysOld: number = 30): Promise<numbe
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    console.error('[ImageCache] Failed to clean old images:', error);
+    logger.error('[ImageCache] Failed to clean old images:', error);
     return 0;
   }
 }
@@ -497,7 +499,7 @@ export async function getIDBCacheInfo(): Promise<{ count: number; totalSize: num
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    console.error('[ImageCache] Failed to get cache info:', error);
+    logger.error('[ImageCache] Failed to get cache info:', error);
     return { count: 0, totalSize: 0 };
   }
 }

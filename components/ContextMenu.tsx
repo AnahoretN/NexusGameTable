@@ -32,7 +32,7 @@ interface MenuItem {
   isSeparator?: boolean;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey, contextMenuType = 'tabletop' }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey: _shiftKey, contextMenuType = 'tabletop' }) => {
   const { state } = useGame();
 
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
@@ -459,7 +459,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     },
     // Return All section for decks
     ...(object.type === ItemType.DECK && can('returnAll') ? (() => {
-      const deck = object as DeckType;
       const returnSubmenuItems: MenuItem[] = [
         {
           label: translate('All', language as Locale),
@@ -759,7 +758,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         data-context-menu={contextMenuType}
         className="fixed z-[9999992] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100 cursor-pointer"
         style={menuStyle}
-        onClick={(e) => {
+        onClick={() => {
           // Menu container click
         }}
         onMouseDown={(e) => {

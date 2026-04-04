@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Undo, ChevronRight, ArrowUp, ArrowDown, Hand, Eye, EyeOff, Lock, Unlock, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown, Minus, Plus } from 'lucide-react';
+import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown, EyeOff } from 'lucide-react';
 import { ContextAction } from '../types';
 
 interface ObjectActionButtonsProps {
