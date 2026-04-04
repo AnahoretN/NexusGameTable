@@ -170,15 +170,12 @@ export function dropObjectsToPool(
   }
 
   try {
-    // Find all boards in pool zone with snapToGrid enabled
-    const boardsInPool = (poolObjects && typeof poolObjects === 'object') ? Object.values(poolObjects).filter(obj =>
-      obj.type === ItemType.BOARD &&
-      (obj as BoardType).snapToGrid &&
-      obj.x >= poolZone.offsetX &&
-      obj.x < poolZone.offsetX + poolZone.width &&
-      obj.y >= poolZone.offsetY &&
-      obj.y < poolZone.offsetY + poolZone.height
-    ) as BoardType[] : [];
+    // IMPORTANT: Disable board magnetism in pool panels
+    // Board magnetism causes issues when objects are dropped in pool panels that contain boards:
+    // - Objects get "stuck" to boards even when dropped far away
+    // - Decks and other objects may disappear or behave incorrectly
+    // Pool panels are for storage/organization, not for gameplay mechanics
+    const boardsInPool: BoardType[] = [];
 
     // Sort by zIndex in DESCENDING order to preserve layer relationships
     const sortedObjects = sortObjectsByLayerIndex(objects);
@@ -193,8 +190,8 @@ export function dropObjectsToPool(
       let finalX = dropPosition.baseX;
       let finalY = dropPosition.baseY;
 
-      // IMPORTANT: Clear any existing grid cell attachment before processing drop
-      // This prevents tokens from being "stuck" to boards when dropped to pool panel
+      // IMPORTANT: Clear any existing grid cell attachment when dropping to pool
+      // This prevents objects from retaining board attachments from main tabletop
       const existingGridCellKey = (obj as any).gridCellKey;
       if (existingGridCellKey) {
         // Parse the grid cell key (format: "boardId:col,row")
@@ -202,7 +199,7 @@ export function dropObjectsToPool(
         if (boardId && cellKey) {
           const board = state.objects[boardId] as any;
           if (board && board.gridCellMagnetPoints && board.gridCellMagnetPoints[cellKey]) {
-            // Remove token from board's magnet points
+            // Remove object from board's magnet points
             const updatedMagnetPoints = board.gridCellMagnetPoints[cellKey].magnetPoints
               .filter((mp: any) => mp.objectId !== obj.id);
 
@@ -214,7 +211,7 @@ export function dropObjectsToPool(
               }
             };
 
-            // Update board to remove token from magnet points
+            // Update board to remove object from magnet points
             dispatch({
               type: 'UPDATE_OBJECT',
               payload: {
@@ -222,88 +219,6 @@ export function dropObjectsToPool(
                 gridCellMagnetPoints: updatedGridCellMagnetPoints
               }
             });
-          }
-        }
-      }
-
-      // Apply board magnetism for tokens if boards are present
-      if (obj.type === ItemType.TOKEN && boardsInPool.length > 0) {
-        const token = obj as Token;
-
-        // Try to snap to each board's grid
-        for (const board of boardsInPool) {
-          if (!board.gridCellMagnetPoints) continue;
-
-          const gridW = board.gridWidth || board.gridSize || 50;
-          const gridH = board.gridHeight || board.gridSize || 50;
-
-          // Calculate relative position to board
-          const relativeX = finalX - board.x;
-          const relativeY = finalY - board.y;
-
-          // Find which cell this position is in
-          let col = 0, row = 0;
-          if (board.gridType === GridType.SQUARE) {
-            col = Math.floor(relativeX / gridW);
-            row = Math.floor(relativeY / gridH);
-          } else if (board.gridType === GridType.HEX) {
-            col = Math.floor(relativeX / (gridW || 100));
-            row = Math.floor(relativeY / (gridH || 115));
-          } else if (board.gridType === GridType.HEX_HORIZONTAL) {
-            col = Math.floor(relativeX / (gridW || 115));
-            row = Math.floor(relativeY / (gridH || 100));
-          }
-
-          // Check if this cell has magnet points available
-          const cellKey = `${col},${row}`;
-          const cellMagnet = board.gridCellMagnetPoints[cellKey];
-
-          if (cellMagnet && cellMagnet.magnetPoints && cellMagnet.magnetPoints.length < (cellMagnet.magnetPointCount || 1)) {
-            // Calculate cell center
-            const cellCenterX = board.x + (col * gridW) + (gridW / 2);
-            const cellCenterY = board.y + (row * gridH) + (gridH / 2);
-
-            // Check if token is close enough to snap (within 50 vu)
-            const distance = Math.sqrt(
-              Math.pow(finalX - cellCenterX, 2) +
-              Math.pow(finalY - cellCenterY, 2)
-            );
-
-            if (distance < 50) {
-              // Snap to cell center
-              finalX = cellCenterX - (token.width || 50) / 2;
-              finalY = cellCenterY - (token.height || 50) / 2;
-
-              // Add to board's magnet points
-              const updatedMagnetPoints = [...(cellMagnet.magnetPoints || []), { objectId: token.id, pointIndex: cellMagnet.magnetPoints.length }];
-              const updatedGridCellMagnetPoints = {
-                ...board.gridCellMagnetPoints,
-                [cellKey]: {
-                  ...cellMagnet,
-                  magnetPoints: updatedMagnetPoints
-                }
-              };
-
-              // Update board with new magnet points
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: {
-                  id: board.id,
-                  gridCellMagnetPoints: updatedGridCellMagnetPoints
-                }
-              });
-
-              // Store grid cell reference in token for easier unhooking
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: {
-                  id: token.id,
-                  gridCellKey: `${board.id}:${cellKey}`
-                }
-              });
-
-              break; // Only snap to first available board
-            }
           }
         }
       }
