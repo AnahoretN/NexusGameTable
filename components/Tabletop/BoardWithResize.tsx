@@ -306,5 +306,31 @@ export const BoardWithResizeMemo = React.memo(BoardWithResize, (prevProps, nextP
         }
     }
 
+    // IMPORTANT: Check board properties that affect rendering
+    const prevBoard = prevProps.token;
+    const nextBoard = nextProps.token;
+
+    // Check rotation changes
+    if ((prevBoard.rotation || 0) !== (nextBoard.rotation || 0)) {
+        return false; // Re-render when rotation changes
+    }
+
+    // Check grid size changes
+    if ((prevBoard.gridSize || 50) !== (nextBoard.gridSize || 50) ||
+        (prevBoard.gridWidth || 50) !== (nextBoard.gridWidth || 50) ||
+        (prevBoard.gridHeight || 50) !== (nextBoard.gridHeight || 50)) {
+        return false; // Re-render when grid cell size changes
+    }
+
+    // Check grid type changes
+    if (prevBoard.gridType !== nextBoard.gridType) {
+        return false; // Re-render when grid type changes
+    }
+
+    // Check showGrid changes
+    if (prevBoard.showGrid !== nextBoard.showGrid) {
+        return false; // Re-render when grid visibility changes
+    }
+
     return true; // Skip re-render by default
 });
