@@ -165,10 +165,79 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
           }, intervalTime);
         }
         break;
+      case 'draw':
+        if (obj.type === ItemType.DECK) {
+          dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: state.activePlayerId } });
+        }
+        break;
+      case 'playTopCard':
+        if (obj.type === ItemType.DECK) {
+          const deck = obj as DeckType;
+          if (deck.cardIds && deck.cardIds.length > 0) {
+            const topCardId = deck.cardIds[0];
+            const card = state.objects[topCardId] as Card;
+            if (!card) return;
+
+            const faceUp = deck.playTopFaceUp ?? true;
+
+            // Get mouse position
+            const mousePos = event
+              ? { x: event.clientX, y: event.clientY }
+              : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+
+            // Take the top card out of deck
+            dispatch({
+              type: 'TAKE_TOP_CARD',
+              payload: { deckId: deck.id }
+            });
+
+            // Add to cursor slot
+            const cardForSlot: Card = {
+              ...card,
+              location: CardLocation.CURSOR_SLOT,
+              faceUp: faceUp,
+              isOnTable: false
+            };
+
+            window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+              detail: {
+                cardId: card.id,
+                clientX: mousePos.x,
+                clientY: mousePos.y,
+                source: 'shift'
+              }
+            }));
+          }
+        }
+        break;
+      case 'millTopCard':
+        if (obj.type === ItemType.DECK) {
+          dispatch({ type: 'MILL_TOP_CARD', payload: { deckId: obj.id, playerId: state.activePlayerId } });
+        }
+        break;
+      case 'shuffleDeck':
+        if (obj.type === ItemType.DECK) {
+          window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
+            detail: { deckId: obj.id }
+          }));
+          dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id } });
+        }
+        break;
+      case 'searchDeck':
+        if (obj.type === ItemType.DECK) {
+          setSearchModalDeck(obj as DeckType);
+          setSearchModalPile(undefined);
+        }
+        break;
+      case 'topDeck':
+        if (obj.type === ItemType.DECK) {
+          setTopDeckModalDeck(obj as DeckType);
+        }
+        break;
       default:
         console.warn('[PoolTabletop] Unknown action:', action);
     }
-  }, [dispatch, state.activePlayerId]);
+  }, [dispatch, state.activePlayerId, state.objects]);
 
   // Pile context menu state
   const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
