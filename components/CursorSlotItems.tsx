@@ -149,7 +149,7 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
               borderWidth={2}
               orientation={cardOrientation}
             >
-              <Layers className="text-slate-400 mb-1" size={shouldUseSvgForDeck(cardShape) ? 12 : 16} />
+              <Layers className="text-slate-400 mb-2" size={shouldUseSvgForDeck(cardShape) ? 18 : 24} />
               <DeckLabel
                 name={item.name}
                 count={visibleCardCount}
@@ -176,9 +176,9 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
             />
           ))}
           <div className="absolute inset-0 bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex flex-col items-center justify-center">
-            <Layers className="text-slate-400 mb-1" size={16} />
-            <div className="text-slate-200 text-xs font-bold px-2 text-center leading-tight">{item.name}</div>
-            <div className="text-slate-500 text-xs mt-1">{visibleCardCount} / {totalCardCount}</div>
+            <Layers className="text-slate-400 mb-2" size={24} />
+            <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{item.name}</span>
+            <span className="text-xs text-slate-500 select-none">{visibleCardCount} / {totalCardCount}</span>
           </div>
         </>
       )}

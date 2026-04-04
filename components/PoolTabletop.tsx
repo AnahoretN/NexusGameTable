@@ -1640,6 +1640,12 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
                 onMouseDown={(e) => handleObjectMouseDown(e, obj)}
                 onContextMenu={(e) => handleContextMenu(e, obj)}
                 dispatch={dispatch}
+                allObjects={state.objects}
+                setDeleteCandidateId={setDeleteCandidateId}
+                setSearchModalDeck={setSearchModalDeck}
+                setTopDeckModalDeck={setTopDeckModalDeck}
+                animateDiceRoll={animateDiceRoll}
+                activePlayerId={state.activePlayerId}
                 style={{
                   left: relativeX,
                   top: relativeY
