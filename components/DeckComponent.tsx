@@ -54,9 +54,10 @@ interface DeckComponentProps {
   allObjects: Record<string, any>;
   currentTool?: string;
   pixelsPerVU?: number; // Conversion factor from vu to pixels
+  style?: React.CSSProperties; // Additional styles for positioning
 }
 
-export const DeckComponent: React.FC<DeckComponentProps> = ({
+export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   deck,
   draggingId,
   hoveredDeckId,
@@ -81,8 +82,16 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
   allObjects,
   currentTool = 'none',
   pixelsPerVU = 1.0,
+  style,
 }) => {
   const { state } = useGame();
+
+  // Memoized mouse down handler to prevent multiple re-renders
+  const handleDeckMouseDown = useCallback((e: React.MouseEvent) => {
+    if ((!deck.locked || isGM) && handleMouseDown) {
+      handleMouseDown(e, deck.id);
+    }
+  }, [deck.id, deck.locked, isGM]); // УБРАЛИ handleMouseDown из зависимостей!
 
   // Convert vu to pixels for deck dimensions
   const vuToPx = (vu: number) => vu * pixelsPerVU;
@@ -328,6 +337,11 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
     return () => clearTimeout(timeout);
   }, [isShuffling, visibleCardCount, deck.cardIds, deck.baseCardIds]);
 
+  // Don't render if deck is in cursor slot (it's being dragged)
+  if (deck.inCursorSlot) {
+    return null;
+  }
+
   return (
     <Tooltip
       text={deck.tooltipText}
@@ -335,7 +349,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
       imageSrc={deck.content}
       scale={deck.tooltipScale}
     >
-      <div style={{ position: 'relative', width: effectiveWidth, height: effectiveHeight }}>
+      <div style={{ position: 'relative', width: effectiveWidth, height: effectiveHeight, ...style }}>
         {/* Render piles */}
       {deck.piles?.filter(p => p.visible).map(pile => {
         const pilePos = getPilePosition(pile);
@@ -582,7 +596,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
         {/* Deck container - keeps normal z-index */}
         <div
           data-object-id={deck.id}
-          onMouseDown={(e) => (!deck.locked || isGM) && handleMouseDown(e, deck.id)}
+          onMouseDown={handleDeckMouseDown}
           onContextMenu={(e) => handleContextMenu(e, deck)}
           onMouseEnter={() => {
             // Allow hover if dragging card OR if cursor slot has cards
@@ -870,14 +884,12 @@ export const DeckComponent: React.FC<DeckComponentProps> = ({
       </div>
     </Tooltip>
   );
-};
+});
 
 // Memoize DeckComponent to prevent unnecessary re-renders
 export default React.memo(DeckComponent, (prevProps, nextProps) => {
   return (
     prevProps.deck.id === nextProps.deck.id &&
-    prevProps.deck.cardIds === nextProps.deck.cardIds &&
-    prevProps.deck.piles === nextProps.deck.piles &&
     prevProps.deck.rotation === nextProps.deck.rotation &&
     prevProps.deck.locked === nextProps.deck.locked &&
     prevProps.draggingId === nextProps.draggingId &&
@@ -885,5 +897,6 @@ export default React.memo(DeckComponent, (prevProps, nextProps) => {
     prevProps.hoveredPileId === nextProps.hoveredPileId &&
     prevProps.cursorSlotHasCards === nextProps.cursorSlotHasCards &&
     prevProps.currentTool === nextProps.currentTool
+    // УБРАЛИ сравнение массивов - они вызывают постоянные ререндеры!
   );
 });

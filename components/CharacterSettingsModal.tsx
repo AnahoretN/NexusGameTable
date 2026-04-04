@@ -82,9 +82,6 @@ export const CharacterSettingsModal: React.FC<CharacterSettingsModalProps> = ({
     if (playerId === 'all_players') {
       return { name: 'All Players', icon: Users };
     }
-    if (playerId === 'gm') {
-      return { name: 'GM', icon: Shield };
-    }
     const player = players.find(p => p.id === playerId);
     return {
       name: player?.name || 'Player',
@@ -145,9 +142,14 @@ export const CharacterSettingsModal: React.FC<CharacterSettingsModalProps> = ({
                 className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
               >
                 <option value="">Add player...</option>
-                {players.filter(p => !tempCharacter.visibleToPlayerIds?.includes(p.id)).map(player => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
-                ))}
+                {!tempCharacter.visibleToPlayerIds?.includes('all_players') && (
+                  <option value="all_players">All Players</option>
+                )}
+                {players
+                  .filter(p => !p.isGM && !tempCharacter.visibleToPlayerIds?.includes(p.id))
+                  .map(player => (
+                    <option key={player.id} value={player.id}>{player.name}</option>
+                  ))}
               </select>
             </div>
           </div>
@@ -193,9 +195,14 @@ export const CharacterSettingsModal: React.FC<CharacterSettingsModalProps> = ({
                 className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
               >
                 <option value="">Add player...</option>
-                {players.filter(p => !tempCharacter.manageableByPlayerIds?.includes(p.id)).map(player => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
-                ))}
+                {!tempCharacter.manageableByPlayerIds?.includes('all_players') && (
+                  <option value="all_players">All Players</option>
+                )}
+                {players
+                  .filter(p => !p.isGM && !tempCharacter.manageableByPlayerIds?.includes(p.id))
+                  .map(player => (
+                    <option key={player.id} value={player.id}>{player.name}</option>
+                  ))}
               </select>
             </div>
           </div>
@@ -241,9 +248,14 @@ export const CharacterSettingsModal: React.FC<CharacterSettingsModalProps> = ({
                 className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
               >
                 <option value="">Add player...</option>
-                {players.filter(p => !tempCharacter.editableByPlayerIds?.includes(p.id)).map(player => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
-                ))}
+                {!tempCharacter.editableByPlayerIds?.includes('all_players') && (
+                  <option value="all_players">All Players</option>
+                )}
+                {players
+                  .filter(p => !p.isGM && !tempCharacter.editableByPlayerIds?.includes(p.id))
+                  .map(player => (
+                    <option key={player.id} value={player.id}>{player.name}</option>
+                  ))}
               </select>
             </div>
           </div>

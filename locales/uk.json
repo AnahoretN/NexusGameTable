@@ -356,5 +356,6 @@
 "Create Pack": "Створити пак",
 "A pack contains your game state and all custom images in a single file": "Пак містить стан гри та всі користувацькі зображення в одному файлі",
 "Create a pack file from the current game state": "Створити файл пака з поточного стану гри",
-"Load a pack file to restore the game": "Завантажити файл пака для відновлення гри"
+"Load a pack file to restore the game": "Завантажити файл пака для відновлення гри",
+"Destroy": "Знищити"
 }

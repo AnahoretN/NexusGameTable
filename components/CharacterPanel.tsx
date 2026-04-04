@@ -28,6 +28,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     characterData?.activeCharacterId || ''
   );
   const [activeColumnId, setActiveColumnId] = useState<string>('column-1');
+  const [activeSubTabId, setActiveSubTabId] = useState<string>('subtab-1');
 
   // Get active character - use characterData from state for reactivity
   const activeCharacter = useMemo(() => {
@@ -35,16 +36,59 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     return characterData.characters.find(c => c.id === activeCharacterId) || null;
   }, [characterData, activeCharacterId]);
 
-  // Migration: Ensure all blocks have columnId and characters have columns field
+  // Get active sub-tab
+  const activeSubTab = useMemo(() => {
+    if (!activeCharacter?.subTabs) return null;
+    // Use character's activeSubTabId if available, otherwise use local state
+    const tabId = activeCharacter.activeSubTabId || activeSubTabId;
+    return activeCharacter.subTabs.find(st => st.id === tabId) || activeCharacter.subTabs[0] || null;
+  }, [activeCharacter, activeSubTabId]);
+
+  // Update local activeSubTabId when character changes
+  useEffect(() => {
+    if (activeCharacter?.activeSubTabId) {
+      setActiveSubTabId(activeCharacter.activeSubTabId);
+    }
+  }, [activeCharacter?.activeSubTabId]);
+
+  // Migration: Ensure all blocks have columnId, characters have columns field, and sub-tabs exist
   useEffect(() => {
     if (!characterData) return;
 
     let needsUpdate = false;
     const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
-      // Ensure columns field exists
-      if (!char.columns || char.columns < 1) {
+      // Migrate legacy blocks/columns to sub-tabs format
+      if (!char.subTabs || char.subTabs.length === 0) {
         needsUpdate = true;
-        return { ...char, columns: 1 };
+        const legacyBlocks = char.blocks || [];
+        const legacyColumns = char.columns || 1;
+
+        return {
+          ...char,
+          subTabs: [
+            {
+              id: 'subtab-1',
+              name: 'Main',
+              blocks: legacyBlocks,
+              columns: legacyColumns
+            },
+            {
+              id: 'subtab-2',
+              name: 'Skills',
+              blocks: [],
+              columns: 1
+            },
+            {
+              id: 'subtab-3',
+              name: 'Inventory',
+              blocks: [],
+              columns: 1
+            }
+          ],
+          activeSubTabId: 'subtab-1',
+          blocks: undefined,
+          columns: undefined
+        };
       }
 
       // Ensure manageableByPlayerIds field exists
@@ -53,17 +97,26 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         return { ...char, manageableByPlayerIds: [] };
       }
 
-      // Ensure all blocks have columnId
-      const hasBlocksWithoutColumnId = char.blocks.some((block: CharacterBlock) => !block.columnId);
-      if (hasBlocksWithoutColumnId) {
-        needsUpdate = true;
-        return {
-          ...char,
-          blocks: char.blocks.map((block: CharacterBlock) => ({
-            ...block,
-            columnId: block.columnId || 'column-1'
-          }))
-        };
+      // Ensure all blocks in all sub-tabs have columnId
+      if (char.subTabs) {
+        const subTabsWithColumnIds = char.subTabs.map(subTab => {
+          const hasBlocksWithoutColumnId = subTab.blocks.some((block: CharacterBlock) => !block.columnId);
+          if (hasBlocksWithoutColumnId) {
+            needsUpdate = true;
+            return {
+              ...subTab,
+              blocks: subTab.blocks.map((block: CharacterBlock) => ({
+                ...block,
+                columnId: block.columnId || 'column-1'
+              }))
+            };
+          }
+          return subTab;
+        });
+
+        if (needsUpdate) {
+          return { ...char, subTabs: subTabsWithColumnIds };
+        }
       }
 
       return char;
@@ -101,9 +154,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     // Check if "all_players" is in manageable list
     if (activeCharacter.manageableByPlayerIds?.includes('all_players')) return true;
 
-    // Check if "gm" is in manageable list and current player is GM
-    if (activeCharacter.manageableByPlayerIds?.includes('gm') && isGM) return true;
-
     return false;
   }, [activeCharacter, isGM, state.activePlayerId]);
 
@@ -120,9 +170,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     // Check if "all_players" is in editable list
     if (activeCharacter.editableByPlayerIds.includes('all_players')) return true;
 
-    // Check if "gm" is in editable list and current player is GM
-    if (activeCharacter.editableByPlayerIds.includes('gm') && isGM) return true;
-
     return false;
   }, [activeCharacter, isGM, state.activePlayerId]);
 
@@ -138,9 +185,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
     // Check if "all_players" is in visible list
     if (activeCharacter.visibleToPlayerIds.includes('all_players')) return true;
-
-    // Check if "gm" is in visible list and current player is GM
-    if (activeCharacter.visibleToPlayerIds.includes('gm') && isGM) return true;
 
     return false;
   }, [activeCharacter, isGM, state.activePlayerId]);
@@ -220,15 +264,22 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   }, [canEditCharacter]);
 
   const handleSaveBlockTitle = useCallback((blockId: string) => {
-    if (!characterData || !activeCharacter) return;
+    if (!characterData || !activeCharacter || !activeSubTab) return;
 
     const newTitle = blockTitleInput.trim() || 'Untitled Block';
     const updatedCharacters = characterData.characters.map(char => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
-          blocks: char.blocks.map(block =>
-            block.id === blockId ? { ...block, title: newTitle } : block
+          subTabs: char.subTabs?.map(subTab =>
+            subTab.id === activeSubTab.id
+              ? {
+                  ...subTab,
+                  blocks: subTab.blocks.map(block =>
+                    block.id === blockId ? { ...block, title: newTitle } : block
+                  )
+                }
+              : subTab
           )
         };
       }
@@ -248,7 +299,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
     setEditingBlockTitle(null);
     setBlockTitleInput('');
-  }, [characterData, activeCharacter, blockTitleInput, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, blockTitleInput, panel.id, dispatch]);
 
   const handleCancelEditBlockTitle = useCallback(() => {
     setEditingBlockTitle(null);
@@ -263,8 +314,27 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       id: `char-${Date.now()}`,
       characterName: 'New Character',
       playerId: undefined, // GM can create unassigned characters
-      blocks: [],
-      columns: 1, // Default to 1 column
+      subTabs: [
+        {
+          id: 'subtab-1',
+          name: 'Main',
+          blocks: [],
+          columns: 1
+        },
+        {
+          id: 'subtab-2',
+          name: 'Skills',
+          blocks: [],
+          columns: 1
+        },
+        {
+          id: 'subtab-3',
+          name: 'Inventory',
+          blocks: [],
+          columns: 1
+        }
+      ],
+      activeSubTabId: 'subtab-1',
       visibleToPlayerIds: [],
       manageableByPlayerIds: [],
       editableByPlayerIds: [],
@@ -284,6 +354,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     });
 
     setActiveCharacterId(newCharacter.id);
+    setActiveSubTabId('subtab-1');
   }, [characterData, isGM, panel.id, dispatch]);
 
   // Handler: Remove character
@@ -329,6 +400,34 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       });
     }
   }, [characterData, panel.id, dispatch]);
+
+  // Handler: Select sub-tab
+  const handleSelectSubTab = useCallback((subTabId: string) => {
+    setActiveSubTabId(subTabId);
+
+    if (characterData && activeCharacter) {
+      const updatedCharacters = characterData.characters.map(char => {
+        if (char.id === activeCharacter.id) {
+          return {
+            ...char,
+            activeSubTabId: subTabId
+          };
+        }
+        return char;
+      });
+
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: panel.id,
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
+        }
+      });
+    }
+  }, [characterData, activeCharacter, panel.id, dispatch]);
 
   // Character settings modal state
   const [settingsModal, setSettingsModal] = useState<{
@@ -378,8 +477,8 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
     const characterData = {
       characterName: settingsModal.character.characterName,
-      blocks: settingsModal.character.blocks,
-      columns: settingsModal.character.columns,
+      subTabs: settingsModal.character.subTabs,
+      activeSubTabId: settingsModal.character.activeSubTabId,
       avatarUrl: settingsModal.character.avatarUrl
     };
 
@@ -409,8 +508,8 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             return {
               ...char,
               characterName: importedData.characterName || char.characterName,
-              blocks: importedData.blocks || char.blocks,
-              columns: importedData.columns || char.columns,
+              subTabs: importedData.subTabs || char.subTabs,
+              activeSubTabId: importedData.activeSubTabId || char.activeSubTabId,
               avatarUrl: importedData.avatarUrl || char.avatarUrl
             };
           }
@@ -440,7 +539,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
   // Handler: Add block to character
   const handleAddBlock = useCallback((blockType: CharacterBlockType, targetColumnId?: string) => {
-    if (!characterData || !activeCharacter || !canEditCharacter) return;
+    if (!characterData || !activeCharacter || !activeSubTab || !canEditCharacter) return;
 
     // Update active column if target column is specified
     if (targetColumnId) {
@@ -511,7 +610,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     }
 
     // Get blocks in the active column to determine order
-    const columnBlocks = activeCharacter.blocks.filter(b => b.columnId === activeColumnId);
+    const columnBlocks = activeSubTab.blocks.filter(b => b.columnId === activeColumnId);
     const newBlock: CharacterBlock = {
       id: `block-${Date.now()}`,
       type: blockType,
@@ -526,7 +625,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       if (char.id === activeCharacter.id) {
         return {
           ...char,
-          blocks: [...char.blocks, newBlock]
+          subTabs: char.subTabs?.map(subTab =>
+            subTab.id === activeSubTab.id
+              ? { ...subTab, blocks: [...subTab.blocks, newBlock] }
+              : subTab
+          )
         };
       }
       return char;
@@ -542,20 +645,24 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
     });
-  }, [characterData, activeCharacter, canEditCharacter, panel.id, dispatch, activeColumnId]);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch, activeColumnId]);
 
   // Handler: Add new column
   const handleAddColumn = useCallback(() => {
-    if (!characterData || !activeCharacter || !canEditCharacter) return;
+    if (!characterData || !activeCharacter || !activeSubTab || !canEditCharacter) return;
 
-    const currentColumns = activeCharacter.columns || 1;
+    const currentColumns = activeSubTab.columns || 1;
     const newColumnId = `column-${currentColumns + 1}`;
 
     const updatedCharacters = characterData.characters.map(char => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
-          columns: currentColumns + 1
+          subTabs: char.subTabs?.map(subTab =>
+            subTab.id === activeSubTab.id
+              ? { ...subTab, columns: currentColumns + 1 }
+              : subTab
+          )
         };
       }
       return char;
@@ -574,13 +681,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
     });
-  }, [characterData, activeCharacter, canEditCharacter, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
 
   // Handler: Remove column
   const handleRemoveColumn = useCallback((columnIdToRemove: string) => {
-    if (!characterData || !activeCharacter || !canEditCharacter) return;
+    if (!characterData || !activeCharacter || !activeSubTab || !canEditCharacter) return;
 
-    const currentColumns = activeCharacter.columns || 1;
+    const currentColumns = activeSubTab.columns || 1;
     if (currentColumns <= 1) return; // Don't allow removing the last column
 
     // Get column number from ID
@@ -590,21 +697,29 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     // Shift blocks: remove blocks from deleted column and shift columns after it
     const updatedCharacters = characterData.characters.map(char => {
       if (char.id === activeCharacter.id) {
-        const updatedBlocks = char.blocks
-          .filter(block => block.columnId !== columnIdToRemove)
-          .map(block => {
-            // If block is in a column after the deleted one, shift column ID
-            const blockColumnNumber = parseInt(block.columnId.split('-')[1]);
-            if (blockColumnNumber > columnNumber) {
-              return { ...block, columnId: `column-${blockColumnNumber - 1}` };
-            }
-            return block;
-          });
-
         return {
           ...char,
-          columns: newColumnCount,
-          blocks: updatedBlocks
+          subTabs: char.subTabs?.map(subTab => {
+            if (subTab.id === activeSubTab.id) {
+              const updatedBlocks = subTab.blocks
+                .filter(block => block.columnId !== columnIdToRemove)
+                .map(block => {
+                  // If block is in a column after the deleted one, shift column ID
+                  const blockColumnNumber = parseInt(block.columnId.split('-')[1]);
+                  if (blockColumnNumber > columnNumber) {
+                    return { ...block, columnId: `column-${blockColumnNumber - 1}` };
+                  }
+                  return block;
+                });
+
+              return {
+                ...subTab,
+                columns: newColumnCount,
+                blocks: updatedBlocks
+              };
+            }
+            return subTab;
+          })
         };
       }
       return char;
@@ -620,18 +735,25 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
     });
-  }, [characterData, activeCharacter, canEditCharacter, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
 
   // Handler: Update block data
   const handleUpdateBlock = useCallback((blockId: string, newData: any) => {
-    if (!characterData || !activeCharacter) return;
+    if (!characterData || !activeCharacter || !activeSubTab) return;
 
     const updatedCharacters = characterData.characters.map(char => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
-          blocks: char.blocks.map(block =>
-            block.id === blockId ? { ...block, data: newData } : block
+          subTabs: char.subTabs?.map(subTab =>
+            subTab.id === activeSubTab.id
+              ? {
+                  ...subTab,
+                  blocks: subTab.blocks.map(block =>
+                    block.id === blockId ? { ...block, data: newData } : block
+                  )
+                }
+              : subTab
           )
         };
       }
@@ -648,17 +770,21 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
     });
-  }, [characterData, activeCharacter, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, panel.id, dispatch]);
 
   // Handler: Remove block
   const handleRemoveBlock = useCallback((blockId: string) => {
-    if (!characterData || !activeCharacter || !canEditCharacter) return;
+    if (!characterData || !activeCharacter || !activeSubTab || !canEditCharacter) return;
 
     const updatedCharacters = characterData.characters.map(char => {
       if (char.id === activeCharacter.id) {
         return {
           ...char,
-          blocks: char.blocks.filter(block => block.id !== blockId)
+          subTabs: char.subTabs?.map(subTab =>
+            subTab.id === activeSubTab.id
+              ? { ...subTab, blocks: subTab.blocks.filter(block => block.id !== blockId) }
+              : subTab
+          )
         };
       }
       return char;
@@ -674,13 +800,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
     });
-  }, [characterData, activeCharacter, canEditCharacter, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
 
   // Move block handlers
   const handleMoveBlockUp = useCallback((blockId: string) => {
-    if (!characterData || !activeCharacter || !canEditCharacter) return;
+    if (!characterData || !activeCharacter || !activeSubTab || !canEditCharacter) return;
 
-    const blocks = [...activeCharacter.blocks];
+    const blocks = [...activeSubTab.blocks];
     const currentIndex = blocks.findIndex(b => b.id === blockId);
 
     if (currentIndex <= 0) return; // Already at the top
@@ -698,7 +824,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       if (char.id === activeCharacter.id) {
         return {
           ...char,
-          blocks: reorderedBlocks
+          subTabs: char.subTabs?.map(subTab =>
+            subTab.id === activeSubTab.id
+              ? { ...subTab, blocks: reorderedBlocks }
+              : subTab
+          )
         };
       }
       return char;
@@ -714,12 +844,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
     });
-  }, [characterData, activeCharacter, canEditCharacter, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
 
   const handleMoveBlockDown = useCallback((blockId: string) => {
-    if (!characterData || !activeCharacter || !canEditCharacter) return;
+    if (!characterData || !activeCharacter || !activeSubTab || !canEditCharacter) return;
 
-    const blocks = [...activeCharacter.blocks];
+    const blocks = [...activeSubTab.blocks];
     const currentIndex = blocks.findIndex(b => b.id === blockId);
 
     if (currentIndex === -1 || currentIndex >= blocks.length - 1) return; // Already at the bottom
@@ -737,7 +867,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       if (char.id === activeCharacter.id) {
         return {
           ...char,
-          blocks: reorderedBlocks
+          subTabs: char.subTabs?.map(subTab =>
+            subTab.id === activeSubTab.id
+              ? { ...subTab, blocks: reorderedBlocks }
+              : subTab
+          )
         };
       }
       return char;
@@ -753,7 +887,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
     });
-  }, [characterData, activeCharacter, canEditCharacter, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
 
   if (!characterData) {
     return (
@@ -812,60 +946,86 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         <div className="flex-1 flex flex-col p-1.5 min-h-0 w-full">
           {/* Character Header */}
           <div className="mb-2 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              {editingCharacterName ? (
-                <input
-                  type="text"
-                  value={characterNameInput}
-                  onChange={(e) => setCharacterNameInput(e.target.value)}
-                  onBlur={handleSaveCharacterName}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSaveCharacterName();
-                    } else if (e.key === 'Escape') {
-                      handleCancelEditCharacterName();
-                    }
-                  }}
-                  className="text-lg font-semibold bg-slate-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
-                  autoFocus
-                />
-              ) : (
-                <h3
-                  className="text-lg font-semibold text-white cursor-pointer hover:text-slate-300 transition-colors"
-                  onDoubleClick={handleStartEditCharacterName}
-                  title="Double-click to rename"
-                >
-                  {activeCharacter.characterName}
-                </h3>
-              )}
-              {isGM && (
-                <button
-                  onClick={() => handleRemoveCharacter(activeCharacter.id)}
-                  className="p-1 text-slate-400 hover:text-red-400 transition-colors ml-2"
-                  title="Remove character"
-                >
-                  <Trash2 size={14} />
-                </button>
+            <div className="flex items-center justify-between gap-2">
+              {/* Character Name */}
+              <div className="flex items-center gap-2 flex-1">
+                {editingCharacterName ? (
+                  <input
+                    type="text"
+                    value={characterNameInput}
+                    onChange={(e) => setCharacterNameInput(e.target.value)}
+                    onBlur={handleSaveCharacterName}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveCharacterName();
+                      } else if (e.key === 'Escape') {
+                        handleCancelEditCharacterName();
+                      }
+                    }}
+                    className="text-lg font-semibold bg-slate-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
+                    autoFocus
+                  />
+                ) : (
+                  <h3
+                    className="text-lg font-semibold text-white cursor-pointer hover:text-slate-300 transition-colors"
+                    onDoubleClick={handleStartEditCharacterName}
+                    title="Double-click to rename"
+                  >
+                    {activeCharacter.characterName}
+                  </h3>
+                )}
+                {isGM && (
+                  <button
+                    onClick={() => handleRemoveCharacter(activeCharacter.id)}
+                    className="p-1 text-slate-400 hover:text-red-400 transition-colors"
+                    title="Remove character"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Sub-tabs */}
+              {activeCharacter.subTabs && activeCharacter.subTabs.length > 0 && (
+                <div className="flex gap-1">
+                  {activeCharacter.subTabs.map(subTab => {
+                    const isActive = subTab.id === (activeCharacter.activeSubTabId || activeSubTabId);
+                    return (
+                      <button
+                        key={subTab.id}
+                        onClick={() => handleSelectSubTab(subTab.id)}
+                        className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                          isActive
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        {subTab.name}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
 
           {/* Blocks Container - Multi-column layout */}
-          <div className="flex-1 overflow-y-auto pr-1 min-h-0 w-full">
-            <div className="flex gap-1.5 h-full">
-              {Array.from({ length: activeCharacter.columns || 1 }, (_, columnIndex) => {
-                const columnId = `column-${columnIndex + 1}`;
-                const columnBlocks = activeCharacter.blocks
-                  .filter(block => block.visible && block.columnId === columnId)
-                  .sort((a, b) => a.order - b.order);
+          {activeSubTab && (
+            <div className="flex-1 overflow-y-auto pr-1 min-h-0 w-full">
+              <div className="flex gap-1.5 h-full">
+                {Array.from({ length: activeSubTab.columns || 1 }, (_, columnIndex) => {
+                  const columnId = `column-${columnIndex + 1}`;
+                  const columnBlocks = activeSubTab.blocks
+                    .filter(block => block.visible && block.columnId === columnId)
+                    .sort((a, b) => a.order - b.order);
 
-                return (
-                  <div
-                    key={columnId}
-                    className="flex-1 flex flex-col space-y-1.5 min-w-0"
-                    style={{ width: `${100 / (activeCharacter.columns || 1)}%` }}
-                  >
-                    {columnBlocks.map(block => {
+                  return (
+                    <div
+                      key={columnId}
+                      className="flex-1 flex flex-col space-y-1.5 min-w-0"
+                      style={{ width: `${100 / (activeSubTab.columns || 1)}%` }}
+                    >
+                      {columnBlocks.map(block => {
                       const blockIndex = columnBlocks.findIndex(b => b.id === block.id);
                       const isFirst = blockIndex === 0;
                       const isLast = blockIndex === columnBlocks.length - 1;
@@ -873,7 +1033,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                       return (
                         <div
                           key={block.id}
-                          className={`w-full bg-slate-700 rounded border border-slate-600 box-border ${
+                          className={`w-full bg-slate-700 rounded box-border ${
                             block.type === CharacterBlockType.AVATAR ? 'h-[200px] min-h-[200px] p-0 relative overflow-hidden' : 'p-1.5'
                           }`}
                           style={{ boxSizing: 'border-box' }}
@@ -1028,12 +1188,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                       default:
                         return (
                           <div className="text-slate-400 text-sm">
-                            Unknown block type: {block.type}
+                              Unknown block type: {block.type}
                           </div>
                         );
-                    }
-                  })()}
-                </div>
+                      }
+                    })()}
+                  </div>
                 );
               })}
 
@@ -1076,10 +1236,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                 </div>
               )}
             </div>
-              );
-            })}
-            </div>
-          </div>
+          );
+        })}
+      </div>
+    </div>
+  )}
 
           {/* Block Type Context Menu */}
           {blockContextMenu && canEditCharacter && (

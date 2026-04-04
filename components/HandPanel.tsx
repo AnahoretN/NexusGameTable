@@ -3,14 +3,15 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType, AppLanguage } from '../types';
+import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType, AppLanguage, Player } from '../types';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
 import { getCardButtonConfigsWithActions } from '../utils/buttonConfig';
 import { MAIN_MENU_WIDTH } from '../constants';
-import { Settings } from 'lucide-react';
+import { Settings, X as XIcon } from 'lucide-react';
 import { useTabCardScale } from '../hooks/useTabCardScale';
+import { HandTabSettingsModal } from './HandTabSettingsModal';
 
 interface HandPanelProps {
   width?: number;
@@ -28,7 +29,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   const { state, dispatch } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
   const scaleMenuRef = useRef<HTMLDivElement>(null);
-  const tabScaleMenuRef = useRef<HTMLDivElement>(null);
 
 
   // State for selected player hand tab (whose hand we're viewing)
@@ -45,8 +45,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
   // Context menu state for hand scale (right-click on empty space in hand panel)
   const [scaleMenu, setScaleMenu] = useState<{ x: number; y: number } | null>(null);
-  // Context menu state for tab scale (right-click on tab)
-  const [tabScaleMenu, setTabScaleMenu] = useState<{ x: number; y: number; playerId: string } | null>(null);
+  // Hand tab settings modal state
+  const [handTabSettings, setHandTabSettings] = useState<{ playerId: string; player: Player } | null>(null);
   // Edit mode for percentage input
   const [isEditingPercentage, setIsEditingPercentage] = useState(false);
   const [editedPercentage, setEditedPercentage] = useState('');
@@ -59,6 +59,9 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   // Long-press state for adding cards to cursor slot
   const longPressTimerRef = useRef<number | null>(null);
   const longPressCardRef = useRef<{ cardId: string; startX: number; startY: number } | null>(null);
+
+  // Local state to track cards being picked up (to prevent flicker during race condition)
+  const [pickingUpCardIds, setPickingUpCardIds] = useState<Set<string>>(new Set());
 
   // Local state for cursor slot hover (purple ring effect)
   const [isCursorOverHand, setIsCursorOverHand] = useState(false);
@@ -91,7 +94,53 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       }
     };
 
-    const handleCursorSlotDrop = () => {
+    const handleCursorSlotDrop = (e: Event) => {
+      const customEvent = e as CustomEvent<{ items: any[] }>;
+      const { items } = customEvent.detail;
+
+      // Add items to hand
+      // Only cards can be added to hand
+      const cardsToAdd = items.filter(item => item.type === 'CARD');
+
+      if (cardsToAdd.length > 0) {
+        const player = state.players.find(p => p.id === selectedPlayerId);
+        if (!player) {
+          console.warn('[HandPanel] Player not found:', selectedPlayerId);
+          setIsCursorOverHand(false);
+          return;
+        }
+
+        // Get current handCardOrder
+        const currentHandCardOrder = player.handCardOrder || [];
+
+        // Add new cards to the end of hand order
+        const newCardIds = cardsToAdd.map(card => card.id);
+        const updatedHandCardOrder = [...currentHandCardOrder, ...newCardIds];
+
+        // Update player's handCardOrder
+        dispatch({
+          type: 'UPDATE_PLAYER',
+          payload: {
+            id: selectedPlayerId,
+            handCardOrder: updatedHandCardOrder
+          }
+        });
+
+        // Update each card to be in hand
+        cardsToAdd.forEach(card => {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: card.id,
+              location: 'HAND',
+              ownerId: selectedPlayerId,
+              inCursorSlot: false,
+              isOnTable: true  // CRITICAL: Cards in hand must be visible (isOnTable=true)
+            }
+          });
+        });
+      }
+
       setIsCursorOverHand(false);
     };
 
@@ -113,17 +162,58 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     };
   }, []);
 
+  // Listen for add-to-cursor-slot events to immediately hide cards (prevents flicker)
+  useEffect(() => {
+    const handleAddToCursorSlot = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        cardId: string;
+        clientX: number;
+        clientY: number;
+        source?: string;
+      }>;
+
+      const { cardId } = customEvent.detail;
+
+      // Immediately add to pickingUpCardIds to hide card from hand panel
+      setPickingUpCardIds(prev => new Set([...prev, cardId]));
+
+      // Auto-remove after 200ms ONLY if card is no longer in cursor slot
+      setTimeout(() => {
+        setPickingUpCardIds(prev => {
+          const obj = state.objects[cardId];
+          const stillInSlot = obj && (obj as Card).inCursorSlot;
+
+          if (!stillInSlot) {
+            const newSet = new Set(prev);
+            newSet.delete(cardId);
+            return newSet;
+          }
+          return prev;
+        });
+      }, 200);
+    };
+
+    window.addEventListener('add-to-cursor-slot', handleAddToCursorSlot);
+
+    return () => {
+      window.removeEventListener('add-to-cursor-slot', handleAddToCursorSlot);
+    };
+  }, [state.objects]);
+
   // Get cards in hand for selected player (whose hand tab we're viewing), sorted by handCardOrder
   const cards = useMemo(() => {
     const player = state.players.find(p => p.id === selectedPlayerId);
     const handCardOrder = player?.handCardOrder || [];
 
-    // Get all cards in hand for selected player (exclude cards in cursor slot)
+    // Get all cards in hand for selected player (exclude cards being picked up)
+    // NOTE: We use pickingUpCardIds Set to immediately hide cards that are being picked up
+    // This prevents race condition where card appears in both cursor slot and hand panel
+    // We DON'T filter by inCursorSlot because that creates a race condition
     const handCards = Object.values(state.objects).filter(o =>
       o.type === 'CARD' &&
       (o as Card).location === 'HAND' &&
       (o as Card).ownerId === selectedPlayerId &&
-      !(o as Card).inCursorSlot // Don't show cards that are in cursor slot
+      !pickingUpCardIds.has(o.id) // Don't show cards that are being picked up (prevents flicker)
     ) as Card[];
 
     // Sort by handCardOrder (first in order = top-right position)
@@ -133,7 +223,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       const bIndex = cardOrderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
       return aIndex - bIndex;
     });
-  }, [state.objects, selectedPlayerId, state.players]);
+  }, [state.objects, selectedPlayerId, state.players, pickingUpCardIds]);
 
   // Determine if we're viewing another player's hand (not our own)
   // In that case, show cards face down (as card backs)
@@ -312,13 +402,15 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     setScaleMenu(safePos);
   }, [getSafeMenuPosition]);
 
-  // Context menu handler for tab right-click (shows tab scale options)
+  // Context menu handler for tab right-click (opens settings modal)
   const handleTabContextMenu = useCallback((e: React.MouseEvent, playerId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    const safePos = getSafeMenuPosition(e.clientX, e.clientY);
-    setTabScaleMenu({ ...safePos, playerId });
-  }, [getSafeMenuPosition]);
+    const player = state.players.find(p => p.id === playerId);
+    if (player) {
+      setHandTabSettings({ playerId, player });
+    }
+  }, [state.players]);
 
   // Handle context menu actions for cards
   const handleContextMenuAction = useCallback((action: string) => {
@@ -430,8 +522,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
 
-    // Shift+click: add to cursor slot immediately
-    if (e.shiftKey) {
+    // Ctrl+click: add to cursor slot immediately
+    if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
       window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
@@ -637,36 +729,58 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 
       // Add each card to the game state with hand location
       cards.forEach(card => {
-        const cardPayload: Card = {
-          id: card.id,
-          type: ItemType.CARD,
-          x: 0, // Cards in hand don't need world coordinates
-          y: 0,
-          rotation: 0,
-          content: card.content || card.frontFaceUrl || '', // Use content (main image URL) first
-          name: card.name || 'Card',
-          locked: false,
-          location: 'HAND' as any,
-          ownerId: state.activePlayerId,
-          isOnTable: false,
-          faceUp: true,
-          ...(card.frontFaceUrl && { frontFaceUrl: card.frontFaceUrl }),
-          ...(card.backFaceUrl && { backFaceUrl: card.backFaceUrl }),
-          ...(card.deckId && { deckId: card.deckId }),
-          ...(card.width && { width: card.width }),
-          ...(card.height && { height: card.height }),
-          // Preserve sprite properties for proper card display
-          ...(card.spriteUrl && { spriteUrl: card.spriteUrl }),
-          ...(card.spriteIndex !== undefined && { spriteIndex: card.spriteIndex }),
-          ...(card.spriteColumns && { spriteColumns: card.spriteColumns }),
-          ...(card.spriteRows && { spriteRows: card.spriteRows }),
-          ...(card.shape && { shape: card.shape }),
-        };
+        // Check if card already exists in game state
+        const existingCard = state.objects[card.id] as Card | undefined;
 
-        dispatch({
-          type: 'ADD_OBJECT',
-          payload: cardPayload
-        });
+        if (existingCard) {
+          // Card already exists - just update its location to HAND
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: card.id,
+              location: 'HAND' as any,
+              isOnTable: false,
+              ownerId: state.activePlayerId,
+              x: 0, // Cards in hand don't need world coordinates
+              y: 0,
+              rotation: 0,
+              inCursorSlot: false,
+            }
+          });
+        } else {
+          // Card is new (e.g., from archetype) - add it
+          const cardPayload: Card = {
+            id: card.id,
+            type: ItemType.CARD,
+            x: 0, // Cards in hand don't need world coordinates
+            y: 0,
+            rotation: 0,
+            content: card.content || card.frontFaceUrl || '', // Use content (main image URL) first
+            name: card.name || 'Card',
+            locked: false,
+            location: 'HAND' as any,
+            ownerId: state.activePlayerId,
+            isOnTable: false,
+            faceUp: true,
+            inCursorSlot: false,
+            ...(card.frontFaceUrl && { frontFaceUrl: card.frontFaceUrl }),
+            ...(card.backFaceUrl && { backFaceUrl: card.backFaceUrl }),
+            ...(card.deckId && { deckId: card.deckId }),
+            ...(card.width && { width: card.width }),
+            ...(card.height && { height: card.height }),
+            // Preserve sprite properties for proper card display
+            ...(card.spriteUrl && { spriteUrl: card.spriteUrl }),
+            ...(card.spriteIndex !== undefined && { spriteIndex: card.spriteIndex }),
+            ...(card.spriteColumns && { spriteColumns: card.spriteColumns }),
+            ...(card.spriteRows && { spriteRows: card.spriteRows }),
+            ...(card.shape && { shape: card.shape }),
+          };
+
+          dispatch({
+            type: 'ADD_OBJECT',
+            payload: cardPayload
+          });
+        }
       });
     };
 
@@ -679,12 +793,26 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     setSelectedPlayerId(state.activePlayerId);
   }, [state.activePlayerId]);
 
-  // Debug: log menu state changes
+  // Migration: Ensure all players have empty hand access arrays
   useEffect(() => {
-    if (tabScaleMenu) {
-      console.log('[HandPanel] tabScaleMenu rendered:', tabScaleMenu);
+    const needsMigration = state.players.some(player =>
+      !player.handVisibleToPlayerIds || !player.handManageableByPlayerIds
+    );
+
+    if (needsMigration) {
+      state.players.forEach(player => {
+        const updatedPlayer: Player = {
+          ...player,
+          handVisibleToPlayerIds: player.handVisibleToPlayerIds || [],
+          handManageableByPlayerIds: player.handManageableByPlayerIds || []
+        };
+        dispatch({
+          type: 'UPDATE_PLAYER',
+          payload: updatedPlayer
+        });
+      });
     }
-  }, [tabScaleMenu]);
+  }, [state.players, dispatch]);
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -693,11 +821,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 
       // Check if click is inside scale menu
       if (scaleMenuRef.current && scaleMenuRef.current.contains(target)) {
-        return;
-      }
-
-      // Check if click is inside tab scale menu
-      if (tabScaleMenuRef.current && tabScaleMenuRef.current.contains(target)) {
         return;
       }
 
@@ -710,13 +833,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       if (scaleMenu) {
         setScaleMenu(null);
       }
-
-      // Close tab scale menu
-      if (tabScaleMenu) {
-        setTabScaleMenu(null);
-      }
     };
-    if (contextMenu || scaleMenu || tabScaleMenu) {
+    if (contextMenu || scaleMenu) {
       // Delay adding listener to avoid immediate closing after contextmenu
       const timeoutId = setTimeout(() => {
         document.addEventListener('mousedown', handleClickOutside);
@@ -726,7 +844,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-  }, [contextMenu, scaleMenu, tabScaleMenu]);
+  }, [contextMenu, scaleMenu]);
 
   return (
     <div
@@ -756,7 +874,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
               o.type === 'CARD' &&
               (o as Card).location === 'HAND' &&
               (o as Card).ownerId === player.id &&
-              !(o as Card).inCursorSlot
+              !pickingUpCardIds.has(o.id) // Exclude cards being picked up
             ).length;
 
             return (
@@ -948,6 +1066,87 @@ export const HandPanel: React.FC<HandPanelProps> = ({
         </>
       )}
 
+      {/* Hand Tab Settings Modal */}
+      {handTabSettings && (
+        <div className="absolute inset-0 bg-slate-800 z-[1000] flex flex-col" onClick={(e) => {
+          // Close modal if clicking outside (on the background)
+          if (e.target === e.currentTarget) {
+            setHandTabSettings(null);
+          }
+        }}>
+          {/* Hand Tab Settings Header - Fixed at top */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0 bg-slate-800">
+            <h2 className="text-lg font-semibold text-white">Hand Tab Settings</h2>
+            <button
+              onClick={() => setHandTabSettings(null)}
+              className="p-1 text-slate-400 hover:text-white transition-colors"
+            >
+              <XIcon size={20} />
+            </button>
+          </div>
+
+          {/* Settings Content - Takes available space with own scrollbar */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+            <HandTabSettingsModal
+              player={handTabSettings.player}
+              players={state.players}
+              activePlayerId={state.activePlayerId}
+              isGM={isGM}
+              onScaleChange={(newScale) => {
+                // Update scale for this player's tab
+                if (selectedPlayerId === handTabSettings.playerId) {
+                  setTabCardScale(newScale);
+                } else {
+                  // Update scale for other player directly via localStorage
+                  try {
+                    const key = `hand-card-scale-${handTabSettings.playerId}`;
+                    localStorage.setItem(key, String(newScale));
+                    window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
+                      detail: { playerId: handTabSettings.playerId, newScale }
+                    }));
+                  } catch {
+                    // Ignore localStorage errors
+                  }
+                }
+              }}
+              onSave={(updatedPlayer) => {
+                dispatch({
+                  type: 'UPDATE_PLAYER',
+                  payload: updatedPlayer
+                });
+                setHandTabSettings(null);
+              }}
+            />
+          </div>
+
+          {/* Cancel Button - Fixed at bottom */}
+          <div className="px-4 pb-3 flex-shrink-0 bg-slate-800 border-t border-slate-700">
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setHandTabSettings(null)}
+                className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (handTabSettings) {
+                    dispatch({
+                      type: 'UPDATE_PLAYER',
+                      payload: handTabSettings.player
+                    });
+                  }
+                  setHandTabSettings(null);
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Context menu for cards in hand */}
       {contextMenu && (
         <ContextMenu
@@ -1033,124 +1232,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                 className="cursor-pointer hover:bg-slate-700 px-2 py-0.5 rounded text-sm text-white"
               >
                 {Math.round(cardScale * 100)}%
-              </span>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Tab scale menu (right-click on tab) */}
-      {tabScaleMenu && createPortal(
-        <div
-          ref={tabScaleMenuRef}
-          className="fixed z-[999999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-3 px-3 min-w-[220px]"
-          style={{ left: tabScaleMenu.x, top: tabScaleMenu.y }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div className="text-xs text-slate-400 mb-2">
-            {translate('Tab Scale', language as Locale)}
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={0.5}
-              max={2}
-              step={0.01}
-              value={selectedPlayerId === tabScaleMenu.playerId ? cardScale : 1}
-              onChange={(e) => {
-                const newScale = parseFloat(e.target.value);
-                // If this is the active tab, update directly
-                if (selectedPlayerId === tabScaleMenu.playerId) {
-                  handleScaleChange(newScale);
-                } else {
-                  // Otherwise update scale for that player directly via localStorage
-                  try {
-                    const key = `hand-card-scale-${tabScaleMenu.playerId}`;
-                    localStorage.setItem(key, String(newScale));
-                    window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
-                      detail: { playerId: tabScaleMenu.playerId, newScale }
-                    }));
-                  } catch {
-                    // Ignore localStorage errors
-                  }
-                }
-              }}
-              className="flex-1 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer slider-input"
-              style={{
-                background: 'linear-gradient(to right, #4a5568, #7c3aed)',
-                borderRadius: '8px'
-              }}
-            />
-            {isEditingPercentage ? (
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min={50}
-                  max={200}
-                  value={editedPercentage}
-                  onChange={(e) => setEditedPercentage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const newPercent = parseFloat(editedPercentage);
-                      const newScale = newPercent / 100;
-                      if (selectedPlayerId === tabScaleMenu.playerId) {
-                        if (!isNaN(newPercent) && newPercent >= 50 && newPercent <= 200) {
-                          handleScaleChange(newScale);
-                        }
-                      } else {
-                        try {
-                          const key = `hand-card-scale-${tabScaleMenu.playerId}`;
-                          localStorage.setItem(key, String(newScale));
-                          window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
-                            detail: { playerId: tabScaleMenu.playerId, newScale }
-                          }));
-                        } catch {
-                          // Ignore localStorage errors
-                        }
-                      }
-                      setIsEditingPercentage(false);
-                    } else if (e.key === 'Escape') {
-                      setIsEditingPercentage(false);
-                    }
-                  }}
-                  onBlur={() => {
-                    const newPercent = parseFloat(editedPercentage);
-                    const newScale = newPercent / 100;
-                    if (selectedPlayerId === tabScaleMenu.playerId) {
-                      if (!isNaN(newPercent) && newPercent >= 50 && newPercent <= 200) {
-                        handleScaleChange(newScale);
-                      }
-                    } else {
-                      try {
-                        const key = `hand-card-scale-${tabScaleMenu.playerId}`;
-                        localStorage.setItem(key, String(newScale));
-                        window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
-                          detail: { playerId: tabScaleMenu.playerId, newScale }
-                        }));
-                      } catch {
-                        // Ignore localStorage errors
-                      }
-                    }
-                    setIsEditingPercentage(false);
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className="w-16 bg-slate-700 text-white text-center rounded px-1 py-0.5 text-sm"
-                  autoFocus
-                />
-                <span className="text-xs text-slate-400">%</span>
-              </div>
-            ) : (
-              <span
-                onClick={() => {
-                  const currentScale = selectedPlayerId === tabScaleMenu.playerId ? cardScale : 1;
-                  setEditedPercentage(String(Math.round(currentScale * 100)));
-                  setIsEditingPercentage(true);
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="cursor-pointer hover:bg-slate-700 px-2 py-0.5 rounded text-sm text-white"
-              >
-                {Math.round((selectedPlayerId === tabScaleMenu.playerId ? cardScale : 1) * 100)}%
               </span>
             )}
           </div>

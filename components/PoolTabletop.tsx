@@ -1,21 +1,36 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
-import { TableObject, ItemType } from '../types';
+import { TableObject, ItemType, Deck as DeckType, CardPile, Counter, DiceObject, TokenShape, Board as BoardType, CardLocation } from '../types';
 import { ObjectRenderer } from './ObjectRenderer';
+import { DeckComponent } from './DeckComponent';
+import { ContextMenu } from './ContextMenu';
+import { PileContextMenu } from './PileContextMenu';
+import { executeContextMenuAction } from '../utils/contextMenuActions';
+import { SvgTokenShape } from './SvgTokenShape';
+import { Tooltip } from './Tooltip';
+import { Plus, Minus } from 'lucide-react';
+import { BoardWithResizeMemo } from './Tabletop/BoardWithResize';
+import { ObjectSettingsModal } from './ObjectSettingsModal';
+import { SearchDeckModal } from './SearchDeckModal';
+import { TopDeckModal } from './TopDeckModal';
+import { DeleteConfirmModal } from './DeleteConfirmModal';
+import {
+  calculatePoolDropPositionWithScroll,
+  dropObjectsToPool,
+  getCursorSlotObjects,
+  type PoolZone as PoolZoneType
+} from '../utils/poolPlacement';
 
-interface PoolZone {
-  offsetX: number;
-  offsetY: number;
-  width: number;
-  height: number;
+interface PoolZone extends PoolZoneType {
   panelId: string;
 }
 
 interface PoolTabletopProps {
   poolZone: PoolZone;
+  zoom?: number;
 }
 
-export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
+export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.02 }) => {
   const { state, dispatch } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -23,150 +38,710 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
   const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
   const isGM = currentPlayer?.isGM ?? false;
 
-  // View transform
-  const [zoom] = useState(1);
+  // View transform - use zoom from props or default to 1.02
+  const currentZoom = zoom || 1.02;
 
-  // Dragging state for objects
+  // Click tracking for single/double click detection on dice
+  const clickTrackerRef = useRef<{ objectId: string | null; timestamp: number; clickCount: number }>({
+    objectId: null,
+    timestamp: 0,
+    clickCount: 0
+  });
+
+  // Dragging state for objects (only for non-draggable objects like boards, etc.)
   const [draggingObject, setDraggingObject] = useState<TableObject | null>(null);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+  const cursorSlotEventSentRef = useRef(false);
+  const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Dice drag tracking for click vs drag detection
+  const diceDragRef = useRef<{
+    objectId: string | null;
+    startX: number;
+    startY: number;
+    isDragging: boolean;
+  }>({
+    objectId: null,
+    startX: 0,
+    startY: 0,
+    isDragging: false
+  });
+
+  // Generic drag tracking for all draggable objects (cards, tokens, etc.)
+  const genericDragRef = useRef<{
+    objectId: string | null;
+    startX: number;
+    startY: number;
+    isDragging: boolean;
+  }>({
+    objectId: null,
+    startX: 0,
+    startY: 0,
+    isDragging: false
+  });
+
+  // State to trigger useEffect when drag starts/ends
+  const [isDraggingDice, setIsDraggingDice] = useState(false);
+  const [isDraggingGeneric, setIsDraggingGeneric] = useState(false);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>(null);
+
+  // Settings modal state
+  const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
+
+  // Search modal states
+  const [searchModalDeck, setSearchModalDeck] = useState<DeckType | null>(null);
+  const [searchModalPile, setSearchModalPile] = useState<CardPile | undefined>(undefined);
+  const [topDeckModalDeck, setTopDeckModalDeck] = useState<DeckType | null>(null);
+
+  // Delete confirmation state
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
+
+  const confirmDelete = useCallback(() => {
+    if (deleteCandidateId) {
+      dispatch({ type: 'DELETE_OBJECT', payload: { id: deleteCandidateId }});
+      setDeleteCandidateId(null);
+    }
+  }, [deleteCandidateId, dispatch]);
+
+  // Pile context menu state
+  const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
+
+  // Timer refs for click delays
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Listen for pile modal open events from deck context menus
+  useEffect(() => {
+    const handleOpenPileModal = (e: Event) => {
+      const customEvent = e as CustomEvent<{ pileId: string }>;
+      const { pileId } = customEvent.detail;
+
+      // Find the deck and pile
+      const deck = Object.values(state.objects).find(obj =>
+        obj.type === ItemType.DECK &&
+        (obj as DeckType).piles?.some(p => p.id === pileId)
+      ) as DeckType;
+
+      if (deck) {
+        const pile = deck.piles?.find(p => p.id === pileId);
+        if (pile) {
+          // For now, just log - we could implement pile modal later
+          console.log('[PoolTabletop] Open pile modal:', { pileId, pileName: pile.name });
+        }
+      }
+    };
+
+    const handleOpenSearchDeckModal = (e: Event) => {
+      const customEvent = e as CustomEvent<{ deckId: string; pileId?: string }>;
+      const { deckId, pileId } = customEvent.detail;
+      console.log('[PoolTabletop] handleOpenSearchDeckModal called:', { deckId, pileId });
+
+      const deck = state.objects[deckId] as DeckType;
+      if (deck) {
+        console.log('[PoolTabletop] Deck found:', deck.name);
+        setSearchModalDeck(deck);
+        if (pileId) {
+          const pile = deck.piles?.find(p => p.id === pileId);
+          console.log('[PoolTabletop] Pile found:', pile?.name);
+          setSearchModalPile(pile);
+        }
+      } else {
+        console.warn('[PoolTabletop] Deck not found:', deckId);
+      }
+    };
+
+    const handleOpenTopDeckModal = (e: Event) => {
+      const customEvent = e as CustomEvent<{ deckId: string }>;
+      const { deckId } = customEvent.detail;
+
+      const deck = state.objects[deckId] as DeckType;
+      if (deck) {
+        setTopDeckModalDeck(deck);
+      }
+    };
+
+    window.addEventListener('open-pile-modal', handleOpenPileModal);
+    window.addEventListener('open-search-deck-modal', handleOpenSearchDeckModal);
+    window.addEventListener('open-top-deck-modal', handleOpenTopDeckModal);
+    return () => {
+      window.removeEventListener('open-pile-modal', handleOpenPileModal);
+      window.removeEventListener('open-search-deck-modal', handleOpenSearchDeckModal);
+      window.removeEventListener('open-top-deck-modal', handleOpenTopDeckModal);
+    };
+  }, [state.objects]);
+
+  // Dice animation state
+  const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
+  const initiatedRollsRef = useRef<Set<string>>(new Set());
+  const lastSeenRollStartTimeRef = useRef<Record<string, number>>({});
+
+  // Deck hover state
+  const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
+  const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
 
   // Calculate pixels per VU
   const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
 
-  // Filter objects in pool zone
+  // Memoize pool bounds calculations for rendering
+  const poolBounds = useMemo(() => ({
+    minX: poolZone.offsetX,
+    minY: poolZone.offsetY,
+    maxX: poolZone.offsetX + poolZone.width,
+    maxY: poolZone.offsetY + poolZone.height,
+    widthPx: poolZone.width * pixelsPerVU,
+    heightPx: poolZone.height * pixelsPerVU
+  }), [poolZone, pixelsPerVU]);
+
+  // Filter objects in pool zone with optimized bounds checking
   const zoneObjects = useMemo(() => {
     const allObjects = Object.values(state.objects);
 
-    // Debug logging (commented out to reduce console spam)
-    // console.log('PoolTabletop: === Starting filter ===');
-    // console.log('PoolTabletop: Total objects in state:', allObjects.length);
+    // Pre-calculate pool bounds for efficiency
+    const poolMinX = poolZone.offsetX;
+    const poolMaxX = poolZone.offsetX + poolZone.width;
+    const poolMinY = poolZone.offsetY;
+    const poolMaxY = poolZone.offsetY + poolZone.height;
 
-    // const cardTokenObjects = allObjects.filter(obj => obj.type === ItemType.CARD || obj.type === ItemType.TOKEN);
-    // console.log('PoolTabletop: Cards and tokens:', cardTokenObjects.length);
+    const filtered = allObjects.filter(obj => {
+      // Exclude UI objects (panels and windows) - they have their own rendering
+      if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
+        return false;
+      }
 
-    // console.log('PoolTabletop: All cards/tokens coordinates:', cardTokenObjects
-    //   .map(obj => ({ id: obj.id, name: obj.name, type: obj.type, x: obj.x, y: obj.y, inCursorSlot: (obj as any).inCursorSlot }))
-    // );
+      // Debug logging for cards
+      if (obj.type === ItemType.CARD) {
+        const card = obj as any;
+        const objX = obj.x || 0;
+        const objY = obj.y || 0;
 
-    // console.log('PoolTabletop: Pool zone bounds:', {
-    //   offsetX: poolZone.offsetX,
-    //   offsetY: poolZone.offsetY,
-    //   width: poolZone.width,
-    //   height: poolZone.height,
-    //   maxX: poolZone.offsetX + poolZone.width,
-    //   maxY: poolZone.offsetY + poolZone.height
-    // });
+        // Check if card is in pool bounds
+        const isInBounds = objX < poolMaxX && objX + (obj.width || 100) > poolMinX &&
+                           objY < poolMaxY && objY + (obj.height || 100) > poolMinY;
 
-    const result = allObjects.filter(obj => {
-      // Exclude objects in cursor slot
-      if ((obj as any).inCursorSlot) return false;
+        if (isInBounds) {
+          console.log('[PoolTabletop] Card in pool bounds:', {
+            id: obj.id,
+            name: obj.name,
+            location: card.location,
+            isOnTable: card.isOnTable,
+            inCursorSlot: card.inCursorSlot,
+            x: objX,
+            y: objY,
+            poolBounds: { minX: poolMinX, maxX: poolMaxX, minY: poolMinY, maxY: poolMaxY }
+          });
+        }
+      }
+
+      // Exclude hidden objects (isOnTable: false)
+      if ((obj as any).isOnTable === false) {
+        return false;
+      }
+
+      // Exclude objects in cursor slot - they should disappear from pool panel when picked up
+      // This applies regardless of which pool panel they came from
+      const inCursorSlot = (obj as any).inCursorSlot;
+
+      if (inCursorSlot) {
+        return false;
+      }
 
       const objX = obj.x || 0;
       const objY = obj.y || 0;
       const objWidth = obj.width || 100;
       const objHeight = obj.height || 100;
 
-      // Calculate object center
+      // For cards, tokens, decks, dice, counters, and other draggable objects: use partial overlap for smoother UX
+      if (obj.type === ItemType.CARD || obj.type === ItemType.TOKEN || obj.type === ItemType.DECK ||
+          obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER) {
+        const isInPool = objX < poolMaxX && objX + objWidth > poolMinX &&
+                         objY < poolMaxY && objY + objHeight > poolMinY;
+        return isInPool;
+      }
+
+      // For other objects: use center point
       const centerX = objX + objWidth / 2;
       const centerY = objY + objHeight / 2;
-
-      // Object is visible if its center is within pool zone
-      const centerInPool = centerX >= poolZone.offsetX && centerX <= poolZone.offsetX + poolZone.width &&
-                          centerY >= poolZone.offsetY && centerY <= poolZone.offsetY + poolZone.height;
-
-      // For cards and tokens: also show if any part is in pool zone (for smoother UX)
-      const partlyInPool = objX < poolZone.offsetX + poolZone.width && objX + objWidth > poolZone.offsetX &&
-                          objY < poolZone.offsetY + poolZone.height && objY + objHeight > poolZone.offsetY;
-
-      const inPool = (obj.type === ItemType.CARD || obj.type === ItemType.TOKEN) ? partlyInPool : centerInPool;
-
-      // Debug logging (commented out to reduce console spam)
-      // if ((obj.type === ItemType.CARD || obj.type === ItemType.TOKEN)) {
-      //   console.log('PoolTabletop: Checking object:', {
-      //     id: obj.id,
-      //     name: obj.name,
-      //     type: obj.type,
-      //     x: objX,
-      //     y: objY,
-      //     centerX,
-      //     centerY,
-      //     inPool,
-      //     inCursorSlot: (obj as any).inCursorSlot,
-      //     reason: !inPool ? `Object center (${centerX}, ${centerY}) not in pool zone [${poolZone.offsetX}, ${poolZone.offsetY}] to [${poolZone.offsetX + poolZone.width}, ${poolZone.offsetY + poolZone.height}]` : 'In pool zone'
-      //   });
-      // }
-
-      return inPool;
+      const isInPool = centerX >= poolMinX && centerX <= poolMaxX &&
+                       centerY >= poolMinY && centerY <= poolMaxY;
+      return isInPool;
     });
 
-    // console.log('PoolTabletop: === Filter complete, found', result.length, 'objects in pool ===');
+    // Sort by hyperscale layer order and zIndex (same as main Tabletop)
+    const sorted = filtered.sort((a, b) => {
+      // First, sort by hyperscale layer order (boards < cards < tokens < interface)
+      const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
+      const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
+      const orderA = layerA?.order ?? 2;
+      const orderB = layerB?.order ?? 2;
+      if (orderA !== orderB) return orderA - orderB;
 
-    return result;
-  }, [state.objects, poolZone]);
+      // Within the same layer, sort by zIndex
+      const zA = a.zIndex ?? 0;
+      const zB = b.zIndex ?? 0;
+      if (zA !== zB) return zA - zB;
+
+      // Token types (archetypes) go to the back (for Tools panel)
+      if (a.type === ItemType.TOKEN_TYPE) return -1;
+      if (b.type === ItemType.TOKEN_TYPE) return 1;
+
+      if (a.locked && !b.locked) return -1;
+      if (!a.locked && b.locked) return 1;
+
+      return 0;
+    });
+
+    // Removed debug logging for performance
+    // if (sorted.length > 0 && false) {
+    //   console.log('[PoolTabletop] Found objects in pool zone:', {
+    //     total: sorted.length,
+    //     objectIds: sorted.map(o => ({ id: o.id, type: o.type, x: o.x, y: o.y }))
+    //   });
+    // }
+
+    return sorted;
+  }, [state.objects, poolZone, state.hyperscaleLayers]);
+
+  // Local dice animation function (used by both initiator and remote players)
+  const startDiceAnimation = useCallback((diceId: string, sides: number, isInitiator: boolean) => {
+    let steps = 0;
+    const maxSteps = 10; // Change 10 times
+    const duration = 1000; // 1 second
+    const intervalTime = duration / maxSteps;
+
+    const interval = setInterval(() => {
+      steps++;
+      if (steps < maxSteps) {
+        // Update local state for visual effect only
+        setRollingDice(prev => ({
+          ...prev,
+          [diceId]: Math.floor(Math.random() * sides) + 1
+        }));
+      } else {
+        clearInterval(interval);
+
+        // Clear local override so the component displays the value from the store
+        setRollingDice(prev => {
+          const next = { ...prev };
+          delete next[diceId];
+          return next;
+        });
+
+        // Only the initiator dispatches the final result
+        if (isInitiator) {
+          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
+          // Clear the rollStartTime after animation completes
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: { id: diceId, rollStartTime: undefined }
+          });
+          initiatedRollsRef.current.delete(diceId);
+        }
+      }
+    }, intervalTime);
+  }, [dispatch]);
+
+  const animateDiceRoll = useCallback((dice: DiceObject) => {
+    const rollStartTime = Date.now();
+
+    // Mark this as a roll we initiated (so we dispatch the final result)
+    initiatedRollsRef.current.add(dice.id);
+
+    // Broadcast the roll start time to all players
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: dice.id, rollStartTime }
+    });
+
+    // Start local animation
+    startDiceAnimation(dice.id, dice.sides, true);
+  }, [dispatch, startDiceAnimation]);
+
+  // Watch for dice rollStartTime changes to sync animations across players
+  useEffect(() => {
+    Object.values(state.objects).forEach(obj => {
+      if (obj.type === ItemType.DICE_OBJECT) {
+        const dice = obj as DiceObject;
+        const lastSeen = lastSeenRollStartTimeRef.current[dice.id];
+
+        // If rollStartTime is newer than what we've seen, start animation
+        if (dice.rollStartTime && dice.rollStartTime !== lastSeen) {
+          lastSeenRollStartTimeRef.current[dice.id] = dice.rollStartTime;
+
+          // Only start animation if we didn't initiate this roll ourselves
+          if (!initiatedRollsRef.current.has(dice.id)) {
+            startDiceAnimation(dice.id, dice.sides, false);
+          }
+        }
+      }
+    });
+  }, [state.objects, startDiceAnimation]);
+
+  // Handle dice roll (double-click)
+  const handleRollDice = useCallback((e: React.MouseEvent, obj: TableObject) => {
+    if (obj.type === ItemType.DICE_OBJECT) {
+      e.stopPropagation();
+
+      const dice = obj as DiceObject;
+
+      // Check if dice belongs to a group
+      if (dice.diceGroupId) {
+        const group = state.diceGroups.find(g => g.id === dice.diceGroupId);
+        if (group && group.visible) {
+          // Roll all dice in the group with animation
+          group.diceIds.forEach(diceId => {
+            const groupDice = state.objects[diceId];
+            if (groupDice?.type === ItemType.DICE_OBJECT) {
+              animateDiceRoll(groupDice as DiceObject);
+            }
+          });
+        } else {
+          // Group not found or not visible, roll single dice with animation
+          animateDiceRoll(dice);
+        }
+      } else {
+        // Single dice roll (not in a group) with animation
+        animateDiceRoll(dice);
+      }
+    }
+  }, [dispatch, state.diceGroups, state.objects, animateDiceRoll]);
 
   // Handle object mouse down
   const handleObjectMouseDown = useCallback((e: React.MouseEvent, obj: TableObject) => {
-    // Debug logging (commented out to reduce console spam)
-    // console.log('PoolTabletop handleObjectMouseDown:', {
-    //   button: e.button,
-    //   ctrlKey: e.ctrlKey,
-    //   metaKey: e.metaKey,
-    //   shiftKey: e.shiftKey,
-    //   objId: obj.id,
-    //   objType: obj.type,
-    //   objName: obj.name
-    // });
-
     if (e.button !== 0) return;
 
-    // Handle Ctrl+click to add to cursor slot
-    if (e.ctrlKey || e.metaKey) {
-      console.log('PoolTabletop: Ctrl+click detected, dispatching add-to-cursor-slot event for', obj.id);
+    // Check if object is locked - locked objects can't be dragged
+    if (obj.locked) return;
+
+    // For draggable objects (cards, tokens, boards, etc.), add to cursor slot IMMEDIATELY
+    // NOTE: Boards ARE draggable in pool panels - use same logic as tokens
+    const isDraggableType = [
+      ItemType.CARD,
+      ItemType.TOKEN,
+      ItemType.DECK,
+      ItemType.DICE_OBJECT,
+      ItemType.RANDOMIZER,
+      ItemType.COUNTER,
+      ItemType.BOARD // Now boards use same drag logic as tokens
+    ].includes(obj.type);
+
+    if (isDraggableType) {
+      // Special handling for dice - track drag distance for click vs drag detection
+      if (obj.type === ItemType.DICE_OBJECT) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Initialize drag tracking
+        diceDragRef.current = {
+          objectId: obj.id,
+          startX: e.clientX,
+          startY: e.clientY,
+          isDragging: false
+        };
+        setIsDraggingDice(true);
+        return;
+      }
+
+      // For other draggable types (including boards), also track drag distance
       e.preventDefault();
       e.stopPropagation();
-      // Dispatch event for Tabletop to handle (same as HandPanel does)
-      window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-        detail: { cardId: obj.id, clientX: e.clientX, clientY: e.clientY, source: 'shift' }
-      }));
+
+      // Check if ctrl key is pressed - add to cursor slot immediately
+      if (e.ctrlKey || e.metaKey) {
+        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+          detail: {
+            cardId: obj.id,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            source: 'shift',
+            fromPoolPanel: poolZone.panelId
+          }
+        }));
+        return;
+      }
+
+      // Otherwise, track drag distance (boards use same logic as tokens now)
+      genericDragRef.current = {
+        objectId: obj.id,
+        startX: e.clientX,
+        startY: e.clientY,
+        isDragging: false
+      };
+      setIsDraggingGeneric(true);
       return;
     }
 
+    // For other objects, use local drag system
     e.stopPropagation();
-    console.log('PoolTabletop: Starting drag for', obj.id);
     setDraggingObject(obj);
     setDragStartPos({ x: e.clientX, y: e.clientY });
+    cursorSlotEventSentRef.current = false; // Reset event flag
+  }, [poolZone.panelId, clickTimerRef, clickTrackerRef, handleRollDice]);
+
+  // Handle context menu
+  const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Always get fresh object from state to ensure we have latest data
+    const freshObject = state.objects[obj.id] || obj;
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      object: freshObject,
+      shiftKey: e.shiftKey // Store shift key state for delete confirmation
+    });
+  }, [state.objects]);
+
+  // Execute context menu action using shared utility
+  const executeMenuAction = (action: string, shiftKey?: boolean) => {
+    console.log('[PoolTabletop] ===== executeMenuAction CALLED =====');
+    console.log('[PoolTabletop] Action:', action);
+    console.log('[PoolTabletop] Shift key:', shiftKey);
+    console.log('[PoolTabletop] Has context menu:', !!contextMenu);
+
+    if (!contextMenu) {
+      console.warn('[PoolTabletop] ERROR: No context menu exists!');
+      return;
+    }
+
+    // Always get fresh object from state to ensure we have latest data
+    const targetObject = state.objects[contextMenu.object.id] || contextMenu.object;
+    console.log('[PoolTabletop] Target object:', {
+      id: targetObject.id,
+      type: targetObject.type,
+      name: targetObject.name
+    });
+
+    // Try to handle action with shared contextMenuAction utility
+    let wasHandled = false;
+
+    // Actions that require special handling in context menu
+    const specialActions = [
+      'configure', 'delete', 'pinToViewport', 'unpinFromViewport',
+      'setCardBack', 'toggleHide', 'moveToHand', 'moveToTopDeck',
+      'moveToBottomDeck', 'moveToDiscard', 'moveToPile-', 'pile-',
+      'moveToHyperscaleLayer:', 'editNexusBoard', 'closeNexusBoardEditing',
+      'deleteNexusBoard', 'resetToBase', 'topDeck', 'searchDeck',
+      // Basic object actions
+      'lock', 'clone', 'flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise',
+      'resetRotation', 'swingClockwise', 'swingCounterClockwise',
+      'bringToFront', 'sendToBack', 'layerUp', 'layerDown',
+      'show', 'hide',
+      // Deck actions
+      'shuffleDeck', 'draw', 'playTopCard', 'millTopCard', 'toBottom',
+      'showTop', 'hideTop', 'returnAll', 'returnAllAndShuffle', 'returnAllExceptHands'
+    ];
+
+    const isSpecialAction = specialActions.some(specialAction => action.startsWith(specialAction));
+    console.log('[PoolTabletop] Is special action:', isSpecialAction);
+
+    if (isSpecialAction) {
+      console.log('[PoolTabletop] Executing via executeContextMenuAction...');
+      try {
+        executeContextMenuAction(action, {
+          object: targetObject,
+          dispatch,
+          state,
+          activePlayerId: state.activePlayerId,
+          setContextMenu,
+          setSettingsModalObj,
+          setDeleteCandidateId,
+          setSearchModalDeck,
+          setSearchModalPile,
+          setTopDeckModalDeck,
+          isShiftPressed: shiftKey,
+          isGM,
+          animateDiceRoll,
+          isPoolPanel: true
+        });
+        wasHandled = true;
+        console.log('[PoolTabletop] executeContextMenuAction completed');
+
+        // Close menu after executing special action (except for modals)
+        if (setContextMenu && action !== 'configure' && action !== 'delete') {
+          console.log('[PoolTabletop] Closing context menu');
+          setContextMenu(null);
+        } else {
+          console.log('[PoolTabletop] Not closing menu for action:', action);
+        }
+      } catch (error) {
+        console.error('[PoolTabletop] ERROR in executeContextMenuAction:', error);
+      }
+    }
+
+    // Handle basic actions that weren't handled by executeContextMenuAction
+    if (!wasHandled) {
+      console.log('[PoolTabletop] Handling basic action in switch...');
+      switch (action) {
+        case 'roll':
+          console.log('[PoolTabletop] Rolling dice');
+          // Roll dice - handled by double-click, but also available from context menu
+          if (targetObject.type === ItemType.DICE_OBJECT) {
+            animateDiceRoll(targetObject as DiceObject);
+          }
+          break;
+
+        default:
+          console.log('[PoolTabletop] Default case for action:', action);
+          // Handle dynamic actions that can't be in switch cases
+          if (action.startsWith('moveToHyperscaleLayer:')) {
+            const layerId = action.split(':')[1];
+            dispatch({
+              type: 'MOVE_OBJECT_TO_HYPERSCALE_LAYER',
+              payload: { objectId: targetObject.id, layerId }
+            });
+          }
+          break;
+      }
+
+      // Close menu after executing action
+      console.log('[PoolTabletop] Closing context menu after basic action');
+      if (setContextMenu) setContextMenu(null);
+    }
+
+    console.log('[PoolTabletop] ===== executeMenuAction FINISHED =====');
+  };
+
+  // Handle pile context menu
+  const handlePileContextMenu = useCallback((e: React.MouseEvent, pile: CardPile, deck: DeckType) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPileContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      pile,
+      deck
+    });
+  }, []);
+
+  // Execute pile context menu action
+  const executePileMenuAction = useCallback((action: string) => {
+    console.log('[PoolTabletop] executePileMenuAction called:', action);
+    if (!pileContextMenu) return;
+    const { pile, deck } = pileContextMenu;
+    console.log('[PoolTabletop] Pile context menu:', { pileName: pile.name, deckName: deck.name });
+
+    switch(action) {
+      case 'lock':
+        dispatch({
+          type: 'TOGGLE_PILE_LOCK',
+          payload: { deckId: deck.id, pileId: pile.id }
+        });
+        setPileContextMenu(null);
+        break;
+      case 'showTop':
+        dispatch({
+          type: 'TOGGLE_SHOW_TOP_CARD',
+          payload: { deckId: deck.id, pileId: pile.id }
+        });
+        setPileContextMenu(null);
+        break;
+      case 'searchDeck':
+        console.log('[PoolTabletop] Dispatching open-search-deck-modal event:', { deckId: deck.id, pileId: pile.id });
+        // Open search deck modal - dispatch event to main app
+        window.dispatchEvent(new CustomEvent('open-search-deck-modal', {
+          detail: { deckId: deck.id, pileId: pile.id }
+        }));
+        setPileContextMenu(null);
+        break;
+      case 'draw':
+        dispatch({
+          type: 'DRAW_FROM_PILE',
+          payload: {
+            pileId: pile.id,
+            deckId: deck.id,
+            playerId: state.activePlayerId
+          }
+        });
+        setPileContextMenu(null);
+        break;
+      case 'returnAll':
+        dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: deck.id, shuffleAfter: false } });
+        setPileContextMenu(null);
+        break;
+    }
+  }, [pileContextMenu, state.activePlayerId, dispatch]);
+
+  // Cleanup click timers on unmount
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+      }
+    };
   }, []);
 
   // Handle mouse move for dragging objects
   const handleObjectMouseMove = useCallback((e: MouseEvent) => {
+    // Handle dice drag tracking
+    if (diceDragRef.current.objectId) {
+      const deltaX = e.clientX - diceDragRef.current.startX;
+      const deltaY = e.clientY - diceDragRef.current.startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      // If moved more than 5px, consider it a drag
+      if (distance > 5 && !diceDragRef.current.isDragging) {
+        diceDragRef.current.isDragging = true;
+
+        // Add to cursor slot immediately when drag threshold is exceeded
+        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+          detail: {
+            cardId: diceDragRef.current.objectId,
+            clientX: diceDragRef.current.startX,
+            clientY: diceDragRef.current.startY,
+            source: 'hold',
+            fromPoolPanel: poolZone.panelId
+          }
+        }));
+      }
+      return;
+    }
+
+    // Handle generic drag tracking for other draggable objects
+    if (genericDragRef.current.objectId) {
+      const deltaX = e.clientX - genericDragRef.current.startX;
+      const deltaY = e.clientY - genericDragRef.current.startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      // If moved more than 5px, consider it a drag
+      if (distance > 5 && !genericDragRef.current.isDragging) {
+        genericDragRef.current.isDragging = true;
+
+        // Add to cursor slot immediately when drag threshold is exceeded
+        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+          detail: {
+            cardId: genericDragRef.current.objectId,
+            clientX: genericDragRef.current.startX,
+            clientY: genericDragRef.current.startY,
+            source: 'hold',
+            fromPoolPanel: poolZone.panelId
+          }
+        }));
+      }
+      return;
+    }
+
     if (!draggingObject) return;
 
     const deltaX = e.clientX - dragStartPos.x;
     const deltaY = e.clientY - dragStartPos.y;
 
-    // For cards and tokens: add to cursor slot after 5px drag
-    if ((draggingObject.type === ItemType.CARD || draggingObject.type === ItemType.TOKEN)) {
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      if (distance >= 5) {
-        console.log('PoolTabletop: Card/token dragged 5px+, adding to cursor slot');
-        setDraggingObject(null);
-
-        // Add to cursor slot
-        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-          detail: {
-            cardId: draggingObject.id,
-            clientX: e.clientX,
-            clientY: e.clientY,
-            source: 'hold'
-          }
-        }));
-        return;
-      }
+    // Draggable objects are now handled by cursor slot system - no local drag needed
+    if ([
+      ItemType.CARD,
+      ItemType.TOKEN,
+      ItemType.DECK,
+      ItemType.DICE_OBJECT,
+      ItemType.RANDOMIZER,
+      ItemType.COUNTER,
+      ItemType.BOARD
+    ].includes(draggingObject.type)) {
+      return;
     }
 
-    // Convert pixel delta to VU delta (account for zoom)
-    const vuDeltaX = deltaX / zoom / pixelsPerVU;
-    const vuDeltaY = deltaY / zoom / pixelsPerVU;
+    // Convert pixel delta to VU delta (account for currentZoom)
+    const vuDeltaX = deltaX / currentZoom / pixelsPerVU;
+    const vuDeltaY = deltaY / currentZoom / pixelsPerVU;
 
     // Calculate new position
     const newX = draggingObject.x + vuDeltaX;
@@ -182,14 +757,109 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
       objElement.style.left = `${relativeX}px`;
       objElement.style.top = `${relativeY}px`;
     }
-  }, [draggingObject, dragStartPos, zoom, pixelsPerVU, poolZone.offsetX, poolZone.offsetY]);
+  }, [draggingObject, dragStartPos, currentZoom, pixelsPerVU, poolZone.offsetX, poolZone.offsetY, poolZone.panelId]);
 
   // Handle mouse up for object drag
   const handleObjectMouseUp = useCallback((e: MouseEvent) => {
+    // Handle dice click detection
+    if (diceDragRef.current.objectId) {
+      const deltaX = e.clientX - diceDragRef.current.startX;
+      const deltaY = e.clientY - diceDragRef.current.startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      const wasDrag = diceDragRef.current.isDragging;
+      const objectId = diceDragRef.current.objectId;
+
+      // Reset drag tracking
+      diceDragRef.current = {
+        objectId: null,
+        startX: 0,
+        startY: 0,
+        isDragging: false
+      };
+      setIsDraggingDice(false);
+
+      // If this was a click (not a drag), handle click detection
+      if (!wasDrag && distance < 5) {
+        const obj = state.objects[objectId];
+        if (obj?.type === ItemType.DICE_OBJECT) {
+          const now = Date.now();
+          const DOUBLE_CLICK_DELAY = 300; // ms
+
+          // Clear any existing timer
+          if (clickTimerRef.current) {
+            clearTimeout(clickTimerRef.current);
+            clickTimerRef.current = null;
+          }
+
+          // Check if this is a double click
+          const lastClick = clickTrackerRef.current;
+          if (lastClick.objectId === objectId && now - lastClick.timestamp < DOUBLE_CLICK_DELAY) {
+            // Double click detected - roll the dice
+            handleRollDice(e as any, obj);
+
+            // Reset click tracker after double click
+            clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
+          } else {
+            // Single click - just track for potential double click, don't add to cursor slot
+            clickTrackerRef.current = {
+              objectId: objectId,
+              timestamp: now,
+              clickCount: lastClick.clickCount + 1
+            };
+
+            // Wait to see if this becomes a double click
+            clickTimerRef.current = setTimeout(() => {
+              const currentTracker = clickTrackerRef.current;
+              if (currentTracker.objectId === objectId && now === currentTracker.timestamp) {
+                // Single click confirmed - just reset tracker, don't add to cursor slot
+                clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
+              }
+            }, DOUBLE_CLICK_DELAY);
+          }
+        }
+      }
+      return;
+    }
+
+    // Handle generic drag tracking for other draggable objects
+    if (genericDragRef.current.objectId) {
+      const deltaX = e.clientX - genericDragRef.current.startX;
+      const deltaY = e.clientY - genericDragRef.current.startY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      const wasDrag = genericDragRef.current.isDragging;
+
+      // Reset drag tracking
+      genericDragRef.current = {
+        objectId: null,
+        startX: 0,
+        startY: 0,
+        isDragging: false
+      };
+      setIsDraggingGeneric(false);
+
+      // If this was a click (not a drag), don't add to cursor slot
+      // Only drags should have already added the object to cursor slot
+      if (!wasDrag && distance < 5) {
+        // Single click - do nothing in pool panel
+        // Objects are only added via drag or ctrl+click
+      }
+      return;
+    }
+
     if (!draggingObject) return;
 
-    // Cards and tokens are already handled in mouseMove (added to cursor slot)
-    if (draggingObject.type === ItemType.CARD || draggingObject.type === ItemType.TOKEN) {
+    // Draggable objects are now handled by cursor slot system - no local drag needed
+    if ([
+      ItemType.CARD,
+      ItemType.TOKEN,
+      ItemType.DECK,
+      ItemType.DICE_OBJECT,
+      ItemType.RANDOMIZER,
+      ItemType.COUNTER,
+      ItemType.BOARD
+    ].includes(draggingObject.type)) {
       setDraggingObject(null);
       return;
     }
@@ -198,9 +868,9 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
     const deltaX = e.clientX - dragStartPos.x;
     const deltaY = e.clientY - dragStartPos.y;
 
-    // Convert pixel delta to VU delta (account for zoom)
-    const vuDeltaX = deltaX / zoom / pixelsPerVU;
-    const vuDeltaY = deltaY / zoom / pixelsPerVU;
+    // Convert pixel delta to VU delta (account for currentZoom)
+    const vuDeltaX = deltaX / currentZoom / pixelsPerVU;
+    const vuDeltaY = deltaY / currentZoom / pixelsPerVU;
 
     let newX = draggingObject.x + vuDeltaX;
     let newY = draggingObject.y + vuDeltaY;
@@ -224,11 +894,11 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
     });
 
     setDraggingObject(null);
-  }, [draggingObject, dragStartPos, zoom, pixelsPerVU, dispatch, poolZone]);
+  }, [draggingObject, dragStartPos, currentZoom, pixelsPerVU, dispatch, poolZone, state.objects, handleRollDice, poolZone.panelId]);
 
-  // Add global mouse listeners for object dragging
+  // Add global mouse listeners for object dragging (for both non-draggable items and draggable objects)
   useEffect(() => {
-    if (draggingObject) {
+    if (draggingObject || isDraggingDice || isDraggingGeneric) {
       window.addEventListener('mousemove', handleObjectMouseMove);
       window.addEventListener('mouseup', handleObjectMouseUp);
       return () => {
@@ -236,25 +906,66 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
         window.removeEventListener('mouseup', handleObjectMouseUp);
       };
     }
-  }, [draggingObject, handleObjectMouseMove, handleObjectMouseUp]);
+  }, [draggingObject, isDraggingDice, isDraggingGeneric, handleObjectMouseMove, handleObjectMouseUp]);
 
-  // Handle drop from cursor slot
+  // Handle drop from cursor slot (local handler for mouseup on PoolTabletop)
   const handleDropFromCursor = useCallback((e: React.MouseEvent) => {
-    // Don't drop if modifiers are pressed (Ctrl/Shift/Meta)
-    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    // IMPORTANT: If clicking inside ANY context menu, don't process drops
+    // This prevents interference with context menu button clicks in both Tabletop and Pool panels
+    const target = e.target as HTMLElement;
+    const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
+    const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
+    if (tableContextMenuElement || poolContextMenuElement) {
+      console.log('[PoolTabletop] Mouseup inside context menu, ignoring drop handler');
+      return;
+    }
 
-    const cursorSlotObjects = Object.values(state.objects).filter(obj =>
-      (obj.type === ItemType.CARD || obj.type === ItemType.TOKEN) && (obj as any).inCursorSlot
-    );
+    // Close context menu if open
+    if (contextMenu) {
+      setContextMenu(null);
+    }
+
+    // Don't drop if modifiers are pressed (Ctrl/Meta)
+    if (e.ctrlKey || e.metaKey) return;
+
+    // IMPORTANT: Check if cursor is over a deck or pile FIRST
+    // If yes, let the main Tabletop handle it (don't drop to pool)
+    const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
+
+    // Check for piles FIRST (before deck) - piles are more specific targets
+    const pileElement = elementUnderCursor?.closest('[data-pile-id]');
+    if (pileElement) {
+      console.log('[PoolTabletop] Cursor over pile, letting main handler process it');
+      return; // Let main Tabletop handle it
+    }
+
+    // Check for deck
+    const deckElement = elementUnderCursor?.closest('[data-object-id]');
+    if (deckElement) {
+      const objectId = deckElement.getAttribute('data-object-id');
+      const obj = objectId ? state.objects[objectId] : undefined;
+      if (obj && obj.type === ItemType.DECK) {
+        console.log('[PoolTabletop] Cursor over deck, letting main handler process it:', objectId);
+        return; // Let main Tabletop handle it
+      }
+    }
+
+    const cursorSlotObjects = getCursorSlotObjects(state.objects);
+
+    // console.log('[PoolTabletop] handleDropFromCursor called:', {
+    //   hasCursorSlotObjects: cursorSlotObjects.length > 0,
+    //   count: cursorSlotObjects.length,
+    //   poolPanelId: poolZone.panelId
+    // });
 
     if (cursorSlotObjects.length > 0) {
       const container = containerRef.current;
       if (!container) return;
 
-      // Get scroll parent (PoolGameSpace) to account for scroll position
+      // Get scroll parent to account for scroll position
       const scrollParent = container.closest('.overflow-auto');
       if (!scrollParent) {
-        console.error('PoolTabletop: scroll parent not found!');
+        console.warn('Scroll parent not found for pool drop operation');
         return;
       }
 
@@ -262,101 +973,176 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
       const scrollLeft = scrollParent.scrollLeft;
       const scrollTop = scrollParent.scrollTop;
 
-      const containerRect = container.getBoundingClientRect();
+      // Calculate drop position using utility function
+      const dropPosition = calculatePoolDropPositionWithScroll(
+        e.clientX,
+        e.clientY,
+        poolZone,
+        scrollRect,
+        scrollLeft,
+        scrollTop,
+        pixelsPerVU,
+        currentZoom
+      );
 
-      console.log('PoolTabletop: === DROP COORDINATES DEBUG ===');
-      console.log('Click position (screen):', { x: e.clientX, y: e.clientY });
-      console.log('Scroll parent:', {
-        rect: { left: scrollRect.left, top: scrollRect.top, width: scrollRect.width, height: scrollRect.height },
-        scroll: { left: scrollLeft, top: scrollTop }
-      });
-      console.log('Container:', {
-        rect: { left: containerRect.left, top: containerRect.top, width: containerRect.width, height: containerRect.height },
-        offsetLeft: container.offsetLeft,
-        offsetTop: container.offsetTop
-      });
-      console.log('Pool zone:', {
-        offsetX: poolZone.offsetX,
-        offsetY: poolZone.offsetY,
-        width: poolZone.width,
-        height: poolZone.height,
-        zoom,
-        pixelsPerVU
-      });
+      // Check if cursor is over the VISIBLE pool panel window first
+      // Get the visible content area (data-pool-content)
+      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
+      if (!visibleContentArea) {
+        console.warn('[PoolTabletop] Visible content area not found');
+        return;
+      }
 
-      // Try different calculation methods
-      const method1 = {
-        name: 'Method 1: screen - scrollRect.left + scrollLeft',
-        x: (e.clientX - scrollRect.left + scrollLeft) / zoom / pixelsPerVU,
-        y: (e.clientY - scrollRect.top + scrollTop) / zoom / pixelsPerVU
-      };
+      const visibleRect = visibleContentArea.getBoundingClientRect();
+      const isCursorOverVisibleArea = e.clientX >= visibleRect.left && e.clientX <= visibleRect.right &&
+                                     e.clientY >= visibleRect.top && e.clientY <= visibleRect.bottom;
 
-      const method2 = {
-        name: 'Method 2: screen - containerRect.left',
-        x: (e.clientX - containerRect.left) / zoom / pixelsPerVU,
-        y: (e.clientY - containerRect.top) / zoom / pixelsPerVU
-      };
+      if (!isCursorOverVisibleArea) {
+        // Cursor is NOT over the visible pool panel window - don't allow drop
+        return;
+      }
 
-      const method3 = {
-        name: 'Method 3: screen - scrollRect.left (no scroll)',
-        x: (e.clientX - scrollRect.left) / zoom / pixelsPerVU,
-        y: (e.clientY - scrollRect.top) / zoom / pixelsPerVU
-      };
+      // Check if ALL objects will be completely visible in the pool panel window
+      // Account for stacking offset - check the last (bottom-right most) object
+      const lastObj = cursorSlotObjects[cursorSlotObjects.length - 1];
+      if (lastObj) {
+        // Calculate stacking offset for the last object
+        const objWidth = (lastObj.width || 50) * pixelsPerVU;
+        const objHeight = (lastObj.height || 50) * pixelsPerVU;
+        const stackingOffset = Math.min(objWidth, objHeight) * 0.05; // 5% stacking offset
+        const maxOffset = stackingOffset * (cursorSlotObjects.length - 1);
 
-      console.log('Calculation methods:', { method1, method2, method3 });
+        // Calculate position of the last object (with maximum offset) in screen coords
+        const objLeft = e.clientX - objWidth / 2 + maxOffset;
+        const objRight = e.clientX + objWidth / 2 + maxOffset;
+        const objTop = e.clientY - objHeight / 2 + maxOffset;
+        const objBottom = e.clientY + objHeight / 2 + maxOffset;
 
-      // Use method 1
-      const relativeX = method1.x;
-      const relativeY = method1.y;
+        // Check if last object is completely within visible content area
+        const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
+                            objTop >= visibleRect.top && objBottom <= visibleRect.bottom;
 
-      // Convert to pool zone coordinates
-      const baseX = poolZone.offsetX + relativeX;
-      const baseY = poolZone.offsetY + relativeY;
+        if (!isFullyVisible) {
+          // Object would be partially outside visible area - don't allow drop
+          return;
+        }
+      }
 
-      console.log('Final coordinates:', { baseX, baseY, relativeX, relativeY });
+      // Drop objects using utility function
+      dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects);
 
-      // Sort by zIndex in DESCENDING order to preserve layer relationships when dropping
-      // Note: PoolTabletop doesn't have access to cursorSlot array, so we use current zIndex
-      const sortedObjects = [...cursorSlotObjects].sort((a, b) => {
-        const zA = a.zIndex ?? 0;
-        const zB = b.zIndex ?? 0;
-        return zB - zA; // Descending order - higher Z first
-      });
-
-      // Drop items with offset based on layer position (same as tabletop)
-      sortedObjects.forEach((obj, sortedIndex) => {
-        const objWidth = obj.width || 100;
-        const objHeight = obj.height || 100;
-
-        // Calculate offset based on sorted position
-        // Highest zIndex (top, sortedIndex=0) gets no offset, lower gets more offset
-        const offsetFromFront = sortedIndex;
-        const offsetAmount = Math.min(objWidth, objHeight) * 0.05; // 5 VU offset
-        const offsetX = offsetFromFront * offsetAmount;
-        const offsetY = offsetFromFront * offsetAmount;
-
-        // Calculate position (cursor is at center of object, so subtract half dimensions)
-        let finalX = baseX - (objWidth / 2) + offsetX;
-        let finalY = baseY - (objHeight / 2) + offsetY;
-
-        // Constrain to pool zone bounds
-        finalX = Math.max(poolZone.offsetX, Math.min(finalX, poolZone.offsetX + poolZone.width - objWidth));
-        finalY = Math.max(poolZone.offsetY, Math.min(finalY, poolZone.offsetY + poolZone.height - objHeight));
-
-        console.log(`Dropping ${obj.name} at:`, { finalX, finalY, objWidth, objHeight });
-
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: {
-            id: obj.id,
-            x: finalX,
-            y: finalY,
-            inCursorSlot: false
-          }
-        });
-      });
+      // Clear cursor slot after successful drop
+      // Dispatch event to clear cursor slot in main Tabletop
+      window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
+        detail: { reason: 'pool-drop' }
+      }));
     }
-  }, [poolZone, zoom, pixelsPerVU, dispatch, state.objects]);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, contextMenu]);
+
+  // Global mouseup handler for cursor slot drop (handles all mouseup events)
+  // This ensures objects are dropped even if mouseup happens outside PoolTabletop
+  useEffect(() => {
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      // Only process left mouse button
+      if (e.button !== 0) return;
+
+      const cursorSlotObjects = getCursorSlotObjects(state.objects);
+
+      // Only handle if cursor slot has objects
+      if (cursorSlotObjects.length === 0) return;
+
+      // Don't drop if modifiers are pressed (Ctrl/Meta)
+      if (e.ctrlKey || e.metaKey) return;
+
+      // Check if mouseup is over this pool panel
+      const container = containerRef.current;
+      if (!container) return;
+
+      // Get the visible content area (data-pool-content) - this is the VISIBLE window
+      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
+      if (!visibleContentArea) {
+        console.warn('[PoolTabletop] Visible content area not found');
+        return;
+      }
+
+      const visibleRect = visibleContentArea.getBoundingClientRect();
+      const x = e.clientX;
+      const y = e.clientY;
+
+      // Check if mouseup position is over the visible pool panel area
+      const isCursorOverVisibleArea = x >= visibleRect.left && x <= visibleRect.right &&
+                                     y >= visibleRect.top && y <= visibleRect.bottom;
+
+      if (isCursorOverVisibleArea) {
+        // Get the scroll parent (PoolGameSpace) to account for scroll position
+        const scrollParent = container.closest('.overflow-auto') as HTMLElement;
+        const scrollLeft = scrollParent?.scrollLeft || 0;
+        const scrollTop = scrollParent?.scrollTop || 0;
+
+        const scrollRect = scrollParent?.getBoundingClientRect();
+        if (!scrollRect) return;
+
+        // Calculate drop position using utility function
+        const dropPosition = calculatePoolDropPositionWithScroll(
+          x,
+          y,
+          poolZone,
+          scrollRect,
+          scrollLeft,
+          scrollTop,
+          pixelsPerVU,
+          currentZoom
+        );
+
+        // Check if ALL objects will be completely visible in the pool panel window
+        // Account for stacking offset - check the last (bottom-right most) object
+        const lastObj = cursorSlotObjects[cursorSlotObjects.length - 1];
+        if (lastObj) {
+          // Calculate stacking offset for the last object
+          const objWidth = (lastObj.width || 50) * pixelsPerVU;
+          const objHeight = (lastObj.height || 50) * pixelsPerVU;
+          const stackingOffset = Math.min(objWidth, objHeight) * 0.05; // 5% stacking offset
+          const maxOffset = stackingOffset * (cursorSlotObjects.length - 1);
+
+          // Calculate position of the last object (with maximum offset)
+          const objLeft = x - objWidth / 2 + maxOffset;
+          const objRight = x + objWidth / 2 + maxOffset;
+          const objTop = y - objHeight / 2 + maxOffset;
+          const objBottom = y + objHeight / 2 + maxOffset;
+
+          // Check if last object is completely within visible content area
+          const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
+                              objTop >= visibleRect.top && objBottom <= visibleRect.bottom;
+
+          if (!isFullyVisible) {
+            // Object would be partially outside visible area - don't allow drop
+            return;
+          }
+        }
+
+        // Drop objects using utility function
+        dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects);
+
+        // Clear cursor slot after successful drop
+        window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
+          detail: { reason: 'pool-drop-global' }
+        }));
+
+        // Stop event from propagating to Tabletop handler
+        e.stopPropagation();
+        e.preventDefault();
+      } else {
+        // NOT over pool panel - notify Tabletop to handle drop on main tabletop
+        // Don't stop propagation - let Tabletop handle it
+        window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-tabletop', {
+          detail: { x: e.clientX, y: e.clientY }
+        }));
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp, { capture: true });
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp, { capture: true } as any);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects]);
 
   // Listen for object-drag-end event from main tabletop (for both cards and tokens)
   useEffect(() => {
@@ -375,50 +1161,59 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
       const container = containerRef.current;
       if (!container) return;
 
-      const rect = container.getBoundingClientRect();
+      // Get the visible content area (data-pool-content) - this is the VISIBLE window
+      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
+      if (!visibleContentArea) {
+        console.warn('[PoolTabletop] Visible content area not found');
+        return;
+      }
+
+      const visibleRect = visibleContentArea.getBoundingClientRect();
       const x = customEvent.detail.x;
       const y = customEvent.detail.y;
 
-      // Check if drop position is over the pool panel
-      const isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      // Check if drop position is over the visible pool panel area
+      const isCursorOverVisibleArea = x >= visibleRect.left && x <= visibleRect.right &&
+                                     y >= visibleRect.top && y <= visibleRect.bottom;
 
-      if (isOver) {
-        // Calculate position relative to container (accounting for scroll)
-        const relativeX = x - rect.left;
-        const relativeY = y - rect.top;
+      if (isCursorOverVisibleArea) {
+        // Get the scroll parent (PoolGameSpace) to account for scroll position
+        const scrollParent = container.closest('.overflow-auto') as HTMLElement;
+        const scrollLeft = scrollParent?.scrollLeft || 0;
+        const scrollTop = scrollParent?.scrollTop || 0;
+
+        // Calculate position relative to content area (accounting for scroll)
+        const relativeX = x - visibleRect.left + scrollLeft;
+        const relativeY = y - visibleRect.top + scrollTop;
 
         // Convert to pool zone coordinates
-        const poolX = poolZone.offsetX + relativeX / zoom / pixelsPerVU;
-        const poolY = poolZone.offsetY + relativeY / zoom / pixelsPerVU;
+        const poolX = poolZone.offsetX + relativeX / currentZoom / pixelsPerVU;
+        const poolY = poolZone.offsetY + relativeY / currentZoom / pixelsPerVU;
 
         // Get the object to determine its dimensions for centering
         const obj = state.objects[customEvent.detail.objectId];
-        const objWidth = obj?.width || 100;
-        const objHeight = obj?.height || 100;
+        const objWidth = (obj?.width || 100) * pixelsPerVU;
+        const objHeight = (obj?.height || 100) * pixelsPerVU;
 
         // Calculate final position (cursor is at center of object, so subtract half dimensions)
-        const finalX = poolX - (objWidth / 2);
-        const finalY = poolY - (objHeight / 2);
+        const finalX = poolX - (objWidth / pixelsPerVU / 2);
+        const finalY = poolY - (objHeight / pixelsPerVU / 2);
 
-        console.log('PoolTabletop: Dropping object from tabletop to pool:', {
-          objectId: customEvent.detail.objectId,
-          screenX: x,
-          screenY: y,
-          rectLeft: rect.left,
-          rectTop: rect.top,
-          relativeX,
-          relativeY,
-          poolX,
-          poolY,
-          finalX,
-          finalY,
-          objWidth,
-          objHeight,
-          poolZoneOffsetX: poolZone.offsetX,
-          poolZoneOffsetY: poolZone.offsetY,
-          zoom,
-          pixelsPerVU
-        });
+        // Check if object will be completely visible in the pool panel window
+        // Calculate object bounds in screen coordinates
+        const objLeft = x - objWidth / 2;
+        const objRight = x + objWidth / 2;
+        const objTop = y - objHeight / 2;
+        const objBottom = y + objHeight / 2;
+
+        // Check if object is completely within visible content area
+        const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
+                            objTop >= visibleRect.top && objBottom <= visibleRect.bottom;
+
+        if (!isFullyVisible) {
+          // Object would be partially outside visible area - don't allow drop
+          return;
+        }
 
         // Move the object to the pool
         dispatch({
@@ -455,23 +1250,23 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
       window.removeEventListener('object-drag-end', handleObjectDragEnd);
       window.removeEventListener('card-drag-end', handleObjectDragEnd as any);
     };
-  }, [poolZone, zoom, pixelsPerVU, dispatch]);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects]);
 
   return (
     <div
       ref={containerRef}
       data-pool-panel={poolZone.panelId}
-      className="relative bg-table"
+      className={`relative ${getCursorSlotObjects(state.objects).length > 0 ? 'cursor-grabbing' : ''}`}
       style={{
-        width: poolZone.width * pixelsPerVU,
-        height: poolZone.height * pixelsPerVU,
+        width: poolBounds.widthPx,
+        height: poolBounds.heightPx,
       }}
       onMouseUp={handleDropFromCursor}
     >
-      {/* Debug info */}
-      <div className="absolute top-0 right-0 z-50 bg-red-900 bg-opacity-90 px-2 py-1 rounded text-xs text-white pointer-events-none">
-        {Math.round(poolZone.width * pixelsPerVU)}x{Math.round(poolZone.height * pixelsPerVU)}px | {pixelsPerVU}px/VU
-      </div>
+      {/* Debug info - removed to hide world coordinates from players */}
+      {/* <div className="absolute top-0 right-0 z-50 bg-red-900 bg-opacity-90 px-2 py-1 rounded text-xs text-white pointer-events-none">
+        {Math.round(poolBounds.widthPx)}x{Math.round(poolBounds.heightPx)}px | {pixelsPerVU}px/VU
+      </div> */}
       {/* Pool zone background with grid pattern */}
       <div
         ref={contentRef}
@@ -479,11 +1274,13 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
         style={{
           backgroundImage: 'radial-gradient(#34495e 1px, transparent 1px)',
           backgroundSize: '20px 20px',
+          transform: `scale(${currentZoom})`,
+          transformOrigin: 'top left',
         }}
       >
           {/* Render objects (positioned relative to pool zone) */}
           {zoneObjects.map(obj => {
-            // Object position relative to pool zone
+            // Object position relative to pool zone (no zoom here since parent is scaled)
             const relativeX = (obj.x - poolZone.offsetX) * pixelsPerVU;
             const relativeY = (obj.y - poolZone.offsetY) * pixelsPerVU;
 
@@ -494,15 +1291,244 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
               ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName)
             );
 
+            // Use DeckComponent for DECK objects, BoardWithResize for BOARD objects, special rendering for DICE and COUNTER, ObjectRenderer for others
+            if (obj.type === ItemType.BOARD) {
+              const board = obj as BoardType;
+              const boardWidth = board.width || 800;
+              const boardHeight = board.height || 600;
+
+              // Pool panel is 1000x1000 vu - calculate scale if board is larger
+              const MAX_POOL_SIZE = 1000;
+              const scaleX = Math.min(1, MAX_POOL_SIZE / boardWidth);
+              const scaleY = Math.min(1, MAX_POOL_SIZE / boardHeight);
+              const scale = Math.min(scaleX, scaleY);
+
+              // Check if this object is being dragged (only for non-draggable items)
+              const isDraggingBoard = draggingObject?.id === obj.id;
+
+              return (
+                <div
+                  key={obj.id}
+                  className="absolute"
+                  style={{
+                    left: (obj.x - poolZone.offsetX) * pixelsPerVU,
+                    top: (obj.y - poolZone.offsetY) * pixelsPerVU,
+                    width: boardWidth * pixelsPerVU,
+                    height: boardHeight * pixelsPerVU,
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'top left',
+                  }}
+                >
+                  <BoardWithResizeMemo
+                    token={board}
+                    obj={board}
+                    isOwner={true}
+                    isResizing={false}
+                    canResize={false} // Disable resize in pool panels
+                    zoom={1} // No additional zoom - already scaled by wrapper
+                    onMouseDown={(e) => handleObjectMouseDown(e, obj)}
+                    onContextMenu={(e) => handleContextMenu(e, obj)}
+                    onResizeStart={() => {}}
+                    onResizeHandleEnter={() => {}}
+                    onResizeHandleLeave={() => {}}
+                    gridSize={board.gridSize || 65}
+                    gridWidth={board.gridWidth}
+                    gridHeight={board.gridHeight}
+                    showGrid={board.showGrid}
+                    currentTool={'none'}
+                    livePreviewSize={null}
+                  />
+                </div>
+              );
+            }
+
+            if (obj.type === ItemType.DECK) {
+              const deckObj = obj as DeckType;
+              const deckWidth = (deckObj.width || 100) * pixelsPerVU;
+              const deckHeight = (deckObj.height || 140) * pixelsPerVU;
+
+              // Check if this object is being dragged (only for non-draggable items)
+              const isDraggingDeck = draggingObject?.id === obj.id;
+
+              return (
+                <DeckComponent
+                  key={obj.id}
+                  deck={deckObj}
+                  draggingId={isDraggingDeck ? obj.id : null}
+                  hoveredDeckId={hoveredDeckId}
+                  hoveredPileId={hoveredPileId}
+                  setHoveredDeckId={setHoveredDeckId}
+                  setHoveredPileId={setHoveredPileId}
+                  isGM={isGM}
+                  draggingClass={isDraggingDeck ? 'dragging' : ''}
+                  draggingPile={null}
+                  setDraggingPile={() => {}}
+                  pileDragStartRef={pileDragStartRef}
+                  setTopDeckModalDeck={setTopDeckModalDeck}
+                  handleMouseDown={(e, id) => handleObjectMouseDown(e, obj)}
+                  handleContextMenu={(e) => handleContextMenu(e, obj)}
+                  handlePileContextMenu={handlePileContextMenu}
+                  setSearchModalDeck={setSearchModalDeck}
+                  setSearchModalPile={setSearchModalPile}
+                  setPilesButtonMenu={() => {}}
+                  setDeleteCandidateId={() => {}}
+                  executeClickAction={() => {}}
+                  cursorSlotHasCards={false}
+                  allObjects={state.objects}
+                  currentTool={'none'}
+                  pixelsPerVU={pixelsPerVU}
+                  style={{
+                    position: 'absolute',
+                    left: relativeX,
+                    top: relativeY,
+                    width: deckWidth,
+                    height: deckHeight
+                  }}
+                />
+              );
+            }
+
+            // Render COUNTER objects
+            if (obj.type === ItemType.COUNTER) {
+              const counter = obj as Counter;
+              const counterWidth = Math.max(counter.width || 60, 100) * pixelsPerVU;
+              const counterHeight = 50 * pixelsPerVU;
+
+              // Check if this object is being dragged (only for non-draggable items)
+              const isDragging = draggingObject?.id === obj.id;
+
+              return (
+                <Tooltip
+                  key={obj.id}
+                  text={obj.tooltipText}
+                  showImage={obj.showTooltipImage}
+                  imageSrc={obj.content}
+                  scale={obj.tooltipScale}
+                >
+                  <div
+                    data-object-id={obj.id}
+                    onMouseDown={(e) => handleObjectMouseDown(e, obj)}
+                    onContextMenu={(e) => handleContextMenu(e, obj)}
+                    className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${isDragging ? 'dragging' : ''}`}
+                    style={{
+                      left: relativeX,
+                      top: relativeY,
+                      width: counterWidth,
+                      height: counterHeight,
+                      transform: `rotate(${obj.rotation || 0}deg)`,
+                      zIndex: obj.zIndex || 1000,
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 } })}><Minus size={14}/></button>
+                    <span className="text-xl font-bold">{counter.value}</span>
+                    <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 } })}><Plus size={14}/></button>
+                  </div>
+                </Tooltip>
+              );
+            }
+
+            // Render DICE_OBJECT objects
+            if (obj.type === ItemType.DICE_OBJECT) {
+              const dice = obj as DiceObject;
+              const diceShape = dice.shape || TokenShape.SQUARE;
+              const diceWidth = (dice.width || 60) * pixelsPerVU;
+              const diceHeight = (dice.height || 60) * pixelsPerVU;
+
+              // Check if this object is being dragged (only for non-draggable items)
+              const isDragging = draggingObject?.id === obj.id;
+
+              // Use animated value if rolling, otherwise use current value
+              const displayValue = rollingDice[obj.id] ?? dice.currentValue ?? 1;
+
+              return (
+                <Tooltip
+                  key={obj.id}
+                  text={obj.tooltipText}
+                  showImage={obj.showTooltipImage}
+                  imageSrc={obj.content}
+                  scale={obj.tooltipScale}
+                >
+                  <div
+                    data-object-id={obj.id}
+                    onMouseDown={(e) => handleObjectMouseDown(e, obj)}
+                    onContextMenu={(e) => handleContextMenu(e, obj)}
+                    className={`absolute flex items-center justify-center ${isDragging ? 'dragging' : ''}`}
+                    style={{
+                      left: relativeX,
+                      top: relativeY,
+                      width: diceWidth,
+                      height: diceHeight,
+                      transform: `rotate(${obj.rotation || 0}deg)`,
+                      zIndex: obj.zIndex || 1000,
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    <SvgTokenShape
+                      shape={diceShape}
+                      width={diceWidth}
+                      height={diceHeight}
+                      color={dice.color || '#e74c3c'}
+                      content={String(displayValue)}
+                      rotation={0}
+                      borderWidth={dice.borderWidth ?? 2}
+                      borderColor={dice.borderColor || 'white'}
+                      opacity={dice.opacity ?? 100}
+                      borderOpacity={dice.borderOpacity ?? 100}
+                      showThickness={true}
+                      fontColor={dice.fontColor || 'white'}
+                    />
+                    {/* Dice value - always centered */}
+                    <div
+                      className="absolute flex items-center justify-center pointer-events-none"
+                      style={{
+                        top: diceShape === TokenShape.TRIANGLE ? '56%' : '45%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)'
+                      }}
+                    >
+                      <span
+                        className="font-bold text-white drop-shadow-md"
+                        style={{
+                          fontSize: `${Math.min(24 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.7)}px`
+                        }}
+                      >{displayValue}</span>
+                    </div>
+                    {/* Dice sides indicator - midpoint between value center and bottom */}
+                    <div
+                      className="absolute flex items-center justify-center pointer-events-none"
+                      style={{
+                        top: diceShape === TokenShape.TRIANGLE ? '78%' : '72.5%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)'
+                      }}
+                    >
+                      <span
+                        className="opacity-75 text-white drop-shadow-md"
+                        style={{
+                          fontSize: `${Math.min(9 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.25)}px`
+                        }}
+                      >d{dice.sides}</span>
+                    </div>
+                  </div>
+                </Tooltip>
+              );
+            }
+
+            // Use ObjectRenderer for CARD and TOKEN
+            // Check if this object is being dragged (only for non-draggable items)
+            const isDraggingObj = draggingObject?.id === obj.id;
+
             return (
               <ObjectRenderer
                 key={obj.id}
                 obj={obj}
                 pixelsPerVU={pixelsPerVU}
-                isDragging={draggingObject?.id === obj.id}
+                isDragging={isDraggingObj}
                 isGM={isGM}
                 showTokenName={showTokenName}
                 onMouseDown={(e) => handleObjectMouseDown(e, obj)}
+                onContextMenu={(e) => handleContextMenu(e, obj)}
                 style={{
                   left: relativeX,
                   top: relativeY
@@ -510,17 +1536,87 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone }) => {
               />
             );
           })}
+
         </div>
 
-        {/* Zone info */}
-      <div className="absolute top-2 left-2 z-50 bg-slate-800 bg-opacity-90 px-2 py-1 rounded text-xs text-slate-300 pointer-events-none">
-        Zone: {poolZone.offsetX},{poolZone.offsetY} ({poolZone.width}x{poolZone.height}) | Objects: {zoneObjects.length}
-      </div>
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          object={state.objects[contextMenu.object.id] || contextMenu.object}
+          isGM={isGM}
+          onAction={executeMenuAction}
+          onClose={() => setContextMenu(null)}
+          allObjects={state.objects}
+          language={state.language}
+          hideCardActions={false}
+          shiftKey={contextMenu.shiftKey}
+          nexusBoardEditingId={null} // Pool panels don't support Nexus Board editing
+          contextMenuType="pool"
+        />
+      )}
 
-      {/* Controls hint */}
-      <div className="absolute bottom-2 left-2 z-50 bg-slate-800 bg-opacity-90 px-2 py-1 rounded text-xs text-slate-400 pointer-events-none">
-        Scroll • Ctrl+click or drag to pickup • Click empty space to drop • Other objects: drag to move
-      </div>
+      {/* Pile Context Menu */}
+      {pileContextMenu && (
+        <PileContextMenu
+          x={pileContextMenu.x}
+          y={pileContextMenu.y}
+          pile={pileContextMenu.pile}
+          deck={pileContextMenu.deck}
+          onAction={executePileMenuAction}
+          onClose={() => setPileContextMenu(null)}
+          language={state.language}
+        />
+      )}
+
+      {/* Object Settings Modal */}
+      {settingsModalObj && (
+        <ObjectSettingsModal
+          object={settingsModalObj}
+          onSave={(updatedObj) => {
+            dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
+            setSettingsModalObj(null);
+          }}
+          onClose={() => setSettingsModalObj(null)}
+          allObjects={state.objects}
+          language={state.language}
+          diceGroups={state.diceGroups}
+          dispatch={dispatch}
+        />
+      )}
+
+      {/* Search Deck Modal */}
+      {searchModalDeck && (
+        <SearchDeckModal
+          deck={searchModalDeck}
+          pile={searchModalPile}
+          onClose={() => {
+            setSearchModalDeck(null);
+            setSearchModalPile(undefined);
+          }}
+          language={state.language}
+        />
+      )}
+
+      {/* Top Deck Modal */}
+      {topDeckModalDeck && (
+        <TopDeckModal
+          deck={topDeckModalDeck}
+          onClose={() => setTopDeckModalDeck(null)}
+          language={state.language}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteCandidateId && (
+        <DeleteConfirmModal
+          objectName={(state.objects[deleteCandidateId] as any)?.name || 'Object'}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteCandidateId(null)}
+          language={state.language}
+        />
+      )}
     </div>
   );
 };

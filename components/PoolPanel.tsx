@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
-import { PanelObject, PoolPanelData, PanelTab, AppLanguage } from '../types';
-import { Plus, Trash2, Lock } from 'lucide-react';
-import { PoolGameSpace } from './PoolGameSpace';
+import { PanelObject, PoolPanelData, PanelTab, AppLanguage, ItemType } from '../types';
+import { Plus, Trash2, Lock, X } from 'lucide-react';
+import { PoolTabletop } from './PoolTabletop';
+import { findAvailableTerritory } from '../utils/territoryManager';
+import { PoolTabSettingsModal } from './PoolTabSettingsModal';
 
 interface PoolPanelProps {
   panel: PanelObject;
   language?: AppLanguage;
 }
 
-export const PoolPanel: React.FC<PoolPanelProps> = ({
+export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   panel,
   language = 'en'
 }) => {
@@ -22,22 +24,44 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
   // Initialize pool data if not exists
   useEffect(() => {
     if (!poolData) {
+      // Get existing pool territories to find available space
+      const existingPools = Object.values(state.objects)
+        .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData)
+        .map(obj => {
+          const poolPanel = obj as PanelObject;
+          const poolData = poolPanel.poolData!;
+          return {
+            id: poolPanel.id,
+            x: poolData.offsetX || 0,
+            y: poolData.offsetY || 0,
+            width: 1000, // Fixed pool size
+            height: 1000
+          };
+        });
+
+      // Find available territory outside playable area (5000×5000)
+      const territory = findAvailableTerritory(existingPools);
+
+      if (!territory) {
+        console.warn('No available territory for pool panel');
+        return;
+      }
+
       const defaultPoolData: PoolPanelData = {
         tabs: [
           {
             id: 'tab-default',
             name: 'Pool 1',
-            visibleToPlayerIds: ['all_players'],
-            manageableByPlayerIds: ['gm'],
-            editableByPlayerIds: ['gm']
+            visibleToPlayerIds: [],
+            manageableByPlayerIds: [],
+            editableByPlayerIds: [],
+            zoom: 1.02
           }
         ],
         activeTabId: 'tab-default',
-        offsetX: 0,
-        offsetY: 0,
-        tabObjects: {
-          'tab-default': []
-        }
+        offsetX: territory.x,
+        offsetY: territory.y,
+        territoryId: `territory-${panel.id}-${Date.now()}`
       };
 
       dispatch({
@@ -48,7 +72,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
         }
       });
     }
-  }, [poolData, panel.id, dispatch]);
+  }, [poolData, panel.id, dispatch, state.objects]);
 
   // Get current player info
   const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
@@ -60,6 +84,48 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
     return poolData.tabs.find((t: PanelTab) => t.id === poolData.activeTabId) || null;
   }, [poolData]);
 
+  // Tab settings modal state
+  const [settingsModal, setSettingsModal] = useState<{
+    tabId: string;
+    tab: PanelTab;
+  } | null>(null);
+
+  // Handler: Open tab settings
+  const handleOpenTabSettings = useCallback((tabId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!isGM) return;
+
+    const tab = poolData?.tabs.find(t => t.id === tabId);
+    if (tab) {
+      setSettingsModal({ tabId, tab });
+    }
+  }, [poolData?.tabs, isGM]);
+
+  // Handler: Save tab settings
+  const handleSaveTabSettings = useCallback((updatedTab: PanelTab) => {
+    if (!poolData) return;
+
+    const updatedTabs = poolData.tabs.map(tab => {
+      if (tab.id === settingsModal?.tabId) {
+        return updatedTab;
+      }
+      return tab;
+    });
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: panel.id,
+        poolData: {
+          ...poolData,
+          tabs: updatedTabs
+        }
+      }
+    });
+  }, [poolData, settingsModal?.tabId, panel.id, dispatch]);
+
   // Check permissions for active tab
   const canViewTab = useMemo(() => {
     if (!activeTab || !poolData) return false;
@@ -68,7 +134,6 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
     // Check if player is in visible list
     if (activeTab.visibleToPlayerIds.includes(state.activePlayerId)) return true;
     if (activeTab.visibleToPlayerIds.includes('all_players')) return true;
-    if (activeTab.visibleToPlayerIds.includes('gm') && isGM) return true;
 
     return false;
   }, [activeTab, isGM, state.activePlayerId, poolData]);
@@ -79,7 +144,6 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
 
     if (activeTab.manageableByPlayerIds.includes(state.activePlayerId)) return true;
     if (activeTab.manageableByPlayerIds.includes('all_players')) return true;
-    if (activeTab.manageableByPlayerIds.includes('gm') && isGM) return true;
 
     return false;
   }, [activeTab, isGM, state.activePlayerId, poolData]);
@@ -90,7 +154,6 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
 
     if (activeTab.editableByPlayerIds.includes(state.activePlayerId)) return true;
     if (activeTab.editableByPlayerIds.includes('all_players')) return true;
-    if (activeTab.editableByPlayerIds.includes('gm') && isGM) return true;
 
     return false;
   }, [activeTab, isGM, state.activePlayerId, poolData]);
@@ -118,9 +181,10 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
     const newTab: PanelTab = {
       id: `tab-${Date.now()}`,
       name: `Pool ${poolData.tabs.length + 1}`,
-      visibleToPlayerIds: ['all_players'],
-      manageableByPlayerIds: ['gm'],
-      editableByPlayerIds: ['gm']
+      visibleToPlayerIds: [],
+      manageableByPlayerIds: [],
+      editableByPlayerIds: [],
+      zoom: 1.02
     };
 
     dispatch({
@@ -185,6 +249,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
             <button
               key={tab.id}
               onClick={() => handleSelectTab(tab.id)}
+              onContextMenu={(e) => handleOpenTabSettings(tab.id, e)}
               className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors relative flex items-center gap-1 ${
                 isActive
                   ? 'bg-blue-600 text-white'
@@ -225,24 +290,22 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
       {/* Pool Content */}
       {canViewTab && activeTab ? (
         <div
-          className="flex-1 relative bg-slate-800"
-          onMouseDown={(e) => {
-            console.log('PoolPanel content div onMouseDown:', {
-              shiftKey: e.shiftKey,
-              ctrlKey: e.ctrlKey,
-              metaKey: e.metaKey,
-              button: e.button,
-              target: e.target
-            });
-          }}
+          className="flex-1 relative"
+          style={{ backgroundColor: '#304458' }}
+          data-pool-content={panel.id}
         >
-          <PoolGameSpace
-            panelId={panel.id}
-            offsetX={poolData.offsetX}
-            offsetY={poolData.offsetY}
-            width={1000}
-            height={1000}
-          />
+          <div className="absolute inset-0 overflow-auto">
+            <PoolTabletop
+              poolZone={{
+                offsetX: poolData.offsetX,
+                offsetY: poolData.offsetY,
+                width: 1000,
+                height: 1000,
+                panelId: panel.id
+              }}
+              zoom={activeTab?.zoom || 1.02}
+            />
+          </div>
         </div>
       ) : (
         /* Access Denied */
@@ -253,6 +316,57 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* Tab Settings Modal */}
+      {settingsModal && (
+        <div className="absolute inset-0 bg-slate-800 z-10 flex flex-col">
+          {/* Settings Header - Fixed at top */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0">
+            <h2 className="text-lg font-semibold text-white">Tab Settings</h2>
+            <button
+              onClick={() => setSettingsModal(null)}
+              className="p-1 text-slate-400 hover:text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Settings Content - Takes available space */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+            <PoolTabSettingsModal
+              tab={settingsModal.tab}
+              players={state.players}
+              activePlayerId={state.activePlayerId}
+              isGM={isGM}
+              onSave={handleSaveTabSettings}
+            />
+          </div>
+
+          {/* Cancel/Save Buttons - Fixed at bottom */}
+          <div className="px-4 pb-3 flex-shrink-0">
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setSettingsModal(null)}
+                className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  // Save the current settings before closing
+                  if (settingsModal) {
+                    handleSaveTabSettings(settingsModal.tab);
+                  }
+                  setSettingsModal(null);
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
+});

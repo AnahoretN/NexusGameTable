@@ -9,9 +9,10 @@ import { Card as CardComponent } from './Card';
 import { CardOrientation } from '../types';
 import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 
-const DEFAULT_MODAL_WIDTH = 75.75; // vw
-const MIN_MODAL_WIDTH = 50; // vw
-const MAX_MODAL_WIDTH = 95; // vw
+const DEFAULT_MODAL_WIDTH = 1400; // px
+const MIN_MODAL_WIDTH = 900; // px
+const MAX_MODAL_WIDTH = 1800; // px
+const DEFAULT_MODAL_HEIGHT = 900; // px
 
 interface TopDeckModalProps {
   deck: Deck;
@@ -286,11 +287,12 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   }, [deck.cardActionButtons, millPile, handleFlip, handleToHand, handleMillToBottom, handleMill, handleMoveToTopDeck, handleMoveToBottomDeck, handleMoveToDiscard, handleClone, language]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center">
+    <div className="fixed inset-0 z-[100002] flex items-center justify-center">
       <div
         ref={modalContainerRef}
-        className="bg-slate-900 border border-slate-700 h-[85vh] flex flex-col relative overflow-hidden"
-        style={{ width: `${modalWidth}vw` }}
+        data-modal="top-deck"
+        className="bg-slate-900 border border-slate-700 flex flex-col relative overflow-hidden"
+        style={{ width: `${modalWidth}px`, height: `${DEFAULT_MODAL_HEIGHT}px` }}
       >
         {/* Header - minimal style */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">

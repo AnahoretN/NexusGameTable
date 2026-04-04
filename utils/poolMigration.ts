@@ -1,0 +1,155 @@
+import { PanelObject, ItemType } from '../types';
+import { findAvailableTerritory } from './territoryManager';
+import { PLAYABLE_AREA_SIZE } from '../constants';
+
+/**
+ * Migration utilities for pool panels
+ * Used to fix pool panels that were created in playable area
+ */
+
+export interface PoolPanelMigrationResult {
+  migrated: number;
+  failed: number;
+  errors: string[];
+}
+
+/**
+ * Check if a pool panel is in playable area (needs migration)
+ */
+export function poolNeedsMigration(panel: PanelObject): boolean {
+  if (!panel.poolData) return false;
+
+  const { offsetX = 0, offsetY = 0 } = panel.poolData;
+
+  // Pool is in playable area if both coordinates are < 5000
+  return offsetX < PLAYABLE_AREA_SIZE && offsetY < PLAYABLE_AREA_SIZE;
+}
+
+/**
+ * Migrate a single pool panel to non-playable territory
+ */
+export function migratePoolPanel(
+  panel: PanelObject,
+  allObjects: Record<string, any>
+): { success: boolean; newX?: number; newY?: number; error?: string } {
+  if (!panel.poolData) {
+    return { success: false, error: 'No pool data' };
+  }
+
+  // Get existing pool territories (excluding this panel)
+  const existingPools = Object.values(allObjects)
+    .filter(obj => obj.type === ItemType.PANEL && obj.id !== panel.id && (obj as PanelObject).poolData)
+    .map(obj => {
+      const poolPanel = obj as PanelObject;
+      const poolData = poolPanel.poolData!;
+      return {
+        id: poolPanel.id,
+        x: poolData.offsetX || 0,
+        y: poolData.offsetY || 0,
+        width: poolData.width || 1000,
+        height: poolData.height || 1000
+      };
+    });
+
+  // Find new territory
+  const territory = findAvailableTerritory(existingPools);
+
+  if (!territory) {
+    return { success: false, error: 'No available territory' };
+  }
+
+  return {
+    success: true,
+    newX: territory.x,
+    newY: territory.y
+  };
+}
+
+/**
+ * Migrate all pool panels that are in playable area
+ */
+export function migrateAllPoolPanels(
+  objects: Record<string, any>
+): PoolPanelMigrationResult {
+  const poolPanels = Object.values(objects).filter(
+    obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData
+  ) as PanelObject[];
+
+  const needsMigration = poolPanels.filter(poolNeedsMigration);
+
+  const result: PoolPanelMigrationResult = {
+    migrated: 0,
+    failed: 0,
+    errors: []
+  };
+
+  needsMigration.forEach(panel => {
+    const migration = migratePoolPanel(panel, objects);
+
+    if (migration.success) {
+      // Update the panel with new coordinates
+      if (panel.poolData) {
+        panel.poolData.offsetX = migration.newX!;
+        panel.poolData.offsetY = migration.newY!;
+        panel.poolData.territoryId = `territory-${panel.id}-${Date.now()}`;
+        result.migrated++;
+      }
+    } else {
+      result.failed++;
+      result.errors.push(`${panel.name || panel.id}: ${migration.error}`);
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Get migration info for console display
+ */
+export function getMigrationInfo(objects: Record<string, any>): {
+  totalPools: number;
+  needsMigration: number;
+  alreadyCorrect: number;
+  details: Array<{ name: string; x: number; y: number; needsMigration: boolean }>;
+} {
+  const poolPanels = Object.values(objects).filter(
+    obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData
+  ) as PanelObject[];
+
+  const details = poolPanels.map(panel => ({
+    name: panel.name || panel.id,
+    x: panel.poolData?.offsetX || 0,
+    y: panel.poolData?.offsetY || 0,
+    needsMigration: poolNeedsMigration(panel)
+  }));
+
+  return {
+    totalPools: poolPanels.length,
+    needsMigration: details.filter(d => d.needsMigration).length,
+    alreadyCorrect: details.filter(d => !d.needsMigration).length,
+    details
+  };
+}
+
+/**
+ * Run migration and log results
+ */
+export function runPoolMigrationIfNeeded(objects: Record<string, any>): void {
+  const info = getMigrationInfo(objects);
+
+  if (info.needsMigration === 0) {
+    console.log('✅ All pool panels are correctly placed outside playable area');
+    return;
+  }
+
+  console.warn(`⚠️ Found ${info.needsMigration} pool panels in playable area`);
+  console.table(info.details.filter(d => d.needsMigration));
+
+  const result = migrateAllPoolPanels(objects);
+
+  console.log(`🔄 Migration complete: ${result.migrated} migrated, ${result.failed} failed`);
+
+  if (result.errors.length > 0) {
+    console.error('Migration errors:', result.errors);
+  }
+}

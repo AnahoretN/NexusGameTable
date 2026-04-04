@@ -27,9 +27,9 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
           {
             id: 'tab-default',
             name: 'Tableau 1',
-            visibleToPlayerIds: ['all_players'],
-            manageableByPlayerIds: ['gm'],
-            editableByPlayerIds: ['gm']
+            visibleToPlayerIds: [],
+            manageableByPlayerIds: [],
+            editableByPlayerIds: []
           }
         ],
         activeTabId: 'tab-default',
@@ -66,7 +66,6 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
     // Check if player is in visible list
     if (activeTab.visibleToPlayerIds.includes(state.activePlayerId)) return true;
     if (activeTab.visibleToPlayerIds.includes('all_players')) return true;
-    if (activeTab.visibleToPlayerIds.includes('gm') && isGM) return true;
 
     return false;
   }, [activeTab, isGM, state.activePlayerId, tableauData]);
@@ -77,7 +76,6 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
 
     if (activeTab.manageableByPlayerIds.includes(state.activePlayerId)) return true;
     if (activeTab.manageableByPlayerIds.includes('all_players')) return true;
-    if (activeTab.manageableByPlayerIds.includes('gm') && isGM) return true;
 
     return false;
   }, [activeTab, isGM, state.activePlayerId, tableauData]);
@@ -88,7 +86,6 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
 
     if (activeTab.editableByPlayerIds.includes(state.activePlayerId)) return true;
     if (activeTab.editableByPlayerIds.includes('all_players')) return true;
-    if (activeTab.editableByPlayerIds.includes('gm') && isGM) return true;
 
     return false;
   }, [activeTab, isGM, state.activePlayerId, tableauData]);
@@ -116,9 +113,9 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
     const newTab: PanelTab = {
       id: `tab-${Date.now()}`,
       name: `Tableau ${tableauData.tabs.length + 1}`,
-      visibleToPlayerIds: ['all_players'],
-      manageableByPlayerIds: ['gm'],
-      editableByPlayerIds: ['gm']
+      visibleToPlayerIds: [],
+      manageableByPlayerIds: [],
+      editableByPlayerIds: []
     };
 
     dispatch({

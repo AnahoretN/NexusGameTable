@@ -370,5 +370,6 @@
   "This pack may contain potentially unsafe content": "Этот пак может содержать потенциально небезопасное содержимое",
   "Load Anyway": "Всё равно загрузить",
   "Only load packs from trusted sources": "Загружайте паки только из доверенных источников",
-  "Security Check": "Проверка безопасности"
+  "Security Check": "Проверка безопасности",
+  "Destroy": "Уничтожить"
 }
