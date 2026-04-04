@@ -1427,6 +1427,120 @@ const TableauPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel
   );
 };
 
+// DrawingToolsPanel with Shift+drag detection
+const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+  const [isShiftDragging, setIsShiftDragging] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const { state } = useGame();
+
+  // Global mouse up handler to clear shift-drag state
+  React.useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsShiftDragging(true);
+
+      // Find the UIObjectRenderer container and trigger its drag
+      const uiObjectContainer = containerRef.current?.closest('[data-ui-object]') as HTMLElement;
+      if (uiObjectContainer) {
+        // Simulate mouse down on the container for drag
+        const mouseDownEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          button: e.button,
+          shiftKey: true
+        });
+        uiObjectContainer.dispatchEvent(mouseDownEvent);
+      }
+    }
+  };
+
+  const isCollapsed = panel.width === 200 && panel.height === 40;
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+      className="h-full"
+    >
+      <DrawingToolsPanel width={panel.width} isCollapsed={isCollapsed} language={state.language} />
+    </div>
+  );
+};
+
+// TokensPanel with Shift+drag detection
+const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+  const [isShiftDragging, setIsShiftDragging] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const { state } = useGame();
+
+  // Global mouse up handler to clear shift-drag state
+  React.useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsShiftDragging(true);
+
+      // Find the UIObjectRenderer container and trigger its drag
+      const uiObjectContainer = containerRef.current?.closest('[data-ui-object]') as HTMLElement;
+      if (uiObjectContainer) {
+        // Simulate mouse down on the container for drag
+        const mouseDownEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          button: e.button,
+          shiftKey: true
+        });
+        uiObjectContainer.dispatchEvent(mouseDownEvent);
+      }
+    }
+  };
+
+  const isCollapsed = panel.width === 200 && panel.height === 40;
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+      className="h-full"
+    >
+      <TokensPanel width={panel.width} isCollapsed={isCollapsed} language={state.language} />
+    </div>
+  );
+};
+
 // Tableau panel content
 const TableauPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   return <TableauPanel panel={panel} />;
