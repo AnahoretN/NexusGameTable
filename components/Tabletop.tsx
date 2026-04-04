@@ -13,6 +13,7 @@ import { SearchDeckModal } from './SearchDeckModal';
 import { TopDeckModal } from './TopDeckModal';
 import { DeckComponent } from './DeckComponent';
 import { UIObjectRendererMemo } from './UIObjectRenderer';
+import { executeActionButtonUniversal, ActionButtonsHandlerContext } from '../utils/actionButtonsHandler';
 import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
@@ -6769,79 +6770,13 @@ export const Tabletop: React.FC = () => {
                                   deckShowTooltipImage={card.deckId ? (state.objects[card.deckId] as DeckType)?.showTooltipImage : undefined}
                                   deckTooltipScale={card.deckId ? (state.objects[card.deckId] as DeckType)?.tooltipScale : undefined}
                                   onActionButtonClick={(action) => {
-                                    switch (action) {
-                                        case 'flip':
-                                            dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }});
-                                            break;
-                                        case 'moveToHand':
-                                            if (obj.type === ItemType.CARD) {
-                                                dispatch({
-                                                    type: 'UPDATE_OBJECT',
-                                                    payload: {
-                                                        id: obj.id,
-                                                        location: CardLocation.HAND,
-                                                        ownerId: state.activePlayerId,
-                                                        isOnTable: false
-                                                    }
-                                                });
-                                            }
-                                            break;
-                                        case 'moveToTopDeck': {
-                                            const card = obj as CardType;
-                                            if (card.deckId) {
-                                                dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId: obj.id, deckId: card.deckId }});
-                                            }
-                                            break;
-                                        }
-                                        case 'moveToBottomDeck': {
-                                            const card = obj as CardType;
-                                            if (card.deckId) {
-                                                dispatch({ type: 'RETURN_CARD_TO_DECK_BOTTOM', payload: { cardId: obj.id, deckId: card.deckId }});
-                                            }
-                                            break;
-                                        }
-                                        case 'moveToDiscard': {
-                                            const card = obj as CardType;
-                                            if (card.deckId) {
-                                                const deck = state.objects[card.deckId] as DeckType | undefined;
-                                                if (deck?.piles) {
-                                                    const millPile = deck.piles.find(p => p.isMillPile);
-                                                    if (millPile) {
-                                                        dispatch({
-                                                            type: 'ADD_CARD_TO_PILE',
-                                                            payload: { deckId: deck.id, pileId: millPile.id, cardId: obj.id }
-                                                        });
-                                                    }
-                                                }
-                                            }
-                                            break;
-                                        }
-                                        case 'rotate':
-                                            dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id }});
-                                            break;
-                                        case 'rotateClockwise':
-                                            dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id }});
-                                            break;
-                                        case 'rotateCounterClockwise':
-                                            dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -(obj.rotationStep ?? 45) }});
-                                            break;
-                                        case 'swingClockwise':
-                                            dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id }});
-                                            break;
-                                        case 'swingCounterClockwise':
-                                            dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id }});
-                                            break;
-                                        case 'clone':
-                                            dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id }});
-                                            break;
-                                        case 'lock':
-                                            dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id }});
-                                            break;
-                                        case 'layer':
-                                            dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id }});
-                                            break;
-                                    }
-                                }}
+                                    const context: ActionButtonsHandlerContext = {
+                                      dispatch,
+                                      activePlayerId: state.activePlayerId,
+                                      objects: state.objects
+                                    };
+                                    executeActionButtonUniversal(obj, action, context);
+                                  }}
                                 language={state.language}
                             />
                             </div>

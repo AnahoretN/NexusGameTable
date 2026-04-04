@@ -2,17 +2,19 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { Deck, Card, CardPile, ContextAction, AppLanguage } from '../types';
+import { Deck, Card, CardPile, ContextAction, AppLanguage, TableObject } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
 import { logger } from '../utils/logger';
 import { Card as CardComponent } from './Card';
+import { ContextMenu } from './ContextMenu';
+import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { CardOrientation } from '../types';
-import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
+import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_MODAL_WIDTH_VU, DEFAULT_MODAL_MIN_WIDTH_VU, DEFAULT_MODAL_MAX_WIDTH_VU, DEFAULT_MODAL_HEIGHT_VU } from '../constants';
 
-const DEFAULT_MODAL_WIDTH = 1400; // px
-const MIN_MODAL_WIDTH = 900; // px
-const MAX_MODAL_WIDTH = 1800; // px
-const DEFAULT_MODAL_HEIGHT = 900; // px
+const DEFAULT_MODAL_WIDTH = DEFAULT_MODAL_WIDTH_VU; // vu
+const MIN_MODAL_WIDTH = DEFAULT_MODAL_MIN_WIDTH_VU; // vu
+const MAX_MODAL_WIDTH = DEFAULT_MODAL_MAX_WIDTH_VU; // vu
+const DEFAULT_MODAL_HEIGHT = DEFAULT_MODAL_HEIGHT_VU; // vu
 
 interface TopDeckModalProps {
   deck: Deck;
@@ -25,16 +27,26 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   const { state, dispatch } = useGame();
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
+  // Get pixelsPerVU for converting vu to pixels
+  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+  const vuToPx = useCallback((vu: number) => vu * pixelsPerVU, [pixelsPerVU]);
+
   const currentPlayerId = state.activePlayerId;
   const currentPlayer = state.players.find(p => p.id === currentPlayerId);
   const isGM = currentPlayer?.isGM ?? false;
 
   const [cardOrder, setCardOrder] = useState<string[]>(deck.cardIds);
 
-  // Modal width state
+  // Modal width state (stored in vu)
   const [modalWidth, setModalWidth] = useState(DEFAULT_MODAL_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef<{ mouseX: number; startWidth: number } | null>(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
+
+  // Settings modal state
+  const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
 
   const cards = useMemo(() =>
     cardOrder.map(id => state.objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
@@ -148,21 +160,103 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
     // cardOrder will sync via useEffect with deck.cardIds
   }, [dispatch, deck.id]);
 
-  // Move to Discard
-  const handleMoveToDiscard = useCallback((cardId: string) => {
-    if (!millPile) {
-      logger.warn('No discard pile found for deck');
-      return;
-    }
-    dispatch({ type: 'MILL_CARD_TO_PILE', payload: { cardId, deckId: deck.id, pileId: millPile.id } });
-    const newCardOrder = cardOrder.filter(id => id !== cardId);
-    setCardOrder(newCardOrder);
-  }, [dispatch, cardOrder, deck.id, millPile]);
-
   // Clone
   const handleClone = useCallback((cardId: string) => {
     dispatch({ type: 'CLONE_OBJECT', payload: { id: cardId } });
   }, [dispatch]);
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      object: card
+    });
+  }, []);
+
+  const executeMenuAction = useCallback((action: string) => {
+    if (!contextMenu) return;
+    const { object } = contextMenu;
+    const card = object as Card;
+
+    switch(action) {
+      case 'configure':
+        setSettingsModalObj(object);
+        setContextMenu(null);
+        return;
+      case 'flip':
+        handleFlip(card.id);
+        break;
+      case 'moveToHand':
+        handleToHand(card.id);
+        break;
+      case 'moveToTopDeck':
+        handleMoveToTopDeck(card.id);
+        break;
+      case 'moveToBottomDeck':
+        handleMoveToBottomDeck(card.id);
+        break;
+      case 'moveToDiscard':
+        handleMill(card.id);
+        break;
+      case 'mill':
+        handleMill(card.id);
+        break;
+      case 'clone':
+        handleClone(card.id);
+        break;
+      case 'toggleHide':
+        const isHidden = card.hidden === true;
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: card.id, hidden: !isHidden }
+        });
+        break;
+      case 'setCardBack':
+        if (card.deckId) {
+          const parentDeck = state.objects[card.deckId] as Deck;
+          if (parentDeck && parentDeck.spriteConfig) {
+            const updatedSpriteConfig = {
+              ...parentDeck.spriteConfig,
+              cardBackSpriteUrl: card.spriteUrl || card.content,
+              cardBackSpriteIndex: card.spriteIndex ?? 0,
+              cardBackSpriteColumns: card.spriteColumns ?? 1,
+              cardBackSpriteRows: card.spriteRows ?? 1,
+            };
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: parentDeck.id, spriteConfig: updatedSpriteConfig }
+            });
+          }
+        }
+        break;
+      case 'destroy':
+        // Destroy permanently removes card from the deck
+        const destroyFilteredOrder = cardOrder.filter(id => id !== card.id);
+        const currentDeck = state.objects[deck.id] as Deck;
+        const currentBaseCardIds = currentDeck?.baseCardIds || deck.baseCardIds || [];
+        const destroyFilteredBaseCardIds = currentBaseCardIds.filter(id => id !== card.id);
+
+        // Remove the card object from state.objects
+        dispatch({ type: 'DELETE_OBJECT', payload: { id: card.id } });
+
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds } });
+        setCardOrder(destroyFilteredOrder);
+        break;
+      case 'delete':
+        const filteredOrder = cardOrder.filter(id => id !== card.id);
+        const deleteCurrentDeck = state.objects[deck.id] as Deck;
+        const deleteCurrentBaseCardIds = deleteCurrentDeck?.baseCardIds || deck.baseCardIds || [];
+        const deleteFilteredBaseCardIds = deleteCurrentBaseCardIds.filter(id => id !== card.id);
+
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: filteredOrder, baseCardIds: deleteFilteredBaseCardIds } });
+        setCardOrder(filteredOrder);
+        break;
+    }
+    setContextMenu(null);
+  }, [contextMenu, handleFlip, handleToHand, handleMoveToTopDeck, handleMoveToBottomDeck, handleMill, handleClone, dispatch, cardOrder, state.objects, deck.id, deck.baseCardIds]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -180,9 +274,8 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
       if (!isResizing || !resizeStartRef.current) return;
 
       const deltaX = resizeStartRef.current.mouseX - e.clientX;
-      const windowWidth = window.innerWidth;
-      const deltaVw = (deltaX / windowWidth) * 100;
-      const newWidth = resizeStartRef.current.startWidth + deltaVw;
+      const deltaVU = deltaX / pixelsPerVU;
+      const newWidth = resizeStartRef.current.startWidth + deltaVU;
 
       setModalWidth(Math.max(MIN_MODAL_WIDTH, Math.min(MAX_MODAL_WIDTH, newWidth)));
     };
@@ -200,7 +293,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isResizing]);
+  }, [isResizing, pixelsPerVU]);
 
   // Action buttons for each card - based on deck.cardActionButtons
   const getCardButtons = useCallback((card: Card) => {
@@ -232,11 +325,11 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         icon: <ArrowDown size={12} />,
         onClick: () => handleMoveToBottomDeck(card.id)
       },
-      moveToDiscard: {
+      mill: {
         className: 'bg-red-600 hover:bg-red-500',
-        title: translate('Move to Discard', language as Locale),
+        title: translate('Mill', language as Locale),
         icon: <Trash2 size={12} />,
-        onClick: () => handleMoveToDiscard(card.id)
+        onClick: () => handleMill(card.id)
       },
       millToBottom: {
         className: 'bg-green-600 hover:bg-green-500',
@@ -262,11 +355,17 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
       };
     }
 
-    // Render buttons based on actionButtons setting (max 4)
-    const buttons = actionButtons
-      .filter(action => action in buttonConfigs)
-      .slice(0, 4)
-      .map(action => buttonConfigs[action]!);
+    // Fixed button order for Top Deck: Draw → Bottom Deck → Mill → Flip
+    const fixedButtonOrder: (ContextAction | 'mill')[] = ['moveToHand', 'moveToBottomDeck', 'mill', 'flip'];
+
+    // Build buttons list in fixed order, using actual button names from configs
+    const buttons = fixedButtonOrder
+      .map(action => {
+        // Map 'mill' to actual mill action name
+        const actualAction = action === 'mill' && millPile ? 'mill' : action;
+        return buttonConfigs[actualAction as ContextAction];
+      })
+      .filter(btnConfig => btnConfig !== undefined); // Only include defined buttons
 
     if (buttons.length === 0) return null;
 
@@ -284,7 +383,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         ))}
       </div>
     );
-  }, [deck.cardActionButtons, millPile, handleFlip, handleToHand, handleMillToBottom, handleMill, handleMoveToTopDeck, handleMoveToBottomDeck, handleMoveToDiscard, handleClone, language]);
+  }, [deck.cardActionButtons, millPile, handleFlip, handleToHand, handleMoveToBottomDeck, handleMill, language]);
 
   return createPortal(
     <div className="fixed inset-0 z-[100002] flex items-center justify-center">
@@ -292,7 +391,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         ref={modalContainerRef}
         data-modal="top-deck"
         className="bg-slate-900 border border-slate-700 flex flex-col relative overflow-hidden"
-        style={{ width: `${modalWidth}px`, height: `${DEFAULT_MODAL_HEIGHT}px` }}
+        style={{ width: `${vuToPx(modalWidth)}px`, height: `${vuToPx(DEFAULT_MODAL_HEIGHT)}px` }}
       >
         {/* Header - minimal style */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
@@ -340,6 +439,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
                       height: cardHeight,
                       opacity: card.hidden && isGM ? 0.5 : 1
                     }}
+                    onContextMenu={(e) => handleContextMenu(e, card)}
                   >
                     <CardComponent
                       card={card}
@@ -353,6 +453,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
                       deckShowTooltipImage={deck.showTooltipImage}
                       deckTooltipScale={deck.tooltipScale}
                       language={language}
+                      onContextMenu={(e: React.MouseEvent) => handleContextMenu(e, card)}
                     />
 
                     {/* Custom action buttons for Top Deck */}
@@ -376,6 +477,35 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
           <span className="text-xs text-slate-600">{translate('Top Deck', language as Locale)}</span>
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          object={contextMenu.object}
+          isGM={!!state.players.find(p => p.id === state.activePlayerId)?.isGM}
+          onAction={executeMenuAction}
+          onClose={() => setContextMenu(null)}
+          allObjects={state.objects}
+          hideCardActions={true}
+          isSearchWindow={true}
+          language={language}
+        />
+      )}
+
+      {/* Object Settings Modal */}
+      {settingsModalObj && (
+        <ObjectSettingsModal
+          object={settingsModalObj}
+          language={language}
+          onSave={(updatedObj) => {
+            dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
+            setSettingsModalObj(null);
+          }}
+          onClose={() => setSettingsModalObj(null)}
+        />
+      )}
     </div>,
     document.body
   );

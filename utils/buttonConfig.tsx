@@ -38,7 +38,7 @@ const ACTION_LABELS: Record<ButtonAction, string> = {
   moveToHand: 'Move to Hand',
   moveToTopDeck: 'Move to Top Deck',
   moveToBottomDeck: 'Move to Bottom Deck',
-  moveToDiscard: 'Move to Discard',
+  mill: 'Mill',
   // Nexus Board actions
   editNexusBoard: 'Edit Board',
   closeNexusBoardEditing: 'Close Editing',
@@ -82,6 +82,7 @@ export const BUTTON_STYLES: Partial<Record<ButtonAction, { className: string }>>
   moveToTopDeck: { className: 'bg-orange-600 hover:bg-orange-500' },
   moveToBottomDeck: { className: 'bg-yellow-600 hover:bg-yellow-500' },
   moveToDiscard: { className: 'bg-red-600 hover:bg-red-500' },
+  mill: { className: 'bg-teal-600 hover:bg-teal-500' },
   deleteNexusBoard: { className: 'bg-red-700 hover:bg-red-600' },
 };
 
@@ -120,6 +121,7 @@ export const ButtonIcons = {
   moveToTopDeck: () => <ArrowUp size={14} />,
   moveToBottomDeck: () => <ArrowDown size={14} />,
   moveToDiscard: () => <Trash2 size={14} />,
+  mill: () => <Undo size={14} />,
   editNexusBoard: () => <Plus size={14} />,
   closeNexusBoardEditing: () => <Check size={14} />,
   deleteNexusBoard: () => <Trash2 size={14} />,

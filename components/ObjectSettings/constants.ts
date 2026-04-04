@@ -18,12 +18,12 @@ export const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
 ];
 
 // "Move to" actions are only for Action Buttons for Cards, NOT for Context Menu Actions
-export const MOVE_TO_ACTIONS: { id: ContextAction; label: string }[] = [
+export const MOVE_TO_ACTIONS: { id: ContextAction | 'mill'; label: string }[] = [
   { id: 'moveTo', label: 'Move to... (section)' },
   { id: 'moveToHand', label: 'Move to Hand' },
   { id: 'moveToTopDeck', label: 'Move to Top Deck' },
   { id: 'moveToBottomDeck', label: 'Move to Bottom Deck' },
-  { id: 'moveToDiscard', label: 'Move to Discard' },
+  { id: 'mill' as any, label: 'Mill' },
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
@@ -52,6 +52,36 @@ export function getButtonApplicableTypes(action: ContextAction): ItemType[] {
       return [ItemType.CARD];
     case 'rotate':
       return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+    case 'draw':
+      return [ItemType.DECK];
+    case 'playTopCard':
+      return [ItemType.DECK];
+    case 'millTopCard':
+      return [ItemType.DECK];
+    case 'toBottom':
+      return [ItemType.CARD];
+    case 'shuffleDeck':
+      return [ItemType.DECK];
+    case 'searchDeck':
+      return [ItemType.DECK];
+    case 'topDeck':
+      return [ItemType.DECK];
+    case 'piles':
+      return [ItemType.DECK];
+    case 'returnAll':
+      return [ItemType.DECK];
+    case 'millToBottom':
+      return [ItemType.CARD];
+    case 'showTop':
+      return [ItemType.DECK];
+    case 'hide':
+      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER];
+    case 'moveToHand':
+      return [ItemType.CARD];
+    case 'moveToTopDeck':
+      return [ItemType.CARD];
+    case 'moveToBottomDeck':
+      return [ItemType.CARD];
     default:
       return [];
   }

@@ -27,6 +27,12 @@ export const DEFAULT_PANEL_WIDTH = 300; // vu
 export const DEFAULT_PANEL_HEIGHT = 400; // vu
 export const DEFAULT_HAND_CARD_WIDTH = 120; // vu - Base width for cards in hand panel modals
 
+// Modal dimensions in virtual units (vu)
+export const DEFAULT_MODAL_WIDTH_VU = 1180; // vu
+export const DEFAULT_MODAL_MIN_WIDTH_VU = 800; // vu
+export const DEFAULT_MODAL_MAX_WIDTH_VU = 1600; // vu
+export const DEFAULT_MODAL_HEIGHT_VU = 800; // vu
+
 export const INITIAL_VIEWPORT: Coordinates = { x: 0, y: 0 };
 export const INITIAL_ZOOM = 1;
 
