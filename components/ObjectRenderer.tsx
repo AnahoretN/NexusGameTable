@@ -109,17 +109,10 @@ export const ObjectRenderer = React.memo<ObjectRendererProps>(({
         </div>
 
         {/* Action buttons for cards */}
-        {dispatch && console.log('[ObjectRenderer] Card actionButtons:', {
-          cardId: obj.id,
-          hasActionButtons: !!(obj.actionButtons && obj.actionButtons.length > 0),
-          actionButtons: obj.actionButtons,
-          actionButtonsLength: obj.actionButtons?.length || 0
-        })}
         {obj.actionButtons && obj.actionButtons.length > 0 && dispatch && (
           <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 z-20 pointer-events-none">
             {obj.actionButtons.map((action) => {
               const buttonConfig = getActionButtonConfig(action, obj, dispatch);
-              console.log('[ObjectRenderer] Rendering button:', { action, hasConfig: !!buttonConfig });
               return buttonConfig ? (
                 <button
                   key={action}
