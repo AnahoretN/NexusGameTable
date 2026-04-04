@@ -6,6 +6,7 @@ import { DeckComponent } from './DeckComponent';
 import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
 import { executeContextMenuAction } from '../utils/contextMenuActions';
+import { executeClickAction as universalExecuteClickAction } from '../utils/objectActionHandlers';
 import { SvgTokenShape } from './SvgTokenShape';
 import { Tooltip } from './Tooltip';
 import { logger } from '../utils/logger';
@@ -106,37 +107,70 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     }
   }, [deleteCandidateId, dispatch]);
 
-  // Execute click actions for objects (similar to main Tabletop)
+  // Local dice animation function (used by both initiator and remote players)
+  const startDiceAnimation = useCallback((diceId: string, sides: number, isInitiator: boolean) => {
+    let steps = 0;
+    const maxSteps = 10; // Change 10 times
+    const duration = 1000; // 1 second
+    const intervalTime = duration / maxSteps;
+
+    const interval = setInterval(() => {
+      steps++;
+      if (steps < maxSteps) {
+        // Update local state for visual effect only
+        setRollingDice(prev => ({
+          ...prev,
+          [diceId]: Math.floor(Math.random() * sides) + 1
+        }));
+      } else {
+        clearInterval(interval);
+
+        // Clear local override so the component displays the value from the store
+        setRollingDice(prev => {
+          const next = { ...prev };
+          delete next[diceId];
+          return next;
+        });
+
+        // Only the initiator dispatches the final result
+        if (isInitiator) {
+          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
+          // Clear the rollStartTime after animation completes
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: { id: diceId, rollStartTime: undefined }
+          });
+          initiatedRollsRef.current.delete(diceId);
+        }
+      }
+    }, intervalTime);
+  }, [dispatch]);
+
+  const animateDiceRoll = useCallback((dice: DiceObject) => {
+    const rollStartTime = Date.now();
+
+    // Mark this as a roll we initiated (so we dispatch the final result)
+    initiatedRollsRef.current.add(dice.id);
+
+    // Broadcast the roll start time to all players
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: dice.id, rollStartTime }
+    });
+
+    // Start local animation
+    startDiceAnimation(dice.id, dice.sides, true);
+  }, [dispatch, startDiceAnimation]);
+
+  // Execute click actions for objects using universal handler
   const executeClickAction = useCallback((obj: TableObject, action: string, event?: React.MouseEvent) => {
     if (!action || action === 'none') return;
 
+    // Pool panel specific actions
     switch (action) {
-      case 'flip':
-        if (obj.type === ItemType.CARD) {
-          dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } });
-        }
-        break;
-      case 'rotate':
-        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
-        break;
-      case 'rotateClockwise':
-        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
-        break;
-      case 'rotateCounterClockwise':
-        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -((obj as any).rotationStep ?? 45) } });
-        break;
       case 'delete':
         setDeleteCandidateId(obj.id);
-        break;
-      case 'clone':
-        dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } });
-        break;
-      case 'bringToFront':
-        dispatch({ type: 'BRING_TO_FRONT', payload: { id: obj.id } });
-        break;
-      case 'sendToBack':
-        dispatch({ type: 'SEND_TO_BACK', payload: { id: obj.id } });
-        break;
+        return;
       case 'roll':
         if (obj.type === ItemType.DICE_OBJECT) {
           const dice = obj as DiceObject;
@@ -145,79 +179,13 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
             type: 'UPDATE_OBJECT',
             payload: { id: dice.id, rollStartTime }
           });
-          // Start local animation
-          let steps = 0;
-          const maxSteps = 10;
-          const duration = 1000;
-          const intervalTime = duration / maxSteps;
-          const interval = setInterval(() => {
-            steps++;
-            if (steps < maxSteps) {
-              // Just for visual effect - actual roll happens via dispatch
-              clearInterval(interval);
-            } else {
-              clearInterval(interval);
-              dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: dice.id } });
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: { id: dice.id, rollStartTime: undefined }
-              });
-            }
-          }, intervalTime);
+          // Use local dice animation
+          startDiceAnimation(dice.id, dice.sides, true);
         }
-        break;
-      case 'draw':
-        if (obj.type === ItemType.DECK) {
-          dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: state.activePlayerId } });
-        }
-        break;
-      case 'playTopCard':
-        if (obj.type === ItemType.DECK) {
-          const deck = obj as DeckType;
-          if (deck.cardIds && deck.cardIds.length > 0) {
-            const topCardId = deck.cardIds[0];
-            const card = state.objects[topCardId] as Card;
-            if (!card) return;
-
-            const faceUp = deck.playTopFaceUp ?? true;
-
-            // Get mouse position
-            const mousePos = event
-              ? { x: event.clientX, y: event.clientY }
-              : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-
-            // Prepare card for cursor slot FIRST (before dispatch)
-            // This ensures we use the correct faceUp value
-            const cardForSlot: Card = {
-              ...card,
-              location: CardLocation.CURSOR_SLOT,
-              faceUp: faceUp,
-              isOnTable: false
-            };
-
-            // Add to cursor slot BEFORE dispatch (prevents race condition)
-            window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-              detail: {
-                cardId: card.id,
-                clientX: mousePos.x,
-                clientY: mousePos.y,
-                source: 'shift',
-                cardOverride: cardForSlot  // Pass the correct card state
-              }
-            }));
-
-            // Then dispatch to update state
-            dispatch({
-              type: 'PLAY_TOP_CARD',
-              payload: { deckId: deck.id }
-            });
-          }
-        }
-        break;
+        return;
       case 'millTopCard':
         if (obj.type === ItemType.DECK) {
           const deck = obj as DeckType;
-          // Mill top card: move it to the mill pile (discard pile)
           if (deck.piles) {
             const millPile = deck.piles.find(p => p.isMillPile);
             if (millPile && deck.cardIds.length > 0) {
@@ -229,7 +197,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
             }
           }
         }
-        break;
+        return;
       case 'shuffleDeck':
         if (obj.type === ItemType.DECK) {
           window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
@@ -237,22 +205,33 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
           }));
           dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id } });
         }
-        break;
+        return;
       case 'searchDeck':
         if (obj.type === ItemType.DECK) {
           setSearchModalDeck(obj as DeckType);
           setSearchModalPile(undefined);
         }
-        break;
+        return;
       case 'topDeck':
         if (obj.type === ItemType.DECK) {
           setTopDeckModalDeck(obj as DeckType);
         }
-        break;
-      default:
-        logger.warn('[PoolTabletop] Unknown action:', action);
+        return;
     }
-  }, [dispatch, state.activePlayerId, state.objects]);
+
+    // Use universal action handler for standard actions
+    universalExecuteClickAction(obj, action, {
+      dispatch,
+      state: { objects: state.objects, activePlayerId: state.activePlayerId },
+      poolZone: { panelId: poolZone.panelId },
+      additionalHandlers: {
+        onDeleteCandidate: setDeleteCandidateId,
+        onAnimateDice: animateDiceRoll,
+        onOpenSearchDeck: setSearchModalDeck,
+        onOpenTopDeckModal: setTopDeckModalDeck
+      }
+    }, event ? { clientX: event.clientX, clientY: event.clientY, shiftKey: event.shiftKey } : undefined);
+  }, [dispatch, state.activePlayerId, state.objects, poolZone.panelId, setDeleteCandidateId, animateDiceRoll, setSearchModalDeck, setTopDeckModalDeck]);
 
   // Pile context menu state
   const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
