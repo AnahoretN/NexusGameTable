@@ -55,6 +55,7 @@ interface DeckComponentProps {
   currentTool?: string;
   pixelsPerVU?: number; // Conversion factor from vu to pixels
   style?: React.CSSProperties; // Additional styles for positioning
+  disableDeckHighlight?: boolean; // Force disable deck highlight
 }
 
 export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
@@ -83,6 +84,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   currentTool = 'none',
   pixelsPerVU = 1.0,
   style,
+  disableDeckHighlight = false,
 }) => {
   const { state } = useGame();
 
@@ -97,7 +99,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   const vuToPx = (vu: number) => vu * pixelsPerVU;
 
   const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-  const canDropCard = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
+  const canDropCard = !disableDeckHighlight && (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
 
   // Helper to check if an action is allowed for the current user
   const can = (action: ContextAction): boolean => {
@@ -358,7 +360,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
         const pileSize = pile.size ?? 1;
 
         // Check if dragging a card and hovering over this pile
-        const isHoveringPile = (isDraggingCardFromTable || cursorSlotHasCards) && hoveredPileId === pile.id;
+        const isHoveringPile = !disableDeckHighlight && (isDraggingCardFromTable || cursorSlotHasCards) && hoveredPileId === pile.id;
 
         return (
           <React.Fragment key={pile.id}>
@@ -405,6 +407,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
             <div
               data-pile-id={pile.id}
               onMouseEnter={() => {
+                if (disableDeckHighlight) return; // Skip hover in pool panels
                 // Allow hover if dragging card OR if cursor slot has cards
                 const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
                 if (draggingFromTable || cursorSlotHasCards) {
@@ -412,6 +415,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                 }
               }}
               onMouseLeave={() => {
+                if (disableDeckHighlight) return; // Skip hover in pool panels
                 if (hoveredPileId === pile.id) {
                   setHoveredPileId(null);
                 }
@@ -599,6 +603,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
           onMouseDown={handleDeckMouseDown}
           onContextMenu={(e) => handleContextMenu(e, deck)}
           onMouseEnter={() => {
+            if (disableDeckHighlight) return; // Skip hover in pool panels
             // Allow hover if dragging card OR if cursor slot has cards
             const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
             if (draggingFromTable || cursorSlotHasCards) {
@@ -606,6 +611,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
             }
           }}
           onMouseLeave={() => {
+            if (disableDeckHighlight) return; // Skip hover in pool panels
             if (hoveredDeckId === deck.id) {
               setHoveredDeckId(null);
             }
@@ -896,7 +902,8 @@ export default React.memo(DeckComponent, (prevProps, nextProps) => {
     prevProps.hoveredDeckId === nextProps.hoveredDeckId &&
     prevProps.hoveredPileId === nextProps.hoveredPileId &&
     prevProps.cursorSlotHasCards === nextProps.cursorSlotHasCards &&
-    prevProps.currentTool === nextProps.currentTool
+    prevProps.currentTool === nextProps.currentTool &&
+    prevProps.disableDeckHighlight === nextProps.disableDeckHighlight
     // УБРАЛИ сравнение массивов - они вызывают постоянные ререндеры!
   );
 });
