@@ -177,7 +177,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       // Immediately add to pickingUpCardIds to hide card from hand panel
       setPickingUpCardIds(prev => new Set([...prev, cardId]));
 
-      // Auto-remove after 200ms ONLY if card is no longer in cursor slot
+      // Auto-remove after 500ms ONLY if card is no longer in cursor slot
+      // Increased from 200ms to prevent flickering when state updates are delayed
       setTimeout(() => {
         setPickingUpCardIds(prev => {
           const obj = state.objects[cardId];

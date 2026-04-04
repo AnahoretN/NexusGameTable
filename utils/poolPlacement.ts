@@ -193,6 +193,39 @@ export function dropObjectsToPool(
       let finalX = dropPosition.baseX;
       let finalY = dropPosition.baseY;
 
+      // IMPORTANT: Clear any existing grid cell attachment before processing drop
+      // This prevents tokens from being "stuck" to boards when dropped to pool panel
+      const existingGridCellKey = (obj as any).gridCellKey;
+      if (existingGridCellKey) {
+        // Parse the grid cell key (format: "boardId:col,row")
+        const [boardId, cellKey] = existingGridCellKey.split(':');
+        if (boardId && cellKey) {
+          const board = state.objects[boardId] as any;
+          if (board && board.gridCellMagnetPoints && board.gridCellMagnetPoints[cellKey]) {
+            // Remove token from board's magnet points
+            const updatedMagnetPoints = board.gridCellMagnetPoints[cellKey].magnetPoints
+              .filter((mp: any) => mp.objectId !== obj.id);
+
+            const updatedGridCellMagnetPoints = {
+              ...board.gridCellMagnetPoints,
+              [cellKey]: {
+                ...board.gridCellMagnetPoints[cellKey],
+                magnetPoints: updatedMagnetPoints
+              }
+            };
+
+            // Update board to remove token from magnet points
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: boardId,
+                gridCellMagnetPoints: updatedGridCellMagnetPoints
+              }
+            });
+          }
+        }
+      }
+
       // Apply board magnetism for tokens if boards are present
       if (obj.type === ItemType.TOKEN && boardsInPool.length > 0) {
         const token = obj as Token;
@@ -288,7 +321,8 @@ export function dropObjectsToPool(
         id: obj.id,
         x: position.constrainedX,
         y: position.constrainedY,
-        inCursorSlot: false
+        inCursorSlot: false,
+        gridCellKey: undefined // Clear grid cell reference when dropping to pool
       };
 
       // Debug logging
