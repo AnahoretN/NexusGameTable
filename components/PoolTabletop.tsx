@@ -1505,6 +1505,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
                 showTokenName={showTokenName}
                 onMouseDown={(e) => handleObjectMouseDown(e, obj)}
                 onContextMenu={(e) => handleContextMenu(e, obj)}
+                dispatch={dispatch}
                 style={{
                   left: relativeX,
                   top: relativeY
