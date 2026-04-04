@@ -249,7 +249,8 @@ export function dropObjectsToPool(
         x: position.constrainedX,
         y: position.constrainedY,
         inCursorSlot: false,
-        gridCellKey: undefined // Clear grid cell reference when dropping to pool
+        gridCellKey: undefined, // Clear grid cell reference when dropping to pool
+        isOnTable: true // IMPORTANT: All objects in pool panel must have isOnTable=true for visibility!
       };
 
       // Debug logging

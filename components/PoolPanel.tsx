@@ -305,18 +305,34 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
           className="flex-1 relative"
           style={{ backgroundColor: '#304458' }}
           data-pool-content={panel.id}
-          onMouseEnter={() => {
-            if (cursorSlotHasCards) {
+          onMouseEnter={(e) => {
+            // Check if hovering over the panel itself, not over scrollbar
+            const target = e.target as HTMLElement;
+            const isScrollbar = target.classList.contains('overflow-auto') ||
+                               target.tagName === 'HTML' ||
+                               target.tagName === 'BODY';
+
+            if (!isScrollbar && cursorSlotHasCards) {
               setIsPanelHovered(true);
             }
           }}
-          onMouseLeave={() => {
-            setIsPanelHovered(false);
+          onMouseLeave={(e) => {
+            // Only clear highlight if leaving the panel entirely
+            const target = e.target as HTMLElement;
+            const relatedTarget = e.relatedTarget as HTMLElement;
+
+            // Check if actually leaving the panel (not just moving to scrollbar)
+            const currentPanel = (e.currentTarget as HTMLElement);
+            const isLeavingPanel = !currentPanel.contains(relatedTarget);
+
+            if (isLeavingPanel) {
+              setIsPanelHovered(false);
+            }
           }}
         >
           {/* Purple highlight overlay when hovering with cards */}
           {showPanelHighlight && (
-            <div className="absolute inset-0 pointer-events-none ring-4 ring-purple-500 ring-opacity-75 z-50" />
+            <div className="absolute inset-0 pointer-events-none border-4 border-purple-500 border-opacity-75 z-50" />
           )}
 
           <div className="absolute inset-0 overflow-auto">

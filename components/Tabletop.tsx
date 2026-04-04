@@ -2850,7 +2850,39 @@ export const Tabletop: React.FC = () => {
       // Check if clicking inside pool panel - dispatch event to add objects to pool
       const poolPanel = target.closest('[data-pool-panel]');
       if (poolPanel) {
-        // Get panel ID
+        // IMPORTANT: Check if cursor is over a deck or pile FIRST
+        // If hovering over deck/pile, let PoolTabletop handle it (don't drop to pool)
+        const clickElement = document.elementFromPoint(e.clientX, e.clientY);
+
+        // Check for piles FIRST (before deck) - piles are more specific targets
+        const pileElement = clickElement?.closest('[data-pile-id]');
+        if (pileElement) {
+          const pileId = pileElement.getAttribute('data-pile-id');
+          const deckElement = pileElement.closest('[data-object-id]');
+          const deckId = deckElement?.getAttribute('data-object-id');
+
+          if (pileId && deckId) {
+            // Let PoolTabletop handle pile drops - stop propagation to prevent pool drop
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+
+        // Check for deck
+        const deckElement = clickElement?.closest('[data-object-id]');
+        if (deckElement) {
+          const objectId = deckElement.getAttribute('data-object-id');
+          const obj = objectId ? state.objects[objectId] : undefined;
+          if (obj && obj.type === ItemType.DECK) {
+            // Let PoolTabletop handle deck drops - stop propagation to prevent pool drop
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+
+        // Not hovering over deck/pile - drop to pool panel
         const panelId = poolPanel.getAttribute('data-pool-panel');
         if (panelId) {
           // Get pool panel data to calculate drop position

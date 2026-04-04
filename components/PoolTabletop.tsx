@@ -314,9 +314,6 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     return getCursorSlotObjects(state.objects).length > 0;
   }, [state.objects]);
 
-  // Check if dragging a card from table
-  const isDraggingCardFromTable = false; // Pool panels don't support dragging from table
-
   // Calculate pixels per VU
   const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
 
@@ -419,61 +416,6 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
 
     return sorted;
   }, [state.objects, poolZone, state.hyperscaleLayers]);
-
-  // Local dice animation function (used by both initiator and remote players)
-  const startDiceAnimation = useCallback((diceId: string, sides: number, isInitiator: boolean) => {
-    let steps = 0;
-    const maxSteps = 10; // Change 10 times
-    const duration = 1000; // 1 second
-    const intervalTime = duration / maxSteps;
-
-    const interval = setInterval(() => {
-      steps++;
-      if (steps < maxSteps) {
-        // Update local state for visual effect only
-        setRollingDice(prev => ({
-          ...prev,
-          [diceId]: Math.floor(Math.random() * sides) + 1
-        }));
-      } else {
-        clearInterval(interval);
-
-        // Clear local override so the component displays the value from the store
-        setRollingDice(prev => {
-          const next = { ...prev };
-          delete next[diceId];
-          return next;
-        });
-
-        // Only the initiator dispatches the final result
-        if (isInitiator) {
-          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
-          // Clear the rollStartTime after animation completes
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: { id: diceId, rollStartTime: undefined }
-          });
-          initiatedRollsRef.current.delete(diceId);
-        }
-      }
-    }, intervalTime);
-  }, [dispatch]);
-
-  const animateDiceRoll = useCallback((dice: DiceObject) => {
-    const rollStartTime = Date.now();
-
-    // Mark this as a roll we initiated (so we dispatch the final result)
-    initiatedRollsRef.current.add(dice.id);
-
-    // Broadcast the roll start time to all players
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: { id: dice.id, rollStartTime }
-    });
-
-    // Start local animation
-    startDiceAnimation(dice.id, dice.sides, true);
-  }, [dispatch, startDiceAnimation]);
 
   // Watch for dice rollStartTime changes to sync animations across players
   useEffect(() => {
@@ -1749,7 +1691,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
                 <DeckComponent
                   key={obj.id}
                   deck={deckObj}
-                  draggingId={isDraggingCardFromTable ? obj.id : null}
+                  draggingId={isDraggingDeck ? obj.id : null}
                   hoveredDeckId={hoveredDeckId}
                   hoveredPileId={hoveredPileId}
                   setHoveredDeckId={setHoveredDeckId}
