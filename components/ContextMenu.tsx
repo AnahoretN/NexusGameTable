@@ -35,12 +35,6 @@ interface MenuItem {
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey, contextMenuType = 'tabletop' }) => {
   const { state } = useGame();
 
-  // Проверка при монтировании компонента
-  React.useEffect(() => {
-    console.log('[ContextMenu] Component mounted with type:', contextMenuType);
-    console.log('[ContextMenu] onAction function:', typeof onAction);
-    console.log('[ContextMenu] Object:', object.type, object.name);
-  }, [onAction, object, contextMenuType]);
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
@@ -135,14 +129,31 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     const parentAction = SUBMENU_TO_PARENT[action];
     const actionToCheck = parentAction || action;
 
+    let result = false;
     if (isGM) {
-      // GM: check allowedActionsForGM
-      // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
-      return allowedActionsForGM == null || (allowedActionsForGM.length > 0 && allowedActionsForGM.includes(actionToCheck));
+      // GM: more permissive - check if parent section is allowed or action is explicitly allowed
+      // undefined/null/empty array = all allowed, specific array = only those allowed
+      if (allowedActionsForGM != null && allowedActionsForGM.length > 0) {
+        // If GM-specific permissions are defined and not empty, check them
+        result = allowedActionsForGM.includes(actionToCheck) ||
+               allowedActionsForGM.includes(parentAction);
+      } else {
+        // If no GM-specific permissions defined, GM has ALL actions allowed
+        // This is the key fix: don't fall back to player's allowedActions for GM!
+        result = true;
+      }
+    } else {
+      // Player: check allowedActions with parent section fallback
+      // undefined/null/empty array = all allowed, specific array = only those allowed
+      if (allowedActions != null && allowedActions.length > 0) {
+        result = allowedActions.includes(actionToCheck) ||
+               allowedActions.includes(parentAction);
+      } else {
+        result = true;
+      }
     }
-    // Player: check allowedActions
-    // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
-    return allowedActions == null || (allowedActions.length > 0 && allowedActions.includes(actionToCheck));
+
+    return result;
   };
 
   // Close layer submenu when clicking outside
@@ -641,6 +652,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         }
       ]
     },
+    // Separator before Hide/Show/Lock/Pin section (only visible if any of Hide, Lock, Pin are visible)
+    {
+      label: '-',
+      action: 'separator-before-hide-lock-pin',
+      visible: can('hide') || (!hideCardActions && can('lock')) || (!hideCardActions && can('pin')),
+      isSeparator: true
+    },
     // Remove the old "To Hand" item since it's now in "Move to.."
     {
       label: (object as any).isOnTable === false ? translate('Show', language as Locale) : translate('Hide', language as Locale),
@@ -660,45 +678,61 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       icon: <Pin size={14} />,
       visible: !hideCardActions && can('pin'),
     },
-    // Separator before Hide Card/Set as Card Back/Destroy/Clone/Delete (only visible if any of these are visible)
+    // Separator after Hide/Lock/Pin section (only visible if any of Hide, Lock, Pin are visible)
     {
       label: '-',
-      action: 'separator-hide-destroy-clone-delete',
-      visible: (isSearchWindow && isGM && object.type === ItemType.CARD) ||
-               (!hideCardActions && can('clone')) ||
-               (!hideCardActions && can('delete')) ||
-               (isSearchWindow && isGM && can('destroy')),
+      action: 'separator-after-hide-lock-pin',
+      visible: can('hide') || (!hideCardActions && can('lock')) || (!hideCardActions && can('pin')),
       isSeparator: true
     },
+    // Hide Card / Unhide Card
     {
       label: (object as Card).hidden ? translate('Unhide Card', language as Locale) : translate('Hide Card', language as Locale),
       action: 'toggleHide',
       icon: (object as Card).hidden ? <Eye size={14} /> : <EyeOff size={14} />,
       visible: isSearchWindow && isGM && object.type === ItemType.CARD,
     },
+    // Separator after Hide Card (only visible in search window for GM)
+    {
+      label: '-',
+      action: 'separator-after-hide',
+      visible: isSearchWindow && isGM && object.type === ItemType.CARD,
+      isSeparator: true
+    },
+    // Set as Card Back
     {
       label: translate('Set as Card Back', language as Locale),
       action: 'setCardBack',
       icon: <ImageDown size={14} />,
       visible: isSearchWindow && isGM && object.type === ItemType.CARD,
     },
+    // Separator before Clone and Destroy (only visible in search window for GM) - ABOVE Clone
     {
-      label: translate('Destroy', language as Locale),
-      action: 'destroy',
-      icon: <Trash2 size={14} />,
-      visible: isSearchWindow && isGM && object.type === ItemType.CARD && can('destroy'),
+      label: '-',
+      action: 'separator-before-clone-destroy',
+      visible: isSearchWindow && isGM && object.type === ItemType.CARD,
+      isSeparator: true
     },
+    // Clone - creates copy of card in same deck (available in search window)
     {
       label: translate('Clone', language as Locale),
       action: 'clone',
       icon: <Copy size={14} />,
-      visible: !hideCardActions && can('clone'),
+      visible: (isSearchWindow && isGM && object.type === ItemType.CARD) || (!hideCardActions && can('clone')),
     },
+    // Destroy - permanently removes card from deck (GM only in search window for cards) - AT THE BOTTOM
+    {
+      label: translate('Destroy', language as Locale),
+      action: 'destroy',
+      icon: <Trash2 size={14} />,
+      visible: isSearchWindow && isGM && object.type === ItemType.CARD,
+    },
+    // Delete - removes card from deck (NOT available in search window, only on tabletop)
     {
       label: translate('Delete', language as Locale),
       action: 'delete',
       icon: <Trash2 size={14} />,
-      visible: !hideCardActions && can('delete')
+      visible: !isSearchWindow && !hideCardActions && can('delete')
     },
   ];
 
@@ -716,20 +750,19 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[100001] cursor-default"
+        className="fixed inset-0 z-[9999990] cursor-default"
         onClick={onClose}
         onContextMenu={(e) => { e.preventDefault(); onClose(); }}
       />
       <div
         ref={menuRef}
         data-context-menu={contextMenuType}
-        className="fixed z-[100003] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100 cursor-pointer"
+        className="fixed z-[9999992] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100 cursor-pointer"
         style={menuStyle}
         onClick={(e) => {
-          console.log('[ContextMenu] MENU DIV CLICKED!', e.target);
+          // Menu container click
         }}
         onMouseDown={(e) => {
-          console.log('[ContextMenu] MENU DIV MOUSE DOWN!', e.target);
           e.stopPropagation();
         }}
       >
@@ -836,7 +869,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                       ref={getSubmenuRef()}
                       data-submenu="true"
                       data-submenu-key={submenuKey}
-                      className="fixed z-[100004] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
+                      className="fixed z-[9999995] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] animate-in fade-in zoom-in-95 duration-100 pointer-events-auto"
                       style={{ left: submenuPos.left, top: submenuPos.top }}
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
@@ -857,12 +890,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  e.preventDefault();
                                   console.log('[ContextMenu] Submenu item clicked:', subAction);
                                   onAction(subAction);
                                   onClose();
                                 }}
                                 onMouseDown={(e) => e.stopPropagation()}
-                                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
+                                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer pointer-events-auto relative z-[9999996]"
+                                style={{ pointerEvents: 'auto' }}
                               >
                                 {subItem.icon}
                                 <span>{subItem.label}</span>
@@ -954,21 +989,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                     <button
                         type="button"
                         onClick={(e) => {
-                          console.log('[ContextMenu] ===== BUTTON CLICKED =====');
                           console.log('[ContextMenu] Button clicked:', item.action, item.label);
-                          console.log('[ContextMenu] Event:', e);
                           // Pass actual shift key state for delete action
                           if (item.action === 'delete') {
-                            console.log('[ContextMenu] Calling onAction with shift key for delete');
                             onAction(item.action, e.shiftKey);
                           } else {
-                            console.log('[ContextMenu] Calling onAction for:', item.action);
                             onAction(item.action);
                           }
-                          console.log('[ContextMenu] onAction called, closing menu');
                           onClose();
                         }}
-                        className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors cursor-pointer ${item.action === 'delete' ? 'text-red-400 hover:text-red-300' : 'text-gray-200'}`}
+                        className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors cursor-pointer ${item.action === 'delete' || item.action === 'destroy' ? 'text-red-400 hover:text-red-300' : 'text-gray-200'}`}
                     >
                         {item.icon}
                         <span>{item.label}</span>

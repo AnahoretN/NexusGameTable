@@ -29,8 +29,6 @@ export interface ContextMenuActionParams {
  * Execute context menu action - shared logic for both Tabletop and PoolTabletop
  */
 export const executeContextMenuAction = (action: string, params: ContextMenuActionParams): void => {
-  console.log('[executeContextMenuAction] CALLED with action:', action, 'object type:', params.object.type);
-
   const {
     object,
     dispatch,
@@ -48,9 +46,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     isGM = false,
     isPoolPanel = false
   } = params;
-
-  console.log('[executeContextMenuAction] Params extracted, setSearchModalDeck:', !!setSearchModalDeck, 'setSearchModalPile:', !!setSearchModalPile);
-  console.log('[executeContextMenuAction] ABOUT TO ENTER SWITCH, action:', action);
 
   switch(action) {
     case 'configure':
@@ -184,12 +179,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
             payload: { object: newCard }
           });
 
-          console.log('[contextMenuActions] Card cloned in deck:', {
-            originalCardId: card.id,
-            newCardId,
-            deckId: deck.id,
-            totalCards: updatedCardIds.length
-          });
+          console.log('[contextMenuActions] Card cloned in deck:', card.name, '→', newCard.name);
         } else {
           // Fallback to regular object clone
           dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id } });
@@ -316,9 +306,9 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       const deckToMill = object as DeckType;
       const millPile = deckToMill.piles?.find(p => p.isMillPile);
       if (millPile && deckToMill.cardIds.length > 0) {
-        const topCardId = deckToMill.cardIds[deckToMill.cardIds.length - 1];
+        const topCardId = deckToMill.cardIds[0]; // First element = top card
         dispatch({
-          type: 'MILL_CARD_TO_PILE',
+          type: 'ADD_CARD_TO_PILE',
           payload: {
             cardId: topCardId,
             deckId: object.id,
@@ -332,10 +322,12 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       // Move top card to bottom of deck
       const deckToBottom = object as DeckType;
       if (deckToBottom.cardIds.length > 0) {
-        const topCardId = deckToBottom.cardIds[deckToBottom.cardIds.length - 1];
+        const topCardId = deckToBottom.cardIds[0]; // First element = top card
+        // Remove from front and add to back (same as Tabletop.tsx)
+        const newCardIds = [...deckToBottom.cardIds.slice(1), topCardId];
         dispatch({
-          type: 'MILL_CARD_TO_BOTTOM',
-          payload: { deckId: object.id, cardId: topCardId }
+          type: 'UPDATE_OBJECT',
+          payload: { id: object.id, cardIds: newCardIds }
         });
       }
       break;
@@ -462,49 +454,44 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
   // These actions use prefixes and cannot be handled by switch cases
 
   // Handle moveToPile actions (moveToPile-{pileId})
-    console.log('[executeContextMenuAction] Checking moveToPile-:', action.startsWith('moveToPile-'), 'objectType:', object.type);
-    if (action.startsWith('moveToPile-') && object.type === ItemType.CARD) {
-      const pileId = action.replace('moveToPile-', '');
-      const card = object as CardType;
-      if (card.deckId) {
-        dispatch({ type: 'ADD_CARD_TO_PILE', payload: { cardId: card.id, pileId, deckId: card.deckId }});
-      }
-      // Menu closing is handled by the component
-      return;
+  if (action.startsWith('moveToPile-') && object.type === ItemType.CARD) {
+    const pileId = action.replace('moveToPile-', '');
+    const card = object as CardType;
+    if (card.deckId) {
+      dispatch({ type: 'ADD_CARD_TO_PILE', payload: { cardId: card.id, pileId, deckId: card.deckId }});
     }
+    // Menu closing is handled by the component
+    return;
+  }
 
-    // Handle pile actions for decks (pile-{pileId})
-    console.log('[executeContextMenuAction] Checking pile-:', action.startsWith('pile-'), 'objectType:', object.type);
-    if (action.startsWith('pile-') && object.type === ItemType.DECK) {
-      const pileId = action.replace('pile-', '');
-      const deck = object as DeckType;
-      const pile = deck.piles?.find(p => p.id === pileId);
-      console.log('[executeContextMenuAction] pile- action:', { action, pileId, deck: deck.name, pile: pile?.name, isPoolPanel });
-      if (pile) {
-        if (isPoolPanel) {
-          // For pool panels, dispatch event
-          window.dispatchEvent(new CustomEvent('open-pile-modal', {
-            detail: { pileId }
-          }));
-        } else {
-          // For tabletop, use state
-          console.log('[executeContextMenuAction] Setting search modal:', { deck: deck.name, pile: pile.name });
-          if (setSearchModalDeck) setSearchModalDeck(deck);
-          if (setSearchModalPile) setSearchModalPile(pile);
-        }
+  // Handle pile actions for decks (pile-{pileId})
+  if (action.startsWith('pile-') && object.type === ItemType.DECK) {
+    const pileId = action.replace('pile-', '');
+    const deck = object as DeckType;
+    const pile = deck.piles?.find(p => p.id === pileId);
+    if (pile) {
+      console.log('[contextMenuActions] Opening pile:', pile.name);
+      if (isPoolPanel) {
+        // For pool panels, dispatch event
+        window.dispatchEvent(new CustomEvent('open-pile-modal', {
+          detail: { pileId }
+        }));
+      } else {
+        // For tabletop, use state
+        if (setSearchModalDeck) setSearchModalDeck(deck);
+        if (setSearchModalPile) setSearchModalPile(pile);
       }
     }
+  }
 
-    // Handle hyperscale layer actions (moveToHyperscaleLayer:{layerId})
-    console.log('[executeContextMenuAction] Checking moveToHyperscaleLayer::', action.startsWith('moveToHyperscaleLayer:'));
-    if (action.startsWith('moveToHyperscaleLayer:')) {
-      const layerId = action.replace('moveToHyperscaleLayer:', '');
-      console.log('[executeContextMenuAction] moveToHyperscaleLayer: action:', { action, layerId, objectId: object.id });
-      dispatch({
-        type: 'MOVE_OBJECT_TO_HYPERSCALE_LAYER',
-        payload: { objectId: object.id, layerId }
-      });
-    }
+  // Handle hyperscale layer actions (moveToHyperscaleLayer:{layerId})
+  if (action.startsWith('moveToHyperscaleLayer:')) {
+    const layerId = action.replace('moveToHyperscaleLayer:', '');
+    dispatch({
+      type: 'MOVE_OBJECT_TO_HYPERSCALE_LAYER',
+      payload: { objectId: object.id, layerId }
+    });
+  }
 
     // Handle editNexusBoard action for NexusBoard - start editing mode
     if (action === 'editNexusBoard' && object.type === ItemType.NEXUS_BOARD) {
