@@ -52,7 +52,13 @@ export const ObjectRenderer = React.memo<ObjectRendererProps>(({
             ...style
           }}
           className={`bg-slate-700 border border-slate-600 rounded shadow-lg ${className}`}
-          onMouseDown={onMouseDown}
+          onMouseDown={(e) => {
+            // Ignore clicks on action buttons
+            if ((e.target as HTMLElement).closest('button')) {
+              return;
+            }
+            onMouseDown?.(e);
+          }}
           onContextMenu={onContextMenu}
         >
           {card.faceUp || isGM ? (
@@ -111,7 +117,9 @@ export const ObjectRenderer = React.memo<ObjectRendererProps>(({
                 <button
                   key={action}
                   onClick={(e) => {
+                    console.log('[ObjectRenderer] Action button clicked:', { action, objectId: obj.id });
                     e.stopPropagation();
+                    e.preventDefault();
                     buttonConfig.action();
                   }}
                   className={`${buttonConfig.className} pointer-events-auto`}
@@ -147,7 +155,13 @@ export const ObjectRenderer = React.memo<ObjectRendererProps>(({
             pointerEvents: isDragging ? 'none' : 'auto',
             ...style
           }}
-          onMouseDown={onMouseDown}
+          onMouseDown={(e) => {
+            // Ignore clicks on action buttons
+            if ((e.target as HTMLElement).closest('button')) {
+              return;
+            }
+            onMouseDown?.(e);
+          }}
           onContextMenu={onContextMenu}
         >
           <SvgTokenShape
@@ -176,7 +190,9 @@ export const ObjectRenderer = React.memo<ObjectRendererProps>(({
                 <button
                   key={action}
                   onClick={(e) => {
+                    console.log('[ObjectRenderer] Action button clicked:', { action, objectId: obj.id });
                     e.stopPropagation();
+                    e.preventDefault();
                     buttonConfig.action();
                   }}
                   className={`${buttonConfig.className} pointer-events-auto`}
