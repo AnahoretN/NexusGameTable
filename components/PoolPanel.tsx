@@ -5,6 +5,7 @@ import { Plus, Trash2, Lock, X } from 'lucide-react';
 import { PoolTabletop } from './PoolTabletop';
 import { findAvailableTerritory } from '../utils/territoryManager';
 import { PoolTabSettingsModal } from './PoolTabSettingsModal';
+import { getCursorSlotObjects } from '../utils/poolPlacement';
 
 interface PoolPanelProps {
   panel: PanelObject;
@@ -77,6 +78,17 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   // Get current player info
   const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
   const isGM = currentPlayer?.isGM ?? false;
+
+  // Check if cursor slot has cards (for panel hover highlight)
+  const cursorSlotHasCards = useMemo(() => {
+    return getCursorSlotObjects(state.objects).length > 0;
+  }, [state.objects]);
+
+  // Panel hover state for highlight
+  const [isPanelHovered, setIsPanelHovered] = useState(false);
+
+  // Show highlight when hovering and cursor slot has cards
+  const showPanelHighlight = isPanelHovered && cursorSlotHasCards;
 
   // Active tab
   const activeTab = useMemo(() => {
@@ -293,7 +305,20 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
           className="flex-1 relative"
           style={{ backgroundColor: '#304458' }}
           data-pool-content={panel.id}
+          onMouseEnter={() => {
+            if (cursorSlotHasCards) {
+              setIsPanelHovered(true);
+            }
+          }}
+          onMouseLeave={() => {
+            setIsPanelHovered(false);
+          }}
         >
+          {/* Purple highlight overlay when hovering with cards */}
+          {showPanelHighlight && (
+            <div className="absolute inset-0 pointer-events-none ring-4 ring-purple-500 ring-opacity-75 z-50" />
+          )}
+
           <div className="absolute inset-0 overflow-auto">
             <PoolTabletop
               poolZone={{
