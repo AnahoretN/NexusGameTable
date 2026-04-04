@@ -2,9 +2,10 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { useLocalSettings } from '../hooks/useLocalSettings';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token, Token as TokenType, TokenType as TokenArchetype, DiceObject, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board, Board as BoardType, NexusBoard, NexusCellObject, HexDirection } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token, Token as TokenType, TokenType as TokenArchetype, DiceObject, Randomizer, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board, Board as BoardType, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
+import { executeContextMenuAction } from '../utils/contextMenuActions';
 import { PileContextMenu } from './PileContextMenu';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -16,13 +17,20 @@ import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
-import { BoardWithResizeMemo } from './BoardWithResize';
+import { BoardWithResizeMemo } from './Tabletop/BoardWithResize';
 import { NexusBoardMemo } from './NexusBoard';
-import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown } from 'lucide-react';
-import { CARD_SHAPE_DIMS, WORLD_SIZE_VU } from '../constants';
+import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, ChevronsUpDown } from 'lucide-react';
+import { useDragOverStore } from '../store/dragOverState';
+import { PLAYABLE_AREA_SIZE } from '../constants';
 import { generateUUID } from '../utils/uuid';
+import { clampScrollToPlayableArea } from '../utils/viewportConstraints';
 import { vuToPixels, pixelsToVu } from '../utils/vuSystem';
 import { CursorSlotVisualization } from './CursorSlotVisualization';
+import {
+  calculatePoolDropPosition,
+  dropObjectsToPool,
+  createPoolZoneFromPanel
+} from '../utils/poolPlacement';
 // import { RemoteObjectAnimation, useRemoteObjectAnimation } from './RemoteObjectAnimation';
 import { PinnedIndicator } from './PinnedIndicator';
 import { ObjectActionButtons } from './ObjectActionButtons';
@@ -45,6 +53,10 @@ import {
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
   const { settings: localSettings } = useLocalSettings();
+  const { setDraggingOver, clearDraggingOver } = useDragOverStore();
+
+  // Ref to access dragOver state efficiently in mousemove handler
+  const dragOverStoreRef = useRef<ReturnType<typeof useDragOverStore.getState> | null>(null);
 
   // Get the base pixelsPerVU conversion factor
   const basePixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
@@ -105,6 +117,7 @@ export const Tabletop: React.FC = () => {
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [draggingPile, setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
+  // Note: isDraggingOverPool removed - using useDragOverStore global state instead
 
   // Shift key state for delete cursor
   const [isShiftPressed, setIsShiftPressed] = useState(false);
@@ -117,10 +130,15 @@ export const Tabletop: React.FC = () => {
   // Resizing state for boards
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [isOverResizeHandle, setIsOverResizeHandle] = useState(false);
+  const [liveResizeSize, setLiveResizeSize] = useState<{ width: number; height: number } | null>(null); // Live preview during resize
+  const liveResizeSizeRef = useRef<{ width: number; height: number } | null>(null); // Ref for immediate access
+  const resizeThrottleRef = useRef<number | null>(null);
+  const resizeFinalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
-  // Cursor slot state - holds cards and tokens picked up with Ctrl+click (max 100 items)
+  // Cursor slot state - holds cards, tokens, boards, and other objects picked up with Ctrl+click (max 100 items)
   // Stores full object data and removes objects from their original position
-  const [cursorSlot, setCursorSlot] = useState<(CardType | TokenType)[]>([]);
+  const [cursorSlot, setCursorSlot] = useState<(CardType | TokenType | BoardType)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   // Ref for immediate cursor position updates (synchronous, for rendering slot items)
   const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
@@ -160,7 +178,14 @@ export const Tabletop: React.FC = () => {
 
   // Refs
   const longPressTimerRef = useRef<number | null>(null);
-  const longPressItemRef = useRef<{ id: string; item: TableObject; startX: number; startY: number } | null>(null);
+  const cursorHoldTimerRef = useRef<number | null>(null); // Timer for 3ms hold before adding to cursor slot (deprecated, using drag threshold instead)
+  const dragThresholdRef = useRef<{
+    initialX: number;
+    initialY: number;
+    targetId: string | null;
+    addedToSlot: boolean;
+  }>({ initialX: 0, initialY: 0, targetId: null, addedToSlot: false });
+  const lastLogTimeRef = useRef<number>(0); // Track last log time for throttling (500ms)
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartPositionRef = useRef<{ id: string; x: number; y: number } | null>(null); // Track initial position for network commit
   const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -188,14 +213,26 @@ export const Tabletop: React.FC = () => {
   useEffect(() => { isPanningRef.current = isPanning; }, [isPanning]);
   useEffect(() => { resizingIdRef.current = resizingId; }, [resizingId]);
   useEffect(() => { draggingPileRef.current = draggingPile; }, [draggingPile]);
+  // Sync liveResizeSizeRef to liveResizeSize state for proper re-renders
+  useEffect(() => {
+    if (liveResizeSize) {
+      liveResizeSizeRef.current = liveResizeSize;
+    } else {
+      liveResizeSizeRef.current = null;
+    }
+  }, [liveResizeSize]);
   // Sync cursorSlotRef - always sync to ensure consistency
   useEffect(() => {
     cursorSlotRef.current = cursorSlot;
   }, [cursorSlot]);
 
-  // Track global mouse position for playTopCard and other features
+  // Track global mouse position for playTopCard and pool panel drag-over visualization
   useEffect(() => {
+    let lastCheckTime = 0;
+    const CHECK_THROTTLE = 50; // Check 20 times per second max (was every mousemove)
+
     const handleMouseMove = (e: MouseEvent) => {
+      // Store mouse position for other features (like playTopCard)
       globalMousePosRef.current = { x: e.clientX, y: e.clientY };
 
       // Check if we should hide click tooltip (mouse left the card)
@@ -208,10 +245,72 @@ export const Tabletop: React.FC = () => {
           clickTooltipBoundsRef.current = null;
         }
       }
+
+      // Throttle pool panel drag-over visualization checks
+      const now = performance.now();
+      if (now - lastCheckTime < CHECK_THROTTLE) return;
+      lastCheckTime = now;
+
+      // Only check if cursor slot has objects
+      if (cursorSlot.length === 0) {
+        if (dragOverStoreRef.current?.targetPoolPanelId) {
+          clearDraggingOver();
+        }
+        return;
+      }
+
+      const cursorSlotObj = cursorSlot[0];
+      const canPlaceInPool = cursorSlotObj && [
+        ItemType.CARD,
+        ItemType.TOKEN
+      ].includes(cursorSlotObj.type);
+
+      if (!canPlaceInPool) {
+        if (dragOverStoreRef.current?.targetPoolPanelId) {
+          clearDraggingOver();
+        }
+        return;
+      }
+
+      // Find pool panel under cursor (simple check - just first panel under cursor)
+      const poolPanels = document.querySelectorAll('[data-pool-panel]');
+      let foundPoolPanelId: string | null = null;
+
+      for (const panel of poolPanels) {
+        const panelId = panel.getAttribute('data-pool-panel');
+        const panelObj = state.objects[panelId as string];
+        if (panelObj?.minimized) continue;
+
+        const gameSpace = panel.closest('[data-pool-gamespace]') as HTMLElement;
+        const contentArea = gameSpace?.querySelector(`[data-pool-content="${panelId}"]`) as HTMLElement;
+        const targetElement = contentArea || gameSpace || panel;
+
+        const rect = targetElement.getBoundingClientRect();
+        const isOver = e.clientX >= rect.left && e.clientX <= rect.right &&
+                       e.clientY >= rect.top && e.clientY <= rect.bottom;
+
+        if (isOver) {
+          foundPoolPanelId = panelId;
+          break;
+        }
+      }
+
+      // Update drag-over state for visual feedback
+      if (foundPoolPanelId && foundPoolPanelId !== dragOverStoreRef.current?.targetPoolPanelId) {
+        setDraggingOver(foundPoolPanelId, cursorSlotObj.id);
+      } else if (!foundPoolPanelId && dragOverStoreRef.current?.targetPoolPanelId) {
+        clearDraggingOver();
+      }
     };
+
+    // Store reference to dragOver state for efficient access
+    dragOverStoreRef.current = useDragOverStore.getState();
+
     window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, [clickTooltip]);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [clickTooltip, cursorSlot, state.objects]);
 
   // Prevent native browser drag-and-drop on the tabletop
   useEffect(() => {
@@ -236,49 +335,79 @@ export const Tabletop: React.FC = () => {
   // Listen for add-to-cursor-slot events from other components (e.g., HandPanel)
   useEffect(() => {
     const handleAddToSlot = (e: Event) => {
+      const startTime = performance.now();
+
       const customEvent = e as CustomEvent<{
         cardId: string;
         clientX: number;
         clientY: number;
         source?: 'shift' | 'hold';
+        fromPoolPanel?: string;
       }>;
-      const { cardId, clientX, clientY, source = 'shift' } = customEvent.detail;
-      console.log('Tabletop: add-to-cursor-slot event received:', {
-        cardId,
-        clientX,
-        clientY,
-        source,
-        itemExists: !!state.objects[cardId],
-        cursorSlotLength: cursorSlot.length
-      });
+      const { cardId, clientX, clientY, source = 'shift', fromPoolPanel } = customEvent.detail;
 
+
+      const itemLookupStart = performance.now();
       const item = state.objects[cardId];
-      if (item && cursorSlot.length < 100) {
-        // Check if item is already being processed
-        if (processingAddToSlotRef.current.has(cardId)) {
-          console.log('Tabletop: Item already being processed, skipping:', cardId);
-          return;
-        }
 
-        // Check if item is already in cursor slot or already marked as inCursorSlot
-        const alreadyInSlot = cursorSlot.some(slotItem => slotItem.id === cardId);
-        const alreadyMarked = (item as any).inCursorSlot;
+      if (!item) {
+        return;
+      }
 
-        if (alreadyInSlot || alreadyMarked) {
-          console.log('Tabletop: Item already in cursor slot, skipping:', cardId);
-          return;
-        }
+      // IMPORTANT: Set dragThresholdRef.addedToSlot = true for events from pool panel/hand panel
+      // This ensures wasThresholdReached is true when handleGlobalMouseUp processes the drop
+      if (source === 'hold' && (fromPoolPanel || (item as any).location === CardLocation.HAND)) {
+        dragThresholdRef.current = {
+          initialX: clientX,
+          initialY: clientY,
+          targetId: cardId,
+          addedToSlot: true  // Mark as already added to slot
+        };
+        console.log('[add-to-cursor-slot] Set dragThresholdRef for pool/hand panel item:', {
+          cardId,
+          source,
+          fromPoolPanel,
+          location: (item as any).location
+        });
+      }
 
-        // Mark as being processed
-        processingAddToSlotRef.current.add(cardId);
+      if (cursorSlot.length >= 100) {
+        return;
+      }
 
-        console.log('Tabletop: Adding item to cursor slot:', item.name);
-        // Set source based on how the item was added (only if slot was empty before)
-        if (cursorSlot.length === 0) {
-          setCursorSlotSource(source);
-        }
+      if (!item) {
+        return;
+      }
 
-        // Deep clone to preserve all properties (especially content/image URL)
+      // Check if item is already being processed
+      if (processingAddToSlotRef.current.has(cardId)) {
+        return;
+      }
+
+      // Check if item is already in cursor slot or already marked as inCursorSlot
+      const alreadyInSlot = cursorSlot.some(slotItem => slotItem.id === cardId);
+      const alreadyMarked = (item as any).inCursorSlot;
+
+      if (alreadyInSlot || alreadyMarked) {
+        return;
+      }
+
+      // Mark as being processed
+      processingAddToSlotRef.current.add(cardId);
+
+      // Set source based on how the item was added (only if slot was empty before)
+      if (cursorSlot.length === 0) {
+        setCursorSlotSource(source);
+      }
+
+      // Process immediately without setTimeout to ensure cursorSlot is updated before mouseup
+      // This fixes the issue where handleGlobalMouseUp sees empty slot (hasItems: false)
+        const processStart = performance.now();
+
+        try {
+        // Optimized clone - only copy properties needed for cursor slot rendering
+        const cloneStart = performance.now();
+
         let itemClone: TableObject;
 
         if (item.type === ItemType.CARD) {
@@ -291,53 +420,163 @@ export const Tabletop: React.FC = () => {
             id: card.id,
             type: ItemType.CARD,
             name: card.name,
-            content: card.content, // Image URL - this is the main image
+            content: card.content,
             frontFaceUrl: card.frontFaceUrl,
             backFaceUrl: card.backFaceUrl,
             deckId: card.deckId,
             width: card.width,
             height: card.height,
-            x: card.x,
-            y: card.y,
-            rotation: card.rotation,
-            location: card.location,
             faceUp: card.faceUp,
-            ownerId: card.ownerId,
-            isOnTable: card.isOnTable,
-            locked: card.locked,
-            // Store orientation info for cursor slot rendering
             isHorizontal: isHorizontal,
-            // Preserve sprite properties for proper card display
             spriteIndex: card.spriteIndex,
             spriteColumns: card.spriteColumns,
             spriteRows: card.spriteRows,
             spriteUrl: card.spriteUrl,
             shape: card.shape,
-            // IMPORTANT: Preserve zIndex to maintain layer relationships
             zIndex: card.zIndex ?? 0,
             hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
+            location: card.location, // IMPORTANT: Preserve location for proper deck/hand/pool detection
           } as CardType;
+        } else if (item.type === ItemType.DECK) {
+          const deck = item as DeckType;
+          itemClone = {
+            id: deck.id,
+            type: ItemType.DECK,
+            name: deck.name,
+            cardIds: [...deck.cardIds],
+            baseCardIds: [...deck.baseCardIds],
+            width: deck.width,
+            height: deck.height,
+            cardShape: deck.cardShape,
+            cardOrientation: deck.cardOrientation,
+            showTopCard: deck.showTopCard,
+            spriteConfig: deck.spriteConfig ? { ...deck.spriteConfig } : undefined,
+            zIndex: deck.zIndex ?? 0,
+            hyperscaleLayerId: deck.hyperscaleLayerId ?? 'cards',
+            locked: deck.locked,
+          } as DeckType;
+        } else if (item.type === ItemType.RANDOMIZER) {
+          const randomizer = item as Randomizer;
+          itemClone = {
+            id: randomizer.id,
+            type: ItemType.RANDOMIZER,
+            name: randomizer.name,
+            width: randomizer.width,
+            height: randomizer.height,
+            currentFace: randomizer.currentFace,
+            zIndex: randomizer.zIndex ?? 0,
+            hyperscaleLayerId: randomizer.hyperscaleLayerId ?? 'tokens',
+          } as Randomizer;
+        } else if (item.type === ItemType.COUNTER) {
+          const counter = item as Counter;
+          itemClone = {
+            id: counter.id,
+            type: ItemType.COUNTER,
+            name: counter.name,
+            width: counter.width,
+            height: counter.height,
+            value: counter.value,
+            zIndex: counter.zIndex ?? 0,
+            hyperscaleLayerId: counter.hyperscaleLayerId ?? 'tokens',
+          } as Counter;
+        } else if (item.type === ItemType.DICE_OBJECT) {
+          const dice = item as DiceObject;
+          itemClone = {
+            id: dice.id,
+            type: ItemType.DICE_OBJECT,
+            width: dice.width,
+            height: dice.height,
+            currentValue: dice.currentValue,
+            color: dice.color,
+            shape: dice.shape,
+            borderWidth: dice.borderWidth,
+            borderColor: dice.borderColor,
+            opacity: dice.opacity,
+            borderOpacity: dice.borderOpacity,
+            fontColor: dice.fontColor,
+            zIndex: dice.zIndex ?? 0,
+            hyperscaleLayerId: dice.hyperscaleLayerId ?? 'tokens',
+          } as DiceObject;
+        } else if (item.type === ItemType.BOARD) {
+          const board = item as BoardType;
+          itemClone = {
+            id: board.id,
+            type: ItemType.BOARD,
+            name: board.name,
+            content: board.content,
+            width: board.width,
+            height: board.height,
+            x: board.x,
+            y: board.y,
+            rotation: board.rotation,
+            gridType: board.gridType,
+            gridSize: board.gridSize,
+            gridWidth: board.gridWidth,
+            gridHeight: board.gridHeight,
+            showGrid: board.showGrid,
+            snapToGrid: board.snapToGrid,
+            color: board.color,
+            zIndex: board.zIndex ?? 0,
+            hyperscaleLayerId: board.hyperscaleLayerId ?? 'boards',
+          } as BoardType;
         } else {
-          itemClone = { ...item } as TokenType;
+          const token = item as TokenType;
+          itemClone = {
+            id: token.id,
+            type: ItemType.TOKEN,
+            name: token.name,
+            width: token.width,
+            height: token.height,
+            shape: token.shape,
+            color: token.color,
+            content: token.content,
+            borderWidth: token.borderWidth,
+            borderColor: (token as any).borderColor,
+            opacity: token.opacity,
+            borderOpacity: token.borderOpacity,
+            zIndex: token.zIndex ?? 0,
+            hyperscaleLayerId: token.hyperscaleLayerId ?? 'tokens',
+          } as TokenType;
         }
 
         // IMPORTANT: Store original zIndex and source for proper layer relationships
         (itemClone as any).originalZIndex = item.zIndex ?? 0;
         (itemClone as any).source = source;
         (itemClone as any).cursorSlotIndex = cursorSlot.length;
+        (itemClone as any).timestamp = Date.now(); // Track when item was added to slot
 
+        // Store pool panel source if object is being dragged from pool panel
+        if (fromPoolPanel) {
+          (itemClone as any).fromPoolPanel = fromPoolPanel;
+        }
+
+
+        const updateStart = performance.now();
         setCursorSlot(prev => [...prev, itemClone]);
-        dispatch({ type: 'UPDATE_OBJECT', payload: { id: cardId, inCursorSlot: true } });
+
+        const dispatchStart = performance.now();
+        const updatePayload: any = { id: cardId, inCursorSlot: true };
+        if (fromPoolPanel) {
+          updatePayload.cursorSlotSourcePanel = fromPoolPanel;
+        }
+        dispatch({ type: 'UPDATE_OBJECT', payload: updatePayload });
+
+        const posStart = performance.now();
         const pos = { x: clientX, y: clientY };
         setCursorPosition(pos);
         cursorPositionRef.current = pos;
 
-        // Remove from processing set after a short delay to ensure state updates
-        setTimeout(() => {
-          processingAddToSlotRef.current.delete(cardId);
-        }, 100);
-      }
+        const totalProcessTime = performance.now() - processStart;
+        const totalFromStart = performance.now() - startTime;
+
+        // Remove from processing set immediately
+        processingAddToSlotRef.current.delete(cardId);
+          } catch (error) {
+            console.error('[Drag Performance] ERROR:', error);
+            processingAddToSlotRef.current.delete(cardId);
+          }
     };
+
 
     window.addEventListener('add-to-cursor-slot', handleAddToSlot);
     return () => window.removeEventListener('add-to-cursor-slot', handleAddToSlot);
@@ -366,49 +605,82 @@ export const Tabletop: React.FC = () => {
         return;
       } // Max 100 items in slot
 
-      // Create new token from archetype
-      const newTokenId = generateUUID();
-      const defaultSize = archetype.defaultSize || { width: 50, height: 50 };
-      const newToken: TokenType = {
-        id: newTokenId,
-        type: ItemType.TOKEN,
-        name: archetype.name, // Use archetype name for token-copy
-        x: 0,
-        y: 0,
-        width: defaultSize.width,
-        height: defaultSize.height,
-        rotation: 0,
-        color: archetype.color,
-        borderColor: (archetype as any).borderColor,
-        content: archetype.content,
-        shape: archetype.shape,
-        isOnTable: false,
-        locked: false,
-        archetypeId: archetype.id,
-        inCursorSlot: true,
-        // Store settings from archetype
-        showName: (archetype as any).showName || false,
-        fontColor: (archetype as any).fontColor,
-        // IMPORTANT: Set zIndex to maintain layer relationships
-        zIndex: archetype.zIndex ?? 3000,
-        hyperscaleLayerId: archetype.hyperscaleLayerId ?? 'tokens',
-      };
+      // Find ALL existing tokens with this archetypeId
+      const existingTokens = Object.values(state.objects)
+        .filter(obj => obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetypeId)
+        .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)); // Sort by zIndex to maintain order
 
-      // Add token to objects list
-      dispatch({ type: 'ADD_OBJECT', payload: newToken });
+      if (existingTokens.length === 0) {
+        // If no existing tokens, create one new token (backward compatibility)
+        const newTokenId = generateUUID();
+        const defaultSize = archetype.defaultSize || { width: 50, height: 50 };
+        const newToken: TokenType = {
+          id: newTokenId,
+          type: ItemType.TOKEN,
+          name: archetype.name, // Use archetype name for token-copy
+          x: 0,
+          y: 0,
+          width: defaultSize.width,
+          height: defaultSize.height,
+          rotation: 0,
+          color: archetype.color,
+          borderColor: (archetype as any).borderColor,
+          content: archetype.content,
+          shape: archetype.shape,
+          isOnTable: false,
+          locked: false,
+          archetypeId: archetype.id,
+          inCursorSlot: true,
+          // Store settings from archetype
+          showName: (archetype as any).showName || false,
+          fontColor: (archetype as any).fontColor,
+          // IMPORTANT: Set zIndex to maintain layer relationships
+          zIndex: archetype.zIndex ?? 3000,
+          hyperscaleLayerId: archetype.hyperscaleLayerId ?? 'tokens',
+        };
 
-      // Create clone for cursor slot
-      const tokenClone: TokenType = { ...newToken };
-      (tokenClone as any).cursorSlotIndex = cursorSlot.length;
-      // IMPORTANT: Store original zIndex for proper restoration when dropping
-      (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
-      (tokenClone as any).source = 'archetype';
+        // Add token to objects list
+        dispatch({ type: 'ADD_OBJECT', payload: newToken });
 
-      // Add to cursor slot
-      setCursorSlot(prev => [...prev, tokenClone]);
-      cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
+        // Add to cursor slot
+        const tokenClone: TokenType = { ...newToken };
+        (tokenClone as any).cursorSlotIndex = cursorSlot.length;
+        (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
+        (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
 
-      // Set cursor position to show token immediately (use provided coords or current mouse position)
+        setCursorSlot(prev => [...prev, tokenClone]);
+        cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
+      } else {
+        // Add all existing tokens to cursor slot (like Ctrl+click behavior)
+        existingTokens.forEach((token, index) => {
+          // Check if already in cursor slot
+          if (cursorSlotRef.current.some(item => item.id === token.id)) {
+            return; // Skip if already in slot
+          }
+
+          // Mark as in cursor slot
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: token.id,
+              inCursorSlot: true,
+              cursorSlotSourcePanel: undefined
+            }
+          });
+
+          // Create clone for cursor slot
+          const tokenClone: TokenType = { ...token };
+          (tokenClone as any).cursorSlotIndex = cursorSlot.length;
+          (tokenClone as any).originalZIndex = token.zIndex ?? 0;
+          (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
+
+          // Add to cursor slot
+          setCursorSlot(prev => [...prev, tokenClone]);
+          cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
+        });
+      }
+
+      // Set cursor position to show tokens immediately (use provided coords or current mouse position)
       if (clientX !== undefined && clientY !== undefined) {
         const pos = { x: clientX, y: clientY };
         setCursorPosition(pos);
@@ -417,15 +689,16 @@ export const Tabletop: React.FC = () => {
         // Use existing cursor position
         cursorPositionRef.current = cursorPosition;
       }
-      // If no position available, token will appear on first mouse move
 
-      // Set source to 'archetype' when adding from token type click
-      setCursorSlotSource('archetype');
+      // Set source to 'shift' to behave like Ctrl+click (drop on click, not on mouseup)
+      setCursorSlotSource('shift');
+
+      isAddingTokenRef.current = false;
     };
 
     window.addEventListener('add-token-to-cursor-slot', handleAddTokenToSlot, { passive: false });
     return () => window.removeEventListener('add-token-to-cursor-slot', handleAddTokenToSlot);
-  }, [cursorSlot.length, dispatch, state.objects]);
+  }, [cursorSlot.length, dispatch, state.objects, cursorPosition, setCursorSlot, setCursorPosition, setCursorSlotSource]);
 
   // Listen for current tool changes from ToolsPanel
   useEffect(() => {
@@ -490,6 +763,25 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('update-deck-cards-dimensions', handleUpdateDeckCardsDimensions);
   }, [dispatch]);
 
+  // Listen for clear-cursor-slot events from PoolTabletop
+  useEffect(() => {
+    const handleClearCursorSlot = (e: Event) => {
+      const customEvent = e as CustomEvent<{ reason?: string }>;
+
+      // Clear cursor slot and related state
+      cursorSlotRef.current = [];
+      setCursorSlot([]);
+      setCursorPosition(null);
+      setCursorSlotSource(null);
+
+      // Clear recently dropped tracking
+      setRecentlyInMyCursorSlot(new Set());
+    };
+
+    window.addEventListener('clear-cursor-slot', handleClearCursorSlot);
+    return () => window.removeEventListener('clear-cursor-slot', handleClearCursorSlot);
+  }, []);
+
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = useCallback((card: CardType) => {
     if (card.deckId) {
@@ -550,6 +842,20 @@ export const Tabletop: React.FC = () => {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // Ref to always have current context menu state for event listeners
+  const contextMenuRef = useRef<typeof contextMenu>(null);
+  useEffect(() => {
+    contextMenuRef.current = contextMenu;
+  }, [contextMenu]);
+
+  // Debug: Track when objects are dropped into pool panels
+  const droppedObjectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (droppedObjectRef.current) {
+      droppedObjectRef.current = null;
+    }
+  }, [state.objects]);
 
   // Click tracking for single/double click detection
   const clickTrackerRef = useRef<{ objectId: string | null; timestamp: number; clickCount: number }>({
@@ -868,10 +1174,16 @@ export const Tabletop: React.FC = () => {
 
   const handleResizeStart = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    e.preventDefault();
     if (contextMenu) setContextMenu(null);
 
     const obj = state.objects[id];
     if (!obj || obj.locked) return;
+
+    // Clear any existing resize state
+    if (resizingIdRef.current) {
+      // Clear previous resize state
+    }
 
     setResizingId(id);
     setResizeStart({
@@ -880,8 +1192,95 @@ export const Tabletop: React.FC = () => {
       width: obj.width ?? 100,
       height: obj.height ?? 100,
     });
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    setLiveResizeSize(null); // Reset live preview size
+    liveResizeSizeRef.current = null; // Reset ref
+    resizeFinalSizeRef.current = null; // Reset final size ref
+    setIsOverResizeHandle(false); // Reset cursor state
+
+    // Global mouseup handler for cleanup
+    const handleGlobalMouseUp = () => {
+      // Get final size from ref (most up-to-date)
+      const finalSize = resizeFinalSizeRef.current || { width: obj.width ?? 100, height: obj.height ?? 100 };
+
+      // Do final dispatch with actual size update
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id,
+          width: finalSize.width,
+          height: finalSize.height,
+        },
+      });
+
+      // Sync to network
+      syncResizeToNetwork(id);
+
+      // Clear all resize state
+      setResizingId(null);
+      setResizeStart(null);
+      setLiveResizeSize(null);
+      liveResizeSizeRef.current = null;
+      setIsOverResizeHandle(false);
+      resizeFinalSizeRef.current = null;
+
+      // Clear throttle timer
+      if (resizeThrottleRef.current !== null) {
+        clearTimeout(resizeThrottleRef.current);
+        resizeThrottleRef.current = null;
+      }
+
+      // Clear drag offset to prevent incorrect positioning on next drag
+      dragOffsetRef.current = null;
+
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp, { once: true });
   };
+
+  // Throttled dispatch for resize updates (100ms)
+  const throttledResizeUpdate = useCallback((id: string, width: number, height: number) => {
+    // Store final size for network sync
+    resizeFinalSizeRef.current = { width, height };
+
+    // Clear existing throttle
+    if (resizeThrottleRef.current !== null) {
+      clearTimeout(resizeThrottleRef.current);
+    }
+
+    // Local-only update (no network)
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id, width, height },
+      _localOnly: true,
+    });
+
+    // Set up throttle for network sync (100ms)
+    resizeThrottleRef.current = window.setTimeout(() => {
+      // Final network sync will happen on mouseup, this just ensures periodic updates
+      if (resizingIdRef.current === id) {
+        resizeFinalSizeRef.current = null;
+      }
+    }, 100);
+  }, [dispatch, resizingIdRef]);
+
+  // Final network sync when resize completes
+  const syncResizeToNetwork = useCallback((id: string) => {
+    const finalSize = resizeFinalSizeRef.current;
+    if (finalSize) {
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id, ...finalSize },
+      });
+      resizeFinalSizeRef.current = null;
+    }
+
+    // Clear throttle
+    if (resizeThrottleRef.current !== null) {
+      clearTimeout(resizeThrottleRef.current);
+      resizeThrottleRef.current = null;
+    }
+  }, [dispatch]);
 
   // Roll dice with group support - if dice is in a group, roll all dice in the group
   const rollDiceWithGroup = useCallback((dice: DiceObject) => {
@@ -1249,7 +1648,10 @@ export const Tabletop: React.FC = () => {
 
     // Set source based on how the item was added (only if slot was empty before)
     if (cursorSlot.length === 0) {
+      console.log('[addToCursorSlot] Setting cursorSlotSource to:', source);
       setCursorSlotSource(source);
+    } else {
+      console.log('[addToCursorSlot] Slot not empty, keeping existing cursorSlotSource:', cursorSlotSource);
     }
 
     // Check if item is snapped to a grid cell and unhook it - OPTIMIZED
@@ -1366,6 +1768,90 @@ export const Tabletop: React.FC = () => {
         zIndex: card.zIndex ?? 0,
         hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
       } as CardType;
+    } else if (item.type === ItemType.DECK) {
+      const deck = item as DeckType;
+      baseWidth = deck.width ?? 100;
+      baseHeight = deck.height ?? 140;
+
+      itemClone = {
+        ...deck, // Deep copy to preserve all deck properties
+        // IMPORTANT: Preserve all deck-specific properties
+        cardIds: [...deck.cardIds], // Copy array to preserve order
+        baseCardIds: [...deck.baseCardIds], // Copy array
+        piles: deck.piles ? deck.piles.map(pile => ({ ...pile })) : [], // Deep copy piles
+        cardShape: deck.cardShape,
+        cardOrientation: deck.cardOrientation,
+        showTopCard: deck.showTopCard,
+        spriteConfig: deck.spriteConfig ? { ...deck.spriteConfig } : undefined,
+        // IMPORTANT: Preserve zIndex to maintain layer relationships
+        zIndex: deck.zIndex ?? 0,
+        hyperscaleLayerId: deck.hyperscaleLayerId ?? 'cards',
+      } as DeckType;
+    } else if (item.type === ItemType.RANDOMIZER) {
+      const randomizer = item as Randomizer;
+      baseWidth = randomizer.width ?? 60;
+      baseHeight = randomizer.height ?? 60;
+
+      itemClone = {
+        ...randomizer, // Deep copy to preserve all randomizer properties
+        // Preserve all randomizer-specific settings
+        faces: randomizer.faces ? [...randomizer.faces] : [],
+        currentFace: randomizer.currentFace,
+        // IMPORTANT: Preserve zIndex to maintain layer relationships
+        zIndex: randomizer.zIndex ?? 0,
+        hyperscaleLayerId: randomizer.hyperscaleLayerId ?? 'tokens',
+      } as Randomizer;
+    } else if (item.type === ItemType.COUNTER) {
+      const counter = item as Counter;
+      baseWidth = counter.width ?? 60;
+      baseHeight = counter.height ?? 60;
+
+      itemClone = {
+        ...counter, // Deep copy to preserve all counter properties
+        // Preserve all counter-specific settings
+        value: counter.value,
+        minValue: counter.minValue,
+        maxValue: counter.maxValue,
+        wrapAround: counter.wrapAround,
+        // IMPORTANT: Preserve zIndex to maintain layer relationships
+        zIndex: counter.zIndex ?? 0,
+        hyperscaleLayerId: counter.hyperscaleLayerId ?? 'tokens',
+      } as Counter;
+    } else if (item.type === ItemType.DICE_OBJECT) {
+      const dice = item as DiceObject;
+      baseWidth = dice.width ?? 60;
+      baseHeight = dice.height ?? 60;
+
+      itemClone = {
+        ...dice, // Deep copy to preserve all dice properties
+        // Preserve all dice-specific settings
+        value: dice.value,
+        sides: dice.sides,
+        rolling: dice.rolling,
+        // IMPORTANT: Preserve zIndex to maintain layer relationships
+        zIndex: dice.zIndex ?? 0,
+        hyperscaleLayerId: dice.hyperscaleLayerId ?? 'tokens',
+      } as DiceObject;
+    } else if (item.type === ItemType.BOARD) {
+      const board = item as BoardType;
+      baseWidth = board.width ?? 500;
+      baseHeight = board.height ?? 500;
+
+      itemClone = {
+        ...board, // Deep copy to preserve all board properties
+        // Preserve all board-specific settings
+        gridType: board.gridType,
+        gridSize: board.gridSize,
+        gridWidth: board.gridWidth,
+        gridHeight: board.gridHeight,
+        showGrid: board.showGrid,
+        snapToGrid: board.snapToGrid,
+        gridCellMagnetPoints: board.gridCellMagnetPoints ? { ...board.gridCellMagnetPoints } : undefined,
+        defaultGridCellMagnetPointCount: board.defaultGridCellMagnetPointCount,
+        // IMPORTANT: Preserve zIndex to maintain layer relationships
+        zIndex: board.zIndex ?? 0,
+        hyperscaleLayerId: board.hyperscaleLayerId ?? 'boards',
+      } as BoardType;
     } else {
       itemClone = { ...item } as TokenType;
     }
@@ -1377,6 +1863,7 @@ export const Tabletop: React.FC = () => {
     // IMPORTANT: Store original zIndex for proper restoration when dropping
     // This preserves layer relationships between objects
     (itemClone as any).originalZIndex = item.zIndex ?? 0;
+    (itemClone as any).timestamp = Date.now(); // Track when item was added to slot
 
     // Keep original zIndex in clone - sorting happens during render/drop
     itemClone.zIndex = item.zIndex ?? 0;
@@ -1408,36 +1895,37 @@ export const Tabletop: React.FC = () => {
     // Also update ref immediately for consistent state
     cursorSlotRef.current = [...cursorSlotRef.current, itemClone];
 
-    // Mark the item as inCursorSlot (keeps it in objects list but hidden from tabletop)
+    // Mark the item as inCursorSlot immediately (no delay for smoother pickup)
     dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
 
     // Clean up magnet points - when picking up an object, remove it from any cell's magnet points
-    // and reposition remaining objects
-    for (const obj of Object.values(state.objects)) {
-      if ((obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_CELL) && obj.magnetPoints) {
-        const cell = obj as BattlefieldCell | NexusCellObject;
-        if (cell.magnetPoints?.some(p => p.objectId === id)) {
-          const result = removeObjectFromCellMagnet(cell, id, state.objects);
-          if (result) {
-            // Update the cell with new magnet points
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: {
-                id: cell.id,
-                magnetPointCount: result.updatedCell.magnetPointCount,
-                magnetPoints: result.updatedCell.magnetPoints
-              }
-            });
-
-            // Move remaining objects to their new magnet positions
-            for (const movedObj of result.movedObjects) {
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: {
+    // and reposition remaining objects (OPTIMIZED: only for tokens that are actually snapped)
+    const pickedObj = state.objects[id];
+    if (pickedObj && pickedObj.type === ItemType.TOKEN && (pickedObj as Token).gridCellKey) {
+      // Token is snapped to a grid cell - clean up magnet points
+      for (const cellObj of Object.values(state.objects)) {
+        if ((cellObj.type === ItemType.BATTLEFIELD_CELL || cellObj.type === ItemType.NEXUS_CELL) && cellObj.magnetPoints) {
+          const cell = cellObj as BattlefieldCell | NexusCellObject;
+          if (cell.magnetPoints?.some(p => p.objectId === id)) {
+            const result = removeObjectFromCellMagnet(cell, id, state.objects);
+            if (result) {
+              // Batch all updates together for better performance
+              const updates = [
+                {
+                  id: cell.id,
+                  magnetPointCount: result.updatedCell.magnetPointCount,
+                  magnetPoints: result.updatedCell.magnetPoints
+                },
+                ...result.movedObjects.map(movedObj => ({
                   id: movedObj.objectId,
                   x: movedObj.x,
                   y: movedObj.y
-                }
+                }))
+              ];
+
+              // Dispatch all updates in one batch
+              updates.forEach(update => {
+                dispatch({ type: 'UPDATE_OBJECT', payload: update });
               });
             }
           }
@@ -1631,8 +2119,14 @@ export const Tabletop: React.FC = () => {
     // Add all items from slot back to the game with automatic magnetism
     sortedSlot.forEach((item, sortedIndex) => {
       const isCard = item.type === ItemType.CARD;
-      let baseWidth = item.width ?? (isCard ? 63 : 50);
-      let baseHeight = item.height ?? (isCard ? 88 : 50);
+      const isDeck = item.type === ItemType.DECK;
+      const isRandomizer = item.type === ItemType.RANDOMIZER;
+      const isCounter = item.type === ItemType.COUNTER;
+      const isDice = item.type === ItemType.DICE_OBJECT;
+      const isBoard = item.type === ItemType.BOARD;
+
+      let baseWidth = item.width ?? 50;
+      let baseHeight = item.height ?? 50;
 
       // For cards, get settings from deck for proper dimensions
       let isHorizontal = (item as any).isHorizontal;
@@ -1641,6 +2135,15 @@ export const Tabletop: React.FC = () => {
         baseWidth = item.width ?? cardSettings.cardWidth ?? 63;
         baseHeight = item.height ?? cardSettings.cardHeight ?? 88;
         isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
+      } else if (isDeck) {
+        baseWidth = item.width ?? 100;
+        baseHeight = item.height ?? 140;
+      } else if (isRandomizer || isCounter || isDice) {
+        baseWidth = item.width ?? 60;
+        baseHeight = item.height ?? 60;
+      } else if (isBoard) {
+        baseWidth = item.width ?? 500;
+        baseHeight = item.height ?? 500;
       }
 
       // For horizontal cards, swap dimensions to match cursor visualization
@@ -1827,7 +2330,15 @@ export const Tabletop: React.FC = () => {
       } else {
         // No cell magnetism - use regular snapping
         let snapTargetX: number, snapTargetY: number;
-        if (item.type === ItemType.TOKEN) {
+
+        // Check if object is being dragged from pool panel
+        const fromPoolPanel = (item as any).fromPoolPanel;
+        if (fromPoolPanel && useOriginalZIndex) {
+          // Object from pool panel - use CURRENT CURSOR POSITION instead of original position
+          // This allows dragging objects from pool panel to any position on tabletop
+          snapTargetX = worldX;
+          snapTargetY = worldY;
+        } else if (item.type === ItemType.TOKEN) {
           const snappedPos = getSnappedCoordinates(worldX, worldY, state.objects, item.id);
           snapTargetX = snappedPos.x + baseWidth / 2;
           snapTargetY = snappedPos.y + baseHeight / 2;
@@ -1898,6 +2409,30 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('drop-cursor-slot-at-position', handleDropAtPosition);
   }, [cursorSlot.length, dropCursorSlot]);
 
+  // Listen for cursor-slot-drop-to-tabletop events from PoolTabletop
+  useEffect(() => {
+    const handleDropToTabletop = (e: Event) => {
+      const customEvent = e as CustomEvent<{ x: number; y: number }>;
+      const { x, y } = customEvent.detail;
+
+      // Only process if cursor slot has items
+      const currentSlot = cursorSlotRef.current;
+      if (currentSlot.length === 0) return;
+
+      // Drop objects on main tabletop using the existing dropCursorSlot function
+      dropCursorSlot(x, y, currentSlot);
+
+      // Clear cursor slot immediately after drop to prevent ghost objects
+      cursorSlotRef.current = [];
+      setCursorSlot([]);
+      setCursorPosition(null);
+      setCursorSlotSource(null);
+    };
+
+    window.addEventListener('cursor-slot-drop-to-tabletop', handleDropToTabletop);
+    return () => window.removeEventListener('cursor-slot-drop-to-tabletop', handleDropToTabletop);
+  }, [dropCursorSlot]);
+
   // Drop cursor slot items to a specific deck (called from handleGlobalClick when clicking on deck)
   const dropToDeck = useCallback((deckId: string, slotItems?: (CardType | TokenType)[]) => {
     // Use provided slotItems or fall back to cursorSlot from state
@@ -1915,12 +2450,26 @@ export const Tabletop: React.FC = () => {
     // Only add cards to deck (not tokens)
     const cardsInSlot = currentSlot.filter(item => item.type === ItemType.CARD);
     if (cardsInSlot.length > 0) {
+      // Debug logging to help diagnose the issue
+      console.log('[dropToDeck] Attempting to add cards to deck:', {
+        cardsCount: cardsInSlot.length,
+        cardIds: cardsInSlot.map(c => c.id),
+        deckId: deckId,
+        cursorSlotSource,
+        cardsDetails: cardsInSlot.map(c => ({
+          id: c.id,
+          location: (c as any).location,
+          deckId: (c as any).deckId,
+          inCursorSlot: (c as any).inCursorSlot,
+          cursorSlotSourcePanel: (c as any).cursorSlotSourcePanel
+        }))
+      });
       // First, restore cards from cursor slot (set inCursorSlot: false)
       // ADD_CARD_TO_TOP_OF_DECK will update their position to deck position
       cardsInSlot.forEach((item) => {
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: item.id, inCursorSlot: false }
+          payload: { id: item.id, inCursorSlot: false, cursorSlotSourcePanel: undefined }
         });
       });
 
@@ -2011,7 +2560,7 @@ export const Tabletop: React.FC = () => {
       cardsInSlot.forEach((item) => {
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: item.id, inCursorSlot: false }
+          payload: { id: item.id, inCursorSlot: false, cursorSlotSourcePanel: undefined }
         });
       });
 
@@ -2115,6 +2664,7 @@ export const Tabletop: React.FC = () => {
           payload: {
             id: item.id,
             inCursorSlot: false,
+            cursorSlotSourcePanel: undefined,
             x: finalX,
             y: finalY,
             zIndex,
@@ -2145,17 +2695,41 @@ export const Tabletop: React.FC = () => {
   // NOTE: This effect depends on cursorSlot to ensure the handler has fresh data
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+
+      // IMPORTANT: If clicking inside ANY context menu, don't process global clicks
+      // This prevents interference with context menu button clicks in both Tabletop and Pool panels
+      const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
+      const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
+      const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
+      const topDeckModalElement = target.closest('[data-modal="top-deck"]');
+
+      console.log('[Tabletop] handleGlobalClick:', {
+        target: target.tagName,
+        targetClasses: target.className,
+        foundTableMenu: !!tableContextMenuElement,
+        foundPoolMenu: !!poolContextMenuElement,
+        foundSearchDeckModal: !!searchDeckModalElement,
+        foundTopDeckModal: !!topDeckModalElement,
+        targetDataAttr: target.getAttribute('data-context-menu')
+      });
+
+      if (tableContextMenuElement || poolContextMenuElement || searchDeckModalElement || topDeckModalElement) {
+        console.log('[Tabletop] Click inside protected element, ignoring global click');
+        return;
+      }
+
       // Close click tooltip on any click
       if (clickTooltip) {
         setClickTooltip(null);
         clickTooltipBoundsRef.current = null;
       }
 
-      if (cursorSlot.length === 0 || e.button !== 0) {
+      // IMPORTANT: Use cursorSlotRef.current instead of cursorSlot to avoid race condition
+      // cursorSlot in closure may be stale due to async React state updates
+      if (cursorSlotRef.current.length === 0 || e.button !== 0) {
         return;
       }
-
-      const target = e.target as HTMLElement;
 
       // Check if clicking on an archetype card (token type in ToolsPanel or MainMenu)
       const archetypeCard = target.closest('[data-archetype-card]');
@@ -2163,8 +2737,8 @@ export const Tabletop: React.FC = () => {
         return; // Don't drop cursor slot when clicking on archetype cards
       }
 
-      // Check if Shift/Ctrl/Meta is pressed
-      if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+      // Check if Ctrl/Meta is pressed
+      if (e.ctrlKey || e.metaKey) return;
 
       // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
       const toolsPanel = target.closest('[data-tools-panel]');
@@ -2175,12 +2749,14 @@ export const Tabletop: React.FC = () => {
       // Check if clicking inside hand panel - dispatch event to add cards to hand
       const handPanel = target.closest('[data-hand-panel]');
       if (handPanel) {
+        // IMPORTANT: Use cursorSlotRef.current to avoid race condition
+        const currentSlot = cursorSlotRef.current;
         // Dispatch custom event for hand panel to handle
         window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
-          detail: { items: cursorSlot }
+          detail: { items: currentSlot }
         }));
         // Track recently dropped objects to prevent showing shadow version
-        const droppedIds = new Set(cursorSlot.map(item => item.id));
+        const droppedIds = new Set(currentSlot.map(item => item.id));
         setRecentlyInMyCursorSlot(droppedIds);
         setTimeout(() => {
           setRecentlyInMyCursorSlot(prev => {
@@ -2200,92 +2776,28 @@ export const Tabletop: React.FC = () => {
 
       // Check if clicking inside pool panel - dispatch event to add objects to pool
       const poolPanel = target.closest('[data-pool-panel]');
-      console.log('Tabletop: Checking for pool panel:', {
-        poolPanel: poolPanel?.outerHTML,
-        hasDataAttribute: poolPanel?.hasAttribute('data-pool-panel'),
-        panelId: poolPanel?.getAttribute('data-pool-panel')
-      });
       if (poolPanel) {
-        console.log('Tabletop: Pool panel found!');
         // Get panel ID
         const panelId = poolPanel.getAttribute('data-pool-panel');
-        console.log('Tabletop: Panel ID:', panelId);
         if (panelId) {
           // Get pool panel data to calculate drop position
           const panelObj = state.objects[panelId] as any;
-          console.log('Tabletop: Panel object:', panelObj);
           if (panelObj && panelObj.poolData) {
-            console.log('Tabletop: Pool data found, dropping items to pool');
-            // Get pool zone coordinates
-            const poolOffsetX = panelObj.poolData.offsetX || 0;
-            const poolOffsetY = panelObj.poolData.offsetY || 0;
-            const poolWidth = panelObj.poolData.width || 1000;
-            const poolHeight = panelObj.poolData.height || 1000;
-
-            // Get the pool panel's visual rectangle to calculate relative position (same as drag mode)
+            const poolZone = createPoolZoneFromPanel(panelObj.poolData);
             const panelRect = poolPanel.getBoundingClientRect();
             const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
 
-            // Calculate position relative to the pool panel's visual position
-            const relativePixelX = e.clientX - panelRect.left;
-            const relativePixelY = e.clientY - panelRect.top;
+            // Calculate drop position using utility function
+            const dropPosition = calculatePoolDropPosition(
+              e.clientX,
+              e.clientY,
+              poolZone,
+              panelRect,
+              pixelsPerVU
+            );
 
-            // Convert to virtual units
-            const relativeVUX = relativePixelX / pixelsPerVU;
-            const relativeVUY = relativePixelY / pixelsPerVU;
-
-            // Base position in pool zone
-            const baseX = poolOffsetX + relativeVUX;
-            const baseY = poolOffsetY + relativeVUY;
-
-            console.log('Tabletop: Drop position (Ctrl+Click):', {
-              clientX: e.clientX,
-              clientY: e.clientY,
-              panelRect: { left: panelRect.left, top: panelRect.top, width: panelRect.width, height: panelRect.height },
-              relativePixelX, relativePixelY,
-              relativeVUX, relativeVUY,
-              poolOffsetX, poolOffsetY,
-              baseX, baseY
-            });
-
-            // Drop items in pool zone with offset based on layer position (5 VU)
-            // Sort by originalZIndex in DESCENDING order to preserve layer relationships
-            const sortedSlot = [...cursorSlot].sort((a, b) => {
-              const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
-              const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
-              return zB - zA; // Descending order - higher Z first
-            });
-
-            sortedSlot.forEach((item, sortedIndex) => {
-              const itemWidth = item.width || 100;
-              const itemHeight = item.height || 100;
-
-              // Calculate offset based on sorted position
-              // Highest zIndex (top, sortedIndex=0) gets no offset, lower gets more offset
-              const offsetFromFront = sortedIndex;
-              const offsetAmount = Math.min(itemWidth, itemHeight) * 0.05; // 5 VU offset
-              const offsetX = offsetFromFront * offsetAmount;
-              const offsetY = offsetFromFront * offsetAmount;
-
-              // Calculate position (cursor is at center of object, so subtract half dimensions)
-              let itemX = baseX - (itemWidth / 2) + offsetX;
-              let itemY = baseY - (itemHeight / 2) + offsetY;
-
-              // Constrain to pool zone bounds
-              itemX = Math.max(poolOffsetX, Math.min(itemX, poolOffsetX + poolWidth - itemWidth));
-              itemY = Math.max(poolOffsetY, Math.min(itemY, poolOffsetY + poolHeight - itemHeight));
-
-              console.log('Tabletop: Dropping item to pool (Ctrl+Click):', item.id, { itemX, itemY, itemWidth, itemHeight });
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: {
-                  id: item.id,
-                  x: itemX,
-                  y: itemY,
-                  inCursorSlot: false
-                }
-              });
-            });
+            // Drop objects using utility function
+            dropObjectsToPool(cursorSlotRef.current, dropPosition, poolZone, dispatch, state.objects);
 
             // Clear the slot
             cursorSlotRef.current = [];
@@ -2294,24 +2806,22 @@ export const Tabletop: React.FC = () => {
             e.preventDefault();
             e.stopPropagation();
             return;
-          } else {
-            console.log('Tabletop: No pool data found in panel object');
           }
         }
-      } else {
-        console.log('Tabletop: No pool panel found at cursor position');
       }
 
       // Check if clicking on a deck - only drop if source='shift' (not for drag/drop)
-      const deckElement = target.closest('[data-object-id]');
+      // Use elementFromPoint for consistent behavior with drag mode
+      const clickElement = document.elementFromPoint(e.clientX, e.clientY);
+      const deckElement = clickElement?.closest('[data-object-id]');
       if (deckElement && cursorSlotSource === 'shift') {
         const objectId = deckElement.getAttribute('data-object-id');
         const obj = objectId ? state.objects[objectId] : undefined;
         if (obj && obj.type === ItemType.DECK && objectId) {
-          // Drop cards to the deck directly - pass cursorSlot from closure
+          // Drop cards to the deck directly - use cursorSlotRef.current to avoid race condition
           e.preventDefault();
           e.stopPropagation();
-          dropToDeck(objectId, cursorSlot);
+          dropToDeck(objectId, cursorSlotRef.current);
           return;
         }
       }
@@ -2335,7 +2845,7 @@ export const Tabletop: React.FC = () => {
           if (foundDeckId) {
             e.preventDefault();
             e.stopPropagation();
-            dropToPile(pileId, foundDeckId, cursorSlot);
+            dropToPile(pileId, foundDeckId, cursorSlotRef.current);
             return;
           }
         }
@@ -2346,11 +2856,11 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      // Drop items at cursor position on tabletop - pass cursorSlot from closure
+      // Drop items at cursor position on tabletop - use cursorSlotRef.current to avoid race condition
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation(); // Prevent handleMouseDown from being called
-      dropCursorSlot(e.clientX, e.clientY, cursorSlot);
+      dropCursorSlot(e.clientX, e.clientY, cursorSlotRef.current);
     };
 
     window.addEventListener('mousedown', handleGlobalClick, { capture: true });
@@ -2464,6 +2974,9 @@ export const Tabletop: React.FC = () => {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
       }
+      if (cursorHoldTimerRef.current) {
+        clearTimeout(cursorHoldTimerRef.current);
+      }
       if (clickTooltipTimerRef.current) {
         clearTimeout(clickTooltipTimerRef.current);
       }
@@ -2472,46 +2985,57 @@ export const Tabletop: React.FC = () => {
   }, []);
 
   // Global mouseup handler for cursor slot drop (when source='hold' for drag)
-  // Also handles adding cards/tokens to cursor slot on click without drag
+  // Drops items immediately on mouseup if they were picked up after 1VU drag threshold
   useEffect(() => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
-      // FIRST: Check if a card/token was pressed but not dragged (longPressItemRef still set)
-      // This handles the case where user clicks on a card/token without Shift and without dragging 5px
-      if (longPressItemRef.current) {
-        const itemRef = longPressItemRef.current;
-        // Clear the ref first to prevent double-processing
-        longPressItemRef.current = null;
+      const target = e.target as HTMLElement;
 
-        // Calculate distance to check if this was a drag or a click
-        const dx = e.clientX - itemRef.startX;
-        const dy = e.clientY - itemRef.startY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        // Check if we just dropped items - prevent immediate re-pickup
-        const timeSinceDrop = Date.now() - lastDropTimeRef.current;
-        if (justDroppedRef.current && timeSinceDrop < 200) {
-          return;
-        }
-
-        // Simple click without drag no longer adds to cursor slot
-        // Only Ctrl+click and drag (5px+) work for adding items
-        if (distance < 5) {
-          // CLICK without drag - ignored, use Ctrl+click to add to slot
-        }
-        // If moved 5px or more, the card was already added to slot in mousemove, nothing to do
+      // IMPORTANT: If clicking inside ANY context menu or modal, don't process global mouseup
+      // This prevents interference with context menu button clicks in both Tabletop and Pool panels
+      const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
+      const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
+      const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
+      const topDeckModalElement = target.closest('[data-modal="top-deck"]');
+      if (tableContextMenuElement || poolContextMenuElement || searchDeckModalElement || topDeckModalElement) {
+        console.log('[Tabletop] Mouseup inside protected element, ignoring global mouseup');
+        return;
       }
 
-      // Use cursorSlotRef.current to get the immediate value (avoid closure stale data)
+      // Clear drag threshold state
+      const wasThresholdReached = dragThresholdRef.current.addedToSlot;
+      dragThresholdRef.current = {
+        initialX: 0,
+        initialY: 0,
+        targetId: null,
+        addedToSlot: false
+      };
+
+      // Clear hold timer if still running (legacy, should not be used anymore)
+      if (cursorHoldTimerRef.current) {
+        clearTimeout(cursorHoldTimerRef.current);
+        cursorHoldTimerRef.current = null;
+      }
+
       // Only process if cursor slot has items with source='hold' (drag, not Ctrl+click)
-      const currentSlot = cursorSlotRef.current;
-      if (currentSlot.length === 0 || cursorSlotSource !== 'hold') return;
+      // Ctrl+click is handled in handleGlobalClick (mousedown)
+      // IMPORTANT: Use cursorSlot (state) not cursorSlotRef (ref) because ref may not be synced yet
+      const currentSlot = cursorSlot;
+
+      if (currentSlot.length === 0 || cursorSlotSource !== 'hold') {
+        return;
+      }
+
+      // Only drop if threshold was reached (object was actually added to slot)
+      if (!wasThresholdReached) {
+        return;
+      }
 
       const clientX = e.clientX;
       const clientY = e.clientY;
 
-      // Check if we're over hand panel
-      const target = e.target as HTMLElement;
-      const handPanel = target.closest('[data-hand-panel]');
+      // Check if we're over hand panel - use elementFromPoint for more reliable detection
+      const elementUnderCursor = document.elementFromPoint(clientX, clientY);
+      const handPanel = elementUnderCursor?.closest('[data-hand-panel]');
 
       if (handPanel) {
         // Over hand panel - dispatch event to add cards to hand
@@ -2529,121 +3053,64 @@ export const Tabletop: React.FC = () => {
           });
         }, 500);
         // Clear the slot
-        cursorSlotRef.current = [];
         setCursorSlot([]);
         setCursorPosition(null);
         setCursorSlotSource(null);
+
+        // CRITICAL: Stop propagation IMMEDIATELY to prevent other mouseup handlers from running
         e.stopPropagation();
         e.preventDefault();
+        e.stopImmediatePropagation(); // CRITICAL: Prevent other listeners on same element
         return;
       }
 
       // Check if we're over pool panel
-      const poolPanel = target.closest('[data-pool-panel]');
-      console.log('Tabletop (drag mode): Checking for pool panel:', {
-        poolPanel: poolPanel?.outerHTML,
-        hasDataAttribute: poolPanel?.hasAttribute('data-pool-panel'),
-        panelId: poolPanel?.getAttribute('data-pool-panel'),
-        clientX, clientY
-      });
+      const poolPanel = elementUnderCursor?.closest('[data-pool-panel]');
       if (poolPanel) {
-        console.log('Tabletop (drag mode): Pool panel found!');
         const panelId = poolPanel.getAttribute('data-pool-panel');
         if (panelId) {
           const panelObj = state.objects[panelId] as any;
-          console.log('Tabletop (drag mode): Panel object:', panelObj);
           if (panelObj && panelObj.poolData) {
-            console.log('Tabletop (drag mode): Pool data found, dropping items to pool');
+            // Check if object came from THIS pool panel
+            // If so, drop to main tabletop instead of back to pool panel
+            const firstItem = currentSlot[0];
+            const fromPoolPanel = (firstItem as any)?.fromPoolPanel;
 
-            // Get pool zone coordinates
-            const poolOffsetX = panelObj.poolData.offsetX || 0;
-            const poolOffsetY = panelObj.poolData.offsetY || 0;
-            const poolWidth = panelObj.poolData.width || 1000;
-            const poolHeight = panelObj.poolData.height || 1000;
+            if (fromPoolPanel === panelId) {
+              // Object came from this pool panel - drop to main tabletop instead
+              // Don't return - continue to drop to main tabletop below
+            } else {
+              // Object came from elsewhere OR from different pool panel - drop to this pool panel
+              const poolZone = createPoolZoneFromPanel(panelObj.poolData);
+              const panelRect = poolPanel.getBoundingClientRect();
+              const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
 
-            // Get the pool panel's visual rectangle to calculate relative position
-            const panelRect = poolPanel.getBoundingClientRect();
-            const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+              // Calculate drop position using utility function
+              const dropPosition = calculatePoolDropPosition(
+                clientX,
+                clientY,
+                poolZone,
+                panelRect,
+                pixelsPerVU
+              );
 
-            // Calculate position relative to the pool panel's visual position
-            const relativePixelX = clientX - panelRect.left;
-            const relativePixelY = clientY - panelRect.top;
+              // Drop objects using utility function
+              dropObjectsToPool(currentSlot, dropPosition, poolZone, dispatch);
 
-            // Convert to virtual units
-            const relativeVUX = relativePixelX / pixelsPerVU;
-            const relativeVUY = relativePixelY / pixelsPerVU;
-
-            // Final position in pool zone
-            const finalX = poolOffsetX + relativeVUX;
-            const finalY = poolOffsetY + relativeVUY;
-
-            console.log('Tabletop (drag mode): Drop position:', {
-              clientX, clientY,
-              panelRect: { left: panelRect.left, top: panelRect.top, width: panelRect.width, height: panelRect.height },
-              relativePixelX, relativePixelY,
-              relativeVUX, relativeVUY,
-              poolOffsetX, poolOffsetY,
-              finalX, finalY
-            });
-
-            // Drop items in pool zone with offset based on layer position (5 VU)
-            // Sort by originalZIndex in DESCENDING order to preserve layer relationships
-            const sortedSlot = [...currentSlot].sort((a, b) => {
-              const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
-              const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
-              return zB - zA; // Descending order - higher Z first
-            });
-
-            sortedSlot.forEach((item, sortedIndex) => {
-              const itemWidth = item.width || 100;
-              const itemHeight = item.height || 100;
-
-              // Calculate offset based on sorted position
-              // Highest zIndex (top, sortedIndex=0) gets no offset, lower gets more offset
-              const offsetFromFront = sortedIndex;
-              const offsetAmount = Math.min(itemWidth, itemHeight) * 0.05; // 5 VU offset
-              const offsetX = offsetFromFront * offsetAmount;
-              const offsetY = offsetFromFront * offsetAmount;
-
-              // Calculate position (cursor is at center of object, so subtract half dimensions)
-              let itemX = finalX - (itemWidth / 2) + offsetX;
-              let itemY = finalY - (itemHeight / 2) + offsetY;
-
-              // Constrain to pool zone bounds
-              itemX = Math.max(poolOffsetX, Math.min(itemX, poolOffsetX + poolWidth - itemWidth));
-              itemY = Math.max(poolOffsetY, Math.min(itemY, poolOffsetY + poolHeight - itemHeight));
-
-              console.log('Tabletop (drag mode): Dropping item to pool:', item.id, { itemX, itemY, itemWidth, itemHeight });
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: {
-                  id: item.id,
-                  x: itemX,
-                  y: itemY,
-                  inCursorSlot: false
-                }
-              });
-            });
-
-            // Clear the slot
-            cursorSlotRef.current = [];
-            setCursorSlot([]);
-            setCursorPosition(null);
-            setCursorSlotSource(null);
-            e.stopPropagation();
-            e.preventDefault();
-            return;
-          } else {
-            console.log('Tabletop (drag mode): No pool data found in panel object');
+              // Clear the slot
+              setCursorSlot([]);
+              setCursorPosition(null);
+              setCursorSlotSource(null);
+              e.stopPropagation();
+              e.preventDefault();
+              return;
+            }
           }
         }
-      } else {
-        console.log('Tabletop (drag mode): No pool panel found at cursor position');
       }
 
       // Check if clicking on a deck or pile - handle it directly here
-      // Use document.elementFromPoint to find what's under cursor since cursor slot cards have pointer-events: none
-      const elementUnderCursor = document.elementFromPoint(clientX, clientY);
+      // elementUnderCursor is already defined above (line 2955)
 
       // Check for piles FIRST (before deck) - piles are more specific targets
       const pileElement = elementUnderCursor?.closest('[data-pile-id]');
@@ -2660,7 +3127,6 @@ export const Tabletop: React.FC = () => {
                 e.stopPropagation();
                 dropToPile(pileId, deck.id, currentSlot);
                 // Ensure slot is cleared after dropping to pile
-                cursorSlotRef.current = [];
                 setCursorSlot([]);
                 setCursorPosition(null);
                 setCursorSlotSource(null);
@@ -2671,7 +3137,7 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      // Then check for deck
+      // Then check for deck - use elementUnderCursor (already computed above)
       const deckElement = elementUnderCursor?.closest('[data-object-id]');
       if (deckElement) {
         const objectId = deckElement.getAttribute('data-object-id');
@@ -2681,7 +3147,6 @@ export const Tabletop: React.FC = () => {
           e.stopPropagation();
           dropToDeck(objectId, currentSlot);
           // Ensure slot is cleared after dropping to deck
-          cursorSlotRef.current = [];
           setCursorSlot([]);
           setCursorPosition(null);
           setCursorSlotSource(null);
@@ -2810,7 +3275,11 @@ export const Tabletop: React.FC = () => {
   }, [state.objects, dispatch]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent, id?: string) => {
-    if (contextMenu) setContextMenu(null);
+    // Removed logging for better performance
+
+    if (contextMenu) {
+      setContextMenu(null);
+    }
 
     // Block all mouse interactions when ruler tool is active (except ruler-specific handling)
     if (currentTool === 'ruler') {
@@ -2849,7 +3318,8 @@ export const Tabletop: React.FC = () => {
       e.stopPropagation();
       const item = state.objects[id];
 
-      // Check if this is a UI object (panel or window) - handled differently
+      // Check if this is a UI object (panel or window) or BOARD - handled differently
+      // Boards use cursor slot system like other draggable objects
       if (item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW)) {
         if (item.locked) return; // Locked objects can't be dragged
 
@@ -2871,6 +3341,7 @@ export const Tabletop: React.FC = () => {
         });
         return;
       }
+
     }
 
     // Block all other mouse interactions when marker or eraser tool is active
@@ -2879,12 +3350,14 @@ export const Tabletop: React.FC = () => {
       return;
     }
 
-    // Pan view with Shift+drag - works on empty space AND objects (but not UI objects)
-    // UI objects (panels/windows) should handle their own drag
+    // Pan view with Shift+drag - works on empty space AND objects (but not UI objects or boards)
+    // UI objects (panels/windows) and boards should handle their own interactions
     const item = id ? state.objects[id] : null;
     const isUIObject = item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW);
+    const isBoardObject = item && item.type === ItemType.BOARD;
 
-    if (e.button === 0 && e.shiftKey && currentTool !== 'marker' && !isUIObject) {
+    // Don't pan if clicking on UI object or board (they have their own handling)
+    if (e.button === 0 && e.shiftKey && currentTool !== 'marker' && !isUIObject && !isBoardObject) {
       setIsPanning(true);
       // Store initial mouse position AND scroll position for direct scroll manipulation
       dragStartRef.current = {
@@ -2928,7 +3401,7 @@ export const Tabletop: React.FC = () => {
       // This applies to all players including GM
       // EXCEPTION: Objects in current player's cursor slot can always be moved
       // EXCEPTION: Objects in pool zones can always be moved (ignore hyperscale restrictions)
-      const isInCursorSlot = item.draggingPlayerId === state.activePlayerId;
+      const isInCursorSlot = item.draggingPlayerId === state.activePlayerId || (item as any).inCursorSlot;
       const isInPoolZone = item.x >= 2500; // Simple check if object is in pool zone
       if (!isInCursorSlot && !isInPoolZone) {
         const objLayer = item.hyperscaleLayerId || 'none';
@@ -2939,10 +3412,31 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      // Cards and tokens: Ctrl+click or Shift+click immediately adds to cursor slot
-      if ((e.shiftKey || e.ctrlKey || e.metaKey) && item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
+      // Cards, tokens, boards, and other small objects: Ctrl+click or Meta+click immediately adds to cursor slot
+      if ((e.ctrlKey || e.metaKey) && item && (
+        item.type === ItemType.CARD ||
+        item.type === ItemType.TOKEN ||
+        item.type === ItemType.DECK ||
+        item.type === ItemType.RANDOMIZER ||
+        item.type === ItemType.COUNTER ||
+        item.type === ItemType.DICE_OBJECT ||
+        item.type === ItemType.BOARD
+      )) {
         addToCursorSlot(id, item);
         return;
+      }
+
+      // Prevent immediate re-pickup after dropping items (within 50ms)
+      // IMPORTANT: Check this BEFORE cursorSlot.length check to prevent race conditions
+      // Short timeout (50ms) prevents accidental double-clicks but allows quick re-drag
+      const timeSinceDrop = Date.now() - lastDropTimeRef.current;
+      if (justDroppedRef.current && timeSinceDrop < 50) {
+        return;
+      }
+
+      // Clear the just-dropped flag if enough time has passed
+      if (justDroppedRef.current && timeSinceDrop >= 50) {
+        justDroppedRef.current = false;
       }
 
       // If cursor slot has items and we click without shift/ctrl/meta, drop all items first
@@ -2953,37 +3447,56 @@ export const Tabletop: React.FC = () => {
         return; // Don't proceed with normal drag handling
       }
 
-      // Prevent immediate re-pickup after dropping items (within 200ms)
-      const timeSinceDrop = Date.now() - lastDropTimeRef.current;
-      if (justDroppedRef.current && timeSinceDrop < 200) {
-        return;
-      }
-
-      // Clear the just-dropped flag if enough time has passed
-      if (justDroppedRef.current && timeSinceDrop >= 200) {
-        justDroppedRef.current = false;
-      }
-
       // For cards and tokens: Ctrl+click immediately adds to cursor slot
       // Without Ctrl: track mouse movement, add to slot after 5px drag threshold
 
       // Store click start position for click detection
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
-      // Cards and tokens use cursor slot drag system ONLY (no normal drag)
-      if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN)) {
-        // Store item info for drag threshold detection (no timer, just movement)
-        longPressItemRef.current = {
-          id,
-          item,
-          startX: e.clientX,
-          startY: e.clientY
+      // Cards, tokens, boards, decks, randomizers, counters, and dice use cursor slot drag system ONLY (no normal drag)
+      // These objects ALWAYS use cursor slot system - NO 5px threshold, IMMEDIATE pickup
+      if (item && (
+        item.type === ItemType.CARD ||
+        item.type === ItemType.TOKEN ||
+        item.type === ItemType.DECK ||
+        item.type === ItemType.RANDOMIZER ||
+        item.type === ItemType.COUNTER ||
+        item.type === ItemType.DICE_OBJECT ||
+        item.type === ItemType.BOARD
+      )) {
+        // Check if object is in pool zone (x >= 2500)
+        // Pool zones start at x=2500, objects there should be handled by PoolTabletop only
+        const objX = item.x || 0;
+        if (objX >= 2500) {
+          return; // Don't handle - let PoolTabletop handle it
+        }
+
+        // CRITICAL: Prevent duplicate processing - if object is already in cursor slot, IGNORE
+        // Only check cursorSlotRef.current (actual slot state), ignore stale inCursorSlot flag
+        // The flag may be stale due to async dispatch after drop
+        const actuallyInSlot = cursorSlotRef.current.some(obj => obj.id === id);
+        if (actuallyInSlot) {
+          e.stopPropagation();
+          return;
+        }
+
+        // Store initial position for drag threshold detection
+        dragThresholdRef.current = {
+          initialX: e.clientX,
+          initialY: e.clientY,
+          targetId: id,
+          addedToSlot: false
         };
-        // DO NOT set draggingId - cards/tokens use cursor slot system only
+
+        e.stopPropagation();
         return; // Don't proceed with normal drag system
       }
 
-      // For other objects (dice, counters, etc.), use normal drag system
+      // Boards use cursor slot system (handled above), don't use normal drag
+      if (item.type === ItemType.BOARD) {
+        return;
+      }
+
       setDraggingId(id);
       if (item) {
         // Note: We don't unpin pinned objects on drag anymore - pinned objects stay pinned while dragging
@@ -2999,6 +3512,21 @@ export const Tabletop: React.FC = () => {
 
         // Check if this object is pinned to viewport
         const isPinned = (item as any).isPinnedToViewport === true;
+        // BOARD objects should always be treated as pinned for drag purposes
+        const isBoard = item.type === ItemType.BOARD;
+
+        console.log('[DRAG START] Object:', {
+          id: item.id,
+          type: item.type,
+          isPinned,
+          isBoard,
+          itemX: item.x,
+          itemY: item.y,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          scrollX: state.viewTransform.scroll.x,
+          scrollY: state.viewTransform.scroll.y
+        });
 
         // Calculate the offset from cursor to object's position
         // For pinned objects, use screen coordinates (like UI objects)
@@ -3011,6 +3539,13 @@ export const Tabletop: React.FC = () => {
           // item.x for pinned objects is already the screen coordinate
           offsetX = e.clientX - item.x;
           offsetY = e.clientY - item.y;
+          console.log('[DRAG START] Using screen coordinates, offset:', { offsetX, offsetY });
+        } else if (isBoard) {
+          // Boards: use screen coordinates (not world coordinates) for consistent positioning
+          // item.x for boards is stored as screen coordinate
+          offsetX = e.clientX - item.x;
+          offsetY = e.clientY - item.y;
+          console.log('[DRAG START] Board using screen coordinates, offset:', { offsetX, offsetY, itemX: item.x, itemY: item.y, clientX: e.clientX, clientY: e.clientY });
         } else {
           // Unpinned objects: use world coordinates
           // Convert viewport coordinates to world coordinates
@@ -3041,11 +3576,44 @@ export const Tabletop: React.FC = () => {
   // Shift+click: add magnet point
   // Ctrl+Shift+click: remove magnet point
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
-    // Always update cursor position for slot visualization (needed when adding token to slot)
+    // Always update ref immediately for synchronous access during render
     const newCursorPosition = { x: e.clientX, y: e.clientY };
-    setCursorPosition(newCursorPosition);
-    // Also update ref immediately for synchronous access during render
     cursorPositionRef.current = newCursorPosition;
+
+    // Check drag threshold for adding to cursor slot
+    if (dragThresholdRef.current.targetId && !dragThresholdRef.current.addedToSlot) {
+      const { initialX, initialY, targetId } = dragThresholdRef.current;
+
+      // Calculate distance in screen pixels
+      const deltaX = e.clientX - initialX;
+      const deltaY = e.clientY - initialY;
+      const distancePixels = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      // Convert to virtual units
+      const distanceVU = distancePixels / pixelsPerVU;
+
+      // Check if threshold reached (1VU for more responsive pickup)
+      if (distanceVU >= 1) {
+        const item = state.objects[targetId];
+        if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN ||
+          item.type === ItemType.DECK || item.type === ItemType.RANDOMIZER ||
+          item.type === ItemType.COUNTER || item.type === ItemType.DICE_OBJECT ||
+          item.type === ItemType.BOARD)) {
+
+          // Add to cursor slot
+          addToCursorSlot(targetId, item, 'hold');
+
+          // Mark as added to prevent duplicate adds
+          dragThresholdRef.current.addedToSlot = true;
+        }
+      }
+    }
+
+    // Throttle cursor position updates to prevent excessive re-renders
+    // Only update if position changed significantly or enough time passed
+    if (!cursorPosition || Math.abs(cursorPosition.x - newCursorPosition.x) > 2 || Math.abs(cursorPosition.y - newCursorPosition.y) > 2) {
+      setCursorPosition(newCursorPosition);
+    }
 
     // Update ruler current position when ruler is active
     if (currentTool === 'ruler' && rulerStart) {
@@ -3061,25 +3629,7 @@ export const Tabletop: React.FC = () => {
       setRulerCurrent(null);
     }
 
-    // Check for drag movement - if mouse moves 5px while holding on a card/token, add to slot immediately
-    if (longPressItemRef.current) {
-      const moveThreshold = 5; // pixels
-      const dx = e.clientX - longPressItemRef.current.startX;
-      const dy = e.clientY - longPressItemRef.current.startY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance >= moveThreshold) {
-        // Mouse moved enough - add to cursor slot for drag
-        // Use same positioning logic as Ctrl+click (WITHOUT mousePosition) to avoid jump
-        // The cursor will be positioned at card center, then follow mouse movement
-        addToCursorSlot(longPressItemRef.current.id, longPressItemRef.current.item, 'hold');
-        // IMPORTANT: Update cursor position to current mouse position AFTER adding to slot
-        // This ensures the card center is at the mouse position from the start
-        cursorPositionRef.current = { x: e.clientX, y: e.clientY };
-        setCursorPosition({ x: e.clientX, y: e.clientY });
-        longPressItemRef.current = null;
-      }
-    }
+    // Note: Duplicate pool panel drag-over code removed - already handled in first mousemove handler (lines 230-313)
 
     if (isPanning) {
       // Direct scrollbar manipulation - synchronized with browser's scroll system
@@ -3089,9 +3639,22 @@ export const Tabletop: React.FC = () => {
         const deltaX = e.clientX - startRef.x;
         const deltaY = e.clientY - startRef.y;
 
+        // Calculate new scroll position
+        let newScrollLeft = (startRef.scrollLeft || 0) - deltaX;
+        let newScrollTop = (startRef.scrollTop || 0) - deltaY;
+
+        // Constrain to playable area
+        const constrained = clampScrollToPlayableArea(
+          newScrollLeft,
+          newScrollTop,
+          container.clientWidth,
+          container.clientHeight,
+          pixelsPerVU
+        );
+
         // Update scroll position directly (inverse of drag direction)
-        container.scrollLeft = (startRef.scrollLeft || 0) - deltaX;
-        container.scrollTop = (startRef.scrollTop || 0) - deltaY;
+        container.scrollLeft = constrained.x;
+        container.scrollTop = constrained.y;
       }
       return;
     }
@@ -3108,28 +3671,48 @@ export const Tabletop: React.FC = () => {
       const newWidth = Math.max(minSize, resizeStart.width + deltaX);
       const newHeight = Math.max(minSize, resizeStart.height + deltaY);
 
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: resizingId,
-          width: newWidth,
-          height: newHeight,
-        },
-      });
+      // Store in ref for immediate access
+      liveResizeSizeRef.current = { width: newWidth, height: newHeight };
+      resizeFinalSizeRef.current = { width: newWidth, height: newHeight };
+
+      // Update state for re-render (batched by React)
+      setLiveResizeSize({ width: newWidth, height: newHeight });
       return;
     }
 
     // Handle dragging
     // Note: Cards and tokens don't set draggingId, they use cursor slot system only
+    // Note: Boards are not draggable anymore
     if (draggingId) {
       const draggingObj = state.objects[draggingId];
       if (!draggingObj) return;
 
+      // Additional safety check: prevent board dragging
+      if (draggingObj.type === ItemType.BOARD) {
+        console.log('[DRAG MOVE] Blocked - board dragging is disabled');
+        return;
+      }
+
       // Pinned objects (boards, decks) and UI objects use screen coordinates directly
       const isPinned = (draggingObj as any).isPinnedToViewport === true;
-      if (draggingObj.type === ItemType.PANEL || draggingObj.type === ItemType.WINDOW || isPinned) {
+      // BOARD objects should always use screen coordinates for drag
+      const isBoard = draggingObj.type === ItemType.BOARD;
+      if (draggingObj.type === ItemType.PANEL || draggingObj.type === ItemType.WINDOW || isPinned || isBoard) {
         const targetX = e.clientX - (dragOffsetRef.current?.x || 0);
         const targetY = e.clientY - (dragOffsetRef.current?.y || 0);
+
+        if (isBoard) {
+          console.log('[DRAG MOVE] BOARD object:', {
+            id: draggingObj.id,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            dragOffset: dragOffsetRef.current,
+            targetX,
+            targetY,
+            currentObjX: draggingObj.x,
+            currentObjY: draggingObj.y
+          });
+        }
 
         dispatch({
           type: 'MOVE_OBJECT',
@@ -3278,7 +3861,7 @@ export const Tabletop: React.FC = () => {
         _localOnly: true // Don't send over network during drag
       });
     }
-  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, dispatch, cursorSlot, isPointInRotatedRect, currentTool, rulerStart, scrollContainerRef]);
+  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, dispatch, cursorSlot, isPointInRotatedRect, currentTool, rulerStart, scrollContainerRef, pixelsPerVU, addToCursorSlot, throttledResizeUpdate, syncResizeToNetwork]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
     // Clear long-press timer if mouse is released before timeout
@@ -3287,68 +3870,19 @@ export const Tabletop: React.FC = () => {
       longPressTimerRef.current = null;
     }
 
-    // Check if this was a card/token click without movement (longPressItemRef still set)
-    const wasCardClickWithoutMovement = longPressItemRef.current !== null;
-
-    if (wasCardClickWithoutMovement) {
-      // This was just a click, not a drag - clear draggingId and handle click action
-      const id = longPressItemRef.current!.id;
-      longPressItemRef.current = null;
-
-      // Clear draggingId since we're not dragging
-      setDraggingId(null);
-
-      // Now handle the click action
-      const obj = state.objects[id];
-      if (!obj) return;
-
-      const now = Date.now();
-      const DOUBLE_CLICK_DELAY = 300;
-
-      // Get click action from object (for cards, inherit from deck)
-      let singleClickAction = (obj as any)?.singleClickAction;
-      let doubleClickAction = (obj as any)?.doubleClickAction;
-
-      // For cards, use inherited settings from deck
-      if (obj?.type === ItemType.CARD) {
-        const cardSettings = getCardSettings(obj as CardType);
-        singleClickAction = cardSettings.singleClickAction;
-        doubleClickAction = cardSettings.doubleClickAction;
-      }
-
-      // Check if this is a double click
-      const lastClick = clickTrackerRef.current;
-      if (lastClick.objectId === id && now - lastClick.timestamp < DOUBLE_CLICK_DELAY) {
-        // Double click detected
-        const action = doubleClickAction;
-        if (action) {
-          executeClickAction(obj, action, e as React.MouseEvent);
-        }
-        clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
-        return;
-      }
-
-      // Single click - schedule execution after double click delay
-      clickTrackerRef.current = {
-        objectId: id,
-        timestamp: now,
-        clickCount: lastClick.clickCount + 1
-      };
-
-      setTimeout(() => {
-        const currentTracker = clickTrackerRef.current;
-        if (currentTracker.objectId === id && now === currentTracker.timestamp) {
-          const action = singleClickAction;
-          if (action) {
-            executeClickAction(obj, action, e as React.MouseEvent);
-          }
-          clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
-        }
-      }, DOUBLE_CLICK_DELAY);
-      return;
+    // Clear cursor hold timer if mouse is released before 3ms (legacy)
+    if (cursorHoldTimerRef.current) {
+      clearTimeout(cursorHoldTimerRef.current);
+      cursorHoldTimerRef.current = null;
     }
 
-    longPressItemRef.current = null;
+    // Clear drag threshold state
+    dragThresholdRef.current = {
+      initialX: 0,
+      initialY: 0,
+      targetId: null,
+      addedToSlot: false
+    };
 
     // Note: Cursor slot drop on mouseup is handled by the global handler above
     // This handleMouseUp is only called when there's an active drag/pan/resize operation
@@ -3495,9 +4029,9 @@ export const Tabletop: React.FC = () => {
             payload: { id: draggingId, draggingPlayerId: null, broadcastX: undefined, broadcastY: undefined }
           });
           setDraggingId(null);
+          clearDraggingOver(); // Clear global drag-over state
           setIsPanning(false);
-          setResizingId(null);
-          setResizeStart(null);
+          // Clear drag offset when ending pan operation
           dragOffsetRef.current = null;
           return;
         }
@@ -3613,16 +4147,110 @@ export const Tabletop: React.FC = () => {
 
     // Clear draggingPlayerId for any dragging object
     if (draggingId) {
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: draggingId, draggingPlayerId: null, broadcastX: undefined, broadcastY: undefined }
-      });
+      // Check if dropping over pool panel using saved state
+      const { targetPoolPanelId: savedPoolPanelId } = useDragOverStore.getState();
+
+      if (savedPoolPanelId && e) {
+        // Get fresh state from stateRef to ensure we have the latest object data
+        const currentState = stateRef.current;
+        const panelObj = currentState.objects[savedPoolPanelId] as PanelObject;
+
+        if (panelObj && panelObj.poolData) {
+          // Find the pool panel and game space elements
+          // gameSpace is the parent container, poolTabletop is inside it
+          const gameSpace = document.querySelector(`[data-pool-gamespace="${savedPoolPanelId}"]`) as HTMLElement;
+          const poolTabletop = document.querySelector(`[data-pool-panel="${savedPoolPanelId}"]`) as HTMLElement;
+
+          if (gameSpace && poolTabletop) {
+            const pixelsPerVU = currentState.viewTransform?.pixelsPerVU ?? 1.08;
+
+            // Get object being dragged from current state
+            const draggedObj = currentState.objects[draggingId];
+
+            if (draggedObj) {
+              // Use game space rect for accurate positioning
+              const panelRect = gameSpace.getBoundingClientRect();
+
+              // Calculate drop position in pool zone
+              const relativePixelX = e.clientX - panelRect.left;
+              const relativePixelY = e.clientY - panelRect.top;
+
+              // Add scroll position to account for scrolling in game space
+              const scrollLeft = gameSpace.scrollLeft;
+              const scrollTop = gameSpace.scrollTop;
+
+              // Convert to virtual units (account for scroll)
+              const relativeVUX = (relativePixelX + scrollLeft) / pixelsPerVU;
+              const relativeVUY = (relativePixelY + scrollTop) / pixelsPerVU;
+
+              // Pool zone coordinates
+              const poolX = panelObj.poolData.offsetX + relativeVUX;
+              const poolY = panelObj.poolData.offsetY + relativeVUY;
+
+              // Get object dimensions for centering
+              const objWidth = draggedObj.width || 100;
+              const objHeight = draggedObj.height || 100;
+
+              // Calculate final position (cursor is at center of object, so subtract half dimensions)
+              const finalX = poolX - (objWidth / 2);
+              const finalY = poolY - (objHeight / 2);
+
+              // Constrain to pool zone bounds
+              const poolWidth = panelObj.poolData.width || 1000;
+              const poolHeight = panelObj.poolData.height || 1000;
+
+              const constrainedX = Math.max(panelObj.poolData.offsetX, Math.min(finalX, panelObj.poolData.offsetX + poolWidth - objWidth));
+              const constrainedY = Math.max(panelObj.poolData.offsetY, Math.min(finalY, panelObj.poolData.offsetY + poolHeight - objHeight));
+
+              // Clear cursor slot if object was in it BEFORE updating position
+              const cursorSlotObj = cursorSlot.find(obj => obj.id === draggingId);
+              if (cursorSlotObj) {
+                const newCursorSlot = cursorSlot.filter(obj => obj.id !== draggingId);
+                cursorSlotRef.current = newCursorSlot;
+                setCursorSlot(newCursorSlot);
+
+                // Clear cursor position if slot is empty
+                if (newCursorSlot.length === 0) {
+                  setCursorPosition(null);
+                }
+              }
+
+              // Move object to pool panel AND clear dragging state in one dispatch
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: draggingId,
+                  x: constrainedX,
+                  y: constrainedY,
+                  inCursorSlot: false,
+                  cursorSlotSourcePanel: undefined,
+                  draggingPlayerId: null,
+                  broadcastX: undefined,
+                  broadcastY: undefined
+                }
+              });
+
+              // Set ref to trigger debug useEffect
+              droppedObjectRef.current = draggingId;
+            }
+          }
+        }
+      } else {
+        // Clear dragging player ID only if not dropping to pool
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: { id: draggingId, draggingPlayerId: null, broadcastX: undefined, broadcastY: undefined }
+        });
+      }
     }
 
     setDraggingId(null);
+    clearDraggingOver(); // Clear global drag-over state
     setIsPanning(false);
-    setResizingId(null);
-    setResizeStart(null);
+    if (resizingId) {
+      // Resize ending
+    }
+    // Note: resize cleanup (setResizingId null) is handled by global mouseup handler in handleResizeStart
     dragOffsetRef.current = null;
 
     // Send final pile position when drag ends
@@ -3783,6 +4411,19 @@ export const Tabletop: React.FC = () => {
   // Global mouseup handler for drag operations - ALWAYS active, checks state internally
   useEffect(() => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+
+      // IMPORTANT: If clicking inside ANY context menu or modal, don't process global mouseup
+      // This prevents interference with context menu button clicks in both Tabletop and Pool panels
+      const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
+      const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
+      const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
+      const topDeckModalElement = target.closest('[data-modal="top-deck"]');
+      if (tableContextMenuElement || poolContextMenuElement || searchDeckModalElement || topDeckModalElement) {
+        console.log('[Tabletop] Mouseup inside protected element, ignoring drag handler');
+        return;
+      }
+
       // Only handle actual mouseup events (button was released)
       // Ignore synthetic events or events during drag
       if (e.button !== 0) return;
@@ -3855,199 +4496,71 @@ export const Tabletop: React.FC = () => {
   }, [currentTool]);
 
   const executeMenuAction = (action: string, shiftKey?: boolean) => {
-      if (!contextMenu) return;
-      const { object } = contextMenu;
+    console.log('[executeMenuAction] Action received:', action);
+    if (!contextMenu) return;
 
-      // Use shift key from context menu or parameter
-      const isShiftPressed = shiftKey !== undefined ? shiftKey : contextMenu.shiftKey;
+    // Always get fresh object from state to ensure we have latest data
+    const freshObject = state.objects[contextMenu.object.id] || contextMenu.object;
 
-      // Actions specific to context menu
-      switch(action) {
-          case 'configure':
-              setContextMenu(null);
-              // Token-copies don't have individual settings
-              if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
-                  return; // Don't open settings for token-copies
-              }
-              setSettingsModalObj(object);
-              return;
-          case 'delete':
-              setContextMenu(null);
-              // If Shift is held, delete immediately without confirmation
-              if (isShiftPressed) {
-                  dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
-                  return;
-              }
-              // Token-copies are deleted immediately without confirmation
-              if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
-                  dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
-                  return;
-              }
-              setDeleteCandidateId(object.id);
-              return;
-          case 'pinToViewport':
-              let screenX: number, screenY: number;
+    const { object } = contextMenu;
 
-              if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
-                  // For UI objects, find the actual rendered element and get its screen position
-                  const uiElement = document.querySelector(`[data-ui-object="${object.id}"]`) as HTMLElement;
-                  if (uiElement) {
-                      const rect = uiElement.getBoundingClientRect();
-                      screenX = rect.left;
-                      screenY = rect.top;
-                  } else {
-                      // Fallback: calculate from object position (unpinned UI objects use object.x directly)
-                      screenX = object.x;
-                      screenY = object.y;
-                  }
-              } else {
-                  // For game objects (decks, etc.) in transform container
-                  // CSS transform is: translate(offset) scale(zoom)
-                  // So: screenX = (worldX + offset.x) * zoom
-                  screenX = object.x + offset.x;
-                  screenY = object.y + offset.y;
-              }
+    // Use shift key from context menu or parameter
+    const isShiftPressed = shiftKey !== undefined ? shiftKey : contextMenu.shiftKey;
 
-              setContextMenu(null);
-              dispatch({
-                  type: 'PIN_TO_VIEWPORT',
-                  payload: {
-                      id: object.id,
-                      screenX,
-                      screenY
-                  }
-              });
-              return;
-          case 'unpinFromViewport':
-              setContextMenu(null);
-              // Convert viewport coordinates to world coordinates
-              // For pinned objects, x/y are viewport coordinates (position: fixed)
-              // For unpinned objects, x/y need to be world coordinates (position: absolute)
-              let worldX: number, worldY: number;
+    // Try to handle action with shared contextMenuAction utility
+    // Returns true if action was handled, false otherwise
+    let wasHandled = false;
 
-              if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
-                  // UI objects: For pinned UI objects, object.x/y ARE the current viewport coordinates
-                  // To convert to world coordinates for unpinned: worldX = screenX / zoom + offset.x
-                  // But for UI objects, they use position: absolute with left: object.x (no transform)
-                  // So: worldX = object.x * zoom + offset.x
-                  worldX = object.x + offset.x;
-                  worldY = object.y + offset.y;
-              } else {
-                  // Game objects (decks, etc.): render in transform container
-                  // For pinned game objects, visual position comes from pinnedScreenPosition
-                  const pinnedPos = (object as any).pinnedScreenPosition;
-                  if (!pinnedPos) {
-                      // No pinned position - shouldn't happen, but use current position as fallback
-                      worldX = object.x;
-                      worldY = object.y;
-                  } else {
-                      // pinnedPos contains current viewport coordinates
-                      // Convert to world coordinates: worldX = screenX / zoom - offset.x
-                      worldX = pinnedPos.x - offset.x;
-                      worldY = pinnedPos.y - offset.y;
-                  }
-              }
+    // Actions that require special handling in context menu
+    const specialActions = [
+      'configure', 'delete', 'pinToViewport', 'unpinFromViewport',
+      'moveToPile-', 'pile-', 'moveToHyperscaleLayer:', 'editNexusBoard',
+      'closeNexusBoardEditing', 'deleteNexusBoard', 'resetToBase'
+    ];
 
-              dispatch({
-                  type: 'UNPIN_FROM_VIEWPORT',
-                  payload: { id: object.id, worldX, worldY }
-              });
-              return;
+    const isSpecialAction = specialActions.some(specialAction => action.startsWith(specialAction));
+
+    console.log('[executeMenuAction] isSpecialAction:', isSpecialAction, 'for action:', action);
+
+    if (isSpecialAction) {
+      console.log('[executeMenuAction] Calling executeContextMenuAction with:', { action, objectType: freshObject.type, objectId: freshObject.id });
+      console.log('[executeMenuAction] executeContextMenuAction function:', typeof executeContextMenuAction);
+      try {
+        executeContextMenuAction(action, {
+          object: freshObject,
+          dispatch,
+          state,
+          activePlayerId: state.activePlayerId,
+          offset,
+          setContextMenu,
+          setSettingsModalObj,
+          setDeleteCandidateId,
+          setSearchModalDeck,
+          setSearchModalPile,
+          setTopDeckModalDeck,
+          setNexusBoardAddingCell,
+          isShiftPressed,
+          isGM,
+          isPoolPanel: false
+        });
+        console.log('[executeMenuAction] executeContextMenuAction completed successfully');
+      } catch (error) {
+        console.error('[executeMenuAction] executeContextMenuAction ERROR:', error);
       }
-
-      // Handle moveToPile actions (moveToPile-{pileId})
-      if (action.startsWith('moveToPile-') && object.type === ItemType.CARD) {
-          const pileId = action.replace('moveToPile-', '');
-          const card = object as CardType;
-          if (card.deckId) {
-              dispatch({ type: 'ADD_CARD_TO_PILE', payload: { cardId: card.id, pileId, deckId: card.deckId }});
-          }
-          setContextMenu(null);
-          return;
+      wasHandled = true;
+      console.log('[executeMenuAction] executeContextMenuAction returned, wasHandled:', wasHandled);
+      // Close menu after executing special action (except for modals)
+      if (setContextMenu && action !== 'configure' && action !== 'delete') {
+        setContextMenu(null);
       }
+    }
 
-      // Handle pile actions for decks (pile-{pileId})
-      if (action.startsWith('pile-') && object.type === ItemType.DECK) {
-          const pileId = action.replace('pile-', '');
-          const deck = object as DeckType;
-          const pile = deck.piles?.find(p => p.id === pileId);
-          if (pile) {
-              setSearchModalDeck(deck);
-              setSearchModalPile(pile);
-          }
-          return;
-      }
-
-      // Handle hyperscale layer actions (moveToHyperscaleLayer:{layerId})
-      if (action.startsWith('moveToHyperscaleLayer:')) {
-          const layerId = action.replace('moveToHyperscaleLayer:', '');
-          dispatch({
-              type: 'MOVE_OBJECT_TO_HYPERSCALE_LAYER',
-              payload: { objectId: object.id, layerId }
-          });
-          setContextMenu(null);
-          return;
-      }
-
-      // Handle editNexusBoard action for NexusBoard - start editing mode
-      if (action === 'editNexusBoard' && object.type === ItemType.NEXUS_BOARD) {
-          setContextMenu(null);
-          setNexusBoardAddingCell(object.id);
-          return;
-      }
-
-      // Handle editNexusBoard action for NexusCellObject - use linked board
-      if (action === 'editNexusBoard' && object.type === ItemType.NEXUS_CELL) {
-          setContextMenu(null);
-          setNexusBoardAddingCell((object as NexusCellObject).nexusBoardId);
-          return;
-      }
-
-      // Handle closeNexusBoardEditing action for NexusBoard - stop editing mode
-      if (action === 'closeNexusBoardEditing' && object.type === ItemType.NEXUS_BOARD) {
-          setContextMenu(null);
-          setNexusBoardAddingCell(null);
-          return;
-      }
-
-      // Handle closeNexusBoardEditing action for NexusCellObject - use linked board
-      if (action === 'closeNexusBoardEditing' && object.type === ItemType.NEXUS_CELL) {
-          setContextMenu(null);
-          setNexusBoardAddingCell(null);
-          return;
-      }
-
-      // Handle deleteNexusBoard action for NexusCellObject - delete the whole board
-      if (action === 'deleteNexusBoard' && object.type === ItemType.NEXUS_CELL) {
-          setContextMenu(null);
-          const cell = object as NexusCellObject;
-          const boardId = cell.nexusBoardId;
-
-          // Delete the NexusBoard (this will cascade to all cells)
-          dispatch({ type: 'DELETE_OBJECT', payload: { id: boardId } });
-          return;
-      }
-
-      // Handle deleteNexusBoard action for NexusBoard - delete the whole board
-      if (action === 'deleteNexusBoard' && object.type === ItemType.NEXUS_BOARD) {
-          setContextMenu(null);
-          dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id } });
-          return;
-      }
-
-      // Reset counter to base value
-      if (action === 'resetToBase' && object.type === ItemType.COUNTER) {
-          setContextMenu(null);
-          const counter = object as Counter;
-          dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: { id: object.id, value: counter.baseValue ?? 0 }
-          });
-          return;
-      }
-
-      // All other actions use the unified executeClickAction
-      executeClickAction(object, action);
+    // All other actions use the unified executeClickAction
+    if (!wasHandled) {
+      executeClickAction(freshObject, action);
+      // Close menu after executing action
+      if (setContextMenu) setContextMenu(null);
+    }
   };
 
   const handlePileContextMenu = useCallback((e: React.MouseEvent, pile: CardPile, deck: DeckType) => {
@@ -4071,10 +4584,19 @@ export const Tabletop: React.FC = () => {
                   type: 'TOGGLE_PILE_LOCK',
                   payload: { deckId: deck.id, pileId: pile.id }
               });
+              setPileContextMenu(null);
+              break;
+          case 'showTop':
+              dispatch({
+                  type: 'TOGGLE_SHOW_TOP_CARD',
+                  payload: { deckId: deck.id, pileId: pile.id }
+              });
+              setPileContextMenu(null);
               break;
           case 'searchDeck':
               setSearchModalDeck(deck);
               setSearchModalPile(pile);
+              setPileContextMenu(null);
               break;
           case 'draw':
               dispatch({
@@ -4085,17 +4607,19 @@ export const Tabletop: React.FC = () => {
                       playerId: state.activePlayerId
                   }
               });
+              setPileContextMenu(null);
               break;
           case 'returnAll':
+              executeClickAction(deck, action);
+              setPileContextMenu(null);
+              break;
           case 'returnAllAndShuffle':
+              executeClickAction(deck, action);
+              setPileContextMenu(null);
+              break;
           case 'returnAllExceptHands':
               executeClickAction(deck, action);
-              break;
-          case 'showTop':
-              dispatch({
-                  type: 'TOGGLE_SHOW_TOP_CARD',
-                  payload: { deckId: deck.id, pileId: pile.id }
-              });
+              setPileContextMenu(null);
               break;
       }
   };
@@ -4119,7 +4643,10 @@ export const Tabletop: React.FC = () => {
           // Exclude DECK objects - they are rendered separately with pinned/unpinned logic
           if (obj.type === ItemType.DECK) return false;
           // Exclude objects in cursor slot
-          if (obj.inCursorSlot) return false;
+          // All draggable objects disappear when picked up (traditional behavior)
+          if (obj.inCursorSlot) {
+            return false;
+          }
           // Exclude objects being dragged by another player (rendered separately as shadow if effect enabled)
           const draggingPlayerId = (obj as any).draggingPlayerId;
           if (draggingPlayerId && draggingPlayerId !== state.activePlayerId) return false;
@@ -4133,6 +4660,20 @@ export const Tabletop: React.FC = () => {
           }
           // Filter out hidden objects (visible === false)
           if ((obj as any).visible === false) return false;
+
+          // PERFORMANCE: Only render objects in or intersecting with playable area
+          // Objects in pool panel territories (outside 5000×5000) are rendered separately
+          const objX = obj.x || 0;
+          const objY = obj.y || 0;
+          const objWidth = obj.width || 100;
+          const objHeight = obj.height || 100;
+
+          // Include objects that intersect with playable area (0-5000×0-5000)
+          const inPlayableArea = objX < PLAYABLE_AREA_SIZE && objY < PLAYABLE_AREA_SIZE &&
+                                objX + objWidth > 0 && objY + objHeight > 0;
+
+          if (!inPlayableArea) return false;
+
           return true;
       })
       .sort((a, b) => {
@@ -4183,6 +4724,11 @@ export const Tabletop: React.FC = () => {
           if (card.location !== CardLocation.TABLE) return false;
           // Filter out hidden cards for players (GM sees them)
           if (card.hidden && !isGM) return false;
+        }
+        // Include dice, counters, and randomizers in remote cursor slot rendering
+        // These will be shown as shadows when another player is dragging them
+        if (obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER || obj.type === ItemType.RANDOMIZER) {
+          return true;
         }
         // Filter out hidden objects
         if ((obj as any).visible === false) return false;
@@ -4303,9 +4849,9 @@ export const Tabletop: React.FC = () => {
   }, [state.objects, state.activePlayerId]);
 
   const worldBounds = useMemo(() => {
-    // Fixed world size: WORLD_SIZE_VU × WORLD_SIZE_VU (in virtual units)
+    // For scrollbars: show only playable area (5000×5000) as if that's the entire world
     // Convert to pixels for rendering (using local zoom-adjusted pixelsPerVU)
-    const sizePx = vuToPixels(WORLD_SIZE_VU, pixelsPerVU);
+    const sizePx = vuToPixels(PLAYABLE_AREA_SIZE, pixelsPerVU);
     return { width: sizePx, height: sizePx };
   }, [pixelsPerVU]);
 
@@ -4320,7 +4866,7 @@ export const Tabletop: React.FC = () => {
     <div
       ref={scrollContainerRef}
       data-tabletop="true"
-      className={`w-full h-full bg-table overflow-auto relative ${
+      className={`w-full h-full overflow-auto relative ${
         currentTool === 'eraser' && isShiftPressed
           ? 'cursor-eraser-delete'
           : currentTool === 'marker' && isShiftPressed
@@ -4345,8 +4891,25 @@ export const Tabletop: React.FC = () => {
         const target = e.target as HTMLElement;
         if (target.scrollLeft === undefined || target.scrollTop === undefined) return;
 
-        const scrollLeft = target.scrollLeft;
-        const scrollTop = target.scrollTop;
+        let scrollLeft = target.scrollLeft;
+        let scrollTop = target.scrollTop;
+
+        // Constrain scroll to playable area (5000×5000 top-left)
+        const constrained = clampScrollToPlayableArea(
+          scrollLeft,
+          scrollTop,
+          target.clientWidth,
+          target.clientHeight,
+          pixelsPerVU
+        );
+
+        // Apply constraints if needed
+        if (constrained.x !== scrollLeft || constrained.y !== scrollTop) {
+          target.scrollLeft = constrained.x;
+          target.scrollTop = constrained.y;
+          scrollLeft = constrained.x;
+          scrollTop = constrained.y;
+        }
 
         // Update scroll position in global state for deck positioning
         dispatch({
@@ -4362,8 +4925,7 @@ export const Tabletop: React.FC = () => {
           (obj as any).isPinnedToViewport &&
           obj.type !== ItemType.PANEL &&
           obj.type !== ItemType.WINDOW &&
-          obj.type !== ItemType.DECK &&
-          obj.type !== ItemType.BOARD
+          obj.type !== ItemType.DECK
         );
 
         if (pinnedObjects.length > 0) {
@@ -4455,6 +5017,20 @@ export const Tabletop: React.FC = () => {
         }
       }}
     >
+      {/* Solid background color */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#2c3e50',
+          pointerEvents: 'none',
+          zIndex: -3
+        }}
+      />
+
       {/* Board background with grid pattern */}
       <div
         style={{
@@ -4476,7 +5052,7 @@ export const Tabletop: React.FC = () => {
                 position: 'absolute',
                 top: 0, left: 0,
                 pointerEvents: 'none',
-                zIndex: -1
+                zIndex: -2  // Changed to -2 to not overlap background grid
             }}
         />
 
@@ -4561,12 +5137,11 @@ export const Tabletop: React.FC = () => {
 
             {/* Objects in another player's cursor slot - darkened, semi-transparent, non-interactive */}
             {remoteCursorSlotObjects.map((obj) => {
-                if (obj.type === ItemType.BOARD) return null; // Boards shouldn't be in cursor slot
-
-                // Calculate global z-index for remote objects
+                // Calculate global z-index for remote objects in cursor slot
+                // Remote cursor slot objects should appear above everything
                 const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
                 const layerOrder = layer?.order ?? 2;
-                const globalZIndex = layerOrder * 10000 + (obj.zIndex ?? 0);
+                const globalZIndex = 999997; // Remote cursor slot objects always on top
 
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
@@ -4653,12 +5228,11 @@ export const Tabletop: React.FC = () => {
 
             {/* Objects being dragged by another player - darkened, semi-transparent, non-interactive */}
             {remoteDraggingObjects.map((obj) => {
-                if (obj.type === ItemType.BOARD) return null;
-
                 // Calculate global z-index for remote dragging objects
+                // Remote dragging objects should appear above everything
                 const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
                 const layerMinZ = layer?.minZIndex ?? 3001;
-                const globalZIndex = layerMinZ + (obj.zIndex ?? 0);
+                const globalZIndex = 999999; // Remote dragging objects always on top
 
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
@@ -4744,9 +5318,10 @@ export const Tabletop: React.FC = () => {
             {/* Shadow objects being dragged by remote players */}
             {remoteDraggingObjects.map((obj) => {
                 // Calculate global z-index for shadow objects
+                // Shadow objects being dragged by remote players should appear above everything
                 const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
                 const layerMinZ = layer?.minZIndex ?? 3001;
-                const globalZIndex = layerMinZ + (obj.zIndex ?? 0);
+                const globalZIndex = 999998; // Shadow objects just below the actively dragging object
 
                 if (obj.type === ItemType.TOKEN) {
                     const token = obj as TokenType;
@@ -5065,25 +5640,24 @@ export const Tabletop: React.FC = () => {
             {tableObjects.map((obj) => {
                 const isOwner = !(obj as any).ownerId || (obj as any).ownerId === state.activePlayerId || isGM;
                 // Only show grab cursor for unlocked objects that can be dragged
-                const canDrag = !obj.locked;
+                // Dice always use default cursor since they're not draggable by mouse in main tabletop
+                const isDice = obj.type === ItemType.DICE_OBJECT;
+                const canDrag = !obj.locked && !isDice;
                 const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 // Calculate global z-index using layer's minZIndex as base
                 // This ensures tokens (3001-6000) always render above boards (1-1000)
+                // When dragging, use very high z-index to appear above everything else
                 const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
                 const layerMinZ = layer?.minZIndex ?? 3001;
-                const globalZIndex = layerMinZ + (obj.zIndex ?? 0);
+                const isDragging = draggingId === obj.id;
+                const globalZIndex = isDragging ? 999999 : layerMinZ + (obj.zIndex ?? 0);
 
                 // Get local zoom scale for this object's layer
                 const objLayerId = obj.hyperscaleLayerId || 'tokens';
                 const layerZoomScale = getLayerZoomScale(objLayerId);
 
                 if (obj.type === ItemType.BOARD) {
-                    // Skip pinned boards - they are rendered separately in fixed container
-                    if ((obj as any).isPinnedToViewport === true) {
-                        return null;
-                    }
-
                     const board = obj as BoardType;
                     const isResizing = resizingId === obj.id;
                     const isDragging = draggingId === obj.id;
@@ -5112,8 +5686,8 @@ export const Tabletop: React.FC = () => {
                                         style={createPositionedStyle(
                                             v2p(obj.x),
                                             v2p(obj.y),
-                                            v2p(board.width),
-                                            v2p(board.height),
+                                            v2p(resizingId === obj.id && liveResizeSizeRef.current ? liveResizeSizeRef.current.width : board.width),
+                                            v2p(resizingId === obj.id && liveResizeSizeRef.current ? liveResizeSizeRef.current.height : board.height),
                                             globalZIndex,
                                             objLayer,
                                             { pointerEvents: isPermeable ? 'none' : 'auto' }
@@ -5123,17 +5697,20 @@ export const Tabletop: React.FC = () => {
                                         token={board}
                                         obj={obj}
                                         isOwner={isOwner}
-                                        isDragging={isDragging}
                                         isResizing={isResizing}
                                         canResize={canResize}
-                                        onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
+                                        zoom={layerZoomScale}
                                         onContextMenu={(e) => handleContextMenu(e, obj)}
+                                        onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                         onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
+                                        onResizeHandleEnter={() => setIsOverResizeHandle(true)}
+                                        onResizeHandleLeave={() => setIsOverResizeHandle(false)}
                                         gridSize={gridSize}
                                         gridWidth={gridW_px}
                                         gridHeight={gridH_px}
                                         showGrid={board.showGrid}
                                         currentTool={currentTool}
+                                        livePreviewSize={resizingId === obj.id ? liveResizeSizeRef.current : null}
                                     />
                                     </div>
                                 );
@@ -6140,15 +6717,17 @@ export const Tabletop: React.FC = () => {
                                             dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }});
                                             break;
                                         case 'moveToHand':
-                                            dispatch({
-                                                type: 'UPDATE_OBJECT',
-                                                payload: {
-                                                    id: obj.id,
-                                                    location: CardLocation.HAND,
-                                                    ownerId: state.activePlayerId,
-                                                    isOnTable: false
-                                                }
-                                            });
+                                            if (obj.type === ItemType.CARD) {
+                                                dispatch({
+                                                    type: 'UPDATE_OBJECT',
+                                                    payload: {
+                                                        id: obj.id,
+                                                        location: CardLocation.HAND,
+                                                        ownerId: state.activePlayerId,
+                                                        isOnTable: false
+                                                    }
+                                                });
+                                            }
                                             break;
                                         case 'moveToTopDeck': {
                                             const card = obj as CardType;
@@ -6222,9 +6801,11 @@ export const Tabletop: React.FC = () => {
                 const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 // Calculate global z-index for decks (cards layer: 1001-3000)
+                // When dragging, use very high z-index to appear above everything else
                 const layer = state.hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
                 const layerMinZ = layer?.minZIndex ?? 1001;
-                const globalZIndex = layerMinZ + (deckObj.zIndex ?? 0);
+                const isDraggingDeck = draggingId === deckObj.id;
+                const globalZIndex = isDraggingDeck ? 999999 : layerMinZ + (deckObj.zIndex ?? 0);
                 const objLayerId = deckObj.hyperscaleLayerId || 'cards';
 
                 return (
@@ -6311,9 +6892,11 @@ export const Tabletop: React.FC = () => {
                 const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 // Calculate global z-index for decks (cards layer: 1001-3000)
+                // When dragging, use very high z-index to appear above everything else
                 const layer = state.hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
                 const layerMinZ = layer?.minZIndex ?? 1001;
-                const globalZIndex = layerMinZ + (deckObj.zIndex ?? 0);
+                const isDraggingDeck = draggingId === deckObj.id;
+                const globalZIndex = isDraggingDeck ? 999999 : layerMinZ + (deckObj.zIndex ?? 0);
 
                 return (
                     <div
@@ -6366,67 +6949,6 @@ export const Tabletop: React.FC = () => {
                 );
             })}
 
-            {/* Pinned Boards - rendered in fixed container using pinnedScreenPosition */}
-            {Object.values(state.objects).filter(obj =>
-              obj.type === ItemType.BOARD && (obj as any).isPinnedToViewport === true
-            ).map((obj) => {
-                const board = obj as any;
-                const pinnedPosition = board.pinnedScreenPosition;
-                if (!pinnedPosition) return null;
-
-                const gridSize = v2p(board.gridSize || 50); // Convert vu to pixels
-                const gridW_px = v2p(board.gridWidth || board.gridSize || 50);
-                const gridH_px = v2p(board.gridHeight || board.gridSize || 50);
-
-                const isDragging = draggingId === board.id;
-                const isResizing = resizingId === board.id;
-
-                // For pinned boards, override position to 0,0 since the outer container
-                // is already positioned at the pinned screen position
-                const pinnedBoardObj = { ...board, x: 0, y: 0 };
-
-                return (
-                    <div
-                        key={board.id}
-                        className="pointer-events-auto"
-                        style={{
-                            position: 'absolute',
-                            left: pinnedPosition.x,
-                            top: pinnedPosition.y,
-                            width: v2p(board.width),
-                            height: v2p(board.height),
-                            zIndex: board.zIndex || 1000,
-                        }}
-                    >
-                        <BoardWithResizeMemo
-                            token={board}
-                            obj={pinnedBoardObj}
-                            isOwner={true}
-                            isDragging={isDragging}
-                            isResizing={isResizing}
-                            canResize={!board.locked}
-                            onMouseDown={(e) => handleMouseDown(e, board.id)}
-                            onContextMenu={(e) => handleContextMenu(e, board)}
-                            onResizeStart={(e) => !board.locked && handleResizeStart(e, board.id)}
-                            gridSize={gridSize}
-                            gridWidth={gridW_px}
-                            gridHeight={gridH_px}
-                            showGrid={board.showGrid}
-                        />
-                        {/* Pinned indicator - top-right corner */}
-                        <div
-                            className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 pointer-events-none"
-                            style={{ zIndex: 10001 }}
-                            title="Pinned to screen"
-                        >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                                <line x1="12" y1="17" x2="12" y2="22"></line>
-                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                            </svg>
-                        </div>
-                    </div>
-                );
-            })}
 
             {/* Pinned Dice and Counters - rendered in fixed container */}
             {Object.values(state.objects).filter(obj =>
@@ -6436,7 +6958,9 @@ export const Tabletop: React.FC = () => {
                 if (!pinnedPosition) return null;
 
                 const isDragging = draggingId === obj.id;
-                const canDrag = !obj.locked;
+                // Dice always use default cursor since they're not draggable by mouse in main tabletop
+                const isDice = obj.type === ItemType.DICE_OBJECT;
+                const canDrag = !obj.locked && !isDice;
                 const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
                 // Check if object's layer is selected - if not, make it permeable to clicks
@@ -6562,13 +7086,14 @@ export const Tabletop: React.FC = () => {
             <ContextMenu
                 x={contextMenu.x}
                 y={contextMenu.y}
-                object={contextMenu.object}
+                object={state.objects[contextMenu.object.id] || contextMenu.object}
                 isGM={isGM}
                 onAction={executeMenuAction}
                 onClose={() => setContextMenu(null)}
                 allObjects={state.objects}
                 language={state.language}
                 nexusBoardEditingId={nexusBoardAddingCell}
+                contextMenuType="tabletop"
             />
         )}
 
@@ -6851,6 +7376,8 @@ export const Tabletop: React.FC = () => {
             </div>
           );
         })()}
-    </div>
-  );
+
+        {/* Dragged object over pool panel - now handled by CursorSlotVisualization */}
+      </div>
+    );
 };

@@ -7,24 +7,28 @@ interface ObjectRendererProps {
   pixelsPerVU: number;
   isDragging?: boolean;
   onMouseDown?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   style?: React.CSSProperties;
   className?: string;
   isGM?: boolean;
   showTokenName?: boolean; // Show token name on token
 }
 
-export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
+export const ObjectRenderer = React.memo<ObjectRendererProps>(({
   obj,
   pixelsPerVU,
   isDragging = false,
   onMouseDown,
+  onContextMenu,
   style = {},
   className = '',
   isGM = false,
   showTokenName = false
 }) => {
   const rotation = obj.rotation || 0;
-  const zIndex = obj.zIndex || 1000;
+  // When dragging, use very high z-index to appear above everything
+  // Otherwise use original object's z-index to maintain layer position
+  const zIndex = isDragging ? 999999 : (obj.zIndex || 1000);
 
   if (obj.type === ItemType.CARD) {
     const card = obj as Card;
@@ -46,6 +50,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
         }}
         className={`bg-slate-700 border border-slate-600 rounded shadow-lg ${className}`}
         onMouseDown={onMouseDown}
+        onContextMenu={onContextMenu}
       >
         {card.faceUp || isGM ? (
           <div className="w-full h-full rounded overflow-hidden">
@@ -116,6 +121,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
           ...style
         }}
         onMouseDown={onMouseDown}
+        onContextMenu={onContextMenu}
       >
         <SvgTokenShape
           shape={token.shape || TokenShape.CIRCLE}
@@ -137,4 +143,4 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
   }
 
   return null;
-};
+});

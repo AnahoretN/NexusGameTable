@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState } from 'react';
-import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer, NexusBoard, NexusCellObject, DiceGroup } from '../types';
+import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer, NexusBoard, NexusCellObject, DiceGroup, PanelTab, PoolPanelData, TableauPanelData } from '../types';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
@@ -14,6 +14,8 @@ import { usePeerConnection } from './usePeerConnection';
 import { restoreImagesFromCache, extractImagesFromState, getNewImages, loadImageCacheFromIDB } from '../utils/imageCache';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
 import { logger } from '../utils/logger';
+import { findAvailableTerritory } from '../utils/territoryManager';
+import { runPoolMigrationIfNeeded } from '../utils/poolMigration';
 
 const GameContext = createContext<{
   state: GameState;
@@ -489,6 +491,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'UPDATE_OBJECT': {
       const obj = state.objects[action.payload.id];
       if (!obj) return state;
+
+      // Debug logging for location AND isOnTable changes on cards
+      if (obj.type === ItemType.CARD && (action.payload.location || action.payload.isOnTable !== undefined)) {
+        console.log('[UPDATE_OBJECT] Card properties changing:', {
+          cardId: action.payload.id,
+          location: {
+            old: (obj as Card).location,
+            new: action.payload.location
+          },
+          isOnTable: {
+            old: (obj as Card).isOnTable,
+            new: action.payload.isOnTable
+          },
+          payloadKeys: Object.keys(action.payload),
+          stackTrace: new Error().stack?.split('\n').slice(2, 6) // Show where it was called from
+        });
+      }
 
       const updatedObj = { ...obj, ...action.payload } as TableObject;
 
@@ -1014,6 +1033,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
         const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
+        // For pinned objects, also update pinnedScreenPosition
         if ((obj as any).isPinnedToViewport) {
           return {
             ...state,
@@ -1482,8 +1502,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const obj = state.objects[action.payload.objectId];
         if (!obj) return state;
 
-        // Only cards and tokens can be in cursor slot
-        if (obj.type !== ItemType.CARD && obj.type !== ItemType.TOKEN && obj.type !== ItemType.DICE_OBJECT && obj.type !== ItemType.COUNTER) return state;
+        // All draggable objects can be in cursor slot
+        if (obj.type !== ItemType.CARD && obj.type !== ItemType.TOKEN && obj.type !== ItemType.DICE_OBJECT && obj.type !== ItemType.COUNTER && obj.type !== ItemType.DECK && obj.type !== ItemType.RANDOMIZER && obj.type !== ItemType.BOARD) return state;
 
         // Check if this card was played via "Play Top" action
         const pendingPlayTop = (obj as Card).__pendingPlayTop;
@@ -1511,6 +1531,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 y: action.payload.y,
                 zIndex: cardZ,
                 inCursorSlot: false,
+                cursorSlotSourcePanel: undefined,
                 location: CardLocation.TABLE,
                 isOnTable: true,
                 hyperscaleLayerId: deckHyperscaleLayerId,
@@ -1561,6 +1582,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 y: action.payload.y,
                 zIndex: tokenZ,
                 inCursorSlot: false,
+                cursorSlotSourcePanel: undefined,
                 isOnTable: true,
             };
 
@@ -1568,6 +1590,41 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             const newSelectedLayers = state.selectedHyperscaleLayerIds.includes(tokenLayer)
                 ? state.selectedHyperscaleLayerIds
                 : [...state.selectedHyperscaleLayerIds, tokenLayer];
+
+            return {
+                ...state,
+                objects: { ...state.objects, [obj.id]: updatedObj },
+                selectedHyperscaleLayerIds: newSelectedLayers,
+            };
+        }
+
+        // Handle board drop (similar to tokens - no location/deck tracking)
+        if (obj.type === ItemType.BOARD) {
+            const boardLayer = obj.hyperscaleLayerId || 'boards';
+            const layer = state.hyperscaleLayers.find(l => l.id === boardLayer);
+            const minZ = layer?.minZIndex ?? 1;
+            const maxZ = layer?.maxZIndex ?? 1000;
+
+            // Clamp zIndex to layer bounds
+            let boardZ = obj.zIndex ?? minZ;
+            if (action.payload.zIndex !== undefined) {
+              boardZ = Math.max(minZ, Math.min(action.payload.zIndex, maxZ));
+            }
+
+            const updatedObj: TableObject = {
+                ...obj,
+                x: action.payload.x,
+                y: action.payload.y,
+                zIndex: boardZ,
+                inCursorSlot: false,
+                cursorSlotSourcePanel: undefined,
+                isOnTable: true,
+            };
+
+            // Auto-select the board's hyperscale layer if not already selected
+            const newSelectedLayers = state.selectedHyperscaleLayerIds.includes(boardLayer)
+                ? state.selectedHyperscaleLayerIds
+                : [...state.selectedHyperscaleLayerIds, boardLayer];
 
             return {
                 ...state,
@@ -1653,13 +1710,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             y: action.payload.y,
             zIndex: objZ,
             inCursorSlot: false,
+            cursorSlotSourcePanel: undefined,
+            isOnTable: true, // Always set isOnTable: true when dropping from cursor slot
             ...(hyperscaleLayerId && { hyperscaleLayerId }),
         };
 
         // For cards, also update location to TABLE
         if (obj.type === ItemType.CARD) {
             (updatedObj as Card).location = CardLocation.TABLE;
-            (updatedObj as Card).isOnTable = true;
         }
 
         // Add to general history (max 100)
@@ -1770,8 +1828,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         const newValue = counter.value + action.payload.delta;
 
-        // Check minimum value (0 or baseValue if allowNegative is false)
-        const minAllowed = counter.allowNegative ? -Infinity : (counter.baseValue ?? 0);
+        // Check minimum value (use minValue if set, otherwise 0 unless allowNegative)
+        const minAllowed = counter.allowNegative ? -Infinity : (counter.minValue ?? 0);
         if (newValue < minAllowed) return state;
 
         // Check maximum value if set
@@ -2256,7 +2314,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // If card exists in state, use it; otherwise it might be coming from cursor slot
         // and we need to handle it differently (it will be added back to objects)
-        if (!card) return state;
+        if (!card) {
+          console.warn('[ADD_CARD_TO_TOP_OF_DECK] Card not found in state:', action.payload.cardId);
+          return state;
+        }
+
+        // Debug logging
+        console.log('[ADD_CARD_TO_TOP_OF_DECK] Adding card to deck:', {
+          cardId: card.id,
+          deckId: deck.id,
+          cardLocation: card.location,
+          cardDeckId: card.deckId,
+          cardInCursorSlot: (card as any).inCursorSlot
+        });
 
         // Capture state for undo before making changes
         let fromDeckId: string | undefined = card.deckId;
@@ -2278,8 +2348,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Remove from previous deck's cardIds (but keep deckId unchanged - it belongs to original deck)
         let updatedState = state;
-        if (fromDeckId && fromDeckId !== deck.id) {
+        if (fromDeckId) {
             const previousDeck = state.objects[fromDeckId] as Deck;
+            // Always remove card from previous deck if it's there, even if adding back to same deck
+            // This prevents duplicates when card was moved to pool panel and then back to deck
             if (previousDeck && previousDeck.cardIds.includes(card.id)) {
                 fromCardIds = [...previousDeck.cardIds];
                 const updatedPreviousDeck: Deck = {
@@ -3205,19 +3277,94 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // Main menu is pinned to viewport by default with dual position mode enabled
       if (panelType === PanelType.MAIN_MENU) {
-        (panel as any).isPinnedToViewport = true;
-        (panel as any).pinnedScreenPosition = { x, y };
-        (panel as any).dualPosition = true; // Enable dual position mode by default
+        panel.isPinnedToViewport = true;
+        panel.pinnedScreenPosition = { x, y };
+        panel.dualPosition = true; // Enable dual position mode by default
       }
 
       // Initialize character data for CHARACTER panels
       if (panelType === PanelType.CHARACTER) {
-        (panel as any).characterData = {
+        (panel as PanelObject & { characterData: any }).characterData = {
           characters: [],
           presets: [],
           activeCharacterId: '',
           isUniversal: false
         };
+      }
+
+      // Initialize pool data for POOL panels
+      if (panelType === PanelType.POOL) {
+        const defaultPoolTab: PanelTab = {
+          id: 'tab-default',
+          name: 'Pool 1',
+          visibleToPlayerIds: [],
+          manageableByPlayerIds: [],
+          editableByPlayerIds: []
+        };
+
+        // Find available territory outside playable area (5000×5000)
+        const existingPools = Object.values(state.objects)
+          .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.POOL)
+          .map(obj => {
+            const poolPanel = obj as PanelObject;
+            const poolData = poolPanel.poolData!;
+            return {
+              id: poolPanel.id,
+              x: poolData.offsetX || 0,
+              y: poolData.offsetY || 0,
+              width: poolData.width || 1000,
+              height: poolData.height || 1000
+            };
+          });
+
+        const territory = findAvailableTerritory(existingPools);
+
+        if (!territory) {
+          logger.error('No available territory for pool panel');
+          // Fallback to old logic if territory finding fails
+          const poolIndex = existingPools.length;
+          const defaultPoolData: PoolPanelData = {
+            tabs: [defaultPoolTab],
+            activeTabId: 'tab-default',
+            offsetX: 2500 + poolIndex * 1200,
+            offsetY: 0,
+            width: 1000,
+            height: 1000
+          };
+          (panel as PanelObject & { poolData: PoolPanelData }).poolData = defaultPoolData;
+        } else {
+          const defaultPoolData: PoolPanelData = {
+            tabs: [defaultPoolTab],
+            activeTabId: 'tab-default',
+            offsetX: territory.x,
+            offsetY: territory.y,
+            width: 1000,
+            height: 1000,
+            territoryId: `territory-${panel.id}-${Date.now()}`
+          };
+          (panel as PanelObject & { poolData: PoolPanelData }).poolData = defaultPoolData;
+        }
+      }
+
+      // Initialize tableau data for TABLEAU panels
+      if (panelType === PanelType.TABLEAU) {
+        const defaultTableauTab: PanelTab = {
+          id: 'tab-default',
+          name: 'Tableau 1',
+          visibleToPlayerIds: [],
+          manageableByPlayerIds: [],
+          editableByPlayerIds: []
+        };
+
+        const defaultTableauData: TableauPanelData = {
+          tabs: [defaultTableauTab],
+          activeTabId: 'tab-default',
+          tabObjects: {
+            'tab-default': []
+          }
+        };
+
+        (panel as PanelObject & { tableauData: TableauPanelData }).tableauData = defaultTableauData;
       }
 
       return {
@@ -4676,6 +4823,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 // Add restored objects
                 addObjects(restoredObjects);
+
+                // Migrate pool panels that are in playable area to non-playable territories
+                runPoolMigrationIfNeeded(restoredObjects);
+
                 addInitialLoadStep('Images restored', 'success');
               } else {
                 // Just add objects without restoration
@@ -4735,7 +4886,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                name: 'Game Board',
                content: '',
                color: '#34495e',
-               locked: true,
+               locked: false,
                isOnTable: true,
                gridType: GridType.HEX,
                gridSize: 60,  // Grid cell size in VU

@@ -4,6 +4,8 @@ import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage
 import { X, Minus, Plus, Eye, EyeOff, Pin, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
 import { HandPanel } from './HandPanel';
 import { CharacterPanel } from './CharacterPanel';
+import { PoolPanel } from './PoolPanel';
+import { TableauPanel } from './TableauPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -11,6 +13,7 @@ import { TopDeckModal } from './TopDeckModal';
 import { PanelSettingsModal } from './PanelSettingsModal';
 import { HyperscaleLayerSettingsWindow } from './HyperscaleLayerSettingsWindow';
 import { useGame } from '../store/GameContext';
+import { useDragOverStore } from '../store/dragOverState';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
@@ -73,6 +76,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   isPinnedMode = false
 }) => {
   const { dispatch, state, isHost } = useGame();
+  const { isDragging: isDraggingOverPoolState, targetPoolPanelId } = useDragOverStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +88,14 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   // Track if this panel is currently being resized
   const [isResizing, setIsResizing] = useState(false);
+
+  // Track if panel is being dragged with Shift
+  const [isShiftDragging, setIsShiftDragging] = useState(false);
+
+  // Helper to check if click should be blocked during Shift+drag
+  const shouldBlockClick = useCallback((e: React.MouseEvent) => {
+    return isShiftDragging || e.shiftKey;
+  }, [isShiftDragging]);
 
   // Main menu specific state
   const [showGameSettings, setShowGameSettings] = useState(false);
@@ -297,13 +309,33 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       const deltaY = e.clientY - startY;
       const minSize = 200;
 
+      // Check if this is a pool panel and calculate max size
+      const isPoolPanel = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.POOL;
+      const SCROLLBAR_SIZE = 20; // Approximate scrollbar width/height
+
+      let maxSize: number | undefined;
+      if (isPoolPanel) {
+        // Pool panels are limited to 1000vu + scrollbar size
+        // Convert to pixels: for pinned panels use vuToPx, for unpinned use pixelsPerVU
+        if (uiObject.isPinnedToViewport) {
+          maxSize = vuToPx(1000) + SCROLLBAR_SIZE;
+        } else {
+          // For unpinned panels, dimensions are already in virtual units
+          maxSize = 1000 + (SCROLLBAR_SIZE / pixelsPerVU);
+        }
+      }
+
       const newWidth = Math.max(minSize, startWidth + deltaX);
       const newHeight = Math.max(minSize, startHeight + deltaY);
 
+      // Apply max size constraint for pool panels
+      const constrainedWidth = maxSize ? Math.min(newWidth, maxSize) : newWidth;
+      const constrainedHeight = maxSize ? Math.min(newHeight, maxSize) : newHeight;
+
       // Update container style directly for smooth resize
       if (container) {
-        container.style.width = `${newWidth}px`;
-        container.style.height = `${newHeight}px`;
+        container.style.width = `${constrainedWidth}px`;
+        container.style.height = `${constrainedHeight}px`;
       }
     };
 
@@ -311,8 +343,26 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       if (!resizing) return;
 
       const rect = container.getBoundingClientRect();
-      const newWidth = Math.round(rect.width);
-      const newHeight = Math.round(rect.height);
+      let newWidth = Math.round(rect.width);
+      let newHeight = Math.round(rect.height);
+
+      // Apply max size constraint for pool panels on final size
+      const isPoolPanel = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.POOL;
+      const SCROLLBAR_SIZE = 20; // Approximate scrollbar width/height
+
+      if (isPoolPanel) {
+        // Pool panels are limited to 1000vu + scrollbar size
+        if (uiObject.isPinnedToViewport) {
+          const maxSize = vuToPx(1000) + SCROLLBAR_SIZE;
+          newWidth = Math.min(newWidth, maxSize);
+          newHeight = Math.min(newHeight, maxSize);
+        } else {
+          // For unpinned panels, dimensions are in virtual units
+          const maxSize = 1000 + (SCROLLBAR_SIZE / pixelsPerVU);
+          newWidth = Math.min(newWidth, maxSize);
+          newHeight = Math.min(newHeight, maxSize);
+        }
+      }
 
       // Only update store if size actually changed
       if (Math.abs(newWidth - uiObject.width) > 5 || Math.abs(newHeight - uiObject.height) > 5) {
@@ -338,6 +388,20 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       if (resizing) setIsResizing(false);
     };
   }, [canResize, uiObject.id, uiObject.width, uiObject.height, dispatch]);
+
+  // Global mouse up handler to clear shift-drag state
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
 
   // UI objects use screen coordinates, so we need to compensate for the world transform
   // The parent container has: translate(offset.x, offset.y) scale(zoom)
@@ -383,6 +447,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     transformOrigin: 'top left',
     zIndex: uiObject.zIndex || 1000,
     pointerEvents: 'auto',
+    cursor: isShiftDragging ? 'grabbing' : 'auto',
     // Enable native CSS resize
     resize: canResize ? 'both' : 'none',
     overflow: canResize ? 'hidden' : 'hidden',
@@ -392,7 +457,12 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     ? 'bg-purple-800'
     : 'bg-slate-700';
 
+  // Check if an object is being dragged over this pool panel
+  const isDragOverPool = isDraggingOverPoolState && targetPoolPanelId === uiObject.id;
+
   const borderColor = isDragging
+    ? 'border-purple-400'
+    : isDragOverPool
     ? 'border-purple-400'
     : 'border-slate-600';
 
@@ -416,11 +486,35 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       ref={containerRef}
       data-ui-object={uiObject.id}
       data-main-menu={isMainMenu ? "true" : undefined}
+      data-shift-dragging={isShiftDragging ? "true" : undefined}
       style={containerStyle}
-      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col w-full`}
+      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col w-full ${
+        isShiftDragging || isDragOverPool ? 'ring-2 ring-purple-500 ring-opacity-50' : ''
+      }`}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
+      }}
+      onMouseDown={(e) => {
+        // When Shift is pressed, enable drag from anywhere on the panel
+        if (e.shiftKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsShiftDragging(true);
+          handleBringToFront();
+          onMouseDown(e, uiObject.id);
+        }
+        // When Shift is not pressed, let normal click handlers work
+      }}
+      onMouseUp={(e) => {
+        if (isShiftDragging) {
+          setIsShiftDragging(false);
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (isShiftDragging) {
+          setIsShiftDragging(false);
+        }
       }}
     >
       {/* Header / Title Bar */}
@@ -435,6 +529,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             className="flex items-center gap-2 truncate cursor-move"
             style={{ flex: 1, minWidth: 0, pointerEvents: 'auto' }}
             onMouseDown={(e) => {
+              // Don't handle normal drag when Shift is pressed - let the container's Shift+drag take over
+              if (e.shiftKey || isShiftDragging) {
+                e.stopPropagation();
+                return;
+              }
               e.stopPropagation();
               handleBringToFront();
               onMouseDown(e, uiObject.id);
@@ -444,6 +543,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             {!minimized && (
               <button
                 onClick={(e) => {
+                  if (shouldBlockClick(e)) return;
                   e.stopPropagation();
                   setShowSupportModal(true);
                 }}
@@ -454,7 +554,10 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             )}
           </div>
           {/* Right side - Control buttons */}
-          <div className="flex items-center gap-0.5 flex-shrink-0 ml-1" style={{ pointerEvents: 'auto' }}>
+          <div
+            className="flex items-center gap-0.5 flex-shrink-0 ml-1"
+            style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+          >
             {!minimized && (
               <>
                 {/* Settings button - visible to all */}
@@ -535,6 +638,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             className="text-sm font-semibold text-white truncate cursor-move"
             style={{ flex: 1, minWidth: 0, pointerEvents: 'auto' }}
             onMouseDown={(e) => {
+              // Don't handle normal drag when Shift is pressed - let the container's Shift+drag take over
+              if (e.shiftKey || isShiftDragging) {
+                e.stopPropagation();
+                return;
+              }
               e.stopPropagation();
               handleBringToFront();
               onMouseDown(e, uiObject.id);
@@ -543,7 +651,10 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             {uiObject.title}
           </div>
           {/* Buttons container - separate from drag handle */}
-          <div className="flex items-center gap-0.5 flex-shrink-0 ml-1" style={{ pointerEvents: 'auto' }}>
+          <div
+            className="flex items-center gap-0.5 flex-shrink-0 ml-1"
+            style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+          >
             {uiObject.type === ItemType.PANEL ? (
               <>
                 {/* Settings button - only shown when expanded */}
@@ -628,25 +739,47 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
       {/* Content */}
       {!minimized && (
-        <div ref={contentRef} className="flex-1 overflow-hidden w-full">
-          {isResizing ? (
-            // Show resize indicator during resize
-            <div className="h-full flex items-center justify-center text-slate-400">
-              <div className="text-center">
-                <div className="text-4xl mb-2">⤡</div>
-                <div className="text-sm">Resizing...</div>
+        <div
+          ref={contentRef}
+          className="flex-1 overflow-hidden w-full relative"
+          onMouseDown={(e) => {
+            // Prevent all clicks when Shift is held and dragging
+            if (e.shiftKey || isShiftDragging) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          onClick={(e) => {
+            // Prevent click events during Shift drag
+            if (isShiftDragging) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+        >
+          <div
+            className="h-full w-full"
+            style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+          >
+            {isResizing ? (
+              // Show resize indicator during resize
+              <div className="h-full flex items-center justify-center text-slate-400">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">⤡</div>
+                  <div className="text-sm">Resizing...</div>
+                </div>
               </div>
-            </div>
-          ) : (
-            <>
-              {uiObject.type === ItemType.PANEL && (
-                <PanelContent panel={uiObject as PanelObject} />
-              )}
-              {uiObject.type === ItemType.WINDOW && (
-                <WindowContent window={uiObject as WindowObject} />
-              )}
-            </>
-          )}
+            ) : (
+              <>
+                {uiObject.type === ItemType.PANEL && (
+                  <PanelContent panel={uiObject as PanelObject} />
+                )}
+                {uiObject.type === ItemType.WINDOW && (
+                  <WindowContent window={uiObject as WindowObject} />
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -823,7 +956,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
                       <span className="text-xs text-gray-300">{translate('Add to cursor slot', state.language as Locale)}</span>
-                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Click</kbd>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Click</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5">
                       <span className="text-xs text-gray-300">{translate('Delete without confirmation', state.language as Locale)}</span>
@@ -947,15 +1080,15 @@ const PanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   switch (panel.panelType) {
     case PanelType.MAIN_MENU:
       // Render the Main Menu content inside the panel (without outer wrapper)
-      return <MainMenuContent width={panel.width} />;
+      return <MainMenuContentWithDragDetection panel={panel} />;
     case PanelType.HAND:
-      return <HandPanelWithDragDetection panel={panel} />;
+      return <HandPanelWithShiftDragDetection panel={panel} />;
     case PanelType.CHARACTER:
-      return <CharacterPanel panel={panel} />;
+      return <CharacterPanelWithDragDetection panel={panel} />;
     case PanelType.TABLEAU:
-      return <TableauPanelContent panel={panel} />;
+      return <TableauPanelWithDragDetection panel={panel} />;
     case PanelType.POOL:
-      return <PoolPanelContent panel={panel} />;
+      return <PoolPanelWithDragDetection panel={panel} />;
     // TODO: Add other panel types
     // case PanelType.CHAT:
     //   return <ChatPanel />;
@@ -972,12 +1105,136 @@ const PanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   }
 };
 
-// HandPanel with drag detection for standalone panels
-const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
-  const [isDragTarget, setIsDragTarget] = React.useState(false);
+// CharacterPanel with Shift+drag detection
+const CharacterPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+  const [isShiftDragging, setIsShiftDragging] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // Global mouse up handler to clear shift-drag state
+  React.useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsShiftDragging(true);
+
+      // Find the UIObjectRenderer container and trigger its drag
+      const uiObjectContainer = containerRef.current?.closest('[data-ui-object]') as HTMLElement;
+      if (uiObjectContainer) {
+        // Simulate mouse down on the container for drag
+        const mouseDownEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          button: e.button,
+          shiftKey: true
+        });
+        uiObjectContainer.dispatchEvent(mouseDownEvent);
+      }
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+      className="h-full"
+    >
+      <CharacterPanel panel={panel} />
+    </div>
+  );
+};
+
+// MainMenuContent with Shift+drag detection
+const MainMenuContentWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+  const [isShiftDragging, setIsShiftDragging] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // Global mouse up handler to clear shift-drag state
+  React.useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsShiftDragging(true);
+
+      // Find the UIObjectRenderer container and trigger its drag
+      const uiObjectContainer = containerRef.current?.closest('[data-ui-object]') as HTMLElement;
+      if (uiObjectContainer) {
+        // Simulate mouse down on the container for drag
+        const mouseDownEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          button: e.button,
+          shiftKey: true
+        });
+        uiObjectContainer.dispatchEvent(mouseDownEvent);
+      }
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+      className="h-full"
+    >
+      <MainMenuContent width={panel.width} />
+    </div>
+  );
+};
+
+// HandPanel with Shift+drag detection and card drag detection
+const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+  const [isShiftDragging, setIsShiftDragging] = React.useState(false);
+  const [isCardDragTarget, setIsCardDragTarget] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
 
+  // Global mouse up handler to clear shift-drag state
+  React.useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
+
+  // Card drag detection
   React.useEffect(() => {
     const handleDragMove = (e: Event) => {
       const customEvent = e as CustomEvent<{
@@ -997,11 +1254,11 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
       const y = customEvent.detail.y;
 
       const isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-      setIsDragTarget(isOver);
+      setIsCardDragTarget(isOver);
     };
 
     const handleDragEnd = () => {
-      setIsDragTarget(false);
+      setIsCardDragTarget(false);
     };
 
     window.addEventListener('card-drag-move', handleDragMove);
@@ -1013,37 +1270,165 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
     };
   }, []);
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsShiftDragging(true);
+
+      // Find the UIObjectRenderer container and trigger its drag
+      const uiObjectContainer = containerRef.current?.closest('[data-ui-object]') as HTMLElement;
+      if (uiObjectContainer) {
+        // Simulate mouse down on the container for drag
+        const mouseDownEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          button: e.button,
+          shiftKey: true
+        });
+        uiObjectContainer.dispatchEvent(mouseDownEvent);
+      }
+    }
+  };
+
   const isCollapsed = panel.width === 200 && panel.height === 40;
 
   return (
-    <div ref={containerRef} className="h-full">
-      <HandPanel width={panel.width} isDragTarget={isDragTarget} isCollapsed={isCollapsed} language={state.language} />
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+      className="h-full"
+    >
+      <HandPanel width={panel.width} isDragTarget={isCardDragTarget} isCollapsed={isCollapsed} language={state.language} />
+    </div>
+  );
+};
+
+// PoolPanel with Shift+drag detection
+const PoolPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+  const [isShiftDragging, setIsShiftDragging] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // Global mouse up handler to clear shift-drag state
+  React.useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only handle Shift+drag for panel movement
+    // Let other key combinations (Ctrl, etc.) pass through to children
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsShiftDragging(true);
+
+      // Find the UIObjectRenderer container and trigger its drag
+      const uiObjectContainer = containerRef.current?.closest('[data-ui-object]') as HTMLElement;
+      if (uiObjectContainer) {
+        // Simulate mouse down on the container for drag
+        const mouseDownEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          button: e.button,
+          shiftKey: true
+        });
+        uiObjectContainer.dispatchEvent(mouseDownEvent);
+      }
+      return;
+    }
+
+    // Don't prevent default or stop propagation for other key combinations
+    // Let them pass through to children (PoolTabletop)
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+      className="h-full"
+    >
+      <PoolPanel panel={panel} />
+    </div>
+  );
+};
+
+// TableauPanel with Shift+drag detection
+const TableauPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+  const [isShiftDragging, setIsShiftDragging] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // Global mouse up handler to clear shift-drag state
+  React.useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsShiftDragging(true);
+
+      // Find the UIObjectRenderer container and trigger its drag
+      const uiObjectContainer = containerRef.current?.closest('[data-ui-object]') as HTMLElement;
+      if (uiObjectContainer) {
+        // Simulate mouse down on the container for drag
+        const mouseDownEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          button: e.button,
+          shiftKey: true
+        });
+        uiObjectContainer.dispatchEvent(mouseDownEvent);
+      }
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+      className="h-full"
+    >
+      <TableauPanel panel={panel} />
     </div>
   );
 };
 
 // Tableau panel content
 const TableauPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
-  const { state } = useGame();
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="p-4 text-slate-300 text-sm">
-        Tableau Panel
-      </div>
-    </div>
-  );
+  return <TableauPanel panel={panel} />;
 };
 
 // Pool panel content
 const PoolPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
-  return (
-    <div className="h-full flex flex-col">
-      <div className="p-4 text-slate-300 text-sm">
-        Pool Panel
-      </div>
-    </div>
-  );
+  return <PoolPanel panel={panel} />;
 };
 
 // Window content renderer

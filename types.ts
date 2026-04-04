@@ -85,7 +85,7 @@ export interface CardPile {
   showTopCard?: boolean; // Whether to show the top card face on the pile itself
 }
 
-export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'lock' | 'clone' | 'roll' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'hide' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard';
+export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'hide' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard';
 export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
 // Alternative card back settings (per-card)
@@ -492,6 +492,10 @@ export interface Player {
   color: string;
   isGM: boolean;
   handCardOrder?: string[]; // Custom order of card IDs in player's hand
+  // Hand visibility permissions (who can view this player's hand)
+  handVisibleToPlayerIds?: string[]; // Player IDs who can see this hand
+  // Hand management permissions (who can reorder/manipulate cards in this hand)
+  handManageableByPlayerIds?: string[]; // Player IDs who can manage this hand
 }
 
 export interface DiceRoll {
@@ -581,6 +585,10 @@ export interface PanelObject extends UIObject {
   dualPosition?: boolean;
   // Optional: character panel data for CHARACTER panel type
   characterData?: CharacterPanelData;
+  // Optional: pool panel data for POOL panel type
+  poolData?: PoolPanelData;
+  // Optional: tableau panel data for TABLEAU panel type
+  tableauData?: TableauPanelData;
 }
 
 // ============================================================================
@@ -684,13 +692,23 @@ export interface CounterBlockData {
   counters: CounterItem[];
 }
 
+// Character sub-tab (for organizing blocks within a character)
+export interface CharacterSubTab {
+  id: string;
+  name: string;
+  blocks: CharacterBlock[];
+  columns: number; // Number of columns (default: 1)
+}
+
 // Character tab data
 export interface CharacterTab {
   id: string;
   characterName: string;
   playerId?: string;
-  blocks: CharacterBlock[];
-  columns: number; // Number of columns (default: 1)
+  blocks?: CharacterBlock[]; // Legacy: for backward compatibility, moved to subTabs
+  columns?: number; // Legacy: for backward compatibility, moved to subTabs
+  subTabs?: CharacterSubTab[]; // New: sub-tabs for organizing blocks
+  activeSubTabId?: string; // New: active sub-tab ID
   visibleToPlayerIds: string[];
   manageableByPlayerIds: string[]; // Can change values but not structure
   editableByPlayerIds: string[];
@@ -711,6 +729,42 @@ export interface CharacterPanelData {
   presets: CharacterPreset[];
   activeCharacterId: string;
   isUniversal: boolean;
+}
+
+// ============================================================================
+// POOL & TABLEAU PANEL TYPES
+// ============================================================================
+
+// Tab for Pool/Tableau panels
+export interface PanelTab {
+  id: string;
+  name: string;
+  // Permission settings
+  visibleToPlayerIds: string[]; // Player IDs who can see this tab
+  manageableByPlayerIds: string[]; // Player IDs who can manage objects in this tab
+  editableByPlayerIds: string[]; // Player IDs who can add/remove objects in this tab
+  zoom?: number; // Zoom level for this tab (default 1)
+}
+
+// Pool panel data - separate 1000x1000vu game space
+export interface PoolPanelData {
+  tabs: PanelTab[];
+  activeTabId: string;
+  // Pool zone offset in vu (where this pool is located in game space)
+  // Should be outside playable area (5000×5000 top-left corner)
+  offsetX: number; // X position of pool zone in game space
+  offsetY: number; // Y position of pool zone in game space
+  // Pool zone is always fixed at 1000x1000 vu
+  territoryId?: string; // Unique identifier for this pool's territory
+  zoom?: number; // Zoom level for each tab (stored per tab in tabs array)
+}
+
+// Tableau panel data - same as main game space but in panel form
+export interface TableauPanelData {
+  tabs: PanelTab[];
+  activeTabId: string;
+  // Objects stored in each tab (separate from main game space)
+  tabObjects: { [tabId: string]: string[] }; // Map of tabId -> object IDs
 }
 
 // Window object - modal dialogs on the game board

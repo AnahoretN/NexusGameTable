@@ -9,9 +9,10 @@ import { ContextMenu } from './ContextMenu';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 
-const DEFAULT_MODAL_WIDTH = 75.75; // vw
-const MIN_MODAL_WIDTH = 50; // vw
-const MAX_MODAL_WIDTH = 95; // vw
+const DEFAULT_MODAL_WIDTH = 1400; // px
+const MIN_MODAL_WIDTH = 900; // px
+const MAX_MODAL_WIDTH = 1800; // px
+const DEFAULT_MODAL_HEIGHT = 900; // px
 
 // Lazy card component - renders sequentially one by one for smooth visual fill effect
 // Cards are rendered in order with a small delay between each (16ms per card index)
@@ -76,6 +77,7 @@ const LazyCard = React.memo(({
             overrideWidth={cardWidth}
             overrideHeight={cardHeight}
             {...commonDeckProps}
+            onContextMenu={(e: React.MouseEvent) => onContextMenu(e, card)}
           />
 
           {buttons.length > 0 && (
@@ -446,6 +448,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
+    console.log('[SearchDeckModal] handleContextMenu called for card:', card.name);
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({
@@ -453,6 +456,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       y: e.clientY,
       object: card
     });
+    console.log('[SearchDeckModal] Context menu state set');
   }, []);
 
   const executeMenuAction = useCallback((action: string) => {
@@ -554,9 +558,45 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         }
         break;
       }
-      case 'clone':
-        dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id }});
+      case 'clone': {
+        // Clone card and add it to the same deck
+        const card = object as Card;
+        if (card.deckId) {
+          // Create a cloned card with a new ID
+          const newCard = {
+            ...card,
+            id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+            name: `${card.name} (Copy)`,
+          };
+
+          // Add the cloned card to the objects
+          dispatch({ type: 'ADD_OBJECT', payload: newCard });
+
+          // Get current deck state
+          const currentDeck = state.objects[deck.id] as Deck;
+          const currentCardIds = currentDeck?.cardIds || deck.cardIds;
+          const currentBaseCardIds = currentDeck?.baseCardIds || deck.baseCardIds;
+
+          // Add the new card to deck's cardIds and baseCardIds
+          const updatedCardIds = [...currentCardIds, newCard.id];
+          const updatedBaseCardIds = [...currentBaseCardIds, newCard.id];
+
+          if (isPile && pile) {
+            const updatedPiles = (currentDeck?.piles || deck.piles)?.map(p =>
+              p.id === pile.id ? { ...p, cardIds: [...pile.cardIds, newCard.id] } : p
+            );
+            dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles, cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds } });
+            setCardOrder([...cardOrder, newCard.id]);
+          } else {
+            dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds } });
+            setCardOrder(updatedCardIds);
+          }
+        } else {
+          // If card has no deck, just clone it normally
+          dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id }});
+        }
         break;
+      }
       case 'toggleHide':
         const isHidden = (object as Card).hidden === true;
         dispatch({
@@ -581,6 +621,28 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: filteredOrder, baseCardIds: filteredBaseCardIds } });
         }
         setCardOrder(filteredOrder);
+        break;
+      case 'destroy':
+        // Destroy permanently removes card from the deck, including from baseCardIds
+        // This means the card won't come back even with "Return All" action
+        const destroyFilteredOrder = cardOrder.filter(id => id !== object.id);
+        // Get the current baseCardIds from state to ensure we're working with latest data
+        const destroyCurrentDeck = state.objects[deck.id] as Deck;
+        const destroyCurrentBaseCardIds = destroyCurrentDeck?.baseCardIds || deck.baseCardIds || [];
+        const destroyFilteredBaseCardIds = destroyCurrentBaseCardIds.filter(id => id !== object.id);
+
+        // Also remove the card object from state.objects to completely forget about it
+        dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id } });
+
+        if (isPile && pile) {
+          const destroyUpdatedPiles = (destroyCurrentDeck?.piles || deck.piles)?.map(p =>
+            p.id === pile.id ? { ...p, cardIds: destroyFilteredOrder } : p
+          );
+          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: destroyUpdatedPiles, baseCardIds: destroyFilteredBaseCardIds } });
+        } else {
+          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds } });
+        }
+        setCardOrder(destroyFilteredOrder);
         break;
       case 'setCardBack':
         // Set the current card's image as the deck's card back
@@ -646,11 +708,12 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   }, [isResizing]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center">
+    <div className="fixed inset-0 z-[100002] flex items-center justify-center">
       <div
         ref={modalContainerRef}
-        className="bg-slate-900 border border-slate-700 h-[85vh] flex flex-col relative overflow-hidden"
-        style={{ width: `${modalWidth}vw` }}
+        data-modal="search-deck"
+        className="bg-slate-900 border border-slate-700 flex flex-col relative overflow-hidden"
+        style={{ width: `${modalWidth}px`, height: `${DEFAULT_MODAL_HEIGHT}px` }}
       >
         {/* Header - minimal style */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">

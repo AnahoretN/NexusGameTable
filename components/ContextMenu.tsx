@@ -18,6 +18,7 @@ interface ContextMenuProps {
   language?: AppLanguage;
   nexusBoardEditingId?: string | null; // ID of NexusBoard currently being edited
   shiftKey?: boolean; // Whether Shift key was pressed when context menu opened
+  contextMenuType?: 'tabletop' | 'pool'; // Type of context menu for proper event handling
 }
 
 interface MenuItem {
@@ -31,8 +32,15 @@ interface MenuItem {
   isSeparator?: boolean;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey, contextMenuType = 'tabletop' }) => {
   const { state } = useGame();
+
+  // Проверка при монтировании компонента
+  React.useEffect(() => {
+    console.log('[ContextMenu] Component mounted with type:', contextMenuType);
+    console.log('[ContextMenu] onAction function:', typeof onAction);
+    console.log('[ContextMenu] Object:', object.type, object.name);
+  }, [onAction, object, contextMenuType]);
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
@@ -140,7 +148,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   // Close layer submenu when clicking outside
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (submenuRef.current && !submenuRef.current.contains(e.target as Node)) {
+      // Check if click is on any submenu (rendered via portal)
+      const target = e.target as Node;
+      const clickedSubmenu = (target as Element).closest('[data-submenu="true"]');
+      const clickedMenu = menuRef.current?.contains(target);
+
+      // Only close if click is outside both main menu and all submenus
+      if (!clickedMenu && !clickedSubmenu) {
         setLayerSubmenuOpen(false);
         setRotateSubmenuOpen(false);
         setPilesSubmenuOpen(false);
@@ -335,7 +349,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       }] : []),
       ...(piles.length > 0 ? [{
         label: '-',
-        action: 'separator',
+        action: 'separator-move-to-piles',
         visible: true,
         isSeparator: true
       }] : []),
@@ -389,12 +403,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: 'resetToBase',
       icon: <RotateCcw size={14} />,
       visible: object.type === ItemType.COUNTER,
-    },
-    {
-      label: translate('Set as Card Back', language as Locale),
-      action: 'setCardBack',
-      icon: <ImageDown size={14} />,
-      visible: isSearchWindow && isGM && object.type === ItemType.CARD,
     },
     // "Move to..." section for cards
     ...moveToSection,
@@ -561,7 +569,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
           },
           {
             label: '-',
-            action: 'separator',
+            action: 'separator-layer-controls',
             visible: true,
             isSeparator: true
           },
@@ -579,7 +587,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
           },
           {
             label: '-',
-            action: 'separator',
+            action: 'separator-hyperscale-layers',
             visible: layerItems.length > 0,
             isSeparator: true
           },
@@ -615,7 +623,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         },
         {
           label: '-',
-          action: 'separator',
+          action: 'separator-rotation-swing',
           visible: can('swingClockwise') || can('swingCounterClockwise'),
           isSeparator: true
         },
@@ -652,11 +660,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       icon: <Pin size={14} />,
       visible: !hideCardActions && can('pin'),
     },
-    // Separator before Clone/Delete (only visible if Clone or Delete is visible)
+    // Separator before Hide Card/Set as Card Back/Destroy/Clone/Delete (only visible if any of these are visible)
     {
       label: '-',
-      action: 'separator-clone-delete',
-      visible: (!hideCardActions && can('clone')) || (!hideCardActions && can('delete')),
+      action: 'separator-hide-destroy-clone-delete',
+      visible: (isSearchWindow && isGM && object.type === ItemType.CARD) ||
+               (!hideCardActions && can('clone')) ||
+               (!hideCardActions && can('delete')) ||
+               (isSearchWindow && isGM && can('destroy')),
       isSeparator: true
     },
     {
@@ -664,6 +675,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       action: 'toggleHide',
       icon: (object as Card).hidden ? <Eye size={14} /> : <EyeOff size={14} />,
       visible: isSearchWindow && isGM && object.type === ItemType.CARD,
+    },
+    {
+      label: translate('Set as Card Back', language as Locale),
+      action: 'setCardBack',
+      icon: <ImageDown size={14} />,
+      visible: isSearchWindow && isGM && object.type === ItemType.CARD,
+    },
+    {
+      label: translate('Destroy', language as Locale),
+      action: 'destroy',
+      icon: <Trash2 size={14} />,
+      visible: isSearchWindow && isGM && object.type === ItemType.CARD && can('destroy'),
     },
     {
       label: translate('Clone', language as Locale),
@@ -693,16 +716,22 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[100000] cursor-default"
+        className="fixed inset-0 z-[100001] cursor-default"
         onClick={onClose}
         onContextMenu={(e) => { e.preventDefault(); onClose(); }}
-        onMouseDown={(e) => e.stopPropagation()}
       />
       <div
         ref={menuRef}
-        className="fixed z-[100000] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100 cursor-default"
+        data-context-menu={contextMenuType}
+        className="fixed z-[100003] bg-slate-800 border border-slate-600 rounded-lg shadow-2xl py-1 min-w-[180px] text-sm animate-in fade-in zoom-in-95 duration-100 cursor-pointer"
         style={menuStyle}
-        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          console.log('[ContextMenu] MENU DIV CLICKED!', e.target);
+        }}
+        onMouseDown={(e) => {
+          console.log('[ContextMenu] MENU DIV MOUSE DOWN!', e.target);
+          e.stopPropagation();
+        }}
       >
         <div className="px-3 py-2 border-b border-slate-700 mb-1">
             <span className="text-xs text-white truncate block max-w-[150px]">
@@ -807,9 +836,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                       ref={getSubmenuRef()}
                       data-submenu="true"
                       data-submenu-key={submenuKey}
-                      className="fixed z-[100001] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
+                      className="fixed z-[100004] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
                       style={{ left: submenuPos.left, top: submenuPos.top }}
                       onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
                     >
                       {/* If item has submenuItems defined, use generic renderer */}
                       {item.submenuItems ? (
@@ -824,11 +854,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                             return (
                               <button
                                 key={subItem.action}
-                                onClick={() => {
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  console.log('[ContextMenu] Submenu item clicked:', subAction);
                                   onAction(subAction);
                                   onClose();
                                 }}
-                                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
                               >
                                 {subItem.icon}
                                 <span>{subItem.label}</span>
@@ -918,16 +952,23 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
             return (
                 <React.Fragment key={item.action || idx}>
                     <button
+                        type="button"
                         onClick={(e) => {
+                          console.log('[ContextMenu] ===== BUTTON CLICKED =====');
+                          console.log('[ContextMenu] Button clicked:', item.action, item.label);
+                          console.log('[ContextMenu] Event:', e);
                           // Pass actual shift key state for delete action
                           if (item.action === 'delete') {
+                            console.log('[ContextMenu] Calling onAction with shift key for delete');
                             onAction(item.action, e.shiftKey);
                           } else {
+                            console.log('[ContextMenu] Calling onAction for:', item.action);
                             onAction(item.action);
                           }
+                          console.log('[ContextMenu] onAction called, closing menu');
                           onClose();
                         }}
-                        className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors ${item.action === 'delete' ? 'text-red-400 hover:text-red-300' : 'text-gray-200'}`}
+                        className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors cursor-pointer ${item.action === 'delete' ? 'text-red-400 hover:text-red-300' : 'text-gray-200'}`}
                     >
                         {item.icon}
                         <span>{item.label}</span>

@@ -2,7 +2,9 @@
 import { Coordinates, CardShape } from './types';
 
 // Virtual Units (vu) - Game world size independent of screen pixels
-export const WORLD_SIZE_VU = 5000; // Game world is 5000×5000 vu
+export const WORLD_SIZE_VU = 10000; // Game world is 10000×10000 vu (total space)
+export const PLAYABLE_AREA_SIZE = 5000; // Playable area for players/GM is 5000×5000 vu (top-left corner)
+export const POOL_PANEL_SIZE = 1000; // Each pool panel reserves 1000×1000 vu territory
 
 // Object dimensions in virtual units (vu)
 // 1 vu = 0.1% of screen height, so objects scale with screen size

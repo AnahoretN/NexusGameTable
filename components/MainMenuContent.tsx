@@ -7,7 +7,7 @@ import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { ItemType, TableObject, Token, CardLocation, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, Randomizer, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
-import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package } from 'lucide-react';
+import { Dices, MessageSquare, User, Check, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Keyboard } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -732,8 +732,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       items: [
         { name: translate('Hand Panel', language as Locale), type: 'PANEL', panelType: PanelType.HAND },
         { name: translate('Character Panel', language as Locale), type: 'PANEL', panelType: PanelType.CHARACTER },
-        { name: translate('Tableau Panel', language as Locale), type: 'PANEL', panelType: PanelType.TABLEAU, disabled: true },
-        { name: translate('Pool Panel', language as Locale), type: 'PANEL', panelType: PanelType.POOL, disabled: true },
+        { name: translate('Pool Panel', language as Locale), type: 'PANEL', panelType: PanelType.POOL },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.PANEL && (obj as any).panelType !== PanelType.MAIN_MENU
     },
@@ -1592,9 +1591,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   const objectsOnTable = useMemo(() =>
     Object.values(state.objects).filter((obj): obj is TableObject =>
       category.matcher(obj) &&
-      // Keep standard tokens (without archetypeId) in the list even when in cursor slot
-      ((obj.type === ItemType.TOKEN && !(obj as any).archetypeId) || !(obj as any).inCursorSlot) &&
       !(obj as any).archetypeId  // Exclude token copies (tokens created from archetypes)
+      // Objects in cursor slot should NOW be visible in the list
     ),
     [state.objects, category.matcher]
   );
@@ -2103,7 +2101,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                         className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 text-xs"
                         title={isVisible ? 'Hide' : 'Show'}
                       >
-                        {isVisible ? <Eye size={10} /> : <EyeOff size={10} />}
+                        {isVisible ? <EyeOff size={10} /> : <Eye size={10} />}
                       </button>
                     )}
                     {canConfigureObjects && (
