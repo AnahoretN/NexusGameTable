@@ -754,21 +754,23 @@ export interface PanelTab {
   manageableByPlayerIds: string[]; // Player IDs who can manage objects in this tab
   editableByPlayerIds: string[]; // Player IDs who can add/remove objects in this tab
   zoom?: number; // Zoom level for this tab (default 1)
+  // Each tab has its own separate 1000x1000vu game space
+  offsetX: number; // X position of this tab's pool zone in game space
+  offsetY: number; // Y position of this tab's pool zone in game space
+  territoryId?: string; // Unique identifier for this tab's territory
 }
 
-// Pool panel data - separate 1000x1000vu game space
+// Pool panel data - separate 1000x1000vu game space per tab
 export interface PoolPanelData {
   tabs: PanelTab[];
   activeTabId: string;
-  // Pool zone offset in vu (where this pool is located in game space)
-  // Should be outside playable area (5000×5000 top-left corner)
-  offsetX: number; // X position of pool zone in game space
-  offsetY: number; // Y position of pool zone in game space
-  // Pool zone is always fixed at 1000x1000 vu
-  width?: number; // Width of pool zone (default 1000)
-  height?: number; // Height of pool zone (default 1000)
-  territoryId?: string; // Unique identifier for this pool's territory
-  zoom?: number; // Zoom level for each tab (stored per tab in tabs array)
+  // Note: Each tab now has its own offsetX, offsetY, territoryId
+  // These fields below are kept for backward compatibility with old data
+  offsetX?: number; // Deprecated: Use tabs[].offsetX instead
+  offsetY?: number; // Deprecated: Use tabs[].offsetY instead
+  territoryId?: string; // Deprecated: Use tabs[].territoryId instead
+  width?: number; // Deprecated: Pool zone is always 1000x1000
+  height?: number; // Deprecated: Pool zone is always 1000x1000
 }
 
 // Tableau panel data - same as main game space but in panel form

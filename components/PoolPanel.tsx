@@ -28,16 +28,17 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
       // Get existing pool territories to find available space
       const existingPools = Object.values(state.objects)
         .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData)
-        .map(obj => {
+        .flatMap(obj => {
           const poolPanel = obj as PanelObject;
           const poolData = poolPanel.poolData!;
-          return {
-            id: poolPanel.id,
-            x: poolData.offsetX || 0,
-            y: poolData.offsetY || 0,
+          // Each tab has its own territory now
+          return poolData.tabs.map(tab => ({
+            id: tab.id,
+            x: tab.offsetX || 0,
+            y: tab.offsetY || 0,
             width: 1000, // Fixed pool size
             height: 1000
-          };
+          }));
         });
 
       // Find available territory outside playable area (5000×5000)
@@ -56,13 +57,13 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
             visibleToPlayerIds: [],
             manageableByPlayerIds: [],
             editableByPlayerIds: [],
-            zoom: 1.02
+            zoom: 1.02,
+            offsetX: territory.x,
+            offsetY: territory.y,
+            territoryId: `territory-${panel.id}-tab-default-${Date.now()}`
           }
         ],
-        activeTabId: 'tab-default',
-        offsetX: territory.x,
-        offsetY: territory.y,
-        territoryId: `territory-${panel.id}-${Date.now()}`
+        activeTabId: 'tab-default'
       };
 
       dispatch({
@@ -72,6 +73,40 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
           poolData: defaultPoolData
         }
       });
+    } else {
+      // Migrate old data where offsetX/offsetY were at panel level
+      // Check if first tab is missing offsetX/offsetY
+      const firstTab = poolData.tabs[0];
+      if (firstTab && (firstTab.offsetX === undefined || firstTab.offsetY === undefined)) {
+        // Check if we have old panel-level coordinates
+        if (poolData.offsetX !== undefined && poolData.offsetY !== undefined) {
+          // Migrate to tab-level coordinates
+          const migratedTabs = poolData.tabs.map((tab, index) => {
+            if (tab.offsetX === undefined || tab.offsetY === undefined) {
+              // For existing tabs, use the old panel coordinates
+              // For new tabs, they'll get their own territory when created
+              return {
+                ...tab,
+                offsetX: poolData.offsetX!,
+                offsetY: poolData.offsetY!,
+                territoryId: poolData.territoryId || `territory-${panel.id}-tab-${tab.id}`
+              };
+            }
+            return tab;
+          });
+
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: panel.id,
+              poolData: {
+                ...poolData,
+                tabs: migratedTabs
+              }
+            }
+          });
+        }
+      }
     }
   }, [poolData, panel.id, dispatch, state.objects]);
 
@@ -190,13 +225,40 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   const handleAddTab = useCallback(() => {
     if (!poolData || !isGM) return;
 
+    // Get existing pool territories to find available space
+    const existingPools = Object.values(state.objects)
+      .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData)
+      .flatMap(obj => {
+        const poolPanel = obj as PanelObject;
+        const poolData = poolPanel.poolData!;
+        // Each tab has its own territory now
+        return poolData.tabs.map(tab => ({
+          id: tab.id,
+          x: tab.offsetX || 0,
+          y: tab.offsetY || 0,
+          width: 1000, // Fixed pool size
+          height: 1000
+        }));
+      });
+
+    // Find available territory outside playable area (5000×5000)
+    const territory = findAvailableTerritory(existingPools);
+
+    if (!territory) {
+      console.warn('No available territory for new pool tab');
+      return;
+    }
+
     const newTab: PanelTab = {
       id: `tab-${Date.now()}`,
       name: `Pool ${poolData.tabs.length + 1}`,
       visibleToPlayerIds: [],
       manageableByPlayerIds: [],
       editableByPlayerIds: [],
-      zoom: 1.02
+      zoom: 1.02,
+      offsetX: territory.x,
+      offsetY: territory.y,
+      territoryId: `territory-${panel.id}-tab-${Date.now()}`
     };
 
     dispatch({
@@ -210,7 +272,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
         }
       }
     });
-  }, [poolData, isGM, panel.id, dispatch]);
+  }, [poolData, isGM, panel.id, dispatch, state.objects]);
 
   // Handler: Remove tab (GM only)
   const handleRemoveTab = useCallback((tabId: string) => {
@@ -338,11 +400,12 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
           <div className="absolute inset-0 overflow-auto">
             <PoolTabletop
               poolZone={{
-                offsetX: poolData.offsetX,
-                offsetY: poolData.offsetY,
+                offsetX: activeTab.offsetX,
+                offsetY: activeTab.offsetY,
                 width: 1000,
                 height: 1000,
-                panelId: panel.id
+                panelId: panel.id,
+                tabId: activeTab.id
               }}
               zoom={activeTab?.zoom || 1.02}
             />

@@ -25,6 +25,7 @@ import {
 
 interface PoolZone extends PoolZoneType {
   panelId: string;
+  tabId: string; // Each tab has its own separate game space
 }
 
 interface PoolTabletopProps {
@@ -1966,5 +1967,6 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
 
 // Memoize PoolTabletop to prevent unnecessary re-renders
 export const PoolTabletopMemo = React.memo(PoolTabletop, (prevProps, nextProps) => {
-  return prevProps.panel.id === nextProps.panel.id;
+  return prevProps.poolZone.panelId === nextProps.poolZone.panelId &&
+         prevProps.poolZone.tabId === nextProps.poolZone.tabId;
 });

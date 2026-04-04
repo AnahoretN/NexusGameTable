@@ -7,6 +7,7 @@ export interface PoolZone {
   width: number;
   height: number;
   panelId: string;
+  tabId: string; // Each tab has its own separate game space
 }
 
 /**

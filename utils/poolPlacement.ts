@@ -10,12 +10,14 @@ export interface PoolZone {
   offsetY: number;
   width: number;
   height: number;
+  panelId: string;
+  tabId: string; // Each tab has its own separate game space
 }
 
 /**
  * Extended table object with cursor slot properties
  */
-export interface CursorSlotObject extends TableObject {
+export type CursorSlotObject = TableObject & {
   inCursorSlot?: boolean;
   originalZIndex?: number;
   cursorSlotSourcePanel?: string; // ID of pool panel where drag started
