@@ -229,7 +229,7 @@ export const Tabletop: React.FC = () => {
   // Track global mouse position for playTopCard and pool panel drag-over visualization
   useEffect(() => {
     let lastCheckTime = 0;
-    const CHECK_THROTTLE = 50; // Check 20 times per second max (was every mousemove)
+    const CHECK_THROTTLE = 200; // Check 5 times per second (enough for drag-over feedback)
 
     const handleMouseMove = (e: MouseEvent) => {
       // Store mouse position for other features (like playTopCard)
@@ -253,8 +253,15 @@ export const Tabletop: React.FC = () => {
 
       // Only check if cursor slot has objects
       if (cursorSlot.length === 0) {
+        console.log('[Tabletop mousemove] Cursor slot is EMPTY - should clear drag-over:', {
+          currentTarget: dragOverStoreRef.current?.targetPoolPanelId,
+          willClear: !!dragOverStoreRef.current?.targetPoolPanelId
+        });
         if (dragOverStoreRef.current?.targetPoolPanelId) {
+          console.log('[Tabletop mousemove] Calling clearDraggingOver() because slot is empty');
           clearDraggingOver();
+          // IMPORTANT: Update ref immediately after clearing state
+          dragOverStoreRef.current = useDragOverStore.getState();
         }
         return;
       }
@@ -262,7 +269,11 @@ export const Tabletop: React.FC = () => {
       const cursorSlotObj = cursorSlot[0];
       const canPlaceInPool = cursorSlotObj && [
         ItemType.CARD,
-        ItemType.TOKEN
+        ItemType.TOKEN,
+        ItemType.DECK,
+        ItemType.DICE_OBJECT,
+        ItemType.COUNTER,
+        ItemType.BOARD
       ].includes(cursorSlotObj.type);
 
       if (!canPlaceInPool) {
@@ -273,21 +284,47 @@ export const Tabletop: React.FC = () => {
       }
 
       // Find pool panel under cursor (simple check - just first panel under cursor)
-      const poolPanels = document.querySelectorAll('[data-pool-panel]');
+      // IMPORTANT: Check [data-pool-content] which has the VISIBLE panel bounds, not [data-pool-panel]
+      // which has the virtual space bounds (1000×1000 vu)
+      const poolContentElements = document.querySelectorAll('[data-pool-content]');
       let foundPoolPanelId: string | null = null;
 
-      for (const panel of poolPanels) {
-        const panelId = panel.getAttribute('data-pool-panel');
+      // Get the source panel ID if object was picked up from a pool panel
+      const sourcePoolPanelId = (cursorSlotObj as any)?.cursorSlotSourcePanel || (cursorSlotObj as any)?.fromPoolPanel;
+
+      // Check if there are multiple pool panels (more than just the source)
+      const hasMultiplePanels = poolContentElements.length > 1;
+
+      for (const contentArea of poolContentElements) {
+        const panelId = contentArea.getAttribute('data-pool-content');
+        if (!panelId) continue;
+
         const panelObj = state.objects[panelId as string];
         if (panelObj?.minimized) continue;
 
-        const gameSpace = panel.closest('[data-pool-gamespace]') as HTMLElement;
-        const contentArea = gameSpace?.querySelector(`[data-pool-content="${panelId}"]`) as HTMLElement;
-        const targetElement = contentArea || gameSpace || panel;
+        // IMPORTANT: Skip the source pool panel ONLY if there are other panels available
+        // If this is the only panel, allow drag-over for feedback
+        if (panelId === sourcePoolPanelId && hasMultiplePanels) {
+          console.log('[Tabletop mousemove] Skipping source pool panel (other panels available):', {
+            panelId,
+            totalPanels: poolContentElements.length
+          });
+          continue;
+        }
 
-        const rect = targetElement.getBoundingClientRect();
+        // Use the visible content area bounds for accurate cursor detection
+        const rect = contentArea.getBoundingClientRect();
         const isOver = e.clientX >= rect.left && e.clientX <= rect.right &&
                        e.clientY >= rect.top && e.clientY <= rect.bottom;
+
+        // Debug logging for each panel check
+        console.log('[Tabletop mousemove] Checking pool panel:', {
+          panelId,
+          cursor: { x: e.clientX, y: e.clientY },
+          bounds: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+          isOver,
+          sourcePoolPanelId
+        });
 
         if (isOver) {
           foundPoolPanelId = panelId;
@@ -295,11 +332,33 @@ export const Tabletop: React.FC = () => {
         }
       }
 
+      // Debug logging to track drag-over state
+      if (foundPoolPanelId) {
+        console.log('[Tabletop mousemove] Cursor OVER pool panel - will SET drag-over:', {
+          foundPoolPanelId,
+          currentTarget: dragOverStoreRef.current?.targetPoolPanelId,
+          willUpdate: foundPoolPanelId !== dragOverStoreRef.current?.targetPoolPanelId
+        });
+      } else {
+        console.log('[Tabletop mousemove] Cursor NOT over any pool panel - will CLEAR drag-over:', {
+          currentTarget: dragOverStoreRef.current?.targetPoolPanelId,
+          shouldClear: !!dragOverStoreRef.current?.targetPoolPanelId
+        });
+      }
+
       // Update drag-over state for visual feedback
       if (foundPoolPanelId && foundPoolPanelId !== dragOverStoreRef.current?.targetPoolPanelId) {
+        console.log('[Tabletop mousemove] Calling setDraggingOver()');
         setDraggingOver(foundPoolPanelId, cursorSlotObj.id);
+        // IMPORTANT: Update ref immediately after setting state
+        dragOverStoreRef.current = useDragOverStore.getState();
       } else if (!foundPoolPanelId && dragOverStoreRef.current?.targetPoolPanelId) {
+        console.log('[Tabletop mousemove] Calling clearDraggingOver()');
         clearDraggingOver();
+        // IMPORTANT: Update ref immediately after clearing state
+        dragOverStoreRef.current = useDragOverStore.getState();
+      } else {
+        console.log('[Tabletop mousemove] No state change needed');
       }
     };
 
