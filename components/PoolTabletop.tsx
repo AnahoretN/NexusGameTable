@@ -105,6 +105,71 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     }
   }, [deleteCandidateId, dispatch]);
 
+  // Execute click actions for objects (similar to main Tabletop)
+  const executeClickAction = useCallback((obj: TableObject, action: string, event?: React.MouseEvent) => {
+    if (!action || action === 'none') return;
+
+    switch (action) {
+      case 'flip':
+        if (obj.type === ItemType.CARD) {
+          dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } });
+        }
+        break;
+      case 'rotate':
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
+        break;
+      case 'rotateClockwise':
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
+        break;
+      case 'rotateCounterClockwise':
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -((obj as any).rotationStep ?? 45) } });
+        break;
+      case 'delete':
+        setDeleteCandidateId(obj.id);
+        break;
+      case 'clone':
+        dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } });
+        break;
+      case 'bringToFront':
+        dispatch({ type: 'BRING_TO_FRONT', payload: { id: obj.id } });
+        break;
+      case 'sendToBack':
+        dispatch({ type: 'SEND_TO_BACK', payload: { id: obj.id } });
+        break;
+      case 'roll':
+        if (obj.type === ItemType.DICE_OBJECT) {
+          const dice = obj as DiceObject;
+          const rollStartTime = Date.now();
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: { id: dice.id, rollStartTime }
+          });
+          // Start local animation
+          let steps = 0;
+          const maxSteps = 10;
+          const duration = 1000;
+          const intervalTime = duration / maxSteps;
+          const interval = setInterval(() => {
+            steps++;
+            if (steps < maxSteps) {
+              // Just for visual effect - actual roll happens via dispatch
+              clearInterval(interval);
+            } else {
+              clearInterval(interval);
+              dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: dice.id } });
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: { id: dice.id, rollStartTime: undefined }
+              });
+            }
+          }, intervalTime);
+        }
+        break;
+      default:
+        console.warn('[PoolTabletop] Unknown action:', action);
+    }
+  }, [dispatch, state.activePlayerId]);
+
   // Pile context menu state
   const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
 
@@ -1347,8 +1412,8 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
                   setSearchModalDeck={setSearchModalDeck}
                   setSearchModalPile={setSearchModalPile}
                   setPilesButtonMenu={() => {}}
-                  setDeleteCandidateId={() => {}}
-                  executeClickAction={() => {}}
+                  setDeleteCandidateId={setDeleteCandidateId}
+                  executeClickAction={executeClickAction}
                   cursorSlotHasCards={false}
                   allObjects={state.objects}
                   currentTool={'none'}
