@@ -253,12 +253,7 @@ export const Tabletop: React.FC = () => {
 
       // Only check if cursor slot has objects
       if (cursorSlot.length === 0) {
-        console.log('[Tabletop mousemove] Cursor slot is EMPTY - should clear drag-over:', {
-          currentTarget: dragOverStoreRef.current?.targetPoolPanelId,
-          willClear: !!dragOverStoreRef.current?.targetPoolPanelId
-        });
         if (dragOverStoreRef.current?.targetPoolPanelId) {
-          console.log('[Tabletop mousemove] Calling clearDraggingOver() because slot is empty');
           clearDraggingOver();
           // IMPORTANT: Update ref immediately after clearing state
           dragOverStoreRef.current = useDragOverStore.getState();
@@ -305,10 +300,6 @@ export const Tabletop: React.FC = () => {
         // IMPORTANT: Skip the source pool panel ONLY if there are other panels available
         // If this is the only panel, allow drag-over for feedback
         if (panelId === sourcePoolPanelId && hasMultiplePanels) {
-          console.log('[Tabletop mousemove] Skipping source pool panel (other panels available):', {
-            panelId,
-            totalPanels: poolContentElements.length
-          });
           continue;
         }
 
@@ -317,48 +308,21 @@ export const Tabletop: React.FC = () => {
         const isOver = e.clientX >= rect.left && e.clientX <= rect.right &&
                        e.clientY >= rect.top && e.clientY <= rect.bottom;
 
-        // Debug logging for each panel check
-        console.log('[Tabletop mousemove] Checking pool panel:', {
-          panelId,
-          cursor: { x: e.clientX, y: e.clientY },
-          bounds: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
-          isOver,
-          sourcePoolPanelId
-        });
-
         if (isOver) {
           foundPoolPanelId = panelId;
           break;
         }
       }
 
-      // Debug logging to track drag-over state
-      if (foundPoolPanelId) {
-        console.log('[Tabletop mousemove] Cursor OVER pool panel - will SET drag-over:', {
-          foundPoolPanelId,
-          currentTarget: dragOverStoreRef.current?.targetPoolPanelId,
-          willUpdate: foundPoolPanelId !== dragOverStoreRef.current?.targetPoolPanelId
-        });
-      } else {
-        console.log('[Tabletop mousemove] Cursor NOT over any pool panel - will CLEAR drag-over:', {
-          currentTarget: dragOverStoreRef.current?.targetPoolPanelId,
-          shouldClear: !!dragOverStoreRef.current?.targetPoolPanelId
-        });
-      }
-
       // Update drag-over state for visual feedback
       if (foundPoolPanelId && foundPoolPanelId !== dragOverStoreRef.current?.targetPoolPanelId) {
-        console.log('[Tabletop mousemove] Calling setDraggingOver()');
         setDraggingOver(foundPoolPanelId, cursorSlotObj.id);
         // IMPORTANT: Update ref immediately after setting state
         dragOverStoreRef.current = useDragOverStore.getState();
       } else if (!foundPoolPanelId && dragOverStoreRef.current?.targetPoolPanelId) {
-        console.log('[Tabletop mousemove] Calling clearDraggingOver()');
         clearDraggingOver();
         // IMPORTANT: Update ref immediately after clearing state
         dragOverStoreRef.current = useDragOverStore.getState();
-      } else {
-        console.log('[Tabletop mousemove] No state change needed');
       }
     };
 
@@ -5116,8 +5080,8 @@ export const Tabletop: React.FC = () => {
           position: 'absolute',
           top: 0,
           left: 0,
-          width: '100%',
-          height: '100%',
+          width: worldBounds.width,
+          height: worldBounds.height,
           backgroundColor: '#2c3e50',
           pointerEvents: 'none',
           zIndex: -3
@@ -5130,8 +5094,8 @@ export const Tabletop: React.FC = () => {
           position: 'absolute',
           top: 0,
           left: 0,
-          width: '100%',
-          height: '100%',
+          width: worldBounds.width,
+          height: worldBounds.height,
           backgroundImage: 'radial-gradient(#34495e 1px, transparent 1px)',
           backgroundSize: '20px 20px',
           pointerEvents: 'none',
