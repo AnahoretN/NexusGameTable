@@ -63,6 +63,7 @@ All notable changes to Nexus Game Table will be documented in this file.
 - **Better drag & drop**: Smoother object manipulation with visual feedback
 - **Context menu enhancements**: More consistent and predictable actions
 - **Grid system improvements**: Better board and token snapping
+- **Deck settings synchronization**: When changing Rotation Step in deck settings, all cards in the deck automatically inherit the new value
 
 ---
 

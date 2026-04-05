@@ -598,9 +598,11 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       const oldCardWidth = oldDeck.cardWidth;
       const oldCardHeight = oldDeck.cardHeight;
       const oldCardOrientation = oldDeck.cardOrientation;
+      const oldRotationStep = oldDeck.rotationStep ?? 45;
       const newCardWidth = cardSettings.cardWidth;
       const newCardHeight = cardSettings.cardHeight;
       const newCardOrientation = cardSettings.cardOrientation;
+      const newRotationStep = cardSettings.rotationStep ?? 45;
 
       const dimensionsChanged = oldCardWidth !== newCardWidth || oldCardHeight !== newCardHeight || oldCardOrientation !== newCardOrientation;
 
@@ -616,6 +618,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
             deckId,
             cardWidth: newCardWidth ?? oldDeck.width,
             cardHeight: newCardHeight ?? oldDeck.height
+          }
+        }));
+      }
+
+      // Check if rotationStep changed
+      if (oldRotationStep !== newRotationStep) {
+        // Dispatch event to update all cards in this deck with new rotationStep
+        window.dispatchEvent(new CustomEvent('update-deck-cards-rotation-step', {
+          detail: {
+            deckId,
+            rotationStep: newRotationStep
           }
         }));
       }

@@ -795,6 +795,33 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('update-deck-cards-dimensions', handleUpdateDeckCardsDimensions);
   }, [dispatch]);
 
+  // Listen for deck card rotation step updates from deck settings changes
+  useEffect(() => {
+    const handleUpdateDeckCardsRotationStep = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        deckId: string;
+        rotationStep: number;
+      }>;
+      const { deckId, rotationStep } = customEvent.detail;
+
+      // Update all cards in this deck with deck's current rotationStep
+      Object.values(state.objects).forEach(obj => {
+        if (obj.type === ItemType.CARD && (obj as CardType).deckId === deckId) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: obj.id,
+              rotationStep: rotationStep
+            }
+          });
+        }
+      });
+    };
+
+    window.addEventListener('update-deck-cards-rotation-step', handleUpdateDeckCardsRotationStep);
+    return () => window.removeEventListener('update-deck-cards-rotation-step', handleUpdateDeckCardsRotationStep);
+  }, [dispatch]);
+
   // Listen for clear-cursor-slot events from PoolTabletop
   useEffect(() => {
     const handleClearCursorSlot = (e: Event) => {
