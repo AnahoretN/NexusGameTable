@@ -46,6 +46,9 @@ export interface GameState {
   diceGroups: DiceGroup[]; // Dice groups for rolling multiple dice together
   lastModifiedBy?: string; // ID of player who last modified the game state
   playerPanelSettings: PlayerPanelSettings; // Individual panel settings for each player
+  // Internal fields (not persisted)
+  _lastPanelSettingsUpdate?: number; // Timestamp of last panel settings update
+  _pendingPanelSettings?: PlayerPanelSettings; // Pending settings waiting for throttle timeout
 }
 
 /**

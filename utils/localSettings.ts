@@ -168,29 +168,51 @@ export const getLocalPanelSettings = (panelId: string): LocalPanelSettings | nul
 
 /**
  * Update local settings for a specific panel
+ * OPTIMIZED: Debounces localStorage writes to prevent performance issues during drag
  */
-export const updateLocalPanelSettings = (panelId: string, updates: Partial<LocalPanelSettings>): void => {
-  const settings = loadLocalSettings();
+let updateTimeout: ReturnType<typeof setTimeout> | null = null;
+let pendingUpdates: Map<string, Partial<LocalPanelSettings>> = new Map();
 
-  // Initialize panel settings if they don't exist
-  if (!settings.panelSettings[panelId]) {
-    settings.panelSettings[panelId] = {
-      x: 0,
-      y: 0,
-      width: 400,
-      height: 300,
-      minimized: false,
-      isPinnedToViewport: true,
-    };
+export const updateLocalPanelSettings = (panelId: string, updates: Partial<LocalPanelSettings>): void => {
+  // Store pending updates
+  pendingUpdates.set(panelId, updates);
+
+  // Clear existing timeout
+  if (updateTimeout) {
+    clearTimeout(updateTimeout);
   }
 
-  // Apply updates
-  settings.panelSettings[panelId] = {
-    ...settings.panelSettings[panelId],
-    ...updates
-  };
+  // Schedule write after 100ms of no updates
+  updateTimeout = setTimeout(() => {
+    const settings = loadLocalSettings();
 
-  saveLocalSettings(settings);
+    // Apply all pending updates
+    pendingUpdates.forEach((updates, id) => {
+      // Initialize panel settings if they don't exist
+      if (!settings.panelSettings[id]) {
+        settings.panelSettings[id] = {
+          x: 0,
+          y: 0,
+          width: 400,
+          height: 300,
+          minimized: false,
+          isPinnedToViewport: true,
+        };
+      }
+
+      // Apply updates
+      settings.panelSettings[id] = {
+        ...settings.panelSettings[id],
+        ...updates
+      };
+    });
+
+    saveLocalSettings(settings);
+
+    // Clear pending updates
+    pendingUpdates.clear();
+    updateTimeout = null;
+  }, 100);
 };
 
 /**

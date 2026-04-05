@@ -223,8 +223,11 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
     })));
   }
 
-  // Filter out viewTransform from sync (pixelsPerVU is screen-specific)
-  const { viewTransform, ...stateWithoutViewTransform } = state;
+  // Filter out viewTransform, playerPanelSettings, and internal fields from sync
+  // viewTransform: pixelsPerVU is screen-specific
+  // playerPanelSettings: synced separately via PLAYER_PANEL_SETTINGS message
+  // _*: internal fields (not persisted)
+  const { viewTransform, playerPanelSettings, _lastPanelSettingsUpdate, _pendingPanelSettings, ...stateWithoutViewTransform } = state;
 
   return {
     state: { ...stateWithoutViewTransform, objects: processedObjects },

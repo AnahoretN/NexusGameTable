@@ -157,6 +157,8 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         connectionsLocked: state.connectionsLocked || false,
         // Save last modified player info (NEW in version 8)
         lastModifiedBy: state.lastModifiedBy || 'gm',
+        // Save player panel settings (individual panel positions/sizes for each player)
+        playerPanelSettings: state.playerPanelSettings || {},
       }
     };
 

@@ -5,6 +5,7 @@ import { Player } from '../types';
 import { logger } from '../utils/logger';
 import { extractImagesFromState, restoreImagesFromCache } from '../utils/imageCache';
 import { filterLocalPanelProperties } from '../utils/panelSync';
+import { getPlayerId } from './gameConstants';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type ImageCache = Record<string, string>; // imageId -> base64 data
@@ -208,9 +209,13 @@ export function usePeerConnection(
       const localOnlyActions = [
         'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
         'SET_PIXELS_PER_VU',      // Pixels per VU is screen-specific
-        'MOVE_OBJECT_COMMIT',     // Panel/window position is local
-        'RESIZE_UI_OBJECT'        // Panel/window size is local
+        'RESIZE_UI_OBJECT'        // Panel/window size is local (handled by UPDATE_PLAYER_PANEL_SETTINGS)
       ];
+
+      // NOTE: MOVE_OBJECT_COMMIT is NOT in localOnlyActions because it needs to reach the host
+      // for panel position tracking. The GameContext reducer handles it correctly:
+      // - For panels/windows: saves to playerPanelSettings (individual per player)
+      // - For other objects: updates global position
 
       if (localOnlyActions.includes(actionType)) {
         console.log(`[P2P Network] ⚠️ Ignoring local-only action:`, actionType, '- not applying to host state');
@@ -262,8 +267,12 @@ export function usePeerConnection(
         console.log(`[P2P Guest] 🎉 Connection to host SUCCESSFUL!`);
         setConnectionStatus('connected');
 
+        // Use persistent playerId from localStorage instead of peer.id
+        // This allows us to restore panel settings across page reloads
+        const persistentPlayerId = getPlayerId();
+
         const myPlayer: Player = {
-          id: peer.id,
+          id: persistentPlayerId,
           name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
           color: '#' + Math.floor(Math.random() * 16777215).toString(16),
           isGM: false

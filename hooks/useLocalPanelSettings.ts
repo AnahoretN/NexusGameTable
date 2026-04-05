@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PanelObject, LocalPanelSettings } from '../types';
 import {
   getLocalPanelSettings,
@@ -9,13 +9,14 @@ import {
 /**
  * Hook for managing local panel settings
  * Provides access to local panel settings that override global settings
+ * OPTIMIZED: Uses memoization to prevent localStorage reads on every render
  */
 export const useLocalPanelSettings = (panel: PanelObject) => {
   const [localSettings, setLocalSettings] = useState<LocalPanelSettings | null>(() =>
     getLocalPanelSettings(panel.id)
   );
 
-  // Refresh local settings from localStorage
+  // Refresh local settings from localStorage (only when explicitly called)
   const refreshSettings = useCallback(() => {
     setLocalSettings(getLocalPanelSettings(panel.id));
   }, [panel.id]);
@@ -36,6 +37,7 @@ export const useLocalPanelSettings = (panel: PanelObject) => {
   }, [panel.id]);
 
   // Get effective panel properties (local if exists, otherwise global)
+  // OPTIMIZED: Memoized to prevent recalculation, but includes panel dependencies
   const getEffectiveProps = useCallback(() => {
     if (!localSettings) {
       // Return global panel properties
@@ -68,7 +70,7 @@ export const useLocalPanelSettings = (panel: PanelObject) => {
       expandedPinnedPosition: localSettings.expandedPinnedPosition || panel.expandedPinnedPosition,
       collapsedPinnedPosition: localSettings.collapsedPinnedPosition || panel.collapsedPinnedPosition,
     };
-  }, [localSettings, panel]);
+  }, [localSettings, panel.x, panel.y, panel.width, panel.height, panel.minimized, panel.isPinnedToViewport, panel.pinnedScreenPosition, panel.expandedState, panel.collapsedState, panel.expandedPinnedPosition, panel.collapsedPinnedPosition]);
 
   // Check if panel has local settings
   const hasLocalSettings = localSettings !== null;

@@ -54,30 +54,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           willRestoreLocalSettings: isReconnection
         });
 
-        // Save local panel settings before applying incoming state (only for reconnection)
+        // Don't save/restore local panel settings anymore
+        // All panel settings should come from host's playerPanelSettings
         const localPanelSettings: Map<string, any> = new Map();
-        if (isReconnection) {
-          Object.entries(state.objects).forEach(([id, obj]) => {
-            if (obj.type === ItemType.PANEL) {
-              const panel = obj as PanelObject;
-              // Save local settings for this panel (will be restored after merge)
-              localPanelSettings.set(id, {
-                x: panel.x,
-                y: panel.y,
-                width: panel.width,
-                height: panel.height,
-                zIndex: panel.zIndex,
-                minimized: panel.minimized,
-                isPinnedToViewport: panel.isPinnedToViewport,
-                pinnedScreenPosition: panel.pinnedScreenPosition,
-                expandedState: panel.expandedState,
-                collapsedState: panel.collapsedState,
-                expandedPinnedPosition: panel.expandedPinnedPosition,
-                collapsedPinnedPosition: panel.collapsedPinnedPosition,
-              });
-            }
-          });
-        }
 
         // Only process objects if they're in the payload
         let finalObjects = state.objects; // Default to current objects
@@ -97,34 +76,47 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               ? { ...incomingObjects, [localMainMenu.id]: localMainMenu }
               : incomingObjects;
 
-            // Restore local panel settings for existing panels ONLY on reconnection
-            // On first connection, use host's panel positions and sizes
-            if (isReconnection) {
-              Object.entries(finalObjects).forEach(([id, obj]) => {
-                if (obj.type === ItemType.PANEL && localPanelSettings.has(id)) {
-                  const localSettings = localPanelSettings.get(id);
-                  finalObjects[id] = {
-                    ...obj,
-                    ...localSettings // Restore local position, size, and state
-                  } as PanelObject;
-                }
-              });
-              console.log('[SYNC_STATE] Restored local panel settings for reconnection');
-            } else {
-              console.log('[SYNC_STATE] Using host panel settings for first connection');
-            }
+            // Don't restore local panel settings - all settings come from host's playerPanelSettings
+            console.log('[SYNC_STATE] Using host panel settings (player-specific settings applied separately)');
         }
 
-        // Remove viewTransform from payload to prevent any cross-contamination
-        const { viewTransform, ...payloadWithoutViewTransform } = action.payload;
+        // Remove viewTransform and internal fields from payload to prevent overwriting local settings
+        // But MERGE playerPanelSettings from host (guest receives all players' settings)
+        const { viewTransform, _lastPanelSettingsUpdate, _pendingPanelSettings, ...payloadWithoutViewTransform } = action.payload;
+
+        // Merge playerPanelSettings from host with local settings
+        // Host has all players' settings, guest needs to preserve their own and receive others'
+        const mergedPlayerPanelSettings = {
+          ...action.payload.playerPanelSettings, // All settings from host
+          ...(state.playerPanelSettings || {}) // Keep local settings (shouldn't conflict, but just in case)
+        };
+
+        // Apply current player's panel settings to objects
+        const currentPlayerId = currentActiveId;
+        const currentPanelSettings = mergedPlayerPanelSettings[currentPlayerId] || {};
+
+        const updatedObjects = { ...finalObjects };
+        Object.entries(currentPanelSettings).forEach(([panelId, panelSettings]: [string, any]) => {
+          if (updatedObjects[panelId] && (updatedObjects[panelId].type === ItemType.PANEL || updatedObjects[panelId].type === ItemType.WINDOW)) {
+            updatedObjects[panelId] = {
+              ...updatedObjects[panelId],
+              ...panelSettings
+            };
+          }
+        });
 
         return {
             ...state, // Keep existing state as base
-            ...payloadWithoutViewTransform, // Merge with payload (excluding viewTransform)
-            objects: finalObjects, // Use merged objects (or current if none in payload)
+            ...payloadWithoutViewTransform, // Merge with payload (excluding viewTransform and internal fields)
+            objects: updatedObjects, // Use objects with applied panel settings
             activePlayerId: currentActiveId,
             // CRITICAL: Never use viewTransform from remote state - always keep local
             viewTransform: currentViewTransform,
+            // CRITICAL: Merge playerPanelSettings from host
+            playerPanelSettings: mergedPlayerPanelSettings,
+            // CRITICAL: Keep internal fields
+            _lastPanelSettingsUpdate: state._lastPanelSettingsUpdate,
+            _pendingPanelSettings: state._pendingPanelSettings,
             // Update session ID to track connection state
             sessionId: incomingSessionId || state.sessionId
         };
@@ -927,25 +919,24 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       }
 
-      // Save local settings for main menu
+      // Save local settings for main menu ONLY if it was actually moved
+      // This check prevents expensive localStorage operations on every MOVE_OBJECT
       if (updatedObj.type === ItemType.PANEL && (updatedObj as PanelObject).panelType === PanelType.MAIN_MENU) {
         const oldPos = obj;
         const newPos = updatedObj;
 
-        // Set isPositionSet flag only if position changed (user moved the menu)
+        // Check if position actually changed
         const positionChanged = ('x' in action.payload || 'y' in action.payload) &&
                               (oldPos.x !== newPos.x || oldPos.y !== newPos.y);
 
-        const localSettings = loadLocalSettings();
-        localSettings.mainMenuPosition = { x: newPos.x, y: newPos.y };
-        localSettings.mainMenuSize = { width: newPos.width || MAIN_MENU_WIDTH, height: newPos.height || 400 };
-
-        // Only if user MOVED the menu, mark position as set
+        // Only save to localStorage if position actually changed
         if (positionChanged) {
+          const localSettings = loadLocalSettings();
+          localSettings.mainMenuPosition = { x: newPos.x, y: newPos.y };
+          localSettings.mainMenuSize = { width: newPos.width || MAIN_MENU_WIDTH, height: newPos.height || 400 };
           localSettings.isPositionSet = true;
+          saveLocalSettings(localSettings);
         }
-
-        saveLocalSettings(localSettings);
       }
 
       return {
@@ -958,10 +949,42 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj || obj.locked) return state;
 
-      // Skip network sync for panels and windows - their position is local to each player
-      // Allow local-only moves (during drag) but prevent network sync
+      // For panels and windows, save position to playerPanelSettings (for host's own panels)
+      // This ensures host's panel positions are also saved and restored
       if ((obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) && !action._localOnly) {
-        return state;
+        const currentPlayerId = state.activePlayerId;
+        const roundedX = Math.round(action.payload.x);
+        const roundedY = Math.round(action.payload.y);
+
+        // Update individual panel settings for host
+        return {
+          ...state,
+          playerPanelSettings: {
+            ...state.playerPanelSettings,
+            [currentPlayerId]: {
+              ...(state.playerPanelSettings[currentPlayerId] || {}),
+              [obj.id]: {
+                ...(state.playerPanelSettings[currentPlayerId]?.[obj.id] || {}),
+                x: roundedX,
+                y: roundedY,
+                // Preserve existing settings
+                width: state.playerPanelSettings[currentPlayerId]?.[obj.id]?.width || obj.width,
+                height: state.playerPanelSettings[currentPlayerId]?.[obj.id]?.height || obj.height,
+                minimized: state.playerPanelSettings[currentPlayerId]?.[obj.id]?.minimized || (obj as any).minimized || false,
+                isPinnedToViewport: state.playerPanelSettings[currentPlayerId]?.[obj.id]?.isPinnedToViewport || (obj as any).isPinnedToViewport || false,
+              }
+            }
+          },
+          // Also update local object for immediate visual feedback
+          objects: {
+            ...state.objects,
+            [obj.id]: {
+              ...obj,
+              x: roundedX,
+              y: roundedY
+            }
+          }
+        };
       }
 
       // Calculate position delta
@@ -4708,6 +4731,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     }
     case 'UPDATE_PLAYER_PANEL_SETTINGS': {
       // Store individual panel settings for a player (host only)
+      // All updates are saved immediately - no throttling to prevent UI lag
       const { playerId, panelId, settings } = action.payload;
 
       // Initialize player settings if not exists
@@ -4718,8 +4742,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...state.playerPanelSettings,
             [playerId]: {
               [panelId]: settings
-            }
-          }
+            },
+          },
         };
       }
 
@@ -4735,7 +4759,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               ...settings
             }
           }
-        }
+        },
       };
     }
     case 'REQUEST_PLAYER_PANEL_SETTINGS': {
@@ -4768,9 +4792,47 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       });
 
+      // Also save to playerPanelSettings so they persist and are used in rendering
+      const currentPlayerId = state.activePlayerId;
+
       return {
         ...state,
-        objects: updatedObjects
+        objects: updatedObjects,
+        playerPanelSettings: {
+          ...state.playerPanelSettings,
+          [currentPlayerId]: {
+            ...(state.playerPanelSettings[currentPlayerId] || {}),
+            ...settings
+          }
+        }
+      };
+    }
+    case 'APPLY_SAVED_PANEL_SETTINGS': {
+      // Apply player panel settings from saved game state (used when loading from file)
+      // This restores all players' panel settings from the save file AND applies them to panel objects
+      const { playerPanelSettings: savedPanelSettings } = action.payload;
+
+      // Apply settings to panel objects for the current player
+      const currentPlayerId = state.activePlayerId;
+      const currentPanelSettings = savedPanelSettings[currentPlayerId] || {};
+
+      const updatedObjects = { ...state.objects };
+      Object.entries(currentPanelSettings).forEach(([panelId, panelSettings]: [string, any]) => {
+        if (updatedObjects[panelId] && (updatedObjects[panelId].type === ItemType.PANEL || updatedObjects[panelId].type === ItemType.WINDOW)) {
+          updatedObjects[panelId] = {
+            ...updatedObjects[panelId],
+            ...panelSettings
+          };
+        }
+      });
+
+      return {
+        ...state,
+        objects: updatedObjects,
+        playerPanelSettings: {
+          ...state.playerPanelSettings,
+          ...savedPanelSettings
+        }
       };
     }
     case 'CLEAR_SAVED_STATE': {
@@ -5081,6 +5143,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   updates.push({ type: 'UPDATE_PLAYER', payload: player });
                 }
               });
+            }
+
+            // Restore player panel settings (individual panel positions/sizes for each player)
+            if (savedState.playerPanelSettings && Object.keys(savedState.playerPanelSettings).length > 0) {
+              updates.push({ type: 'APPLY_SAVED_PANEL_SETTINGS', payload: { playerPanelSettings: savedState.playerPanelSettings } });
             }
 
             // Apply all updates

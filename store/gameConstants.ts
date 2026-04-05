@@ -101,6 +101,20 @@ export function getSessionId(): string {
 }
 
 /**
+ * Get player's persistent ID from localStorage
+ * This persists across page reloads to identify the same player
+ */
+export function getPlayerId(): string {
+  if (typeof window === 'undefined') return 'unknown';
+  let playerId = localStorage.getItem('nexus-player-id');
+  if (!playerId) {
+    playerId = 'player-' + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('nexus-player-id', playerId);
+  }
+  return playerId;
+}
+
+/**
  * Helper function to create a Standard Deck with 54 cards using sprite sheet
  * Sprite sheet: 13 columns x 5 rows = 65 cards, last 10 removed, 55th card is the back
  */

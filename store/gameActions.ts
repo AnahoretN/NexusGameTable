@@ -108,6 +108,7 @@ export type Action =
   // Player panel settings actions
   | BaseAction<'UPDATE_PLAYER_PANEL_SETTINGS', { playerId: string; panelId: string; settings: any }>
   | BaseAction<'APPLY_PLAYER_PANEL_SETTINGS', { settings: Record<string, any> }> // Apply individual settings to panels
+  | BaseAction<'APPLY_SAVED_PANEL_SETTINGS', { playerPanelSettings: Record<string, any> }> // Apply saved settings from file
   | BaseAction<'REQUEST_PLAYER_PANEL_SETTINGS', { playerId: string }> // Guest requests their panel settings from host
   // Undo actions
   | ActionWithoutPayload<'UNDO_MARKER'>

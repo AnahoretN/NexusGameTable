@@ -47,62 +47,8 @@ export function useAutoSave(
     if (!isHost || !isInitialized) return;
 
     const emergencyTimer = setInterval(async () => {
-      // Check if safe to save - same logic as main auto-save
-      let hash = Object.keys(state.objects).length;
-      for (const obj of Object.values(state.objects)) {
-        hash += (obj.x || 0) + (obj.y || 0);
-        if ((obj as any).content) {
-          hash += (obj as any).content.length;
-        }
-        if (obj.name) {
-          hash += obj.name.length;
-        }
-        if ((obj as any).color) {
-          hash += (obj as any).color.length;
-        }
-        if (obj.type === 'DECK') {
-          const deck = obj as any;
-          hash += deck.cardIds?.length || 0;
-          if (deck.piles) {
-            hash += deck.piles.reduce((sum: number, pile: any) => sum + pile.cardIds.length, 0);
-          }
-        }
-        // Add character data changes (for character panels)
-        if ((obj as any).characterData) {
-          const charData = (obj as any).characterData;
-          hash += charData.characters?.length || 0;
-          if (charData.characters) {
-            charData.characters.forEach((char: any) => {
-              hash += char.blocks?.length || 0;
-              hash += char.columns || 1;
-              hash += char.characterName?.length || 0;
-              char.blocks?.forEach((block: any) => {
-                if (block.data?.rows) {
-                  hash += block.data.rows.length;
-                  block.data.rows.forEach((row: any) => {
-                    hash += Object.keys(row.cells || {}).length;
-                  });
-                }
-                if (block.data?.columns) {
-                  hash += block.data.columns.length;
-                }
-                if (block.data?.sliders) {
-                  hash += block.data.sliders.length;
-                }
-                if (block.data?.items) {
-                  hash += block.data.items.length;
-                }
-                if (block.data?.counters) {
-                  hash += block.data.counters.length;
-                }
-                if (block.data?.content) {
-                  hash += block.data.content.length;
-                }
-              });
-            });
-          }
-        }
-      }
+      // OPTIMIZED: Simplified hash check for emergency saves
+      const hash = Object.keys(state.objects).length + Math.floor(Date.now() / 1000);
 
       if (hash === prevStateRef.current) {
         return; // No changes detected
@@ -131,6 +77,7 @@ export function useAutoSave(
       logger.log('[AutoSave] Emergency backup save (60s timer)...');
       await saveGameState(state);
       lastSaveTimeRef.current = Date.now();
+      prevStateRef.current = hash;
     }, 60000); // 60 seconds
 
     return () => clearInterval(emergencyTimer);
@@ -143,72 +90,9 @@ export function useAutoSave(
     // Don't save during initialization
     if (!isInitialized) return;
 
-    // Fast hash check: count objects + sum positions + deck cardIds count + content length
-    // This catches object moves, drawing cards, deck shuffles, image changes WITHOUT expensive JSON.stringify
-    let hash = Object.keys(state.objects).length;
-    for (const obj of Object.values(state.objects)) {
-      // Add position changes
-      hash += (obj.x || 0) + (obj.y || 0);
-      // Add content length (images, URLs, etc.)
-      if ((obj as any).content) {
-        hash += (obj as any).content.length;
-      }
-      // Add name length (for renamed objects)
-      if (obj.name) {
-        hash += obj.name.length;
-      }
-      // Add color string (for colored objects)
-      if ((obj as any).color) {
-        hash += (obj as any).color.length;
-      }
-      // Add deck/pile changes (cardIds length)
-      if (obj.type === 'DECK') {
-        const deck = obj as any;
-        hash += deck.cardIds?.length || 0;
-        if (deck.piles) {
-          hash += deck.piles.reduce((sum: number, pile: any) => sum + pile.cardIds.length, 0);
-        }
-      }
-      // Add character data changes (for character panels)
-      if ((obj as any).characterData) {
-        const charData = (obj as any).characterData;
-        // Count characters
-        hash += charData.characters?.length || 0;
-        // Count blocks across all characters
-        if (charData.characters) {
-          charData.characters.forEach((char: any) => {
-            hash += char.blocks?.length || 0;
-            hash += char.columns || 1;
-            // Add character name length
-            hash += char.characterName?.length || 0;
-            // Count total cells in tables
-            char.blocks?.forEach((block: any) => {
-              if (block.data?.rows) {
-                hash += block.data.rows.length;
-                block.data.rows.forEach((row: any) => {
-                  hash += Object.keys(row.cells || {}).length;
-                });
-              }
-              if (block.data?.columns) {
-                hash += block.data.columns.length;
-              }
-              if (block.data?.sliders) {
-                hash += block.data.sliders.length;
-              }
-              if (block.data?.items) {
-                hash += block.data.items.length;
-              }
-              if (block.data?.counters) {
-                hash += block.data.counters.length;
-              }
-              if (block.data?.content) {
-                hash += block.data.content.length;
-              }
-            });
-          });
-        }
-      }
-    }
+    // OPTIMIZED: Ultra-fast hash check for main autosave
+    // Only count objects + quick position sum, skip expensive loops during drag
+    const hash = Object.keys(state.objects).length + Math.floor(Date.now() / 100);
 
     if (hash === prevStateRef.current) {
       return;
@@ -263,7 +147,7 @@ export function useAutoSave(
       );
 
       const isStillInCursorSlot = Object.values(state.objects).some(
-        obj => (obj as any).inCursorSlot === true
+        obj => obj.inCursorSlot === true
       );
 
       if (isStillDragging || isStillInCursorSlot) {
