@@ -667,7 +667,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-[100005] flex items-center justify-center bg-black/15">
+    <div className="fixed inset-0 z-[100005] flex items-center justify-center bg-black/40">
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-center items-center py-2 px-4">
@@ -984,19 +984,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       <Maximize2 size={14} />
                     </button>
                   </div>
-                </div>
-
-                {/* Rotation Step */}
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Rotation Step (degrees)', language as Locale)}</label>
-                  <input
-                    type="number"
-                    value={(data as any).rotationStep ?? 45}
-                    onChange={e => update('rotationStep', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                    min="1"
-                    max="360"
-                  />
                 </div>
               </div>
 

@@ -498,6 +498,32 @@ export interface HyperscaleLayer {
   order: number;       // Display order (lower = higher priority in list)
 }
 
+// Local panel settings for each player
+// These settings override the global panel state
+export interface LocalPanelSettings {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  minimized: boolean;
+  isPinnedToViewport: boolean;
+  pinnedScreenPosition?: { x: number; y: number };
+  expandedState?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  collapsedState?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  expandedPinnedPosition?: { x: number; y: number };
+  collapsedPinnedPosition?: { x: number; y: number };
+}
+
 export interface Player {
   id: string;
   name: string;

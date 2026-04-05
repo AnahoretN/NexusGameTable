@@ -53,7 +53,7 @@ All notable changes to Nexus Game Table will be documented in this file.
 
 **Major performance and UX improvements to the main game table**
 
-- **Hyperscale Layers**: New layer management system for better object organization
+- **Hyper-Layers**: New layer management system for better object organization
   - Boards layer (bottom)
   - Cards layer
   - Tokens layer

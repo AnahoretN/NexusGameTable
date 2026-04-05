@@ -387,7 +387,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   }, [deck.cardActionButtons, millPile, handleFlip, handleToHand, handleMoveToBottomDeck, handleMill, language]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[100002] flex items-center justify-center">
+    <div className="fixed inset-0 z-[100002] flex items-center justify-center bg-black/40">
       <div
         ref={modalContainerRef}
         data-modal="top-deck"

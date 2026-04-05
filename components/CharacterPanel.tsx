@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType } from '../types';
 import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload, X } from 'lucide-react';
@@ -1326,89 +1327,94 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       )}
 
       {/* Character Settings Modal */}
-      {settingsModal && (
-        <div className="absolute inset-0 bg-slate-800 z-10 flex flex-col">
-          {/* Character Settings Header - Fixed at top */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0">
-            <h2 className="text-lg font-semibold text-white">Character Settings</h2>
-            <button
-              onClick={() => setSettingsModal(null)}
-              className="p-1 text-slate-400 hover:text-white transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
+      {settingsModal && createPortal(
+        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={() => setSettingsModal(null)}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex justify-center items-center py-2 px-4">
+              <h3 className="text-base font-bold text-white">Settings: {settingsModal.character.characterName}</h3>
+            </div>
 
-          {/* Settings Content - Takes available space */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
-            <CharacterSettingsModal
-              character={settingsModal.character}
-              players={state.players}
-              onSave={handleSaveCharacterSettings}
-              onCharacterChange={setTempSettingsCharacter}
-            />
-          </div>
+            {/* Tabs */}
+            <div className="flex">
+              <button className="flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors bg-slate-700 text-white border-b-2 border-purple-500">
+                General
+              </button>
+            </div>
 
-          {/* Save/Load Character Buttons - Fixed at bottom */}
-          {(isGM || canEditCharacter) && (
-            <div className="px-4 pb-2 flex-shrink-0">
-              <div className="flex gap-2">
-                <button
-                  onClick={handleExportCharacter}
-                  className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded transition-colors text-sm"
-                >
-                  <Save size={14} />
-                  Save Character
-                </button>
-                <label className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded transition-colors text-sm cursor-pointer">
-                  <Upload size={14} />
-                  Load Character
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        handleImportCharacter(file);
-                      }
-                    }}
-                    className="hidden"
-                  />
-                </label>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+              <div className="space-y-4">
+                <CharacterSettingsModal
+                  character={settingsModal.character}
+                  players={state.players}
+                  onSave={handleSaveCharacterSettings}
+                  onCharacterChange={setTempSettingsCharacter}
+                />
               </div>
             </div>
-          )}
 
-          {/* Cancel/Save Buttons - Fixed at bottom */}
-          <div className="px-4 pb-3 flex-shrink-0">
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setSettingsModal(null);
-                  setTempSettingsCharacter(null);
-                }}
-                className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 transition-colors"
-              >
-                Cancel
-              </button>
-              {settingsModal && (
+            {/* Footer */}
+            <div className="flex flex-col gap-2 p-4">
+              {/* Save/Load Character Buttons */}
+              {(isGM || canEditCharacter) && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportCharacter}
+                    className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded transition-colors text-sm"
+                  >
+                    <Save size={14} />
+                    Save Character
+                  </button>
+                  <label className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded transition-colors text-sm cursor-pointer">
+                    <Upload size={14} />
+                    Load Character
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          handleImportCharacter(file);
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {/* Cancel/Save Buttons */}
+              <div className="flex justify-end gap-2">
                 <button
                   onClick={() => {
-                    // Save character settings when in settings modal
-                    if (tempSettingsCharacter) {
-                      handleSaveCharacterSettings(tempSettingsCharacter);
-                    }
                     setSettingsModal(null);
                     setTempSettingsCharacter(null);
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded"
                 >
-                  Save
+                  Cancel
                 </button>
-              )}
+                {settingsModal && (
+                  <button
+                    onClick={() => {
+                      // Save character settings when in settings modal
+                      if (tempSettingsCharacter) {
+                        handleSaveCharacterSettings(tempSettingsCharacter);
+                      }
+                      setSettingsModal(null);
+                      setTempSettingsCharacter(null);
+                    }}
+                    className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
+                  >
+                    Save Changes
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
