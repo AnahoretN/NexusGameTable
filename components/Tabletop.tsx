@@ -3384,19 +3384,33 @@ export const Tabletop: React.FC = () => {
       const handPanel = elementUnderCursor?.closest('[data-hand-panel]');
 
       if (handPanel) {
+        // Filter to only allow cards in hand panel
+        const itemsToDrop = [...currentSlot];
+        const cardsOnly = itemsToDrop.filter(item => item.type === ItemType.CARD);
+        const nonCardItems = itemsToDrop.filter(item => item.type !== ItemType.CARD);
+
+        // If there are non-card items, don't treat this as a hand panel drop
+        // Instead, drop them on the tabletop
+        if (nonCardItems.length > 0) {
+          // Drop non-card items on tabletop instead
+          dropCursorSlot(clientX, clientY, currentSlot);
+          e.stopPropagation();
+          e.preventDefault();
+          return;
+        }
+
         // CRITICAL: Clear cursor slot FIRST to prevent visual flicker
         // Copy items before clearing slot for the event
-        const itemsToDrop = [...currentSlot];
         setCursorSlot([]);
         setCursorPosition(null);
         setCursorSlotSource(null);
 
         // Over hand panel - dispatch event to add cards to hand
         window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
-          detail: { items: itemsToDrop }
+          detail: { items: cardsOnly }
         }));
         // Track recently dropped objects to prevent showing shadow version
-        const droppedIds = new Set(itemsToDrop.map(item => item.id));
+        const droppedIds = new Set(cardsOnly.map(item => item.id));
         setRecentlyInMyCursorSlot(droppedIds);
         setTimeout(() => {
           setRecentlyInMyCursorSlot(prev => {
@@ -4245,8 +4259,14 @@ export const Tabletop: React.FC = () => {
       // BOARD objects should always use screen coordinates for drag
       const isBoard = draggingObj.type === ItemType.BOARD;
       if (draggingObj.type === ItemType.PANEL || draggingObj.type === ItemType.WINDOW || isPinned || isBoard) {
-        const targetX = e.clientX - (dragOffsetRef.current?.x || 0);
-        const targetY = e.clientY - (dragOffsetRef.current?.y || 0);
+        // Calculate delta from initial mouse position to avoid drift
+        const deltaX = e.clientX - dragStartRef.current.x;
+        const deltaY = e.clientY - dragStartRef.current.y;
+
+        // Use initial object position + delta for smooth dragging
+        const initialPos = dragStartPositionRef.current;
+        const targetX = initialPos.x + deltaX;
+        const targetY = initialPos.y + deltaY;
 
         dispatch({
           type: 'MOVE_OBJECT',
@@ -4279,7 +4299,7 @@ export const Tabletop: React.FC = () => {
       // Check if this is a card with horizontal orientation (display dimensions are swapped)
       if (draggingObj.type === ItemType.CARD) {
         const card = draggingObj as CardType;
-        const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
+        const deck = card.deckId ? stateRef.current.objects[card.deckId] as DeckType | undefined : undefined;
         if (deck?.cardOrientation === CardOrientation.HORIZONTAL) {
           // Horizontal cards have width and height swapped for display
           [draggingObjWidth, draggingObjHeight] = [draggingObjHeight, draggingObjWidth];
@@ -4289,7 +4309,7 @@ export const Tabletop: React.FC = () => {
       const centerX = targetX + draggingObjWidth / 2;
       const centerY = targetY + draggingObjHeight / 2;
 
-      const snapped = getSnappedCoordinates(centerX, centerY, state.objects, draggingId);
+      const snapped = getSnappedCoordinates(centerX, centerY, stateRef.current.objects, draggingId);
 
       // Apply board rotation if snapped to a board with snapRotationToGrid enabled
       let newRotation = draggingObj.rotation ?? 0;
@@ -4315,67 +4335,15 @@ export const Tabletop: React.FC = () => {
         const worldX = p2v(e.clientX + state.viewTransform.scroll.x);
         const worldY = p2v(e.clientY + state.viewTransform.scroll.y);
 
-        // First check if cursor is over any pile (piles take priority)
-        let foundPile = null;
-        for (const obj of Object.values(state.objects)) {
-          if (obj.type === ItemType.DECK) {
-            const deck = obj as DeckType;
-            const visiblePiles = deck.piles?.filter(p => p.visible) || [];
+        // Skip pile detection during drag for better performance
+        // Piles are only relevant when dropping, not during drag
+        // This removes the expensive loop through all objects on every mousemove
 
-            for (const pile of visiblePiles) {
-              // Calculate pile position
-              const pileSize = pile.size ?? 1;
-              let pileX: number, pileY: number;
-
-              if (pile.position === 'free') {
-                pileX = pile.x ?? 0;
-                pileY = pile.y ?? 0;
-              } else if (pile.position === 'right') {
-                pileX = obj.x + obj.width + 4;
-                pileY = obj.y;
-              } else if (pile.position === 'left') {
-                pileX = obj.x - obj.width - 4;
-                pileY = obj.y;
-              } else if (pile.position === 'top') {
-                pileX = obj.x;
-                pileY = obj.y - obj.height - 4;
-              } else if (pile.position === 'bottom') {
-                pileX = obj.x;
-                pileY = obj.y + obj.height + 4;
-              } else {
-                pileX = obj.x;
-                pileY = obj.y;
-              }
-
-              const pileWidth = obj.width * pileSize;
-              const pileHeight = obj.height * pileSize;
-
-              // Check if cursor is within pile bounds (using deck's rotation since piles rotate with deck)
-              if (isPointInRotatedRect(worldX, worldY, pileX, pileY, pileWidth, pileHeight, deck.rotation || 0)) {
-                foundPile = pile.id;
-                break;
-              }
-            }
-            if (foundPile) break;
-          }
-        }
-
-        setHoveredPileId(foundPile);
-
-        // If not over a pile, check if over a deck
+        // Skip deck detection during drag for better performance
+        // Deck hover is only needed for visual feedback, not critical
+        // Checking all decks on every mousemove is too expensive
         if (!foundPile) {
-          let foundDeck = null;
-          Object.values(state.objects).forEach(obj => {
-            if (obj.type === ItemType.DECK) {
-              // Check if cursor is within deck bounds (accounting for rotation)
-              if (isPointInRotatedRect(worldX, worldY, obj.x, obj.y, obj.width, obj.height, obj.rotation || 0)) {
-                foundDeck = obj.id;
-              }
-            }
-          });
-          setHoveredDeckId(foundDeck);
-        } else {
-          setHoveredDeckId(null); // Clear deck hover when over pile
+          setHoveredDeckId(null);
         }
       }
     }
@@ -4402,7 +4370,7 @@ export const Tabletop: React.FC = () => {
         _localOnly: true // Don't send over network during drag
       });
     }
-  }, [isPanning, resizingId, resizeStart, state.objects, state.activePlayerId, draggingId, draggingPile, offset, dispatch, cursorSlot, isPointInRotatedRect, currentTool, rulerStart, scrollContainerRef, pixelsPerVU, addToCursorSlot, throttledResizeUpdate, syncResizeToNetwork]);
+  }, [isPanning, resizingId, resizeStart, state.activePlayerId, draggingId, draggingPile, offset, dispatch, cursorSlot, isPointInRotatedRect, currentTool, rulerStart, scrollContainerRef, pixelsPerVU, addToCursorSlot, throttledResizeUpdate, syncResizeToNetwork]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
     // Clear long-press timer if mouse is released before timeout

@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, useState } from 'react';
+import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
 import { X, Minus, Plus, Eye, EyeOff, Pin, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
@@ -109,17 +109,54 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   const [showSupportModal, setShowSupportModal] = useState(false);
   const { settings: localSettings, updateEffectSetting } = useLocalSettings();
 
-  // For panels (not windows), use local panel settings
+  // For panels (not windows), use player panel settings instead of local settings
   const isPanel = uiObject.type === ItemType.PANEL;
   const panelObject = isPanel ? (uiObject as PanelObject) : null;
+
+  // getLocalEffectiveProps and updateLocalSettings are only needed for windows now
   const {
-    getEffectiveProps,
+    getEffectiveProps: getLocalEffectiveProps,
     updateSettings: updateLocalSettings,
-    hasLocalSettings: hasLocalPanelSettings
   } = useLocalPanelSettings(panelObject || uiObject as any);
 
-  // Get effective properties (local if exists, otherwise global)
-  const effectiveProps = getEffectiveProps();
+  // Get player-specific panel settings from GameContext (stored on host)
+  // For panels, always use playerPanelSettings if they exist, otherwise use panel properties directly
+  // This is much simpler and more performant than the localSettings system
+  const currentPlayerId = state.activePlayerId;
+  const playerPanelSettings = state.playerPanelSettings[currentPlayerId]?.[uiObject.id];
+
+  // Simple direct computation - no complex dependencies
+  // IMPORTANT: During dragging, always use uiObject.x/y directly, not playerPanelSettings
+  // This prevents panels from jumping to stale positions from playerPanelSettings
+  const effectiveProps = (playerPanelSettings && !isDragging) ? {
+    // Player settings from host (synced across reconnects) - take priority
+    // But NOT during dragging - use current object position during drag
+    x: playerPanelSettings.x !== undefined ? playerPanelSettings.x : uiObject.x,
+    y: playerPanelSettings.y !== undefined ? playerPanelSettings.y : uiObject.y,
+    width: playerPanelSettings.width !== undefined ? playerPanelSettings.width : uiObject.width,
+    height: playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiObject.height,
+    minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,
+    isPinnedToViewport: playerPanelSettings.isPinnedToViewport !== undefined ? playerPanelSettings.isPinnedToViewport : (uiObject as any).isPinnedToViewport || false,
+    // Use panel properties for other settings
+    pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
+    expandedState: (uiObject as any).expandedState,
+    collapsedState: (uiObject as any).collapsedState,
+    expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
+    collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
+  } : {
+    // No player settings OR currently dragging - use panel properties directly
+    x: uiObject.x,
+    y: uiObject.y,
+    width: uiObject.width,
+    height: uiObject.height,
+    minimized: (uiObject as any).minimized || false,
+    isPinnedToViewport: (uiObject as any).isPinnedToViewport || false,
+    pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
+    expandedState: (uiObject as any).expandedState,
+    collapsedState: (uiObject as any).collapsedState,
+    expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
+    collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
+  };
 
   // Get pixelsPerVU for converting vu to pixels (for pinned panels)
   const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
