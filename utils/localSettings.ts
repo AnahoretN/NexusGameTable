@@ -3,6 +3,31 @@ import { logger } from './logger';
 
 const LOCAL_SETTINGS_KEY = 'nexus-local-settings';
 
+// Local panel settings for each panel
+export interface LocalPanelSettings {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  minimized: boolean;
+  isPinnedToViewport: boolean;
+  pinnedScreenPosition?: { x: number; y: number };
+  expandedState?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  collapsedState?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  expandedPinnedPosition?: { x: number; y: number };
+  collapsedPinnedPosition?: { x: number; y: number };
+}
+
 export interface LocalSettings {
   // Main menu position (local for each player)
   mainMenuPosition: {
@@ -25,6 +50,11 @@ export interface LocalSettings {
   };
   // Zoom level for game space (100 = default, affects object sizes)
   zoom: number;
+  // Local panel settings - keyed by panel ID
+  // These settings override the global panel state for each player
+  panelSettings: {
+    [panelId: string]: LocalPanelSettings;
+  };
 }
 
 const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
@@ -42,6 +72,7 @@ const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
     showRemoteCursorSlotObjects: true, // Enabled by default
   },
   zoom: 100, // Default 100%
+  panelSettings: {}, // Empty by default - panels will use global settings until customized
 };
 
 /**
@@ -124,4 +155,61 @@ export const clearLocalSettings = (): void => {
   } catch (error) {
     logger.error('Failed to clear local settings:', error);
   }
+};
+
+/**
+ * Get local settings for a specific panel
+ * Returns null if no local settings exist for this panel
+ */
+export const getLocalPanelSettings = (panelId: string): LocalPanelSettings | null => {
+  const settings = loadLocalSettings();
+  return settings.panelSettings[panelId] || null;
+};
+
+/**
+ * Update local settings for a specific panel
+ */
+export const updateLocalPanelSettings = (panelId: string, updates: Partial<LocalPanelSettings>): void => {
+  const settings = loadLocalSettings();
+
+  // Initialize panel settings if they don't exist
+  if (!settings.panelSettings[panelId]) {
+    settings.panelSettings[panelId] = {
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+      minimized: false,
+      isPinnedToViewport: true,
+    };
+  }
+
+  // Apply updates
+  settings.panelSettings[panelId] = {
+    ...settings.panelSettings[panelId],
+    ...updates
+  };
+
+  saveLocalSettings(settings);
+};
+
+/**
+ * Remove local settings for a specific panel
+ */
+export const removeLocalPanelSettings = (panelId: string): void => {
+  const settings = loadLocalSettings();
+
+  if (settings.panelSettings[panelId]) {
+    delete settings.panelSettings[panelId];
+    saveLocalSettings(settings);
+  }
+};
+
+/**
+ * Clear all local panel settings
+ */
+export const clearAllLocalPanelSettings = (): void => {
+  const settings = loadLocalSettings();
+  settings.panelSettings = {};
+  saveLocalSettings(settings);
 };

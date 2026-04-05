@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { PanelObject, PoolPanelData, PanelTab, AppLanguage, ItemType } from '../types';
 import { Plus, Trash2, Lock, X } from 'lucide-react';
@@ -433,37 +434,40 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
       )}
 
       {/* Tab Settings Modal */}
-      {settingsModal && (
-        <div className="absolute inset-0 bg-slate-800 z-10 flex flex-col">
-          {/* Settings Header - Fixed at top */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0">
-            <h2 className="text-lg font-semibold text-white">Tab Settings</h2>
-            <button
-              onClick={() => setSettingsModal(null)}
-              className="p-1 text-slate-400 hover:text-white transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
+      {settingsModal && createPortal(
+        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={() => setSettingsModal(null)}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex justify-center items-center py-2 px-4">
+              <h3 className="text-base font-bold text-white">Settings: {settingsModal.tab.name}</h3>
+            </div>
 
-          {/* Settings Content - Takes available space */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
-            <PoolTabSettingsModal
-              tab={settingsModal.tab}
-              players={state.players}
-              activePlayerId={state.activePlayerId}
-              isGM={isGM}
-              onSave={handleSaveTabSettings}
-              onTabChange={setTempSettingsTab}
-            />
-          </div>
+            {/* Tabs */}
+            <div className="flex">
+              <button className="flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors bg-slate-700 text-white border-b-2 border-purple-500">
+                General
+              </button>
+            </div>
 
-          {/* Cancel/Save Buttons - Fixed at bottom */}
-          <div className="px-4 pb-3 flex-shrink-0">
-            <div className="flex justify-end gap-2">
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+              <div className="space-y-4">
+                <PoolTabSettingsModal
+                  tab={settingsModal.tab}
+                  players={state.players}
+                  activePlayerId={state.activePlayerId}
+                  isGM={isGM}
+                  onSave={handleSaveTabSettings}
+                  onTabChange={setTempSettingsTab}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 p-4">
               <button
                 onClick={() => setSettingsModal(null)}
-                className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 transition-colors"
+                className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded"
               >
                 Cancel
               </button>
@@ -476,13 +480,14 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
                   setSettingsModal(null);
                   setTempSettingsTab(null);
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
               >
-                Save
+                Save Changes
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

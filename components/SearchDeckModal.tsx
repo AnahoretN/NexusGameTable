@@ -709,7 +709,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   }, [isResizing, pixelsPerVU]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[100002] flex items-center justify-center">
+    <div className="fixed inset-0 z-[100002] flex items-center justify-center bg-black/40">
       <div
         ref={modalContainerRef}
         data-modal="search-deck"

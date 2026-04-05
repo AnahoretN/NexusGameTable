@@ -108,8 +108,8 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70">
-      <div className="bg-slate-800 rounded-lg shadow-xl w-[450px] border border-slate-700 max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40">
+      <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-between items-center py-3 px-4 border-b border-slate-700">
           <h3 className="text-base font-bold text-white flex items-center gap-2">

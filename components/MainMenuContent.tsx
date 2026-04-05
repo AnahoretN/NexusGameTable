@@ -1139,7 +1139,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
       {/* Manual P2P Connection Modal */}
       {showManualConnection && createPortal(
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000]">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000]">
           <div className="bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white">{translate('Direct Connection', language as Locale)}</h2>
@@ -1428,7 +1428,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
       {/* Pack Creation Modal */}
       {packModalOpen && createPortal(
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10001]">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10001]">
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="flex justify-between items-center py-3 px-4 border-b border-slate-700">

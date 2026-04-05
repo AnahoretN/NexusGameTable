@@ -1071,66 +1071,69 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       )}
 
       {/* Hand Tab Settings Modal */}
-      {handTabSettings && (
-        <div className="absolute inset-0 bg-slate-800 z-[1000] flex flex-col" onClick={(e) => {
+      {handTabSettings && createPortal(
+        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={(e) => {
           // Close modal if clicking outside (on the background)
           if (e.target === e.currentTarget) {
             setHandTabSettings(null);
           }
         }}>
-          {/* Hand Tab Settings Header - Fixed at top */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0 bg-slate-800">
-            <h2 className="text-lg font-semibold text-white">Hand Tab Settings</h2>
-            <button
-              onClick={() => setHandTabSettings(null)}
-              className="p-1 text-slate-400 hover:text-white transition-colors"
-            >
-              <XIcon size={20} />
-            </button>
-          </div>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex justify-center items-center py-2 px-4">
+              <h3 className="text-base font-bold text-white">Settings: {handTabSettings.player.name}</h3>
+            </div>
 
-          {/* Settings Content - Takes available space with own scrollbar */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
-            <HandTabSettingsModal
-              player={handTabSettings.player}
-              players={state.players}
-              activePlayerId={state.activePlayerId}
-              isGM={isGM}
-              onScaleChange={(newScale) => {
-                // Update scale for this player's tab
-                if (selectedPlayerId === handTabSettings.playerId) {
-                  setTabCardScale(newScale);
-                } else {
-                  // Update scale for other player directly via localStorage
-                  try {
-                    const key = `hand-card-scale-${handTabSettings.playerId}`;
-                    localStorage.setItem(key, String(newScale));
-                    window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
-                      detail: { playerId: handTabSettings.playerId, newScale }
-                    }));
-                  } catch {
-                    // Ignore localStorage errors
-                  }
-                }
-              }}
-              onPlayerChange={setTempSettingsPlayer}
-              onSave={(updatedPlayer) => {
-                dispatch({
-                  type: 'UPDATE_PLAYER',
-                  payload: updatedPlayer
-                });
-                setHandTabSettings(null);
-                setTempSettingsPlayer(null);
-              }}
-            />
-          </div>
+            {/* Tabs */}
+            <div className="flex">
+              <button className="flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors bg-slate-700 text-white border-b-2 border-purple-500">
+                General
+              </button>
+            </div>
 
-          {/* Cancel Button - Fixed at bottom */}
-          <div className="px-4 pb-3 flex-shrink-0 bg-slate-800 border-t border-slate-700">
-            <div className="flex justify-end gap-2">
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+              <div className="space-y-4">
+                <HandTabSettingsModal
+                  player={handTabSettings.player}
+                  players={state.players}
+                  activePlayerId={state.activePlayerId}
+                  isGM={isGM}
+                  onScaleChange={(newScale) => {
+                    // Update scale for this player's tab
+                    if (selectedPlayerId === handTabSettings.playerId) {
+                      setTabCardScale(newScale);
+                    } else {
+                      // Update scale for other player directly via localStorage
+                      try {
+                        const key = `hand-card-scale-${handTabSettings.playerId}`;
+                        localStorage.setItem(key, String(newScale));
+                        window.dispatchEvent(new CustomEvent('hand-card-scale-change', {
+                          detail: { playerId: handTabSettings.playerId, newScale }
+                        }));
+                      } catch {
+                        // Ignore localStorage errors
+                      }
+                    }
+                  }}
+                  onPlayerChange={setTempSettingsPlayer}
+                  onSave={(updatedPlayer) => {
+                    dispatch({
+                      type: 'UPDATE_PLAYER',
+                      payload: updatedPlayer
+                    });
+                    setHandTabSettings(null);
+                    setTempSettingsPlayer(null);
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 p-4">
               <button
                 onClick={() => setHandTabSettings(null)}
-                className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 transition-colors"
+                className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded"
               >
                 Cancel
               </button>
@@ -1145,13 +1148,14 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                   setHandTabSettings(null);
                   setTempSettingsPlayer(null);
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
               >
-                Save
+                Save Changes
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Context menu for cards in hand */}

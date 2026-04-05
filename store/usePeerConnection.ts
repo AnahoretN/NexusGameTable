@@ -4,6 +4,7 @@ import { Action } from './gameActions';
 import { Player } from '../types';
 import { logger } from '../utils/logger';
 import { extractImagesFromState, restoreImagesFromCache } from '../utils/imageCache';
+import { filterLocalPanelProperties } from '../utils/panelSync';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type ImageCache = Record<string, string>; // imageId -> base64 data
@@ -400,6 +401,11 @@ export function usePeerConnection(
         // Send current state to new player with image references
         // Also send all images in cache
         const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
+
+        // Filter out local panel properties before syncing
+        // Each player should have their own panel position, size, and minimized state
+        stateWithRefs.objects = filterLocalPanelProperties(stateWithRefs.objects);
+
         const stateSize = JSON.stringify(stateWithRefs).length;
 
         console.log(`[P2P Host] 📤 Sending SYNC_STATE to guest (${stateSize} chars)`);
