@@ -53,7 +53,7 @@ const SimplifiedBoard: React.FC<{
                 zIndex: obj.zIndex ?? 0,
                 border: '2px solid #212f3c',
                 boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-                backgroundColor: (obj as any).color || '#34495e',
+                backgroundColor: token.color || '#34495e',
                 backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
@@ -237,7 +237,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 zIndex: obj.zIndex ?? 0,
                 border: '2px solid #212f3c',
                 boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-                backgroundColor: (obj as any).color || '#34495e',
+                backgroundColor: token.color || '#34495e',
                 backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
@@ -330,6 +330,16 @@ export const BoardWithResizeMemo = React.memo(BoardWithResize, (prevProps, nextP
     // Check showGrid changes
     if (prevBoard.showGrid !== nextBoard.showGrid) {
         return false; // Re-render when grid visibility changes
+    }
+
+    // Check color changes
+    if (prevBoard.color !== nextBoard.color) {
+        return false; // Re-render when board color changes
+    }
+
+    // Check background image changes
+    if (prevProps.obj.content !== nextProps.obj.content) {
+        return false; // Re-render when background image changes
     }
 
     return true; // Skip re-render by default

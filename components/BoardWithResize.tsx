@@ -107,7 +107,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 top: 0,
                 width: '100%',   // Use full width of parent container
                 height: '100%',  // Use full height of parent container
-                backgroundColor: (obj as any).color || '#34495e',
+                backgroundColor: token.color || '#34495e',
                 backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
@@ -180,8 +180,8 @@ function arePropsEqual(
     prevProps.gridSize === nextProps.gridSize &&
     prevProps.obj.width === nextProps.obj.width &&
     prevProps.obj.height === nextProps.obj.height &&
-    (prevProps.obj as any).content === (nextProps.obj as any).content &&
-    (prevProps.obj as any).color === (nextProps.obj as any).color
+    (prevProps.token as any).content === (nextProps.token as any).content &&
+    (prevProps.token as any).color === (nextProps.token as any).color
   );
 }
 
