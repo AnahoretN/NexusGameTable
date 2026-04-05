@@ -101,7 +101,6 @@ export const PileContextMenu: React.FC<PileContextMenuProps> = ({ x, y, pile, de
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('[PileContextMenu] Action clicked:', item.action);
                 onAction(item.action);
                 onClose();
               }}

@@ -92,7 +92,6 @@ export function loadAndAdaptState(storedData: string, currentViewportWidth: numb
 
     return newState;
   } catch (e) {
-    console.error('Error loading saved state:', e);
     return null;
   }
 }

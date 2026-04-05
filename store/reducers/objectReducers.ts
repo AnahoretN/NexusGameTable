@@ -8,15 +8,6 @@ import { removeObjectFromCellMagnet, removeObjectFromGridCellMagnet, generateGri
 
 export function addObjectReducer(state: any, action: any): any {
   const { type, payload } = action;
-
-  // Debug logging for MOVE_OBJECT
-  if (type === 'MOVE_OBJECT') {
-    console.log('[MOVE_OBJECT] Action received:', {
-      objectId: payload.id,
-      x: payload.x,
-      y: payload.y
-    });
-  }
   const newObjects = { ...state.objects };
 
   if (type === 'ADD_OBJECT') {

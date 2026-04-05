@@ -178,8 +178,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
             type: 'ADD_OBJECT',
             payload: { object: newCard }
           });
-
-          console.log('[contextMenuActions] Card cloned in deck:', card.name, '→', newCard.name);
         } else {
           // Fallback to regular object clone
           dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id } });
@@ -470,7 +468,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     const deck = object as DeckType;
     const pile = deck.piles?.find(p => p.id === pileId);
     if (pile) {
-      console.log('[contextMenuActions] Opening pile:', pile.name);
       if (isPoolPanel) {
         // For pool panels, dispatch event
         window.dispatchEvent(new CustomEvent('open-pile-modal', {

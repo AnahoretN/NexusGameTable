@@ -45,12 +45,6 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
 
   // Sync tempPlayer with player prop when it changes
   useEffect(() => {
-    console.log('[HandTabSettingsModal] Loading player data:', {
-      playerId: player.id,
-      playerName: player.name,
-      handVisibleToPlayerIds: player.handVisibleToPlayerIds,
-      handManageableByPlayerIds: player.handManageableByPlayerIds
-    });
     setTempPlayer({
       ...player,
       handVisibleToPlayerIds: player.handVisibleToPlayerIds || [],

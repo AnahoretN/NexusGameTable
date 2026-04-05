@@ -138,18 +138,8 @@ export function runPoolMigrationIfNeeded(objects: Record<string, any>): void {
   const info = getMigrationInfo(objects);
 
   if (info.needsMigration === 0) {
-    console.log('✅ All pool panels are correctly placed outside playable area');
     return;
   }
 
-  console.warn(`⚠️ Found ${info.needsMigration} pool panels in playable area`);
-  console.table(info.details.filter(d => d.needsMigration));
-
   const result = migrateAllPoolPanels(objects);
-
-  console.log(`🔄 Migration complete: ${result.migrated} migrated, ${result.failed} failed`);
-
-  if (result.errors.length > 0) {
-    console.error('Migration errors:', result.errors);
-  }
 }

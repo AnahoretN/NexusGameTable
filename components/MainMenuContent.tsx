@@ -161,7 +161,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     const urlParams = new URLSearchParams(window.location.search);
     const offerCode = urlParams.get('offer');
     if (offerCode) {
-      console.log('[MainMenuContent] Found offer code in URL');
       setManualConnectionTab('join');
       manualConnection.setLocalOffer(offerCode);
       setShowManualConnection(true);
@@ -178,7 +177,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       const conn = manualConnection.connectionRef.current;
       // Only update if there's actually a connection (don't clear existing connection)
       if (conn) {
-        console.log('[MainMenuContent] Setting manual connection for GameContext');
         (window as any).__setManualConnection(conn);
       }
     }
@@ -2219,21 +2217,11 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onS
 
   // Handle archetype click - add to cursor slot
   const handleArchetypeClick = useCallback((clientX: number, clientY: number) => {
-    console.log('[MainMenuContent] handleArchetypeClick - Archetype:', archetype.name, 'ID:', archetype.id);
-    console.log('[MainMenuContent] Dispatching add-token-to-cursor-slot event');
-
     const event = new CustomEvent('add-token-to-cursor-slot', {
       detail: { archetypeId: archetype.id, clientX, clientY }
     });
 
-    console.log('[MainMenuContent] Event created, about to dispatch');
-    const dispatchResult = window.dispatchEvent(event);
-    console.log('[MainMenuContent] Event dispatched, result:', dispatchResult);
-
-    // Проверка что обработчик действительно есть
-    setTimeout(() => {
-      console.log('[MainMenuContent] 100ms after dispatch - checking if event was handled');
-    }, 100);
+    window.dispatchEvent(event);
   }, [archetype.id, archetype.name]);
 
   // Set up capture phase listener for mousedown to set flag BEFORE Tabletop's handleGlobalClick
@@ -2247,26 +2235,12 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onS
       const settingsButton = target.closest('[data-archetype-settings]') as HTMLElement;
       if (settingsButton) return;
 
-      console.log('[MainMenuContent] handleMouseDownCapture - About to set isAddingToken flag');
-      console.log('[MainMenuContent] handleMouseDownCapture - card before:', card);
-      console.log('[MainMenuContent] handleMouseDownCapture - card.dataset before:', card.dataset);
-
       (card as HTMLElement).dataset.isAddingToken = 'true';
       dragStartTimeRef.current = Date.now();
       dragStartPositionRef.current = { x: e.clientX, y: e.clientY };
-
-      console.log('[MainMenuContent] handleMouseDownCapture - card.dataset after:', card.dataset);
-      console.log('[MainMenuContent] handleMouseDownCapture - isAddingToken flag set');
     };
 
     const handleMouseUpCapture = (e: MouseEvent) => {
-      console.log('[MainMenuContent] handleMouseUpCapture - ======================================');
-      console.log('[MainMenuContent] handleMouseUpCapture - Starting');
-      console.log('[MainMenuContent] handleMouseUpCapture - Event type:', e.type);
-      console.log('[MainMenuContent] handleMouseUpCapture - Button:', e.button);
-      console.log('[MainMenuContent] handleMouseUpCapture - card.dataset.isAddingToken:', card.dataset.isAddingToken);
-      console.log('[MainMenuContent] handleMouseUpCapture - card element:', card);
-
       if (card.dataset.isAddingToken) {
         const dragDuration = Date.now() - dragStartTimeRef.current;
         const dragDistance = dragStartPositionRef.current
@@ -2276,36 +2250,21 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onS
             )
           : 0;
 
-        console.log('[MainMenuContent] handleMouseUpCapture - Click check - Duration:', dragDuration, 'Distance:', dragDistance);
-
         // Clear the adding token flag
         delete card.dataset.isAddingToken;
 
         // If it was a quick click with minimal movement, treat as click
         if (dragDuration < 200 && dragDistance < 10) {
-          console.log('[MainMenuContent] handleMouseUpCapture - This is a quick click, adding token');
-          console.log('[MainMenuContent] handleMouseUpCapture - About to call handleArchetypeClick');
-          try {
-            handleArchetypeClick(e.clientX, e.clientY);
-            console.log('[MainMenuContent] handleMouseUpCapture - handleArchetypeClick returned');
-          } catch (error) {
-            console.error('[MainMenuContent] handleMouseUpCapture - ERROR in handleArchetypeClick:', error);
-          }
-        } else {
-          console.log('[MainMenuContent] handleMouseUpCapture - NOT a quick click, ignoring');
+          handleArchetypeClick(e.clientX, e.clientY);
         }
-      } else {
-        console.log('[MainMenuContent] handleMouseUpCapture - isAddingToken flag not set, skipping');
       }
     };
 
     // Use capture phase to ensure this runs before Tabletop's handleGlobalClick
-    console.log('[MainMenuContent] Setting up mouse event listeners for card:', card);
     card.addEventListener('mousedown', handleMouseDownCapture, { capture: true });
     card.addEventListener('mouseup', handleMouseUpCapture, { capture: true });
 
     return () => {
-      console.log('[MainMenuContent] Cleaning up mouse event listeners for card');
       card.removeEventListener('mousedown', handleMouseDownCapture, { capture: true } as any);
       card.removeEventListener('mouseup', handleMouseUpCapture, { capture: true } as any);
     };

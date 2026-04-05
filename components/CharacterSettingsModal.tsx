@@ -21,13 +21,6 @@ export const CharacterSettingsModal: React.FC<CharacterSettingsModalProps> = ({
 
   // Sync tempCharacter with character prop when it changes
   useEffect(() => {
-    console.log('[CharacterSettingsModal] Loading character data:', {
-      characterId: character.id,
-      characterName: character.characterName,
-      visibleToPlayerIds: character.visibleToPlayerIds,
-      manageableByPlayerIds: character.manageableByPlayerIds,
-      editableByPlayerIds: character.editableByPlayerIds
-    });
     setTempCharacter(character);
   }, [character.id, character.characterName, character.visibleToPlayerIds, character.manageableByPlayerIds, character.editableByPlayerIds]);
 

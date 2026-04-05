@@ -357,7 +357,7 @@ export function executeClickAction(
       break;
 
     default:
-      console.warn(`[executeClickAction] Unknown action: ${action}`);
+      // Unknown action - ignore
   }
 }
 

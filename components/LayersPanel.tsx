@@ -27,22 +27,17 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
   const toggleLayer = (layerId: string) => {
     const isSelected = isLayerSelected(layerId);
     const layer = state.hyperscaleLayers.find(l => l.id === layerId);
-    console.log(`[LAYER TOGGLE] ${layer?.name || layerId} (${layerId}) - current state: ${isSelected ? 'SELECTED' : 'NOT SELECTED'}`);
     if (isSelected) {
       // Don't allow deselecting all layers
       if (state.selectedHyperscaleLayerIds.length > 1) {
         const newSelection = state.selectedHyperscaleLayerIds.filter(id => id !== layerId);
-        console.log(`[LAYER TOGGLE] DESELECTING - new selection: ${newSelection.join(', ')}`);
         dispatch({
           type: 'SET_HYPERSCALE_LAYERS',
           payload: { layerIds: newSelection }
         });
-      } else {
-        console.log(`[LAYER TOGGLE] CANNOT DESELECT - would leave no layers selected`);
       }
     } else {
       const newSelection = [...state.selectedHyperscaleLayerIds, layerId];
-      console.log(`[LAYER TOGGLE] SELECTING - new selection: ${newSelection.join(', ')}`);
       dispatch({
         type: 'SET_HYPERSCALE_LAYERS',
         payload: { layerIds: newSelection }

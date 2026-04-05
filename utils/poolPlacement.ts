@@ -162,12 +162,10 @@ export function dropObjectsToPool(
   }
 
   if (!dropPosition || !poolZone) {
-    console.error('Invalid drop position or pool zone');
     return;
   }
 
   if (typeof dispatch !== 'function') {
-    console.error('Dispatch must be a function');
     return;
   }
 
@@ -185,19 +183,12 @@ export function dropObjectsToPool(
     // Drop items with offset based on layer position
     sortedObjects.forEach((obj, sortedIndex) => {
       if (!obj || !obj.id) {
-        console.warn('[dropObjectsToPool] Invalid object in drop list', obj);
         return;
       }
 
       // IMPORTANT: Skip objects that are in a deck (location === 'DECK')
       // Cards in deck should not be dropped to pool panel - this prevents duplication
       if (obj.type === ItemType.CARD && (obj as any).location === CardLocation.DECK) {
-        console.log('[dropObjectsToPool] Skipping card in deck:', {
-          id: obj.id,
-          location: (obj as any).location,
-          deckId: (obj as any).deckId,
-          reason: 'Cards in deck should not be dropped to pool panel'
-        });
         return;
       }
 
@@ -255,17 +246,6 @@ export function dropObjectsToPool(
         isOnTable: true // IMPORTANT: All objects in pool panel must have isOnTable=true for visibility!
       };
 
-      // Debug logging
-      console.log('[dropObjectsToPool] Dropping object to pool:', {
-        id: obj.id,
-        type: obj.type,
-        location: (obj as any).location,
-        isOnTable: (obj as any).isOnTable,
-        x: position.constrainedX,
-        y: position.constrainedY,
-        poolZone: { offsetX: poolZone.offsetX, offsetY: poolZone.offsetY }
-      });
-
       // For cards, set proper location and isOnTable=true for visibility in pool panel
       // IMPORTANT: Cards in pool panel should NEVER have location=HAND or location=CURSOR_SLOT
       // This prevents cards from briefly appearing in hand panel when being dragged to deck
@@ -275,11 +255,6 @@ export function dropObjectsToPool(
         // IMPORTANT: Don't change location if card is already in a deck (location === 'DECK')
         // This prevents cards from being pulled out of deck when opening search modal
         if (card.location === CardLocation.DECK) {
-          console.log('[dropObjectsToPool] Card already in deck, keeping location:', {
-            id: card.id,
-            location: card.location,
-            deckId: card.deckId
-          });
           // Keep current location and just update position
           updatePayload.isOnTable = true; // MUST be true for pool panel visibility
         } else {
@@ -287,15 +262,6 @@ export function dropObjectsToPool(
           // deckId only indicates which deck the card belongs to, not its current location
           // When card is in deck, it will be handled by ADD_CARD_TO_TOP_OF_DECK action
           const properLocation = CardLocation.TABLE;
-
-          console.log('[dropObjectsToPool] Card location correction:', {
-            id: card.id,
-            oldLocation: card.location,
-            newLocation: properLocation,
-            deckId: card.deckId,
-            ownerId: card.ownerId,
-            reason: 'Cards in pool panel are on TABLE (not in deck)'
-          });
 
           updatePayload.location = properLocation; // Set proper location for deck/hand detection
           updatePayload.isOnTable = true; // MUST be true for pool panel visibility
@@ -308,7 +274,7 @@ export function dropObjectsToPool(
       });
     });
   } catch (error) {
-    console.error('Error dropping objects to pool:', error);
+    // Error handling
   }
 }
 
