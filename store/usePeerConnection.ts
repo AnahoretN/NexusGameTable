@@ -170,11 +170,30 @@ export function usePeerConnection(
       localImageCacheRef.current = { ...localImageCacheRef.current, ...newImages };
       // Re-dispatch to update state with restored images
       localDispatch({ type: 'RESTORE_IMAGES', payload: newImages });
+    } else if (data.type === 'PLAYER_PANEL_SETTINGS') {
+      // Guest received their individual panel settings from host
+      const { playerId, settings } = data.payload;
+      console.log(`[P2P Network] 📥 Received PLAYER_PANEL_SETTINGS for ${playerId} (${Object.keys(settings).length} panels)`);
+
+      // Apply individual panel settings using special action
+      localDispatch({
+        type: 'APPLY_PLAYER_PANEL_SETTINGS',
+        payload: { settings }
+      });
     } else if (data.type === 'HELO') {
       // Host received new player info
       const newPlayer = data.payload;
       console.log(`[P2P Network] 👋 Received HELO from player:`, newPlayer.name, `(${newPlayer.id})`);
       localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
+
+      // Send player's individual panel settings back to them
+      const playerPanelSettings = stateRef.current.playerPanelSettings[newPlayer.id] || {};
+      if (Object.keys(playerPanelSettings).length > 0) {
+        console.log(`[P2P Host] 📤 Sending player panel settings to ${newPlayer.name} (${Object.keys(playerPanelSettings).length} panels)`);
+        senderConn.send({ type: 'PLAYER_PANEL_SETTINGS', payload: { playerId: newPlayer.id, settings: playerPanelSettings } });
+      } else {
+        console.log(`[P2P Host] 📤 No existing panel settings for ${newPlayer.name}, using host defaults`);
+      }
     } else if (data.type === 'UPDATE_PLAYER_NAME') {
       // Host received player name update request
       console.log(`[P2P Network] ✏️ Received UPDATE_PLAYER_NAME`);
@@ -188,11 +207,17 @@ export function usePeerConnection(
       // These actions are screen-specific and should not be synced
       const localOnlyActions = [
         'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
-        'SET_PIXELS_PER_VU'       // Pixels per VU is screen-specific
+        'SET_PIXELS_PER_VU',      // Pixels per VU is screen-specific
+        'MOVE_OBJECT_COMMIT',     // Panel/window position is local
+        'RESIZE_UI_OBJECT'        // Panel/window size is local
       ];
 
       if (localOnlyActions.includes(actionType)) {
         console.log(`[P2P Network] ⚠️ Ignoring local-only action:`, actionType, '- not applying to host state');
+      } else if (actionType === 'UPDATE_PLAYER_PANEL_SETTINGS') {
+        // Host received update to player panel settings from guest
+        console.log(`[P2P Network] 📥 Received UPDATE_PLAYER_PANEL_SETTINGS from guest`);
+        localDispatch(data.payload);
       } else {
         localDispatch(data.payload);
       }
@@ -419,6 +444,9 @@ export function usePeerConnection(
 
         // Initialize cache for this guest
         imageCachesRef.current.set(conn.peer, imageCache);
+
+        // Store reference to connection for sending player panel settings later
+        (conn as any).pendingPlayerId = null; // Will be set when HELO is received
 
         // Listen for data from this guest
         conn.on('data', (data: any) => {

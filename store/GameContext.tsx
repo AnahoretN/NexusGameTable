@@ -42,6 +42,42 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
         );
 
+        // Check if this is a reconnection to the same session
+        // If session ID matches, restore local panel settings; otherwise use host's settings
+        const incomingSessionId = action.payload.sessionId;
+        const isReconnection = state.sessionId === incomingSessionId;
+
+        console.log('[SYNC_STATE] Session check:', {
+          current: state.sessionId,
+          incoming: incomingSessionId,
+          isReconnection,
+          willRestoreLocalSettings: isReconnection
+        });
+
+        // Save local panel settings before applying incoming state (only for reconnection)
+        const localPanelSettings: Map<string, any> = new Map();
+        if (isReconnection) {
+          Object.entries(state.objects).forEach(([id, obj]) => {
+            if (obj.type === ItemType.PANEL) {
+              const panel = obj as PanelObject;
+              // Save local settings for this panel (will be restored after merge)
+              localPanelSettings.set(id, {
+                x: panel.x,
+                y: panel.y,
+                width: panel.width,
+                height: panel.height,
+                minimized: panel.minimized,
+                isPinnedToViewport: panel.isPinnedToViewport,
+                pinnedScreenPosition: panel.pinnedScreenPosition,
+                expandedState: panel.expandedState,
+                collapsedState: panel.collapsedState,
+                expandedPinnedPosition: panel.expandedPinnedPosition,
+                collapsedPinnedPosition: panel.collapsedPinnedPosition,
+              });
+            }
+          });
+        }
+
         // Only process objects if they're in the payload
         let finalObjects = state.objects; // Default to current objects
         if (action.payload.objects) {
@@ -59,6 +95,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             finalObjects = localMainMenu
               ? { ...incomingObjects, [localMainMenu.id]: localMainMenu }
               : incomingObjects;
+
+            // Restore local panel settings for existing panels ONLY on reconnection
+            // On first connection, use host's panel positions and sizes
+            if (isReconnection) {
+              Object.entries(finalObjects).forEach(([id, obj]) => {
+                if (obj.type === ItemType.PANEL && localPanelSettings.has(id)) {
+                  const localSettings = localPanelSettings.get(id);
+                  finalObjects[id] = {
+                    ...obj,
+                    ...localSettings // Restore local position, size, and state
+                  } as PanelObject;
+                }
+              });
+              console.log('[SYNC_STATE] Restored local panel settings for reconnection');
+            } else {
+              console.log('[SYNC_STATE] Using host panel settings for first connection');
+            }
         }
 
         // Remove viewTransform from payload to prevent any cross-contamination
@@ -70,7 +123,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             objects: finalObjects, // Use merged objects (or current if none in payload)
             activePlayerId: currentActiveId,
             // CRITICAL: Never use viewTransform from remote state - always keep local
-            viewTransform: currentViewTransform
+            viewTransform: currentViewTransform,
+            // Update session ID to track connection state
+            sessionId: incomingSessionId || state.sessionId
         };
     }
     case 'RESTORE_IMAGES': {
@@ -493,6 +548,47 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj) return state;
 
+      // For panels and windows, filter out local-only properties from network sync
+      // These properties should remain local to each player and not be synced
+      if ((obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) && !action._localOnly) {
+        const localOnlyProps = [
+          'x', 'y',                    // Position is local
+          'width', 'height',           // Size is local
+          'minimized',                 // Minimized state is local
+          'isPinnedToViewport',        // Pinning is local
+          'pinnedScreenPosition',      // Pinned position is local
+          'expandedState',             // Expanded state is local
+          'collapsedState',            // Collapsed state is local
+          'expandedPinnedPosition',    // Expanded pinned position is local
+          'collapsedPinnedPosition'    // Collapsed pinned position is local
+        ];
+
+        // Check if payload contains only local-only properties
+        const payloadKeys = Object.keys(action.payload);
+        const hasOnlyLocalProps = payloadKeys.every(key => localOnlyProps.includes(key));
+
+        // If only local properties are being updated, skip this action for panels/windows
+        if (hasOnlyLocalProps && payloadKeys.length > 0) {
+          return state;
+        }
+
+        // Filter out local properties from the payload
+        const filteredPayload: any = {};
+        Object.entries(action.payload).forEach(([key, value]) => {
+          if (!localOnlyProps.includes(key)) {
+            filteredPayload[key] = value;
+          }
+        });
+
+        // If all properties were filtered out, skip this action
+        if (Object.keys(filteredPayload).length === 0) {
+          return state;
+        }
+
+        // Use filtered payload instead of original
+        action.payload = filteredPayload;
+      }
+
       // Debug logging for location AND isOnTable changes on cards
       if (obj.type === ItemType.CARD && (action.payload.location || action.payload.isOnTable !== undefined)) {
         console.log('[UPDATE_OBJECT] Card properties changing:', {
@@ -860,6 +956,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj || obj.locked) return state;
 
+      // Skip network sync for panels and windows - their position is local to each player
+      // Allow local-only moves (during drag) but prevent network sync
+      if ((obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) && !action._localOnly) {
+        return state;
+      }
+
       // Calculate position delta
       const deltaX = action.payload.x - obj.x;
       const deltaY = action.payload.y - obj.y;
@@ -1030,6 +1132,43 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const { id, x, y, previousX, previousY } = action.payload;
       const obj = state.objects[id];
       if (!obj || obj.locked) return state;
+
+      // For panels and windows, update individual player settings instead of syncing position
+      if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
+        const currentPlayerId = state.activePlayerId;
+        const roundedX = Math.round(x);
+        const roundedY = Math.round(y);
+
+        // Update individual panel settings for this player
+        return {
+          ...state,
+          playerPanelSettings: {
+            ...state.playerPanelSettings,
+            [currentPlayerId]: {
+              ...(state.playerPanelSettings[currentPlayerId] || {}),
+              [id]: {
+                ...(state.playerPanelSettings[currentPlayerId]?.[id] || {}),
+                x: roundedX,
+                y: roundedY,
+                // Preserve existing settings
+                width: state.playerPanelSettings[currentPlayerId]?.[id]?.width || obj.width,
+                height: state.playerPanelSettings[currentPlayerId]?.[id]?.height || obj.height,
+                minimized: state.playerPanelSettings[currentPlayerId]?.[id]?.minimized || (obj as any).minimized || false,
+                isPinnedToViewport: state.playerPanelSettings[currentPlayerId]?.[id]?.isPinnedToViewport || (obj as any).isPinnedToViewport || false,
+              }
+            }
+          },
+          // Also update local object for immediate visual feedback
+          objects: {
+            ...state.objects,
+            [id]: {
+              ...obj,
+              x: roundedX,
+              y: roundedY
+            }
+          }
+        };
+      }
 
       // Calculate position delta
       const deltaX = x - obj.x;
@@ -3582,6 +3721,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj || (obj.type !== ItemType.PANEL && obj.type !== ItemType.WINDOW)) return state;
 
+      // For panels and windows, resize is a local-only operation
+      // Skip network sync for resize operations
+      if (!action._localOnly) {
+        // Mark as local-only to prevent network sync
+        action._localOnly = true;
+      }
+
       return {
         ...state,
         objects: {
@@ -4558,6 +4704,72 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           return state;
       }
     }
+    case 'UPDATE_PLAYER_PANEL_SETTINGS': {
+      // Store individual panel settings for a player (host only)
+      const { playerId, panelId, settings } = action.payload;
+
+      // Initialize player settings if not exists
+      if (!state.playerPanelSettings[playerId]) {
+        return {
+          ...state,
+          playerPanelSettings: {
+            ...state.playerPanelSettings,
+            [playerId]: {
+              [panelId]: settings
+            }
+          }
+        };
+      }
+
+      // Update panel settings for this player
+      return {
+        ...state,
+        playerPanelSettings: {
+          ...state.playerPanelSettings,
+          [playerId]: {
+            ...state.playerPanelSettings[playerId],
+            [panelId]: {
+              ...(state.playerPanelSettings[playerId][panelId] || {}),
+              ...settings
+            }
+          }
+        }
+      };
+    }
+    case 'REQUEST_PLAYER_PANEL_SETTINGS': {
+      // Guest requests their panel settings from host
+      // This should only be processed by host, guests ignore it
+      if (!isHost) return state;
+
+      const { playerId } = action.payload;
+      const playerSettings = state.playerPanelSettings[playerId] || {};
+
+      // Send the settings back to the guest via a special action
+      // This will be handled by the guest's SYNC_STATE handler
+      // For now, we'll just return the current state
+      // The actual delivery will happen via the peer connection
+      return state;
+    }
+    case 'APPLY_PLAYER_PANEL_SETTINGS': {
+      // Apply individual panel settings directly to panels (used when guest receives their settings from host)
+      const { settings } = action.payload;
+
+      // Update panels with individual settings
+      const updatedObjects = { ...state.objects };
+      Object.entries(settings).forEach(([panelId, panelSettings]: [string, any]) => {
+        if (updatedObjects[panelId] && (updatedObjects[panelId].type === ItemType.PANEL || updatedObjects[panelId].type === ItemType.WINDOW)) {
+          updatedObjects[panelId] = {
+            ...updatedObjects[panelId],
+            ...panelSettings
+          };
+        }
+      });
+
+      return {
+        ...state,
+        objects: updatedObjects
+      };
+    }
     case 'CLEAR_SAVED_STATE': {
       // Clear ALL saved data from localStorage including URL parameters
       clearAllData();
@@ -5124,7 +5336,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Filter out local-only actions that should not be sent to host
           const localOnlyActions = [
               'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
-              'SET_PIXELS_PER_VU'       // Pixels per VU is screen-specific
+              'SET_PIXELS_PER_VU',       // Pixels per VU is screen-specific
+              'MOVE_OBJECT_COMMIT',      // Panel/window position is local (handled separately)
+              'RESIZE_UI_OBJECT'         // Panel/window size is local (handled separately)
           ];
 
           if (localOnlyActions.includes(action.type)) {
@@ -5137,8 +5351,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const hasManualConnection = manualConnectionRef.current && manualConnectionRef.current.open === true;
 
           if (hasPeerJSConnection) {
+              // UPDATE_PLAYER_PANEL_SETTINGS is sent as a separate message type for clarity
+              if (action.type === 'UPDATE_PLAYER_PANEL_SETTINGS') {
+                  hostConnectionRef.current.send({ type: 'ACTION', payload: action });
+                  // Optimistic update for immediate feedback
+                  localDispatch(action);
               // UPDATE_PLAYER_NAME is sent as a separate message type for clarity
-              if (action.type === 'UPDATE_PLAYER_NAME') {
+              } else if (action.type === 'UPDATE_PLAYER_NAME') {
                   hostConnectionRef.current.send({ type: 'UPDATE_PLAYER_NAME', payload: action });
                   // Optimistic update for immediate feedback
                   localDispatch(action);
@@ -5156,7 +5375,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else if (hasManualConnection) {
               // Using manual P2P connection (DataChannelAdapter has PeerJS-compatible interface)
               console.log('[Manual P2P] Sending action to host:', action.type);
-              if (action.type === 'UPDATE_PLAYER_NAME') {
+              if (action.type === 'UPDATE_PLAYER_PANEL_SETTINGS') {
+                  manualConnectionRef.current.send({ type: 'ACTION', payload: action });
+                  localDispatch(action);  // Optimistic update
+              } else if (action.type === 'UPDATE_PLAYER_NAME') {
                   manualConnectionRef.current.send({ type: 'UPDATE_PLAYER_NAME', payload: action });
                   localDispatch(action);  // Optimistic update
               } else {

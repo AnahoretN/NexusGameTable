@@ -3771,6 +3771,77 @@ export const Tabletop: React.FC = () => {
 
         // Note: We DON'T unpin pinned objects on drag - pinned objects stay pinned while dragging
 
+        // Panel layer management: when dragging a panel (not main-menu), bring it to front
+        // Logic: defragment panels from bottom (9001) up, dragged panel → first free layer
+        if (item.type === ItemType.PANEL) {
+          const panel = item as PanelObject;
+          const isMainMenu = panel.panelType === 'main_menu';
+
+          if (!isMainMenu) {
+            // Find all panels except main-menu
+            const allPanels = Object.values(state.objects)
+              .filter(obj => obj.type === ItemType.PANEL)
+              .filter(obj => (obj as PanelObject).panelType !== 'main_menu')
+              .map(obj => obj as PanelObject);
+
+            if (allPanels.length > 0) {
+              const BOTTOM_Z = 9001;
+
+              // Sort all panels (including dragged one) by current z-index (ascending)
+              // This gives us the order from bottom to top
+              const sortedPanels = [...allPanels].sort((a, b) => (a.zIndex || 1000) - (b.zIndex || 1000));
+
+              // Defragment: start from BOTTOM_Z and move up sequentially
+              sortedPanels.forEach((otherPanel, index) => {
+                const newZ = BOTTOM_Z + index;
+
+                dispatch({
+                  type: 'UPDATE_OBJECT',
+                  payload: {
+                    id: otherPanel.id,
+                    zIndex: newZ
+                  },
+                  _localOnly: true // Layer management is local per player
+                });
+
+                // Update individual panel settings for this player
+                dispatch({
+                  type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+                  payload: {
+                    playerId: state.activePlayerId,
+                    panelId: otherPanel.id,
+                    settings: { zIndex: newZ }
+                  }
+                });
+              });
+
+              // After defragmentation, the dragged panel is now at some position
+              // Move it to the layer right above the highest panel (no gaps)
+              const highestPanelZ = BOTTOM_Z + sortedPanels.length - 1;
+              const draggedPanelNewZ = highestPanelZ + 1;
+
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: id,
+                  zIndex: draggedPanelNewZ
+                },
+                _localOnly: true // Layer management is local per player
+              });
+
+              // Update individual panel settings for dragged panel
+              dispatch({
+                type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+                payload: {
+                  playerId: state.activePlayerId,
+                  panelId: id,
+                  settings: { zIndex: draggedPanelNewZ }
+                }
+              });
+            }
+          }
+        }
+
         // UI objects use screen coordinates directly, not world coordinates
         setDraggingId(id);
         dragStartRef.current = { x: e.clientX, y: e.clientY };

@@ -16,9 +16,12 @@ interface PanelSettingsModalProps {
 /**
  * Modal for editing panel settings (position, size, rotation, etc.)
  * Used in both UIObjectRenderer and MainMenuContent
+ *
+ * Each player has their own individual panel settings that are stored on the host.
+ * When a player opens this modal, they see and modify their own settings only.
  */
 export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, onClose, language = 'en' }) => {
-  const { dispatch } = useGame();
+  const { dispatch, state, isHost } = useGame();
 
   const [activeTab, setActiveTab] = React.useState<PanelSettingsTab>('general');
   const [title, setTitle] = React.useState(panel.title);
@@ -29,19 +32,82 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
   const [dualPosition, setDualPosition] = React.useState(panel.dualPosition || false);
   const [zIndex, setZIndex] = React.useState(panel.zIndex || 1000);
 
+  // Sync values with current panel state (in case panel was resized while modal is open)
+  React.useEffect(() => {
+    setTitle(panel.title);
+    setX(panel.x);
+    setY(panel.y);
+    setWidth(panel.width);
+    setHeight(panel.height);
+    setDualPosition(panel.dualPosition || false);
+    setZIndex(panel.zIndex || 1000);
+  }, [panel.title, panel.x, panel.y, panel.width, panel.height, panel.dualPosition, panel.zIndex]);
+
   const handleSave = () => {
+    const currentPlayerId = state.activePlayerId;
+
+    // Update individual panel settings for this player (stored on host)
+    if (isHost) {
+      // Host updates directly
+      dispatch({
+        type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+        payload: {
+          playerId: currentPlayerId,
+          panelId: panel.id,
+          settings: {
+            x: Math.round(x),
+            y: Math.round(y),
+            width: Math.round(width),
+            height: Math.round(height),
+            minimized: panel.minimized || false,
+            isPinnedToViewport: panel.isPinnedToViewport || false,
+            pinnedScreenPosition: panel.pinnedScreenPosition,
+            expandedState: panel.expandedState,
+            collapsedState: panel.collapsedState,
+            expandedPinnedPosition: panel.expandedPinnedPosition,
+            collapsedPinnedPosition: panel.collapsedPinnedPosition,
+          }
+        }
+      });
+    } else {
+      // Guest sends request to host to update their settings
+      // This will be synced via the peer connection
+      dispatch({
+        type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+        payload: {
+          playerId: currentPlayerId,
+          panelId: panel.id,
+          settings: {
+            x: Math.round(x),
+            y: Math.round(y),
+            width: Math.round(width),
+            height: Math.round(height),
+            minimized: panel.minimized || false,
+            isPinnedToViewport: panel.isPinnedToViewport || false,
+            pinnedScreenPosition: panel.pinnedScreenPosition,
+            expandedState: panel.expandedState,
+            collapsedState: panel.collapsedState,
+            expandedPinnedPosition: panel.expandedPinnedPosition,
+            collapsedPinnedPosition: panel.collapsedPinnedPosition,
+          }
+        }
+      });
+    }
+
+    // Also update local panel for immediate visual feedback
     dispatch({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
         title,
-        x,
-        y,
-        width,
-        height,
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height),
         dualPosition,
         zIndex
-      }
+      },
+      _localOnly: true // Don't sync this to other players
     });
 
     onClose();

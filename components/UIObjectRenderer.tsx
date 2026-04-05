@@ -205,7 +205,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               width: restoreState?.width ?? MAIN_MENU_WIDTH,
               height: restoreState?.height ?? 400,
             })
-          }
+          },
+          _localOnly: true // Minimized state and dimensions are local
         });
       }
     } else {
@@ -243,7 +244,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               : undefined),
             width: 200,
             height: 32, // Title bar height
-          }
+          },
+          _localOnly: true // Minimized state and dimensions are local
         });
       }
     }
@@ -290,9 +292,16 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   }, [dispatch, uiObject.id]);
 
   const handleOpenSettings = useCallback(() => {
-    // Check permissions - GM always has access, non-GM needs configureObjects permission
-    const canConfigure = isHost || state.playerPermissions.configureObjects;
-    if (!canConfigure) return; // Silently do nothing if no permission
+    // Only GM can access panel settings - no exceptions for guests
+    if (uiObject.type === ItemType.PANEL) {
+      if (!isGM) return; // Non-GM players cannot access panel settings
+    }
+
+    // For non-panel objects, check permissions
+    if (uiObject.type !== ItemType.PANEL) {
+      const canConfigure = isHost || state.playerPermissions.configureObjects;
+      if (!canConfigure) return; // Silently do nothing if no permission
+    }
 
     // Check if settings window is already open
     const settingsWindowId = `settings-${uiObject.id}`;
@@ -303,7 +312,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       return;
     }
 
-    // Open settings window - uses CREATE_WINDOW which routes to PanelSettingsModal for panels
+    // For all objects including panels, use CREATE_WINDOW with OBJECT_SETTINGS
+    // The WindowContent renderer will handle panels specially and show PanelSettingsModal
     dispatch({
       type: 'CREATE_WINDOW',
       payload: {
@@ -314,7 +324,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         y: effectiveProps.y + 50,
       }
     });
-  }, [dispatch, uiObject, state.objects, isHost, state.playerPermissions.configureObjects, effectiveProps]);
+  }, [dispatch, uiObject, state.objects, isHost, state.playerPermissions.configureObjects, effectiveProps, isGM]);
 
   const handleBringToFront = useCallback(() => {
     // Bring to front by setting high z-index
@@ -431,14 +441,52 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
       // Only update store if size actually changed
       if (Math.abs(newWidth - startWidth) > 5 || Math.abs(newHeight - startHeight) > 5) {
-        // For panels (except main menu), save to local settings
+        // Round to hundredths for settings (2 decimal places)
+        const roundedWidth = Math.round(newWidth * 100) / 100;
+        const roundedHeight = Math.round(newHeight * 100) / 100;
+
+        // For panels (except main menu), save to local settings AND update player panel settings
         if (isPanel && !isMainMenu) {
-          updateLocalSettings({ width: newWidth, height: newHeight });
+          updateLocalSettings({ width: roundedWidth, height: roundedHeight });
+
+          // Update the panel object itself for immediate visual feedback
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: { id: uiObject.id, width: roundedWidth, height: roundedHeight },
+            _localOnly: true // Size changes are local
+          });
+
+          // Also update individual panel settings for this player (stored on host)
+          dispatch({
+            type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+            payload: {
+              playerId: state.activePlayerId,
+              panelId: uiObject.id,
+              settings: {
+                width: roundedWidth,
+                height: roundedHeight
+              }
+            }
+          });
         } else {
           // For main menu and windows, use global state
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: { id: uiObject.id, width: newWidth, height: newHeight }
+            payload: { id: uiObject.id, width: roundedWidth, height: roundedHeight },
+            _localOnly: true // Size changes are local
+          });
+
+          // Also update individual panel settings for this player (stored on host)
+          dispatch({
+            type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+            payload: {
+              playerId: state.activePlayerId,
+              panelId: uiObject.id,
+              settings: {
+                width: roundedWidth,
+                height: roundedHeight
+              }
+            }
           });
         }
       }
@@ -548,9 +596,11 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     const windowObj = uiObject as WindowObject;
     const targetObj = windowObj.targetObjectId ? state.objects[windowObj.targetObjectId] : null;
     const targetPanel = targetObj?.type === ItemType.PANEL ? targetObj as PanelObject : null;
-    // For non-panel objects and hyperscale layer settings, don't render the window frame - the modal renders via portal
+
+    // For ALL panels (not just HAND) and hyperscale layer settings, don't render the window frame
+    // The modal renders via portal directly, so we don't need the window frame
     if ((uiObject as WindowObject).windowType === WindowType.HYPERSCALE_LAYER_SETTINGS ||
-        !targetPanel || targetPanel.panelType === PanelType.HAND) {
+        targetPanel) { // All panels should render without window frame
       return <WindowContent window={windowObj} />;
     }
   }
@@ -731,8 +781,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
           >
             {uiObject.type === ItemType.PANEL ? (
               <>
-                {/* Settings button - only shown when expanded */}
-                {!isCollapsed && (
+                {/* Settings button - only shown to GM when expanded */}
+                {!isCollapsed && isGM && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1645,25 +1695,22 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
   switch (windowObj.windowType) {
     case WindowType.OBJECT_SETTINGS:
       const targetObj = windowObj.targetObjectId ? state.objects[windowObj.targetObjectId] : null;
-      // Panels are stored in state.objects, not state.uiObjects
-      const targetPanel = targetObj?.type === ItemType.PANEL ? targetObj as PanelObject : null;
 
-      if (targetPanel) {
-        // Show panel settings for all panels including HAND panels
+      if (!targetObj) {
+        // Object not found, close the window immediately
+        console.warn('[WindowContent] Object not found for OBJECT_SETTINGS:', windowObj.targetObjectId);
+        handleClose();
+        return null;
+      }
+
+      // Check if this is a panel - panels have their own settings modal
+      if (targetObj.type === ItemType.PANEL) {
+        const targetPanel = targetObj as PanelObject;
+        // Show panel settings for all panels
         return <PanelSettingsModal panel={targetPanel} onClose={handleClose} language={state.language} />;
       }
 
-      if (!targetObj) {
-        // Object not found, close the window
-        return (
-          <div className="p-4 text-slate-400 text-sm">
-            Object not found
-            <button onClick={handleClose} className="ml-2 text-red-400 hover:text-red-300">Close</button>
-          </div>
-        );
-      }
-      // ObjectSettingsModal uses createPortal to document.body, so render it without window frame
-      // Return the modal directly - it will render via portal to document.body
+      // For non-panel objects, use the regular ObjectSettingsModal
       return (
         <ObjectSettingsModal
           object={targetObj}

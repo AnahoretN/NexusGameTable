@@ -2,63 +2,55 @@ import { ItemType, PanelObject } from '../types';
 
 /**
  * Filter out local panel properties before syncing
- * This ensures that each player's local panel settings (position, size, minimized state)
- * are not synced to other players
+ *
+ * IMPORTANT: This function is used when sending state to NEW guests connecting.
+ * Guests should receive the HOST's panel positions and sizes as initial values.
+ *
+ * After connection, guests can modify their local panel settings without
+ * affecting the host or other guests (enforced by GameContext.tsx checks).
  */
 export function filterLocalPanelProperties(objects: Record<string, any>): Record<string, any> {
   const filteredObjects: Record<string, any> = {};
 
   Object.entries(objects).forEach(([id, obj]) => {
-    // For panels, we need to preserve the panel existence but filter local properties
+    // For panels, send COMPLETE panel data to guests
+    // This ensures guests see panels exactly as the host has them positioned
     if (obj.type === ItemType.PANEL) {
       const panel = obj as PanelObject;
 
-      // Create a filtered version of the panel without local properties
-      // Local properties that should NOT be synced:
-      // - x, y (position is local per player)
-      // - width, height (size is local per player)
-      // - minimized (collapsed state is local per player)
-      // - isPinnedToViewport (pinning is local per player)
-      // - pinnedScreenPosition (pinned position is local per player)
-      // - expandedState (expanded state is local per player)
-      // - collapsedState (collapsed state is local per player)
-      // - expandedPinnedPosition (pinned position is local per player)
-      // - collapsedPinnedPosition (pinned position is local per player)
-
-      // Keep only the properties that should be synced:
-      // - id, type, panelType, title
-      // - deckId, playerId (for identifying which panel this is)
-      // - poolData, tableauData, characterData (content data)
-      // - dualPosition (this is a setting, not a local state)
-      // - visible (visibility is controlled by host)
-
+      // Send ALL panel properties including position and size
+      // Guests will use these as initial values when they connect
       const filteredPanel: any = {
         id: panel.id,
         type: panel.type,
         panelType: panel.panelType,
         title: panel.title,
-        visible: panel.visible !== false, // Sync visibility (controlled by host)
-        dualPosition: panel.dualPosition, // Sync dual position setting
+        visible: panel.visible !== false,
+        dualPosition: panel.dualPosition,
+        // Include position and size - guests should see host's layout
+        x: panel.x,
+        y: panel.y,
+        width: panel.width,
+        height: panel.height,
+        minimized: panel.minimized || false,
+        isPinnedToViewport: panel.isPinnedToViewport || false,
+        rotation: panel.rotation || 0,
+        zIndex: panel.zIndex || 1000,
       };
 
-      // Add optional identifiers
+      // Add optional properties if they exist
       if (panel.deckId) filteredPanel.deckId = panel.deckId;
       if (panel.playerId) filteredPanel.playerId = panel.playerId;
+      if (panel.pinnedScreenPosition) filteredPanel.pinnedScreenPosition = panel.pinnedScreenPosition;
+      if (panel.expandedState) filteredPanel.expandedState = panel.expandedState;
+      if (panel.collapsedState) filteredPanel.collapsedState = panel.collapsedState;
+      if (panel.expandedPinnedPosition) filteredPanel.expandedPinnedPosition = panel.expandedPinnedPosition;
+      if (panel.collapsedPinnedPosition) filteredPanel.collapsedPinnedPosition = panel.collapsedPinnedPosition;
 
       // Add content data (should be synced)
       if (panel.poolData) filteredPanel.poolData = panel.poolData;
       if (panel.tableauData) filteredPanel.tableauData = panel.tableauData;
       if (panel.characterData) filteredPanel.characterData = panel.characterData;
-
-      // Add default values for local properties (will be overridden by local settings)
-      filteredPanel.x = 100;
-      filteredPanel.y = 100;
-      filteredPanel.width = 400;
-      filteredPanel.height = 300;
-      filteredPanel.minimized = false;
-      filteredPanel.isPinnedToViewport = true;
-      filteredPanel.rotation = 0;
-      filteredPanel.zIndex = 1000;
 
       filteredObjects[id] = filteredPanel;
     } else {

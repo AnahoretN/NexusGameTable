@@ -9,6 +9,25 @@ export interface ViewTransform {
   pixelsPerVU: number; // Conversion factor from virtual units to pixels
 }
 
+// Individual panel settings for each player
+export interface PlayerPanelSettings {
+  [playerId: string]: {
+    [panelId: string]: {
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      minimized?: boolean;
+      isPinnedToViewport?: boolean;
+      pinnedScreenPosition?: { x: number; y: number };
+      expandedState?: { x: number; y: number; width: number; height: number };
+      collapsedState?: { x: number; y: number; width: number; height: number };
+      expandedPinnedPosition?: { x: number; y: number };
+      collapsedPinnedPosition?: { x: number; y: number };
+    };
+  };
+}
+
 export interface GameState {
   objects: Record<string, TableObject>;
   players: Player[];
@@ -26,6 +45,7 @@ export interface GameState {
   connectionsLocked: boolean; // Whether new player connections are locked (host only)
   diceGroups: DiceGroup[]; // Dice groups for rolling multiple dice together
   lastModifiedBy?: string; // ID of player who last modified the game state
+  playerPanelSettings: PlayerPanelSettings; // Individual panel settings for each player
 }
 
 /**
@@ -63,6 +83,8 @@ export const initialState: GameState = {
   language: (typeof localStorage !== 'undefined' && (localStorage.getItem('app-language') as AppLanguage)) || 'en',
   // Track who last modified the game state (for auto-save timers)
   lastModifiedBy: 'gm',
+  // Individual panel settings for each player (stored on host)
+  playerPanelSettings: {},
   // Default hyperscale layers
   hyperscaleLayers: [
     {
