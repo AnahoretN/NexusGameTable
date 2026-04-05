@@ -147,7 +147,7 @@ export const Tabletop: React.FC = () => {
   // - 'shift' = Ctrl+click on board (drop only on click, not on mouseup)
   // - 'hold' = Long press or drag (drop on mouseup)
   // - 'archetype' = Click on token archetype in ToolsPanel (don't drop on normal click)
-  const [cursorSlotSource, setCursorSlotSource] = useState<'shift' | 'hold' | 'archetype' | null>(null);
+  const [cursorSlotSource, setCursorSlotSource] = useState<'ctrl' | 'hold' | 'archetype' | null>(null);
 
   // Ref to track when we're adding a token (prevent slot from being dropped during add)
   const isAddingTokenRef = useRef(false);
@@ -365,24 +365,33 @@ export const Tabletop: React.FC = () => {
         cardId: string;
         clientX: number;
         clientY: number;
-        source?: 'shift' | 'hold';
+        source?: 'ctrl' | 'hold';
         fromPoolPanel?: string;
         cardOverride?: any;
       }>;
-      const { cardId, clientX, clientY, source = 'shift', fromPoolPanel, cardOverride } = customEvent.detail;
+      const { cardId, clientX, clientY, source = 'ctrl', fromPoolPanel, cardOverride } = customEvent.detail;
 
+      console.log('[CURSOR_SLOT] Received add-to-cursor-slot event:', {
+        cardId,
+        source,
+        fromPoolPanel,
+        hasCardOverride: !!cardOverride,
+        mousePosition: { x: clientX, y: clientY },
+        currentSlotLength: cursorSlot.length
+      });
 
       const itemLookupStart = performance.now();
       const item = state.objects[cardId];
 
       if (!item) {
+        console.log('[CURSOR_SLOT] Item not found:', cardId);
         return;
       }
 
       // IMPORTANT: Set dragThresholdRef.addedToSlot = true for events from pool panel/hand panel
       // This ensures wasThresholdReached is true when handleGlobalMouseUp processes the drop
       // Support both 'hold' (drag from panel) and 'shift' (Ctrl+click)
-      if ((source === 'hold' || source === 'shift') && (fromPoolPanel || (item as any).location === CardLocation.HAND || (item as any).location === CardLocation.TABLE || (item as any).location === CardLocation.DECK)) {
+      if ((source === 'hold' || source === 'ctrl') && (fromPoolPanel || (item as any).location === CardLocation.HAND || (item as any).location === CardLocation.TABLE || (item as any).location === CardLocation.DECK)) {
         dragThresholdRef.current = {
           initialX: clientX,
           initialY: clientY,
@@ -401,6 +410,7 @@ export const Tabletop: React.FC = () => {
 
       // Check if item is already being processed
       if (processingAddToSlotRef.current.has(cardId)) {
+        console.log('[CURSOR_SLOT] Item already being processed:', cardId);
         return;
       }
 
@@ -409,11 +419,31 @@ export const Tabletop: React.FC = () => {
       const alreadyMarked = (item as any).inCursorSlot;
 
       if (alreadyInSlot || alreadyMarked) {
+        console.log('[CURSOR_SLOT] Item already in slot or marked:', {
+          cardId,
+          alreadyInSlot,
+          alreadyMarked,
+          itemLocation: (item as any).location,
+          itemInCursorSlot: (item as any).inCursorSlot
+        });
         return;
       }
 
       // Mark as being processed
       processingAddToSlotRef.current.add(cardId);
+
+      console.log('[CURSOR_SLOT] ✅ Item passed all checks, starting processing:', {
+        cardId,
+        itemType: item.type,
+        itemLocation: (item as any).location,
+        itemOwnerId: (item as any).ownerId,
+        inCursorSlot: (item as any).inCursorSlot,
+        source,
+        fromPoolPanel,
+        currentSlotLength: cursorSlot.length,
+        processingSetSize: processingAddToSlotRef.current.size,
+        processingSetContents: Array.from(processingAddToSlotRef.current)
+      });
 
       // Set source based on how the item was added (only if slot was empty before)
       if (cursorSlot.length === 0) {
@@ -425,6 +455,7 @@ export const Tabletop: React.FC = () => {
         const processStart = performance.now();
 
         try {
+        console.log('[CURSOR_SLOT] Starting item clone process:', { cardId, itemType: item.type });
         // Optimized clone - only copy properties needed for cursor slot rendering
         const cloneStart = performance.now();
 
@@ -586,6 +617,19 @@ export const Tabletop: React.FC = () => {
         if (fromPoolPanel) {
           updatePayload.fromPoolPanel = fromPoolPanel;
         }
+
+        console.log('[CURSOR_SLOT] Successfully added item to cursor slot:', {
+          cardId,
+          itemType: item.type,
+          itemLocation: (item as any).location,
+          itemOwnerId: (item as any).ownerId,
+          source,
+          fromPoolPanel,
+          slotIndex: cursorSlot.length,
+          newSlotLength: cursorSlot.length + 1,
+          updatePayload
+        });
+
         dispatch({ type: 'UPDATE_OBJECT', payload: updatePayload });
 
         const posStart = performance.now();
@@ -596,9 +640,24 @@ export const Tabletop: React.FC = () => {
         const totalProcessTime = performance.now() - processStart;
         const totalFromStart = performance.now() - startTime;
 
+        console.log('[CURSOR_SLOT] Successfully processed item, removing from processing set:', {
+          cardId,
+          processingSetSize: processingAddToSlotRef.current.size,
+          processingSetContents: Array.from(processingAddToSlotRef.current),
+          totalProcessTime
+        });
+
         // Remove from processing set immediately
         processingAddToSlotRef.current.delete(cardId);
           } catch (error) {
+            console.log('[CURSOR_SLOT] ❌ ERROR processing item, removing from processing set:', {
+              cardId,
+              error: error instanceof Error ? error.message : String(error),
+              errorStack: error instanceof Error ? error.stack : undefined,
+              itemType: item?.type,
+              itemLocation: (item as any)?.location,
+              itemOwnerId: (item as any)?.ownerId
+            });
             processingAddToSlotRef.current.delete(cardId);
           }
     };
@@ -700,7 +759,7 @@ export const Tabletop: React.FC = () => {
       const tokenClone: TokenType = { ...newToken };
       (tokenClone as any).cursorSlotIndex = cursorSlot.length;
       (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
-      (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
+      (tokenClone as any).source = 'ctrl'; // Use 'ctrl' for Ctrl+click behavior
 
       setCursorSlot(prev => [...prev, tokenClone]);
       cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
@@ -715,8 +774,8 @@ export const Tabletop: React.FC = () => {
         cursorPositionRef.current = cursorPosition;
       }
 
-      // Set source to 'shift' to behave like Ctrl+click (drop on click, not on mouseup)
-      setCursorSlotSource('shift');
+      // Set source to 'ctrl' to behave like Ctrl+click (drop on click, not on mouseup)
+      setCursorSlotSource('ctrl');
 
       isAddingTokenRef.current = false;
     };
@@ -1538,7 +1597,7 @@ export const Tabletop: React.FC = () => {
             cursorSlotRef.current = [...cursorSlotRef.current, cardForSlot];
             setCursorSlot(prev => [...prev, cardForSlot]);
             if (cursorSlot.length === 0) {
-              setCursorSlotSource('shift');
+              setCursorSlotSource('ctrl');
             }
 
             // Use new PLAY_TOP_CARD action with undo tracking
@@ -1813,16 +1872,29 @@ export const Tabletop: React.FC = () => {
   }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition, rollDiceWithGroup]);
 
   // Add object to cursor slot (Ctrl+click or long-press on card/token)
-  const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
+  const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'ctrl' | 'hold' = 'ctrl', mousePosition?: { x: number; y: number }) => {
+    console.log('[CURSOR_SLOT] addToCursorSlot called:', {
+      itemId: id,
+      itemType: item.type,
+      itemName: item.name,
+      source,
+      mousePosition,
+      currentSlotLength: cursorSlot.length
+    });
+
     // IMPORTANT: Check if cursor is over a token archetype button - if so, don't add to slot
     // This prevents accidental pickup when clicking token type buttons
     const elementUnderCursor = document.elementFromPoint(mousePosition?.x ?? 0, mousePosition?.y ?? 0);
     const archetypeButton = elementUnderCursor?.closest('[data-archetype-card]');
     if (archetypeButton) {
+      console.log('[CURSOR_SLOT] addToCursorSlot: Clicked on archetype button, aborting');
       return;
     }
 
-    if (cursorSlot.length >= 100) return; // Max 100 items in slot
+    if (cursorSlot.length >= 100) {
+      console.log('[CURSOR_SLOT] addToCursorSlot: Slot is full (100 items), aborting');
+      return; // Max 100 items in slot
+    }
 
     // Set source based on how the item was added (only if slot was empty before)
     if (cursorSlot.length === 0) {
@@ -2114,6 +2186,19 @@ export const Tabletop: React.FC = () => {
     // Use provided slotItems or fall back to cursorSlot from state
     const currentSlot = slotItems ?? cursorSlot;
     if (currentSlot.length === 0) return;
+
+    console.log('[CURSOR_SLOT] Dropping cursor slot:', {
+      itemCount: currentSlot.length,
+      itemIds: currentSlot.map(item => item.id),
+      mousePosition: { x: clientX, y: clientY },
+      hasCustomSlotItems: !!slotItems
+    });
+
+    // Notify that items were dropped from cursor slot (for hand panel to clear pickingUpCardIds)
+    const droppedIds = currentSlot.map(item => item.id);
+    window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+      detail: { cardIds: droppedIds }
+    }));
 
     // Check if cursor is over a token archetype card (in MainMenu or TokensPanel)
     // If so, prevent the drop to avoid accidental drops when clicking tokens
@@ -2590,16 +2675,24 @@ export const Tabletop: React.FC = () => {
     });
 
     // Track recently dropped objects to prevent showing shadow version
-    const droppedIds = new Set(currentSlot.map(item => item.id));
-    setRecentlyInMyCursorSlot(droppedIds);
+    const recentlyDroppedIds = new Set(currentSlot.map(item => item.id));
+    setRecentlyInMyCursorSlot(recentlyDroppedIds);
     // Clear after 500ms (enough time for WebRTC sync)
     setTimeout(() => {
       setRecentlyInMyCursorSlot(prev => {
         const next = new Set(prev);
-        droppedIds.forEach(id => next.delete(id));
+        recentlyDroppedIds.forEach(id => next.delete(id));
         return next;
       });
     }, 500);
+
+    console.log('[CURSOR_SLOT] Successfully dropped items from cursor slot:', {
+      droppedIds: Array.from(recentlyDroppedIds),
+      slotCleared: true
+    });
+
+    // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+    processingAddToSlotRef.current.clear();
 
     // Clear the slot - also update ref immediately for mouseup handler
     cursorSlotRef.current = [];
@@ -2670,6 +2763,17 @@ export const Tabletop: React.FC = () => {
       return;
     }
 
+    console.log('[CURSOR_SLOT] dropToDeck called:', {
+      deckId,
+      itemCount: currentSlot.length,
+      itemIds: currentSlot.map(item => item.id),
+      processingSetSize: processingAddToSlotRef.current.size,
+      processingSetContents: Array.from(processingAddToSlotRef.current)
+    });
+
+    // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+    processingAddToSlotRef.current.clear();
+
     const deck = state.objects[deckId] as DeckType;
     if (!deck) {
       return;
@@ -2678,6 +2782,8 @@ export const Tabletop: React.FC = () => {
     // Only add cards to deck (not tokens)
     const cardsInSlot = currentSlot.filter(item => item.type === ItemType.CARD);
     if (cardsInSlot.length > 0) {
+      const cardIds = cardsInSlot.map(item => item.id);
+
       // First, restore cards from cursor slot (set inCursorSlot: false)
       // ADD_CARD_TO_TOP_OF_DECK will update their position to deck position
       cardsInSlot.forEach((item) => {
@@ -2686,6 +2792,11 @@ export const Tabletop: React.FC = () => {
           payload: { id: item.id, inCursorSlot: false, fromPoolPanel: undefined }
         });
       });
+
+      // Notify that cards were dropped from cursor slot (for hand panel to clear pickingUpCardIds)
+      window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+        detail: { cardIds }
+      }));
 
       // Then add them to the deck in reverse order (last in slot = first to be added = ends up on top)
       [...cardsInSlot].reverse().forEach((item) => {
@@ -2767,9 +2878,23 @@ export const Tabletop: React.FC = () => {
       return;
     }
 
+    console.log('[CURSOR_SLOT] dropToPile called:', {
+      pileId,
+      deckId,
+      itemCount: currentSlot.length,
+      itemIds: currentSlot.map(item => item.id),
+      processingSetSize: processingAddToSlotRef.current.size,
+      processingSetContents: Array.from(processingAddToSlotRef.current)
+    });
+
+    // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+    processingAddToSlotRef.current.clear();
+
     // Only add cards to pile (not tokens)
     const cardsInSlot = currentSlot.filter(item => item.type === ItemType.CARD);
     if (cardsInSlot.length > 0) {
+      const cardIds = cardsInSlot.map(item => item.id);
+
       // First, restore cards from cursor slot (set inCursorSlot: false)
       cardsInSlot.forEach((item) => {
         dispatch({
@@ -2777,6 +2902,11 @@ export const Tabletop: React.FC = () => {
           payload: { id: item.id, inCursorSlot: false, fromPoolPanel: undefined }
         });
       });
+
+      // Notify that cards were dropped from cursor slot (for hand panel to clear pickingUpCardIds)
+      window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+        detail: { cardIds }
+      }));
 
       // Then add them to the pile in reverse order (last in slot = first to be added = ends up on top)
       [...cardsInSlot].reverse().forEach((item) => {
@@ -2977,6 +3107,12 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
+      // CRITICAL: Check for Ctrl/Meta FIRST to allow adding items to slot
+      // This must happen BEFORE click actions check to ensure Ctrl+click works properly
+      if ((e.ctrlKey || e.metaKey) && cursorSlotRef.current.length === 0) {
+        return; // Let handleMouseDown add the clicked item to slot
+      }
+
       // Close click tooltip on any click
       if (clickTooltip) {
         setClickTooltip(null);
@@ -3025,6 +3161,13 @@ export const Tabletop: React.FC = () => {
         }
       }
 
+      // IMPORTANT: Check for Ctrl/Meta to allow adding NEW items to slot FIRST
+      // This must happen BEFORE other checks to ensure Ctrl+click works properly
+      // When Ctrl/Meta is pressed, NEVER drop - always allow adding more items to slot
+      if (e.ctrlKey || e.metaKey) {
+        return; // Let handleMouseDown add the clicked item to slot
+      }
+
       // IMPORTANT: Use cursorSlotRef.current instead of cursorSlot to avoid race condition
       // cursorSlot in closure may be stale due to async React state updates
       if (cursorSlotRef.current.length === 0 || e.button !== 0) {
@@ -3037,10 +3180,9 @@ export const Tabletop: React.FC = () => {
         return; // Don't drop cursor slot when clicking on archetype cards
       }
 
-      // Check if Ctrl/Meta is pressed
-      if (e.ctrlKey || e.metaKey) {
-        return;
-      }
+      // If Ctrl/Meta is pressed and slot has items, still allow drop (user wants to drop)
+      // When cursorSlotSource === 'ctrl', we WANT to drop on click even if Ctrl is pressed
+      // This fixes the issue where PLAY_TOP_CARD sets source='ctrl' but Ctrl check prevents drop
 
       // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
       const toolsPanel = target.closest('[data-tools-panel]');
@@ -3061,17 +3203,42 @@ export const Tabletop: React.FC = () => {
         // IMPORTANT: Use cursorSlot from state to ensure we have current data
         // Don't use cursorSlotRef.current as it may be stale
         if (cursorSlot.length > 0) {
+          console.log('[CURSOR_SLOT] Click on hand panel, dropping cards:', {
+            cardIds: cursorSlot.map(item => item.id),
+            itemCount: cursorSlot.length,
+            processingSetSize: processingAddToSlotRef.current.size,
+            processingSetContents: Array.from(processingAddToSlotRef.current)
+          });
+
+          // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+          processingAddToSlotRef.current.clear();
+
+          // CRITICAL: Reset dragThresholdRef to prevent handleGlobalMouseUp from processing stale state
+          dragThresholdRef.current = {
+            initialX: 0,
+            initialY: 0,
+            targetId: null,
+            addedToSlot: false
+          };
+
+          // CRITICAL: Notify that cards were dropped from cursor slot (for hand panel to clear pickingUpCardIds)
+          // This must happen BEFORE dispatching cursor-slot-drop-to-hand to avoid race conditions
+          const droppedIds = cursorSlot.map(item => item.id);
+          window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+            detail: { cardIds: droppedIds }
+          }));
+
           // Dispatch custom event for hand panel to handle
           window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
             detail: { items: cursorSlot }
           }));
           // Track recently dropped objects to prevent showing shadow version
-          const droppedIds = new Set(cursorSlot.map(item => item.id));
-          setRecentlyInMyCursorSlot(droppedIds);
+          const recentlyDroppedIds = new Set(cursorSlot.map(item => item.id));
+          setRecentlyInMyCursorSlot(recentlyDroppedIds);
           setTimeout(() => {
             setRecentlyInMyCursorSlot(prev => {
               const next = new Set(prev);
-              droppedIds.forEach(id => next.delete(id));
+              recentlyDroppedIds.forEach(id => next.delete(id));
               return next;
             });
           }, 500);
@@ -3160,14 +3327,32 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      // Check if clicking on a deck - only drop if source='shift' (not for drag/drop)
+      // Check if clicking on a deck - only drop if source='ctrl' (not for drag/drop)
       // Use elementFromPoint for consistent behavior with drag mode
       const clickElement = document.elementFromPoint(e.clientX, e.clientY);
       const deckElement = clickElement?.closest('[data-object-id]');
-      if (deckElement && cursorSlotSource === 'shift') {
+      if (deckElement && cursorSlotSource === 'ctrl') {
         const objectId = deckElement.getAttribute('data-object-id');
         const obj = objectId ? state.objects[objectId] : undefined;
         if (obj && obj.type === ItemType.DECK && objectId) {
+          console.log('[CURSOR_SLOT] Click on deck with ctrl source, dropping cards:', {
+            deckId: objectId,
+            cardCount: cursorSlotRef.current.length,
+            processingSetSize: processingAddToSlotRef.current.size,
+            processingSetContents: Array.from(processingAddToSlotRef.current)
+          });
+
+          // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+          processingAddToSlotRef.current.clear();
+
+          // CRITICAL: Reset dragThresholdRef to prevent handleGlobalMouseUp from processing stale state
+          dragThresholdRef.current = {
+            initialX: 0,
+            initialY: 0,
+            targetId: null,
+            addedToSlot: false
+          };
+
           // Drop cards to the deck directly - use cursorSlotRef.current to avoid race condition
           e.preventDefault();
           e.stopPropagation();
@@ -3176,9 +3361,9 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      // Check if clicking on a pile - only drop if source='shift'
+      // Check if clicking on a pile - only drop if source='ctrl'
       const pileElement = target.closest('[data-pile-id]');
-      if (pileElement && cursorSlotSource === 'shift') {
+      if (pileElement && cursorSlotSource === 'ctrl') {
         const pileId = pileElement.getAttribute('data-pile-id');
         if (pileId) {
           // Find the deck that owns this pile
@@ -3193,6 +3378,25 @@ export const Tabletop: React.FC = () => {
             }
           }
           if (foundDeckId) {
+            console.log('[CURSOR_SLOT] Click on pile with ctrl source, dropping cards:', {
+              pileId,
+              deckId: foundDeckId,
+              cardCount: cursorSlotRef.current.length,
+              processingSetSize: processingAddToSlotRef.current.size,
+              processingSetContents: Array.from(processingAddToSlotRef.current)
+            });
+
+            // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+            processingAddToSlotRef.current.clear();
+
+            // CRITICAL: Reset dragThresholdRef to prevent handleGlobalMouseUp from processing stale state
+            dragThresholdRef.current = {
+              initialX: 0,
+              initialY: 0,
+              targetId: null,
+              addedToSlot: false
+            };
+
             e.preventDefault();
             e.stopPropagation();
             dropToPile(pileId, foundDeckId, cursorSlotRef.current);
@@ -3207,9 +3411,25 @@ export const Tabletop: React.FC = () => {
       }
 
       // Drop items at cursor position on tabletop - use cursorSlotRef.current to avoid race condition
+      console.log('[CURSOR_SLOT] Click on tabletop with ctrl source, dropping cards:', {
+        cardCount: cursorSlotRef.current.length,
+        processingSetSize: processingAddToSlotRef.current.size,
+        processingSetContents: Array.from(processingAddToSlotRef.current)
+      });
+
+      // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+      processingAddToSlotRef.current.clear();
+
+      // CRITICAL: Reset dragThresholdRef to prevent handleGlobalMouseUp from processing stale state
+      dragThresholdRef.current = {
+        initialX: 0,
+        initialY: 0,
+        targetId: null,
+        addedToSlot: false
+      };
+
       e.preventDefault();
       e.stopPropagation();
-      e.stopImmediatePropagation(); // Prevent handleMouseDown from being called
       dropCursorSlot(e.clientX, e.clientY, cursorSlotRef.current);
     };
 
@@ -3340,6 +3560,13 @@ export const Tabletop: React.FC = () => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
+      console.log('[CURSOR_SLOT] handleGlobalMouseUp called:', {
+        cursorSlotLength: cursorSlot.length,
+        cursorSlotSource,
+        wasThresholdReached: dragThresholdRef.current.addedToSlot,
+        dragThresholdTarget: dragThresholdRef.current.targetId
+      });
+
       // IMPORTANT: If clicking inside ANY context menu or modal, don't process global mouseup
       // This prevents interference with context menu button clicks in both Tabletop and Pool panels
       const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
@@ -3348,6 +3575,7 @@ export const Tabletop: React.FC = () => {
       const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
       const topDeckModalElement = target.closest('[data-modal="top-deck"]');
       if (tableContextMenuElement || poolContextMenuElement || submenuElement || searchDeckModalElement || topDeckModalElement) {
+        console.log('[CURSOR_SLOT] handleGlobalMouseUp: Clicked inside context menu/modal, ignoring');
         return;
       }
 
@@ -3372,11 +3600,27 @@ export const Tabletop: React.FC = () => {
       const currentSlot = cursorSlot;
 
       if (currentSlot.length === 0 || cursorSlotSource !== 'hold') {
+        console.log('[CURSOR_SLOT] handleGlobalMouseUp: Early return - empty slot or wrong source:', {
+          slotLength: currentSlot.length,
+          cursorSlotSource,
+          processingSetSize: processingAddToSlotRef.current.size,
+          processingSetContents: Array.from(processingAddToSlotRef.current),
+          condition: currentSlot.length === 0 ? 'empty slot' : 'wrong source'
+        });
+
+        // CRITICAL: Clear processingAddToSlotRef if slot is empty to prevent "already being processed" errors
+        if (currentSlot.length === 0) {
+          processingAddToSlotRef.current.clear();
+        }
+
         return;
       }
 
       // Only drop if threshold was reached (object was actually added to slot)
       if (!wasThresholdReached) {
+        console.log('[CURSOR_SLOT] handleGlobalMouseUp: Early return - threshold not reached');
+        // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+        processingAddToSlotRef.current.clear();
         return;
       }
 
@@ -3396,6 +3640,9 @@ export const Tabletop: React.FC = () => {
         // If there are non-card items, don't treat this as a hand panel drop
         // Instead, drop them on the tabletop
         if (nonCardItems.length > 0) {
+          // CRITICAL: Clear processingAddToSlotRef before drop to prevent "already being processed" errors
+          processingAddToSlotRef.current.clear();
+
           // Drop non-card items on tabletop instead
           dropCursorSlot(clientX, clientY, currentSlot);
           e.stopPropagation();
@@ -3405,21 +3652,36 @@ export const Tabletop: React.FC = () => {
 
         // CRITICAL: Clear cursor slot FIRST to prevent visual flicker
         // Copy items before clearing slot for the event
+        const itemsForDrop = [...cardsOnly];
         setCursorSlot([]);
         setCursorPosition(null);
         setCursorSlotSource(null);
 
+        console.log('[CURSOR_SLOT] handleGlobalMouseUp: Drag to hand panel, dropping cards:', {
+          cardIds: itemsForDrop.map(item => item.id),
+          itemCount: itemsForDrop.length
+        });
+
+        // CRITICAL: Clear processingAddToSlotRef to prevent "already being processed" errors
+        processingAddToSlotRef.current.clear();
+
+        // CRITICAL: Notify that cards were dropped from cursor slot (for hand panel to clear pickingUpCardIds)
+        const droppedIds = itemsForDrop.map(item => item.id);
+        window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+          detail: { cardIds: droppedIds }
+        }));
+
         // Over hand panel - dispatch event to add cards to hand
         window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
-          detail: { items: cardsOnly }
+          detail: { items: itemsForDrop }
         }));
         // Track recently dropped objects to prevent showing shadow version
-        const droppedIds = new Set(cardsOnly.map(item => item.id));
-        setRecentlyInMyCursorSlot(droppedIds);
+        const recentlyDroppedIds = new Set(itemsForDrop.map(item => item.id));
+        setRecentlyInMyCursorSlot(recentlyDroppedIds);
         setTimeout(() => {
           setRecentlyInMyCursorSlot(prev => {
             const next = new Set(prev);
-            droppedIds.forEach(id => next.delete(id));
+            recentlyDroppedIds.forEach(id => next.delete(id));
             return next;
           });
         }, 500);
@@ -3427,7 +3689,6 @@ export const Tabletop: React.FC = () => {
         // CRITICAL: Stop propagation IMMEDIATELY to prevent other mouseup handlers from running
         e.stopPropagation();
         e.preventDefault();
-        e.stopImmediatePropagation(); // CRITICAL: Prevent other listeners on same element
         return;
       }
 
@@ -3525,6 +3786,8 @@ export const Tabletop: React.FC = () => {
       }
 
       // Not over hand panel or deck - drop on tabletop, pass currentSlot
+      // CRITICAL: Clear processingAddToSlotRef before drop to prevent "already being processed" errors
+      processingAddToSlotRef.current.clear();
       dropCursorSlot(clientX, clientY, currentSlot);
     };
 
@@ -3957,6 +4220,15 @@ export const Tabletop: React.FC = () => {
         item.type === ItemType.DICE_OBJECT ||
         item.type === ItemType.BOARD
       )) {
+        console.log('[CURSOR_SLOT] Ctrl+click detected, adding to cursor slot:', {
+          itemId: id,
+          itemType: item.type,
+          itemName: item.name,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey
+        });
+        e.preventDefault();
+        e.stopPropagation();
         addToCursorSlot(id, item);
         return;
       }

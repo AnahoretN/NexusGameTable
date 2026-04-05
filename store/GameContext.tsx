@@ -583,23 +583,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         action.payload = filteredPayload;
       }
 
-      // Debug logging for location AND isOnTable changes on cards
-      if (obj.type === ItemType.CARD && (action.payload.location || action.payload.isOnTable !== undefined)) {
-        console.log('[UPDATE_OBJECT] Card properties changing:', {
-          cardId: action.payload.id,
-          location: {
-            old: (obj as Card).location,
-            new: action.payload.location
-          },
-          isOnTable: {
-            old: (obj as Card).isOnTable,
-            new: action.payload.isOnTable
-          },
-          payloadKeys: Object.keys(action.payload),
-          stackTrace: new Error().stack?.split('\n').slice(2, 6) // Show where it was called from
-        });
-      }
-
       const updatedObj = { ...obj, ...action.payload } as TableObject;
 
       // Clamp zIndex to hyperscale layer bounds

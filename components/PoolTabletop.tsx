@@ -514,7 +514,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
             cardId: obj.id,
             clientX: e.clientX,
             clientY: e.clientY,
-            source: 'shift',
+            source: 'ctrl',
             fromPoolPanel: poolZone.panelId
           }
         }));

@@ -114,6 +114,15 @@ export function handlePlayTopCard(
     height: deck.cardHeight,
   };
 
+  console.log('[CURSOR_SLOT] Adding card to cursor slot from deck:', {
+    cardId: card.id,
+    deckId: deck.id,
+    source: 'shift',
+    mousePosition: mousePos,
+    cardLocation: card.location,
+    cardOwnerId: card.ownerId
+  });
+
   // Add to cursor slot BEFORE dispatch
   window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
     detail: {
