@@ -798,7 +798,11 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         {activeTab === 'hand' && (
           <div className="h-full flex flex-col">
             {/* Hand Panel */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden" onClick={(e) => {
+              // Don't let clicks propagate to main menu container
+              // This allows cursor slot drops to work properly
+              e.stopPropagation();
+            }}>
               <HandPanel width={width} isDragTarget={dragOverHand} language={language} />
             </div>
           </div>

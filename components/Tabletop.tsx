@@ -3054,37 +3054,41 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      // Check if clicking on main menu - don't drop, let it handle adding tokens
-      const mainMenu = target.closest('[data-main-menu="true"]');
-      if (mainMenu) {
-        return;
-      }
-
       // Check if clicking inside hand panel - dispatch event to add cards to hand
+      // IMPORTANT: Check hand panel BEFORE main menu, because hand panel is inside main menu
       const handPanel = target.closest('[data-hand-panel]');
       if (handPanel) {
-        // IMPORTANT: Use cursorSlotRef.current to avoid race condition
-        const currentSlot = cursorSlotRef.current;
-        // Dispatch custom event for hand panel to handle
-        window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
-          detail: { items: currentSlot }
-        }));
-        // Track recently dropped objects to prevent showing shadow version
-        const droppedIds = new Set(currentSlot.map(item => item.id));
-        setRecentlyInMyCursorSlot(droppedIds);
-        setTimeout(() => {
-          setRecentlyInMyCursorSlot(prev => {
-            const next = new Set(prev);
-            droppedIds.forEach(id => next.delete(id));
-            return next;
-          });
-        }, 500);
-        // Clear the slot - also update ref immediately
-        cursorSlotRef.current = [];
-        setCursorSlot([]);
-        setCursorPosition(null);
-        e.preventDefault();
-        e.stopPropagation();
+        // IMPORTANT: Use cursorSlot from state to ensure we have current data
+        // Don't use cursorSlotRef.current as it may be stale
+        if (cursorSlot.length > 0) {
+          // Dispatch custom event for hand panel to handle
+          window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
+            detail: { items: cursorSlot }
+          }));
+          // Track recently dropped objects to prevent showing shadow version
+          const droppedIds = new Set(cursorSlot.map(item => item.id));
+          setRecentlyInMyCursorSlot(droppedIds);
+          setTimeout(() => {
+            setRecentlyInMyCursorSlot(prev => {
+              const next = new Set(prev);
+              droppedIds.forEach(id => next.delete(id));
+              return next;
+            });
+          }, 500);
+          // Clear the slot - also update ref immediately
+          cursorSlotRef.current = [];
+          setCursorSlot([]);
+          setCursorPosition(null);
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+
+      // Check if clicking on main menu - don't drop, let it handle adding tokens
+      // Only prevent drop if NOT clicking on hand panel (already handled above)
+      const mainMenu = target.closest('[data-main-menu="true"]');
+      if (mainMenu) {
         return;
       }
 

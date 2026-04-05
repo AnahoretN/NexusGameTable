@@ -30,8 +30,61 @@ export interface FlexibleHexGrid {
  */
 const HEX_RATIO = 1.15;
 
+// Cache for grid cell center calculations to improve performance
+const gridCellCenterCache = new Map<string, { x: number; y: number; timestamp: number }>();
+const MAX_CACHE_SIZE = 2000;
+const CACHE_TTL = 5000; // 5 seconds
+
 /**
- * Calculate grid cell center based on grid type
+ * Clear cache for a specific board
+ */
+export function clearGridCellCache(boardId: string): void {
+  const keysToDelete = Array.from(gridCellCenterCache.keys())
+    .filter(key => key.startsWith(`${boardId}-`));
+
+  keysToDelete.forEach(key => gridCellCenterCache.delete(key));
+}
+
+/**
+ * Clear entire grid cell cache
+ */
+export function clearAllGridCellCache(): void {
+  gridCellCenterCache.clear();
+}
+
+/**
+ * Clean up expired cache entries
+ */
+function cleanupExpiredCacheEntries(): void {
+  const now = Date.now();
+  const keysToDelete: string[] = [];
+
+  for (const [key, value] of gridCellCenterCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      keysToDelete.push(key);
+    }
+  }
+
+  keysToDelete.forEach(key => gridCellCenterCache.delete(key));
+}
+
+/**
+ * Clean up cache if it exceeds maximum size
+ */
+function cleanupCacheSize(): void {
+  if (gridCellCenterCache.size >= MAX_CACHE_SIZE) {
+    // Remove oldest entries (first 20% of cache)
+    const entriesToDelete = Math.floor(MAX_CACHE_SIZE * 0.2);
+    const keys = Array.from(gridCellCenterCache.keys());
+
+    for (let i = 0; i < entriesToDelete; i++) {
+      gridCellCenterCache.delete(keys[i]);
+    }
+  }
+}
+
+/**
+ * Calculate grid cell center based on grid type with caching
  * @param board - The board object
  * @param col - Column index
  * @param row - Row index
@@ -42,11 +95,28 @@ export function calculateGridCellCenter(
   col: number,
   row: number
 ): { x: number; y: number } {
+  // Create cache key including board properties that affect calculation
+  const cacheKey = `${board.id}-${board.x}-${board.y}-${board.gridType}-${board.gridWidth || board.gridSize}-${board.gridHeight || board.gridSize}-${col}-${row}`;
+
+  // Check cache
+  const cached = gridCellCenterCache.get(cacheKey);
+  if (cached) {
+    return { x: cached.x, y: cached.y };
+  }
+
+  // Perform periodic cleanup
+  if (gridCellCenterCache.size > 0 && gridCellCenterCache.size % 100 === 0) {
+    cleanupExpiredCacheEntries();
+    cleanupCacheSize();
+  }
+
   const gridW = board.gridWidth || board.gridSize || 50;
   const gridH = board.gridHeight || board.gridSize || 50;
 
+  let result: { x: number; y: number };
+
   if (board.gridType === GridType.SQUARE) {
-    return {
+    result = {
       x: board.x + (col * gridW) + (gridW / 2),
       y: board.y + (row * gridH) + (gridH / 2)
     };
@@ -57,7 +127,7 @@ export function calculateGridCellCenter(
     const dy = gridH - hCap;
     const offsetX = gridW / 2;
 
-    return {
+    result = {
       x: board.x + col * dx + (row % 2 === 1 ? offsetX : 0),
       y: board.y + row * dy
     };
@@ -68,21 +138,34 @@ export function calculateGridCellCenter(
     const dy = gridH;
     const offsetY = gridH / 2;
 
-    return {
+    result = {
       x: board.x + col * dx,
       y: board.y + row * dy + (col % 2 === 1 ? offsetY : 0)
     };
   } else {
     // Fallback for other grid types
-    return {
+    result = {
       x: board.x + (col * gridW) + (gridW / 2),
       y: board.y + (row * gridH) + (gridH / 2)
     };
   }
+
+  // Cache the result
+  gridCellCenterCache.set(cacheKey, {
+    x: result.x,
+    y: result.y,
+    timestamp: Date.now()
+  });
+
+  return result;
 }
 
 const DEFAULT_HEX_WIDTH = 100;
 const DEFAULT_FLAT_HEX_WIDTH = 115;
+
+// Cache for hex grid calculations
+const hexGridCache = new Map<string, FlexibleHexGrid>();
+const MAX_HEX_CACHE_SIZE = 50;
 
 /**
  * Calculate pointy-top hex height from width
@@ -107,6 +190,14 @@ export function calculateFlatHexHeight(width: number): number {
  * @returns Hex grid path and pattern dimensions
  */
 export function calculateFlexibleHexGrid(gridWidth: number = DEFAULT_HEX_WIDTH): FlexibleHexGrid {
+  const cacheKey = `flexible-${gridWidth}`;
+
+  // Check cache
+  const cached = hexGridCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const width = gridWidth;
   const height = calculateHexHeight(width);
 
@@ -156,13 +247,24 @@ export function calculateFlexibleHexGrid(gridWidth: number = DEFAULT_HEX_WIDTH):
     makeHexPath(offsetX, dy) +
     makeHexPath(dx + offsetX, dy);
 
-  return {
+  const result = {
     path: tilingPath,
     patternWidth: patternWidth,
     patternHeight: patternHeight,
     hexWidth: width,
     hexHeight: height
   };
+
+  // Clean up cache if too large
+  if (hexGridCache.size >= MAX_HEX_CACHE_SIZE) {
+    const firstKey = hexGridCache.keys().next().value;
+    hexGridCache.delete(firstKey);
+  }
+
+  // Cache the result
+  hexGridCache.set(cacheKey, result);
+
+  return result;
 }
 
 /**

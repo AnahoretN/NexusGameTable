@@ -1,6 +1,6 @@
 import { t as translate, Locale } from '../utils/translations';
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from 'react';
 import { logger } from '../utils/logger';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
@@ -13,6 +13,103 @@ import { MAIN_MENU_WIDTH } from '../constants';
 import { Settings, X as XIcon } from 'lucide-react';
 import { useTabCardScale } from '../hooks/useTabCardScale';
 import { HandTabSettingsModal } from './HandTabSettingsModal';
+
+// Memoized component for individual card in hand panel to prevent unnecessary re-renders
+interface HandCardItemProps {
+  card: Card;
+  displayedCard: Card;
+  actualIndex: number;
+  cardWidth: number;
+  cardHeight: number;
+  cardSettings: ReturnType<typeof getCardSettings>;
+  deck?: DeckType;
+  isViewingOpponentHand: boolean;
+  isDragging: boolean;
+  isDragOver: boolean;
+  buttons: Array<{ title: string; icon: React.ReactNode; className: string; onAction: () => void }>;
+  language: AppLanguage;
+  onMouseDown: (e: React.MouseEvent, cardId: string, index: number, element: HTMLDivElement) => void;
+  onContextMenu: (e: React.MouseEvent, card: Card) => void;
+}
+
+const HandCardItem = memo<HandCardItemProps>(({
+  card,
+  displayedCard,
+  actualIndex,
+  cardWidth,
+  cardHeight,
+  cardSettings,
+  deck,
+  isViewingOpponentHand,
+  isDragging,
+  isDragOver,
+  buttons,
+  language,
+  onMouseDown,
+  onContextMenu
+}) => {
+  return (
+    <div
+      data-card-index={actualIndex}
+      className="relative flex-shrink-0 group"
+      style={{
+        width: cardWidth,
+        height: cardHeight,
+        zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
+        transform: isDragOver ? 'scale(1.05)' : undefined,
+      }}
+      onMouseDown={(e) => onMouseDown(e, card.id, actualIndex, e.currentTarget as HTMLDivElement)}
+      onContextMenu={(e) => onContextMenu(e, card)}
+    >
+      <CardComponent
+        card={displayedCard}
+        overrideWidth={cardWidth}
+        overrideHeight={cardHeight}
+        cardWidth={cardSettings.cardWidth}
+        cardHeight={cardSettings.cardHeight}
+        cardNamePosition={cardSettings.cardNamePosition}
+        cardOrientation={cardSettings.cardOrientation}
+        disableRotationTransform={true}
+        deckSpriteConfig={deck?.spriteConfig}
+        deckShowTooltipImage={deck?.showTooltipImage}
+        deckTooltipScale={deck?.tooltipScale}
+        shouldSeeCardFace={!isViewingOpponentHand}
+        language={language}
+      />
+
+      {!isViewingOpponentHand && buttons.length > 0 && (
+        <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+          {buttons.map(btn => (
+            <button
+              key={btn.title}
+              onClick={(e) => { e.stopPropagation(); btn.onAction(); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={`p-1.5 rounded-lg text-white shadow ${btn.className} pointer-events-auto`}
+              title={btn.title}
+            >
+              {btn.icon}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // Only re-render when critical props change
+  return (
+    prevProps.card.id === nextProps.card.id &&
+    prevProps.card.faceUp === nextProps.card.faceUp &&
+    prevProps.displayedCard.faceUp === nextProps.displayedCard.faceUp &&
+    prevProps.cardWidth === nextProps.cardWidth &&
+    prevProps.cardHeight === nextProps.cardHeight &&
+    prevProps.isDragging === nextProps.isDragging &&
+    prevProps.isDragOver === nextProps.isDragOver &&
+    prevProps.isViewingOpponentHand === nextProps.isViewingOpponentHand &&
+    prevProps.actualIndex === nextProps.actualIndex
+  );
+});
+
+HandCardItem.displayName = 'HandCardItem';
 
 interface HandPanelProps {
   width?: number;
@@ -529,6 +626,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
+      // Immediately add to pickingUpCardIds to prevent flicker
+      setPickingUpCardIds(prev => new Set([...prev, cardId]));
       window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
         detail: { cardId, clientX: e.clientX, clientY: e.clientY }
       }));
@@ -547,6 +646,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 
     longPressTimerRef.current = window.setTimeout(() => {
       if (longPressCardRef.current) {
+        // Immediately add to pickingUpCardIds to prevent flicker
+        setPickingUpCardIds(prev => new Set([...prev, longPressCardRef.current.cardId]));
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: longPressCardRef.current.cardId,
@@ -580,6 +681,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
           clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
         }
+        // Immediately add to pickingUpCardIds to prevent flicker
+        setPickingUpCardIds(prev => new Set([...prev, longPressCardRef.current.cardId]));
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: longPressCardRef.current.cardId,
@@ -1012,51 +1115,23 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                         const displayedCard = isViewingOpponentHand ? { ...card, faceUp: false } : card;
 
                         return (
-                          <div
+                          <HandCardItem
                             key={card.id}
-                            data-card-index={actualIndex}
-                            className="relative flex-shrink-0 group"
-                            style={{
-                              width: cardWidth,
-                              height: cardHeight,
-                              zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
-                              transform: isDragOver ? 'scale(1.05)' : undefined,
-                            }}
-                            onMouseDown={(e) => handleCardMouseDown(e, card.id, actualIndex, e.currentTarget as HTMLDivElement)}
-                            onContextMenu={(e) => handleCardContextMenu(e, card)}
-                          >
-                            <CardComponent
-                              card={displayedCard}
-                              overrideWidth={cardWidth}
-                              overrideHeight={cardHeight}
-                              cardWidth={cardSettings.cardWidth}
-                              cardHeight={cardSettings.cardHeight}
-                              cardNamePosition={cardSettings.cardNamePosition}
-                              cardOrientation={cardSettings.cardOrientation}
-                              disableRotationTransform={true}
-                              deckSpriteConfig={deck?.spriteConfig}
-                              deckShowTooltipImage={deck?.showTooltipImage}
-                              deckTooltipScale={deck?.tooltipScale}
-                              shouldSeeCardFace={!isViewingOpponentHand}
-                              language={language}
-                            />
-
-                            {!isViewingOpponentHand && buttons.length > 0 && (
-                              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-                                {buttons.map(btn => (
-                                  <button
-                                    key={btn.title}
-                                    onClick={(e) => { e.stopPropagation(); btn.onAction(); }}
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    className={`p-1.5 rounded-lg text-white shadow ${btn.className} pointer-events-auto`}
-                                    title={btn.title}
-                                  >
-                                    {btn.icon}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                            card={card}
+                            displayedCard={displayedCard}
+                            actualIndex={actualIndex}
+                            cardWidth={cardWidth}
+                            cardHeight={cardHeight}
+                            cardSettings={cardSettings}
+                            deck={deck}
+                            isViewingOpponentHand={isViewingOpponentHand}
+                            isDragging={dragIndex === actualIndex}
+                            isDragOver={dragOverIndex === actualIndex}
+                            buttons={buttons}
+                            language={language}
+                            onMouseDown={handleCardMouseDown}
+                            onContextMenu={handleCardContextMenu}
+                          />
                         );
                       })}
                     </div>
