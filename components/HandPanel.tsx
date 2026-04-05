@@ -48,6 +48,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
   const [scaleMenu, setScaleMenu] = useState<{ x: number; y: number } | null>(null);
   // Hand tab settings modal state
   const [handTabSettings, setHandTabSettings] = useState<{ playerId: string; player: Player } | null>(null);
+  const [tempSettingsPlayer, setTempSettingsPlayer] = useState<Player | null>(null);
   // Edit mode for percentage input
   const [isEditingPercentage, setIsEditingPercentage] = useState(false);
   const [editedPercentage, setEditedPercentage] = useState('');
@@ -1112,12 +1113,14 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                   }
                 }
               }}
+              onPlayerChange={setTempSettingsPlayer}
               onSave={(updatedPlayer) => {
                 dispatch({
                   type: 'UPDATE_PLAYER',
                   payload: updatedPlayer
                 });
                 setHandTabSettings(null);
+                setTempSettingsPlayer(null);
               }}
             />
           </div>
@@ -1133,13 +1136,14 @@ export const HandPanel: React.FC<HandPanelProps> = ({
               </button>
               <button
                 onClick={() => {
-                  if (handTabSettings) {
+                  if (tempSettingsPlayer) {
                     dispatch({
                       type: 'UPDATE_PLAYER',
-                      payload: handTabSettings.player
+                      payload: tempSettingsPlayer
                     });
                   }
                   setHandTabSettings(null);
+                  setTempSettingsPlayer(null);
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
               >

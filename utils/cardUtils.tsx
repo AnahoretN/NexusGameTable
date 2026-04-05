@@ -14,54 +14,27 @@ export function getCardDimensions(
   displayScale: number,
   baseScale: number = 0.9
 ): { width: number; height: number } {
-  // Create cache key from card properties
-  const cacheKey = `${card.id}-${deck?.id || 'nodeck'}-${displayScale}-${baseScale}`;
+  const actualScale = displayScale * baseScale;
+
+  // Use card's own dimensions first, then fall back to deck settings
+  const cardWidth = card.width ?? deck?.cardWidth ?? 100;
+  const cardHeight = card.height ?? deck?.cardHeight ?? 140;
+
+  // Create cache key from card properties including dimensions
+  // This ensures cache is invalidated when card dimensions change
+  const cacheKey = `${card.id}-${deck?.id || 'nodeck'}-${displayScale}-${baseScale}-${cardWidth}-${cardHeight}-${deck?.cardOrientation}`;
 
   // Check cache first
   if (cardDimensionsCache.has(cacheKey)) {
     return cardDimensionsCache.get(cacheKey)!;
   }
 
-  const actualScale = displayScale * baseScale;
-  // Use card's own dimensions first, then fall back to deck settings
-  const cardWidth = card.width ?? deck?.cardWidth ?? 100;
-  const cardHeight = card.height ?? deck?.cardHeight ?? 140;
-  const cardShape = deck?.cardShape ?? card.shape ?? CardShape.POKER;
-  const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
-
-  // Check if this is a geometric shape
-  const isGeometricShape = isGeometricCardShape(cardShape);
-
-  let baseCardWidth = cardWidth;
-  let baseCardHeight = cardHeight;
-
-  // For geometric shapes with horizontal orientation, swap dimensions
-  // (matches the effectiveWidth/effectiveHeight logic in DeckComponent)
-  if (isGeometricShape && isHorizontal) {
-    baseCardWidth = cardHeight;
-    baseCardHeight = cardWidth;
-  }
-
-  // For non-geometric shapes with horizontal orientation, swap dimensions
-  // (the card is rotated -90deg, so we need to display it "sideways")
-  if (!isGeometricShape && isHorizontal) {
-    baseCardWidth = cardHeight;
-    baseCardHeight = cardWidth;
-  }
-
-  // Base width for display - horizontal cards get more width
-  // This matches the logic in SearchDeckModal where horizontal cards get 1.254x multiplier
-  const baseDisplayWidth = 140;
-  const scaledBaseWidth = isHorizontal ? baseDisplayWidth * 1.254 * actualScale : baseDisplayWidth * actualScale;
-
-  // Calculate aspect ratio from the card's display dimensions
-  const aspectRatio = baseCardWidth / baseCardHeight;
-
-  // Final dimensions based on base width and aspect ratio
-  const finalWidth = scaledBaseWidth;
-  const finalHeight = scaledBaseWidth / aspectRatio;
-
-  const result = { width: finalWidth, height: finalHeight };
+  // Simply scale the actual dimensions - preserve exact aspect ratio from settings
+  // NO swapping of width/height - use exactly what's specified in settings
+  const result = {
+    width: cardWidth * actualScale,
+    height: cardHeight * actualScale
+  };
 
   // Cache the result
   cardDimensionsCache.set(cacheKey, result);

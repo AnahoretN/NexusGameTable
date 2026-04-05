@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { CharacterTab, Player } from '../types';
 import { User, Users, X as XIcon } from 'lucide-react';
 
@@ -6,6 +6,7 @@ interface CharacterSettingsModalProps {
   character: CharacterTab;
   players: Player[];
   onSave: (updatedCharacter: CharacterTab) => void;
+  onCharacterChange?: (updatedCharacter: CharacterTab) => void;
 }
 
 type AccessType = 'visible' | 'manageable' | 'editable';
@@ -13,9 +14,29 @@ type AccessType = 'visible' | 'manageable' | 'editable';
 export const CharacterSettingsModal: React.FC<CharacterSettingsModalProps> = ({
   character,
   players,
-  onSave: _onSave
+  onSave: _onSave,
+  onCharacterChange
 }) => {
   const [tempCharacter, setTempCharacter] = useState<CharacterTab>(character);
+
+  // Sync tempCharacter with character prop when it changes
+  useEffect(() => {
+    console.log('[CharacterSettingsModal] Loading character data:', {
+      characterId: character.id,
+      characterName: character.characterName,
+      visibleToPlayerIds: character.visibleToPlayerIds,
+      manageableByPlayerIds: character.manageableByPlayerIds,
+      editableByPlayerIds: character.editableByPlayerIds
+    });
+    setTempCharacter(character);
+  }, [character.id, character.characterName, character.visibleToPlayerIds, character.manageableByPlayerIds, character.editableByPlayerIds]);
+
+  // Notify parent when tempCharacter changes (for external save button)
+  useEffect(() => {
+    if (onCharacterChange && tempCharacter.id === character.id) {
+      onCharacterChange(tempCharacter);
+    }
+  }, [tempCharacter, onCharacterChange, character.id]);
 
   const handleAddAccess = useCallback((type: AccessType, playerId: string) => {
     setTempCharacter(prev => {

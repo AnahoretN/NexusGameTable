@@ -14,6 +14,7 @@ import { usePeerConnection } from './usePeerConnection';
 import { restoreImagesFromCache, extractImagesFromState, getNewImages, loadImageCacheFromIDB } from '../utils/imageCache';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
 import { logger } from '../utils/logger';
+import { clearCardDimensionsCache } from '../utils/cardUtils';
 import { findAvailableTerritory } from '../utils/territoryManager';
 import { runPoolMigrationIfNeeded } from '../utils/poolMigration';
 
@@ -551,6 +552,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               });
           }
 
+          // Clear card dimensions cache when card shape changes
+          if (deck.cardShape && deck.cardShape !== oldDeck.cardShape) {
+              clearCardDimensionsCache();
+          }
+
           // When cardWidth or cardHeight changes, update only cards that had the previous default size
           // This allows users to change deck size without affecting cards,
           // but changing card size will update cards that still have default sizes
@@ -563,8 +569,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               Object.values(state.objects).forEach(o => {
                   if (o.type === ItemType.CARD && (o as Card).deckId === deck.id) {
                       const card = o as Card;
-                      // Only update cards that currently have the old card dimensions
-                      if (card.width === oldCardWidth && card.height === oldCardHeight) {
+                      // Update cards that currently have the old card dimensions OR match the deck's aspect ratio
+                      // This ensures cards inherit deck dimension changes even if they have small variations
+                      const cardMatchesOldDimensions = card.width === oldCardWidth && card.height === oldCardHeight;
+                      const cardMatchesDeckRatio = Math.abs((card.width / card.height) - (oldCardWidth / oldCardHeight)) < 0.01;
+
+                      if (cardMatchesOldDimensions || cardMatchesDeckRatio) {
                           newObjects[o.id] = {
                               ...card,
                               width: newCardWidth,
@@ -573,6 +583,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                       }
                   }
               });
+          }
+
+          // Clear card dimensions cache when deck card dimensions change
+          if (newCardWidth !== oldCardWidth || newCardHeight !== oldCardHeight) {
+              clearCardDimensionsCache();
           }
 
           // Handle isMillPile exclusive toggle
@@ -1382,6 +1397,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         faceUp: true,
         isOnTable: false, // Not visible on tabletop
         shape: deck.cardShape || CardShape.POKER,
+        // Inherit card dimensions from deck to maintain correct aspect ratio
+        width: deck.cardWidth,
+        height: deck.cardHeight,
       };
       const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
 
@@ -2971,6 +2989,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
         }
       });
+
+      // Clear card dimensions cache to force recalculation with new dimensions
+      clearCardDimensionsCache();
 
       return {
         ...state,

@@ -131,7 +131,12 @@ function handleDeckUpdate(
     Object.values(oldObjects).forEach(o => {
       if (o.type === ItemType.CARD && (o as Card).deckId === deck.id) {
         const card = o as Card;
-        if (card.width === oldCardWidth && card.height === oldCardHeight) {
+        // Update cards that currently have the old card dimensions OR match the deck's aspect ratio
+        // This ensures cards inherit deck dimension changes even if they have small variations
+        const cardMatchesOldDimensions = card.width === oldCardWidth && card.height === oldCardHeight;
+        const cardMatchesDeckRatio = Math.abs((card.width / card.height) - (oldCardWidth / oldCardHeight)) < 0.01;
+
+        if (cardMatchesOldDimensions || cardMatchesDeckRatio) {
           newObjects[o.id] = {
             ...card,
             width: newCardWidth,

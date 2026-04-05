@@ -384,10 +384,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         }
 
         // Auto-normalize dimensions when card shape changes
-        // Keep the current width, adjust height based on new shape's aspect ratio
-        const currentWidth = prev.cardWidth ?? deck.width;
-        const currentOrientation = prev.cardOrientation ?? CardOrientation.VERTICAL;
+        // Use proper dimensions from CARD_SHAPE_DIMS for the new shape
         const newShape = value as CardShape;
+        const currentOrientation = prev.cardOrientation ?? CardOrientation.VERTICAL;
 
         // For standard card shapes (POKER, BRIDGE, MINI_US, MINI_EURO)
         if (newShape === CardShape.POKER || newShape === CardShape.BRIDGE ||
@@ -396,6 +395,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
           const baseRatio = baseDims.height / baseDims.width;
           // VERTICAL: normal ratio, HORIZONTAL: inverted ratio
           const ratio = currentOrientation === CardOrientation.VERTICAL ? baseRatio : 1 / baseRatio;
+
+          // Use base dimensions from CARD_SHAPE_DIMS to ensure correct aspect ratio
+          const currentWidth = baseDims.width;
           const newHeight = Math.round(currentWidth * ratio);
           updated.cardWidth = currentWidth;
           updated.cardHeight = newHeight;
@@ -405,6 +407,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         }
         // For HEX_HORIZONTAL, use exact formula: height = width / 1.15
         else if (newShape === CardShape.HEX_HORIZONTAL) {
+          const baseDims = CARD_SHAPE_DIMS[newShape];
+          const currentWidth = baseDims.width;
           const newHeight = Math.round(currentWidth / 1.15);
           updated.cardWidth = currentWidth;
           updated.cardHeight = newHeight;
@@ -414,6 +418,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         }
         // For HEX, normalization depends on orientation
         else if (newShape === CardShape.HEX) {
+          const baseDims = CARD_SHAPE_DIMS[newShape];
+          const currentWidth = baseDims.width;
           // VERTICAL (pointy-top): height = width × 1.15
           // HORIZONTAL (flat-top): height = width / 1.15
           const newHeight = currentOrientation === CardOrientation.VERTICAL
@@ -436,6 +442,8 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         }
         // For SQUARE and CIRCLE, make height equal to width
         else if (newShape === CardShape.SQUARE || newShape === CardShape.CIRCLE) {
+          const baseDims = CARD_SHAPE_DIMS[newShape];
+          const currentWidth = baseDims.width;
           updated.cardWidth = currentWidth;
           updated.cardHeight = currentWidth;
           // Also update deck dimensions to match
@@ -582,31 +590,28 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     // After saving, update all cards in the deck when cardWidth/cardHeight/cardOrientation changed
     if (isDeck) {
       const deckId = data.id;
-      const cardsInDeck = Object.values(allObjects).filter(obj =>
-        obj.type === ItemType.CARD && (obj as Card).deckId === deckId
-      ) as Card[];
-
-      // Check if card dimensions or orientation changed
-      const oldCardWidth = (data as Deck).cardWidth;
-      const oldCardHeight = (data as Deck).cardHeight;
-      const oldCardOrientation = (data as Deck).cardOrientation;
+      const oldDeck = allObjects[deckId] as Deck;
+      const oldCardWidth = oldDeck.cardWidth;
+      const oldCardHeight = oldDeck.cardHeight;
+      const oldCardOrientation = oldDeck.cardOrientation;
       const newCardWidth = cardSettings.cardWidth;
       const newCardHeight = cardSettings.cardHeight;
       const newCardOrientation = cardSettings.cardOrientation;
 
       const dimensionsChanged = oldCardWidth !== newCardWidth || oldCardHeight !== newCardHeight || oldCardOrientation !== newCardOrientation;
 
-      if (dimensionsChanged && cardsInDeck.length > 0) {
-        // Use cardWidth/cardHeight from settings, fallback to deck's width/height
-        const finalCardWidth = newCardWidth ?? (data as Deck).width;
-        const finalCardHeight = newCardHeight ?? (data as Deck).height;
+      if (dimensionsChanged) {
+        // Clear card dimensions cache to ensure new dimensions are used immediately
+        import('../utils/cardUtils').then(({ clearCardDimensionsCache }) => {
+          clearCardDimensionsCache();
+        });
 
         // Dispatch event to update all cards in this deck
         window.dispatchEvent(new CustomEvent('update-deck-cards-dimensions', {
           detail: {
             deckId,
-            cardWidth: finalCardWidth,
-            cardHeight: finalCardHeight
+            cardWidth: newCardWidth ?? oldDeck.width,
+            cardHeight: newCardHeight ?? oldDeck.height
           }
         }));
       }
@@ -1562,6 +1567,54 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                       <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Grid3x3 size={12} />
+                        {translate('Snap Cards to Grid', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('snapCardsToGrid', !(data as Board).snapCardsToGrid)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Board).snapCardsToGrid ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Board).snapCardsToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Grid3x3 size={12} />
+                        {translate('Snap Tokens to Grid', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Board).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Grid3x3 size={12} />
+                        {translate('Snap Rotation to Grid', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('snapRotationToGrid', !(data as Board).snapRotationToGrid)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Board).snapRotationToGrid ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Board).snapRotationToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
                         <Eye size={12} />
                         {translate('Show Grid', language as Locale)}
                       </label>
@@ -1573,22 +1626,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       >
                         <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
                           (data as Board).showGrid !== false ? 'translate-x-5' : 'translate-x-0.5'
-                        }`} />
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
-                      <label className="text-xs text-gray-400 flex items-center gap-2">
-                        <Grid3x3 size={12} />
-                        {translate('Snap Objects to Grid', language as Locale)}
-                      </label>
-                      <button
-                        onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
-                        className={`w-10 h-5 rounded-full transition-colors ${
-                          (data as Board).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
-                        }`}
-                      >
-                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </div>
@@ -1911,49 +1948,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {!isDrawing && !isPanel && (
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <MousePointer size={14} /> {translate('Mouse Click Actions', language as Locale)}
+                  <MousePointer size={14} /> {translate('Double Click Action', language as Locale)}
                 </h4>
 
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Single Click */}
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Single Click', language as Locale)}</label>
-                    <select
-                      value={(data as any).singleClickAction || 'none'}
-                      onChange={e => update('singleClickAction', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                    >
-                      {CLICK_ACTIONS
-                        .filter(action => {
-                          // 'none' is always available
-                          if (action.id === 'none') return true;
-
-                          // Deck-specific actions - only for decks, not cards, boards, or battlefield cells
-                          if ((isCard || isBoard || isBattlefieldCell) && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
-                            return false;
-                          }
-                          // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
-                          if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip', 'moveTo'].includes(action.id)) {
-                            return false;
-                          }
-                          // For boards and battlefield cells, only allow rotate/layer section actions
-                          if (isBoard || isBattlefieldCell) {
-                            const boardAllowedActions = ['rotate', 'layer'];
-                            if (!boardAllowedActions.includes(action.id)) {
-                              return false;
-                            }
-                          }
-                          return true;
-                        })
-                        .map(action => (
-                          <option key={action.id} value={action.id}>{action.label}</option>
-                        ))}
-                    </select>
-                  </div>
-
+                <div>
                   {/* Double Click */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Double Click', language as Locale)}</label>
                     <select
                       value={(data as any).doubleClickAction || 'none'}
                       onChange={e => update('doubleClickAction', e.target.value)}
@@ -2668,27 +2668,12 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               {/* Click Actions */}
               <div className="pt-4">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <MousePointer size={14} /> {translate('Mouse Click Actions for Cards', language as Locale)}
+                  <MousePointer size={14} /> {translate('Double Click Action for Cards', language as Locale)}
                 </h4>
 
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Single Click */}
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Single Click', language as Locale)}</label>
-                    <select
-                      value={cardSettings.singleClickAction || 'none'}
-                      onChange={(e) => updateCardSettings('singleClickAction', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                    >
-                      {CARD_CLICK_ACTIONS.map(action => (
-                        <option key={action.id} value={action.id}>{action.label}</option>
-                      ))}
-                    </select>
-                  </div>
-
+                <div>
                   {/* Double Click */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Double Click', language as Locale)}</label>
                     <select
                       value={cardSettings.doubleClickAction || 'none'}
                       onChange={(e) => updateCardSettings('doubleClickAction', e.target.value)}

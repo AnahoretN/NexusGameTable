@@ -653,6 +653,12 @@ export const Tabletop: React.FC = () => {
   // Listen for add-token-to-cursor-slot events from ToolsPanel
   useEffect(() => {
     const handleAddTokenToSlot = (e: Event) => {
+      console.log('[handleAddTokenToSlot] ======================================');
+      console.log('[handleAddTokenToSlot] START - Creating new token from archetype');
+      console.log('[handleAddTokenToSlot] Event type:', e.type);
+      console.log('[handleAddTokenToSlot] Current cursorSlot.length:', cursorSlot.length);
+      console.log('[handleAddTokenToSlot] Current cursorSlotRef.current.length:', cursorSlotRef.current.length);
+
       // Set flag to prevent slot from being dropped during this operation
       isAddingTokenRef.current = true;
 
@@ -664,88 +670,71 @@ export const Tabletop: React.FC = () => {
       const { archetypeId, clientX, clientY } = customEvent.detail;
       const archetype = state.objects[archetypeId] as TokenArchetype;
 
+      console.log('[handleAddTokenToSlot] Archetype ID:', archetypeId, 'Name:', archetype?.name);
+      console.log('[handleAddTokenToSlot] isAddingTokenRef.current BEFORE:', isAddingTokenRef.current);
+
       if (!archetype || archetype.type !== ItemType.TOKEN_TYPE) {
+        console.log('[handleAddTokenToSlot] ERROR: Invalid archetype');
         isAddingTokenRef.current = false;
         return;
       }
       if (cursorSlot.length >= 100) {
+        console.log('[handleAddTokenToSlot] ERROR: Slot full (100 items)');
         isAddingTokenRef.current = false;
         return;
       } // Max 100 items in slot
 
-      // Find ALL existing tokens with this archetypeId
-      const existingTokens = Object.values(state.objects)
-        .filter(obj => obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetypeId)
-        .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)) as Token[]; // Sort by zIndex to maintain order
+      console.log('[handleAddTokenToSlot] All checks passed, proceeding to create token');
 
-      if (existingTokens.length === 0) {
-        // If no existing tokens, create one new token (backward compatibility)
-        const newTokenId = generateUUID();
-        const defaultSize = archetype.defaultSize || { width: 50, height: 50 };
-        const newToken: TokenType = {
-          id: newTokenId,
-          type: ItemType.TOKEN,
-          name: archetype.name, // Use archetype name for token-copy
-          x: 0,
-          y: 0,
-          width: defaultSize.width,
-          height: defaultSize.height,
-          rotation: 0,
-          color: archetype.color,
-          borderColor: (archetype as any).borderColor,
-          content: archetype.content,
-          shape: archetype.shape,
-          isOnTable: false,
-          locked: false,
-          archetypeId: archetype.id,
-          inCursorSlot: true,
-          // Store settings from archetype
-          showName: (archetype as any).showName || false,
-          fontColor: (archetype as any).fontColor,
-          // IMPORTANT: Set zIndex to maintain layer relationships
-          zIndex: archetype.zIndex ?? 3000,
-          hyperscaleLayerId: archetype.hyperscaleLayerId ?? 'tokens',
-        };
+      // ALWAYS create a NEW token copy from archetype (not add existing tokens)
+      const newTokenId = generateUUID();
+      console.log('[handleAddTokenToSlot] Creating NEW token with ID:', newTokenId);
 
-        // Add token to objects list
-        dispatch({ type: 'ADD_OBJECT', payload: newToken });
+      const defaultSize = archetype.defaultSize || { width: 50, height: 50 };
+      const newToken: TokenType = {
+        id: newTokenId,
+        type: ItemType.TOKEN,
+        name: archetype.name, // Use archetype name for token-copy
+        x: 0,
+        y: 0,
+        width: defaultSize.width,
+        height: defaultSize.height,
+        rotation: 0,
+        color: archetype.color,
+        borderColor: (archetype as any).borderColor,
+        content: archetype.content,
+        shape: archetype.shape,
+        isOnTable: false,
+        locked: false,
+        archetypeId: archetype.id,
+        inCursorSlot: true,
+        // Store settings from archetype
+        showName: (archetype as any).showName || false,
+        fontColor: (archetype as any).fontColor,
+        // IMPORTANT: Set zIndex to maintain layer relationships
+        zIndex: archetype.zIndex ?? 3000,
+        hyperscaleLayerId: archetype.hyperscaleLayerId ?? 'tokens',
+      };
 
-        // Add to cursor slot
-        const tokenClone: TokenType = { ...newToken };
-        (tokenClone as any).cursorSlotIndex = cursorSlot.length;
-        (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
-        (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
+      // Add token to objects list
+      console.log('[handleAddTokenToSlot] Dispatching ADD_OBJECT for token:', newTokenId);
+      dispatch({ type: 'ADD_OBJECT', payload: newToken });
 
-        setCursorSlot(prev => [...prev, tokenClone]);
-        cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
-      } else {
-        // Add all existing tokens to cursor slot (like Ctrl+click behavior)
-        existingTokens.forEach((token, index) => {
-          // Check if already in cursor slot
-          if (cursorSlotRef.current.some(item => item.id === token.id)) {
-            return; // Skip if already in slot
-          }
+      // Add to cursor slot
+      const tokenClone: TokenType = { ...newToken };
+      (tokenClone as any).cursorSlotIndex = cursorSlot.length;
+      (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
+      (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
 
-          // Mark as in cursor slot
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: token.id,
-              inCursorSlot: true
-            }
-          });
-
-          // Create clone for cursor slot
-          const tokenClone: TokenType = { ...token };
-          (tokenClone as any).cursorSlotIndex = cursorSlot.length;
-          (tokenClone as any).originalZIndex = token.zIndex ?? 0;
-          (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
-
-          // Add to cursor slot
-          setCursorSlot(prev => [...prev, tokenClone]);
-          cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
-        });
-      }
+      console.log('[handleAddTokenToSlot] Adding token to cursorSlot. Current length:', cursorSlot.length, 'New length:', cursorSlot.length + 1);
+      setCursorSlot(prev => {
+        console.log('[handleAddTokenToSlot] setCursorSlot callback - prev.length:', prev.length);
+        const result = [...prev, tokenClone];
+        console.log('[handleAddTokenToSlot] setCursorSlot callback - result.length:', result.length);
+        return result;
+      });
+      cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
+      console.log('[handleAddTokenToSlot] END - Token added to slot');
 
       // Set cursor position to show tokens immediately (use provided coords or current mouse position)
       if (clientX !== undefined && clientY !== undefined) {
@@ -811,13 +800,20 @@ export const Tabletop: React.FC = () => {
       }>;
       const { deckId, cardWidth, cardHeight } = customEvent.detail;
 
-      // Update all cards in this deck with new dimensions
+      // Clear card dimensions cache to ensure new dimensions are used
+      import('../utils/cardUtils').then(({ clearCardDimensionsCache }) => {
+        clearCardDimensionsCache();
+      });
+
+      // Update all cards in this deck with deck's current cardWidth/cardHeight
+      // This ensures cards always use deck's dimensions instead of their own stored values
       Object.values(state.objects).forEach(obj => {
         if (obj.type === ItemType.CARD && (obj as CardType).deckId === deckId) {
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
               id: obj.id,
+              // Update to deck's current dimensions instead of deleting
               width: cardWidth,
               height: cardHeight
             }
@@ -904,6 +900,27 @@ export const Tabletop: React.FC = () => {
   const handleMouseUpRef = useRef<(e?: MouseEvent | React.MouseEvent) => void>(() => {});
   const handleMouseMoveRef = useRef<(e: MouseEvent | React.MouseEvent) => void>(() => {});
 
+  // Unified click/drag tracking system
+  const interactionStateRef = useRef<{
+    objectId: string | null;
+    startTime: number;
+    startClientX: number;
+    startClientY: number;
+    hasMoved: boolean;
+    clickCount: number;
+    lastClickTime: number;
+    isInDragMode: boolean; // True when we've started dragging (>= 1VU movement)
+  }>({
+    objectId: null,
+    startTime: 0,
+    startClientX: 0,
+    startClientY: 0,
+    hasMoved: false,
+    clickCount: 0,
+    lastClickTime: 0,
+    isInDragMode: false
+  });
+
   // Ref to always have current state for event listeners
   const stateRef = useRef(state);
   useEffect(() => {
@@ -924,24 +941,79 @@ export const Tabletop: React.FC = () => {
     }
   }, [state.objects]);
 
-  // Click tracking for single/double click detection
-  const clickTrackerRef = useRef<{ objectId: string | null; timestamp: number; clickCount: number }>({
-    objectId: null,
-    timestamp: 0,
-    clickCount: 0
-  });
-
   const activePlayer = (state.players || []).find(p => p.id === state.activePlayerId);
   const isGM = !!activePlayer?.isGM;
 
   // --- Grid Snapping Logic ---
+  // Helper function to transform coordinates with board rotation
+  const transformPointWithBoardRotation = (localX: number, localY: number, board: BoardType): { x: number, y: number } => {
+    if (!board.rotation || board.rotation === 0) {
+      return { x: localX, y: localY };
+    }
+
+    // Board center
+    const boardCenterX = board.x + board.width / 2;
+    const boardCenterY = board.y + board.height / 2;
+
+    // Relative position from board center
+    const relX = localX - boardCenterX;
+    const relY = localY - boardCenterY;
+
+    // Convert rotation to radians
+    const angle = (board.rotation * Math.PI) / 180;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+
+    // Apply rotation
+    const rotatedX = relX * cosA - relY * sinA;
+    const rotatedY = relX * sinA + relY * cosA;
+
+    // Convert back to absolute position
+    return {
+      x: boardCenterX + rotatedX,
+      y: boardCenterY + rotatedY
+    };
+  };
+
+  // Helper function to transform cursor coordinates back to board's local coordinate system
+  const transformCursorToBoardSpace = (cursorX: number, cursorY: number, board: BoardType): { x: number, y: number } => {
+    if (!board.rotation || board.rotation === 0) {
+      return { x: cursorX - board.x, y: cursorY - board.y };
+    }
+
+    // Board center
+    const boardCenterX = board.x + board.width / 2;
+    const boardCenterY = board.y + board.height / 2;
+
+    // Relative position from board center
+    const relX = cursorX - boardCenterX;
+    const relY = cursorY - boardCenterY;
+
+    // Convert rotation to radians and apply inverse rotation
+    const angle = (-board.rotation * Math.PI) / 180; // Inverse rotation
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+
+    // Apply inverse rotation
+    const rotatedX = relX * cosA - relY * sinA;
+    const rotatedY = relX * sinA + relY * cosA;
+
+    // Convert to board-local coordinates (relative to board top-left)
+    return {
+      x: rotatedX + board.width / 2,
+      y: rotatedY + board.height / 2
+    };
+  };
+
   // Snaps ONLY tokens to the center of nearest grid cell
   // Snap radius = token size (half width or half height, whichever is larger)
-  const getSnappedCoordinates = (cursorX: number, cursorY: number, objects: Record<string, TableObject>, currentDraggingId: string | null): { x: number, y: number } => {
+  const getSnappedCoordinates = (cursorX: number, cursorY: number, objects: Record<string, TableObject>, currentDraggingId: string | null): { x: number, y: number, snappedToBoard?: BoardType } => {
       const draggingObj = objects[currentDraggingId || ''];
 
-      // Only tokens snap to grid
-      if (!draggingObj || draggingObj.type !== ItemType.TOKEN) {
+      // Only tokens and cards snap to grid
+      const isToken = draggingObj?.type === ItemType.TOKEN;
+      const isCard = draggingObj?.type === ItemType.CARD;
+      if (!draggingObj || (!isToken && !isCard)) {
           const objHalfW = draggingObj ? (draggingObj.width ?? 100) / 2 : 0;
           const objHalfH = draggingObj ? (draggingObj.height ?? 100) / 2 : 0;
           return { x: cursorX - objHalfW, y: cursorY - objHalfH };
@@ -952,14 +1024,14 @@ export const Tabletop: React.FC = () => {
       const objHalfW = objW / 2;
       const objHalfH = objH / 2;
 
-      // Snap radius = token size (using max dimension)
+      // Snap radius = token/card size (using max dimension)
       const snapRadius = Math.max(objW, objH);
       const snapRadiusSq = snapRadius * snapRadius; // Use squared distance for comparisons
 
-      // Get all boards with snapToGrid enabled
+      // Get all boards with snapToGrid enabled (for tokens) or snapCardsToGrid enabled (for cards)
       const boards = Object.values(objects).filter(obj =>
           obj.type === ItemType.BOARD &&
-          (obj as any).snapToGrid &&
+          (isCard ? (obj as any).snapCardsToGrid : (obj as any).snapToGrid) &&
           (obj as any).gridType !== GridType.NONE &&
           obj.isOnTable &&
           obj.id !== currentDraggingId
@@ -985,20 +1057,29 @@ export const Tabletop: React.FC = () => {
           const boardRows = Math.floor(board.height / gridH);
 
           if (board.gridType === GridType.SQUARE) {
-              // Find the cell under cursor
-              const relativeX = cursorX - board.x;
-              const relativeY = cursorY - board.y;
-              const col = Math.floor(relativeX / gridW);
-              const row = Math.floor(relativeY / gridH);
+              // Transform cursor to board's local coordinate system (accounting for rotation)
+              const localCoords = transformCursorToBoardSpace(cursorX, cursorY, board);
+              const col = Math.floor(localCoords.x / gridW);
+              const row = Math.floor(localCoords.y / gridH);
 
               // Check if cell is within board bounds
               if (col < 0 || col >= boardCols || row < 0 || row >= boardRows) {
                   continue;
               }
 
-              // Calculate cell center
-              const cellCenterX = board.x + (col * gridW) + (gridW / 2);
-              const cellCenterY = board.y + (row * gridH) + (gridH / 2);
+              // Calculate cell center in board-local coordinates
+              const localCellCenterX = (col * gridW) + (gridW / 2);
+              const localCellCenterY = (row * gridH) + (gridH / 2);
+
+              // Transform cell center back to world coordinates (with board rotation)
+              const worldCellCenter = transformPointWithBoardRotation(
+                board.x + localCellCenterX,
+                board.y + localCellCenterY,
+                board
+              );
+
+              const cellCenterX = worldCellCenter.x;
+              const cellCenterY = worldCellCenter.y;
 
               // Check if this cell has custom magnet points or use default
               const cellKey = `${col},${row}`;
@@ -1016,20 +1097,28 @@ export const Tabletop: React.FC = () => {
               let snapY = cellCenterY;
 
               if (cellMagnetData && cellMagnetData.magnetPointCount && cellMagnetData.magnetPointCount > 1) {
-                // Find nearest magnet point in this cell
+                // Find nearest magnet point in this cell (in board-local coordinates)
                 const magnetPositions = calculateGridCellMagnetPositions(
-                  cellCenterX, cellCenterY, gridW, gridH, cellMagnetData
+                  localCellCenterX, localCellCenterY, gridW, gridH, cellMagnetData
                 );
 
+                // Transform magnet points to world coordinates and find nearest
                 let minMagnetDistSq = Infinity;
-                for (const magnetPos of magnetPositions) {
-                  const dx = cursorX - magnetPos.x;
-                  const dy = cursorY - magnetPos.y;
+                for (const localMagnetPos of magnetPositions) {
+                  // Transform from board-local to world coordinates
+                  const worldMagnetPos = transformPointWithBoardRotation(
+                    board.x + localMagnetPos.x,
+                    board.y + localMagnetPos.y,
+                    board
+                  );
+
+                  const dx = cursorX - worldMagnetPos.x;
+                  const dy = cursorY - worldMagnetPos.y;
                   const distSq = dx * dx + dy * dy;
                   if (distSq < minMagnetDistSq) {
                     minMagnetDistSq = distSq;
-                    snapX = magnetPos.x;
-                    snapY = magnetPos.y;
+                    snapX = worldMagnetPos.x;
+                    snapY = worldMagnetPos.y;
                   }
                 }
               }
@@ -1040,35 +1129,40 @@ export const Tabletop: React.FC = () => {
               const distSq = dx * dx + dy * dy;
 
               if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
-                  nearestCell = { x: snapX, y: snapY, distanceSq: distSq };
+                  nearestCell = { x: snapX, y: snapY, distanceSq: distSq, board: board };
                   // Early exit if we found an exact match
-                  if (distSq === 0) return { x: snapX - objHalfW, y: snapY - objHalfH };
+                  if (distSq === 0) return { x: snapX - objHalfW, y: snapY - objHalfH, snappedToBoard: board };
               }
           } else if (board.gridType === GridType.HEX) {
               // Pointy-top hex grid snapping - using gridUtils for consistency
               const hexW = gridW || 100;
               const hexH = gridH || (hexW * 1.15);  // Use board's gridHeight if available
 
-              // Calculate cursor position relative to board
-              const relativeX = cursorX - board.x;
-              const relativeY = cursorY - board.y;
+              // Transform cursor to board's local coordinate system
+              const localCoords = transformCursorToBoardSpace(cursorX, cursorY, board);
 
-              // Use gridUtils to get hex center
-              const hexCenter = getHexCenterAtPixel(
-                  relativeX,
-                  relativeY,
+              // Use gridUtils to get hex center in local coordinates
+              const localHexCenter = getHexCenterAtPixel(
+                  localCoords.x,
+                  localCoords.y,
                   hexW,
                   hexH,
                   'pointy-top'
               );
 
-              // Calculate absolute hex center
-              const hexCenterX = board.x + hexCenter.x;
-              const hexCenterY = board.y + hexCenter.y;
+              // Transform hex center back to world coordinates
+              const worldHexCenter = transformPointWithBoardRotation(
+                board.x + localHexCenter.x,
+                board.y + localHexCenter.y,
+                board
+              );
 
-              // Check if hex center is within board bounds
-              const hexX = hexCenterX - board.x;
-              const hexY = hexCenterY - board.y;
+              const hexCenterX = worldHexCenter.x;
+              const hexCenterY = worldHexCenter.y;
+
+              // Check if hex center is within board bounds (in local coordinates)
+              const hexX = localHexCenter.x;
+              const hexY = localHexCenter.y;
               const halfW = hexW / 2;
               const halfH = hexH / 2;
 
@@ -1083,35 +1177,40 @@ export const Tabletop: React.FC = () => {
               const distSq = dx * dx + dy * dy;
 
               if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
-                  nearestCell = { x: hexCenterX, y: hexCenterY, distanceSq: distSq };
+                  nearestCell = { x: hexCenterX, y: hexCenterY, distanceSq: distSq, board: board };
                   // Early exit if we found an exact match
-                  if (distSq === 0) return { x: hexCenterX - objHalfW, y: hexCenterY - objHalfH };
+                  if (distSq === 0) return { x: hexCenterX - objHalfW, y: hexCenterY - objHalfH, snappedToBoard: board };
               }
           } else if (board.gridType === GridType.HEX_HORIZONTAL) {
               // Flat-top (horizontal) hex grid snapping - using gridUtils for consistency
               const hexW = gridW || 115;
               const hexH = gridH || (hexW / 1.15);  // Use board's gridHeight if available
 
-              // Calculate cursor position relative to board
-              const relativeX = cursorX - board.x;
-              const relativeY = cursorY - board.y;
+              // Transform cursor to board's local coordinate system
+              const localCoords = transformCursorToBoardSpace(cursorX, cursorY, board);
 
-              // Use gridUtils to get hex center
-              const hexCenter = getHexCenterAtPixel(
-                  relativeX,
-                  relativeY,
+              // Use gridUtils to get hex center in local coordinates
+              const localHexCenter = getHexCenterAtPixel(
+                  localCoords.x,
+                  localCoords.y,
                   hexW,
                   hexH,
                   'flat-top'
               );
 
-              // Calculate absolute hex center
-              const hexCenterX = board.x + hexCenter.x;
-              const hexCenterY = board.y + hexCenter.y;
+              // Transform hex center back to world coordinates
+              const worldHexCenter = transformPointWithBoardRotation(
+                board.x + localHexCenter.x,
+                board.y + localHexCenter.y,
+                board
+              );
 
-              // Check if hex center is within board bounds
-              const hexX = hexCenterX - board.x;
-              const hexY = hexCenterY - board.y;
+              const hexCenterX = worldHexCenter.x;
+              const hexCenterY = worldHexCenter.y;
+
+              // Check if hex center is within board bounds (in local coordinates)
+              const hexX = localHexCenter.x;
+              const hexY = localHexCenter.y;
               const halfW = hexW / 2;
               const halfH = hexH / 2;
 
@@ -1126,9 +1225,9 @@ export const Tabletop: React.FC = () => {
               const distSq = dx * dx + dy * dy;
 
               if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
-                  nearestCell = { x: hexCenterX, y: hexCenterY, distanceSq: distSq };
+                  nearestCell = { x: hexCenterX, y: hexCenterY, distanceSq: distSq, board: board };
                   // Early exit if we found an exact match
-                  if (distSq === 0) return { x: hexCenterX - objHalfW, y: hexCenterY - objHalfH };
+                  if (distSq === 0) return { x: hexCenterX - objHalfW, y: hexCenterY - objHalfH, snappedToBoard: board };
               }
           }
       }
@@ -1147,7 +1246,7 @@ export const Tabletop: React.FC = () => {
               if (distSq <= snapRadiusSq && (!nearestCell || distSq < nearestCell.distanceSq)) {
                   nearestCell = { x: magnetPoint.x, y: magnetPoint.y, distanceSq: distSq };
                   // Early exit if we found an exact match
-                  if (distSq === 0) return { x: magnetPoint.x - objHalfW, y: magnetPoint.y - objHalfH };
+                  if (distSq === 0) return { x: magnetPoint.x - objHalfW, y: magnetPoint.y - objHalfH, snappedToBoard: nearestCell.board };
               }
           }
       }
@@ -1156,7 +1255,8 @@ export const Tabletop: React.FC = () => {
       if (nearestCell) {
           return {
               x: nearestCell.x - objHalfW,
-              y: nearestCell.y - objHalfH
+              y: nearestCell.y - objHalfH,
+              snappedToBoard: nearestCell.board
           };
       }
 
@@ -1430,6 +1530,9 @@ export const Tabletop: React.FC = () => {
               isOnTable: false, // Important: card should NOT render on table
               // Store orientation info for cursor slot rendering
               isHorizontal: isHorizontal,
+              // Inherit card dimensions from deck for correct aspect ratio
+              width: deck.cardWidth,
+              height: deck.cardHeight,
             };
 
             // Set cursor position first to ensure immediate render
@@ -1715,6 +1818,17 @@ export const Tabletop: React.FC = () => {
 
   // Add object to cursor slot (Ctrl+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
+    console.log('[addToCursorSlot] Called - ID:', id, 'Source:', source, 'Current slot length:', cursorSlot.length);
+
+    // IMPORTANT: Check if cursor is over a token archetype button - if so, don't add to slot
+    // This prevents accidental pickup when clicking token type buttons
+    const elementUnderCursor = document.elementFromPoint(mousePosition?.x ?? 0, mousePosition?.y ?? 0);
+    const archetypeButton = elementUnderCursor?.closest('[data-archetype-card]');
+    if (archetypeButton) {
+      console.log('[addToCursorSlot] BLOCKED - Cursor is over token archetype button, not adding to slot');
+      return;
+    }
+
     if (cursorSlot.length >= 100) return; // Max 100 items in slot
 
     // Set source based on how the item was added (only if slot was empty before)
@@ -2011,6 +2125,17 @@ export const Tabletop: React.FC = () => {
     const currentSlot = slotItems ?? cursorSlot;
     if (currentSlot.length === 0) return;
 
+    // Check if cursor is over a token archetype card (in MainMenu or TokensPanel)
+    // If so, prevent the drop to avoid accidental drops when clicking tokens
+    const elementAtCursor = document.elementFromPoint(clientX, clientY);
+    const archetypeCard = elementAtCursor?.closest('[data-archetype-card]');
+
+    if (archetypeCard) {
+      // Cursor is over a token button, don't drop
+      console.log('[Tabletop] dropCursorSlot - Preventing drop - cursor over token archetype card');
+      return;
+    }
+
     // Determine if we should preserve original zIndex or use stack zIndex
     // Read source from the first item in slot (stored when adding to slot)
     // Shift mode: use stack zIndex (10000+), Hold/Archetype mode: preserve original
@@ -2034,9 +2159,11 @@ export const Tabletop: React.FC = () => {
     let targetCell: (BattlefieldCell | NexusCellObject) | null = null;
     let targetBoardCell: { board: BoardType; col: number; row: number; cellCenterX: number; cellCenterY: number } | null = null;
 
-    // Only tokens use automatic cell magnetism
+    // Only tokens and cards use automatic cell magnetism
     const firstItem = currentSlot[0];
-    if (firstItem && firstItem.type === ItemType.TOKEN) {
+    const isToken = firstItem?.type === ItemType.TOKEN;
+    const isCard = firstItem?.type === ItemType.CARD;
+    if (firstItem && (isToken || isCard)) {
       // Check battlefield cells first
       for (const obj of Object.values(state.objects)) {
         if ((obj.type === ItemType.BATTLEFIELD_CELL || obj.type === ItemType.NEXUS_CELL) &&
@@ -2063,7 +2190,7 @@ export const Tabletop: React.FC = () => {
       if (!targetCell) {
         for (const obj of Object.values(state.objects)) {
           if (obj.type === ItemType.BOARD &&
-              (obj as BoardType).snapToGrid &&
+              (isCard ? (obj as BoardType).snapCardsToGrid : (obj as BoardType).snapToGrid) &&
               (obj as BoardType).gridType !== GridType.NONE &&
               obj.isOnTable !== false) {
             const board = obj as BoardType;
@@ -2072,16 +2199,27 @@ export const Tabletop: React.FC = () => {
             let cellCenterX: number, cellCenterY: number;
 
             if (board.gridType === GridType.SQUARE) {
-              const relativeX = worldX - board.x;
-              const relativeY = worldY - board.y;
-              const col = Math.floor(relativeX / gridW);
-              const row = Math.floor(relativeY / gridH);
+              // Transform world coordinates to board's local coordinate system
+              const localCoords = transformCursorToBoardSpace(worldX, worldY, board);
+              const col = Math.floor(localCoords.x / gridW);
+              const row = Math.floor(localCoords.y / gridH);
 
               // Check if cell is within board bounds
               if (col >= 0 && col < Math.floor(board.width / gridW) &&
                   row >= 0 && row < Math.floor(board.height / gridH)) {
-                cellCenterX = board.x + (col * gridW) + (gridW / 2);
-                cellCenterY = board.y + (row * gridH) + (gridH / 2);
+                // Calculate cell center in local coordinates
+                const localCellCenterX = (col * gridW) + (gridW / 2);
+                const localCellCenterY = (row * gridH) + (gridH / 2);
+
+                // Transform to world coordinates
+                const worldCellCenter = transformPointWithBoardRotation(
+                  board.x + localCellCenterX,
+                  board.y + localCellCenterY,
+                  board
+                );
+
+                cellCenterX = worldCellCenter.x;
+                cellCenterY = worldCellCenter.y;
                 targetBoardCell = { board, col, row, cellCenterX, cellCenterY };
                 break;
               }
@@ -2090,34 +2228,40 @@ export const Tabletop: React.FC = () => {
               const hexW = gridW || 100;
               const hexH = gridH || (hexW * 1.15);  // Use board's gridHeight if available
 
-              const hCapIdeal = hexW / (2 * Math.sqrt(3));
-              const hCap = Math.min(hCapIdeal, hexH / 2);
+              // Transform world coordinates to board's local coordinate system
+              const localCoords = transformCursorToBoardSpace(worldX, worldY, board);
 
-              const relativeX = worldX - board.x;
-              const relativeY = worldY - board.y;
-
-              const hexCenter = getHexCenterAtPixel(
-                  relativeX,
-                  relativeY,
+              const localHexCenter = getHexCenterAtPixel(
+                  localCoords.x,
+                  localCoords.y,
                   hexW,
                   hexH,
                   'pointy-top'
               );
 
-              cellCenterX = board.x + hexCenter.x;
-              cellCenterY = board.y + hexCenter.y;
+              // Transform to world coordinates
+              const worldCellCenter = transformPointWithBoardRotation(
+                board.x + localHexCenter.x,
+                board.y + localHexCenter.y,
+                board
+              );
 
-              // Calculate col and row from hex center position
+              cellCenterX = worldCellCenter.x;
+              cellCenterY = worldCellCenter.y;
+
+              // Calculate col and row from hex center position (in local coordinates)
+              const hCapIdeal = hexW / (2 * Math.sqrt(3));
+              const hCap = Math.min(hCapIdeal, hexH / 2);
               const dx = hexW;
               const dy = hexH - hCap;
               const offsetX = hexW / 2;
 
-              const row = Math.round(hexCenter.y / dy);
-              const col = Math.round((hexCenter.x - (row % 2) * offsetX) / dx);
+              const row = Math.round(localHexCenter.y / dy);
+              const col = Math.round((localHexCenter.x - (row % 2) * offsetX) / dx);
 
-              // Check if hex center is within board bounds
-              const hexX = cellCenterX - board.x;
-              const hexY = cellCenterY - board.y;
+              // Check if hex center is within board bounds (in local coordinates)
+              const hexX = localHexCenter.x;
+              const hexY = localHexCenter.y;
               const halfW = hexW / 2;
               const halfH = hexH / 2;
 
@@ -2134,31 +2278,38 @@ export const Tabletop: React.FC = () => {
               const wCapIdeal = hexH / (2 * Math.sqrt(3));
               const wCap = Math.min(wCapIdeal, hexW / 2);
 
-              const relativeX = worldX - board.x;
-              const relativeY = worldY - board.y;
+              // Transform world coordinates to board's local coordinate system
+              const localCoords = transformCursorToBoardSpace(worldX, worldY, board);
 
-              const hexCenter = getHexCenterAtPixel(
-                  relativeX,
-                  relativeY,
+              const localHexCenter = getHexCenterAtPixel(
+                  localCoords.x,
+                  localCoords.y,
                   hexW,
                   hexH,
                   'flat-top'
               );
 
-              cellCenterX = board.x + hexCenter.x;
-              cellCenterY = board.y + hexCenter.y;
+              // Transform to world coordinates
+              const worldCellCenter = transformPointWithBoardRotation(
+                board.x + localHexCenter.x,
+                board.y + localHexCenter.y,
+                board
+              );
 
-              // Calculate col and row from hex center position
+              cellCenterX = worldCellCenter.x;
+              cellCenterY = worldCellCenter.y;
+
+              // Calculate col and row from hex center position (in local coordinates)
               const dx = hexW - wCap;
               const dy = hexH;
               const offsetY = hexH / 2;
 
-              const col = Math.round(hexCenter.x / dx);
-              const row = Math.round((hexCenter.y - (col % 2) * offsetY) / dy);
+              const col = Math.round(localHexCenter.x / dx);
+              const row = Math.round((localHexCenter.y - (col % 2) * offsetY) / dy);
 
-              // Check if hex center is within board bounds
-              const hexX = cellCenterX - board.x;
-              const hexY = cellCenterY - board.y;
+              // Check if hex center is within board bounds (in local coordinates)
+              const hexX = localHexCenter.x;
+              const hexY = localHexCenter.y;
               const halfW = hexW / 2;
               const halfH = hexH / 2;
 
@@ -2242,6 +2393,7 @@ export const Tabletop: React.FC = () => {
       const defaultZIndex = Math.max(minZ, Math.min(maxZ, stackZ));
 
       let finalX: number, finalY: number;
+      let finalRotation: number = item.rotation ?? 0; // Will be updated if snapRotationToGrid is enabled
       let finalZIndex: number = defaultZIndex; // Will be overridden if snapped to cell
 
       // Use automatic magnetism for tokens dropped on cells
@@ -2409,10 +2561,15 @@ export const Tabletop: React.FC = () => {
           // This allows dragging objects from pool panel to any position on tabletop
           snapTargetX = worldX;
           snapTargetY = worldY;
-        } else if (item.type === ItemType.TOKEN) {
+        } else if (item.type === ItemType.TOKEN || item.type === ItemType.CARD) {
           const snappedPos = getSnappedCoordinates(worldX, worldY, state.objects, item.id);
           snapTargetX = snappedPos.x + baseWidth / 2;
           snapTargetY = snappedPos.y + baseHeight / 2;
+
+          // Apply board rotation if snapped to a board with snapRotationToGrid enabled
+          if (snappedPos.snappedToBoard && snappedPos.snappedToBoard.snapRotationToGrid) {
+            finalRotation = snappedPos.snappedToBoard.rotation ?? 0;
+          }
         } else {
           snapTargetX = worldX;
           snapTargetY = worldY;
@@ -2438,6 +2595,7 @@ export const Tabletop: React.FC = () => {
           x: finalX,
           y: finalY,
           zIndex: finalZIndex,
+          rotation: finalRotation,
         },
       });
     });
@@ -2469,6 +2627,17 @@ export const Tabletop: React.FC = () => {
     const handleDropAtPosition = (e: Event) => {
       const customEvent = e as CustomEvent<{ clientX: number; clientY: number }>;
       const { clientX, clientY } = customEvent.detail;
+
+      // Check if cursor is over a token archetype card (in MainMenu or TokensPanel)
+      // If so, prevent the drop to avoid accidental drops when clicking tokens
+      const elementAtCursor = document.elementFromPoint(clientX, clientY);
+      const archetypeCard = elementAtCursor?.closest('[data-archetype-card]');
+
+      if (archetypeCard) {
+        // Cursor is over a token button, don't drop
+        console.log('[Tabletop] Preventing drop - cursor over token archetype card');
+        return;
+      }
 
       // Drop the cursor slot at the specified position
       if (cursorSlot.length > 0) {
@@ -2717,13 +2886,18 @@ export const Tabletop: React.FC = () => {
         const pileCenterX = pileX + deck.width * pileSize / 2;
         const pileCenterY = pileY + deck.height * pileSize / 2;
 
-        // Apply grid snapping for tokens only (find snap from center, then add offset)
-        let finalX, finalY;
-        if (item.type === ItemType.TOKEN) {
+        // Apply grid snapping for tokens and cards (find snap from center, then add offset)
+        let finalX, finalY, finalRotation = item.rotation ?? 0;
+        if (item.type === ItemType.TOKEN || item.type === ItemType.CARD) {
           const snappedPos = getSnappedCoordinates(pileCenterX, pileCenterY, state.objects, item.id);
           // snappedPos is top-left, convert to center, add offset, convert back to top-left
           finalX = snappedPos.x + baseWidth / 2 + offsetX - baseWidth / 2;
           finalY = snappedPos.y + baseHeight / 2 + offsetY - baseHeight / 2;
+
+          // Apply board rotation if snapped to a board with snapRotationToGrid enabled
+          if (snappedPos.snappedToBoard && snappedPos.snappedToBoard.snapRotationToGrid) {
+            finalRotation = snappedPos.snappedToBoard.rotation ?? 0;
+          }
         } else {
           finalX = pileCenterX - baseWidth / 2 + offsetX;
           finalY = pileCenterY - baseHeight / 2 + offsetY;
@@ -2739,6 +2913,7 @@ export const Tabletop: React.FC = () => {
             x: finalX,
             y: finalY,
             zIndex,
+            rotation: finalRotation,
           }
         });
       });
@@ -2768,6 +2943,11 @@ export const Tabletop: React.FC = () => {
     const handleGlobalClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
+      // IMPORTANT: Block all object interactions when ruler tool is active
+      if (currentTool === 'ruler') {
+        return; // Let ruler have exclusive control
+      }
+
       // IMPORTANT: If clicking inside ANY context menu, don't process global clicks
       // This prevents interference with context menu button clicks in both Tabletop and Pool panels
       const tableContextMenuElement = target.closest('[data-context-menu="tabletop"]');
@@ -2776,16 +2956,48 @@ export const Tabletop: React.FC = () => {
       const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
       const topDeckModalElement = target.closest('[data-modal="top-deck"]');
 
-      console.log('[Tabletop] handleGlobalClick:', {
-        target: target.tagName,
-        targetClasses: target.className,
-        foundTableMenu: !!tableContextMenuElement,
-        foundPoolMenu: !!poolContextMenuElement,
-        foundSubmenu: !!submenuElement,
-        foundSearchDeckModal: !!searchDeckModalElement,
-        foundTopDeckModal: !!topDeckModalElement,
-        targetDataAttr: target.getAttribute('data-context-menu')
-      });
+
+      // IMPORTANT: Check for card/deck click actions FIRST, before cursor slot check
+      // This allows click actions to work even when cursor slot is empty
+      if (e.button === 0) { // Only left click
+        // Try to find the object element - check both data-object-id and navigate up the DOM tree
+        let objElement = target.closest('[data-object-id]');
+
+        // If not found directly, try to find by checking parent elements more thoroughly
+        if (!objElement) {
+          let currentElement = target as HTMLElement;
+          while (currentElement && currentElement !== document.body) {
+            if (currentElement.getAttribute && currentElement.getAttribute('data-object-id')) {
+              objElement = currentElement;
+              break;
+            }
+            currentElement = currentElement.parentElement as HTMLElement;
+          }
+        }
+
+        if (objElement) {
+          const objectId = objElement.getAttribute('data-object-id');
+          if (objectId) {
+            const obj = state.objects[objectId];
+            // Check for cards with click actions
+            if (obj?.type === ItemType.CARD) {
+              const cardSettings = getCardSettings(obj as CardType);
+              // If this card has click actions configured, don't intercept the mousedown
+              if (cardSettings.singleClickAction || cardSettings.doubleClickAction) {
+                return; // Let the card's click handlers work
+              }
+            }
+            // Check for decks with click actions
+            if (obj?.type === ItemType.DECK) {
+              const deck = obj as DeckType;
+              // If this deck has click actions configured, don't intercept the mousedown
+              if (deck.singleClickAction || deck.doubleClickAction) {
+                return; // Let the deck's click handlers work
+              }
+            }
+          }
+        }
+      }
 
       if (tableContextMenuElement || poolContextMenuElement || submenuElement || searchDeckModalElement || topDeckModalElement) {
         console.log('[Tabletop] Click inside protected element, ignoring global click');
@@ -2798,24 +3010,89 @@ export const Tabletop: React.FC = () => {
         clickTooltipBoundsRef.current = null;
       }
 
+      // IMPORTANT: Check for card/deck click actions FIRST, before cursor slot check
+      // This allows click actions to work even when cursor slot is empty
+      if (e.button === 0) { // Only left click
+        // Try to find the object element - check both data-object-id and navigate up the DOM tree
+        let objElement = target.closest('[data-object-id]');
+
+        // If not found directly, try to find by checking parent elements more thoroughly
+        if (!objElement) {
+          let currentElement = target as HTMLElement;
+          while (currentElement && currentElement !== document.body) {
+            if (currentElement.getAttribute && currentElement.getAttribute('data-object-id')) {
+              objElement = currentElement;
+              break;
+            }
+            currentElement = currentElement.parentElement as HTMLElement;
+          }
+        }
+
+        if (objElement) {
+          const objectId = objElement.getAttribute('data-object-id');
+          if (objectId) {
+            const obj = state.objects[objectId];
+            // Check for cards with click actions
+            if (obj?.type === ItemType.CARD) {
+              const cardSettings = getCardSettings(obj as CardType);
+              // If this card has click actions configured, don't intercept the mousedown
+              if (cardSettings.singleClickAction || cardSettings.doubleClickAction) {
+                console.log('[handleGlobalClick] Card has click actions, letting click pass through');
+                return; // Let the card's click handlers work
+              }
+            }
+            // Check for decks with click actions
+            if (obj?.type === ItemType.DECK) {
+              const deck = obj as DeckType;
+              // If this deck has click actions configured, don't intercept the mousedown
+              if (deck.singleClickAction || deck.doubleClickAction) {
+                console.log('[handleGlobalClick] Deck has click actions, letting click pass through');
+                return; // Let the deck's click handlers work
+              }
+            }
+          }
+        }
+      }
+
       // IMPORTANT: Use cursorSlotRef.current instead of cursorSlot to avoid race condition
       // cursorSlot in closure may be stale due to async React state updates
       if (cursorSlotRef.current.length === 0 || e.button !== 0) {
         return;
       }
 
+      console.log('[handleGlobalClick] START - Slot has items:', cursorSlotRef.current.length, 'Target:', target);
+
       // Check if clicking on an archetype card (token type in ToolsPanel or MainMenu)
       const archetypeCard = target.closest('[data-archetype-card]');
       if (archetypeCard) {
+        console.log('[handleGlobalClick] BLOCKED - Clicking on archetype card, not dropping');
         return; // Don't drop cursor slot when clicking on archetype cards
       }
 
       // Check if Ctrl/Meta is pressed
-      if (e.ctrlKey || e.metaKey) return;
+      if (e.ctrlKey || e.metaKey) {
+        console.log('[handleGlobalClick] BLOCKED - Ctrl/Meta pressed');
+        return;
+      }
 
       // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
       const toolsPanel = target.closest('[data-tools-panel]');
       if (toolsPanel) {
+        console.log('[handleGlobalClick] BLOCKED - Clicking on ToolsPanel');
+        return;
+      }
+
+      // Check if clicking on TokensPanel - don't drop, let the panel handle adding more tokens
+      const tokensPanel = target.closest('[data-tokens-panel]');
+      if (tokensPanel) {
+        console.log('[handleGlobalClick] BLOCKED - Clicking on TokensPanel');
+        return;
+      }
+
+      // Check if clicking on main menu - don't drop, let it handle adding tokens
+      const mainMenu = target.closest('[data-main-menu="true"]');
+      if (mainMenu) {
+        console.log('[handleGlobalClick] BLOCKED - Clicking on main menu');
         return;
       }
 
@@ -2970,7 +3247,7 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('mousedown', handleGlobalClick, { capture: true });
     return () => window.removeEventListener('mousedown', handleGlobalClick, { capture: true } as any);
-  }, [cursorSlot, dropCursorSlot, state.objects, dropToDeck, dropToPile, clickTooltip]);
+  }, [cursorSlot, dropCursorSlot, state.objects, dropToDeck, dropToPile, clickTooltip, currentTool]);
 
   // Helper function to check if a point is within a rotated rectangle
   const isPointInRotatedRect = useCallback((
@@ -3393,6 +3670,100 @@ export const Tabletop: React.FC = () => {
       setContextMenu(null);
     }
 
+    // Note: Unified click/drag system with clear priority:
+    // 1. Check for double click first (fast clicks without movement)
+    // 2. Then check for drag (movement >= 1VU)
+    // 3. Single click does nothing (unless singleClickAction is configured)
+
+    if (id && e.button === 0) {
+      const item = state.objects[id];
+      if (item) {
+        // Check if object has doubleClickAction
+        let doubleClickAction = (item as any)?.doubleClickAction;
+        if (item?.type === ItemType.CARD) {
+          const cardSettings = getCardSettings(item as CardType);
+          doubleClickAction = cardSettings.doubleClickAction;
+        }
+
+        const now = Date.now();
+        const DOUBLE_CLICK_DELAY = 300; // ms
+
+        // Check for double click FIRST (before drag)
+        if (doubleClickAction && doubleClickAction !== 'none') {
+          const timeSinceLastClick = now - interactionStateRef.current.lastClickTime;
+
+          if (interactionStateRef.current.objectId === id && timeSinceLastClick < DOUBLE_CLICK_DELAY) {
+            // DOUBLE CLICK DETECTED!
+            executeClickAction(item, doubleClickAction, e);
+
+            // Reset interaction state
+            interactionStateRef.current = {
+              objectId: null,
+              startTime: 0,
+              startClientX: 0,
+              startClientY: 0,
+              hasMoved: false,
+              clickCount: 0,
+              lastClickTime: 0,
+              isInDragMode: false
+            };
+
+            e.preventDefault();
+            e.stopPropagation();
+            return; // Don't proceed with drag logic
+          }
+
+          // First click - save state for potential drag or second click
+          interactionStateRef.current = {
+            objectId: id,
+            startTime: now,
+            startClientX: e.clientX,
+            startClientY: e.clientY,
+            hasMoved: false,
+            clickCount: interactionStateRef.current.objectId === id ? interactionStateRef.current.clickCount + 1 : 1,
+            lastClickTime: now,
+            isInDragMode: false
+          };
+
+          // Set timeout to detect if this becomes a single click (no second click within delay)
+          // IMPORTANT: Only reset if lastClickTime hasn't changed (meaning no second click happened)
+          setTimeout(() => {
+            const currentState = interactionStateRef.current;
+            // Only reset if this is still the same click (lastClickTime hasn't been updated by a second click)
+            if (currentState.objectId === id && currentState.lastClickTime === now) {
+              // This was a single click - reset state, don't execute anything
+              interactionStateRef.current = {
+                objectId: null,
+                startTime: 0,
+                startClientX: 0,
+                startClientY: 0,
+                hasMoved: false,
+                clickCount: 0,
+                lastClickTime: 0,
+                isInDragMode: false
+              };
+            }
+          }, DOUBLE_CLICK_DELAY);
+
+          return; // Don't proceed with normal drag handling yet
+        }
+
+        // No doubleClickAction - proceed with normal drag logic
+
+        // Reset interaction state if no doubleClickAction
+        interactionStateRef.current = {
+          objectId: null,
+          startTime: 0,
+          startClientX: 0,
+          startClientY: 0,
+          hasMoved: false,
+          clickCount: 0,
+          lastClickTime: 0,
+          isInDragMode: false
+        };
+      }
+    }
+
     // Block all mouse interactions when ruler tool is active (except ruler-specific handling)
     if (currentTool === 'ruler') {
       // Only handle left click for ruler functionality
@@ -3692,31 +4063,78 @@ export const Tabletop: React.FC = () => {
     const newCursorPosition = { x: e.clientX, y: e.clientY };
     cursorPositionRef.current = newCursorPosition;
 
-    // Check drag threshold for adding to cursor slot
-    if (dragThresholdRef.current.targetId && !dragThresholdRef.current.addedToSlot) {
-      const { initialX, initialY, targetId } = dragThresholdRef.current;
+    // Block cursor slot drag when ruler is active
+    if (currentTool !== 'ruler') {
+      // Check interaction state for objects with doubleClickAction
+      if (interactionStateRef.current.objectId && !interactionStateRef.current.isInDragMode) {
+        const { objectId, startClientX, startClientY } = interactionStateRef.current;
 
-      // Calculate distance in screen pixels
-      const deltaX = e.clientX - initialX;
-      const deltaY = e.clientY - initialY;
-      const distancePixels = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        // Calculate distance in screen pixels
+        const deltaX = e.clientX - startClientX;
+        const deltaY = e.clientY - startClientY;
+        const distancePixels = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-      // Convert to virtual units
-      const distanceVU = distancePixels / pixelsPerVU;
+        // Convert to virtual units
+        const distanceVU = distancePixels / pixelsPerVU;
 
-      // Check if threshold reached (1VU for more responsive pickup)
-      if (distanceVU >= 1) {
-        const item = state.objects[targetId];
-        if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN ||
-          item.type === ItemType.DECK || item.type === ItemType.RANDOMIZER ||
-          item.type === ItemType.COUNTER || item.type === ItemType.DICE_OBJECT ||
-          item.type === ItemType.BOARD)) {
+        // Check if threshold reached (1VU) - switch to drag mode
+        if (distanceVU >= 1) {
+          interactionStateRef.current.isInDragMode = true;
+          interactionStateRef.current.hasMoved = true;
 
-          // Add to cursor slot
-          addToCursorSlot(targetId, item, 'hold');
+          // Add to cursor slot using the normal cursor slot system
+          const item = state.objects[objectId];
+          if (item && !item.locked) {
+            // Set dragThresholdRef to ensure wasThresholdReached is true in handleGlobalMouseUp
+            dragThresholdRef.current = {
+              initialX: startClientX,
+              initialY: startClientY,
+              targetId: objectId,
+              addedToSlot: true  // Mark as added to slot
+            };
 
-          // Mark as added to prevent duplicate adds
-          dragThresholdRef.current.addedToSlot = true;
+            addToCursorSlot(objectId, item, 'hold');
+
+            // Mark interaction state as added to slot to prevent duplicate adds
+            interactionStateRef.current.isInDragMode = true;
+          }
+        }
+      }
+
+      // Check drag threshold for adding to cursor slot (legacy system)
+      if (dragThresholdRef.current.targetId && !dragThresholdRef.current.addedToSlot) {
+        const { initialX, initialY, targetId } = dragThresholdRef.current;
+
+        // Calculate distance in screen pixels
+        const deltaX = e.clientX - initialX;
+        const deltaY = e.clientY - initialY;
+        const distancePixels = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+        // Convert to virtual units
+        const distanceVU = distancePixels / pixelsPerVU;
+
+        // Check if threshold reached (1VU for more responsive pickup)
+        if (distanceVU >= 1) {
+          const item = state.objects[targetId];
+          if (item && (item.type === ItemType.CARD || item.type === ItemType.TOKEN ||
+            item.type === ItemType.DECK || item.type === ItemType.RANDOMIZER ||
+            item.type === ItemType.COUNTER || item.type === ItemType.DICE_OBJECT ||
+            item.type === ItemType.BOARD)) {
+
+            // IMPORTANT: Check if cursor is over a token archetype button - don't pickup
+            const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
+            const archetypeButton = elementUnderCursor?.closest('[data-archetype-card]');
+            if (archetypeButton) {
+              console.log('[handleMouseMove] BLOCKED - Cursor is over token archetype button, not picking up item');
+              return; // Don't pickup when clicking on token type buttons
+            }
+
+            // Add to cursor slot
+            addToCursorSlot(targetId, item, 'hold');
+
+            // Mark as added to prevent duplicate adds
+            dragThresholdRef.current.addedToSlot = true;
+          }
         }
       }
     }
@@ -3869,12 +4287,19 @@ export const Tabletop: React.FC = () => {
 
       const snapped = getSnappedCoordinates(centerX, centerY, state.objects, draggingId);
 
+      // Apply board rotation if snapped to a board with snapRotationToGrid enabled
+      let newRotation = draggingObj.rotation ?? 0;
+      if (snapped.snappedToBoard && snapped.snappedToBoard.snapRotationToGrid) {
+        newRotation = snapped.snappedToBoard.rotation ?? 0;
+      }
+
       dispatch({
         type: 'MOVE_OBJECT',
         payload: {
           id: draggingId,
           x: snapped.x,
           y: snapped.y,
+          rotation: newRotation,
         },
         _localOnly: true, // Don't send over network during drag
       });
@@ -3988,6 +4413,12 @@ export const Tabletop: React.FC = () => {
       cursorHoldTimerRef.current = null;
     }
 
+    // Note: Cursor slot drop on mouseup is handled by the global handler above
+    // This handleMouseUp is only called when there's an active drag/pan/resize operation
+
+    // Save drag threshold state BEFORE clearing it
+    const wasThresholdReached = dragThresholdRef.current.addedToSlot;
+
     // Clear drag threshold state
     dragThresholdRef.current = {
       initialX: 0,
@@ -3996,71 +4427,32 @@ export const Tabletop: React.FC = () => {
       addedToSlot: false
     };
 
-    // Note: Cursor slot drop on mouseup is handled by the global handler above
-    // This handleMouseUp is only called when there's an active drag/pan/resize operation
-
     // Check if this was a click (not a drag or resize)
     const wasDragging = draggingId !== null;
     const wasResizing = resizingId !== null;
-    const clientX = e?.clientX || dragStartRef.current.x;
-    const clientY = e?.clientY || dragStartRef.current.y;
 
-    // Calculate distance moved
-    const distance = Math.sqrt(
-      Math.pow(clientX - dragStartRef.current.x, 2) +
-      Math.pow(clientY - dragStartRef.current.y, 2)
-    );
+    // Handle interaction state (unified click/drag system)
+    if (interactionStateRef.current.objectId && !wasResizing) {
+      const { objectId, isInDragMode } = interactionStateRef.current;
 
-    const wasClick = !wasResizing && distance < 5; // Less than 5px movement = click
-
-    // Handle click detection and execution
-    if (wasClick && wasDragging && draggingId) {
-      const obj = state.objects[draggingId];
-      const now = Date.now();
-      const DOUBLE_CLICK_DELAY = 300; // ms
-
-      // Get click action from object (for cards, inherit from deck)
-      let singleClickAction = (obj as any)?.singleClickAction;
-      let doubleClickAction = (obj as any)?.doubleClickAction;
-
-      // For cards, use inherited settings from deck
-      if (obj?.type === ItemType.CARD) {
-        const cardSettings = getCardSettings(obj as CardType);
-        singleClickAction = cardSettings.singleClickAction;
-        doubleClickAction = cardSettings.doubleClickAction;
-      }
-
-      // Check if this is a double click
-      const lastClick = clickTrackerRef.current;
-      if (lastClick.objectId === draggingId && now - lastClick.timestamp < DOUBLE_CLICK_DELAY) {
-        // Double click detected
-        const action = doubleClickAction;
-        if (action) {
-          executeClickAction(obj, action, e as React.MouseEvent);
-        }
-        // Reset click tracker after double click
-        clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
+      if (isInDragMode) {
+        // This was a drag - handle drag completion
+        // Normal drag logic will handle the rest
       } else {
-        // Single click - schedule execution after double click delay
-        clickTrackerRef.current = {
-          objectId: draggingId,
-          timestamp: now,
-          clickCount: lastClick.clickCount + 1
-        };
-
-        // Wait to see if this becomes a double click
-        setTimeout(() => {
-          const currentTracker = clickTrackerRef.current;
-          if (currentTracker.objectId === draggingId && now === currentTracker.timestamp) {
-            // Still the same click, execute single click action
-            const action = singleClickAction;
-            if (action) {
-              executeClickAction(obj, action, e as React.MouseEvent);
-            }
-            clickTrackerRef.current = { objectId: null, timestamp: 0, clickCount: 0 };
-          }
-        }, DOUBLE_CLICK_DELAY);
+        // This was a click without drag - already handled by double click logic in handleMouseDown
       }
+
+      // Clear interaction state
+      interactionStateRef.current = {
+        objectId: null,
+        startTime: 0,
+        startClientX: 0,
+        startClientY: 0,
+        hasMoved: false,
+        clickCount: 0,
+        lastClickTime: 0,
+        isInDragMode: false
+      };
     }
 
     // Check if dropping a card onto a deck or pile
@@ -7177,8 +7569,10 @@ export const Tabletop: React.FC = () => {
                                     type: ItemType.CARD,
                                     x: 0,
                                     y: 0,
-                                    width: newDeck.cardWidth || newDeck.width,
-                                    height: newDeck.cardHeight || newDeck.height,
+                                    // Don't set width/height on cards - let them use deck's cardWidth/cardHeight
+                                    // This ensures cards always respect deck's card dimension settings
+                                    // width: newDeck.cardWidth || newDeck.width,
+                                    // height: newDeck.cardHeight || newDeck.height,
                                     rotation: 0,
                                     name: `Card ${i + 1}`,
                                     content: spriteConfig.cardBackUrl || spriteConfig.spriteUrl,

@@ -2,7 +2,7 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { ItemType, TableObject, TokenType, TokenShape, WindowType, AppLanguage } from '../types';
-import { Pen, Eraser, Ruler, Compass, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import { Pen, Eraser, Ruler, ZoomIn, ZoomOut, ChevronDown, ChevronUp, Settings, MousePointer2 } from 'lucide-react';
 import { SvgTokenShape } from './SvgTokenShape';
 
 // Helper function to get translation for tool keys
@@ -16,14 +16,14 @@ function getToolTranslation(language: AppLanguage, key: string): string {
     toolEraserDesc: 'Erase drawings',
     toolRuler: 'Ruler',
     toolRulerDesc: 'Measure distances',
-    toolCompass: 'Compass',
-    toolCompassDesc: 'Draw circles/arcs',
+    toolZoom: 'Zoom',
+    toolZoomDesc: 'Zoom in/out',
   };
   return translate(toolTranslations[key] || key, language as Locale);
 }
 
 // Drawing tools
-export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'compass';
+export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'zoom';
 
 interface DrawingToolConfig {
   id: DrawingTool;
@@ -33,11 +33,11 @@ interface DrawingToolConfig {
 }
 
 const DRAWING_TOOLS: DrawingToolConfig[] = [
-  { id: 'none', labelKey: 'toolCursor', descKey: 'toolCursorDesc', icon: null },
+  { id: 'none', labelKey: 'toolCursor', descKey: 'toolCursorDesc', icon: <MousePointer2 size={20} /> },
   { id: 'marker', labelKey: 'toolMarker', descKey: 'toolMarkerDesc', icon: <Pen size={20} /> },
   { id: 'eraser', labelKey: 'toolEraser', descKey: 'toolEraserDesc', icon: <Eraser size={20} /> },
   { id: 'ruler', labelKey: 'toolRuler', descKey: 'toolRulerDesc', icon: <Ruler size={20} /> },
-  { id: 'compass', labelKey: 'toolCompass', descKey: 'toolCompassDesc', icon: <Compass size={20} /> },
+  { id: 'zoom', labelKey: 'toolZoom', descKey: 'toolZoomDesc', icon: <ZoomIn size={20} /> },
 ];
 
 interface ToolsPanelProps {
@@ -65,24 +65,102 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   // Marker settings
   const [markerColor, setMarkerColor] = useState('#ff0000');
   const [markerThickness, setMarkerThickness] = useState(10);
+  const [markerOpacity, setMarkerOpacity] = useState(100);
 
-  // Emit marker settings when they change
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
-      detail: { color: markerColor, thickness: markerThickness }
-    }));
-  }, [markerColor, markerThickness]);
+  // Eraser settings
+  const [eraserThickness, setEraserThickness] = useState(20);
 
-  // Respond to settings request from other components
+  // Zoom settings
+  const [zoomLevel, setZoomLevel] = useState(100);
+
+  // Sync tool state with other components (bidirectional)
   useEffect(() => {
-    const handleRequest = () => {
-      window.dispatchEvent(new CustomEvent('marker-settings-sync', {
-        detail: { color: markerColor, thickness: markerThickness }
+    const handleToolSync = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tool: DrawingTool }>;
+      setSelectedTool(customEvent.detail.tool);
+    };
+
+    const handleToolRequest = () => {
+      window.dispatchEvent(new CustomEvent('drawing-tool-sync', {
+        detail: { tool: selectedTool }
       }));
     };
-    window.addEventListener('marker-settings-request', handleRequest);
-    return () => window.removeEventListener('marker-settings-request', handleRequest);
-  }, [markerColor, markerThickness]);
+
+    window.addEventListener('drawing-tool-sync', handleToolSync);
+    window.addEventListener('drawing-tool-request', handleToolRequest);
+
+    // Request current tool state on mount
+    window.dispatchEvent(new Event('drawing-tool-request'));
+
+    return () => {
+      window.removeEventListener('drawing-tool-sync', handleToolSync);
+      window.removeEventListener('drawing-tool-request', handleToolRequest);
+    };
+  }, [selectedTool]);
+
+  // Sync marker settings (bidirectional)
+  useEffect(() => {
+    // Emit when local state changes
+    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
+      detail: { color: markerColor, thickness: markerThickness, opacity: markerOpacity }
+    }));
+
+    // Listen for changes from other components
+    const handleMarkerSync = (e: Event) => {
+      const customEvent = e as CustomEvent<{ color: string; thickness: number; opacity?: number }>;
+      setMarkerColor(customEvent.detail.color);
+      setMarkerThickness(customEvent.detail.thickness);
+      if (customEvent.detail.opacity !== undefined) {
+        setMarkerOpacity(customEvent.detail.opacity);
+      }
+    };
+
+    window.addEventListener('marker-settings-sync', handleMarkerSync);
+
+    return () => {
+      window.removeEventListener('marker-settings-sync', handleMarkerSync);
+    };
+  }, [markerColor, markerThickness, markerOpacity]);
+
+  // Sync eraser settings (bidirectional)
+  useEffect(() => {
+    // Emit when local state changes
+    window.dispatchEvent(new CustomEvent('eraser-settings-changed', {
+      detail: { thickness: eraserThickness }
+    }));
+
+    // Listen for changes from other components
+    const handleEraserSync = (e: Event) => {
+      const customEvent = e as CustomEvent<{ thickness: number }>;
+      setEraserThickness(customEvent.detail.thickness);
+    };
+
+    window.addEventListener('eraser-settings-sync', handleEraserSync);
+
+    return () => {
+      window.removeEventListener('eraser-settings-sync', handleEraserSync);
+    };
+  }, [eraserThickness]);
+
+  // Sync zoom settings (bidirectional)
+  useEffect(() => {
+    // Emit when local state changes
+    window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
+      detail: { level: zoomLevel }
+    }));
+
+    // Listen for changes from other components
+    const handleZoomSync = (e: Event) => {
+      const customEvent = e as CustomEvent<{ level: number }>;
+      setZoomLevel(customEvent.detail.level);
+    };
+
+    window.addEventListener('zoom-settings-sync', handleZoomSync);
+
+    return () => {
+      window.removeEventListener('zoom-settings-sync', handleZoomSync);
+    };
+  }, [zoomLevel]);
 
   // Token archetypes expanded state
   const [archetypesExpanded, setArchetypesExpanded] = useState(true);
@@ -96,6 +174,8 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     setSelectedTool(tool);
     // Dispatch event to notify other components about tool change
     window.dispatchEvent(new CustomEvent('drawing-tool-changed', { detail: { tool } }));
+    // Sync immediately with all other panels
+    window.dispatchEvent(new CustomEvent('drawing-tool-sync', { detail: { tool } }));
   }, []);
 
   // Track drag state to distinguish click from drag
@@ -303,38 +383,139 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
 
           {/* Marker Settings (shown when marker is selected) */}
           {selectedTool === 'marker' && (
-            <div className="space-y-2 mt-3 p-2 bg-slate-900 rounded">
+            <div className="space-y-3 mt-3 p-3 bg-slate-900 rounded-lg">
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Color', language as Locale)}</label>
-                <div className="flex gap-1">
-                  {['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ffffff', '#000000'].map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setMarkerColor(color)}
-                      className={`w-6 h-6 rounded border-2 transition-colors ${
-                        markerColor === color ? 'border-white scale-110' : 'border-slate-600'
-                      }`}
-                      style={{ backgroundColor: color }}
-                      title={color}
-                    />
-                  ))}
-                </div>
+                <input
+                  type="color"
+                  value={markerColor}
+                  onChange={(e) => setMarkerColor(e.target.value)}
+                  className="w-full h-10 bg-slate-800 border border-slate-700 rounded cursor-pointer"
+                />
               </div>
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Thickness', language as Locale)}: {markerThickness}px</label>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Size', language as Locale)}: {markerThickness}px</label>
                 <input
                   type="range"
                   min="1"
-                  max="20"
+                  max="100"
                   value={markerThickness}
                   onChange={(e) => setMarkerThickness(Number(e.target.value))}
-                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer slider-input"
+                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                 />
+                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                  <span>1px</span>
+                  <span>50px</span>
+                  <span>100px</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Opacity', language as Locale)}: {markerOpacity}%</label>
+                <input
+                  type="range"
+                  min="1"
+                  max="100"
+                  value={markerOpacity}
+                  onChange={(e) => setMarkerOpacity(Number(e.target.value))}
+                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                />
+                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                  <span>1%</span>
+                  <span>50%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Eraser Settings (shown when eraser is selected) */}
+          {selectedTool === 'eraser' && (
+            <div className="space-y-3 mt-3 p-3 bg-slate-900 rounded-lg">
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Size', language as Locale)}: {markerThickness}px</label>
+                <input
+                  type="range"
+                  min="1"
+                  max="100"
+                  value={markerThickness}
+                  onChange={(e) => {
+                    const newThickness = Number(e.target.value);
+                    setMarkerThickness(newThickness);
+                    // Force immediate sync for cursor update
+                    window.dispatchEvent(new CustomEvent('eraser-settings-changed', {
+                      detail: { thickness: newThickness }
+                    }));
+                  }}
+                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                />
+                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                  <span>1px</span>
+                  <span>50px</span>
+                  <span>100px</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Zoom Settings (shown when zoom is selected) */}
+          {selectedTool === 'zoom' && (
+            <div className="space-y-2 mt-3 p-2 bg-slate-900 rounded">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const newZoom = Math.max(25, zoomLevel - 25);
+                    setZoomLevel(newZoom);
+                    window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
+                      detail: { level: newZoom }
+                    }));
+                  }}
+                  className="p-2 bg-slate-700 rounded hover:bg-slate-600 transition-colors"
+                  title={translate('Zoom Out', language as Locale)}
+                >
+                  <ZoomOut size={16} />
+                </button>
+                <div className="flex-1 text-center">
+                  <span className="text-sm text-white">{zoomLevel}%</span>
+                </div>
+                <button
+                  onClick={() => {
+                    const newZoom = Math.min(400, zoomLevel + 25);
+                    setZoomLevel(newZoom);
+                    window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
+                      detail: { level: newZoom }
+                    }));
+                  }}
+                  className="p-2 bg-slate-700 rounded hover:bg-slate-600 transition-colors"
+                  title={translate('Zoom In', language as Locale)}
+                >
+                  <ZoomIn size={16} />
+                </button>
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Quick Zoom', language as Locale)}</label>
+                <div className="grid grid-cols-4 gap-1">
+                  {[25, 50, 100, 200].map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => {
+                        setZoomLevel(level);
+                        window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
+                          detail: { level }
+                        }));
+                      }}
+                      className={`text-xs py-1 rounded transition-colors ${
+                        zoomLevel === level
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
+                      }`}
+                    >
+                      {level}%
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
         </div>
-
         {/* Token Archetypes Section */}
         <div className="p-3">
           <div className="flex items-center justify-between mb-2">
@@ -450,13 +631,17 @@ export function useDrawingTool(): DrawingTool {
 }
 
 // Hook to get marker settings
-export function useMarkerSettings(): { color: string; thickness: number } {
-  const [settings, setSettings] = useState({ color: '#ff0000', thickness: 3 });
+export function useMarkerSettings(): { color: string; thickness: number; opacity: number } {
+  const [settings, setSettings] = useState({ color: '#ff0000', thickness: 3, opacity: 100 });
 
   useEffect(() => {
     const handleMarkerChange = (e: Event) => {
-      const customEvent = e as CustomEvent<{ color: string; thickness: number }>;
-      setSettings(customEvent.detail);
+      const customEvent = e as CustomEvent<{ color: string; thickness: number; opacity?: number }>;
+      setSettings({
+        color: customEvent.detail.color,
+        thickness: customEvent.detail.thickness,
+        opacity: customEvent.detail.opacity ?? 100
+      });
     };
 
     window.addEventListener('marker-settings-changed', handleMarkerChange);

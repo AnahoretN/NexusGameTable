@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
-import { useDrawingTool } from './ToolsPanel';
+import { useDrawingTool, useMarkerSettings, useEraserSettings } from './ToolsPanel';
 import { ItemType, Stroke, StrokePoint, Drawing } from '../types';
 
 interface DrawingCanvasProps {
@@ -232,6 +232,21 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     return () => window.removeEventListener('marker-settings-changed', handleMarkerSettingsChange);
   }, []);
 
+  // Eraser settings
+  const [eraserThickness, setEraserThickness] = useState(20);
+
+  // Listen for eraser settings changes
+  useEffect(() => {
+    const handleEraserSettingsChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ thickness: number }>;
+      setEraserThickness(customEvent.detail.thickness);
+    };
+
+    window.addEventListener('eraser-settings-changed', handleEraserSettingsChange);
+
+    return () => window.removeEventListener('eraser-settings-changed', handleEraserSettingsChange);
+  }, []);
+
   // Listen for settings sync response
   useEffect(() => {
     const handleSettingsSync = (e: Event) => {
@@ -292,7 +307,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     // Don't draw custom cursor when Shift is pressed (move mode)
     if ((currentTool === 'marker' || currentTool === 'eraser') && cursorPosition && !isOverPanel && !isAltPressed && !isShiftPressed) {
       ctx.beginPath();
-      const cursorRadius = markerThickness / 2;
+      // Use appropriate thickness based on current tool
+      const thickness = currentTool === 'eraser' ? eraserThickness : markerThickness;
+      const cursorRadius = thickness / 2;
       ctx.arc(cursorPosition.x, cursorPosition.y, cursorRadius, 0, Math.PI * 2);
       if (currentTool === 'marker') {
         // Marker: filled circle with semi-transparent color
@@ -328,7 +345,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
       ctx.stroke();
     }
-  }, [drawings, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
+  }, [drawings, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, eraserThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
 
   const getWorldPosition = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -578,7 +595,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       ctx.stroke();
 
       // Partial eraser: remove only touched points from strokes (uses memoized drawings)
-      const eraserRadius = markerThickness / 2;
+      const eraserRadius = eraserThickness / 2;
 
       drawings.forEach(drawing => {
         let strokesModified = false;
