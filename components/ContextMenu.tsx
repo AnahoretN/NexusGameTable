@@ -890,7 +890,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   e.preventDefault();
-                                  console.log('[ContextMenu] Submenu item clicked:', subAction);
                                   onAction(subAction);
                                   onClose();
                                 }}
@@ -988,7 +987,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                     <button
                         type="button"
                         onClick={(e) => {
-                          console.log('[ContextMenu] Button clicked:', item.action, item.label);
                           // Pass actual shift key state for delete action
                           if (item.action === 'delete') {
                             onAction(item.action, e.shiftKey);

@@ -449,22 +449,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const handleSaveCharacterSettings = useCallback((updatedCharacter: CharacterTab) => {
     if (!characterData) return;
 
-    console.log('[CharacterPanel] Saving character settings:', {
-      characterId: updatedCharacter.id,
-      characterName: updatedCharacter.characterName,
-      visibleToPlayerIds: updatedCharacter.visibleToPlayerIds,
-      manageableByPlayerIds: updatedCharacter.manageableByPlayerIds,
-      editableByPlayerIds: updatedCharacter.editableByPlayerIds
-    });
-
     const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === settingsModal?.characterId) {
         return updatedCharacter;
       }
       return char;
     });
-
-    console.log('[CharacterPanel] Updated characters:', updatedCharacters);
 
     dispatch({
       type: 'UPDATE_OBJECT',

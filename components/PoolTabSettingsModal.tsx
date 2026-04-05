@@ -25,13 +25,6 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
 
   // Sync tempTab with tab prop when it changes - use key fields to detect changes
   useEffect(() => {
-    console.log('[PoolTabSettingsModal] Loading tab data:', {
-      tabId: tab.id,
-      tabName: tab.name,
-      visibleToPlayerIds: tab.visibleToPlayerIds,
-      manageableByPlayerIds: tab.manageableByPlayerIds,
-      editableByPlayerIds: tab.editableByPlayerIds
-    });
     setTempTab(tab);
   }, [tab.id, tab.name, tab.visibleToPlayerIds, tab.manageableByPlayerIds, tab.editableByPlayerIds]);
 

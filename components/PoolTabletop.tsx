@@ -971,12 +971,6 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     // Only add cards to deck (not tokens)
     const cardsInSlot = cursorSlotObjects.filter(item => item.type === ItemType.CARD);
     if (cardsInSlot.length > 0) {
-      console.log('[PoolTabletop] Dropping cards to deck:', {
-        cardsCount: cardsInSlot.length,
-        cardIds: cardsInSlot.map(c => c.id),
-        deckId: deckId
-      });
-
       // Add cards to deck in reverse order (last in slot = first to be added = ends up on top)
       // ADD_CARD_TO_TOP_OF_DECK will handle setting inCursorSlot: false and updating position
       // It also prevents duplicate additions by checking if card is already in deck
@@ -1038,13 +1032,6 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
     // Only add cards to pile (not tokens)
     const cardsInSlot = cursorSlotObjects.filter(item => item.type === ItemType.CARD);
     if (cardsInSlot.length > 0) {
-      console.log('[PoolTabletop] Dropping cards to pile:', {
-        cardsCount: cardsInSlot.length,
-        cardIds: cardsInSlot.map(c => c.id),
-        pileId: pileId,
-        deckId: deckId
-      });
-
       // First, restore cards from cursor slot (set inCursorSlot: false)
       // Use _localOnly to prevent visual flicker - card will be updated again by ADD_CARD_TO_TOP_OF_DECK/ADD_CARD_TO_PILE
       cardsInSlot.forEach((item) => {

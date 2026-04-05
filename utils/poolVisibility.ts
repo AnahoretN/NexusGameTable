@@ -21,7 +21,6 @@ export function isCursorOverVisiblePoolPanel(
   // Get the visible content area (data-pool-content) - this is the VISIBLE window
   const visibleContentArea = document.querySelector(`[data-pool-content="${poolPanelId}"]`) as HTMLElement;
   if (!visibleContentArea) {
-    console.warn('[isCursorOverVisiblePoolPanel] Visible content area not found');
     return false;
   }
 
@@ -48,7 +47,6 @@ export function areObjectsFullyVisible(
   // Get the visible content area (data-pool-content) - this is the VISIBLE window
   const visibleContentArea = document.querySelector(`[data-pool-content="${poolPanelId}"]`) as HTMLElement;
   if (!visibleContentArea) {
-    console.warn('[areObjectsFullyVisible] Visible content area not found');
     return false;
   }
 
@@ -90,7 +88,6 @@ export function isObjectFullyVisible(
   // Get the visible content area (data-pool-content) - this is the VISIBLE window
   const visibleContentArea = document.querySelector(`[data-pool-content="${poolPanelId}"]`) as HTMLElement;
   if (!visibleContentArea) {
-    console.warn('[isObjectFullyVisible] Visible content area not found');
     return false;
   }
 

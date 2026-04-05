@@ -45,7 +45,6 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
       const territory = findAvailableTerritory(existingPools);
 
       if (!territory) {
-        console.warn('No available territory for pool panel');
         return;
       }
 
@@ -155,22 +154,12 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   const handleSaveTabSettings = useCallback((updatedTab: PanelTab) => {
     if (!poolData) return;
 
-    console.log('[PoolPanel] Saving tab settings:', {
-      tabId: updatedTab.id,
-      tabName: updatedTab.name,
-      visibleToPlayerIds: updatedTab.visibleToPlayerIds,
-      manageableByPlayerIds: updatedTab.manageableByPlayerIds,
-      editableByPlayerIds: updatedTab.editableByPlayerIds
-    });
-
     const updatedTabs = poolData.tabs.map(tab => {
       if (tab.id === settingsModal?.tabId) {
         return updatedTab;
       }
       return tab;
     });
-
-    console.log('[PoolPanel] Updated tabs:', updatedTabs);
 
     dispatch({
       type: 'UPDATE_OBJECT',
@@ -259,7 +248,6 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
     const territory = findAvailableTerritory(existingPools);
 
     if (!territory) {
-      console.warn('No available territory for new pool tab');
       return;
     }
 

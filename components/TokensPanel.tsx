@@ -32,13 +32,10 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
 
   // Handle archetype click - add to cursor slot
   const handleArchetypeClick = useCallback((archetype: TokenType, clientX: number, clientY: number) => {
-    console.log('[TokensPanel] handleArchetypeClick - Archetype:', archetype.name, 'ID:', archetype.id);
-    console.log('[TokensPanel] Dispatching add-token-to-cursor-slot event');
     // Dispatch event to Tabletop to handle adding token to cursor slot
     window.dispatchEvent(new CustomEvent('add-token-to-cursor-slot', {
       detail: { archetypeId: archetype.id, clientX, clientY }
     }));
-    console.log('[TokensPanel] Event dispatched');
   }, []);
 
   // Track if we're currently dragging a token type to place it
@@ -55,15 +52,11 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
       // Check if clicking on settings button - don't add token in that case
       const settingsButton = target.closest('[data-archetype-settings]') as HTMLElement;
       if (archetypeCard && !settingsButton) {
-        console.log('[TokensPanel] handleMouseDownCapture - Clicking on archetype card');
-        console.log('[TokensPanel] handleMouseDownCapture - archetypeCard.dataset before:', archetypeCard.dataset);
         archetypeCard.dataset.isAddingToken = 'true';
         dragStartTimeRef.current = Date.now();
         dragStartPositionRef.current = { x: e.clientX, y: e.clientY };
         // Store reference to the card that was clicked
         dragArchetypeCardRef.current = archetypeCard;
-        console.log('[TokensPanel] handleMouseDownCapture - archetypeCard.dataset after:', archetypeCard.dataset);
-        console.log('[TokensPanel] handleMouseDownCapture - isAddingToken flag set');
       }
     };
 
@@ -95,11 +88,8 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
     };
 
     const handleMouseUpCapture = (e: MouseEvent) => {
-      console.log('[TokensPanel] handleMouseUpCapture - Starting');
-
       // Check if we were dragging a token
       if (isDraggingTokenRef.current) {
-        console.log('[TokensPanel] handleMouseUpCapture - Was dragging, dropping token');
         // Drop the token at current position
         isDraggingTokenRef.current = false;
         const archetypeId = dragArchetypeIdRef.current;
@@ -121,8 +111,6 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
 
       // Normal click handling (not a drag)
       const archetypeCard = dragArchetypeCardRef.current;
-      console.log('[TokensPanel] handleMouseUpCapture - archetypeCard:', archetypeCard);
-      console.log('[TokensPanel] handleMouseUpCapture - archetypeCard?.dataset:', archetypeCard?.dataset);
 
       if (archetypeCard && archetypeCard.dataset.isAddingToken) {
         const dragDuration = Date.now() - dragStartTimeRef.current;
@@ -133,32 +121,19 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
             )
           : 0;
 
-        console.log('[TokensPanel] handleMouseUpCapture - Quick click check - Duration:', dragDuration, 'Distance:', dragDistance);
-
         // Clear the adding token flag
         delete archetypeCard.dataset.isAddingToken;
 
         // If it was a quick click with minimal movement, treat as click (add to slot without dropping)
         if (dragDuration < 200 && dragDistance < 3) {
-          console.log('[TokensPanel] handleMouseUpCapture - This is a quick click, adding token to slot');
           const archetypeId = archetypeCard.dataset.archetypeId;
           if (archetypeId) {
             const archetype = state.objects[archetypeId] as TokenType;
             if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
-              console.log('[TokensPanel] handleMouseUpCapture - About to call handleArchetypeClick');
-              try {
-                handleArchetypeClick(archetype, e.clientX, e.clientY);
-                console.log('[TokensPanel] handleMouseUpCapture - handleArchetypeClick returned');
-              } catch (error) {
-                console.error('[TokensPanel] handleMouseUpCapture - ERROR in handleArchetypeClick:', error);
-              }
+              handleArchetypeClick(archetype, e.clientX, e.clientY);
             }
           }
-        } else {
-          console.log('[TokensPanel] handleMouseUpCapture - NOT a quick click, ignoring');
         }
-      } else {
-        console.log('[TokensPanel] handleMouseUpCapture - isAddingToken flag not set or no archetypeCard');
       }
 
       // Reset drag tracking

@@ -389,12 +389,6 @@ export const Tabletop: React.FC = () => {
           targetId: cardId,
           addedToSlot: true  // Mark as already added to slot
         };
-        console.log('[add-to-cursor-slot] Set dragThresholdRef for pool/hand panel item:', {
-          cardId,
-          source,
-          fromPoolPanel,
-          location: (item as any).location
-        });
       }
 
       if (cursorSlot.length >= 100) {
@@ -605,7 +599,6 @@ export const Tabletop: React.FC = () => {
         // Remove from processing set immediately
         processingAddToSlotRef.current.delete(cardId);
           } catch (error) {
-            console.error('[Drag Performance] ERROR:', error);
             processingAddToSlotRef.current.delete(cardId);
           }
     };
@@ -632,8 +625,6 @@ export const Tabletop: React.FC = () => {
     });
 
     if (cursorSlotObjects.length > 0) {
-      console.log('[Tabletop] Auto-adding PLAY_TOP_CARD objects to cursor slot:', cursorSlotObjects.map(obj => ({ id: obj.id, type: obj.type, name: obj.name })));
-
       cursorSlotObjects.forEach(obj => {
         // Mark as processing BEFORE dispatching to prevent race conditions
         processingAddToSlotRef.current.add(obj.id);
@@ -653,12 +644,6 @@ export const Tabletop: React.FC = () => {
   // Listen for add-token-to-cursor-slot events from ToolsPanel
   useEffect(() => {
     const handleAddTokenToSlot = (e: Event) => {
-      console.log('[handleAddTokenToSlot] ======================================');
-      console.log('[handleAddTokenToSlot] START - Creating new token from archetype');
-      console.log('[handleAddTokenToSlot] Event type:', e.type);
-      console.log('[handleAddTokenToSlot] Current cursorSlot.length:', cursorSlot.length);
-      console.log('[handleAddTokenToSlot] Current cursorSlotRef.current.length:', cursorSlotRef.current.length);
-
       // Set flag to prevent slot from being dropped during this operation
       isAddingTokenRef.current = true;
 
@@ -670,25 +655,17 @@ export const Tabletop: React.FC = () => {
       const { archetypeId, clientX, clientY } = customEvent.detail;
       const archetype = state.objects[archetypeId] as TokenArchetype;
 
-      console.log('[handleAddTokenToSlot] Archetype ID:', archetypeId, 'Name:', archetype?.name);
-      console.log('[handleAddTokenToSlot] isAddingTokenRef.current BEFORE:', isAddingTokenRef.current);
-
       if (!archetype || archetype.type !== ItemType.TOKEN_TYPE) {
-        console.log('[handleAddTokenToSlot] ERROR: Invalid archetype');
         isAddingTokenRef.current = false;
         return;
       }
       if (cursorSlot.length >= 100) {
-        console.log('[handleAddTokenToSlot] ERROR: Slot full (100 items)');
         isAddingTokenRef.current = false;
         return;
       } // Max 100 items in slot
 
-      console.log('[handleAddTokenToSlot] All checks passed, proceeding to create token');
-
       // ALWAYS create a NEW token copy from archetype (not add existing tokens)
       const newTokenId = generateUUID();
-      console.log('[handleAddTokenToSlot] Creating NEW token with ID:', newTokenId);
 
       const defaultSize = archetype.defaultSize || { width: 50, height: 50 };
       const newToken: TokenType = {
@@ -717,7 +694,6 @@ export const Tabletop: React.FC = () => {
       };
 
       // Add token to objects list
-      console.log('[handleAddTokenToSlot] Dispatching ADD_OBJECT for token:', newTokenId);
       dispatch({ type: 'ADD_OBJECT', payload: newToken });
 
       // Add to cursor slot
@@ -726,15 +702,8 @@ export const Tabletop: React.FC = () => {
       (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
       (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
 
-      console.log('[handleAddTokenToSlot] Adding token to cursorSlot. Current length:', cursorSlot.length, 'New length:', cursorSlot.length + 1);
-      setCursorSlot(prev => {
-        console.log('[handleAddTokenToSlot] setCursorSlot callback - prev.length:', prev.length);
-        const result = [...prev, tokenClone];
-        console.log('[handleAddTokenToSlot] setCursorSlot callback - result.length:', result.length);
-        return result;
-      });
+      setCursorSlot(prev => [...prev, tokenClone]);
       cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
-      console.log('[handleAddTokenToSlot] END - Token added to slot');
 
       // Set cursor position to show tokens immediately (use provided coords or current mouse position)
       if (clientX !== undefined && clientY !== undefined) {
@@ -1818,14 +1787,11 @@ export const Tabletop: React.FC = () => {
 
   // Add object to cursor slot (Ctrl+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'shift' | 'hold' = 'shift', mousePosition?: { x: number; y: number }) => {
-    console.log('[addToCursorSlot] Called - ID:', id, 'Source:', source, 'Current slot length:', cursorSlot.length);
-
     // IMPORTANT: Check if cursor is over a token archetype button - if so, don't add to slot
     // This prevents accidental pickup when clicking token type buttons
     const elementUnderCursor = document.elementFromPoint(mousePosition?.x ?? 0, mousePosition?.y ?? 0);
     const archetypeButton = elementUnderCursor?.closest('[data-archetype-card]');
     if (archetypeButton) {
-      console.log('[addToCursorSlot] BLOCKED - Cursor is over token archetype button, not adding to slot');
       return;
     }
 
@@ -1833,10 +1799,7 @@ export const Tabletop: React.FC = () => {
 
     // Set source based on how the item was added (only if slot was empty before)
     if (cursorSlot.length === 0) {
-      console.log('[addToCursorSlot] Setting cursorSlotSource to:', source);
       setCursorSlotSource(source);
-    } else {
-      console.log('[addToCursorSlot] Slot not empty, keeping existing cursorSlotSource:', cursorSlotSource);
     }
 
     // Check if item is snapped to a grid cell and unhook it - OPTIMIZED
@@ -2132,7 +2095,6 @@ export const Tabletop: React.FC = () => {
 
     if (archetypeCard) {
       // Cursor is over a token button, don't drop
-      console.log('[Tabletop] dropCursorSlot - Preventing drop - cursor over token archetype card');
       return;
     }
 
@@ -2635,7 +2597,6 @@ export const Tabletop: React.FC = () => {
 
       if (archetypeCard) {
         // Cursor is over a token button, don't drop
-        console.log('[Tabletop] Preventing drop - cursor over token archetype card');
         return;
       }
 
@@ -2690,20 +2651,6 @@ export const Tabletop: React.FC = () => {
     // Only add cards to deck (not tokens)
     const cardsInSlot = currentSlot.filter(item => item.type === ItemType.CARD);
     if (cardsInSlot.length > 0) {
-      // Debug logging to help diagnose the issue
-      console.log('[dropToDeck] Attempting to add cards to deck:', {
-        cardsCount: cardsInSlot.length,
-        cardIds: cardsInSlot.map(c => c.id),
-        deckId: deckId,
-        cursorSlotSource,
-        cardsDetails: cardsInSlot.map(c => ({
-          id: c.id,
-          location: (c as any).location,
-          deckId: (c as any).deckId,
-          inCursorSlot: (c as any).inCursorSlot,
-          cursorSlotSourcePanel: (c as any).cursorSlotSourcePanel
-        }))
-      });
       // First, restore cards from cursor slot (set inCursorSlot: false)
       // ADD_CARD_TO_TOP_OF_DECK will update their position to deck position
       cardsInSlot.forEach((item) => {
@@ -3000,7 +2947,6 @@ export const Tabletop: React.FC = () => {
       }
 
       if (tableContextMenuElement || poolContextMenuElement || submenuElement || searchDeckModalElement || topDeckModalElement) {
-        console.log('[Tabletop] Click inside protected element, ignoring global click');
         return;
       }
 
@@ -3037,7 +2983,6 @@ export const Tabletop: React.FC = () => {
               const cardSettings = getCardSettings(obj as CardType);
               // If this card has click actions configured, don't intercept the mousedown
               if (cardSettings.singleClickAction || cardSettings.doubleClickAction) {
-                console.log('[handleGlobalClick] Card has click actions, letting click pass through');
                 return; // Let the card's click handlers work
               }
             }
@@ -3046,7 +2991,6 @@ export const Tabletop: React.FC = () => {
               const deck = obj as DeckType;
               // If this deck has click actions configured, don't intercept the mousedown
               if (deck.singleClickAction || deck.doubleClickAction) {
-                console.log('[handleGlobalClick] Deck has click actions, letting click pass through');
                 return; // Let the deck's click handlers work
               }
             }
@@ -3060,39 +3004,32 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      console.log('[handleGlobalClick] START - Slot has items:', cursorSlotRef.current.length, 'Target:', target);
-
       // Check if clicking on an archetype card (token type in ToolsPanel or MainMenu)
       const archetypeCard = target.closest('[data-archetype-card]');
       if (archetypeCard) {
-        console.log('[handleGlobalClick] BLOCKED - Clicking on archetype card, not dropping');
         return; // Don't drop cursor slot when clicking on archetype cards
       }
 
       // Check if Ctrl/Meta is pressed
       if (e.ctrlKey || e.metaKey) {
-        console.log('[handleGlobalClick] BLOCKED - Ctrl/Meta pressed');
         return;
       }
 
       // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
       const toolsPanel = target.closest('[data-tools-panel]');
       if (toolsPanel) {
-        console.log('[handleGlobalClick] BLOCKED - Clicking on ToolsPanel');
         return;
       }
 
       // Check if clicking on TokensPanel - don't drop, let the panel handle adding more tokens
       const tokensPanel = target.closest('[data-tokens-panel]');
       if (tokensPanel) {
-        console.log('[handleGlobalClick] BLOCKED - Clicking on TokensPanel');
         return;
       }
 
       // Check if clicking on main menu - don't drop, let it handle adding tokens
       const mainMenu = target.closest('[data-main-menu="true"]');
       if (mainMenu) {
-        console.log('[handleGlobalClick] BLOCKED - Clicking on main menu');
         return;
       }
 
@@ -3380,7 +3317,6 @@ export const Tabletop: React.FC = () => {
       const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
       const topDeckModalElement = target.closest('[data-modal="top-deck"]');
       if (tableContextMenuElement || poolContextMenuElement || submenuElement || searchDeckModalElement || topDeckModalElement) {
-        console.log('[Tabletop] Mouseup inside protected element, ignoring global mouseup');
         return;
       }
 
@@ -3998,19 +3934,6 @@ export const Tabletop: React.FC = () => {
         // BOARD objects should always be treated as pinned for drag purposes
         const isBoard = item.type === ItemType.BOARD;
 
-        console.log('[DRAG START] Object:', {
-          id: item.id,
-          type: item.type,
-          isPinned,
-          isBoard,
-          itemX: item.x,
-          itemY: item.y,
-          clientX: e.clientX,
-          clientY: e.clientY,
-          scrollX: state.viewTransform.scroll.x,
-          scrollY: state.viewTransform.scroll.y
-        });
-
         // Calculate the offset from cursor to object's position
         // For pinned objects, use screen coordinates (like UI objects)
         // For unpinned objects, use world coordinates with zoom and offset
@@ -4022,13 +3945,11 @@ export const Tabletop: React.FC = () => {
           // item.x for pinned objects is already the screen coordinate
           offsetX = e.clientX - item.x;
           offsetY = e.clientY - item.y;
-          console.log('[DRAG START] Using screen coordinates, offset:', { offsetX, offsetY });
         } else if (isBoard) {
           // Boards: use screen coordinates (not world coordinates) for consistent positioning
           // item.x for boards is stored as screen coordinate
           offsetX = e.clientX - item.x;
           offsetY = e.clientY - item.y;
-          console.log('[DRAG START] Board using screen coordinates, offset:', { offsetX, offsetY, itemX: item.x, itemY: item.y, clientX: e.clientX, clientY: e.clientY });
         } else {
           // Unpinned objects: use world coordinates
           // Convert viewport coordinates to world coordinates
@@ -4125,7 +4046,6 @@ export const Tabletop: React.FC = () => {
             const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
             const archetypeButton = elementUnderCursor?.closest('[data-archetype-card]');
             if (archetypeButton) {
-              console.log('[handleMouseMove] BLOCKED - Cursor is over token archetype button, not picking up item');
               return; // Don't pickup when clicking on token type buttons
             }
 
@@ -4219,7 +4139,6 @@ export const Tabletop: React.FC = () => {
 
       // Additional safety check: prevent board dragging
       if (draggingObj.type === ItemType.BOARD) {
-        console.log('[DRAG MOVE] Blocked - board dragging is disabled');
         return;
       }
 
@@ -4230,19 +4149,6 @@ export const Tabletop: React.FC = () => {
       if (draggingObj.type === ItemType.PANEL || draggingObj.type === ItemType.WINDOW || isPinned || isBoard) {
         const targetX = e.clientX - (dragOffsetRef.current?.x || 0);
         const targetY = e.clientY - (dragOffsetRef.current?.y || 0);
-
-        if (isBoard) {
-          console.log('[DRAG MOVE] BOARD object:', {
-            id: draggingObj.id,
-            clientX: e.clientX,
-            clientY: e.clientY,
-            dragOffset: dragOffsetRef.current,
-            targetX,
-            targetY,
-            currentObjX: draggingObj.x,
-            currentObjY: draggingObj.y
-          });
-        }
 
         dispatch({
           type: 'MOVE_OBJECT',
@@ -4925,7 +4831,6 @@ export const Tabletop: React.FC = () => {
       const searchDeckModalElement = target.closest('[data-modal="search-deck"]');
       const topDeckModalElement = target.closest('[data-modal="top-deck"]');
       if (tableContextMenuElement || poolContextMenuElement || submenuElement || searchDeckModalElement || topDeckModalElement) {
-        console.log('[Tabletop] Mouseup inside protected element, ignoring drag handler');
         return;
       }
 
@@ -5001,7 +4906,6 @@ export const Tabletop: React.FC = () => {
   }, [currentTool]);
 
   const executeMenuAction = (action: string, shiftKey?: boolean) => {
-    console.log('[executeMenuAction] Action received:', action);
     if (!contextMenu) return;
 
     // Always get fresh object from state to ensure we have latest data
@@ -5025,11 +4929,7 @@ export const Tabletop: React.FC = () => {
 
     const isSpecialAction = specialActions.some(specialAction => action.startsWith(specialAction));
 
-    console.log('[executeMenuAction] isSpecialAction:', isSpecialAction, 'for action:', action);
-
     if (isSpecialAction) {
-      console.log('[executeMenuAction] Calling executeContextMenuAction with:', { action, objectType: freshObject.type, objectId: freshObject.id });
-      console.log('[executeMenuAction] executeContextMenuAction function:', typeof executeContextMenuAction);
       try {
         executeContextMenuAction(action, {
           object: freshObject,
@@ -5048,12 +4948,10 @@ export const Tabletop: React.FC = () => {
           isGM,
           isPoolPanel: false
         });
-        console.log('[executeMenuAction] executeContextMenuAction completed successfully');
       } catch (error) {
-        console.error('[executeMenuAction] executeContextMenuAction ERROR:', error);
+        // Error handling
       }
       wasHandled = true;
-      console.log('[executeMenuAction] executeContextMenuAction returned, wasHandled:', wasHandled);
       // Close menu after executing special action (except for modals)
       if (setContextMenu && action !== 'configure' && action !== 'delete') {
         setContextMenu(null);
