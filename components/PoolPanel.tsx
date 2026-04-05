@@ -136,6 +136,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
     tabId: string;
     tab: PanelTab;
   } | null>(null);
+  const [tempSettingsTab, setTempSettingsTab] = useState<PanelTab | null>(null);
 
   // Handler: Open tab settings
   const handleOpenTabSettings = useCallback((tabId: string, e: React.MouseEvent) => {
@@ -154,12 +155,22 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   const handleSaveTabSettings = useCallback((updatedTab: PanelTab) => {
     if (!poolData) return;
 
+    console.log('[PoolPanel] Saving tab settings:', {
+      tabId: updatedTab.id,
+      tabName: updatedTab.name,
+      visibleToPlayerIds: updatedTab.visibleToPlayerIds,
+      manageableByPlayerIds: updatedTab.manageableByPlayerIds,
+      editableByPlayerIds: updatedTab.editableByPlayerIds
+    });
+
     const updatedTabs = poolData.tabs.map(tab => {
       if (tab.id === settingsModal?.tabId) {
         return updatedTab;
       }
       return tab;
     });
+
+    console.log('[PoolPanel] Updated tabs:', updatedTabs);
 
     dispatch({
       type: 'UPDATE_OBJECT',
@@ -171,6 +182,9 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
         }
       }
     });
+
+    // Close the settings modal after saving
+    setSettingsModal(null);
   }, [poolData, settingsModal?.tabId, panel.id, dispatch]);
 
   // Check permissions for active tab
@@ -334,16 +348,25 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
                 {tab.name}
               </span>
               {isGM && poolData.tabs.length > 1 && (
-                <button
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleRemoveTab(tab.id);
                   }}
-                  className="ml-1 text-slate-400 hover:text-red-400 transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      handleRemoveTab(tab.id);
+                    }
+                  }}
+                  className="ml-1 text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
                   title="Remove tab"
                 >
                   <Trash2 size={10} />
-                </button>
+                </div>
               )}
             </button>
           );
@@ -443,6 +466,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
               activePlayerId={state.activePlayerId}
               isGM={isGM}
               onSave={handleSaveTabSettings}
+              onTabChange={setTempSettingsTab}
             />
           </div>
 
@@ -458,10 +482,11 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
               <button
                 onClick={() => {
                   // Save the current settings before closing
-                  if (settingsModal) {
-                    handleSaveTabSettings(settingsModal.tab);
+                  if (tempSettingsTab) {
+                    handleSaveTabSettings(tempSettingsTab);
                   }
                   setSettingsModal(null);
+                  setTempSettingsTab(null);
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
               >

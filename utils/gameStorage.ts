@@ -1,4 +1,4 @@
-import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage } from '../types';
+import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, DiceGroup } from '../types';
 import type { GameState, ViewTransform } from '../store/GameContext';
 import { SCROLLBAR_WIDTH } from '../constants';
 import { logger } from './logger';
@@ -10,7 +10,7 @@ import {
 import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache, clearImageCacheIDB } from './imageCache';
 
 const STORAGE_KEY = 'nexus-game-state';
-const STORAGE_VERSION = 7; // Version with image path storage (no actual image data)
+const STORAGE_VERSION = 8; // Version with new objects and settings (diceGroups, access control, etc.)
 
 // In-memory cache for IDB images to avoid repeated reads
 let cachedIDBCache: ImageCache | null = null;
@@ -151,6 +151,12 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         hyperscaleLayers: state.hyperscaleLayers,
         // Save selected hyperscale layer IDs
         selectedHyperscaleLayerIds: state.selectedHyperscaleLayerIds,
+        // Save dice groups (NEW in version 8)
+        diceGroups: state.diceGroups || [],
+        // Save connection lock state (NEW in version 8)
+        connectionsLocked: state.connectionsLocked || false,
+        // Save last modified player info (NEW in version 8)
+        lastModifiedBy: state.lastModifiedBy || 'gm',
       }
     };
 
@@ -261,10 +267,29 @@ export const loadGameState = (
       return migrateToVersion6(adaptedState);
     }
 
+    // Version 7 migration - add new fields (diceGroups, connectionsLocked, lastModifiedBy, etc.)
+    if (parsed.version === 7) {
+      const data: StoredGameState = parsed;
+      // Check if state is too old (more than 7 days)
+      const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      if (data.timestamp < weekAgo) {
+        clearGameState();
+        return null;
+      }
+      const shouldAdapt = !isGuest;
+      const adaptedState = shouldAdapt
+        ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
+        : data.state;
+
+      // Migrate to version 8 by adding new fields
+      return migrateToVersion8(adaptedState);
+    }
+
     const data: StoredGameState = parsed;
 
     // Check version
     if (data.version !== STORAGE_VERSION) {
+      logger.warn(`[LOAD] Unsupported save version: ${data.version} (current: ${STORAGE_VERSION})`);
       clearGameState();
       return null;
     }
@@ -322,6 +347,128 @@ function migrateVersion3(parsed: any): Partial<GameState> | null {
     return parsed.state;
   }
   return parsed;
+}
+
+/**
+ * Migrate from version 7 to version 8 (add diceGroups, connectionsLocked, lastModifiedBy, etc.)
+ */
+function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
+  const migrated = { ...state };
+
+  // Add diceGroups if missing (NEW in version 8)
+  if (!migrated.diceGroups) {
+    migrated.diceGroups = [];
+  }
+
+  // Add connectionsLocked if missing (NEW in version 8)
+  if (migrated.connectionsLocked === undefined) {
+    migrated.connectionsLocked = false;
+  }
+
+  // Add lastModifiedBy if missing (NEW in version 8)
+  if (!migrated.lastModifiedBy) {
+    migrated.lastModifiedBy = 'gm';
+  }
+
+  // Ensure all hyperscale layers have zoomEnabled field
+  if (migrated.hyperscaleLayers) {
+    migrated.hyperscaleLayers = migrated.hyperscaleLayers.map(layer => ({
+      ...layer,
+      zoomEnabled: layer.zoomEnabled ?? (layer.id !== 'interface')
+    }));
+  }
+
+  // Add 'drawings' layer to hyperscale layers if missing (NEW in version 8)
+  const hasDrawingsLayer = migrated.hyperscaleLayers?.some(layer => layer.id === 'drawings');
+  if (!hasDrawingsLayer && migrated.hyperscaleLayers) {
+    migrated.hyperscaleLayers.push({
+      id: 'drawings',
+      name: 'Drawings',
+      minZIndex: 6001,
+      maxZIndex: 7000,
+      color: '#ec4899',
+      playerCanSelect: true,
+      playerCanView: true,
+      individualPosition: true,
+      individualObjects: false,
+      zoomEnabled: true,
+      order: 3
+    });
+
+    // Update selected layer IDs to include 'drawings'
+    if (migrated.selectedHyperscaleLayerIds) {
+      if (!migrated.selectedHyperscaleLayerIds.includes('drawings')) {
+        migrated.selectedHyperscaleLayerIds = [...migrated.selectedHyperscaleLayerIds, 'drawings'];
+      }
+    }
+  }
+
+  // Migrate players: add hand access permissions if missing (NEW in version 8)
+  if (migrated.players) {
+    migrated.players = migrated.players.map(player => ({
+      ...player,
+      handVisibleToPlayerIds: player.handVisibleToPlayerIds || [],
+      handManageableByPlayerIds: player.handManageableByPlayerIds || []
+    }));
+  }
+
+  // Migrate objects: ensure access control fields exist (NEW in version 8)
+  if (migrated.objects) {
+    const migratedObjects: Record<string, TableObject> = {};
+    Object.entries(migrated.objects).forEach(([id, obj]) => {
+      const migratedObj = { ...obj };
+
+      // Ensure panels have proper access control
+      if (obj.type === 'PANEL') {
+        const panel = obj as any;
+
+        // Ensure poolData has proper access control for tabs
+        if (panel.poolData?.tabs) {
+          panel.poolData.tabs = panel.poolData.tabs.map((tab: any) => ({
+            ...tab,
+            visibleToPlayerIds: tab.visibleToPlayerIds || [],
+            manageableByPlayerIds: tab.manageableByPlayerIds || [],
+            editableByPlayerIds: tab.editableByPlayerIds || []
+          }));
+        }
+
+        // Ensure characterData has proper access control for characters
+        if (panel.characterData?.characters) {
+          panel.characterData.characters = panel.characterData.characters.map((character: any) => ({
+            ...character,
+            visibleToPlayerIds: character.visibleToPlayerIds || [],
+            manageableByPlayerIds: character.manageableByPlayerIds || [],
+            editableByPlayerIds: character.editableByPlayerIds || []
+          }));
+        }
+      }
+
+      // Ensure dice objects have diceGroupId field (for linking to groups)
+      if (obj.type === 'DICE_OBJECT') {
+        const dice = obj as any;
+        if (dice.diceGroupId === undefined) {
+          migratedObj.diceGroupId = null;
+        }
+        if (dice.fromPoolPanel === undefined) {
+          migratedObj.fromPoolPanel = null;
+        }
+      }
+
+      migratedObjects[id] = migratedObj;
+    });
+
+    migrated.objects = migratedObjects;
+  }
+
+  logger.log('[MIGRATION] Migrated from version 7 to version 8:');
+  logger.log('  - Added diceGroups support');
+  logger.log('  - Added connectionsLocked field');
+  logger.log('  - Added lastModifiedBy field');
+  logger.log('  - Added drawings hyperscale layer');
+  logger.log('  - Added hand access permissions for players');
+  logger.log('  - Added access control for panel tabs and characters');
+
+  return migrated;
 }
 
 /**

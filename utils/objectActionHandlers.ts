@@ -108,7 +108,10 @@ export function handlePlayTopCard(
     location: 'CURSOR_SLOT' as any,
     faceUp,
     isHorizontal,
-    isOnTable: false
+    isOnTable: false,
+    // Inherit card dimensions from deck for correct aspect ratio
+    width: deck.cardWidth,
+    height: deck.cardHeight,
   };
 
   // Add to cursor slot BEFORE dispatch

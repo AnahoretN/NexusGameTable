@@ -1091,7 +1091,7 @@ const PanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
       return <TableauPanelWithDragDetection panel={panel} />;
     case PanelType.POOL:
       return <PoolPanelWithDragDetection panel={panel} />;
-    case PanelType.DRAWING_TOOLS:
+    case PanelType.TOOLS:
       return <DrawingToolsPanelWithDragDetection panel={panel} />;
     case PanelType.TOKENS:
       return <TokensPanelWithDragDetection panel={panel} />;

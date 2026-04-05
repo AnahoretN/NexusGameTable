@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { PanelTab, Player } from '../types';
 import { User, Users, X as XIcon } from 'lucide-react';
 
@@ -8,6 +8,7 @@ interface PoolTabSettingsModalProps {
   activePlayerId: string;
   isGM: boolean;
   onSave: (updatedTab: PanelTab) => void;
+  onTabChange?: (updatedTab: PanelTab) => void;
 }
 
 type AccessType = 'visible' | 'manageable' | 'editable';
@@ -17,9 +18,29 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
   players,
   activePlayerId,
   isGM,
-  onSave
+  onSave,
+  onTabChange
 }) => {
   const [tempTab, setTempTab] = useState<PanelTab>(tab);
+
+  // Sync tempTab with tab prop when it changes - use key fields to detect changes
+  useEffect(() => {
+    console.log('[PoolTabSettingsModal] Loading tab data:', {
+      tabId: tab.id,
+      tabName: tab.name,
+      visibleToPlayerIds: tab.visibleToPlayerIds,
+      manageableByPlayerIds: tab.manageableByPlayerIds,
+      editableByPlayerIds: tab.editableByPlayerIds
+    });
+    setTempTab(tab);
+  }, [tab.id, tab.name, tab.visibleToPlayerIds, tab.manageableByPlayerIds, tab.editableByPlayerIds]);
+
+  // Notify parent when tempTab changes (for external save button)
+  useEffect(() => {
+    if (onTabChange && tempTab.id === tab.id) {
+      onTabChange(tempTab);
+    }
+  }, [tempTab, onTabChange, tab.id]);
 
   const handleAddAccess = useCallback((type: AccessType, playerId: string) => {
     setTempTab(prev => {

@@ -430,6 +430,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     characterId: string;
     character: CharacterTab;
   } | null>(null);
+  const [tempSettingsCharacter, setTempSettingsCharacter] = useState<CharacterTab | null>(null);
 
   // Handler: Open character settings
   const handleOpenCharacterSettings = useCallback((characterId: string, e: React.MouseEvent) => {
@@ -448,12 +449,22 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const handleSaveCharacterSettings = useCallback((updatedCharacter: CharacterTab) => {
     if (!characterData) return;
 
+    console.log('[CharacterPanel] Saving character settings:', {
+      characterId: updatedCharacter.id,
+      characterName: updatedCharacter.characterName,
+      visibleToPlayerIds: updatedCharacter.visibleToPlayerIds,
+      manageableByPlayerIds: updatedCharacter.manageableByPlayerIds,
+      editableByPlayerIds: updatedCharacter.editableByPlayerIds
+    });
+
     const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === settingsModal?.characterId) {
         return updatedCharacter;
       }
       return char;
     });
+
+    console.log('[CharacterPanel] Updated characters:', updatedCharacters);
 
     dispatch({
       type: 'UPDATE_OBJECT',
@@ -465,6 +476,9 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
     });
+
+    // Close the settings modal after saving
+    setSettingsModal(null);
   }, [characterData, settingsModal?.characterId, panel.id, dispatch]);
 
   // Handler: Export character to JSON
@@ -1341,6 +1355,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
               character={settingsModal.character}
               players={state.players}
               onSave={handleSaveCharacterSettings}
+              onCharacterChange={setTempSettingsCharacter}
             />
           </div>
 
@@ -1378,20 +1393,29 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
           <div className="px-4 pb-3 flex-shrink-0">
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setSettingsModal(null)}
+                onClick={() => {
+                  setSettingsModal(null);
+                  setTempSettingsCharacter(null);
+                }}
                 className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 transition-colors"
               >
                 Cancel
               </button>
-              <button
-                onClick={() => {
-                  // Save is handled by CharacterSettingsModal internally
-                  setSettingsModal(null);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-              >
-                Save
-              </button>
+              {settingsModal && (
+                <button
+                  onClick={() => {
+                    // Save character settings when in settings modal
+                    if (tempSettingsCharacter) {
+                      handleSaveCharacterSettings(tempSettingsCharacter);
+                    }
+                    setSettingsModal(null);
+                    setTempSettingsCharacter(null);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                >
+                  Save
+                </button>
+              )}
             </div>
           </div>
         </div>

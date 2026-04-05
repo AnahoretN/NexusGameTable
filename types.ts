@@ -434,7 +434,9 @@ export interface Board extends GameItem {
   gridWidth?: number;  // Width of grid cell (for non-square cells)
   gridHeight?: number; // Height of grid cell (for non-square cells)
   showGrid?: boolean;  // Whether to show the grid visually
-  snapToGrid: boolean;
+  snapToGrid: boolean; // Snap tokens to grid
+  snapCardsToGrid?: boolean; // Snap cards to grid
+  snapRotationToGrid?: boolean; // Apply board rotation to snapped objects
   linkGridSize?: boolean; // Remember proportions button state for grid settings
   fromPoolPanel?: string; // ID of pool panel this board was picked up from (if any)
 
@@ -527,7 +529,7 @@ export enum PanelType {
   TABLEAU = 'TABLEAU',  // Tableau panel for card tableau
   POOL = 'POOL',        // Pool panel for drawing cards
   CHARACTER = 'CHARACTER',  // Character panel for RPG games
-  DRAWING_TOOLS = 'DRAWING_TOOLS',  // Drawing tools panel
+  TOOLS = 'TOOLS',  // Tools panel
   TOKENS = 'TOKENS',  // Tokens panel for quick access
 }
 

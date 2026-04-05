@@ -90,10 +90,15 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
 
   // Memoized mouse down handler to prevent multiple re-renders
   const handleDeckMouseDown = useCallback((e: React.MouseEvent) => {
-    if ((!deck.locked || isGM) && handleMouseDown) {
-      handleMouseDown(e, deck.id);
+    if (!deck.locked || isGM) {
+      // Note: Double click actions are handled in Tabletop's handleMouseUp
+      // We don't block mouseDown here to allow normal dragging to work
+
+      if (handleMouseDown) {
+        handleMouseDown(e, deck.id);
+      }
     }
-  }, [deck.id, deck.locked, isGM]); // УБРАЛИ handleMouseDown из зависимостей!
+  }, [deck.id, deck.locked, isGM, deck.singleClickAction, deck.doubleClickAction, handleMouseDown, executeClickAction]);
 
   // Convert vu to pixels for deck dimensions
   const vuToPx = (vu: number) => vu * pixelsPerVU;

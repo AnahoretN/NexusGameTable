@@ -9,6 +9,7 @@ interface HandTabSettingsModalProps {
   isGM: boolean;
   onSave: (updatedPlayer: Player) => void;
   onScaleChange?: (newScale: number) => void;
+  onPlayerChange?: (updatedPlayer: Player) => void;
 }
 
 type AccessType = 'visible' | 'manageable';
@@ -19,7 +20,8 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
   activePlayerId: _activePlayerId,
   isGM: _isGM,
   onSave: _onSave,
-  onScaleChange
+  onScaleChange,
+  onPlayerChange
 }) => {
   const [tempPlayer, setTempPlayer] = useState<Player>({
     ...player,
@@ -40,6 +42,28 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
       // Ignore localStorage errors
     }
   }, [player.id]);
+
+  // Sync tempPlayer with player prop when it changes
+  useEffect(() => {
+    console.log('[HandTabSettingsModal] Loading player data:', {
+      playerId: player.id,
+      playerName: player.name,
+      handVisibleToPlayerIds: player.handVisibleToPlayerIds,
+      handManageableByPlayerIds: player.handManageableByPlayerIds
+    });
+    setTempPlayer({
+      ...player,
+      handVisibleToPlayerIds: player.handVisibleToPlayerIds || [],
+      handManageableByPlayerIds: player.handManageableByPlayerIds || []
+    });
+  }, [player.id, player.name, player.handVisibleToPlayerIds, player.handManageableByPlayerIds]);
+
+  // Notify parent when tempPlayer changes (for external save button)
+  useEffect(() => {
+    if (onPlayerChange && tempPlayer.id === player.id) {
+      onPlayerChange(tempPlayer);
+    }
+  }, [tempPlayer, onPlayerChange, player.id]);
 
   const handleAddAccess = useCallback((type: AccessType, playerId: string) => {
     setTempPlayer(prev => {
