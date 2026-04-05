@@ -66,6 +66,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 y: panel.y,
                 width: panel.width,
                 height: panel.height,
+                zIndex: panel.zIndex,
                 minimized: panel.minimized,
                 isPinnedToViewport: panel.isPinnedToViewport,
                 pinnedScreenPosition: panel.pinnedScreenPosition,
@@ -554,6 +555,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const localOnlyProps = [
           'x', 'y',                    // Position is local
           'width', 'height',           // Size is local
+          'zIndex',                   // Layer position is local
           'minimized',                 // Minimized state is local
           'isPinnedToViewport',        // Pinning is local
           'pinnedScreenPosition',      // Pinned position is local
@@ -4752,6 +4754,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     }
     case 'APPLY_PLAYER_PANEL_SETTINGS': {
       // Apply individual panel settings directly to panels (used when guest receives their settings from host)
+      // This bypasses the regular UPDATE_OBJECT zIndex clamping to preserve individual layer positions
       const { settings } = action.payload;
 
       // Update panels with individual settings
