@@ -397,7 +397,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
 
             // Check if actually leaving the panel (not just moving to scrollbar)
             const currentPanel = (e.currentTarget as HTMLElement);
-            const isLeavingPanel = !currentPanel.contains(relatedTarget);
+            const isLeavingPanel = !relatedTarget || !currentPanel.contains(relatedTarget);
 
             if (isLeavingPanel) {
               setIsPanelHovered(false);
