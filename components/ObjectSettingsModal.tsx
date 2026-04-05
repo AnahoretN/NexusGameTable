@@ -251,6 +251,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     cardWidth?: number;
     cardHeight?: number;
     cardNamePosition?: CardNamePosition;
+    rotationStep?: number;
     searchFaceUp?: boolean;
     playTopFaceUp?: boolean;
     searchWindowVisibility?: SearchWindowVisibility;
@@ -270,6 +271,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         cardWidth: deck.cardWidth,
         cardHeight: deck.cardHeight,
         cardNamePosition: deck.cardNamePosition,
+        rotationStep: deck.rotationStep ?? 45,
         searchFaceUp: deck.searchFaceUp ?? true,
         playTopFaceUp: deck.playTopFaceUp ?? true,
         searchWindowVisibility: deck.searchWindowVisibility,
@@ -314,6 +316,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         cardWidth: deckObj.cardWidth,
         cardHeight: deckObj.cardHeight,
         cardNamePosition: deckObj.cardNamePosition,
+        rotationStep: deckObj.rotationStep ?? 45,
         searchFaceUp: deckObj.searchFaceUp ?? true,
         playTopFaceUp: deckObj.playTopFaceUp ?? true,
       });
@@ -529,6 +532,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       (toSave as Deck).cardWidth = cardSettings.cardWidth;
       (toSave as Deck).cardHeight = cardSettings.cardHeight;
       (toSave as Deck).cardNamePosition = cardSettings.cardNamePosition;
+      (toSave as Deck).rotationStep = cardSettings.rotationStep;
       (toSave as Deck).searchFaceUp = cardSettings.searchFaceUp;
       (toSave as Deck).playTopFaceUp = cardSettings.playTopFaceUp;
       (toSave as Deck).searchWindowVisibility = cardSettings.searchWindowVisibility;
@@ -985,6 +989,25 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     </button>
                   </div>
                 </div>
+
+                {/* Rotation Step Settings - for objects that can be rotated */}
+                {(isDeck || isCard || isToken || isBoard || isDice || isCounter || isNexusCell || isArchetype) && (
+                  <div className="pt-2">
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Rotation Step (°)', language as Locale)}</label>
+                    <select
+                      value={(data as any).rotationStep ?? 45}
+                      onChange={(e) => update('rotationStep', Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      <option value={15}>15°</option>
+                      <option value={30}>30°</option>
+                      <option value={45}>45°</option>
+                      <option value={60}>60°</option>
+                      <option value={90}>90°</option>
+                      <option value={180}>180°</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* Counter Settings */}
@@ -2428,18 +2451,35 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </div>
                 </div>
 
-                {/* Card Name Position */}
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Show Card Name', language as Locale)}</label>
-                  <select
-                    value={cardSettings.cardNamePosition ?? 'bottom'}
-                    onChange={(e) => updateCardSettings('cardNamePosition', e.target.value as CardNamePosition)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
-                  >
-                    <option value="bottom">{translate('Bottom', language as Locale)}</option>
-                    <option value="top">{translate('Top', language as Locale)}</option>
-                    <option value="none">{translate('None', language as Locale)}</option>
-                  </select>
+                {/* Card Name Position and Rotation Step */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Show Card Name', language as Locale)}</label>
+                    <select
+                      value={cardSettings.cardNamePosition ?? 'bottom'}
+                      onChange={(e) => updateCardSettings('cardNamePosition', e.target.value as CardNamePosition)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      <option value="bottom">{translate('Bottom', language as Locale)}</option>
+                      <option value="top">{translate('Top', language as Locale)}</option>
+                      <option value="none">{translate('None', language as Locale)}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Rotation Step (°)', language as Locale)}</label>
+                    <select
+                      value={cardSettings.rotationStep ?? 45}
+                      onChange={(e) => updateCardSettings('rotationStep', Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      <option value={15}>15°</option>
+                      <option value={30}>30°</option>
+                      <option value={45}>45°</option>
+                      <option value={60}>60°</option>
+                      <option value={90}>90°</option>
+                      <option value={180}>180°</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Card Tooltip Image */}
