@@ -2522,24 +2522,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // If card exists in state, use it; otherwise it might be coming from cursor slot
         // and we need to handle it differently (it will be added back to objects)
         if (!card) {
-          console.warn('[ADD_CARD_TO_TOP_OF_DECK] Card not found in state:', action.payload.cardId);
           return state;
         }
 
         // Prevent duplicate additions - if card is already in this deck, skip
         if (deck.cardIds.includes(card.id)) {
-          console.log('[ADD_CARD_TO_TOP_OF_DECK] Card already in deck, skipping:', card.id);
           return state;
         }
-
-        // Debug logging
-        console.log('[ADD_CARD_TO_TOP_OF_DECK] Adding card to deck:', {
-          cardId: card.id,
-          deckId: deck.id,
-          cardLocation: card.location,
-          cardDeckId: card.deckId,
-          cardInCursorSlot: (card as any).inCursorSlot
-        });
 
         // Capture state for undo before making changes
         let fromDeckId: string | undefined = card.deckId;
