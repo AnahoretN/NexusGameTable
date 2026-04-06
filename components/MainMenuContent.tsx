@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
+import { findGM, isGM } from '../utils/playerUtils';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package } from 'lucide-react';
 import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
@@ -1035,12 +1036,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               {state.players
                 .map(p => {
                   const isCurrentPlayer = p.id === state.activePlayerId;
-                  const isGMPlayer = p.id === 'gm-player';
-                  const isGameMaster = p.id === 'gm';
-                  const isGMView = state.activePlayerId === 'gm';
+                  const gameMaster = findGM(state.players);
+                  const isGameMaster = p.id === gameMaster?.id;
+                  const currentPlayerObj = state.players.find(pl => pl.id === state.activePlayerId);
+                  const isGMView = isGM(currentPlayerObj);
 
                   // Check if current user is the host (can switch between GM and GM Player modes)
-                  const isHostUser = state.activePlayerId === 'gm' || state.activePlayerId === 'gm-player';
+                  // Host is defined as the user who is currently using the GM account
+                  const isHostUser = isGMView;
 
                   // Determine which buttons to show
                   let showSwitchButton = false;
@@ -1048,7 +1051,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
                   if (isHostUser) {
                     // Host can switch between GM and GM Player modes
-                    if (isGameMaster || isGMPlayer) {
+                    if (isGameMaster) {
                       showSwitchButton = true;
                     } else {
                       // Other players - Host can rename them

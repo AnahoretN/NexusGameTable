@@ -352,33 +352,37 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             pixelsPerVU: calculatePixelsPerVU(window.innerWidth, window.innerHeight)
         };
 
-        // CRITICAL: Merge players from pack with current players to preserve GM status
-        // Pack may not have the same players, so we need to preserve current players
-        const packPlayers = action.payload.players || [];
-        const mergedPlayers = [...state.players];
+        // CRITICAL: Merge players from save with current players
+        // Keep current players, update their data from save if they exist there
+        // Ignore players from save that don't exist in current session
+        const savePlayers = action.payload.players || [];
+        const mergedPlayers = [...state.players]; // Start with current players
 
-        // Add players from pack that don't exist in current state
-        packPlayers.forEach(packPlayer => {
-            const existingIndex = mergedPlayers.findIndex(p => p.id === packPlayer.id);
-            if (existingIndex === -1) {
-                // Player doesn't exist - add from pack
-                mergedPlayers.push({
-                    ...packPlayer,
-                    handCardOrder: packPlayer.handCardOrder || undefined
-                });
-            } else {
-                // Player exists - update handCardOrder only (preserve other properties like isGM)
-                if (packPlayer.handCardOrder) {
-                    mergedPlayers[existingIndex] = {
-                        ...mergedPlayers[existingIndex],
-                        handCardOrder: packPlayer.handCardOrder
-                    };
-                }
+        // Update current players with data from save (if they exist in save)
+        mergedPlayers.forEach((currentPlayer, index) => {
+            const savePlayer = savePlayers.find(p => p.id === currentPlayer.id);
+            if (savePlayer) {
+                // Player exists in both - update handCardOrder from save
+                mergedPlayers[index] = {
+                    ...currentPlayer,
+                    handCardOrder: savePlayer.handCardOrder || currentPlayer.handCardOrder
+                };
             }
         });
 
         // Ensure diceRolls array exists
         const diceRolls = action.payload.diceRolls || [];
+
+        // CRITICAL: Ensure at least one GM exists after loading
+        // If no GM in merged players, make the first player GM
+        const hasGM = mergedPlayers.some(p => p.isGM === true);
+        if (!hasGM && mergedPlayers.length > 0) {
+            mergedPlayers[0].isGM = true;
+            console.log('[LOAD_GAME] No GM found in save, made player', mergedPlayers[0].id, 'a GM');
+        }
+
+        // CRITICAL: Ensure players array is never undefined
+        const finalPlayers = mergedPlayers.length > 0 ? mergedPlayers : state.players;
 
         // CRITICAL: Keep current activePlayerId to prevent losing GM status after loading pack
         // This ensures GM stays GM after loading a pack
@@ -387,7 +391,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         return {
             ...action.payload,
             objects: migratedObjects,
-            players: mergedPlayers,
+            players: finalPlayers,
             undo,
             drawings,
             viewTransform,
