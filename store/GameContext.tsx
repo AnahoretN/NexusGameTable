@@ -384,6 +384,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // CRITICAL: Ensure players array is never undefined
         const finalPlayers = mergedPlayers.length > 0 ? mergedPlayers : state.players;
 
+        // CRITICAL: Ensure playerPanelSettings exists (may be missing in old saves)
+        const playerPanelSettings = action.payload.playerPanelSettings || {};
+
         // CRITICAL: Keep current activePlayerId to prevent losing GM status after loading pack
         // This ensures GM stays GM after loading a pack
         const currentActiveId = state.activePlayerId;
@@ -392,6 +395,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...action.payload,
             objects: migratedObjects,
             players: finalPlayers,
+            playerPanelSettings,
             undo,
             drawings,
             viewTransform,

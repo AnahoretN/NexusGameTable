@@ -291,7 +291,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     }));
   };
 
-  const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
+  const currentUserIsGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
 
   // Get main menu panel for bounds and minimized state
   const mainMenuPanel = useMemo(() => {
@@ -785,11 +785,11 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 dispatch={dispatch}
                 deleteCandidateId={deleteCandidateId}
                 setDeleteCandidateId={setDeleteCandidateId}
-                isGM={isGM}
-                canCreateObjects={isGM || state.playerPermissions.createObjects}
-                canConfigureObjects={isGM || state.playerPermissions.configureObjects}
-                canDeleteObjects={isGM || state.playerPermissions.deleteObjects}
-                canHideObjects={isGM || state.playerPermissions.hideObjects}
+                isGM={currentUserIsGM}
+                canCreateObjects={currentUserIsGM || state.playerPermissions.createObjects}
+                canConfigureObjects={currentUserIsGM || state.playerPermissions.configureObjects}
+                canDeleteObjects={currentUserIsGM || state.playerPermissions.deleteObjects}
+                canHideObjects={currentUserIsGM || state.playerPermissions.hideObjects}
                 language={state.language}
               />
             ))}
@@ -987,7 +987,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   <Save size={16} />
                   {translate('Save Session', language as Locale)}
                 </button>
-                {isGM && (
+                {currentUserIsGM && (
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
@@ -996,7 +996,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     {translate('Load Session', language as Locale)}
                   </button>
                 )}
-                {isGM && (
+                {currentUserIsGM && (
                   <button
                     onClick={handleSavePack}
                     className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
@@ -1005,7 +1005,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     {translate('Create Pack', language as Locale)}
                   </button>
                 )}
-                {isGM && (
+                {currentUserIsGM && (
                   <button
                     onClick={handleLoadPack}
                     className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
@@ -1552,7 +1552,7 @@ interface CategorySectionProps {
   dispatch: React.Dispatch<any>;
   deleteCandidateId: string | null;
   setDeleteCandidateId: (id: string | null) => void;
-  isGM: boolean;
+  currentUserIsGM: boolean;
   canCreateObjects: boolean;
   canConfigureObjects: boolean;
   canDeleteObjects: boolean;
@@ -1566,7 +1566,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   dispatch,
   deleteCandidateId,
   setDeleteCandidateId,
-  isGM,
+  currentUserIsGM,
   canCreateObjects,
   canConfigureObjects,
   canDeleteObjects,
