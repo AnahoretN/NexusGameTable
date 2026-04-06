@@ -290,12 +290,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({
       const { cardIds } = customEvent.detail;
       if (!cardIds || cardIds.length === 0) return;
 
-      console.log('[CURSOR_SLOT] Cards dropped from cursor slot:', {
-        cardIds,
-        currentPickingUpCardIds: Array.from(pickingUpCardIds),
-        selectedPlayerId
-      });
-
       // Immediately remove all dropped cards from pickingUpCardIds
       setPickingUpCardIds(prev => {
         const newSet = new Set(prev);
@@ -333,18 +327,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 
       // CRITICAL: Skip if card was just dropped to hand (prevents re-hiding)
       if (recentlyDroppedToHandRef.current.has(cardId)) {
-        console.log('[CURSOR_SLOT] Skipping pickingUpCardIds for recently dropped card:', {
-          cardId,
-          selectedPlayerId
-        });
         return;
       }
-
-      console.log('[CURSOR_SLOT] Adding card to pickingUpCardIds in hand panel:', {
-        cardId,
-        currentPickingUpCardIds: Array.from(pickingUpCardIds),
-        selectedPlayerId
-      });
 
       // Immediately add to pickingUpCardIds to hide card from hand panel
       setPickingUpCardIds(prev => new Set([...prev, cardId]));
@@ -688,21 +672,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 
       // Check if card is already in cursor slot or being picked up
       if (card.inCursorSlot || pickingUpCardIds.has(cardId)) {
-        console.log('[CURSOR_SLOT] Ctrl+click: Card already in cursor slot or being picked up, skipping:', {
-          cardId,
-          inCursorSlot: card.inCursorSlot,
-          inPickingUpCardIds: pickingUpCardIds.has(cardId)
-        });
         return;
       }
-
-      console.log('[CURSOR_SLOT] Ctrl+click: Adding card to cursor slot from hand:', {
-        cardId,
-        cardLocation: card?.location,
-        cardOwnerId: card?.ownerId,
-        mousePosition: { x: e.clientX, y: e.clientY },
-        source: 'ctrl-click'
-      });
 
       // Immediately add to pickingUpCardIds to prevent flicker
       setPickingUpCardIds(prev => new Set([...prev, cardId]));
@@ -728,11 +699,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 
         // Check if card is already in cursor slot or being picked up
         if (card.inCursorSlot || pickingUpCardIds.has(longPressCardRef.current.cardId)) {
-          console.log('[CURSOR_SLOT] Long-press: Card already in cursor slot or being picked up, skipping:', {
-            cardId: longPressCardRef.current.cardId,
-            inCursorSlot: card.inCursorSlot,
-            inPickingUpCardIds: pickingUpCardIds.has(longPressCardRef.current.cardId)
-          });
           longPressCardRef.current = null;
           longPressTimerRef.current = null;
           setDragIndex(null);
@@ -740,14 +706,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({
         }
 
         const cardId = longPressCardRef.current.cardId;
-
-        console.log('[CURSOR_SLOT] Long-press: Adding card to cursor slot from hand:', {
-          cardId,
-          cardLocation: card?.location,
-          cardOwnerId: card?.ownerId,
-          mousePosition: { x: e.clientX, y: e.clientY },
-          source: 'long-press'
-        });
 
         // Immediately add to pickingUpCardIds to prevent flicker
         setPickingUpCardIds(prev => new Set([...prev, cardId]));
@@ -789,27 +747,12 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 
         // Check if card is already in cursor slot or being picked up
         if (card.inCursorSlot || pickingUpCardIds.has(longPressCardRef.current.cardId)) {
-          console.log('[CURSOR_SLOT] Drag: Card already in cursor slot or being picked up, skipping:', {
-            cardId: longPressCardRef.current.cardId,
-            inCursorSlot: card.inCursorSlot,
-            inPickingUpCardIds: pickingUpCardIds.has(longPressCardRef.current.cardId),
-            dragDistance: distance
-          });
           longPressCardRef.current = null;
           setDragIndex(null);
           return;
         }
 
         const cardId = longPressCardRef.current.cardId;
-
-        console.log('[CURSOR_SLOT] Drag: Adding card to cursor slot from hand:', {
-          cardId,
-          cardLocation: card?.location,
-          cardOwnerId: card?.ownerId,
-          mousePosition: { x: e.clientX, y: e.clientY },
-          dragDistance: distance,
-          source: 'drag'
-        });
 
         // Immediately add to pickingUpCardIds to prevent flicker
         setPickingUpCardIds(prev => new Set([...prev, cardId]));
