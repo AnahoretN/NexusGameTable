@@ -6399,7 +6399,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                                className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                                 style={createPositionedStyle(
                                     v2p(obj.x),
                                     v2p(obj.y),
@@ -6452,7 +6452,7 @@ export const Tabletop: React.FC = () => {
                             {/* No letter display needed - SvgTokenShape handles all token rendering */}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -6689,7 +6689,7 @@ export const Tabletop: React.FC = () => {
                                 )}
 
                                 {/* Action buttons */}
-                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -6925,7 +6925,7 @@ export const Tabletop: React.FC = () => {
                                 </svg>
 
                                 {/* Action buttons */}
-                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -7037,7 +7037,7 @@ export const Tabletop: React.FC = () => {
                             )}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -7193,7 +7193,7 @@ export const Tabletop: React.FC = () => {
                                 )}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
