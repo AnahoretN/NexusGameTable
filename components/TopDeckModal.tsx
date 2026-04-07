@@ -63,10 +63,20 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   const getCardDimensions = useCallback((card: Card) => {
     const actualCardWidth = card.width ?? DEFAULT_DECK_WIDTH;
     const actualCardHeight = card.height ?? DEFAULT_DECK_HEIGHT;
-    // Card dimensions now reflect the orientation (no swap needed)
+
+    // Use the card's actual dimensions to determine display size
+    // Scale the card proportionally while maintaining its aspect ratio
     const aspectRatio = actualCardWidth / actualCardHeight;
-    const cardHeight = scaledBaseCardWidth / aspectRatio;
-    return { width: scaledBaseCardWidth, height: cardHeight };
+
+    // Calculate scale factor based on the card's size relative to a standard card
+    // This ensures larger cards appear larger and smaller cards appear smaller
+    const standardCardWidth = DEFAULT_DECK_WIDTH;
+    const scaleFromStandard = scaledBaseCardWidth / standardCardWidth;
+
+    const cardWidth = actualCardWidth * scaleFromStandard;
+    const cardHeight = cardWidth / aspectRatio;
+
+    return { width: cardWidth, height: cardHeight };
   }, [scaledBaseCardWidth]);
 
   // Set initial flip state when modal opens: top card face up, others face down

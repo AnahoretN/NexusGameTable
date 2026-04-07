@@ -85,7 +85,7 @@ export interface CardPile {
   showTopCard?: boolean; // Whether to show the top card face on the pile itself
 }
 
-export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'hide' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard';
+export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'draw' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'shuffleDeck' | 'searchDeck' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'returnAll' | 'hide' | 'topDeck' | 'millToBottom' | 'piles' | 'showTop' | 'hideTop' | 'pin' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAllAndShuffle' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport';
 export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
 // Alternative card back settings (per-card)
@@ -606,6 +606,9 @@ export interface UIObject {
   // Dual pinned positions for panels with dualPosition mode enabled
   expandedPinnedPosition?: { x: number; y: number };
   collapsedPinnedPosition?: { x: number; y: number };
+  // Pixel dimensions when pinned - to prevent size changes when pinning/unpinning
+  pinnedPixelWidth?: number;
+  pinnedPixelHeight?: number;
   // Permission actions (for panels/windows that can have actions)
   allowedActions?: ContextAction[];
   allowedActionsForGM?: ContextAction[];

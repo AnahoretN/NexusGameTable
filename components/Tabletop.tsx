@@ -1694,36 +1694,21 @@ export const Tabletop: React.FC = () => {
         dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } });
         break;
       case 'pin':
-        // Toggle pin to viewport
+        // Toggle pin to viewport - delegate to contextMenuActions for consistency
         {
           const isPinned = (obj as any).isPinnedToViewport || false;
-          if (isPinned) {
-            // Unpin: convert viewport coordinates to world coordinates
-            // For pinned objects, obj.x/obj.y are screen coordinates
-            const worldX = (obj.x - offset.x) / zoom;
-            const worldY = (obj.y - offset.y) / zoom;
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: { id: obj.id, x: worldX, y: worldY, isPinnedToViewport: false }
-            });
-          } else {
-            // Pin: convert world coordinates to viewport coordinates
-            // For unpinned game objects, obj.x/obj.y are world coordinates
-            const screenX = (obj.x * zoom) + offset.x;
-            const screenY = (obj.y * zoom) + offset.y;
-            // For dice and counters, also store pinnedScreenPosition
-            const isDiceOrCounter = obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER;
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: {
-                id: obj.id,
-                x: screenX,
-                y: screenY,
-                isPinnedToViewport: true,
-                ...(isDiceOrCounter && { pinnedScreenPosition: { x: screenX, y: screenY } })
-              }
-            });
-          }
+          const action = isPinned ? 'unpinFromViewport' : 'pinToViewport';
+
+          executeContextMenuAction(action, {
+            object: obj,
+            dispatch,
+            state,
+            activePlayerId: state.activePlayerId,
+            offset: { x: 0, y: 0 }, // Tabletop always uses 0,0 offset
+            isShiftPressed,
+            isGM: state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false,
+            isPoolPanel: false
+          });
         }
         break;
       case 'layerUp':
@@ -2060,7 +2045,12 @@ export const Tabletop: React.FC = () => {
         hyperscaleLayerId: board.hyperscaleLayerId ?? 'boards',
       } as BoardType;
     } else {
-      itemClone = { ...item } as TokenType;
+      itemClone = {
+        ...item,
+        // Preserve pinning state when adding to cursor slot
+        isPinnedToViewport: (item as any).isPinnedToViewport,
+        pinnedScreenPosition: (item as any).pinnedScreenPosition ? { ...(item as any).pinnedScreenPosition } : undefined,
+      } as TokenType;
     }
 
     // Store the index of this item in the cursor slot (used for offset calculation)
@@ -4948,6 +4938,41 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
+      // Ctrl+P for pin/unpin selected object (use 'code' to work with any keyboard layout)
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyP' && draggingId) {
+        e.preventDefault();
+        const obj = state.objects[draggingId];
+        if (obj) {
+          const isPinned = (obj as any).isPinnedToViewport === true;
+
+          if (isPinned) {
+            // Unpin
+            dispatch({
+              type: 'UNPIN_FROM_VIEWPORT',
+              payload: {
+                id: obj.id,
+                worldX: obj.x,
+                worldY: obj.y
+              }
+            });
+          } else {
+            // Pin - calculate screen position
+            const screenX = (obj.x * zoom) + offset.x;
+            const screenY = (obj.y * zoom) + offset.y;
+
+            dispatch({
+              type: 'PIN_TO_VIEWPORT',
+              payload: {
+                id: obj.id,
+                screenX,
+                screenY
+              }
+            });
+          }
+        }
+        return;
+      }
+
       // TEST: Spacebar manually compensates pinned deck position based on scroll
       if (e.key === ' ' && !e.repeat) {
         e.preventDefault();
@@ -5552,30 +5577,42 @@ export const Tabletop: React.FC = () => {
         );
 
         if (pinnedObjects.length > 0) {
-          pinnedObjects.forEach(obj => {
+          // Get current zoom multiplier for calculations
+          const currentZoom = (localSettings.zoom ?? 100) / 100;
+
+          // Batch process pinned objects to reduce dispatch overhead
+          const updates = pinnedObjects.map(obj => {
             const pinnedObj = obj as any;
             const pinnedPosition = pinnedObj.pinnedScreenPosition;
 
             if (pinnedPosition) {
-              // For game objects in transform container: screenX = (obj.x + offset.x) * zoom
-              // We want: screenX = pinnedPosition.x
-              // So: obj.x = pinnedPosition.x / zoom - offset.x
-              const newX = pinnedPosition.x - offset.x;
-              const newY = pinnedPosition.y - offset.y;
+              // For game objects in transform container: screenX = (obj.x * zoom) + offset.x
+              // For pinned objects: screenX = pinnedPosition.x
+              // To keep same visual position: obj.x = (pinnedPosition.x - offset.x) / zoom
+              const newX = (pinnedPosition.x - offset.x) / currentZoom;
+              const newY = (pinnedPosition.y - offset.y) / currentZoom;
 
-              // Only dispatch if position actually changed significantly
-              if (Math.abs(newX - obj.x) > 0.5 || Math.abs(newY - obj.y) > 0.5) {
-                dispatch({
-                  type: 'UPDATE_OBJECT',
-                  payload: {
-                    id: obj.id,
-                    x: newX,
-                    y: newY
-                  }
-                });
+              // Only include if position actually changed significantly
+              if (Math.abs(newX - obj.x) > 0.1 || Math.abs(newY - obj.y) > 0.1) {
+                return {
+                  id: obj.id,
+                  x: newX,
+                  y: newY
+                };
               }
             }
-          });
+            return null;
+          }).filter(Boolean);
+
+          // Batch dispatch all updates at once
+          if (updates.length > 0) {
+            updates.forEach(update => {
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: update
+              });
+            });
+          }
         }
       }}
       onContextMenu={(e) => e.preventDefault()}
@@ -7542,6 +7579,10 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.DICE_OBJECT) {
                     const dice = obj as DiceObject;
                     const diceShape = dice.shape || TokenShape.SQUARE;
+                    // For pinned objects, convert vu to actual pixels
+                    const diceWidth = v2p(dice.width || 60);
+                    const diceHeight = v2p(dice.height || 60);
+
                     return (
                         <div
                             key={obj.id}
@@ -7558,15 +7599,15 @@ export const Tabletop: React.FC = () => {
                                 onDoubleClick={(e) => { e.stopPropagation(); if (currentTool !== 'marker' && currentTool !== 'eraser') rollDiceWithGroup(dice); }}
                                 className={`flex items-center justify-center group select-none ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                                 style={{
-                                    width: v2p(dice.width || 60),
-                                    height: v2p(dice.height || 60),
+                                    width: diceWidth,
+                                    height: diceHeight,
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
                                 <SvgTokenShape
                                     shape={diceShape}
-                                    width={v2p(dice.width || 60)}
-                                    height={v2p(dice.height || 60)}
+                                    width={diceWidth}
+                                    height={diceHeight}
                                     color={obj.color || '#6366f1'}
                                     content={''}
                                     borderColor={(obj as any).borderColor || '#4f46e5'}
@@ -7614,6 +7655,10 @@ export const Tabletop: React.FC = () => {
                 // Render counter
                 if (obj.type === ItemType.COUNTER) {
                     const counter = obj as Counter;
+                    // For pinned objects, convert vu to actual pixels
+                    const counterWidth = v2p(Math.max(obj.width, 100));
+                    const counterHeight = v2p(50);
+
                     return (
                         <div
                             key={obj.id}
@@ -7629,8 +7674,8 @@ export const Tabletop: React.FC = () => {
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 className={`bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${draggingClass}`}
                                 style={{
-                                    width: v2p(Math.max(obj.width, 100)),
-                                    height: v2p(50),
+                                    width: counterWidth,
+                                    height: counterHeight,
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
@@ -7641,6 +7686,76 @@ export const Tabletop: React.FC = () => {
                                   <div className="absolute -top-5 left-0 right-0 text-center text-[12px] truncate px-1" style={{ color: (obj as any).fontColor || '#ffffff' }}>
                                     {obj.name}
                                   </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                }
+
+                // Render other pinned objects (tokens, cards, etc.)
+                if (obj.type === ItemType.TOKEN || obj.type === ItemType.CARD) {
+                    const isToken = obj.type === ItemType.TOKEN;
+                    const token = isToken ? (obj as Token) : null;
+                    const card = !isToken ? (obj as Card) : null;
+
+                    // Get card settings from deck for cards
+                    let cardSettings = { allowedActions: [], allowedActionsForGM: [], actionButtons: [], singleClickAction: undefined, doubleClickAction: undefined };
+                    if (card && card.deckId) {
+                        const deck = state.objects[card.deckId] as DeckType;
+                        if (deck && deck.type === ItemType.DECK) {
+                            cardSettings = {
+                                allowedActions: deck.cardAllowedActions,
+                                allowedActionsForGM: deck.cardAllowedActionsForGM,
+                                actionButtons: deck.cardActionButtons,
+                                singleClickAction: deck.cardSingleClickAction,
+                                doubleClickAction: deck.cardDoubleClickAction,
+                            };
+                        }
+                    }
+
+                    return (
+                        <div
+                            key={obj.id}
+                            className={isPermeable ? '' : 'pointer-events-auto'}
+                            style={{
+                                left: pinnedPosition.x,
+                                top: pinnedPosition.y,
+                                pointerEvents: isPermeable ? 'none' : 'auto',
+                            }}
+                        >
+                            <div
+                                onMouseDown={(e) => handleMouseDown(e, obj.id)}
+                                onContextMenu={(e) => handleContextMenu(e, obj)}
+                                className={`absolute select-none group ${draggingClass}`}
+                                style={{
+                                    transform: `rotate(${obj.rotation}deg)`
+                                }}
+                            >
+                                {(obj as any).isPinnedToViewport && <PinnedIndicator />}
+
+                                {isToken && token && (
+                                    <>
+                                        <SvgTokenShape
+                                            shape={token.shape || TokenShape.SQUARE}
+                                            width={v2p(token.width || 60)}
+                                            height={v2p(token.height || 60)}
+                                            color={token.color || '#6366f1'}
+                                            content={token.content || ''}
+                                            showThickness={true}
+                                            tokenName={(obj as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+                                            fontColor={(obj as any).fontColor || 'white'}
+                                        />
+                                    </>
+                                )}
+
+                                {!isToken && card && (
+                                    <div className="relative">
+                                        <Card
+                                            card={card}
+                                            canFlip={cardSettings.actionButtons?.includes('flip') ?? false}
+                                            onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
+                                        />
+                                    </div>
                                 )}
                             </div>
                         </div>

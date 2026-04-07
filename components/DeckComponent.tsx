@@ -414,7 +414,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
       imageSrc={deck.content}
       scale={deck.tooltipScale}
     >
-      <div style={{ position: 'relative', width: effectiveWidth, height: effectiveHeight, ...style }}>
+      <div data-object-id={deck.id} style={{ position: 'relative', width: effectiveWidth, height: effectiveHeight, ...style }}>
         {/* Render piles */}
       {deck.piles?.filter(p => p.visible).map(pile => {
         const pilePos = getPilePosition(pile);

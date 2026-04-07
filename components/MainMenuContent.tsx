@@ -1042,26 +1042,26 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   const isGMView = isGM(currentPlayerObj);
 
                   // Check if current user is the host (can switch between GM and GM Player modes)
-                  // Host is defined as the user who is currently using the GM account
-                  const isHostUser = isGMView;
+                  // Host is defined as the user who is currently using the GM account (either 'gm' or 'gm-player' mode)
+                  const isHostUser = isGMView || state.activePlayerId === 'gm-player';
 
                   // Determine which buttons to show
                   let showSwitchButton = false;
                   let showRenameButton = false;
 
-                  if (isHostUser) {
+                  // Check if this player block is either Game Master or GM Player
+                  const isGMRelatedPlayer = isGameMaster || (p.id === 'gm-player');
+
+                  if (isHostUser && isGMRelatedPlayer) {
                     // Host can switch between GM and GM Player modes
-                    if (isGameMaster) {
-                      showSwitchButton = true;
-                    } else {
-                      // Other players - Host can rename them
-                      showRenameButton = true;
-                    }
-                  } else {
+                    // Show switch button on both Game Master and GM Player blocks
+                    showSwitchButton = true;
+                  } else if (isHostUser && !isGMRelatedPlayer) {
+                    // Host can rename other players (not GM or GM Player)
+                    showRenameButton = true;
+                  } else if (!isHostUser && isCurrentPlayer) {
                     // Non-host players can only rename themselves
-                    if (isCurrentPlayer) {
-                      showRenameButton = true;
-                    }
+                    showRenameButton = true;
                   }
 
                   return (
@@ -1071,33 +1071,33 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       {p.isGM && <span className="text-xs bg-yellow-600 px-1 rounded text-white">GM</span>}
                       {isCurrentPlayer && <span className="text-xs bg-slate-600 px-1 rounded text-gray-300">{translate('You', language as Locale)}</span>}
 
+                      {/* Rename button */}
+                      {showRenameButton && (
+                        <button
+                          onClick={() => setRenamePlayerId(p.id)}
+                          className="p-1 hover:bg-slate-700 rounded text-gray-400 hover:text-white transition-colors"
+                          title={translate('Edit name', language as Locale)}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
+
                       {/* GM Mode Switch Button - shown for both Game Master and GM Player when current user is host */}
                       {showSwitchButton && (
                         <button
                           onClick={() => {
-                            if (isGMView) {
-                              // Switch to GM Player mode
-                              dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm-player' });
-                            } else {
-                              // Switch back to GM mode
+                            if (isGameMaster) {
+                              // Clicking on Game Master block switches TO GM mode
                               dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm' });
+                            } else {
+                              // Clicking on GM Player block switches TO GM Player mode
+                              dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm-player' });
                             }
                           }}
                           className="ml-auto p-1 bg-purple-600/20 hover:bg-purple-600/40 rounded text-purple-400 hover:text-purple-300 transition-colors"
-                          title={isGMView ? translate('Switch to Player Mode', language as Locale) : translate('Switch to GM Mode', language as Locale)}
+                          title={isGameMaster ? translate('Switch to GM Mode', language as Locale) : translate('Switch to Player Mode', language as Locale)}
                         >
                           <User size={14} />
-                        </button>
-                      )}
-
-                      {/* Rename button - not shown when switch button is visible */}
-                      {showRenameButton && (
-                        <button
-                          onClick={() => setRenamePlayerId(p.id)}
-                          className="ml-auto p-1 hover:bg-slate-700 rounded text-gray-400 hover:text-white transition-colors"
-                          title={translate('Edit name', language as Locale)}
-                        >
-                          <Pencil size={14} />
                         </button>
                       )}
                     </div>

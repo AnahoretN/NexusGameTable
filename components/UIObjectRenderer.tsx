@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
-import { X, Minus, Plus, Eye, EyeOff, Pin, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
+import { X, Minus, Plus, Eye, EyeOff, Lock, Unlock, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
 import { HandPanel } from './HandPanel';
 import { CharacterPanel } from './CharacterPanel';
 import { PoolPanel } from './PoolPanel';
@@ -57,7 +57,7 @@ const SUPPORT_LINKS = [
     name: 'Patreon',
     url: 'https://www.patreon.com/c/AnchoriteComics',
     icon: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764190408/Patreon_logo.svg_ala7gn.png',
-    color: 'bg-red-600'
+    color: 'bg-purple-600'
   }
 ];
 
@@ -86,8 +86,10 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   // Check if this is a main menu panel (must be before useState that uses it)
   const isMainMenu = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.MAIN_MENU;
 
-  // Check if current user is GM
-  const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
+  // Memoize GM check to prevent repeated array searches
+  const isGM = useMemo(() => {
+    return state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
+  }, [state.players, state.activePlayerId]);
 
   // Track if this panel is currently being resized
   const [isResizing, setIsResizing] = useState(false);
@@ -109,9 +111,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   const [showSupportModal, setShowSupportModal] = useState(false);
   const { settings: localSettings, updateEffectSetting } = useLocalSettings();
 
-  // For panels (not windows), use player panel settings instead of local settings
-  const isPanel = uiObject.type === ItemType.PANEL;
-  const panelObject = isPanel ? (uiObject as PanelObject) : null;
+  // Memoize panel check to prevent repeated type checks
+  const isPanel = useMemo(() => uiObject.type === ItemType.PANEL, [uiObject.type]);
+  const panelObject = useMemo(() => isPanel ? (uiObject as PanelObject) : null, [isPanel, uiObject]);
 
   // getLocalEffectiveProps and updateLocalSettings are only needed for windows now
   const {
@@ -125,43 +127,61 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   const currentPlayerId = state.activePlayerId;
   const playerPanelSettings = state.playerPanelSettings[currentPlayerId]?.[uiObject.id];
 
-  // Simple direct computation - no complex dependencies
-  // IMPORTANT: During dragging, always use uiObject.x/y directly, not playerPanelSettings
-  // This prevents panels from jumping to stale positions from playerPanelSettings
-  const effectiveProps = (playerPanelSettings && !isDragging) ? {
-    // Player settings from host (synced across reconnects) - take priority
-    // But NOT during dragging - use current object position during drag
-    x: playerPanelSettings.x !== undefined ? playerPanelSettings.x : uiObject.x,
-    y: playerPanelSettings.y !== undefined ? playerPanelSettings.y : uiObject.y,
-    width: playerPanelSettings.width !== undefined ? playerPanelSettings.width : uiObject.width,
-    height: playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiObject.height,
-    minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,
-    isPinnedToViewport: playerPanelSettings.isPinnedToViewport !== undefined ? playerPanelSettings.isPinnedToViewport : (uiObject as any).isPinnedToViewport || false,
-    // Use panel properties for other settings
-    pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
-    expandedState: (uiObject as any).expandedState,
-    collapsedState: (uiObject as any).collapsedState,
-    expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
-    collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
-  } : {
-    // No player settings OR currently dragging - use panel properties directly
-    x: uiObject.x,
-    y: uiObject.y,
-    width: uiObject.width,
-    height: uiObject.height,
-    minimized: (uiObject as any).minimized || false,
-    isPinnedToViewport: (uiObject as any).isPinnedToViewport || false,
-    pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
-    expandedState: (uiObject as any).expandedState,
-    collapsedState: (uiObject as any).collapsedState,
-    expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
-    collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
-  };
+  // Memoize effectiveProps to prevent unnecessary recalculations
+  const effectiveProps = useMemo(() => {
+    // Simple direct computation - no complex dependencies
+    // IMPORTANT: During dragging, always use uiObject.x/y directly, not playerPanelSettings
+    // This prevents panels from jumping to stale positions from playerPanelSettings
+    return (playerPanelSettings && !isDragging) ? {
+      // Player settings from host (synced across reconnects) - take priority
+      // But NOT during dragging - use current object position during drag
+      x: playerPanelSettings.x !== undefined ? playerPanelSettings.x : uiObject.x,
+      y: playerPanelSettings.y !== undefined ? playerPanelSettings.y : uiObject.y,
+      width: playerPanelSettings.width !== undefined ? playerPanelSettings.width : uiObject.width,
+      height: playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiObject.height,
+      minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,
+      isPinnedToViewport: playerPanelSettings.isPinnedToViewport !== undefined ? playerPanelSettings.isPinnedToViewport : (uiObject as any).isPinnedToViewport || false,
+      // Use panel properties for other settings
+      pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
+      expandedState: (uiObject as any).expandedState,
+      collapsedState: (uiObject as any).collapsedState,
+      expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
+      collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
+    } : {
+      // No player settings OR currently dragging - use panel properties directly
+      x: uiObject.x,
+      y: uiObject.y,
+      width: uiObject.width,
+      height: uiObject.height,
+      minimized: (uiObject as any).minimized || false,
+      isPinnedToViewport: (uiObject as any).isPinnedToViewport || false,
+      pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
+      expandedState: (uiObject as any).expandedState,
+      collapsedState: (uiObject as any).collapsedState,
+      expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
+      collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
+    };
+  }, [
+    playerPanelSettings,
+    isDragging,
+    uiObject.x,
+    uiObject.y,
+    uiObject.width,
+    uiObject.height,
+    uiObject.minimized,
+    uiObject.isPinnedToViewport,
+    uiObject.pinnedScreenPosition,
+    uiObject.expandedState,
+    uiObject.collapsedState,
+    uiObject.expandedPinnedPosition,
+    uiObject.collapsedPinnedPosition,
+  ]);
 
   // Get pixelsPerVU for converting vu to pixels (for pinned panels)
   const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
   const vuToPx = useCallback((vu: number) => vuToPixels(vu ?? 0, pixelsPerVU), [pixelsPerVU]);
 
+  // Memoize minimized check
   const minimized = effectiveProps.minimized;
   const visible = uiObject.visible !== false;
 
@@ -173,17 +193,18 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   if (!visible) return null;
 
-  // Can resize non-main-menu panels when not minimized
-  const canResize = !isMainMenu && !minimized;
+  // Memoize canResize check
+  const canResize = useMemo(() => !isMainMenu && !minimized, [isMainMenu, minimized]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: 'CLOSE_UI_OBJECT', payload: { id: uiObject.id } });
   }, [dispatch, uiObject.id]);
 
-  const isCollapsed = effectiveProps.width === 200 && effectiveProps.height === 32;
+  // Memoize collapse checks
+  const isCollapsed = useMemo(() => effectiveProps.width === 200 && effectiveProps.height === 32, [effectiveProps.width, effectiveProps.height]);
   // For main menu, use minimized flag; for other panels, use size-based check
   const shouldExpand = isMainMenu ? minimized : isCollapsed;
-  const dualPosition = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).dualPosition;
+  const dualPosition = useMemo(() => uiObject.type === ItemType.PANEL && (uiObject as PanelObject).dualPosition, [uiObject]);
 
   const handleToggleCollapse = useCallback((e?: React.MouseEvent) => {
     // Toggle between collapsed (200px wide, title only) and full size
@@ -288,41 +309,13 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     }
   }, [dispatch, uiObject, shouldExpand, dualPosition, isMainMenu, effectiveProps, isPanel, updateLocalSettings]);
 
-  // Toggle pin to viewport - using GameContext pinning system
-  const handleTogglePin = useCallback(() => {
-    // Use effectiveProps to get the actual pinned state (includes playerPanelSettings override)
-    const isPinned = effectiveProps.isPinnedToViewport === true;
-
-    if (isPinned) {
-      // Unpin - convert viewport coordinates to world coordinates
-      // For pinned objects, uiObject.x/y are viewport coordinates (position: fixed)
-      // For unpinned objects, uiObject.x/y need to be world coordinates (position: absolute)
-      // Pinned: left: uiObject.x (viewport)
-      // Unpinned: left: (uiObject.x - offset.x) / zoom
-      // To keep same visual position: worldX = viewportX * zoom + offset.x
-      const worldX = uiObject.x * zoom + offset.x;
-      const worldY = uiObject.y * zoom + offset.y;
-
-      dispatch({
-        type: 'UNPIN_FROM_VIEWPORT',
-        payload: { id: uiObject.id, worldX, worldY }
-      });
-    } else {
-      // Pin - use getBoundingClientRect for accurate screen position
-      const container = containerRef.current;
-      if (container) {
-        const rect = container.getBoundingClientRect();
-        dispatch({
-          type: 'PIN_TO_VIEWPORT',
-          payload: {
-            id: uiObject.id,
-            screenX: rect.left,
-            screenY: rect.top
-          }
-        });
-      }
-    }
-  }, [dispatch, uiObject, zoom, offset]);
+  // Toggle lock for panels/windows
+  const handleToggleLock = useCallback(() => {
+    dispatch({
+      type: 'TOGGLE_LOCK',
+      payload: { id: uiObject.id }
+    });
+  }, [dispatch, uiObject.id]);
 
   const handleHide = useCallback(() => {
     // Hide panel instead of closing it
@@ -362,7 +355,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         y: effectiveProps.y + 50,
       }
     });
-  }, [dispatch, uiObject, state.objects, isHost, state.playerPermissions.configureObjects, effectiveProps, isGM]);
+  }, [dispatch, uiObject.id, uiObject.type, state.objects, isHost, state.playerPermissions.configureObjects, effectiveProps.x, effectiveProps.y, isGM]);
 
   const handleBringToFront = useCallback(() => {
     // Bring to front by setting high z-index
@@ -479,18 +472,38 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
       // Only update store if size actually changed
       if (Math.abs(newWidth - startWidth) > 5 || Math.abs(newHeight - startHeight) > 5) {
-        // Round to hundredths for settings (2 decimal places)
-        const roundedWidth = Math.round(newWidth * 100) / 100;
-        const roundedHeight = Math.round(newHeight * 100) / 100;
+        // For pinned panels, save pixel dimensions directly; for unpinned, save in vu
+        let finalWidth, finalHeight;
+
+        if (uiObject.isPinnedToViewport) {
+          // Pinned panels: save exact pixel dimensions
+          finalWidth = newWidth;
+          finalHeight = newHeight;
+
+          // Also update pinned pixel dimensions
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: uiObject.id,
+              pinnedPixelWidth: finalWidth,
+              pinnedPixelHeight: finalHeight
+            },
+            _localOnly: true
+          });
+        } else {
+          // Unpinned panels: convert to vu and round
+          finalWidth = Math.round((newWidth / pixelsPerVU) * 100) / 100;
+          finalHeight = Math.round((newHeight / pixelsPerVU) * 100) / 100;
+        }
 
         // For panels (except main menu), save to local settings AND update player panel settings
         if (isPanel && !isMainMenu) {
-          updateLocalSettings({ width: roundedWidth, height: roundedHeight });
+          updateLocalSettings({ width: finalWidth, height: finalHeight });
 
           // Update the panel object itself for immediate visual feedback
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: { id: uiObject.id, width: roundedWidth, height: roundedHeight },
+            payload: { id: uiObject.id, width: finalWidth, height: finalHeight },
             _localOnly: true // Size changes are local
           });
 
@@ -501,8 +514,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               playerId: state.activePlayerId,
               panelId: uiObject.id,
               settings: {
-                width: roundedWidth,
-                height: roundedHeight
+                width: finalWidth,
+                height: finalHeight
               }
             }
           });
@@ -510,7 +523,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
           // For main menu and windows, use global state
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: { id: uiObject.id, width: roundedWidth, height: roundedHeight },
+            payload: { id: uiObject.id, width: finalWidth, height: finalHeight },
             _localOnly: true // Size changes are local
           });
 
@@ -521,8 +534,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               playerId: state.activePlayerId,
               panelId: uiObject.id,
               settings: {
-                width: roundedWidth,
-                height: roundedHeight
+                width: finalWidth,
+                height: finalHeight
               }
             }
           });
@@ -584,9 +597,36 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     return obj.pinnedScreenPosition;
   };
 
-  const pinnedPosition = isPinnedMode ? getPinnedPosition() : null;
+  const pinnedPosition = useMemo(() => {
+    return isPinnedMode ? getPinnedPosition() : null;
+  }, [isPinnedMode, uiObject]);
 
-  const containerStyle: React.CSSProperties = {
+  // Memoize width calculation to prevent unnecessary recalculations
+  const containerWidth = useMemo(() => {
+    if (currentSize?.width) return currentSize.width;
+    if (minimized) return undefined; // Will use height calculation
+
+    if (isPinnedMode) {
+      if ((uiObject as any).pinnedPixelWidth) return (uiObject as any).pinnedPixelWidth;
+      if (!isMainMenu) return vuToPx(effectiveProps.width);
+    }
+    return effectiveProps.width;
+  }, [currentSize, minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.width, vuToPx]);
+
+  // Memoize height calculation to prevent unnecessary recalculations
+  const containerHeight = useMemo(() => {
+    if (minimized) return 32;
+    if (currentSize?.height) return currentSize.height;
+
+    if (isPinnedMode) {
+      if ((uiObject as any).pinnedPixelHeight) return (uiObject as any).pinnedPixelHeight;
+      if (!isMainMenu) return vuToPx(effectiveProps.height);
+    }
+    return effectiveProps.height;
+  }, [currentSize, minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.height, vuToPx]);
+
+  // Memoize container style to prevent unnecessary recalculations
+  const containerStyle: React.CSSProperties = useMemo(() => ({
     position: isPinnedMode ? 'fixed' : 'absolute',
     // For pinned mode: use pinnedScreenPosition (actual screen coordinates)
     // For unpinned mode: convert screen coords to world coords: subtract offset, divide by zoom
@@ -596,10 +636,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     top: isPinnedMode
       ? (pinnedPosition?.y ?? effectiveProps.y)
       : (effectiveProps.y - offset.y) / zoom,
-    // For pinned panels, convert vu to pixels; for unpinned, use vu directly (scaled by CSS transform)
-    // Main menu is special: its dimensions are already in pixels, not vu
-    width: currentSize ? currentSize.width : (isPinnedMode ? (isMainMenu ? effectiveProps.width : vuToPx(effectiveProps.width)) : effectiveProps.width),
-    height: minimized ? 32 : (currentSize ? currentSize.height : (isPinnedMode ? (isMainMenu ? effectiveProps.height : vuToPx(effectiveProps.height)) : effectiveProps.height)),
+    // Use memoized dimensions
+    width: containerWidth,
+    height: containerHeight,
     // In pinned mode, no scale transform; in unpinned mode, reverse the scale
     transform: isPinnedMode
       ? `rotate(${uiObject.rotation}deg)`
@@ -611,7 +650,21 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     // Disable native CSS resize - use custom resize handler
     resize: 'none',
     overflow: 'hidden',
-  };
+  }), [
+    isPinnedMode,
+    pinnedPosition,
+    effectiveProps.x,
+    effectiveProps.y,
+    offset.x,
+    offset.y,
+    zoom,
+    containerWidth,
+    containerHeight,
+    uiObject.rotation,
+    uiObject.zIndex,
+    isShiftDragging,
+    isHoveringResizeHandle,
+  ]);
 
   const headerBg = uiObject.type === ItemType.WINDOW
     ? 'bg-purple-800'
@@ -733,32 +786,32 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 >
                   <Settings size={14} className="text-white" />
                 </button>
-                {/* Pin to screen button - GM only */}
+                {/* Lock button - GM only */}
                 {isGM && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleTogglePin();
+                      handleToggleLock();
                     }}
-                    className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
-                    title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
+                    className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.locked ? 'bg-purple-600' : ''}`}
+                    title={uiObject.locked ? 'Unlock' : 'Lock'}
                   >
-                    <Pin size={14} className="text-white" />
+                    {uiObject.locked ? <Unlock size={14} className="text-white" /> : <Lock size={14} className="text-white" />}
                   </button>
                 )}
               </>
             )}
-            {/* Pin button for collapsed state - GM only */}
+            {/* Lock button for collapsed state - GM only */}
             {minimized && isGM && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleTogglePin();
+                  handleToggleLock();
                 }}
-                className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600' : ''}`}
-                title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
+                className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.locked ? 'bg-purple-600' : ''}`}
+                title={uiObject.locked ? 'Unlock' : 'Lock'}
               >
-                <Pin size={14} className="text-white" />
+                {uiObject.locked ? <Unlock size={14} className="text-white" /> : <Lock size={14} className="text-white" />}
               </button>
             )}
             {/* Minimize/Expand button - GM only */}
@@ -832,16 +885,16 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     <Settings size={14} className="text-white" />
                   </button>
                 )}
-                {/* Pin to viewport button */}
+                {/* Lock button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleTogglePin();
+                    handleToggleLock();
                   }}
-                  className={`p-0.5 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600 hover:bg-purple-500' : 'hover:bg-white/20'}`}
-                  title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
+                  className={`p-0.5 rounded transition-colors ${uiObject.locked ? 'bg-purple-600 hover:bg-purple-500' : 'hover:bg-white/20'}`}
+                  title={uiObject.locked ? 'Unlock' : 'Lock'}
                 >
-                  <Pin size={14} className="text-white" />
+                  {uiObject.locked ? <Unlock size={14} className="text-white" /> : <Lock size={14} className="text-white" />}
                 </button>
                 {/* Collapse/Expand button - minimizes and collapses to 200px */}
                 <button
@@ -869,18 +922,18 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 )}
               </>
             ) : (
-              // Windows have pin and close buttons
+              // Windows have lock and close buttons
               <>
-                {/* Pin to viewport button */}
+                {/* Lock button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleTogglePin();
+                    handleToggleLock();
                   }}
-                  className={`p-0.5 rounded transition-colors ${uiObject.isPinnedToViewport ? 'bg-purple-600 hover:bg-purple-500' : 'hover:bg-white/20'}`}
-                  title={uiObject.isPinnedToViewport ? 'Unpin' : 'Pin'}
+                  className={`p-0.5 rounded transition-colors ${uiObject.locked ? 'bg-purple-600 hover:bg-purple-500' : 'hover:bg-white/20'}`}
+                  title={uiObject.locked ? 'Unlock' : 'Lock'}
                 >
-                  <Pin size={14} className="text-white" />
+                  {uiObject.locked ? <Unlock size={14} className="text-white" /> : <Lock size={14} className="text-white" />}
                 </button>
                 {/* Close button */}
                 <button
@@ -888,7 +941,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                     e.stopPropagation();
                     handleClose();
                   }}
-                  className="p-0.5 hover:bg-red-500 rounded transition-colors"
+                  className="p-0.5 hover:bg-purple-500 rounded transition-colors"
                   title="Close"
                 >
                   <X size={14} className="text-white" />
@@ -1167,7 +1220,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                       window.location.reload();
                     }
                   }}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded transition-colors text-sm"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors text-sm"
                 >
                   <Trash2 size={14} />
                   <span>{translate('Clear Cache', state.language as Locale)}</span>
@@ -1821,6 +1874,7 @@ export const UIObjectRendererMemo = React.memo(UIObjectRenderer, (prevProps, nex
     prevProps.uiObject.width === nextProps.uiObject.width &&
     prevProps.uiObject.height === nextProps.uiObject.height &&
     prevProps.uiObject.minimized === nextProps.uiObject.minimized &&
+    prevProps.uiObject.locked === nextProps.uiObject.locked &&
     prevProps.isDragging === nextProps.isDragging &&
     prevProps.zoom === nextProps.zoom &&
     prevProps.isPinnedMode === nextProps.isPinnedMode

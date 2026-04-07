@@ -47,6 +47,11 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     isPoolPanel = false
   } = params;
 
+  // Extract zoom and scroll from state for pin/unpin calculations
+  const zoom = state?.zoom ?? 1;
+  const scrollX = state?.viewTransform?.scroll?.x ?? 0;
+  const scrollY = state?.viewTransform?.scroll?.y ?? 0;
+
   switch(action) {
     case 'configure':
       // Token-copies don't have individual settings
@@ -78,67 +83,126 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       return;
 
     case 'pinToViewport':
-      let screenX: number, screenY: number;
+      console.log('📌 PIN_TO_VIEWPORT - Finding current visible position', {
+        objectId: object.id,
+        objectType: object.type,
+        objectName: object.name
+      });
 
-      if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
-        // For UI objects, find the actual rendered element and get its screen position
-        const uiElement = document.querySelector(`[data-ui-object="${object.id}"]`) as HTMLElement;
-        if (uiElement) {
-          const rect = uiElement.getBoundingClientRect();
+      // NEW APPROACH: Use DOM query to find the ACTUAL current position of the object
+      // This ensures NO visual jump when pinning - the object stays exactly where it is
+      requestAnimationFrame(() => {
+        let element: HTMLElement | null = null;
+        let screenX: number, screenY: number;
+
+        if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+          // UI objects
+          element = document.querySelector(`[data-ui-object="${object.id}"]`) as HTMLElement;
+        } else {
+          // Game objects - try multiple selectors
+          element = document.querySelector(`[data-object-id="${object.id}"]`) as HTMLElement;
+          if (!element) {
+            // Try finding by ID in the tabletop container
+            element = document.querySelector(`[data-testid="object-${object.id}"]`) as HTMLElement;
+          }
+        }
+
+        if (element) {
+          const rect = element.getBoundingClientRect();
           screenX = rect.left;
           screenY = rect.top;
-        } else {
-          // Fallback: calculate from object position (unpinned UI objects use object.x directly)
-          screenX = object.x;
-          screenY = object.y;
-        }
-      } else {
-        // For game objects (decks, etc.) in transform container
-        // CSS transform is: translate(offset) scale(zoom)
-        // So: screenX = worldX * zoom + offset.x
-        screenX = (object.x * zoom) + offset.x;
-        screenY = (object.y * zoom) + offset.y;
-      }
 
-      dispatch({
-        type: 'PIN_TO_VIEWPORT',
-        payload: {
-          id: object.id,
-          screenX,
-          screenY
+          console.log('✅ Found element, using its current screen position', {
+            objectId: object.id,
+            screenX,
+            screenY,
+            rect
+          });
+        } else {
+          // Fallback: calculate from object position
+          console.log('⚠️ Element not found, calculating from object position', {
+            objectId: object.id,
+            objectType: object.type
+          });
+
+          if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+            // UI objects use object.x/y directly
+            screenX = object.x;
+            screenY = object.y;
+          } else {
+            // Game objects in transform container
+            if (typeof zoom === 'undefined') {
+              console.error('❌ ZOOM undefined!');
+              return;
+            }
+            screenX = (object.x * zoom) + offset.x - scrollX;
+            screenY = (object.y * zoom) + offset.y - scrollY;
+          }
+
+          console.log('✅ Calculated screen position', {
+            objectId: object.id,
+            screenX,
+            screenY
+          });
         }
+
+        // Dispatch the pin action with the correct screen position
+        dispatch({
+          type: 'PIN_TO_VIEWPORT',
+          payload: {
+            id: object.id,
+            screenX,
+            screenY
+          }
+        });
       });
       return;
 
     case 'unpinFromViewport':
+      console.log('📍 UNPIN_FROM_VIEWPORT - Restoring world position', {
+        objectId: object.id,
+        objectType: object.type
+      });
+
+      // Get the current pinned screen position
+      const pinnedPos = (object as any).pinnedScreenPosition;
+
+      if (!pinnedPos) {
+        console.error('❌ No pinned position found!');
+        return;
+      }
+
+      // For unpinning, we need to convert the screen position back to world coordinates
       let worldX: number, worldY: number;
 
       if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
-        // UI objects: For pinned UI objects, object.x/y ARE the current viewport coordinates
-        // To convert to world coordinates for unpinned: worldX = screenX / zoom + offset.x
-        // But for UI objects, they use position: absolute with left: object.x (no transform)
-        // So: worldX = object.x * zoom + offset.x
-        worldX = object.x + offset.x;
-        worldY = object.y + offset.y;
+        // UI objects: simple conversion
+        worldX = pinnedPos.x - offset.x;
+        worldY = pinnedPos.y - offset.y;
       } else {
-        // Game objects (decks, etc.): render in transform container
-        // For pinned game objects, visual position comes from pinnedScreenPosition
-        const pinnedPos = (object as any).pinnedScreenPosition;
-        if (!pinnedPos) {
-          // No pinned position - shouldn't happen, but use current position as fallback
-          worldX = object.x;
-          worldY = object.y;
-        } else {
-          // pinnedPos contains current viewport coordinates
-          // Convert to world coordinates: worldX = (screenX - offset.x) / zoom
-          worldX = (pinnedPos.x - offset.x) / zoom;
-          worldY = (pinnedPos.y - offset.y) / zoom;
+        // Game objects: need to account for zoom and scroll
+        if (typeof zoom === 'undefined') {
+          console.error('❌ ZOOM undefined!');
+          return;
         }
+        worldX = (pinnedPos.x + scrollX - offset.x) / zoom;
+        worldY = (pinnedPos.y + scrollY - offset.y) / zoom;
       }
+
+      console.log('✅ Calculated world position for unpinning', {
+        objectId: object.id,
+        worldX,
+        worldY,
+        fromScreenPos: pinnedPos
+      });
 
       dispatch({
         type: 'UNPIN_FROM_VIEWPORT',
-        payload: { id: object.id, worldX, worldY }
+        payload: {
+          id: object.id,
+          worldX,
+          worldY
+        }
       });
       return;
 
@@ -454,7 +518,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
   // Handle moveToPile actions (moveToPile-{pileId})
   if (action.startsWith('moveToPile-') && object.type === ItemType.CARD) {
     const pileId = action.replace('moveToPile-', '');
-    const card = object as CardType;
+    const card = object as Card;
     if (card.deckId) {
       dispatch({ type: 'ADD_CARD_TO_PILE', payload: { cardId: card.id, pileId, deckId: card.deckId }});
     }

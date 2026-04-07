@@ -41,6 +41,7 @@ const SimplifiedBoard: React.FC<{
 }) => {
     return (
         <div
+            data-object-id={obj.id}
             onContextMenu={onContextMenu}
             {...(onMouseDown && { onMouseDown })}
             className={`absolute flex items-center justify-center text-white font-bold select-none group ${isResizing ? 'opacity-80' : ''} ${obj.locked ? 'ring-2 ring-red-500' : ''}`}
@@ -225,6 +226,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 
     return (
         <div
+            data-object-id={obj.id}
             onContextMenu={onContextMenu}
             {...(onMouseDown && { onMouseDown })}
             className={`absolute flex items-center justify-center text-white font-bold select-none group ${isResizing ? 'opacity-80' : ''} ${obj.locked ? 'ring-2 ring-red-500' : ''}`}

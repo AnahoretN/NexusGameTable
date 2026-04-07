@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
-import { useDrawingTool, useMarkerSettings, useEraserSettings } from './ToolsPanel';
+import { useDrawingTool, useMarkerSettings } from './ToolsPanel';
 import { ItemType, Stroke, StrokePoint, Drawing } from '../types';
 
 interface DrawingCanvasProps {

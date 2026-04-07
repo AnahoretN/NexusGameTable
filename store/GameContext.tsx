@@ -1710,6 +1710,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 hyperscaleLayerId: deckHyperscaleLayerId,
                 // Clear the pending data
                 __pendingPlayTop: undefined,
+                // Preserve pinning state if card was pinned
+                ...((card as any).isPinnedToViewport && {
+                    isPinnedToViewport: true,
+                    pinnedScreenPosition: (card as any).pinnedScreenPosition || { x: action.payload.x, y: action.payload.y }
+                }),
             };
 
             // Add to general history as card-played-from-top
@@ -1757,6 +1762,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 inCursorSlot: false,
                 fromPoolPanel: undefined,
                 isOnTable: true,
+                // Preserve pinning state if object was pinned
+                ...((obj as any).isPinnedToViewport && {
+                    isPinnedToViewport: true,
+                    pinnedScreenPosition: (obj as any).pinnedScreenPosition || { x: action.payload.x, y: action.payload.y }
+                }),
             };
 
             // Auto-select the token's hyperscale layer if not already selected
@@ -1792,6 +1802,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 inCursorSlot: false,
                 fromPoolPanel: undefined,
                 isOnTable: true,
+                // Preserve pinning state if object was pinned (boards should maintain their pinning)
+                ...((obj as any).isPinnedToViewport && {
+                    isPinnedToViewport: true,
+                    pinnedScreenPosition: (obj as any).pinnedScreenPosition || { x: action.payload.x, y: action.payload.y }
+                }),
             };
 
             // Auto-select the board's hyperscale layer if not already selected
@@ -1886,6 +1901,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             fromPoolPanel: undefined,
             isOnTable: true, // Always set isOnTable: true when dropping from cursor slot
             ...(hyperscaleLayerId && { hyperscaleLayerId }),
+            // Preserve pinning state if object was pinned
+            ...((obj as any).isPinnedToViewport && {
+                isPinnedToViewport: true,
+                pinnedScreenPosition: (obj as any).pinnedScreenPosition || { x: action.payload.x, y: action.payload.y }
+            }),
         };
 
         // For cards, also update location to TABLE
@@ -3363,14 +3383,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const obj = state.objects[action.payload.id];
       if (!obj) return state;
 
-      // Add to general history
-      const historyEntry: GeneralHistoryEntry = {
-        type: 'object-pinned',
-        objectId: obj.id,
-        previousPinnedToViewport: (obj as any).isPinnedToViewport,
-        previousScreenPosition: (obj as any).pinnedScreenPosition,
-      };
-      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+      // Skip history for pinning to improve performance
+      // Pinning/unpinning is frequent and doesn't need history tracking
 
       const isMinimized = (obj as any).minimized || false;
       const hasDualPosition = (obj as any).dualPosition || false;
@@ -3401,44 +3415,52 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Also set the legacy pinnedScreenPosition for backward compatibility
         updatedObj.pinnedScreenPosition = { x: action.payload.screenX, y: action.payload.screenY };
 
+        // Store pixel dimensions if provided (to prevent size changes when pinning)
+        if (action.payload.pixelWidth !== undefined) {
+          updatedObj.pinnedPixelWidth = action.payload.pixelWidth;
+        }
+        if (action.payload.pixelHeight !== undefined) {
+          updatedObj.pinnedPixelHeight = action.payload.pixelHeight;
+        }
+
         return {
           ...state,
           objects: {
             ...state.objects,
             [action.payload.id]: updatedObj
           },
-          undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
       }
 
       // Single position mode (original behavior)
+      const updatedObj: any = {
+        ...obj,
+        isPinnedToViewport: true,
+        pinnedScreenPosition: { x: action.payload.screenX, y: action.payload.screenY }
+      };
+
+      // Store pixel dimensions if provided (to prevent size changes when pinning)
+      if (action.payload.pixelWidth !== undefined) {
+        updatedObj.pinnedPixelWidth = action.payload.pixelWidth;
+      }
+      if (action.payload.pixelHeight !== undefined) {
+        updatedObj.pinnedPixelHeight = action.payload.pixelHeight;
+      }
+
       return {
         ...state,
         objects: {
           ...state.objects,
-          [action.payload.id]: {
-            ...obj,
-            isPinnedToViewport: true,
-            pinnedScreenPosition: { x: action.payload.screenX, y: action.payload.screenY }
-          }
+          [action.payload.id]: updatedObj
         },
-        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'UNPIN_FROM_VIEWPORT': {
       const obj = state.objects[action.payload.id];
       if (!obj) return state;
 
-      // Add to general history
-      const historyEntry: GeneralHistoryEntry = {
-        type: 'object-unpinned',
-        objectId: obj.id,
-        previousX: obj.x,
-        previousY: obj.y,
-        previousPinnedToViewport: (obj as any).isPinnedToViewport || false,
-        previousScreenPosition: (obj as any).pinnedScreenPosition,
-      };
-      const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
+      // Skip history for unpinning to improve performance
+      // Pinning/unpinning is frequent and doesn't need history tracking
 
       return {
         ...state,
@@ -3454,7 +3476,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             collapsedPinnedPosition: undefined
           }
         },
-        undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
     case 'CREATE_PANEL': {

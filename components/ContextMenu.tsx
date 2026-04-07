@@ -675,13 +675,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: object.isPinnedToViewport ? translate('Unpin', language as Locale) : translate('Pin', language as Locale),
       action: object.isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
       icon: <Pin size={14} />,
-      visible: !hideCardActions && can('pin'),
+      // TODO: Temporarily hide pinning in pool panel - re-enable later when properly implemented
+      visible: !hideCardActions && can('pin') && object.type !== ItemType.BOARD && contextMenuType !== 'pool',
     },
     // Separator after Hide/Lock/Pin section (only visible if any of Hide, Lock, Pin are visible)
     {
       label: '-',
       action: 'separator-after-hide-lock-pin',
-      visible: can('hide') || (!hideCardActions && can('lock')) || (!hideCardActions && can('pin')),
+      visible: can('hide') || (!hideCardActions && can('lock')) || (!hideCardActions && can('pin') && object.type !== ItemType.BOARD && contextMenuType !== 'pool'),
       isSeparator: true
     },
     // Hide Card / Unhide Card

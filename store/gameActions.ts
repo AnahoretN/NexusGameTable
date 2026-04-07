@@ -71,7 +71,7 @@ export type Action =
   | BaseAction<'TOGGLE_SHOW_TOP_CARD', { deckId: string; pileId?: string }>
   | BaseAction<'SWING_CLOCKWISE', { id: string }>
   | BaseAction<'SWING_COUNTER_CLOCKWISE', { id: string }>
-  | BaseAction<'PIN_TO_VIEWPORT', { id: string; screenX: number; screenY: number }>
+  | BaseAction<'PIN_TO_VIEWPORT', { id: string; screenX: number; screenY: number; pixelWidth?: number; pixelHeight?: number }>
   | BaseAction<'UNPIN_FROM_VIEWPORT', { id: string; worldX: number; worldY: number }>
   // UI Object actions
   | BaseAction<'CREATE_PANEL', { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string }>
