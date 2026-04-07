@@ -89,7 +89,7 @@ const SimplifiedBoard: React.FC<{
             )}
 
             {/* Board name label */}
-            <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap ${currentTool === 'none' ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'} transition-opacity`} style={{ pointerEvents: 'auto' }}>
+            <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap ${currentTool === 'none' || currentTool === 'zoom' ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'} transition-opacity`} style={{ pointerEvents: 'auto' }}>
                 {token.name}
             </div>
         </div>
@@ -274,7 +274,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             )}
 
             {/* Board name label */}
-            <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap ${currentTool === 'none' ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'} transition-opacity`} style={{ pointerEvents: 'auto' }}>
+            <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap ${currentTool === 'none' || currentTool === 'zoom' ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'} transition-opacity`} style={{ pointerEvents: 'auto' }}>
                 {token.name}
             </div>
         </div>

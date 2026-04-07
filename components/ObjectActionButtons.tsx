@@ -100,7 +100,7 @@ export const ObjectActionButtons: React.FC<ObjectActionButtonsProps> = ({ obj, d
   if (buttons.length === 0) return null;
 
   return (
-    <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100' : ''}`}>
+    <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100' : ''}`}>
       {buttons.map((btn: any) => (
         <button
           key={btn.key}

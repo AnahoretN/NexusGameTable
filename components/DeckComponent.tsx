@@ -425,7 +425,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                   setHoveredPileId(null);
                 }
               }}
-              className={`absolute group ${currentTool !== 'none' ? 'cursor-default' : draggingPile?.pile.id === pile.id ? 'opacity-50 scale-95 cursor-grabbing' : ''}`}
+              className={`absolute group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingPile?.pile.id === pile.id ? 'opacity-50 scale-95 cursor-grabbing' : ''}`}
               style={{
                 left: pilePos.x,
                 top: pilePos.y,
@@ -621,7 +621,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
               setHoveredDeckId(null);
             }
           }}
-          className={`absolute group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+          className={`absolute group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           style={{
             left: 0,
             top: 0,
@@ -739,8 +739,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
         )}
 
         {/* Action buttons on bottom edge - like cards */}
-        {/* Hide buttons when cursor slot has cards or when drawing tool is active */}
-        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 transition-opacity z-30 pointer-events-none ${cursorSlotHasCards || currentTool !== 'none' ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}>
+        {/* Hide buttons when cursor slot has cards or when drawing tool is active (except zoom) */}
+        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 transition-opacity z-30 pointer-events-none ${cursorSlotHasCards || (currentTool !== 'none' && currentTool !== 'zoom') ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}>
           {(() => {
             // Define all possible buttons based on actionButtons setting
             const actionButtons = deck.actionButtons || [];

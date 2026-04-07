@@ -14,6 +14,7 @@ interface CardProps {
   isHovered?: boolean;
   canFlip?: boolean;
   showActionButtons?: boolean;
+  currentTool?: string; // Add currentTool to handle zoom tool visibility
   onToHand?: (e: React.MouseEvent) => void;
   onReturnToDeck?: (e: React.MouseEvent) => void;
   // Action buttons based on settings

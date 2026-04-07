@@ -7308,7 +7308,7 @@ export const Tabletop: React.FC = () => {
                                   card={card}
                                   canFlip={cardSettings.actionButtons?.includes('flip') ?? false}
                                   onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
-                                  showActionButtons={currentTool === 'none'}
+                                  showActionButtons={currentTool === 'none' || currentTool === 'zoom'}
                                   actionButtons={cardSettings.actionButtons}
                                   overrideWidth={v2p(displayWidth)}
                                   overrideHeight={v2p(displayHeight)}
@@ -7528,7 +7528,7 @@ export const Tabletop: React.FC = () => {
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
                                 onDoubleClick={(e) => { e.stopPropagation(); if (currentTool !== 'marker' && currentTool !== 'eraser') rollDiceWithGroup(dice); }}
-                                className={`flex items-center justify-center group select-none ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                                className={`flex items-center justify-center group select-none ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     width: v2p(dice.width || 60),
                                     height: v2p(dice.height || 60),
