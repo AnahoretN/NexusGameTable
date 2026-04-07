@@ -200,6 +200,64 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     };
   }, [deck.spriteConfig]);
 
+  // Helper function to get background styles for a card back (handles priority)
+  const getCardBackStyles = useCallback((card: CardType | null) => {
+    if (!card) return { backgroundColor: '#1e293b' };
+
+    // Priority 1: Check if card has alternativeBack
+    if (card.alternativeBack && card.alternativeBack.url) {
+      return {
+        backgroundImage: `url(${card.alternativeBack.url})`,
+        backgroundSize: '100% 100%',
+        backgroundPosition: 'center',
+        backgroundColor: '#1e293b'
+      };
+    }
+
+    // Priority 2: Check if card has custom backFaceUrl
+    if (card.backFaceUrl) {
+      return {
+        backgroundImage: `url(${card.backFaceUrl})`,
+        backgroundSize: '100% 100%',
+        backgroundPosition: 'center',
+        backgroundColor: '#1e293b'
+      };
+    }
+
+    // Priority 3: Use deck's spriteConfig cardBackUrl or cardBackSpriteUrl
+    const deckSpriteConfig = deck.spriteConfig;
+    if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
+      const spriteColumns = deckSpriteConfig.cardBackSpriteColumns || 1;
+      const spriteRows = deckSpriteConfig.cardBackSpriteRows || 1;
+      const col = deckSpriteConfig.cardBackSpriteIndex % spriteColumns;
+      const row = Math.floor(deckSpriteConfig.cardBackSpriteIndex / spriteColumns);
+      const colPercent = spriteColumns > 1 ? (col / (spriteColumns - 1)) * 100 : 0;
+      const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
+
+      return {
+        backgroundImage: `url(${deckSpriteConfig.cardBackSpriteUrl})`,
+        backgroundSize: `${spriteColumns * 100}% ${spriteRows * 100}%`,
+        backgroundPosition: `${colPercent}% ${rowPercent}%`,
+        backgroundColor: '#1e293b'
+      };
+    } else if (deckSpriteConfig?.cardBackUrl) {
+      return {
+        backgroundImage: `url(${deckSpriteConfig.cardBackUrl})`,
+        backgroundSize: '100% 100%',
+        backgroundPosition: 'center',
+        backgroundColor: '#1e293b'
+      };
+    }
+
+    // No card back found - return default dark background
+    return {
+      backgroundImage: undefined,
+      backgroundSize: '100% 100%',
+      backgroundPosition: 'center',
+      backgroundColor: '#1e293b'
+    };
+  }, [deck.spriteConfig]);
+
   // Memoize piles grouping by position
   const { getPilePosition } = useMemo(() => {
     const visiblePiles = deck.piles?.filter(p => p.visible) || [];
@@ -675,6 +733,40 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                   />
                 </SvgDeckShape>
               </div>
+            ) : deck.showTopCardBack && topCard ? (
+              // Show top card back
+              <div className="absolute inset-0 overflow-hidden">
+                <SvgDeckShape
+                  shape={cardShape}
+                  width={effectiveWidth}
+                  height={effectiveHeight}
+                  backgroundColor="#1e293b"
+                  borderColor="#64748b"
+                  borderWidth={2}
+                  orientation={cardOrientation}
+                >
+                  <div
+                    style={{ width: '100%', height: '100%', ...getCardBackStyles(topCard) }}
+                  />
+                </SvgDeckShape>
+              </div>
+            ) : deck.showDeckBack ? (
+              // Show deck back
+              <div className="absolute inset-0 overflow-hidden">
+                <SvgDeckShape
+                  shape={cardShape}
+                  width={effectiveWidth}
+                  height={effectiveHeight}
+                  backgroundColor="#1e293b"
+                  borderColor="#64748b"
+                  borderWidth={2}
+                  orientation={cardOrientation}
+                >
+                  <div
+                    style={{ width: '100%', height: '100%', ...getCardBackStyles(topCard) }}
+                  />
+                </SvgDeckShape>
+              </div>
             ) : (
               // Normal deck appearance with SVG shape
               <div className="absolute inset-0 cursor-pointer">
@@ -723,6 +815,22 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                 <div
                   className="w-full h-full"
                   style={getCardBackgroundStyles(topCard)}
+                />
+              </div>
+            ) : deck.showTopCardBack && topCard ? (
+              // Show top card back
+              <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
+                <div
+                  className="w-full h-full"
+                  style={getCardBackStyles(topCard)}
+                />
+              </div>
+            ) : deck.showDeckBack ? (
+              // Show deck back
+              <div className="w-full h-full relative overflow-hidden" style={shapeStyles}>
+                <div
+                  className="w-full h-full"
+                  style={getCardBackStyles(topCard)}
                 />
               </div>
             ) : (

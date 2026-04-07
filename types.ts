@@ -259,6 +259,8 @@ export interface Deck extends GameItem {
   initialCardCount?: number; // DEPRECATED: Now calculated from baseCardIds.length, kept for backwards compatibility
   piles?: CardPile[]; // Additional card piles associated with this deck (discard, etc.)
   showTopCard?: boolean; // Whether to show the top card face on the deck itself
+  showDeckBack?: boolean; // Whether to show the deck back on the deck object (uses Card Back URL or top card's alternative back)
+  showTopCardBack?: boolean; // Whether to show the top card's back on the deck object
 
   // Settings for cards belonging to this deck (inherited by cards)
   cardAllowedActions?: ContextAction[]; // Actions players are allowed on cards from this deck

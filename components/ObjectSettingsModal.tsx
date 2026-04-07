@@ -1083,24 +1083,76 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 </div>
               )}
 
-              {/* Show Top Card (for decks) */}
+              {/* Deck Display Settings (for decks) */}
               {isDeck && (
-                <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 mt-5 mb-5">
-                  <label className="text-xs text-gray-400 flex items-center gap-2">
-                    <Eye size={12} />
-                    {translate('Show Top Card on Deck', language as Locale)}
-                  </label>
-                  <button
-                    onClick={() => update('showTopCard', !(data as Deck).showTopCard)}
-                    className={`w-10 h-5 rounded-full transition-colors ${
-                      (data as Deck).showTopCard ? 'bg-green-600' : 'bg-slate-700'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                      (data as Deck).showTopCard ? 'translate-x-5' : 'translate-x-0.5'
-                    }`} />
-                  </button>
-                </div>
+                <>
+                  <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 mt-5 mb-2">
+                    <label className="text-xs text-gray-400 flex items-center gap-2">
+                      <Eye size={12} />
+                      {translate('Show Top Card', language as Locale)}
+                    </label>
+                    <button
+                      onClick={() => update('showTopCard', !(data as Deck).showTopCard)}
+                      className={`w-10 h-5 rounded-full transition-colors ${
+                        (data as Deck).showTopCard ? 'bg-green-600' : 'bg-slate-700'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        (data as Deck).showTopCard ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mb-5">
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-1">
+                        <Layers size={12} />
+                        {translate('Show Deck Back', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => {
+                          const newValue = !(data as Deck).showDeckBack;
+                          update('showDeckBack', newValue);
+                          // Disable showTopCardBack when enabling showDeckBack
+                          if (newValue) {
+                            update('showTopCardBack', false);
+                          }
+                        }}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Deck).showDeckBack ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Deck).showDeckBack ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                      <label className="text-xs text-gray-400 flex items-center gap-1">
+                        <Layers size={12} />
+                        {translate('Show Top Card Back', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => {
+                          const newValue = !(data as Deck).showTopCardBack;
+                          update('showTopCardBack', newValue);
+                          // Disable showDeckBack when enabling showTopCardBack
+                          if (newValue) {
+                            update('showDeckBack', false);
+                          }
+                        }}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Deck).showTopCardBack ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Deck).showTopCardBack ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
 
               {/* Color + Border Color + Shape (for tokens and battlefield cells) - side by side, equal width */}
