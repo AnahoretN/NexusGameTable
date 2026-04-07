@@ -954,8 +954,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     return null;
   }
 
-  // When tool is 'none', disable pointer events so canvas doesn't block other interactions
-  const pointerEvents = currentTool === 'none' ? 'none' : 'auto';
+  // When tool is 'none', 'ruler', or 'zoom', disable pointer events so canvas doesn't block other interactions
+  // Canvas should only capture events for drawing tools (marker, eraser)
+  const pointerEvents = (currentTool === 'none' || currentTool === 'ruler' || currentTool === 'zoom') ? 'none' : 'auto';
   // Cursor logic:
   // - ALT pressed or over panel: default cursor (normal cursor mode)
   // - Shift+marker: move cursor (for moving drawings)
