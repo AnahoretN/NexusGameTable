@@ -596,20 +596,23 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
     onSave(toSave);
 
-    // After saving, update all cards in the deck when cardWidth/cardHeight/cardOrientation changed
+    // After saving, update all cards in the deck when cardWidth/cardHeight/cardOrientation/cardShape changed
     if (isDeck) {
       const deckId = data.id;
       const oldDeck = allObjects[deckId] as Deck;
       const oldCardWidth = oldDeck.cardWidth;
       const oldCardHeight = oldDeck.cardHeight;
       const oldCardOrientation = oldDeck.cardOrientation;
+      const oldCardShape = oldDeck.cardShape;
       const oldRotationStep = oldDeck.rotationStep ?? 45;
       const newCardWidth = cardSettings.cardWidth;
       const newCardHeight = cardSettings.cardHeight;
       const newCardOrientation = cardSettings.cardOrientation;
+      const newCardShape = cardSettings.cardShape;
       const newRotationStep = cardSettings.rotationStep ?? 45;
 
       const dimensionsChanged = oldCardWidth !== newCardWidth || oldCardHeight !== newCardHeight || oldCardOrientation !== newCardOrientation;
+      const shapeChanged = oldCardShape !== newCardShape;
 
       if (dimensionsChanged) {
         // Clear card dimensions cache to ensure new dimensions are used immediately
@@ -623,6 +626,17 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
             deckId,
             cardWidth: newCardWidth ?? oldDeck.width,
             cardHeight: newCardHeight ?? oldDeck.height
+          }
+        }));
+      }
+
+      // Check if cardShape changed
+      if (shapeChanged) {
+        // Dispatch event to update all cards in this deck with new shape
+        window.dispatchEvent(new CustomEvent('update-deck-cards-shape', {
+          detail: {
+            deckId,
+            cardShape: newCardShape
           }
         }));
       }

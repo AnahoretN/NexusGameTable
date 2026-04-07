@@ -825,6 +825,33 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('update-deck-cards-rotation-step', handleUpdateDeckCardsRotationStep);
   }, [dispatch]);
 
+  // Listen for deck card shape updates from deck settings changes
+  useEffect(() => {
+    const handleUpdateDeckCardsShape = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        deckId: string;
+        cardShape: CardShape;
+      }>;
+      const { deckId, cardShape } = customEvent.detail;
+
+      // Update all cards in this deck with deck's current cardShape
+      Object.values(state.objects).forEach(obj => {
+        if (obj.type === ItemType.CARD && (obj as CardType).deckId === deckId) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: obj.id,
+              shape: cardShape
+            }
+          });
+        }
+      });
+    };
+
+    window.addEventListener('update-deck-cards-shape', handleUpdateDeckCardsShape);
+    return () => window.removeEventListener('update-deck-cards-shape', handleUpdateDeckCardsShape);
+  }, [dispatch]);
+
   // Listen for clear-cursor-slot events from PoolTabletop
   useEffect(() => {
     const handleClearCursorSlot = (e: Event) => {
@@ -7672,10 +7699,10 @@ export const Tabletop: React.FC = () => {
                                     type: ItemType.CARD,
                                     x: 0,
                                     y: 0,
-                                    // Don't set width/height on cards - let them use deck's cardWidth/cardHeight
-                                    // This ensures cards always respect deck's card dimension settings
-                                    // width: newDeck.cardWidth || newDeck.width,
-                                    // height: newDeck.cardHeight || newDeck.height,
+                                    // Set card dimensions from deck settings
+                                    // This ensures cards are created with the correct dimensions
+                                    width: newDeck.cardWidth || newDeck.width,
+                                    height: newDeck.cardHeight || newDeck.height,
                                     rotation: 0,
                                     name: `Card ${i + 1}`,
                                     content: spriteConfig.cardBackUrl || spriteConfig.spriteUrl,
