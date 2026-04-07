@@ -459,41 +459,33 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
           {/* Zoom Settings (shown when zoom is selected) */}
           {selectedTool === 'zoom' && (
             <div className="space-y-2 mt-3 p-2 bg-slate-900 rounded">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const newZoom = Math.max(25, zoomLevel - 25);
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Zoom Level', language as Locale)}: {zoomLevel}%</label>
+                <input
+                  type="range"
+                  min="50"
+                  max="200"
+                  step="25"
+                  value={zoomLevel}
+                  onChange={(e) => {
+                    const newZoom = Number(e.target.value);
                     setZoomLevel(newZoom);
                     window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
                       detail: { level: newZoom }
                     }));
                   }}
-                  className="p-2 bg-slate-700 rounded hover:bg-slate-600 transition-colors"
-                  title={translate('Zoom Out', language as Locale)}
-                >
-                  <ZoomOut size={16} />
-                </button>
-                <div className="flex-1 text-center">
-                  <span className="text-sm text-white">{zoomLevel}%</span>
+                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                />
+                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                  <span>50%</span>
+                  <span>125%</span>
+                  <span>200%</span>
                 </div>
-                <button
-                  onClick={() => {
-                    const newZoom = Math.min(400, zoomLevel + 25);
-                    setZoomLevel(newZoom);
-                    window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
-                      detail: { level: newZoom }
-                    }));
-                  }}
-                  className="p-2 bg-slate-700 rounded hover:bg-slate-600 transition-colors"
-                  title={translate('Zoom In', language as Locale)}
-                >
-                  <ZoomIn size={16} />
-                </button>
               </div>
               <div>
                 <label className="block text-[10px] text-gray-400 mb-1">{translate('Quick Zoom', language as Locale)}</label>
                 <div className="grid grid-cols-4 gap-1">
-                  {[25, 50, 100, 200].map((level) => (
+                  {[50, 100, 150, 200].map((level) => (
                     <button
                       key={level}
                       onClick={() => {

@@ -20,7 +20,7 @@ import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { BoardWithResizeMemo } from './Tabletop/BoardWithResize';
 import { NexusBoardMemo } from './NexusBoard';
-import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, ChevronsUpDown } from 'lucide-react';
+import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, ChevronsUpDown, Pin } from 'lucide-react';
 import { useDragOverStore } from '../store/dragOverState';
 import { PLAYABLE_AREA_SIZE } from '../constants';
 import { generateUUID } from '../utils/uuid';
@@ -1669,18 +1669,18 @@ export const Tabletop: React.FC = () => {
           const isPinned = (obj as any).isPinnedToViewport || false;
           if (isPinned) {
             // Unpin: convert viewport coordinates to world coordinates
-            const worldX = obj.x + offset.x;
-            const worldY = obj.y + offset.y;
+            // For pinned objects, obj.x/obj.y are screen coordinates
+            const worldX = (obj.x - offset.x) / zoom;
+            const worldY = (obj.y - offset.y) / zoom;
             dispatch({
               type: 'UPDATE_OBJECT',
               payload: { id: obj.id, x: worldX, y: worldY, isPinnedToViewport: false }
             });
           } else {
-            // Pin: use current screen position
-            const worldX = obj.x;
-            const worldY = obj.y;
-            const screenX = worldX - offset.x;
-            const screenY = worldY - offset.y;
+            // Pin: convert world coordinates to viewport coordinates
+            // For unpinned game objects, obj.x/obj.y are world coordinates
+            const screenX = (obj.x * zoom) + offset.x;
+            const screenY = (obj.y * zoom) + offset.y;
             // For dice and counters, also store pinnedScreenPosition
             const isDiceOrCounter = obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER;
             dispatch({
@@ -6576,11 +6576,13 @@ export const Tabletop: React.FC = () => {
                                 {/* Magnetism System Visualization - hidden */}
                                 <svg
                                     className="absolute pointer-events-none hidden"
-                                    width={v2p(obj.width)}
-                                    height={v2p(obj.height)}
+                                    width="100%"
+                                    height="100%"
+                                    viewBox={`0 0 ${obj.width} ${obj.height}`}
+                                    preserveAspectRatio="none"
                                     style={{ overflow: 'visible' }}
                                 >
-                                    <g transform={`translate(${v2p(obj.width) / 2}, ${v2p(obj.height) / 2})`}>
+                                    <g transform={`translate(${obj.width / 2}, ${obj.height / 2})`}>
                                         {/* Calculate ellipse radii - simple version (inscribed in bounding box) */}
                                         {(() => {
                                             // For all shapes, use the same simple approach: ellipse in bounding box
@@ -6605,11 +6607,11 @@ export const Tabletop: React.FC = () => {
                                                     <ellipse
                                                         cx={0}
                                                         cy={0}
-                                                        rx={v2p(ellipseRx)}
-                                                        ry={v2p(ellipseRy)}
+                                                        rx={ellipseRx}
+                                                        ry={ellipseRy}
                                                         fill="none"
                                                         stroke="#22c55e"
-                                                        strokeWidth={v2p(1.5)}
+                                                        strokeWidth={1.5}
                                                         opacity={0.7}
                                                     />
 
@@ -6628,10 +6630,10 @@ export const Tabletop: React.FC = () => {
                                                                 key={`magnet-line-${index}`}
                                                                 x1={0}
                                                                 y1={0}
-                                                                x2={v2p(endX)}
-                                                                y2={v2p(endY)}
+                                                                x2={endX}
+                                                                y2={endY}
                                                                 stroke={hasObject ? "#22c55e" : "#f59e0b"}
-                                                                strokeWidth={v2p(hasObject ? 1.5 : 1)}
+                                                                strokeWidth={hasObject ? 1.5 : 1}
                                                                 opacity={hasObject ? 0.8 : 0.4}
                                                             />
                                                         );
@@ -6650,9 +6652,9 @@ export const Tabletop: React.FC = () => {
                                                         return (
                                                             <circle
                                                                 key={`magnet-point-${index}`}
-                                                                cx={v2p(magnetX)}
-                                                                cy={v2p(magnetY)}
-                                                                r={v2p(hasObject ? 2.5 : 2)}
+                                                                cx={magnetX}
+                                                                cy={magnetY}
+                                                                r={hasObject ? 2.5 : 2}
                                                                 fill={hasObject ? "#22c55e" : "#ef4444"}
                                                                 opacity={hasObject ? 1 : 0.7}
                                                             />
@@ -6664,7 +6666,7 @@ export const Tabletop: React.FC = () => {
                                                         <circle
                                                             cx={0}
                                                             cy={0}
-                                                            r={v2p(3)}
+                                                            r={3}
                                                             fill="#fbbf24"
                                                         />
                                                     )}
@@ -6739,6 +6741,13 @@ export const Tabletop: React.FC = () => {
                                                 className: obj.locked ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-yellow-600 hover:bg-yellow-500',
                                                 title: obj.locked ? 'Unlock' : 'Lock',
                                                 icon: obj.locked ? <Unlock size={14} /> : <Lock size={14} />
+                                            },
+                                            pin: {
+                                                key: 'pin',
+                                                action: () => executeClickAction(obj, 'pin'),
+                                                className: 'bg-pink-600 hover:bg-pink-500',
+                                                title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
+                                                icon: <Pin size={14} />
                                             },
                                         };
 
@@ -6815,11 +6824,13 @@ export const Tabletop: React.FC = () => {
                                 {/* Magnetism System Visualization - hidden */}
                                 <svg
                                     className="absolute pointer-events-none hidden"
-                                    width={v2p(obj.width)}
-                                    height={v2p(obj.height)}
+                                    width="100%"
+                                    height="100%"
+                                    viewBox={`0 0 ${obj.width} ${obj.height}`}
+                                    preserveAspectRatio="none"
                                     style={{ overflow: 'visible' }}
                                 >
-                                    <g transform={`translate(${v2p(obj.width) / 2}, ${v2p(obj.height) / 2})`}>
+                                    <g transform={`translate(${obj.width / 2}, ${obj.height / 2})`}>
                                         {/* Calculate ellipse radii - simple version (inscribed in bounding box) */}
                                         {(() => {
                                             // For all shapes, use the same simple approach: ellipse in bounding box
@@ -6844,11 +6855,11 @@ export const Tabletop: React.FC = () => {
                                                     <ellipse
                                                         cx={0}
                                                         cy={0}
-                                                        rx={v2p(ellipseRx)}
-                                                        ry={v2p(ellipseRy)}
+                                                        rx={ellipseRx}
+                                                        ry={ellipseRy}
                                                         fill="none"
                                                         stroke="#22c55e"
-                                                        strokeWidth={v2p(1.5)}
+                                                        strokeWidth={1.5}
                                                         opacity={0.7}
                                                     />
 
@@ -6867,10 +6878,10 @@ export const Tabletop: React.FC = () => {
                                                                 key={`magnet-line-${index}`}
                                                                 x1={0}
                                                                 y1={0}
-                                                                x2={v2p(endX)}
-                                                                y2={v2p(endY)}
+                                                                x2={endX}
+                                                                y2={endY}
                                                                 stroke={hasObject ? "#22c55e" : "#f59e0b"}
-                                                                strokeWidth={v2p(hasObject ? 1.5 : 1)}
+                                                                strokeWidth={hasObject ? 1.5 : 1}
                                                                 opacity={hasObject ? 0.8 : 0.4}
                                                             />
                                                         );
@@ -6889,9 +6900,9 @@ export const Tabletop: React.FC = () => {
                                                         return (
                                                             <circle
                                                                 key={`magnet-point-${index}`}
-                                                                cx={v2p(magnetX)}
-                                                                cy={v2p(magnetY)}
-                                                                r={v2p(hasObject ? 2.5 : 2)}
+                                                                cx={magnetX}
+                                                                cy={magnetY}
+                                                                r={hasObject ? 2.5 : 2}
                                                                 fill={hasObject ? "#22c55e" : "#ef4444"}
                                                                 opacity={hasObject ? 1 : 0.7}
                                                             />
@@ -6903,7 +6914,7 @@ export const Tabletop: React.FC = () => {
                                                         <circle
                                                             cx={0}
                                                             cy={0}
-                                                            r={v2p(3)}
+                                                            r={3}
                                                             fill="#fbbf24"
                                                         />
                                                     )}

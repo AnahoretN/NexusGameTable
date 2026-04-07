@@ -125,4 +125,15 @@ export const HexGrid: React.FC<HexGridProps> = ({
   );
 };
 
-export const HexGridMemo = React.memo(HexGrid);
+export const HexGridMemo = React.memo(HexGrid, (prevProps, nextProps) => {
+  return (
+    prevProps.width === nextProps.width &&
+    prevProps.height === nextProps.height &&
+    prevProps.orientation === nextProps.orientation &&
+    prevProps.hexWidth === nextProps.hexWidth &&
+    prevProps.hexHeight === nextProps.hexHeight &&
+    prevProps.stroke === nextProps.stroke &&
+    prevProps.strokeWidth === nextProps.strokeWidth &&
+    prevProps.zoom === nextProps.zoom
+  );
+});

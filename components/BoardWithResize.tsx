@@ -19,6 +19,7 @@ interface BoardWithResizeProps {
     gridHeight?: number;
     showGrid?: boolean;
     currentTool?: string;
+    zoom?: number;
 }
 
 export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
@@ -33,6 +34,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     gridSize,
     gridWidth,
     gridHeight,
+    zoom = 1,
 }) => {
     const [isHoveringCorner, setIsHoveringCorner] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -123,24 +125,24 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 <>
                     {(isHexGrid || isHexHorizontalGrid) ? (
                         <HexGridMemo
-                            width={obj.width ?? 100}
-                            height={obj.height ?? 100}
+                            width={(obj.width ?? 100) * zoom}
+                            height={(obj.height ?? 100) * zoom}
                             orientation={isHexGrid ? 'pointy-top' : 'flat-top'}
                             hexWidth={actualGridWidth}
                             hexHeight={actualGridHeight}
                             stroke="rgba(33,47,60,0.7)"
                             strokeWidth={1}
-                            zoom={1}
+                            zoom={zoom}
                         />
                     ) : isSquareGrid ? (
                         <SquareGridMemo
-                            width={obj.width ?? 100}
-                            height={obj.height ?? 100}
+                            width={(obj.width ?? 100) * zoom}
+                            height={(obj.height ?? 100) * zoom}
                             cellWidth={actualGridWidth}
                             cellHeight={actualGridHeight}
                             stroke="rgba(33,47,60,0.7)"
                             strokeWidth={1}
-                            zoom={1}
+                            zoom={zoom}
                         />
                     ) : null}
                 </>
@@ -150,12 +152,14 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             {canResize && !isDragging && (
                 <div
                     onMouseDown={onResizeStart}
-                    className={`absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize transition-opacity ${
+                    className={`absolute bottom-0 right-0 cursor-nwse-resize transition-opacity ${
                         isHoveringCorner || isResizing ? 'opacity-100' : 'opacity-75'
                     }`}
                     style={{
+                        width: `${16 * zoom}px`,
+                        height: `${16 * zoom}px`,
                         background: 'linear-gradient(135deg, transparent 50%, rgba(147, 51, 234, 0.8) 50%)',
-                        borderTopLeftRadius: '4px',
+                        borderTopLeftRadius: `${4 * zoom}px`,
                         pointerEvents: 'auto',
                     }}
                 />
@@ -181,7 +185,8 @@ function arePropsEqual(
     prevProps.obj.width === nextProps.obj.width &&
     prevProps.obj.height === nextProps.obj.height &&
     (prevProps.token as any).content === (nextProps.token as any).content &&
-    (prevProps.token as any).color === (nextProps.token as any).color
+    (prevProps.token as any).color === (nextProps.token as any).color &&
+    prevProps.zoom === nextProps.zoom
   );
 }
 

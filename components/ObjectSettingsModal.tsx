@@ -56,6 +56,8 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
     { id: 'lock', label: translate('Lock/Unlock', language as Locale) },
     { id: 'pin', label: translate('Pin/Unpin', language as Locale) },
     { id: 'rotate', label: translate('Rotation (section)', language as Locale) },
+    { id: 'rotateClockwise', label: translate('Rotation CW', language as Locale) },
+    { id: 'rotateCounterClockwise', label: translate('Rotation CCW', language as Locale) },
     { id: 'swingClockwise', label: translate('Swing CW', language as Locale) },
     { id: 'swingCounterClockwise', label: translate('Swing CCW', language as Locale) },
   ];
@@ -97,6 +99,9 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
       return [ItemType.DECK];
     case 'flip':
       return [ItemType.CARD, ItemType.TOKEN];
+    case 'rotateClockwise':
+    case 'rotateCounterClockwise':
+      return [ItemType.CARD];
     case 'swingClockwise':
     case 'swingCounterClockwise':
       return [ItemType.CARD];
@@ -1841,7 +1846,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         return false;
                       }
                       // For decks: exclude individual Top Deck actions (they're controlled by 'topDeck' section)
-                      if (isDeck && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                      if (isDeck && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'swingClockwise', 'swingCounterClockwise', 'rotateClockwise', 'rotateCounterClockwise'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
@@ -2549,8 +2554,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       // Exclude individual Move To actions (keep moveTo section only)
                       if (action.id === 'moveToHand' || action.id === 'moveToTopDeck' ||
                           action.id === 'moveToBottomDeck' || action.id === 'moveToDiscard') return false;
-                      // Exclude swing actions (only for Action Buttons, not Context Menu)
-                      if (action.id === 'swingClockwise' || action.id === 'swingCounterClockwise') return false;
+                      // Exclude swing and rotation actions (only for Action Buttons, not Context Menu)
+                      if (action.id === 'swingClockwise' || action.id === 'swingCounterClockwise' ||
+                          action.id === 'rotateClockwise' || action.id === 'rotateCounterClockwise') return false;
                       return true;
                     })
                     .map((action) => {

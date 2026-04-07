@@ -95,9 +95,9 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       } else {
         // For game objects (decks, etc.) in transform container
         // CSS transform is: translate(offset) scale(zoom)
-        // So: screenX = (worldX + offset.x) * zoom
-        screenX = object.x + offset.x;
-        screenY = object.y + offset.y;
+        // So: screenX = worldX * zoom + offset.x
+        screenX = (object.x * zoom) + offset.x;
+        screenY = (object.y * zoom) + offset.y;
       }
 
       dispatch({
@@ -130,9 +130,9 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
           worldY = object.y;
         } else {
           // pinnedPos contains current viewport coordinates
-          // Convert to world coordinates: worldX = screenX / zoom - offset.x
-          worldX = pinnedPos.x - offset.x;
-          worldY = pinnedPos.y - offset.y;
+          // Convert to world coordinates: worldX = (screenX - offset.x) / zoom
+          worldX = (pinnedPos.x - offset.x) / zoom;
+          worldY = (pinnedPos.y - offset.y) / zoom;
         }
       }
 

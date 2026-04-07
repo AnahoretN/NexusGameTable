@@ -179,24 +179,24 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         <>
             {(isHexGrid || isHexHorizontalGrid) ? (
                 <HexGridMemo
-                    width={actualWidth}
-                    height={actualHeight}
+                    width={actualWidth * zoom}
+                    height={actualHeight * zoom}
                     orientation={isHexGrid ? 'pointy-top' : 'flat-top'}
                     hexWidth={actualGridWidth}
                     hexHeight={actualGridHeight}
                     stroke="rgba(33,47,60,0.7)"
                     strokeWidth={1}
-                    zoom={1}
+                    zoom={zoom}
                 />
             ) : isSquareGrid ? (
                 <SquareGridMemo
-                    width={actualWidth}
-                    height={actualHeight}
+                    width={actualWidth * zoom}
+                    height={actualHeight * zoom}
                     cellWidth={actualGridWidth}
                     cellHeight={actualGridHeight}
                     stroke="rgba(33,47,60,0.7)"
                     strokeWidth={1}
-                    zoom={1}
+                    zoom={zoom}
                 />
             ) : null}
         </>
@@ -340,6 +340,11 @@ export const BoardWithResizeMemo = React.memo(BoardWithResize, (prevProps, nextP
     // Check background image changes
     if (prevProps.obj.content !== nextProps.obj.content) {
         return false; // Re-render when background image changes
+    }
+
+    // Check zoom changes - important for grid rendering
+    if (prevProps.zoom !== nextProps.zoom) {
+        return false; // Re-render when zoom changes
     }
 
     return true; // Skip re-render by default

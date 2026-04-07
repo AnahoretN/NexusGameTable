@@ -59,7 +59,7 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
       style={{
         width: '12px',
         height: '12px',
-        transform: `scale(${1 / zoom})`,
+        transform: `scale(${zoom})`,
         transformOrigin: 'bottom right',
         pointerEvents: 'auto', // Always capture events
         cursor: 'se-resize', // Always se-resize when over handle

@@ -290,7 +290,7 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
               />
               <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
                 <span>50%</span>
-                <span>100%</span>
+                <span>125%</span>
                 <span>200%</span>
               </div>
             </div>

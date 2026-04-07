@@ -55,4 +55,14 @@ export const SquareGrid: React.FC<SquareGridProps> = ({
   );
 };
 
-export const SquareGridMemo = React.memo(SquareGrid);
+export const SquareGridMemo = React.memo(SquareGrid, (prevProps, nextProps) => {
+  return (
+    prevProps.width === nextProps.width &&
+    prevProps.height === nextProps.height &&
+    prevProps.cellWidth === nextProps.cellWidth &&
+    prevProps.cellHeight === nextProps.cellHeight &&
+    prevProps.stroke === nextProps.stroke &&
+    prevProps.strokeWidth === nextProps.strokeWidth &&
+    prevProps.zoom === nextProps.zoom
+  );
+});

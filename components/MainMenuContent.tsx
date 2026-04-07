@@ -903,7 +903,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     />
                     <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
                       <span>50%</span>
-                      <span>100%</span>
+                      <span>125%</span>
                       <span>200%</span>
                     </div>
                   </div>
@@ -1889,8 +1889,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: generateUUID(),
           type: ItemType.BATTLEFIELD_CELL,
           shape: TokenShape.SQUARE, // Default shape, can be changed in settings
-          x: screenX - 50,
-          y: screenY - 50,
+          x: worldX - pixelsToVu(50, pixelsPerVU), // Center the cell on cursor (50 is half of default 100vu width)
+          y: worldY - pixelsToVu(50, pixelsPerVU), // Center the cell on cursor (50 is half of default 100vu height)
           rotation: 0,
           width: 100,
           height: 100,
@@ -1907,6 +1907,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           gridSize: 50,
           zIndex: 0, // Will be clamped to layer bounds
           hyperscaleLayerId: targetLayerId, // Place on boards layer or top selected layer
+          actionButtons: ['pin', 'lock', 'delete'], // Add pin button for battlefield cells
         };
         dispatch({ type: 'ADD_OBJECT', payload: cell });
         break;
@@ -1931,8 +1932,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: mainCellId,
           type: ItemType.NEXUS_CELL,
           shape: TokenShape.HEX,
-          x: screenX - 50,
-          y: screenY - 75,
+          x: worldX - pixelsToVu(cellWidth / 2, pixelsPerVU), // Center the cell on cursor
+          y: worldY - pixelsToVu(cellHeight / 2, pixelsPerVU), // Center the cell on cursor
           rotation: 0,
           width: cellWidth,
           height: cellHeight,
@@ -1962,8 +1963,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           id: boardId,
           type: ItemType.NEXUS_BOARD,
           shape: TokenShape.HEX,
-          x: screenX - 50,
-          y: screenY - 75,
+          x: worldX - pixelsToVu(50, pixelsPerVU),
+          y: worldY - pixelsToVu(75, pixelsPerVU),
           rotation: 0,
           width: 0,  // Board itself doesn't render, just a container
           height: 0,

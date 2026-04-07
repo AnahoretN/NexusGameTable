@@ -290,7 +290,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   // Toggle pin to viewport - using GameContext pinning system
   const handleTogglePin = useCallback(() => {
-    const isPinned = uiObject.isPinnedToViewport === true;
+    // Use effectiveProps to get the actual pinned state (includes playerPanelSettings override)
+    const isPinned = effectiveProps.isPinnedToViewport === true;
 
     if (isPinned) {
       // Unpin - convert viewport coordinates to world coordinates
@@ -1235,10 +1236,12 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       {/* Resize handle indicator - shown in bottom-right corner */}
       {canResize && !minimized && (
         <div
-          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize opacity-50 hover:opacity-100 transition-opacity flex items-center justify-center z-[9999]"
+          className="absolute bottom-0 right-0 cursor-nwse-resize opacity-50 hover:opacity-100 transition-opacity flex items-center justify-center z-[9999]"
           style={{
+            width: `${16 * zoom}px`,
+            height: `${16 * zoom}px`,
             background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)',
-            borderBottomRightRadius: '0.5rem',
+            borderBottomRightRadius: `${0.5 * zoom}rem`,
             pointerEvents: 'auto'
           }}
         />

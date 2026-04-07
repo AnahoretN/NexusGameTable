@@ -135,6 +135,19 @@ export function executeActionButtonUniversal(
       dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } });
       break;
 
+    case 'pin':
+      // Pin/unpin is handled through UPDATE_OBJECT with isPinnedToViewport flag
+      // This toggles the pin state for the object
+      const isCurrentlyPinned = (obj as any).isPinnedToViewport === true;
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: obj.id,
+          isPinnedToViewport: !isCurrentlyPinned
+        }
+      });
+      break;
+
     case 'delete':
       if (setDeleteCandidateId) {
         setDeleteCandidateId(obj.id);
