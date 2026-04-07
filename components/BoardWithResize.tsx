@@ -156,10 +156,10 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                         isHoveringCorner || isResizing ? 'opacity-100' : 'opacity-75'
                     }`}
                     style={{
-                        width: `${16 * zoom}px`,
-                        height: `${16 * zoom}px`,
+                        width: `${Math.min(16 * zoom, 32)}px`, // Max 32px to prevent blocking board
+                        height: `${Math.min(16 * zoom, 32)}px`,
                         background: 'linear-gradient(135deg, transparent 50%, rgba(147, 51, 234, 0.8) 50%)',
-                        borderTopLeftRadius: `${4 * zoom}px`,
+                        borderTopLeftRadius: `${Math.min(4 * zoom, 8)}px`,
                         pointerEvents: 'auto',
                     }}
                 />

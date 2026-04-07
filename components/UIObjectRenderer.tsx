@@ -1238,10 +1238,10 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         <div
           className="absolute bottom-0 right-0 cursor-nwse-resize opacity-50 hover:opacity-100 transition-opacity flex items-center justify-center z-[9999]"
           style={{
-            width: `${16 * zoom}px`,
-            height: `${16 * zoom}px`,
+            width: `${Math.min(16 * zoom, 32)}px`, // Max 32px to prevent blocking panel
+            height: `${Math.min(16 * zoom, 32)}px`,
             background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)',
-            borderBottomRightRadius: `${0.5 * zoom}rem`,
+            borderBottomRightRadius: `${Math.min(0.5 * zoom, 1)}rem`,
             pointerEvents: 'auto'
           }}
         />

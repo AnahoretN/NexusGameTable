@@ -59,7 +59,7 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
       style={{
         width: '12px',
         height: '12px',
-        transform: `scale(${zoom})`,
+        transform: `scale(${Math.min(zoom, 2)})`, // Max 2x scale to prevent blocking board
         transformOrigin: 'bottom right',
         pointerEvents: 'auto', // Always capture events
         cursor: 'se-resize', // Always se-resize when over handle
