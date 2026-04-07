@@ -7309,6 +7309,7 @@ export const Tabletop: React.FC = () => {
                                   canFlip={cardSettings.actionButtons?.includes('flip') ?? false}
                                   onFlip={() => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id }})}
                                   showActionButtons={currentTool === 'none' || currentTool === 'zoom'}
+                                  currentTool={currentTool}
                                   actionButtons={cardSettings.actionButtons}
                                   overrideWidth={v2p(displayWidth)}
                                   overrideHeight={v2p(displayHeight)}
