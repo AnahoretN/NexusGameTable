@@ -283,6 +283,11 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 
 // Memoize the component to prevent unnecessary re-renders
 export const BoardWithResizeMemo = React.memo(BoardWithResize, (prevProps, nextProps) => {
+    // IMPORTANT: Check currentTool changes to ensure proper re-rendering
+    if (prevProps.currentTool !== nextProps.currentTool) {
+        return false; // Force re-render when tool changes (especially for zoom)
+    }
+
     // Re-render when important props change
     if (prevProps.isResizing !== nextProps.isResizing) {
         return false; // Force re-render for resize state changes
