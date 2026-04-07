@@ -7021,7 +7021,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                                className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     left: v2p(obj.x),
                                     top: v2p(obj.y),
@@ -7300,7 +7300,7 @@ export const Tabletop: React.FC = () => {
                             )}
                             onMouseDown={(e) => handleMouseDown(e, obj.id)}
                             onContextMenu={(e) => handleContextMenu(e, obj)}
-                            className={`rounded-lg ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                            className={`rounded-lg ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                         >
                             {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             <div>
