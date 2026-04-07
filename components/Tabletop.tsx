@@ -137,14 +137,14 @@ export const Tabletop: React.FC = () => {
   const resizeThrottleRef = useRef<number | null>(null);
   const resizeFinalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
-  // Cursor slot state - holds cards, tokens, boards, and other objects picked up with Ctrl+click (max 100 items)
+  // Cursor slot state - holds cards, tokens, boards, and other objects picked up with Shift+click (max 100 items)
   // Stores full object data and removes objects from their original position
   const [cursorSlot, setCursorSlot] = useState<(CardType | TokenType | BoardType)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   // Ref for immediate cursor position updates (synchronous, for rendering slot items)
   const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
   // Track how items were added to cursor slot:
-  // - 'shift' = Ctrl+click on board (drop only on click, not on mouseup)
+  // - 'shift' = Shift+click on board (drop only on click, not on mouseup)
   // - 'hold' = Long press or drag (drop on mouseup)
   // - 'archetype' = Click on token archetype in ToolsPanel (don't drop on normal click)
   const [cursorSlotSource, setCursorSlotSource] = useState<'ctrl' | 'hold' | 'archetype' | null>(null);
@@ -380,8 +380,8 @@ export const Tabletop: React.FC = () => {
 
       // IMPORTANT: Set dragThresholdRef.addedToSlot = true for events from pool panel/hand panel
       // This ensures wasThresholdReached is true when handleGlobalMouseUp processes the drop
-      // Support both 'hold' (drag from panel) and 'shift' (Ctrl+click)
-      if ((source === 'hold' || source === 'ctrl') && (fromPoolPanel || (item as any).location === CardLocation.HAND || (item as any).location === CardLocation.TABLE || (item as any).location === CardLocation.DECK)) {
+      // Support both 'hold' (drag from panel) and 'shift' (Shift+click)
+      if ((source === 'hold' || source === 'shift') && (fromPoolPanel || (item as any).location === CardLocation.HAND || (item as any).location === CardLocation.TABLE || (item as any).location === CardLocation.DECK)) {
         dragThresholdRef.current = {
           initialX: clientX,
           initialY: clientY,
@@ -700,7 +700,7 @@ export const Tabletop: React.FC = () => {
       const tokenClone: TokenType = { ...newToken };
       (tokenClone as any).cursorSlotIndex = cursorSlot.length;
       (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
-      (tokenClone as any).source = 'ctrl'; // Use 'ctrl' for Ctrl+click behavior
+      (tokenClone as any).source = 'shift'; // Use 'shift' for Shift+click behavior
 
       setCursorSlot(prev => [...prev, tokenClone]);
       cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
@@ -715,7 +715,7 @@ export const Tabletop: React.FC = () => {
         cursorPositionRef.current = cursorPosition;
       }
 
-      // Set source to 'ctrl' to behave like Ctrl+click (drop on click, not on mouseup)
+      // Set source to 'shift' to behave like Shift+click (drop on click, not on mouseup)
       setCursorSlotSource('ctrl');
 
       isAddingTokenRef.current = false;
@@ -1812,7 +1812,7 @@ export const Tabletop: React.FC = () => {
     }
   }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition, rollDiceWithGroup]);
 
-  // Add object to cursor slot (Ctrl+click or long-press on card/token)
+  // Add object to cursor slot (Shift+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'ctrl' | 'hold' = 'ctrl', mousePosition?: { x: number; y: number }) => {
     // IMPORTANT: Check if cursor is over a token archetype button - if so, don't add to slot
     // This prevents accidental pickup when clicking token type buttons
@@ -2056,7 +2056,7 @@ export const Tabletop: React.FC = () => {
       cursorPositionRef.current = newPos;
       setCursorPosition(newPos);
     } else {
-      // Calculate screen position of object center (world -> screen) for Ctrl+click
+      // Calculate screen position of object center (world -> screen) for Shift+click
       // IMPORTANT: Use v2p to convert vu to pixels, and account for scroll position
       const itemCenterX = item.x + (item.width ?? 63) / 2;
       const itemCenterY = item.y + (item.height ?? 88) / 2;
@@ -3009,7 +3009,7 @@ export const Tabletop: React.FC = () => {
       }
 
       // CRITICAL: Check for Ctrl/Meta FIRST to allow adding items to slot
-      // This must happen BEFORE click actions check to ensure Ctrl+click works properly
+      // This must happen BEFORE click actions check to ensure Shift+click works properly
       if ((e.ctrlKey || e.metaKey) && cursorSlotRef.current.length === 0) {
         return; // Let handleMouseDown add the clicked item to slot
       }
@@ -3063,7 +3063,7 @@ export const Tabletop: React.FC = () => {
       }
 
       // IMPORTANT: Check for Ctrl/Meta to allow adding NEW items to slot FIRST
-      // This must happen BEFORE other checks to ensure Ctrl+click works properly
+      // This must happen BEFORE other checks to ensure Shift+click works properly
       // When Ctrl/Meta is pressed, NEVER drop - always allow adding more items to slot
       if (e.ctrlKey || e.metaKey) {
         return; // Let handleMouseDown add the clicked item to slot
@@ -3082,7 +3082,7 @@ export const Tabletop: React.FC = () => {
       }
 
       // If Ctrl/Meta is pressed and slot has items, still allow drop (user wants to drop)
-      // When cursorSlotSource === 'ctrl', we WANT to drop on click even if Ctrl is pressed
+      // When cursorSlotSource === 'shift', we WANT to drop on click even if Shift is pressed
       // This fixes the issue where PLAY_TOP_CARD sets source='ctrl' but Ctrl check prevents drop
 
       // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
@@ -3225,7 +3225,7 @@ export const Tabletop: React.FC = () => {
       // Use elementFromPoint for consistent behavior with drag mode
       const clickElement = document.elementFromPoint(e.clientX, e.clientY);
       const deckElement = clickElement?.closest('[data-object-id]');
-      if (deckElement && cursorSlotSource === 'ctrl') {
+      if (deckElement && cursorSlotSource === 'shift') {
         const objectId = deckElement.getAttribute('data-object-id');
         const obj = objectId ? state.objects[objectId] : undefined;
         if (obj && obj.type === ItemType.DECK && objectId) {
@@ -3250,7 +3250,7 @@ export const Tabletop: React.FC = () => {
 
       // Check if clicking on a pile - only drop if source='ctrl'
       const pileElement = target.closest('[data-pile-id]');
-      if (pileElement && cursorSlotSource === 'ctrl') {
+      if (pileElement && cursorSlotSource === 'shift') {
         const pileId = pileElement.getAttribute('data-pile-id');
         if (pileId) {
           // Find the deck that owns this pile
@@ -3459,8 +3459,8 @@ export const Tabletop: React.FC = () => {
         cursorHoldTimerRef.current = null;
       }
 
-      // Only process if cursor slot has items with source='hold' (drag, not Ctrl+click)
-      // Ctrl+click is handled in handleGlobalClick (mousedown)
+      // Only process if cursor slot has items with source='hold' (drag, not Shift+click)
+      // Shift+click is handled in handleGlobalClick (mousedown)
       // IMPORTANT: Use cursorSlot (state) not cursorSlotRef (ref) because ref may not be synced yet
       const currentSlot = cursorSlot;
 
@@ -3765,6 +3765,12 @@ export const Tabletop: React.FC = () => {
       setContextMenu(null);
     }
 
+    // Block all object interactions when Ctrl/Meta is pressed (except for pan view which is handled earlier)
+    // Ctrl+Drag is now exclusively for pan view, no object interactions
+    if ((e.ctrlKey || e.metaKey) && e.button === 0) {
+      return; // Don't process any object interactions when Ctrl is held
+    }
+
     // Note: Unified click/drag system with clear priority:
     // 1. Check for double click first (fast clicks without movement)
     // 2. Then check for drag (movement >= 1VU)
@@ -4006,7 +4012,7 @@ export const Tabletop: React.FC = () => {
     const isBoardObject = item && item.type === ItemType.BOARD;
 
     // Don't pan if clicking on UI object or board (they have their own handling)
-    if (e.button === 0 && e.shiftKey && currentTool !== 'marker' && !isUIObject && !isBoardObject) {
+    if (e.button === 0 && (e.ctrlKey || e.metaKey) && currentTool !== 'marker' && !isUIObject && !isBoardObject) {
       setIsPanning(true);
       // Store initial mouse position AND scroll position for direct scroll manipulation
       dragStartRef.current = {
@@ -4061,8 +4067,8 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      // Cards, tokens, boards, and other small objects: Ctrl+click or Meta+click immediately adds to cursor slot
-      if ((e.ctrlKey || e.metaKey) && item && (
+      // Cards, tokens, boards, and other small objects: Shift+click immediately adds to cursor slot
+      if (e.shiftKey && item && (
         item.type === ItemType.CARD ||
         item.type === ItemType.TOKEN ||
         item.type === ItemType.DECK ||
@@ -4098,7 +4104,7 @@ export const Tabletop: React.FC = () => {
         return; // Don't proceed with normal drag handling
       }
 
-      // For cards and tokens: Ctrl+click immediately adds to cursor slot
+      // For cards and tokens: Shift+click immediately adds to cursor slot
       // Without Ctrl: track mouse movement, add to slot after 5px drag threshold
 
       // Store click start position for click detection
@@ -4210,7 +4216,7 @@ export const Tabletop: React.FC = () => {
 
   // Handle click on battlefield cell for magnetism control
   // Shift+click: add magnet point
-  // Ctrl+Shift+click: remove magnet point
+  // Ctrl+Shift+click: remove magnet point (unchanged)
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     // Always update ref immediately for synchronous access during render
     const newCursorPosition = { x: e.clientX, y: e.clientY };
@@ -6452,7 +6458,7 @@ export const Tabletop: React.FC = () => {
                             {/* No letter display needed - SvgTokenShape handles all token rendering */}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -6546,7 +6552,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                                className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                                 style={createPositionedStyle(
                                     v2p(obj.x),
                                     v2p(obj.y),
@@ -6689,7 +6695,7 @@ export const Tabletop: React.FC = () => {
                                 )}
 
                                 {/* Action buttons */}
-                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -6797,7 +6803,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => isOwner && handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
+                                className={`absolute flex items-center justify-center select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     left: v2p(obj.x),
                                     top: v2p(obj.y),
@@ -6925,7 +6931,7 @@ export const Tabletop: React.FC = () => {
                                 </svg>
 
                                 {/* Action buttons */}
-                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -7037,7 +7043,7 @@ export const Tabletop: React.FC = () => {
                             )}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -7193,7 +7199,7 @@ export const Tabletop: React.FC = () => {
                                 )}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' || currentTool === 'zoom' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
