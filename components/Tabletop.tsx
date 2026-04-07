@@ -123,6 +123,9 @@ export const Tabletop: React.FC = () => {
   // Shift key state for delete cursor
   const [isShiftPressed, setIsShiftPressed] = useState(false);
 
+  // Ctrl/Meta key state for hiding action buttons during pan view
+  const [isCtrlPressed, setIsCtrlPressed] = useState(false);
+
   // Ruler state
   const [rulerStart, setRulerStart] = useState<{ x: number; y: number } | null>(null);
   const [rulerCurrent, setRulerCurrent] = useState<{ x: number; y: number } | null>(null);
@@ -3765,10 +3768,18 @@ export const Tabletop: React.FC = () => {
       setContextMenu(null);
     }
 
-    // Block all object interactions when Ctrl/Meta is pressed (except for pan view which is handled earlier)
-    // Ctrl+Drag is now exclusively for pan view, no object interactions
-    if ((e.ctrlKey || e.metaKey) && e.button === 0) {
-      return; // Don't process any object interactions when Ctrl is held
+    // Pan view with Ctrl+drag - works EVERYWHERE (including objects, UI, boards)
+    // Ctrl+Drag is exclusively for pan view, overrides all other interactions
+    if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
+      setIsPanning(true);
+      // Store initial mouse position AND scroll position for direct scroll manipulation
+      dragStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: scrollContainerRef.current?.scrollLeft || 0,
+        scrollTop: scrollContainerRef.current?.scrollTop || 0
+      };
+      return;
     }
 
     // Note: Unified click/drag system with clear priority:
@@ -4002,25 +4013,6 @@ export const Tabletop: React.FC = () => {
     // Block all other mouse interactions when marker or eraser tool is active
     // (but UI objects are already handled above)
     if (currentTool === 'marker' || currentTool === 'eraser') {
-      return;
-    }
-
-    // Pan view with Shift+drag - works on empty space AND objects (but not UI objects or boards)
-    // UI objects (panels/windows) and boards should handle their own interactions
-    const item = id ? state.objects[id] : null;
-    const isUIObject = item && (item.type === ItemType.PANEL || item.type === ItemType.WINDOW);
-    const isBoardObject = item && item.type === ItemType.BOARD;
-
-    // Don't pan if clicking on UI object or board (they have their own handling)
-    if (e.button === 0 && (e.ctrlKey || e.metaKey) && currentTool !== 'marker' && !isUIObject && !isBoardObject) {
-      setIsPanning(true);
-      // Store initial mouse position AND scroll position for direct scroll manipulation
-      dragStartRef.current = {
-        x: e.clientX,
-        y: e.clientY,
-        scrollLeft: scrollContainerRef.current?.scrollLeft || 0,
-        scrollTop: scrollContainerRef.current?.scrollTop || 0
-      };
       return;
     }
 
@@ -4896,6 +4888,11 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
+      // Track Ctrl/Meta key state for hiding action buttons during pan view
+      if ((e.ctrlKey || e.metaKey) && !isCtrlPressed) {
+        setIsCtrlPressed(true);
+      }
+
       // Close click tooltip on ESC
       if (e.key === 'Escape') {
         if (clickTooltip) {
@@ -4962,6 +4959,10 @@ export const Tabletop: React.FC = () => {
       if (e.key === 'Shift') {
         setIsShiftPressed(false);
       }
+      // Reset Ctrl/Meta key state when released
+      if (!e.ctrlKey && !e.metaKey && isCtrlPressed) {
+        setIsCtrlPressed(false);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -4969,7 +4970,7 @@ export const Tabletop: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [clickTooltip, currentTool, rulerStart, dispatch, isCtrlPressed]);
 
   // Track right mouse button for ruler circle display
   useEffect(() => {
@@ -6458,7 +6459,7 @@ export const Tabletop: React.FC = () => {
                             {/* No letter display needed - SvgTokenShape handles all token rendering */}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${!isCtrlPressed && (currentTool === 'none' || currentTool === 'zoom') ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -6695,7 +6696,7 @@ export const Tabletop: React.FC = () => {
                                 )}
 
                                 {/* Action buttons */}
-                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${!isCtrlPressed && (currentTool === 'none' || currentTool === 'zoom') ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -6931,7 +6932,7 @@ export const Tabletop: React.FC = () => {
                                 </svg>
 
                                 {/* Action buttons */}
-                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                                <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${!isCtrlPressed && (currentTool === 'none' || currentTool === 'zoom') ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                     {(() => {
                                         const actionButtons = obj.actionButtons || [];
                                         const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -7043,7 +7044,7 @@ export const Tabletop: React.FC = () => {
                             )}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${!isCtrlPressed && (currentTool === 'none' || currentTool === 'zoom') ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -7199,7 +7200,7 @@ export const Tabletop: React.FC = () => {
                                 )}
 
                             {/* Action buttons */}
-                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${currentTool === 'none' ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 pointer-events-none ${!isCtrlPressed && (currentTool === 'none' || currentTool === 'zoom') ? 'group-hover:opacity-100 opacity-0' : 'opacity-100'}`}>
                                 {(() => {
                                     const actionButtons = obj.actionButtons || [];
                                     const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
