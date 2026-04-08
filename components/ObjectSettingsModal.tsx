@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup } from '../types';
 
-import { X, Check, Settings, Shield, MousePointer, Layers, Trash2, Plus, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Magnet } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { calculateHexHeight, calculateFlatHexHeight } from '../utils/gridUtils';
 import { CARD_SHAPE_DIMS } from '../constants';
@@ -38,28 +38,11 @@ function translateGridType(gridType: GridType, language: AppLanguage = 'en'): st
 // Get available actions with translated labels
 function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
   return [
-    { id: 'topDeck', label: translate('Top Deck (section)', language as Locale) },
-    { id: 'draw', label: translate('Draw Card', language as Locale) },
-    { id: 'playTopCard', label: translate('Play Top', language as Locale) },
-    { id: 'millTopCard', label: translate('Mill', language as Locale) },
-    { id: 'toBottom', label: translate('To Bottom', language as Locale) },
-    { id: 'showTop', label: translate('Show Top', language as Locale) },
-    { id: 'searchDeck', label: translate('Search', language as Locale) },
-    { id: 'shuffleDeck', label: translate('Shuffle', language as Locale) },
-    { id: 'piles', label: translate('Piles', language as Locale) },
-    { id: 'returnAll', label: translate('Return All', language as Locale) },
-    { id: 'hide', label: translate('Hide/Show', language as Locale) },
     { id: 'clone', label: translate('Clone Object', language as Locale) },
     { id: 'delete', label: translate('Delete Object', language as Locale) },
-    { id: 'flip', label: translate('Flip Card', language as Locale) },
-    { id: 'layer', label: translate('Change Layer (section)', language as Locale) },
     { id: 'lock', label: translate('Lock/Unlock', language as Locale) },
-    { id: 'pin', label: translate('Pin/Unpin', language as Locale) },
+    { id: 'layer', label: translate('Change Layer (section)', language as Locale) },
     { id: 'rotate', label: translate('Rotation (section)', language as Locale) },
-    { id: 'rotateClockwise', label: translate('Rotation CW', language as Locale) },
-    { id: 'rotateCounterClockwise', label: translate('Rotation CCW', language as Locale) },
-    { id: 'swingClockwise', label: translate('Swing CW', language as Locale) },
-    { id: 'swingCounterClockwise', label: translate('Swing CCW', language as Locale) },
   ];
 }
 
@@ -75,8 +58,8 @@ function getMoveToActions(language: AppLanguage = 'en'): { id: ContextAction; la
 }
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-// Submenu actions are excluded since they depend on their parent section (layer/rotate/topDeck)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'returnAll', 'rotate', 'topDeck', 'piles'];
+// Submenu actions are excluded since they depend on their parent section (layer/rotate)
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'rotate'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -89,22 +72,6 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   if (!isActionButtonAllowed(action)) return [];
 
   switch (action) {
-    case 'shuffleDeck':
-    case 'searchDeck':
-    case 'draw':
-    case 'playTopCard':
-    case 'millTopCard':
-    case 'toBottom':
-    case 'showTop':
-      return [ItemType.DECK];
-    case 'flip':
-      return [ItemType.CARD, ItemType.TOKEN];
-    case 'rotateClockwise':
-    case 'rotateCounterClockwise':
-      return [ItemType.CARD];
-    case 'swingClockwise':
-    case 'swingCounterClockwise':
-      return [ItemType.CARD];
     // "Move to" actions for cards
     case 'moveToHand':
     case 'moveToTopDeck':
@@ -147,8 +114,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
     ...[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS].map(a => ({ id: a.id, label: a.label }))
       .filter(action => {
         // Exclude deck-specific and section actions
-        if (action.id === 'hide' ||
-            action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
+        if (action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
             action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
             action.id === 'rotate' || action.id === 'layer' ||
             action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
@@ -1932,11 +1898,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         return false;
                       }
                       // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
-                      if ((isDeck || isBoard || isToken || isBattlefieldCell) && ['flip'].includes(action.id)) {
-                        return false;
-                      }
-                      // 'flip' only applies to cards (not tokens, decks, boards, or battlefield cells)
-                      if (action.id === 'flip' && (isDeck || isBoard || isToken || isBattlefieldCell)) return false;
                       return true;
                     })
                     .map((action) => {

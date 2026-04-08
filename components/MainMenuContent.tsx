@@ -7,9 +7,9 @@ import { useGame, GameState } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM, isGM } from '../utils/playerUtils';
-import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, CardPile, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
+import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package } from 'lucide-react';
-import { TOKEN_SIZE, CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
+import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -118,7 +118,7 @@ interface MainMenuContentProps {
 }
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
-  const { state, dispatch, peerId, isHost, stateRef } = useGame();
+  const { state, dispatch, peerId } = useGame();
   const { settings: localSettings, updateSetting } = useLocalSettings();
   const language: AppLanguage = state.language || 'en';
 
@@ -129,15 +129,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
   const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [chatInput, setChatInput] = useState('');
-  const [chatHistory, setChatHistory] = useState<{ sender: string; text: string }[]>([]);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
-  const [searchModalDeck, setSearchModalDeck] = useState<Deck | null>(null);
-  const [searchModalPile, setSearchModalPile] = useState<CardPile | undefined>(undefined);
-  const [topDeckModalDeck, setTopDeckModalDeck] = useState<Deck | null>(null);
-  const [pilesButtonMenu, setPilesButtonMenu] = useState<{ deck: Deck; x: number; y: number } | null>(null);
   const [dragOverHand, setDragOverHand] = useState(false);
-  const [previousTab, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
+  const [, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom'>('none');
@@ -187,11 +182,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [markerColor, setMarkerColor] = useState('#ff0000');
   const [markerThickness, setMarkerThickness] = useState(10);
   const [markerOpacity, setMarkerOpacity] = useState(100);
-  const mainMenuRef = useRef<HTMLDivElement>(null);
   const currentDrawingTool = useDrawingTool();
 
   // Hand card scale state with localStorage persistence
-  const { scale: handCardScale, setHandCardScale } = useHandCardScale();
+  const { setHandCardScale } = useHandCardScale();
 
   // Listen for hand card scale change events from context menu
   useEffect(() => {
@@ -660,8 +654,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
   const handleSendChat = () => {
     if (!chatInput.trim()) return;
-    const userMsg = chatInput;
-    setChatHistory(prev => [...prev, { sender: 'You', text: userMsg }]);
     setChatInput('');
   };
 

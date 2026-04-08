@@ -16,10 +16,8 @@ export interface ObjectManagementProps {
 }
 
 export const ObjectManagement: React.FC<ObjectManagementProps> = ({
-  object,
   canPerformAction,
-  onAction,
-  language = 'en'
+  onAction
 }) => {
   const t = (key: string) => key; // Simplified
 

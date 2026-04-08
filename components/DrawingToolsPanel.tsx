@@ -1,9 +1,8 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useCallback, useEffect } from 'react';
-import { useGame } from '../store/GameContext';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { AppLanguage } from '../types';
-import { Pen, Eraser, Ruler, ZoomIn, ChevronDown, Settings, MousePointer2, Search, ZoomOut, Wrench } from 'lucide-react';
+import { Pen, Eraser, Ruler, ZoomIn, MousePointer2 } from 'lucide-react';
 
 // Drawing tools
 export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'zoom';

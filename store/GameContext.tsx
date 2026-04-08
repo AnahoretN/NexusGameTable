@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState } from 'react';
-import { GameItem, Player, PlayerPermissions, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, ContextAction, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingData, Stroke, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, AppLanguage, HyperscaleLayer, NexusBoard, NexusCellObject, DiceGroup, PanelTab, PoolPanelData, TableauPanelData } from '../types';
-import { CARD_WIDTH, CARD_HEIGHT, CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, SCROLLBAR_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
+import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
+import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
 import { generateUUID } from '../utils/uuid';
-import { loadGameState, restoreImagesInState, clearAllData, hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
-import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition, hasLocalSettings, LocalSettings } from '../utils/localSettings';
+import { loadGameState, clearAllData } from '../utils/gameStorage';
+import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from '../utils/localSettings';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
 import { Action } from './gameActions';
@@ -56,7 +56,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Don't save/restore local panel settings anymore
         // All panel settings should come from host's playerPanelSettings
-        const localPanelSettings: Map<string, any> = new Map();
 
         // Only process objects if they're in the payload
         let finalObjects = state.objects; // Default to current objects
@@ -652,8 +651,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                       const card = o as Card;
                       // Update cards that currently have the old card dimensions OR match the deck's aspect ratio
                       // This ensures cards inherit deck dimension changes even if they have small variations
-                      const cardMatchesOldDimensions = card.width === oldCardWidth && card.height === oldCardHeight;
-                      const cardMatchesDeckRatio = Math.abs((card.width / card.height) - (oldCardWidth / oldCardHeight)) < 0.01;
+                      const cardMatchesOldDimensions = (card.width ?? 0) === oldCardWidth && (card.height ?? 0) === oldCardHeight;
+                      const cardMatchesDeckRatio = card.width && card.height ? Math.abs((card.width / card.height) - (oldCardWidth / oldCardHeight)) < 0.01 : false;
 
                       if (cardMatchesOldDimensions || cardMatchesDeckRatio) {
                           newObjects[o.id] = {
@@ -3577,7 +3576,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           name: 'Pool 1',
           visibleToPlayerIds: [],
           manageableByPlayerIds: [],
-          editableByPlayerIds: []
+          editableByPlayerIds: [],
+          offsetX: 0,
+          offsetY: 0
         };
 
         // Find available territory outside playable area (5000×5000)
@@ -3631,7 +3632,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           name: 'Tableau 1',
           visibleToPlayerIds: [],
           manageableByPlayerIds: [],
-          editableByPlayerIds: []
+          editableByPlayerIds: [],
+          offsetX: 0,
+          offsetY: 0
         };
 
         const defaultTableauData: TableauPanelData = {
@@ -4809,15 +4812,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'REQUEST_PLAYER_PANEL_SETTINGS': {
       // Guest requests their panel settings from host
       // This should only be processed by host, guests ignore it
-      if (!isHost) return state;
+      // Note: This action is filtered at dispatch level based on isHost status
 
-      const { playerId } = action.payload;
-      const playerSettings = state.playerPanelSettings[playerId] || {};
-
-      // Send the settings back to the guest via a special action
-      // This will be handled by the guest's SYNC_STATE handler
-      // For now, we'll just return the current state
       // The actual delivery will happen via the peer connection
+      // For now, we'll just return the current state
       return state;
     }
     case 'APPLY_PLAYER_PANEL_SETTINGS': {

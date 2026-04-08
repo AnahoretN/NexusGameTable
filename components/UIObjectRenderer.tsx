@@ -117,7 +117,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   // getLocalEffectiveProps and updateLocalSettings are only needed for windows now
   const {
-    getEffectiveProps: getLocalEffectiveProps,
     updateSettings: updateLocalSettings,
   } = useLocalPanelSettings(panelObject || uiObject as any);
 
@@ -206,7 +205,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   const shouldExpand = isMainMenu ? minimized : isCollapsed;
   const dualPosition = useMemo(() => uiObject.type === ItemType.PANEL && (uiObject as PanelObject).dualPosition, [uiObject]);
 
-  const handleToggleCollapse = useCallback((e?: React.MouseEvent) => {
+  const handleToggleCollapse = useCallback((_e?: React.MouseEvent) => {
     // Toggle between collapsed (200px wide, title only) and full size
 
     if (shouldExpand) {
@@ -445,7 +444,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       setCurrentSize({ width: constrainedWidth, height: constrainedHeight });
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = (_e: MouseEvent) => {
       if (!resizing) return;
 
       const rect = container.getBoundingClientRect();
@@ -715,12 +714,12 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         }
         // When Shift is not pressed, let normal click handlers work
       }}
-      onMouseUp={(e) => {
+      onMouseUp={(_e) => {
         if (isShiftDragging) {
           setIsShiftDragging(false);
         }
       }}
-      onMouseLeave={(e) => {
+      onMouseLeave={(_e) => {
         if (isShiftDragging) {
           setIsShiftDragging(false);
         }
@@ -1440,7 +1439,7 @@ const MainMenuContentWithDragDetection: React.FC<{ panel: PanelObject }> = ({ pa
 };
 
 // HandPanel with Shift+drag detection and card drag detection
-const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel, effectiveProps }) => {
+const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel: _panel, effectiveProps }) => {
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const [isCardDragTarget, setIsCardDragTarget] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -1648,7 +1647,7 @@ const TableauPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel
 };
 
 // DrawingToolsPanel with Shift+drag detection
-const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel, effectiveProps }) => {
+const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel: _panel, effectiveProps }) => {
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
@@ -1705,7 +1704,7 @@ const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effecti
 };
 
 // TokensPanel with Shift+drag detection
-const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel, effectiveProps }) => {
+const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel: _panel, effectiveProps }) => {
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
@@ -1759,16 +1758,6 @@ const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProp
       <TokensPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={state.language} />
     </div>
   );
-};
-
-// Tableau panel content
-const TableauPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
-  return <TableauPanel panel={panel} />;
-};
-
-// Pool panel content
-const PoolPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
-  return <PoolPanel panel={panel} />;
 };
 
 // Window content renderer

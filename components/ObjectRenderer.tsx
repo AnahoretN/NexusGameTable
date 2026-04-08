@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, Token, ItemType, TableObject, TokenShape, ContextAction } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
-import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp, ArrowDown, Lock, Unlock, Shuffle, Search, Hand, Layers, Pin, Undo, Plus } from 'lucide-react';
+import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp, ArrowDown, Lock, Unlock, Shuffle, Search, Hand, Pin, Undo } from 'lucide-react';
 import { getCardSettings } from '../utils/cardUtils';
 import { executeActionButtonUniversal } from '../utils/actionButtonsHandler';
 import { logger } from '../utils/logger';

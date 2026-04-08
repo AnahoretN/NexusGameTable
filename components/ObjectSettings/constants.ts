@@ -4,17 +4,11 @@ import { ContextAction, ClickAction, ItemType } from '../../types';
 export const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'clone', label: 'Clone Object' },
   { id: 'delete', label: 'Delete Object' },
-  { id: 'flip', label: 'Flip Card' },
+  { id: 'lock', label: 'Lock/Unlock Position' },
   { id: 'layer', label: 'Change Layer (section)' },
   { id: 'layerUp', label: 'Layer Up' },
   { id: 'layerDown', label: 'Layer Down' },
-  { id: 'lock', label: 'Lock/Unlock Position' },
-  { id: 'pin', label: 'Pin/Unpin to Screen' },
   { id: 'rotate', label: 'Rotation (section)' },
-  { id: 'rotateClockwise', label: 'Rotate Clockwise' },
-  { id: 'rotateCounterClockwise', label: 'Rotate Counter-Clockwise' },
-  { id: 'swingClockwise', label: 'Swing Clockwise' },
-  { id: 'swingCounterClockwise', label: 'Swing Counter-Clockwise' },
 ];
 
 // "Move to" actions are only for Action Buttons for Cards, NOT for Context Menu Actions
@@ -27,7 +21,7 @@ export const MOVE_TO_ACTIONS: { id: ContextAction | 'mill'; label: string }[] = 
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'pin', 'rotate'];
+export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'rotate'];
 
 // Check if an action can be shown as an action button
 export function isActionButtonAllowed(action: ContextAction): boolean {
@@ -43,39 +37,10 @@ export function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'layerUp':
     case 'layerDown':
       return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
-    case 'rotateClockwise':
-    case 'rotateCounterClockwise':
-    case 'swingClockwise':
-    case 'swingCounterClockwise':
-      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
-    case 'flip':
-      return [ItemType.CARD];
     case 'rotate':
       return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
-    case 'draw':
-      return [ItemType.DECK];
-    case 'playTopCard':
-      return [ItemType.DECK];
-    case 'millTopCard':
-      return [ItemType.DECK];
-    case 'toBottom':
-      return [ItemType.CARD];
-    case 'shuffleDeck':
-      return [ItemType.DECK];
-    case 'searchDeck':
-      return [ItemType.DECK];
-    case 'topDeck':
-      return [ItemType.DECK];
-    case 'piles':
-      return [ItemType.DECK];
-    case 'returnAll':
-      return [ItemType.DECK];
     case 'millToBottom':
       return [ItemType.CARD];
-    case 'showTop':
-      return [ItemType.DECK];
-    case 'hide':
-      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER];
     case 'moveToHand':
       return [ItemType.CARD];
     case 'moveToTopDeck':

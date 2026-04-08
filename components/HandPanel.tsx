@@ -4,13 +4,13 @@ import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from '
 import { logger } from '../utils/logger';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType, AppLanguage, Player } from '../types';
+import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player } from '../types';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
 import { getCardButtonConfigsWithActions } from '../utils/buttonConfig';
 import { MAIN_MENU_WIDTH } from '../constants';
-import { Settings, X as XIcon } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { useTabCardScale } from '../hooks/useTabCardScale';
 import { HandTabSettingsModal } from './HandTabSettingsModal';
 
@@ -406,12 +406,6 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     dispatch({ type: 'FLIP_CARD', payload: { cardId } });
   }, [dispatch]);
 
-  const handleRotate = useCallback((cardId: string) => {
-    // Use card's rotationStep (or default 45) from settings
-    const obj = state.objects[cardId] as any;
-    const rotationStep = obj?.rotationStep ?? 45;
-    dispatch({ type: 'ROTATE_OBJECT', payload: { id: cardId, angle: rotationStep } });
-  }, [dispatch, state.objects]);
 
   const handleRotateClockwise = useCallback((cardId: string) => {
     // Rotate clockwise by rotationStep
@@ -1181,8 +1175,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                         );
 
                         const actualIndex = groupOffset + index;
-                        const isDragging = dragIndex === actualIndex;
-                        const isDragOver = dragOverIndex === actualIndex;
+                        const _isDragging = dragIndex === actualIndex;
+                        const _isDragOver = dragOverIndex === actualIndex;
 
                         // When viewing opponent's hand, create a modified card that appears face down
                         const displayedCard = isViewingOpponentHand ? { ...card, faceUp: false } : card;
@@ -1403,5 +1397,8 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 
 // Memoize HandPanel to prevent unnecessary re-renders
 export const HandPanelMemo = React.memo(HandPanel, (prevProps, nextProps) => {
-  return prevProps.panel.id === nextProps.panel.id;
+  return prevProps.width === nextProps.width &&
+         prevProps.isDragTarget === nextProps.isDragTarget &&
+         prevProps.isCollapsed === nextProps.isCollapsed &&
+         prevProps.language === nextProps.language;
 });

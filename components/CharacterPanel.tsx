@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType } from '../types';
-import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload, X } from 'lucide-react';
+import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload } from 'lucide-react';
 import { TextBlock, SliderBlock, TableBlock, InventoryBlock, AvatarBlock, CounterBlock } from './CharacterBlocks';
 import { SimpleContextMenu } from './SimpleContextMenu';
 import { CharacterSettingsModal } from './CharacterSettingsModal';

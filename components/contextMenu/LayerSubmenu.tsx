@@ -16,8 +16,7 @@ export interface LayerSubmenuProps {
 
 export const LayerSubmenu: React.FC<LayerSubmenuProps> = ({
   canPerformAction,
-  onAction,
-  language = 'en'
+  onAction
 }) => {
   const t = (key: string) => key; // Simplified - would use actual translate function
 

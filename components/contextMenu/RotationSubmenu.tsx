@@ -16,8 +16,7 @@ export interface RotationSubmenuProps {
 
 export const RotationSubmenu: React.FC<RotationSubmenuProps> = ({
   canPerformAction,
-  onAction,
-  language = 'en'
+  onAction
 }) => {
   const t = (key: string) => key; // Simplified
 

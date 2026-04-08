@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { ContextAction, Deck } from '../../types';
-import { Hand, Shuffle, Search, Eye, EyeOff, Undo, ArrowDown, CornerDownRight, RotateCw } from 'lucide-react';
+import { Hand, Shuffle, Search, Eye, Undo, ArrowDown, CornerDownRight, RotateCw } from 'lucide-react';
 import { Locale } from '../../utils/translations';
 
 export interface DeckActionsProps {
@@ -17,10 +17,8 @@ export interface DeckActionsProps {
 }
 
 export const DeckActions: React.FC<DeckActionsProps> = ({
-  deck,
   canPerformAction,
   onAction,
-  language = 'en',
   hasCursorSlotCards = false
 }) => {
   const t = (key: string) => key; // Simplified
@@ -128,7 +126,7 @@ export const DECK_ACTIONS: ContextAction[] = [
  * Check if deck has any actions available
  */
 export function hasDeckActions(
-  deck: Deck,
+  _deck: Deck,
   canPerformAction: (action: ContextAction) => boolean
 ): boolean {
   return DECK_ACTIONS.some(action => canPerformAction(action));
