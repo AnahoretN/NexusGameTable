@@ -101,12 +101,16 @@ export function findAvailableTerritory(
 
 /**
  * Calculate territory for pool panel based on pool data
+ * NOTE: This function now uses tab coordinates instead of poolData.offsetX/offsetY
  */
 export function calculatePoolTerritory(poolId: string, poolData: any): Territory {
+  // Get active tab coordinates
+  const activeTab = poolData.tabs?.find((tab: any) => tab.id === poolData.activeTabId) || poolData.tabs?.[0];
+
   return {
     id: poolId,
-    x: poolData.offsetX || 0,
-    y: poolData.offsetY || 0,
+    x: activeTab?.offsetX ?? 0,
+    y: activeTab?.offsetY ?? 0,
     width: poolData.width || POOL_PANEL_SIZE,
     height: poolData.height || POOL_PANEL_SIZE
   };

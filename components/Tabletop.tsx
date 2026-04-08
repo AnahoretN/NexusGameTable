@@ -4829,9 +4829,14 @@ export const Tabletop: React.FC = () => {
               const relativeVUX = (relativePixelX + scrollLeft) / pixelsPerVU;
               const relativeVUY = (relativePixelY + scrollTop) / pixelsPerVU;
 
+              // Get active tab coordinates
+              const activeTab = panelObj.poolData.tabs?.find((tab: any) => tab.id === panelObj.poolData.activeTabId) || panelObj.poolData.tabs?.[0];
+              const tabOffsetX = activeTab?.offsetX ?? 0;
+              const tabOffsetY = activeTab?.offsetY ?? 0;
+
               // Pool zone coordinates
-              const poolX = panelObj.poolData.offsetX + relativeVUX;
-              const poolY = panelObj.poolData.offsetY + relativeVUY;
+              const poolX = tabOffsetX + relativeVUX;
+              const poolY = tabOffsetY + relativeVUY;
 
               // Get object dimensions for centering
               const objWidth = draggedObj.width || 100;
@@ -4845,8 +4850,8 @@ export const Tabletop: React.FC = () => {
               const poolWidth = panelObj.poolData.width || 1000;
               const poolHeight = panelObj.poolData.height || 1000;
 
-              const constrainedX = Math.max(panelObj.poolData.offsetX, Math.min(finalX, panelObj.poolData.offsetX + poolWidth - objWidth));
-              const constrainedY = Math.max(panelObj.poolData.offsetY, Math.min(finalY, panelObj.poolData.offsetY + poolHeight - objHeight));
+              const constrainedX = Math.max(tabOffsetX, Math.min(finalX, tabOffsetX + poolWidth - objWidth));
+              const constrainedY = Math.max(tabOffsetY, Math.min(finalY, tabOffsetY + poolHeight - objHeight));
 
               // Clear cursor slot if object was in it BEFORE updating position
               const cursorSlotObj = cursorSlot.find(obj => obj.id === draggingId);

@@ -3584,16 +3584,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Find available territory outside playable area (5000×5000)
         const existingPools = Object.values(state.objects)
           .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.POOL)
-          .map(obj => {
+          .flatMap(obj => {
             const poolPanel = obj as PanelObject;
             const poolData = poolPanel.poolData!;
-            return {
-              id: poolPanel.id,
-              x: poolData.offsetX || 0,
-              y: poolData.offsetY || 0,
-              width: poolData.width || 1000,
-              height: poolData.height || 1000
-            };
+            // Each tab has its own territory now
+            return poolData.tabs.map(tab => ({
+              id: tab.id,
+              x: tab.offsetX ?? 0,
+              y: tab.offsetY ?? 0,
+              width: 1000,
+              height: 1000
+            }));
           });
 
         const territory = findAvailableTerritory(existingPools);
@@ -3602,24 +3603,30 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           logger.error('No available territory for pool panel');
           // Fallback to old logic if territory finding fails
           const poolIndex = existingPools.length;
-          const defaultPoolData: PoolPanelData = {
-            tabs: [defaultPoolTab],
-            activeTabId: 'tab-default',
+          const fallbackTab = {
+            ...defaultPoolTab,
             offsetX: 2500 + poolIndex * 1200,
-            offsetY: 0,
+            offsetY: 0
+          };
+          const defaultPoolData: PoolPanelData = {
+            tabs: [fallbackTab],
+            activeTabId: 'tab-default',
             width: 1000,
             height: 1000
           };
           (panel as PanelObject & { poolData: PoolPanelData }).poolData = defaultPoolData;
         } else {
-          const defaultPoolData: PoolPanelData = {
-            tabs: [defaultPoolTab],
-            activeTabId: 'tab-default',
+          const territoryTab = {
+            ...defaultPoolTab,
             offsetX: territory.x,
             offsetY: territory.y,
+            territoryId: `territory-${panel.id}-tab-default-${Date.now()}`
+          };
+          const defaultPoolData: PoolPanelData = {
+            tabs: [territoryTab],
+            activeTabId: 'tab-default',
             width: 1000,
-            height: 1000,
-            territoryId: `territory-${panel.id}-${Date.now()}`
+            height: 1000
           };
           (panel as PanelObject & { poolData: PoolPanelData }).poolData = defaultPoolData;
         }

@@ -34,8 +34,8 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
           // Each tab has its own territory now
           return poolData.tabs.map(tab => ({
             id: tab.id,
-            x: tab.offsetX || 0,
-            y: tab.offsetY || 0,
+            x: tab.offsetX ?? 0,
+            y: tab.offsetY ?? 0,
             width: 1000, // Fixed pool size
             height: 1000
           }));
@@ -226,8 +226,8 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
         // Each tab has its own territory now
         return poolData.tabs.map(tab => ({
           id: tab.id,
-          x: tab.offsetX || 0,
-          y: tab.offsetY || 0,
+          x: tab.offsetX ?? 0,
+          y: tab.offsetY ?? 0,
           width: 1000, // Fixed pool size
           height: 1000
         }));

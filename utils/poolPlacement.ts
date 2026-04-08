@@ -325,11 +325,29 @@ export interface PoolPanelData {
 
 /**
  * Create default pool zone from panel data
+ * NOTE: This function is deprecated - use createPoolZoneFromTab instead
  */
 export function createPoolZoneFromPanel(poolData: PoolPanelData): PoolZone {
+  // Get active tab coordinates
+  const activeTab = poolData.tabs?.find(tab => tab.id === poolData.activeTabId) || poolData.tabs?.[0];
+
   return {
-    offsetX: poolData.offsetX || 0,
-    offsetY: poolData.offsetY || 0,
+    offsetX: activeTab?.offsetX ?? 0,
+    offsetY: activeTab?.offsetY ?? 0,
+    width: poolData.width || DEFAULT_POOL_WIDTH,
+    height: poolData.height || DEFAULT_POOL_HEIGHT
+  };
+}
+
+/**
+ * Create pool zone from specific tab
+ */
+export function createPoolZoneFromTab(poolData: PoolPanelData, tabId: string): PoolZone {
+  const tab = poolData.tabs?.find(t => t.id === tabId);
+
+  return {
+    offsetX: tab?.offsetX ?? 0,
+    offsetY: tab?.offsetY ?? 0,
     width: poolData.width || DEFAULT_POOL_WIDTH,
     height: poolData.height || DEFAULT_POOL_HEIGHT
   };

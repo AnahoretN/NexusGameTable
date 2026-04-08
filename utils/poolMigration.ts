@@ -17,9 +17,11 @@ export interface PoolPanelMigrationResult {
  * Check if a pool panel is in playable area (needs migration)
  */
 export function poolNeedsMigration(panel: PanelObject): boolean {
-  if (!panel.poolData) return false;
+  if (!panel.poolData || !panel.poolData.tabs || panel.poolData.tabs.length === 0) return false;
 
-  const { offsetX = 0, offsetY = 0 } = panel.poolData;
+  // Check first tab's coordinates
+  const firstTab = panel.poolData.tabs[0];
+  const { offsetX = 0, offsetY = 0 } = firstTab;
 
   // Pool is in playable area if both coordinates are < 5000
   return offsetX < PLAYABLE_AREA_SIZE && offsetY < PLAYABLE_AREA_SIZE;
@@ -39,16 +41,17 @@ export function migratePoolPanel(
   // Get existing pool territories (excluding this panel)
   const existingPools = Object.values(allObjects)
     .filter(obj => obj.type === ItemType.PANEL && obj.id !== panel.id && (obj as PanelObject).poolData)
-    .map(obj => {
+    .flatMap(obj => {
       const poolPanel = obj as PanelObject;
       const poolData = poolPanel.poolData!;
-      return {
-        id: poolPanel.id,
-        x: poolData.offsetX || 0,
-        y: poolData.offsetY || 0,
-        width: poolData.width || 1000,
-        height: poolData.height || 1000
-      };
+      // Each tab has its own territory now
+      return poolData.tabs.map(tab => ({
+        id: tab.id,
+        x: tab.offsetX ?? 0,
+        y: tab.offsetY ?? 0,
+        width: 1000,
+        height: 1000
+      }));
     });
 
   // Find new territory
@@ -87,11 +90,14 @@ export function migrateAllPoolPanels(
     const migration = migratePoolPanel(panel, objects);
 
     if (migration.success) {
-      // Update the panel with new coordinates
-      if (panel.poolData) {
-        panel.poolData.offsetX = migration.newX!;
-        panel.poolData.offsetY = migration.newY!;
-        panel.poolData.territoryId = `territory-${panel.id}-${Date.now()}`;
+      // Update the panel tabs with new coordinates
+      if (panel.poolData && panel.poolData.tabs && panel.poolData.tabs.length > 0) {
+        // Update all tabs to use the new territory coordinates
+        panel.poolData.tabs.forEach(tab => {
+          tab.offsetX = migration.newX!;
+          tab.offsetY = migration.newY!;
+          tab.territoryId = `territory-${panel.id}-${tab.id}-${Date.now()}`;
+        });
         result.migrated++;
       }
     } else {
@@ -116,12 +122,19 @@ export function getMigrationInfo(objects: Record<string, any>): {
     obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData
   ) as PanelObject[];
 
-  const details = poolPanels.map(panel => ({
-    name: panel.name || panel.id,
-    x: panel.poolData?.offsetX || 0,
-    y: panel.poolData?.offsetY || 0,
-    needsMigration: poolNeedsMigration(panel)
-  }));
+  const details = poolPanels.map(panel => {
+    // Get coordinates from first tab
+    const firstTab = panel.poolData?.tabs?.[0];
+    const x = firstTab?.offsetX ?? 0;
+    const y = firstTab?.offsetY ?? 0;
+
+    return {
+      name: panel.name || panel.id,
+      x,
+      y,
+      needsMigration: poolNeedsMigration(panel)
+    };
+  });
 
   return {
     totalPools: poolPanels.length,

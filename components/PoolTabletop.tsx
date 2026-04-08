@@ -407,14 +407,6 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       return 0;
     });
 
-    // Removed debug logging for performance
-    // if (sorted.length > 0 && false) {
-    //   console.log('[PoolTabletop] Found objects in pool zone:', {
-    //     total: sorted.length,
-    //     objectIds: sorted.map(o => ({ id: o.id, type: o.type, x: o.x, y: o.y }))
-    //   });
-    // }
-
     return sorted;
   }, [state.objects, poolZone, state.hyperscaleLayers]);
 

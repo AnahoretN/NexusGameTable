@@ -560,6 +560,21 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       });
     }
 
+    // For boards: clear magnet points when snap settings are disabled
+    if (toSave.type === ItemType.BOARD) {
+      const board = toSave as Board;
+      const originalBoard = object as Board;
+
+      // Check if snapToGrid or snapCardsToGrid changed from true to false
+      const snapToGridDisabled = originalBoard.snapToGrid === true && board.snapToGrid === false;
+      const snapCardsToGridDisabled = originalBoard.snapCardsToGrid === true && board.snapCardsToGrid === false;
+
+      // If either setting was disabled, clear all magnet points
+      if (snapToGridDisabled || snapCardsToGridDisabled) {
+        (toSave as Board).gridCellMagnetPoints = undefined;
+      }
+    }
+
     onSave(toSave);
 
     // After saving, update all cards in the deck when cardWidth/cardHeight/cardOrientation/cardShape changed
