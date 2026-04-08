@@ -11,6 +11,9 @@ export interface ContextMenuActionParams {
   state: any;
   activePlayerId?: string;
   offset?: { x: number; y: number };
+  scrollX?: number;
+  scrollY?: number;
+  zoom?: number;
   setContextMenu?: (menu: any) => void;
   setSettingsModalObj?: (obj: TableObject) => void;
   setDeleteCandidateId?: (id: string) => void;
@@ -47,10 +50,15 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     isPoolPanel = false
   } = params;
 
-  // Extract zoom and scroll from state for pin/unpin calculations
+  // Extract zoom, scroll, and offset from state for pin/unpin calculations
   const zoom = state?.zoom ?? 1;
   const scrollX = state?.viewTransform?.scroll?.x ?? 0;
   const scrollY = state?.viewTransform?.scroll?.y ?? 0;
+  const stateOffset = state?.viewTransform?.offset || { x: 0, y: 0 };
+  // Use state offset for game objects, parameter offset for UI objects
+  const effectiveOffset = (object.type === ItemType.PANEL || object.type === ItemType.WINDOW)
+    ? offset
+    : stateOffset;
 
   switch(action) {
     case 'configure':
@@ -83,12 +91,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       return;
 
     case 'pinToViewport':
-      console.log('📌 PIN_TO_VIEWPORT - Finding current visible position', {
-        objectId: object.id,
-        objectType: object.type,
-        objectName: object.name
-      });
-
       // NEW APPROACH: Use DOM query to find the ACTUAL current position of the object
       // This ensures NO visual jump when pinning - the object stays exactly where it is
       requestAnimationFrame(() => {
@@ -109,41 +111,30 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
 
         if (element) {
           const rect = element.getBoundingClientRect();
-          screenX = rect.left;
-          screenY = rect.top;
-
-          console.log('✅ Found element, using its current screen position', {
-            objectId: object.id,
-            screenX,
-            screenY,
-            rect
-          });
+          // IMPORTANT: For pinned objects, we need to account for zoom in the conversion
+          // Unpinned objects use v2p() which includes zoom, so getBoundingClientRect() returns zoomed coordinates
+          // For pinned objects with position: fixed, we need to remove zoom effect
+          // Formula: pinnedX = viewportX / zoom
+          const currentZoom = zoom || 1;
+          screenX = rect.left / currentZoom;
+          screenY = rect.top / currentZoom;
         } else {
           // Fallback: calculate from object position
-          console.log('⚠️ Element not found, calculating from object position', {
-            objectId: object.id,
-            objectType: object.type
-          });
-
           if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
             // UI objects use object.x/y directly
             screenX = object.x;
             screenY = object.y;
           } else {
             // Game objects in transform container
-            if (typeof zoom === 'undefined') {
-              console.error('❌ ZOOM undefined!');
-              return;
-            }
-            screenX = (object.x * zoom) + offset.x - scrollX;
-            screenY = (object.y * zoom) + offset.y - scrollY;
+            // Convert world coordinates to pinned screen coordinates
+            // Pinned rendering: left = pinnedPosition.x * zoom
+            // Unpinned rendering: left = worldX * pixelsPerVU * zoom + offset.x - scroll.x
+            // For same visual position: pinnedPosition.x * zoom = worldX * pixelsPerVU * zoom + offset.x - scroll.x
+            // Therefore: pinnedPosition.x = worldX * pixelsPerVU + (offset.x - scroll.x) / zoom
+            const pixelsPerVU = state?.viewTransform?.pixelsPerVU ?? 1.08;
+            screenX = object.x * pixelsPerVU + (offset.x - scrollX) / (zoom || 1);
+            screenY = object.y * pixelsPerVU + (offset.y - scrollY) / (zoom || 1);
           }
-
-          console.log('✅ Calculated screen position', {
-            objectId: object.id,
-            screenX,
-            screenY
-          });
         }
 
         // Dispatch the pin action with the correct screen position
@@ -159,11 +150,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       return;
 
     case 'unpinFromViewport':
-      console.log('📍 UNPIN_FROM_VIEWPORT - Restoring world position', {
-        objectId: object.id,
-        objectType: object.type
-      });
-
       // Get the current pinned screen position
       const pinnedPos = (object as any).pinnedScreenPosition;
 
@@ -172,29 +158,32 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
         return;
       }
 
-      // For unpinning, we need to convert the screen position back to world coordinates
+      // For unpinning, we need to convert pinned coordinates back to world coordinates
       let worldX: number, worldY: number;
 
       if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
-        // UI objects: simple conversion
+        // UI objects: simple conversion (no zoom, just offset)
         worldX = pinnedPos.x - offset.x;
         worldY = pinnedPos.y - offset.y;
       } else {
-        // Game objects: need to account for zoom and scroll
-        if (typeof zoom === 'undefined') {
-          console.error('❌ ZOOM undefined!');
-          return;
-        }
-        worldX = (pinnedPos.x + scrollX - offset.x) / zoom;
-        worldY = (pinnedPos.y + scrollY - offset.y) / zoom;
-      }
+        // Game objects: pinnedScreenPosition is in a different coordinate system than world coordinates!
+        //
+        // PINNED rendering: left = pinnedPosition.x * zoom (NO pixelsPerVU, offset, scroll)
+        // UNPINNED rendering: left = v2p(x) = x * pixelsPerVU * zoom + offset.x - scroll.x
+        //
+        // To convert from pinned to unpinned:
+        // pinnedPosition.x * zoom = worldX * pixelsPerVU * zoom + offset.x - scroll.x
+        // Therefore: worldX = (pinnedPosition.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom)
+        // Simplified: worldX = pinnedPosition.x / pixelsPerVU + (scroll.x - offset.x) / (pixelsPerVU * zoom)
+        //
+        // Since pinnedScreenPosition was calculated as screenX/zoom during pinning, and we want
+        // to maintain visual position, we need to convert to the unpinned coordinate system.
+        const pixelsPerVU = state?.viewTransform?.pixelsPerVU ?? 1.08;
 
-      console.log('✅ Calculated world position for unpinning', {
-        objectId: object.id,
-        worldX,
-        worldY,
-        fromScreenPos: pinnedPos
-      });
+        // Convert from pinned screen coordinates to world coordinates
+        worldX = (pinnedPos.x * zoom - effectiveOffset.x + scrollX) / (pixelsPerVU * zoom);
+        worldY = (pinnedPos.y * zoom - effectiveOffset.y + scrollY) / (pixelsPerVU * zoom);
+      }
 
       dispatch({
         type: 'UNPIN_FROM_VIEWPORT',

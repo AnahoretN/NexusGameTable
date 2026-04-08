@@ -1710,10 +1710,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 hyperscaleLayerId: deckHyperscaleLayerId,
                 // Clear the pending data
                 __pendingPlayTop: undefined,
-                // Preserve pinning state if card was pinned
-                ...((card as any).isPinnedToViewport && {
+                // Re-pin object if it was pinned before being picked up
+                ...((card as any).wasPinnedToViewport && {
                     isPinnedToViewport: true,
-                    pinnedScreenPosition: (card as any).pinnedScreenPosition || { x: action.payload.x, y: action.payload.y }
+                    pinnedScreenPosition: {
+                        x: action.payload.x * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.x || 0) - (state.viewTransform?.scroll?.x || 0)),
+                        y: action.payload.y * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.y || 0) - (state.viewTransform?.scroll?.y || 0))
+                    },
+                    wasPinnedToViewport: undefined // Clear the flag
                 }),
             };
 
@@ -1762,10 +1766,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 inCursorSlot: false,
                 fromPoolPanel: undefined,
                 isOnTable: true,
-                // Preserve pinning state if object was pinned
-                ...((obj as any).isPinnedToViewport && {
+                // Re-pin object if it was pinned before being picked up
+                ...((obj as any).wasPinnedToViewport && {
                     isPinnedToViewport: true,
-                    pinnedScreenPosition: (obj as any).pinnedScreenPosition || { x: action.payload.x, y: action.payload.y }
+                    pinnedScreenPosition: {
+                        x: action.payload.x * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.x || 0) - (state.viewTransform?.scroll?.x || 0)),
+                        y: action.payload.y * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.y || 0) - (state.viewTransform?.scroll?.y || 0))
+                    },
+                    wasPinnedToViewport: undefined // Clear the flag
                 }),
             };
 
@@ -1802,10 +1810,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 inCursorSlot: false,
                 fromPoolPanel: undefined,
                 isOnTable: true,
-                // Preserve pinning state if object was pinned (boards should maintain their pinning)
-                ...((obj as any).isPinnedToViewport && {
+                // Re-pin object if it was pinned before being picked up
+                ...((obj as any).wasPinnedToViewport && {
                     isPinnedToViewport: true,
-                    pinnedScreenPosition: (obj as any).pinnedScreenPosition || { x: action.payload.x, y: action.payload.y }
+                    pinnedScreenPosition: {
+                        x: action.payload.x * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.x || 0) - (state.viewTransform?.scroll?.x || 0)),
+                        y: action.payload.y * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.y || 0) - (state.viewTransform?.scroll?.y || 0))
+                    },
+                    wasPinnedToViewport: undefined // Clear the flag
                 }),
             };
 
@@ -1901,10 +1913,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             fromPoolPanel: undefined,
             isOnTable: true, // Always set isOnTable: true when dropping from cursor slot
             ...(hyperscaleLayerId && { hyperscaleLayerId }),
-            // Preserve pinning state if object was pinned
-            ...((obj as any).isPinnedToViewport && {
+            // Re-pin object if it was pinned before being picked up
+            ...((obj as any).wasPinnedToViewport && {
                 isPinnedToViewport: true,
-                pinnedScreenPosition: (obj as any).pinnedScreenPosition || { x: action.payload.x, y: action.payload.y }
+                pinnedScreenPosition: {
+                    // Convert world coordinates (vu) to pinned screen coordinates
+                    // Pinned rendering: left = pinnedPosition.x * zoom
+                    // Unpinned rendering: left = worldX * pixelsPerVU * zoom + offset.x - scroll.x
+                    // To maintain visual position: pinnedPosition.x * zoom = worldX * pixelsPerVU * zoom + offset.x - scroll.x
+                    // Therefore: pinnedPosition.x = (worldX * pixelsPerVU * zoom + offset.x - scroll.x) / zoom
+                    // Simplified: pinnedPosition.x = worldX * pixelsPerVU + (offset.x - scroll.x) / zoom
+                    x: action.payload.x * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.x || 0) - (state.viewTransform?.scroll?.x || 0)),
+                    y: action.payload.y * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.y || 0) - (state.viewTransform?.scroll?.y || 0))
+                },
+                wasPinnedToViewport: undefined // Clear the flag
             }),
         };
 

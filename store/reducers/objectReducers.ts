@@ -54,7 +54,8 @@ export function addObjectReducer(state: any, action: any): any {
     const obj = state.objects[action.payload.id];
     if (!obj || obj.locked) return state;
 
-    // For pinned objects, also update pinnedScreenPosition
+    // For pinned objects, update world coordinates but keep pinnedScreenPosition unchanged
+    // The pinnedScreenPosition should only be updated when pinning/unpinning, not during movement
     if ((obj as any).isPinnedToViewport) {
       return {
         ...state,
@@ -63,8 +64,8 @@ export function addObjectReducer(state: any, action: any): any {
           [action.payload.id]: {
             ...obj,
             x: action.payload.x,
-            y: action.payload.y,
-            pinnedScreenPosition: { x: action.payload.x, y: action.payload.y }
+            y: action.payload.y
+            // Note: pinnedScreenPosition is NOT updated here - it stays constant while pinned
           } as TableObject
         }
       };

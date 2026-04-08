@@ -2093,7 +2093,24 @@ export const Tabletop: React.FC = () => {
     cursorSlotRef.current = [...cursorSlotRef.current, itemClone as CardType | TokenType | BoardType];
 
     // Mark the item as inCursorSlot immediately (no delay for smoother pickup)
-    dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
+    // IMPORTANT: Unpin object when adding to cursor slot to allow proper repositioning
+    // Store that it was pinned so it can be re-pinned when dropped
+    const pinnedObj = state.objects[id];
+    if (pinnedObj && (pinnedObj as any).isPinnedToViewport) {
+      // Unpin the object but remember it was pinned for re-pinning on drop
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id,
+          inCursorSlot: true,
+          isPinnedToViewport: false,
+          pinnedScreenPosition: undefined,
+          wasPinnedToViewport: true // Remember it was pinned
+        }
+      });
+    } else {
+      dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
+    }
 
     // Clean up magnet points - when picking up an object, remove it from any cell's magnet points
     // and reposition remaining objects (OPTIMIZED: only for tokens that are actually snapped)
@@ -4120,6 +4137,7 @@ export const Tabletop: React.FC = () => {
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
       // Cards, tokens, boards, decks, randomizers, counters, and dice use cursor slot drag system ONLY (no normal drag)
+      // EXCEPT when pinned - pinned objects should use direct drag to maintain pinned position
       // These objects ALWAYS use cursor slot system - NO 5px threshold, IMMEDIATE pickup
       if (item && (
         item.type === ItemType.CARD ||
@@ -4130,6 +4148,11 @@ export const Tabletop: React.FC = () => {
         item.type === ItemType.DICE_OBJECT ||
         item.type === ItemType.BOARD
       )) {
+        // SPECIAL CASE: Pinned objects should use direct drag, NOT cursor slot
+        if ((item as any).isPinnedToViewport === true) {
+          // Pinned cards/tokens/counters/dice - use direct drag (skip cursor slot)
+          // Continue to normal drag handling below
+        } else {
         // Check if object is in pool zone (x >= 2500)
         // Pool zones start at x=2500, objects there should be handled by PoolTabletop only
         const objX = item.x || 0;
@@ -4156,6 +4179,7 @@ export const Tabletop: React.FC = () => {
 
         e.stopPropagation();
         return; // Don't proceed with normal drag system
+        }
       }
 
       // Boards use cursor slot system (handled above), don't use normal drag
@@ -5176,12 +5200,21 @@ export const Tabletop: React.FC = () => {
 
     if (isSpecialAction) {
       try {
+        // Get current scroll and zoom values
+        const scrollContainer = scrollContainerRef.current;
+        const currentScrollX = scrollContainer?.scrollLeft || state.viewTransform.scroll.x;
+        const currentScrollY = scrollContainer?.scrollTop || state.viewTransform.scroll.y;
+        const currentZoom = (localSettings.zoom ?? 100) / 100;
+
         executeContextMenuAction(action, {
           object: freshObject,
           dispatch,
           state,
           activePlayerId: state.activePlayerId,
           offset,
+          scrollX: currentScrollX,
+          scrollY: currentScrollY,
+          zoom: currentZoom,
           setContextMenu,
           setSettingsModalObj,
           setDeleteCandidateId,
@@ -5496,6 +5529,17 @@ export const Tabletop: React.FC = () => {
       });
   }, [state.objects, state.activePlayerId]);
 
+  // OPTIMIZATION: Cache for pinned game objects (for position updates)
+  const pinnedGameObjects = useMemo(() => {
+    return (Object.values(state.objects) as TableObject[]).filter(obj =>
+      (obj as any).isPinnedToViewport &&
+      obj.type !== ItemType.PANEL &&
+      obj.type !== ItemType.WINDOW &&
+      obj.type !== ItemType.DECK &&
+      obj.type !== ItemType.BOARD
+    );
+  }, [state.objects]);
+
   const worldBounds = useMemo(() => {
     // For scrollbars: show only playable area (5000×5000) as if that's the entire world
     // Convert to pixels for rendering (using local zoom-adjusted pixelsPerVU)
@@ -5509,6 +5553,7 @@ export const Tabletop: React.FC = () => {
         setDeleteCandidateId(null);
     }
   };
+
 
   return (
     <div
@@ -6501,7 +6546,7 @@ export const Tabletop: React.FC = () => {
                                     fontColor={(obj as any).fontColor || 'white'}
                                 />
 
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
+                            {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
                             {showGrid && (
                                 <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
                                     <defs>
@@ -7096,7 +7141,7 @@ export const Tabletop: React.FC = () => {
                                     pointerEvents: isPermeable ? 'none' : 'auto',
                                 }}
                             >
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
+                            {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
                             <span className="text-xl font-bold">{counter.value}</span>
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
@@ -7366,7 +7411,7 @@ export const Tabletop: React.FC = () => {
                             onContextMenu={(e) => handleContextMenu(e, obj)}
                             className={`rounded-lg ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                         >
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
+                            {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
                             <div>
                               <Card
                                   card={card}
@@ -7504,27 +7549,32 @@ export const Tabletop: React.FC = () => {
                 const isDraggingDeck = draggingId === deckObj.id;
                 const globalZIndex = isDraggingDeck ? 999999 : layerMinZ + (deckObj.zIndex ?? 0);
 
+                // Get current zoom multiplier for rendering pinned objects
+                const currentZoom = (localSettings.zoom ?? 100) / 100;
+
                 return (
                     <div
                         key={deckObj.id}
                         className="pointer-events-auto"
                         style={{
                             position: 'fixed',
-                            left: pinnedPosition.x,
-                            top: pinnedPosition.y,
+                            left: pinnedPosition.x * currentZoom,
+                            top: pinnedPosition.y * currentZoom,
                             zIndex: globalZIndex,
                         }}
                     >
-                        {/* Pinned indicator */}
-                        <div
-                            className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
-                            title="Pinned to screen"
-                        >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                                <line x1="12" y1="17" x2="12" y2="22"></line>
-                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-                            </svg>
-                        </div>
+                        {/* Pinned indicator - show only when pinned, not in cursor slot, and not dragging */}
+                        {deckObj.isPinnedToViewport && !deckObj.inCursorSlot && draggingId !== deckObj.id && (
+                            <div
+                                className="absolute -top-2 -right-2 bg-purple-600 rounded-full p-1 z-50 pointer-events-none"
+                                title="Pinned to screen"
+                            >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                    <line x1="12" y1="17" x2="12" y2="22"></line>
+                                    <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+                                </svg>
+                            </div>
+                        )}
                         <DeckComponent
                             deck={deckObj}
                             draggingId={draggingId}
@@ -7560,7 +7610,7 @@ export const Tabletop: React.FC = () => {
             {Object.values(state.objects).filter(obj =>
               (obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER) && (obj as any).isPinnedToViewport === true
             ).map((obj) => {
-                const pinnedPosition = (obj as any).pinnedScreenPosition;
+                let pinnedPosition = (obj as any).pinnedScreenPosition;
                 if (!pinnedPosition) return null;
 
                 const isDragging = draggingId === obj.id;
@@ -7579,17 +7629,21 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.DICE_OBJECT) {
                     const dice = obj as DiceObject;
                     const diceShape = dice.shape || TokenShape.SQUARE;
-                    // For pinned objects, convert vu to actual pixels
-                    const diceWidth = v2p(dice.width || 60);
-                    const diceHeight = v2p(dice.height || 60);
+                    // For pinned objects, use raw pixels (NOT v2p, which includes zoom)
+                    // Object dimensions are in vu, convert to pixels: pixels = vu * pixelsPerVU
+                    const diceWidth = (dice.width || 60) * pixelsPerVU;
+                    const diceHeight = (dice.height || 60) * pixelsPerVU;
+                    // Get current zoom for pinned objects
+                    const currentZoom = (localSettings.zoom ?? 100) / 100;
 
                     return (
                         <div
                             key={obj.id}
                             className={isPermeable ? '' : 'pointer-events-auto'}
                             style={{
-                                left: pinnedPosition.x,
-                                top: pinnedPosition.y,
+                                position: 'absolute',
+                                left: pinnedPosition.x * currentZoom,
+                                top: pinnedPosition.y * currentZoom,
                                 pointerEvents: isPermeable ? 'none' : 'auto',
                             }}
                         >
@@ -7655,17 +7709,21 @@ export const Tabletop: React.FC = () => {
                 // Render counter
                 if (obj.type === ItemType.COUNTER) {
                     const counter = obj as Counter;
-                    // For pinned objects, convert vu to actual pixels
-                    const counterWidth = v2p(Math.max(obj.width, 100));
-                    const counterHeight = v2p(50);
+                    // For pinned objects, use raw pixels (NOT v2p, which includes zoom)
+                    // Object dimensions are in vu, convert to pixels: pixels = vu * pixelsPerVU
+                    const counterWidth = Math.max(obj.width, 100) * pixelsPerVU;
+                    const counterHeight = 50 * pixelsPerVU;
+                    // Get current zoom for pinned objects
+                    const currentZoom = (localSettings.zoom ?? 100) / 100;
 
                     return (
                         <div
                             key={obj.id}
                             className={isPermeable ? '' : 'pointer-events-auto'}
                             style={{
-                                left: pinnedPosition.x,
-                                top: pinnedPosition.y,
+                                position: 'absolute',
+                                left: pinnedPosition.x * currentZoom,
+                                top: pinnedPosition.y * currentZoom,
                                 pointerEvents: isPermeable ? 'none' : 'auto',
                             }}
                         >
@@ -7713,32 +7771,38 @@ export const Tabletop: React.FC = () => {
                         }
                     }
 
+                    const currentZoom = (localSettings.zoom ?? 100) / 100;
+
                     return (
                         <div
                             key={obj.id}
                             className={isPermeable ? '' : 'pointer-events-auto'}
                             style={{
-                                left: pinnedPosition.x,
-                                top: pinnedPosition.y,
+                                position: 'absolute',
+                                left: pinnedPosition.x * currentZoom,
+                                top: pinnedPosition.y * currentZoom,
                                 pointerEvents: isPermeable ? 'none' : 'auto',
                             }}
                         >
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute select-none group ${draggingClass}`}
+                                className={`select-none group ${draggingClass}`}
                                 style={{
+                                    width: isToken ? (token?.width || 60) * pixelsPerVU : (card?.width || 63) * pixelsPerVU,
+                                    height: isToken ? (token?.height || 60) * pixelsPerVU : (card?.height || 88) * pixelsPerVU,
                                     transform: `rotate(${obj.rotation}deg)`
                                 }}
                             >
-                                {(obj as any).isPinnedToViewport && <PinnedIndicator />}
+                                {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
 
                                 {isToken && token && (
                                     <>
                                         <SvgTokenShape
                                             shape={token.shape || TokenShape.SQUARE}
-                                            width={v2p(token.width || 60)}
-                                            height={v2p(token.height || 60)}
+                                            // For pinned objects, use raw pixels (NOT v2p, which includes zoom)
+                                            width={(token.width || 60) * pixelsPerVU}
+                                            height={(token.height || 60) * pixelsPerVU}
                                             color={token.color || '#6366f1'}
                                             content={token.content || ''}
                                             showThickness={true}
@@ -7749,7 +7813,7 @@ export const Tabletop: React.FC = () => {
                                 )}
 
                                 {!isToken && card && (
-                                    <div className="relative">
+                                    <div className="relative" style={{ width: '100%', height: '100%' }}>
                                         <Card
                                             card={card}
                                             canFlip={cardSettings.actionButtons?.includes('flip') ?? false}
