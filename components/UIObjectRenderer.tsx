@@ -685,15 +685,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
      (uiObject as WindowObject).windowType === WindowType.HYPERSCALE_LAYER_SETTINGS);
   if (isModalWindow) {
     const windowObj = uiObject as WindowObject;
-    const targetObj = windowObj.targetObjectId ? state.objects[windowObj.targetObjectId] : null;
-    const targetPanel = targetObj?.type === ItemType.PANEL ? targetObj as PanelObject : null;
-
-    // For ALL panels (not just HAND) and hyperscale layer settings, don't render the window frame
+    // For ALL modal windows (OBJECT_SETTINGS and HYPERSCALE_LAYER_SETTINGS), don't render the window frame
     // The modal renders via portal directly, so we don't need the window frame
-    if ((uiObject as WindowObject).windowType === WindowType.HYPERSCALE_LAYER_SETTINGS ||
-        targetPanel) { // All panels should render without window frame
-      return <WindowContent window={windowObj} />;
-    }
+    return <WindowContent window={windowObj} />;
   }
 
   return (

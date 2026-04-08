@@ -6,7 +6,6 @@ import { Plus, Trash2, Lock, X } from 'lucide-react';
 import { PoolTabletop } from './PoolTabletop';
 import { findAvailableTerritory } from '../utils/territoryManager';
 import { PoolTabSettingsModal } from './PoolTabSettingsModal';
-import { getCursorSlotObjects } from '../utils/poolPlacement';
 
 interface PoolPanelProps {
   panel: PanelObject;
@@ -113,17 +112,6 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   // Get current player info
   const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
   const isGM = currentPlayer?.isGM ?? false;
-
-  // Check if cursor slot has cards (for panel hover highlight)
-  const cursorSlotHasCards = useMemo(() => {
-    return getCursorSlotObjects(state.objects).length > 0;
-  }, [state.objects]);
-
-  // Panel hover state for highlight
-  const [isPanelHovered, setIsPanelHovered] = useState(false);
-
-  // Show highlight when hovering and cursor slot has cards
-  const showPanelHighlight = isPanelHovered && cursorSlotHasCards;
 
   // Active tab
   const activeTab = useMemo(() => {
@@ -379,36 +367,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
           className="flex-1 relative"
           style={{ backgroundColor: '#304458' }}
           data-pool-content={panel.id}
-          onMouseEnter={(e) => {
-            // Check if hovering over the panel itself, not over scrollbar
-            const target = e.target as HTMLElement;
-            const isScrollbar = target.classList.contains('overflow-auto') ||
-                               target.tagName === 'HTML' ||
-                               target.tagName === 'BODY';
-
-            if (!isScrollbar && cursorSlotHasCards) {
-              setIsPanelHovered(true);
-            }
-          }}
-          onMouseLeave={(e) => {
-            // Only clear highlight if leaving the panel entirely
-            const target = e.target as HTMLElement;
-            const relatedTarget = e.relatedTarget as HTMLElement;
-
-            // Check if actually leaving the panel (not just moving to scrollbar)
-            const currentPanel = (e.currentTarget as HTMLElement);
-            const isLeavingPanel = !relatedTarget || !currentPanel.contains(relatedTarget);
-
-            if (isLeavingPanel) {
-              setIsPanelHovered(false);
-            }
-          }}
         >
-          {/* Purple highlight overlay when hovering with cards */}
-          {showPanelHighlight && (
-            <div className="absolute inset-0 pointer-events-none border-4 border-purple-500 border-opacity-75 z-50" />
-          )}
-
           <div className="absolute inset-0 overflow-auto">
             <PoolTabletop
               poolZone={{

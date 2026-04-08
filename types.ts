@@ -312,6 +312,7 @@ export interface TokenType extends GameItem {
   autoName?: boolean; // Auto-generate names like "Goblin 1", "Goblin 2", etc.
   namePrefix?: string; // Prefix for auto-naming
   spawnCount?: number; // Track how many have been spawned for naming
+  maxCopies?: number; // Maximum number of copies allowed (0 = unlimited)
   // Display settings
   showName?: boolean; // Show the token name on the token itself
 }

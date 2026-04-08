@@ -53,7 +53,7 @@ import {
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
-  const { settings: localSettings } = useLocalSettings();
+  const { settings: localSettings, updateSetting } = useLocalSettings();
   const { setDraggingOver, clearDraggingOver } = useDragOverStore();
 
   // Ref to access dragOver state efficiently in mousemove handler
@@ -662,6 +662,23 @@ export const Tabletop: React.FC = () => {
         isAddingTokenRef.current = false;
         return;
       }
+
+      // Check maxCopies limit (if set)
+      const maxCopies = (archetype as any).maxCopies ?? 0;
+      if (maxCopies > 0) {
+        // Count existing tokens with this archetypeId
+        const existingCopyCount = Object.values(state.objects).filter(obj =>
+          obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetypeId
+        ).length;
+
+        if (existingCopyCount >= maxCopies) {
+          // Show a notification that limit has been reached
+          console.warn(`Maximum token limit (${maxCopies}) reached for archetype: ${archetype.name}`);
+          isAddingTokenRef.current = false;
+          return;
+        }
+      }
+
       if (cursorSlot.length >= 100) {
         isAddingTokenRef.current = false;
         return;
@@ -4137,7 +4154,7 @@ export const Tabletop: React.FC = () => {
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
       // Cards, tokens, boards, decks, randomizers, counters, and dice use cursor slot drag system ONLY (no normal drag)
-      // EXCEPT when pinned - pinned objects should use direct drag to maintain pinned position
+      // ALL objects (including pinned) now use cursor slot system for consistent behavior
       // These objects ALWAYS use cursor slot system - NO 5px threshold, IMMEDIATE pickup
       if (item && (
         item.type === ItemType.CARD ||
@@ -4148,11 +4165,6 @@ export const Tabletop: React.FC = () => {
         item.type === ItemType.DICE_OBJECT ||
         item.type === ItemType.BOARD
       )) {
-        // SPECIAL CASE: Pinned objects should use direct drag, NOT cursor slot
-        if ((item as any).isPinnedToViewport === true) {
-          // Pinned cards/tokens/counters/dice - use direct drag (skip cursor slot)
-          // Continue to normal drag handling below
-        } else {
         // Check if object is in pool zone (x >= 2500)
         // Pool zones start at x=2500, objects there should be handled by PoolTabletop only
         const objX = item.x || 0;
@@ -4179,7 +4191,6 @@ export const Tabletop: React.FC = () => {
 
         e.stopPropagation();
         return; // Don't proceed with normal drag system
-        }
       }
 
       // Boards use cursor slot system (handled above), don't use normal drag
@@ -5140,8 +5151,46 @@ export const Tabletop: React.FC = () => {
     };
   }, []); // Empty deps - handlers check refs for current state
 
+  // Handle Ctrl+wheel for zoom - using window event listener with capture phase
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Calculate new zoom level based on wheel direction
+        const currentZoom = localSettings.zoom ?? 100;
+        const zoomStep = 5; // 5% increment/decrement
+        let newZoom = currentZoom;
+
+        if (e.deltaY < 0) {
+          // Scroll up - zoom in
+          newZoom = Math.min(200, currentZoom + zoomStep);
+        } else {
+          // Scroll down - zoom out
+          newZoom = Math.max(50, currentZoom - zoomStep);
+        }
+
+        // Update zoom setting
+        updateSetting('zoom', newZoom);
+
+        // Dispatch event to sync with ToolsPanel
+        window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
+          detail: { level: newZoom }
+        }));
+      }
+    };
+
+    // Add event listener with capture phase to intercept before browser
+    window.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel, { capture: true } as any);
+    };
+  }, [localSettings.zoom, updateSetting]);
+
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    // Zoom disabled - keeping scale at 1
+    // This handler is now a fallback - main handler is on window
   }, []);
 
   // Sync scroll and pixelsPerVU to global state (for save/load)

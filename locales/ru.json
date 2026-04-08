@@ -382,5 +382,8 @@
   "Load Anyway": "Всё равно загрузить",
   "Only load packs from trusted sources": "Загружайте паки только из доверенных источников",
   "Security Check": "Проверка безопасности",
-  "Destroy": "Уничтожить"
+  "Destroy": "Уничтожить",
+  "Maximum Copies": "Максимум копий",
+  "0 = unlimited": "0 = безлимитно",
+  "Maximum number of tokens that can be created from this type. Set to 0 for unlimited.": "Максимальное количество токенов, которое можно создать из этого типа. Установите 0 для безлимитного количества."
 }

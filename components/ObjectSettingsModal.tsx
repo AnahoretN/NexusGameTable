@@ -1270,6 +1270,22 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 />
               )}
 
+              {/* Max Copies (for token types only) */}
+              {isArchetype && (
+                <div className="mt-4">
+                  <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Maximum Copies', language as Locale)}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={(data as any).maxCopies ?? 0}
+                    onChange={e => update('maxCopies', e.target.value ? Number(e.target.value) : 0)}
+                    placeholder={translate('0 = unlimited', language as Locale)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">{translate('Maximum number of tokens that can be created from this type. Set to 0 for unlimited.', language as Locale)}</p>
+                </div>
+              )}
+
               {/* Color + Image URL (for boards) - side by side, Color is smaller */}
               {isBoard && (
                 <div className="grid grid-cols-[80px_1fr] gap-2">

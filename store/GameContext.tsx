@@ -2185,6 +2185,27 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'CLONE_OBJECT': {
         const obj = state.objects[action.payload.id] as any;
         if (!obj) return state;
+
+        // For tokens with archetypeId, check maxCopies limit
+        if (obj.type === ItemType.TOKEN && obj.archetypeId) {
+          const archetype = state.objects[obj.archetypeId] as any;
+          if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+            const maxCopies = archetype.maxCopies ?? 0;
+            if (maxCopies > 0) {
+              // Count existing tokens with this archetypeId
+              const existingCopyCount = Object.values(state.objects).filter(o =>
+                o.type === ItemType.TOKEN && o.archetypeId === obj.archetypeId
+              ).length;
+
+              if (existingCopyCount >= maxCopies) {
+                // Limit reached, don't allow cloning
+                console.warn(`Maximum token limit (${maxCopies}) reached for archetype: ${archetype.name}`);
+                return state;
+              }
+            }
+          }
+        }
+
         const newId = generateUUID();
 
         // For token copies: use 'tokens' layer if it exists
