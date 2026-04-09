@@ -140,12 +140,12 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       height: playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiObject.height,
       minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,
       isPinnedToViewport: playerPanelSettings.isPinnedToViewport !== undefined ? playerPanelSettings.isPinnedToViewport : (uiObject as any).isPinnedToViewport || false,
-      // Use panel properties for other settings
-      pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
-      expandedState: (uiObject as any).expandedState,
-      collapsedState: (uiObject as any).collapsedState,
-      expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
-      collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
+      // Use panel properties for other settings, but prefer playerPanelSettings for state
+      pinnedScreenPosition: playerPanelSettings.pinnedScreenPosition !== undefined ? playerPanelSettings.pinnedScreenPosition : (uiObject as any).pinnedScreenPosition,
+      expandedState: playerPanelSettings.expandedState !== undefined ? playerPanelSettings.expandedState : (uiObject as any).expandedState,
+      collapsedState: playerPanelSettings.collapsedState !== undefined ? playerPanelSettings.collapsedState : (uiObject as any).collapsedState,
+      expandedPinnedPosition: playerPanelSettings.expandedPinnedPosition !== undefined ? playerPanelSettings.expandedPinnedPosition : (uiObject as any).expandedPinnedPosition,
+      collapsedPinnedPosition: playerPanelSettings.collapsedPinnedPosition !== undefined ? playerPanelSettings.collapsedPinnedPosition : (uiObject as any).collapsedPinnedPosition,
     } : {
       // No player settings OR currently dragging - use panel properties directly
       x: uiObject.x,
@@ -174,15 +174,38 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     uiObject.collapsedState,
     uiObject.expandedPinnedPosition,
     uiObject.collapsedPinnedPosition,
+    playerPanelSettings?.pinnedScreenPosition,
+    playerPanelSettings?.expandedState,
+    playerPanelSettings?.collapsedState,
+    playerPanelSettings?.expandedPinnedPosition,
+    playerPanelSettings?.collapsedPinnedPosition,
   ]);
 
   // Get pixelsPerVU for converting vu to pixels (for pinned panels)
   const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
   const vuToPx = useCallback((vu: number) => vuToPixels(vu ?? 0, pixelsPerVU), [pixelsPerVU]);
 
-  // Memoize minimized check
-  const minimized = effectiveProps.minimized;
+  // Memoize minimized check - use uiObject.minimized directly during drag to avoid stale state
+  const isActuallyMinimized = isDragging
+    ? (uiObject as any).minimized || false
+    : effectiveProps.minimized;
+  const minimized = isActuallyMinimized;
   const visible = uiObject.visible !== false;
+
+  // Debug logging for minimized state
+  if (isDragging) {
+    console.log('[UIObjectRenderer] UI Object drag state:', {
+      id: uiObject.id,
+      type: uiObject.type,
+      panelType: (uiObject as any).panelType,
+      isDragging,
+      uiObjectMinimized: (uiObject as any).minimized,
+      effectivePropsMinimized: effectiveProps.minimized,
+      isActuallyMinimized,
+      uiObjectHeight: uiObject.height,
+      effectivePropsHeight: effectiveProps.height
+    });
+  }
 
   // Preload translations for current language
   useEffect(() => {
@@ -192,15 +215,19 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   if (!visible) return null;
 
-  // Memoize canResize check
-  const canResize = useMemo(() => !isMainMenu && !minimized, [isMainMenu, minimized]);
+  // Memoize canResize check - use actual minimized state during drag
+  const canResize = useMemo(() => !isMainMenu && !isActuallyMinimized, [isMainMenu, isActuallyMinimized]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: 'CLOSE_UI_OBJECT', payload: { id: uiObject.id } });
   }, [dispatch, uiObject.id]);
 
   // Memoize collapse checks
-  const isCollapsed = useMemo(() => effectiveProps.width === 200 && effectiveProps.height === 40, [effectiveProps.width, effectiveProps.height]);
+  const isCollapsed = useMemo(() => {
+    // During dragging, check uiObject directly, otherwise use effectiveProps
+    const heightToCheck = isDragging ? uiObject.height : effectiveProps.height;
+    return heightToCheck === 40;
+  }, [isDragging, uiObject.height, effectiveProps.height]);
   // For main menu, use minimized flag; for other panels, use size-based check
   const shouldExpand = isMainMenu ? minimized : isCollapsed;
   const dualPosition = useMemo(() => uiObject.type === ItemType.PANEL && (uiObject as PanelObject).dualPosition, [uiObject]);
@@ -209,11 +236,47 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     // Toggle between collapsed (200px wide, title only) and full size
 
     if (shouldExpand) {
-      // Currently collapsed - expand to saved state or default
+      // Currently collapsed - expand to saved state
       const restoreState = effectiveProps.expandedState;
+
+      // Log for debugging
+      console.log('[handleToggleCollapse] Expanding panel:', {
+        panelId: uiObject.id,
+        isMainMenu,
+        restoreState,
+        currentPosition: { x: effectiveProps.x, y: effectiveProps.y },
+        currentDimensions: { width: effectiveProps.width, height: effectiveProps.height },
+        playerPanelSettings
+      });
 
       // Update local settings instead of global state
       if (isPanel && !isMainMenu) {
+        console.log('[handleToggleCollapse] Expanding regular panel:', {
+          id: uiObject.id,
+          restoreState,
+          currentPosition: { x: effectiveProps.x, y: effectiveProps.y },
+          currentDimensions: { width: effectiveProps.width, height: effectiveProps.height }
+        });
+
+        // Update the object itself first
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: uiObject.id,
+            minimized: false,
+            width: restoreState?.width,
+            height: restoreState?.height,
+            collapsedState: {
+              x: effectiveProps.x,
+              y: effectiveProps.y,
+              width: effectiveProps.width,
+              height: effectiveProps.height,
+            },
+          },
+          _localOnly: true // Local-only properties for panels
+        });
+
+        // Update local settings for localStorage
         updateLocalSettings({
           minimized: false,
           collapsedState: {
@@ -222,78 +285,208 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             width: effectiveProps.width,
             height: effectiveProps.height,
           },
-          ...(dualPosition && restoreState ? {
-            x: restoreState.x,
-            y: restoreState.y,
-            width: restoreState.width,
-            height: restoreState.height,
-          } : dualPosition ? {
-            width: MAIN_MENU_WIDTH,
-            height: 400,
-          } : {
-            // In single position mode, restore expanded dimensions but keep position
-            width: restoreState?.width ?? MAIN_MENU_WIDTH,
-            height: restoreState?.height ?? 400,
-          })
+          // Restore exact dimensions from expandedState
+          width: restoreState?.width,
+          height: restoreState?.height,
+        });
+
+        // Also update playerPanelSettings in global state
+        dispatch({
+          type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+          payload: {
+            playerId: state.activePlayerId,
+            panelId: uiObject.id,
+            settings: {
+              minimized: false,
+              x: effectiveProps.x,
+              y: effectiveProps.y,
+              width: restoreState?.width,
+              height: restoreState?.height,
+              expandedState: restoreState // Save expandedState to playerPanelSettings
+            }
+          }
+        });
+
+        // Also update playerPanelSettings in global state
+        dispatch({
+          type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+          payload: {
+            playerId: state.activePlayerId,
+            panelId: uiObject.id,
+            settings: {
+              minimized: false,
+              x: effectiveProps.x,
+              y: effectiveProps.y,
+              width: restoreState?.width,
+              height: restoreState?.height,
+            }
+          }
         });
       } else {
         // For main menu and windows, use global state
+        console.log('[handleToggleCollapse] Dispatching UPDATE_OBJECT for main menu:', {
+          id: uiObject.id,
+          minimized: false,
+          restoringDimensions: {
+            width: restoreState?.width,
+            height: restoreState?.height
+          }
+        });
+
+        // First update the object dimensions and minimized state
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: {
             id: uiObject.id,
             minimized: false,
+            width: restoreState?.width, // Restore exact saved width
+            height: restoreState?.height, // Restore exact saved height
             collapsedState: {
-              x: uiObject.x,
-              y: uiObject.y,
-              width: uiObject.width,
-              height: uiObject.height,
+              x: effectiveProps.x,
+              y: effectiveProps.y,
+              width: effectiveProps.width,
+              height: effectiveProps.height,
             },
-            // Always restore from expandedState or use defaults
-            width: restoreState?.width ?? MAIN_MENU_WIDTH,
-            height: restoreState?.height ?? 400,
           },
-          _localOnly: true // Minimized state and dimensions are local
+          _localOnly: true // Local-only properties for panels
+        });
+
+        // Then update playerPanelSettings for position persistence
+        dispatch({
+          type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+          payload: {
+            playerId: state.activePlayerId,
+            panelId: uiObject.id,
+            settings: {
+              minimized: false,
+              x: effectiveProps.x,
+              y: effectiveProps.y,
+              width: restoreState?.width,
+              height: restoreState?.height,
+            }
+          }
         });
       }
     } else {
-      // Currently expanded - collapse to 200px and minimize
+      // Currently expanded - collapse and minimize
       if (isPanel && !isMainMenu) {
-        updateLocalSettings({
-          minimized: true,
-          expandedState: {
-            x: effectiveProps.x,
-            y: effectiveProps.y,
-            width: effectiveProps.width,
-            height: effectiveProps.height,
-          },
-          ...(dualPosition && effectiveProps.collapsedState
-            ? { x: effectiveProps.collapsedState.x, y: effectiveProps.collapsedState.y }
-            : undefined),
-          width: 200,
-          height: 32, // Title bar height
+        // Save current dimensions before collapsing
+        const currentWidth = uiObject.width;
+        const currentHeight = uiObject.height;
+
+        console.log('[handleToggleCollapse] Minimizing regular panel, saving dimensions:', {
+          id: uiObject.id,
+          currentWidth,
+          currentHeight,
+          currentPosition: { x: uiObject.x, y: uiObject.y }
         });
-      } else {
-        // For main menu and windows, use global state
+
+        // Update the object itself first (to prevent expansion during drag)
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: {
             id: uiObject.id,
             minimized: true,
+            height: 40,
             expandedState: {
               x: uiObject.x,
               y: uiObject.y,
-              width: uiObject.width,
-              height: uiObject.height,
+              width: currentWidth,
+              height: currentHeight,
             },
-            width: 200,
-            height: 40, // Title bar height (must match containerHeight calculation)
           },
-          _localOnly: true // Minimized state and dimensions are local
+          _localOnly: true // Local-only properties for panels
+        });
+
+        // Update local settings for localStorage
+        updateLocalSettings({
+          minimized: true,
+          expandedState: {
+            x: uiObject.x,
+            y: uiObject.y,
+            width: currentWidth,
+            height: currentHeight,
+          },
+          height: 40, // Title bar height
+        });
+
+        // Also update playerPanelSettings in global state
+        dispatch({
+          type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+          payload: {
+            playerId: state.activePlayerId,
+            panelId: uiObject.id,
+            settings: {
+              minimized: true,
+              x: uiObject.x,
+              y: uiObject.y,
+              width: currentWidth,
+              height: 40,
+              expandedState: {
+                x: uiObject.x,
+                y: uiObject.y,
+                width: currentWidth,
+                height: currentHeight,
+              }
+            }
+          }
+        });
+      } else {
+        // For main menu and windows, use global state
+        // Save current dimensions before collapsing
+        const currentWidth = uiObject.width;
+        const currentHeight = uiObject.height;
+
+        console.log('[handleToggleCollapse] Minimizing main menu, saving dimensions:', {
+          id: uiObject.id,
+          currentWidth,
+          currentHeight,
+          currentPosition: { x: uiObject.x, y: uiObject.y },
+          currentUiObjectMinimized: (uiObject as any).minimized,
+          currentUiObjectHeight: uiObject.height
+        });
+
+        // Update the object minimized state and height
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: uiObject.id,
+            minimized: true,
+            height: 40, // Title bar height (must match containerHeight calculation)
+            expandedState: {
+              x: uiObject.x,
+              y: uiObject.y,
+              width: currentWidth,
+              height: currentHeight,
+            },
+          },
+          _localOnly: true // Local-only properties for panels
+        });
+
+        // Then update playerPanelSettings for position persistence
+        dispatch({
+          type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+          payload: {
+            playerId: state.activePlayerId,
+            panelId: uiObject.id,
+            settings: {
+              minimized: true,
+              x: uiObject.x,
+              y: uiObject.y,
+              width: currentWidth,
+              height: 40,
+              expandedState: {
+                x: uiObject.x,
+                y: uiObject.y,
+                width: currentWidth,
+                height: currentHeight,
+              }
+            }
+          }
         });
       }
     }
-  }, [dispatch, uiObject, shouldExpand, dualPosition, isMainMenu, effectiveProps, isPanel, updateLocalSettings]);
+  }, [dispatch, uiObject, shouldExpand, dualPosition, isMainMenu, effectiveProps, isPanel, updateLocalSettings, state]);
 
   // Toggle lock for panels/windows
   const handleToggleLock = useCallback(() => {
@@ -590,7 +783,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   // Memoize width calculation to prevent unnecessary recalculations
   const containerWidth = useMemo(() => {
     if (currentSize?.width) return currentSize.width;
-    if (minimized) return 200; // Use fixed width when minimized
 
     if (isPinnedMode) {
       if ((uiObject as any).pinnedPixelWidth) return (uiObject as any).pinnedPixelWidth;
@@ -610,6 +802,18 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     }
     return effectiveProps.height;
   }, [currentSize, minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.height, vuToPx]);
+
+  // Debug logging for container height
+  if (isDragging && (uiObject as any).panelType === 'main_menu') {
+    console.log('[UIObjectRenderer] Main menu container dimensions:', {
+      id: uiObject.id,
+      minimized,
+      isActuallyMinimized,
+      containerHeight,
+      currentSize,
+      isPinnedMode
+    });
+  }
 
   // Memoize container style to prevent unnecessary recalculations
   const containerStyle: React.CSSProperties = useMemo(() => ({
@@ -735,7 +939,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             }}
           >
             <span className="text-sm font-bold text-white truncate">{APP_NAME}</span>
-            {!minimized && (
+            {!isActuallyMinimized && (
               <button
                 onClick={(e) => {
                   if (shouldBlockClick(e)) return;
@@ -753,7 +957,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             className="flex items-center gap-0.5 flex-shrink-0 ml-1"
             style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
           >
-            {!minimized && (
+            {!isActuallyMinimized && (
               <>
                 {/* Settings button - visible to all */}
                 <button
@@ -782,7 +986,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               </>
             )}
             {/* Lock button for collapsed state - GM only */}
-            {minimized && isGM && (
+            {isActuallyMinimized && isGM && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -796,7 +1000,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             )}
             {/* Minimize/Expand button - GM only */}
             {isGM && (
-              minimized ? (
+              isActuallyMinimized ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -826,7 +1030,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         // Other panels header
         <div
           className={`${headerBg} px-2 py-1 flex items-center select-none flex-shrink-0`}
-          style={{ height: 32, position: 'relative' }}
+          style={{ height: 40, position: 'relative' }}
         >
           {/* Drag handle - only this area triggers drag */}
           <div
@@ -933,7 +1137,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       )}
 
       {/* Content */}
-      {!minimized && (
+      {!isActuallyMinimized && (
         <div
           ref={contentRef}
           className="flex-1 overflow-hidden w-full relative"
@@ -1267,7 +1471,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         document.body
       )}
       {/* Resize handle indicator - shown in bottom-right corner */}
-      {canResize && !minimized && (
+      {canResize && !isActuallyMinimized && (
         <div
           className="absolute bottom-0 right-0 cursor-nwse-resize opacity-50 hover:opacity-100 transition-opacity flex items-center justify-center z-[9999]"
           style={{

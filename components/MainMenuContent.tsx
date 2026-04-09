@@ -136,6 +136,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom'>('none');
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
   // Pack modal state
   const [packModalOpen, setPackModalOpen] = useState(false);
   const [packName, setPackName] = useState('');
@@ -236,6 +237,29 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       if (shiftThreeTimeoutRef.current) {
         clearTimeout(shiftThreeTimeoutRef.current);
       }
+    };
+  }, []);
+
+  // Track Shift key state for delete confirmation skip
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
 
@@ -783,6 +807,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 canDeleteObjects={currentUserIsGM || state.playerPermissions.deleteObjects}
                 canHideObjects={currentUserIsGM || state.playerPermissions.hideObjects}
                 language={state.language}
+                isShiftPressed={isShiftPressed}
               />
             ))}
           </div>
@@ -1550,6 +1575,7 @@ interface CategorySectionProps {
   canDeleteObjects: boolean;
   canHideObjects: boolean;
   language: AppLanguage;
+  isShiftPressed: boolean;
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({
@@ -1564,6 +1590,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   canDeleteObjects,
   canHideObjects,
   language,
+  isShiftPressed,
 }) => {
   // Load expanded state from localStorage, default to false (collapsed)
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -2136,11 +2163,15 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     )}
                     {canDeleteObjects && (
                       <button
-                        onClick={(e) => {
+                        onMouseDown={(e) => {
+                          // Prevent default behavior to avoid interference
+                          e.preventDefault();
+                          e.stopPropagation();
+
                           // Token copies (tokens with archetypeId) are deleted immediately without confirmation
                           if (obj.type === ItemType.TOKEN && (obj as any).archetypeId) {
                             dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id }});
-                          } else if (e.shiftKey) {
+                          } else if (isShiftPressed) {
                             // If Shift is held, delete immediately without confirmation
                             dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id }});
                           } else {

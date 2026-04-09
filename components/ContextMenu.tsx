@@ -446,16 +446,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: translate('Top Deck', language as Locale),
       action: 'topDeck',
       icon: <ArrowUp size={14} />,
-      visible: (() => {
-        const visible = object.type === ItemType.DECK; // Temporarily simplified for debugging
-        console.log('[ContextMenu] Top Deck visibility:', {
-          objectName: object.name,
-          objectType: object.type,
-          visible,
-          hasSubmenu: true
-        });
-        return visible;
-      })(),
+      visible: object.type === ItemType.DECK && can('topDeck'),
       hasSubmenu: true,
       submenuItems: [
         {
@@ -518,19 +509,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       label: translate('Piles', language as Locale),
       action: 'piles',
       icon: <Layers size={14} />,
-      visible: (() => {
-        const hasPiles = (object as Deck).piles && (object as Deck).piles.length > 0;
-        const visible = object.type === ItemType.DECK && hasPiles; // Temporarily simplified for debugging
-        console.log('[ContextMenu] Piles visibility:', {
-          objectName: object.name,
-          objectType: object.type,
-          hasPiles,
-          pilesCount: (object as Deck).piles?.length || 0,
-          visible,
-          hasSubmenu: true
-        });
-        return visible;
-      })(),
+      visible: object.type === ItemType.DECK &&
+               (object as Deck).piles &&
+               (object as Deck).piles.length > 0 &&
+               can('piles'),
       hasSubmenu: true,
       submenuItems: (object as Deck).piles?.map((pile) => ({
         label: `${pile.name} (${pile.cardIds.length})`,

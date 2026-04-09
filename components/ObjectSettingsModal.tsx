@@ -56,16 +56,11 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
 // Deck-specific actions (ONLY for decks, NOT for tokens, cards, etc.)
 function getDeckActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
   return [
-    { id: 'topDeck', label: translate('Top Deck', language as Locale) },
+    { id: 'topDeck', label: translate('Top Deck (section)', language as Locale) },
     { id: 'returnAll', label: translate('Return All (section)', language as Locale) },
     { id: 'shuffleDeck', label: translate('Shuffle', language as Locale) },
     { id: 'searchDeck', label: translate('Search', language as Locale) },
-    { id: 'piles', label: translate('Piles', language as Locale) },
-    { id: 'draw', label: translate('Draw', language as Locale) },
-    { id: 'playTopCard', label: translate('Play Top Card', language as Locale) },
-    { id: 'millTopCard', label: translate('Mill', language as Locale) },
-    { id: 'toBottom', label: translate('To Bottom', language as Locale) },
-    { id: 'showTop', label: translate('Show Top Card', language as Locale) },
+    { id: 'piles', label: translate('Piles (section)', language as Locale) },
   ];
 }
 
@@ -172,9 +167,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
         if (action.id === 'show' || action.id === 'hide' ||
             action.id === 'shuffleDeck' || action.id === 'searchDeck' || action.id === 'topDeck' ||
             action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-            action.id === 'rotate' || action.id === 'layer' ||
-            action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-            action.id === 'toBottom' || action.id === 'showTop') {
+            action.id === 'rotate' || action.id === 'layer') {
           return false;
         }
         // Exclude section headers
@@ -2128,7 +2121,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                           if (action.id === 'none') return true;
 
                           // Deck-specific actions - only for decks, not cards, boards, or battlefield cells
-                          if ((isCard || isBoard || isBattlefieldCell) && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles', 'draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop'].includes(action.id)) {
+                          if ((isCard || isBoard || isBattlefieldCell) && ['topDeck', 'returnAll', 'shuffleDeck', 'searchDeck', 'piles'].includes(action.id)) {
                             return false;
                           }
                           // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
@@ -2683,9 +2676,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       // Exclude deck-specific and section actions
                       if (action.id === 'show' || action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-                          action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-                          action.id === 'toBottom' || action.id === 'showTop') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
                       // Exclude individual Move To actions (keep moveTo section only)
                       if (action.id === 'moveToHand' || action.id === 'moveToTopDeck' ||
                           action.id === 'moveToBottomDeck' || action.id === 'moveToDiscard') return false;
@@ -2704,9 +2695,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         .filter(a => {
                           if (a.id === 'show' || a.id === 'hide' ||
                               a.id === 'shuffleDeck' || a.id === 'searchDeck' ||
-                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles' ||
-                              a.id === 'draw' || a.id === 'playTopCard' || a.id === 'millTopCard' ||
-                              a.id === 'toBottom' || a.id === 'showTop') return false;
+                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles') return false;
                           // Exclude individual Move To actions (keep moveTo section only)
                           if (a.id === 'moveToHand' || a.id === 'moveToTopDeck' ||
                               a.id === 'moveToBottomDeck' || a.id === 'moveToDiscard') return false;
@@ -2740,9 +2729,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                         .filter(a => {
                           if (a.id === 'show' || a.id === 'hide' ||
                               a.id === 'shuffleDeck' || a.id === 'searchDeck' ||
-                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles' ||
-                              a.id === 'draw' || a.id === 'playTopCard' || a.id === 'millTopCard' ||
-                              a.id === 'toBottom' || a.id === 'showTop') return false;
+                              a.id === 'topDeck' || a.id === 'returnAll' || a.id === 'delete' || a.id === 'piles') return false;
                           // Exclude individual Move To actions (keep moveTo section only)
                           if (a.id === 'moveToHand' || a.id === 'moveToTopDeck' ||
                               a.id === 'moveToBottomDeck' || a.id === 'moveToDiscard') return false;
@@ -2817,9 +2804,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       // Only card-applicable actions (exclude all deck-specific actions)
                       if (action.id === 'show' || action.id === 'hide' ||
                           action.id === 'shuffleDeck' || action.id === 'searchDeck' ||
-                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles' ||
-                          action.id === 'draw' || action.id === 'playTopCard' || action.id === 'millTopCard' ||
-                          action.id === 'toBottom' || action.id === 'showTop') return false;
+                          action.id === 'topDeck' || action.id === 'returnAll' || action.id === 'delete' || action.id === 'piles') return false;
                       // Exclude section headers only
                       if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate') return false;
                       // Exclude pin action from card action buttons
