@@ -1589,7 +1589,7 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
         ref={contentRef}
         className="absolute inset-0"
         style={{
-          backgroundImage: 'radial-gradient(#34495e 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(#465665 1px, transparent 1px)',
           backgroundSize: '20px 20px',
           transform: `scale(${currentZoom})`,
           transformOrigin: 'top left',
