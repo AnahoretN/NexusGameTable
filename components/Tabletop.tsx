@@ -879,14 +879,16 @@ export const Tabletop: React.FC = () => {
       const { deckId, cardBackUrl } = customEvent.detail;
 
       // Update the deck's spriteConfig with the new cardBackUrl
+      // Also clear cardBackSpriteUrl to avoid conflicts - the last changed method should take priority
       const deck = state.objects[deckId];
       if (deck && deck.type === ItemType.DECK) {
+        const { cardBackSpriteUrl, cardBackSpriteIndex, cardBackSpriteColumns, cardBackSpriteRows, ...restConfig } = deck.spriteConfig || {};
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: {
             id: deckId,
             spriteConfig: {
-              ...deck.spriteConfig,
+              ...restConfig,
               cardBackUrl
             }
           }

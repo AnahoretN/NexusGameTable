@@ -228,8 +228,10 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         if (card.deckId) {
           const parentDeck = state.objects[card.deckId] as Deck;
           if (parentDeck && parentDeck.spriteConfig) {
+            // Clear cardBackUrl to avoid conflicts - the last changed method should take priority
+            const { cardBackUrl, ...restConfig } = parentDeck.spriteConfig;
             const updatedSpriteConfig = {
-              ...parentDeck.spriteConfig,
+              ...restConfig,
               cardBackSpriteUrl: card.spriteUrl || card.content,
               cardBackSpriteIndex: card.spriteIndex ?? 0,
               cardBackSpriteColumns: card.spriteColumns ?? 1,

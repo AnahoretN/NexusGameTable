@@ -80,9 +80,13 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           return `url(${altBack.url})`;
         }
       }
-      // Card is face down - check for custom sprite back
+      // Card is face down - check for custom sprite back (from "Set as Card Back" function)
       if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
         return `url(${deckSpriteConfig.cardBackSpriteUrl})`;
+      }
+      // Card is face down - check for simple card back URL from deck settings
+      if (deckSpriteConfig?.cardBackUrl) {
+        return `url(${deckSpriteConfig.cardBackUrl})`;
       }
       // Default pattern
       return 'repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)';

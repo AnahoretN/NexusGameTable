@@ -661,8 +661,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           const parentDeck = state.objects[card.deckId] as Deck;
           if (parentDeck && parentDeck.spriteConfig) {
             // If the card is from a sprite sheet, save the sprite info for the card back
+            // Also clear cardBackUrl to avoid conflicts - the last changed method should take priority
+            const { cardBackUrl, ...restConfig } = parentDeck.spriteConfig;
             const updatedSpriteConfig = {
-              ...parentDeck.spriteConfig,
+              ...restConfig,
               cardBackSpriteUrl: card.spriteUrl || card.content,
               cardBackSpriteIndex: card.spriteIndex ?? 0,
               cardBackSpriteColumns: card.spriteColumns ?? 1,
