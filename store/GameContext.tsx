@@ -2140,10 +2140,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         if (!obj) return state;
         // If angle is provided in payload, use it; otherwise use object's rotationStep
         // For cards, also check deck's rotationStep
+        // For tokens with archetypeId, check archetype's rotationStep
         let rotationStep = obj.rotationStep;
         if (!rotationStep && obj.type === ItemType.CARD && obj.deckId) {
             const deck = state.objects[obj.deckId] as any;
             rotationStep = deck?.rotationStep;
+        }
+        if (!rotationStep && obj.type === ItemType.TOKEN && obj.archetypeId) {
+            const archetype = state.objects[obj.archetypeId] as any;
+            rotationStep = archetype?.rotationStep;
         }
         const angle = action.payload.angle ?? rotationStep ?? 45;
         const previousRotation = obj.rotation;
@@ -3869,6 +3874,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         zIndex: newZ,
         hyperscaleLayerId,
         archetypeId: archetype.id,
+        // Inherit action settings from archetype
+        allowedActions: archetype.allowedActions,
+        allowedActionsForGM: archetype.allowedActionsForGM,
+        actionButtons: archetype.actionButtons,
+        singleClickAction: archetype.singleClickAction,
+        doubleClickAction: archetype.doubleClickAction,
+        rotationStep: archetype.rotationStep,
       };
 
       // Increment spawn count on archetype

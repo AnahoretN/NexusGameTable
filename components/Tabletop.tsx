@@ -3054,6 +3054,26 @@ export const Tabletop: React.FC = () => {
                 return; // Let the deck's click handlers work
               }
             }
+            // Check for tokens with click actions
+            if (obj?.type === ItemType.TOKEN) {
+              const token = obj as Token;
+              let singleClickAction = token.singleClickAction;
+              let doubleClickAction = token.doubleClickAction;
+
+              // For tokens with archetypeId, get actions from archetype
+              if (token.archetypeId) {
+                const archetype = state.objects[token.archetypeId];
+                if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+                  singleClickAction = (archetype as any).singleClickAction;
+                  doubleClickAction = (archetype as any).doubleClickAction;
+                }
+              }
+
+              // If this token has click actions configured, don't intercept the mousedown
+              if (singleClickAction || doubleClickAction) {
+                return; // Let the token's click handlers work
+              }
+            }
           }
         }
       }
@@ -3110,6 +3130,26 @@ export const Tabletop: React.FC = () => {
               // If this deck has click actions configured, don't intercept the mousedown
               if (deck.singleClickAction || deck.doubleClickAction) {
                 return; // Let the deck's click handlers work
+              }
+            }
+            // Check for tokens with click actions
+            if (obj?.type === ItemType.TOKEN) {
+              const token = obj as Token;
+              let singleClickAction = token.singleClickAction;
+              let doubleClickAction = token.doubleClickAction;
+
+              // For tokens with archetypeId, get actions from archetype
+              if (token.archetypeId) {
+                const archetype = state.objects[token.archetypeId];
+                if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+                  singleClickAction = (archetype as any).singleClickAction;
+                  doubleClickAction = (archetype as any).doubleClickAction;
+                }
+              }
+
+              // If this token has click actions configured, don't intercept the mousedown
+              if (singleClickAction || doubleClickAction) {
+                return; // Let the token's click handlers work
               }
             }
           }
@@ -3846,6 +3886,12 @@ export const Tabletop: React.FC = () => {
         if (item?.type === ItemType.CARD) {
           const cardSettings = getCardSettings(item as CardType);
           doubleClickAction = cardSettings.doubleClickAction;
+        } else if (item?.type === ItemType.TOKEN && (item as any).archetypeId) {
+          // For tokens with archetypeId, get doubleClickAction from archetype
+          const archetype = state.objects[(item as any).archetypeId];
+          if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+            doubleClickAction = (archetype as any).doubleClickAction;
+          }
         }
 
         const now = Date.now();

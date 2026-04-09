@@ -579,7 +579,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       // Properties to copy from archetype to token-copies
       const propsToUpdate = [
         'width', 'height', 'color', 'shape', 'content',
-        'borderColor', 'borderWidth', 'showNameOnToken', 'showName', 'name', 'fontColor'
+        'borderColor', 'borderWidth', 'showNameOnToken', 'showName', 'name', 'fontColor',
+        'allowedActions', 'allowedActionsForGM', 'actionButtons', 'singleClickAction', 'doubleClickAction',
+        'rotationStep'
       ] as const;
 
       tokenCopies.forEach(copy => {
@@ -1960,10 +1962,6 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       }
                       // Exclude rotation and swing actions - they're controlled by 'rotate' section
                       if (['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
-                        return false;
-                      }
-                      // For decks: exclude individual Top Deck actions (they're controlled by 'topDeck' section)
-                      if (isDeck && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)

@@ -29,6 +29,21 @@ export interface ContextMenuActionParams {
 }
 
 /**
+ * Helper function to get rotationStep for an object, considering archetype for tokens
+ */
+const getRotationStep = (object: TableObject, allObjects: Record<string, TableObject>): number => {
+  // For tokens with archetypeId, get rotationStep from archetype
+  if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
+    const archetype = allObjects[(object as any).archetypeId];
+    if (archetype && archetype.type === ItemType.TOKEN_TYPE && archetype.rotationStep) {
+      return archetype.rotationStep;
+    }
+  }
+  // Default to object's rotationStep or 45
+  return (object as any).rotationStep || 45;
+};
+
+/**
  * Execute context menu action - shared logic for both Tabletop and PoolTabletop
  */
 export const executeContextMenuAction = (action: string, params: ContextMenuActionParams): void => {
@@ -261,7 +276,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     case 'rotateCounterClockwise':
       // Rotate counter-clockwise (negative rotation)
       const currentRotation = object.rotation || 0;
-      const rotationStep = (object as any).rotationStep || 45;
+      const rotationStep = getRotationStep(object, state.objects);
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: { id: object.id, rotation: currentRotation - rotationStep }
