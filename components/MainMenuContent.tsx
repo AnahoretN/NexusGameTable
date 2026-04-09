@@ -2104,6 +2104,30 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                         {isVisible ? <EyeOff size={10} /> : <Eye size={10} />}
                       </button>
                     )}
+                    {canCreateObjects && (
+                      <button
+                        onClick={() => {
+                          if (obj.type === ItemType.TOKEN_TYPE) {
+                            // For token types, spawn a new token from this archetype
+                            dispatch({
+                              type: 'SPAWN_TOKEN_FROM_ARCHETYPE',
+                              payload: {
+                                archetypeId: obj.id,
+                                x: obj.x + 20,
+                                y: obj.y + 20
+                              }
+                            });
+                          } else {
+                            // For other objects, just clone
+                            dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } });
+                          }
+                        }}
+                        className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 text-xs"
+                        title="Clone"
+                      >
+                        <Copy size={10} />
+                      </button>
+                    )}
                     {canConfigureObjects && (
                       <button
                         onClick={() => dispatch({
