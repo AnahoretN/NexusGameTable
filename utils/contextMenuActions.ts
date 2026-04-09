@@ -91,62 +91,71 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       return;
 
     case 'pinToViewport':
-      // NEW APPROACH: Use DOM query to find the ACTUAL current position of the object
-      // This ensures NO visual jump when pinning - the object stays exactly where it is
-      requestAnimationFrame(() => {
-        let element: HTMLElement | null = null;
-        let screenX: number, screenY: number;
-
-        if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
-          // UI objects
-          element = document.querySelector(`[data-ui-object="${object.id}"]`) as HTMLElement;
-        } else {
-          // Game objects - try multiple selectors
-          element = document.querySelector(`[data-object-id="${object.id}"]`) as HTMLElement;
-          if (!element) {
-            // Try finding by ID in the tabletop container
-            element = document.querySelector(`[data-testid="object-${object.id}"]`) as HTMLElement;
-          }
-        }
-
-        if (element) {
-          const rect = element.getBoundingClientRect();
-          // IMPORTANT: For pinned objects, we need to account for zoom in the conversion
-          // Unpinned objects use v2p() which includes zoom, so getBoundingClientRect() returns zoomed coordinates
-          // For pinned objects with position: fixed, we need to remove zoom effect
-          // Formula: pinnedX = viewportX / zoom
-          const currentZoom = zoom || 1;
-          screenX = rect.left / currentZoom;
-          screenY = rect.top / currentZoom;
-        } else {
-          // Fallback: calculate from object position
-          if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
-            // UI objects use object.x/y directly
-            screenX = object.x;
-            screenY = object.y;
-          } else {
-            // Game objects in transform container
-            // Convert world coordinates to pinned screen coordinates
-            // Pinned rendering: left = pinnedPosition.x * zoom
-            // Unpinned rendering: left = worldX * pixelsPerVU * zoom + offset.x - scroll.x
-            // For same visual position: pinnedPosition.x * zoom = worldX * pixelsPerVU * zoom + offset.x - scroll.x
-            // Therefore: pinnedPosition.x = worldX * pixelsPerVU + (offset.x - scroll.x) / zoom
-            const pixelsPerVU = state?.viewTransform?.pixelsPerVU ?? 1.08;
-            screenX = object.x * pixelsPerVU + (offset.x - scrollX) / (zoom || 1);
-            screenY = object.y * pixelsPerVU + (offset.y - scrollY) / (zoom || 1);
-          }
-        }
-
-        // Dispatch the pin action with the correct screen position
+      // Toggle pin state: if pinned, unpin; if unpinned, pin
+      if ((object as any).pinnedToViewport) {
+        // Already pinned, so unpin
         dispatch({
-          type: 'PIN_TO_VIEWPORT',
-          payload: {
-            id: object.id,
-            screenX,
-            screenY
-          }
+          type: 'UPDATE_OBJECT',
+          payload: { id: object.id, pinnedToViewport: false }
         });
-      });
+      } else {
+        // Not pinned, so pin - use DOM query to find the ACTUAL current position of the object
+        // This ensures NO visual jump when pinning - the object stays exactly where it is
+        requestAnimationFrame(() => {
+          let element: HTMLElement | null = null;
+          let screenX: number, screenY: number;
+
+          if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+            // UI objects
+            element = document.querySelector(`[data-ui-object="${object.id}"]`) as HTMLElement;
+          } else {
+            // Game objects - try multiple selectors
+            element = document.querySelector(`[data-object-id="${object.id}"]`) as HTMLElement;
+            if (!element) {
+              // Try finding by ID in the tabletop container
+              element = document.querySelector(`[data-testid="object-${object.id}"]`) as HTMLElement;
+            }
+          }
+
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            // IMPORTANT: For pinned objects, we need to account for zoom in the conversion
+            // Unpinned objects use v2p() which includes zoom, so getBoundingClientRect() returns zoomed coordinates
+            // For pinned objects with position: fixed, we need to remove zoom effect
+            // Formula: pinnedX = viewportX / zoom
+            const currentZoom = zoom || 1;
+            screenX = rect.left / currentZoom;
+            screenY = rect.top / currentZoom;
+          } else {
+            // Fallback: calculate from object position
+            if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+              // UI objects use object.x/y directly
+              screenX = object.x;
+              screenY = object.y;
+            } else {
+              // Game objects in transform container
+              // Convert world coordinates to pinned screen coordinates
+              // Pinned rendering: left = pinnedPosition.x * zoom
+              // Unpinned rendering: left = worldX * pixelsPerVU * zoom + offset.x - scroll.x
+              // For same visual position: pinnedPosition.x * zoom = worldX * pixelsPerVU * zoom + offset.x - scroll.x
+              // Therefore: pinnedPosition.x = worldX * pixelsPerVU + (offset.x - scroll.x) / zoom
+              const pixelsPerVU = state?.viewTransform?.pixelsPerVU ?? 1.08;
+              screenX = object.x * pixelsPerVU + (offset.x - scrollX) / (zoom || 1);
+              screenY = object.y * pixelsPerVU + (offset.y - scrollY) / (zoom || 1);
+            }
+          }
+
+          // Dispatch the pin action with the correct screen position
+          dispatch({
+            type: 'PIN_TO_VIEWPORT',
+            payload: {
+              id: object.id,
+              screenX,
+              screenY
+            }
+          });
+        });
+      }
       return;
 
     case 'unpinFromViewport':
@@ -314,9 +323,10 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       break;
 
     case 'hide':
+      // Toggle visibility: if hidden, show; if visible, hide
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, isOnTable: false }
+        payload: { id: object.id, isOnTable: !(object as any).isOnTable }
       });
       break;
 

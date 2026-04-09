@@ -32,7 +32,7 @@ export function useAutoSave(
 ): void {
   const lastSaveTimeRef = useRef<number>(0);
   const playerTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const prevStateRef = useRef<number>(0);
+  const lastEmergencySaveHashRef = useRef<string>('');
 
   // Only cleanup timers on unmount, not on every state change
   useEffect(() => {
@@ -47,11 +47,21 @@ export function useAutoSave(
     if (!isHost || !isInitialized) return;
 
     const emergencyTimer = setInterval(async () => {
-      // OPTIMIZED: Simplified hash check for emergency saves
-      const hash = Object.keys(state.objects).length + Math.floor(Date.now() / 1000);
+      // Create a stable hash based on actual state content (not time-based)
+      const stateHash = JSON.stringify({
+        objectCount: Object.keys(state.objects).length,
+        objectIds: Object.keys(state.objects).sort(),
+        // Sample a few object properties to detect changes without expensive serialization
+        sampleObjects: Object.entries(state.objects).slice(0, 5).map(([id, obj]) => ({
+          id,
+          x: obj.x,
+          y: obj.y,
+          modifiedBy: obj.lastModifiedBy
+        }))
+      });
 
-      if (hash === prevStateRef.current) {
-        return; // No changes detected
+      if (stateHash === lastEmergencySaveHashRef.current) {
+        return; // No actual changes detected
       }
 
       // Check if safe to save
@@ -77,11 +87,11 @@ export function useAutoSave(
       logger.log('[AutoSave] Emergency backup save (60s timer)...');
       await saveGameState(state);
       lastSaveTimeRef.current = Date.now();
-      prevStateRef.current = hash;
+      lastEmergencySaveHashRef.current = stateHash;
     }, 60000); // 60 seconds
 
     return () => clearInterval(emergencyTimer);
-  }, [isHost, isInitialized, state]);
+  }, [isHost, isInitialized]);
 
   useEffect(() => {
     // Don't save if we're a guest (state comes from host)
@@ -89,17 +99,6 @@ export function useAutoSave(
 
     // Don't save during initialization
     if (!isInitialized) return;
-
-    // OPTIMIZED: Ultra-fast hash check for main autosave
-    // Only count objects + quick position sum, skip expensive loops during drag
-    const hash = Object.keys(state.objects).length + Math.floor(Date.now() / 100);
-
-    if (hash === prevStateRef.current) {
-      return;
-    }
-
-    // Update previous hash
-    prevStateRef.current = hash;
 
     // Check if ANY object is being dragged (by any player)
     const isAnyDragging = Object.values(state.objects).some(
