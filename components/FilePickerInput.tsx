@@ -11,6 +11,37 @@ interface FilePickerInputProps {
 }
 
 /**
+ * Validate URL to prevent URI malformed errors
+ * Returns true if URL is valid, false otherwise
+ */
+const isValidUrl = (url: string): boolean => {
+  if (!url || url.trim() === '') return true; // Empty URL is valid (user can clear the field)
+
+  try {
+    // Try to create a URL object
+    // This will throw for malformed URLs
+    new URL(url);
+    return true;
+  } catch (error) {
+    // If URL constructor fails, it might be a relative path or data URI
+    // Check for common valid patterns
+    if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
+      return true; // Relative paths are valid
+    }
+    if (url.startsWith('data:')) {
+      return true; // Data URIs are valid
+    }
+    if (url.startsWith('blob:')) {
+      return true; // Blob URLs are valid
+    }
+
+    // Check for basic URL pattern (protocol://domain)
+    const urlPattern = /^https?:\/\/.+/i;
+    return urlPattern.test(url);
+  }
+};
+
+/**
  * Convert a file to base64 data URL for P2P sharing
  */
 const fileToBase64 = (file: File): Promise<string> => {
@@ -40,6 +71,16 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   const [sizeWarning, setSizeWarning] = useState<string>('');
 
   const MAX_FILE_SIZE = 3 * 1024 * 1024; // 3MB
+
+  const handleUrlChange = (newValue: string) => {
+    // Validate URL - if invalid, treat as empty string
+    if (isValidUrl(newValue)) {
+      onChange(newValue);
+    } else {
+      // Invalid URL - treat as empty string
+      onChange('');
+    }
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -91,7 +132,7 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
     <div className="relative flex items-center">
       <input
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={e => handleUrlChange(e.target.value)}
         className={`bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm pr-10 ${className}`}
         placeholder={placeholder}
         disabled={isLoading}
