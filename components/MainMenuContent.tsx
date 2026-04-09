@@ -1981,6 +1981,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           ],
           cellWidth: cellWidth,
           cellHeight: cellHeight,
+          snapToGrid: true, // Enable magnetism by default
         };
 
         // Add both objects - board first, then cell

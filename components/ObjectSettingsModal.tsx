@@ -1840,6 +1840,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       />
                     </div>
                   </div>
+
+                  {/* Magnetism Toggle */}
+                  <div className="flex items-center justify-between pt-2">
+                    <label className="text-sm text-gray-300">{translate('Enable Cell Magnetism', language as Locale)}</label>
+                    <button
+                      onClick={() => update('snapToGrid', !(data as any).snapToGrid)}
+                      className={`w-12 h-6 rounded-full transition-colors ${(data as any).snapToGrid !== false ? 'bg-green-600' : 'bg-slate-600'}`}
+                    >
+                      <div className={`w-5 h-5 bg-white rounded-full transition-transform ${(data as any).snapToGrid !== false ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400">{translate('When enabled, tokens snap to the center of cells', language as Locale)}</p>
                 </div>
               )}
 

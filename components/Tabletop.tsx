@@ -1112,12 +1112,22 @@ export const Tabletop: React.FC = () => {
       ) as BoardType[];
 
       // Get all individual battlefield cells with snapToGrid enabled
-      const cells = Object.values(objects).filter(obj =>
-          obj.type === ItemType.BATTLEFIELD_CELL &&
-          (obj as any).snapToGrid &&
-          obj.isOnTable &&
-          obj.id !== currentDraggingId
-      ) as BattlefieldCell[];
+      const cells = Object.values(objects).filter(obj => {
+          if (obj.type === ItemType.BATTLEFIELD_CELL) {
+              const cell = obj as BattlefieldCell;
+              return cell.snapToGrid && cell.isOnTable && obj.id !== currentDraggingId;
+          } else if (obj.type === ItemType.NEXUS_CELL) {
+              const nexusCell = obj as NexusCellObject;
+              // Check if parent board has magnetism enabled
+              const parentBoard = objects[nexusCell.nexusBoardId] as NexusBoard;
+              if (parentBoard && parentBoard.snapToGrid === false) {
+                  // Parent board has magnetism disabled, skip this cell
+                  return false;
+              }
+              return nexusCell.snapToGrid && nexusCell.isOnTable && obj.id !== currentDraggingId;
+          }
+          return false;
+      }) as (BattlefieldCell | NexusCellObject)[];
 
       // Find nearest cell center within snap radius
       let nearestCell: { x: number; y: number; distanceSq: number } | null = null;
@@ -2252,6 +2262,17 @@ export const Tabletop: React.FC = () => {
             obj.snapToGrid &&
             obj.isOnTable !== false) {
           const cell = obj as BattlefieldCell | NexusCellObject;
+
+          // For NexusCell, check if parent board has magnetism enabled
+          if (obj.type === ItemType.NEXUS_CELL) {
+            const nexusCell = obj as NexusCellObject;
+            const parentBoard = state.objects[nexusCell.nexusBoardId] as NexusBoard;
+            if (parentBoard && parentBoard.snapToGrid === false) {
+              // Parent board has magnetism disabled, skip this cell
+              continue;
+            }
+          }
+
           const cellCenterX = cell.x + (cell.width ?? 100) / 2;
           const cellCenterY = cell.y + (cell.height ?? 100) / 2;
           const distance = Math.sqrt(
@@ -3750,14 +3771,21 @@ export const Tabletop: React.FC = () => {
         const objectId = deckElement.getAttribute('data-object-id');
         const obj = objectId ? state.objects[objectId] : undefined;
         if (obj && obj.type === ItemType.DECK && objectId) {
-          e.preventDefault();
-          e.stopPropagation();
-          dropToDeck(objectId, currentSlot);
-          // Ensure slot is cleared after dropping to deck
-          setCursorSlot([]);
-          setCursorPosition(null);
-          setCursorSlotSource(null);
-          return;
+          // Check if slot contains only cards - tokens should not be dropped to deck
+          const slotContainsOnlyCards = currentSlot.every(item => item.type === ItemType.CARD);
+
+          if (slotContainsOnlyCards) {
+            // Only drop cards to deck, tokens should stay on tabletop
+            e.preventDefault();
+            e.stopPropagation();
+            dropToDeck(objectId, currentSlot);
+            // Ensure slot is cleared after dropping to deck
+            setCursorSlot([]);
+            setCursorPosition(null);
+            setCursorSlotSource(null);
+            return;
+          }
+          // If slot contains tokens, continue to drop on tabletop below
         }
       }
 

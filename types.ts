@@ -396,6 +396,9 @@ export interface NexusBoard extends GameItem {
   // Cell dimensions
   cellWidth: number;             // Default 100
   cellHeight: number;            // Default 150
+
+  // Magnetism control for all cells in this board
+  snapToGrid?: boolean;          // When disabled, no cells in this board will attract tokens
 }
 
 export interface DiceObject extends GameItem {

@@ -200,7 +200,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   }, [dispatch, uiObject.id]);
 
   // Memoize collapse checks
-  const isCollapsed = useMemo(() => effectiveProps.width === 200 && effectiveProps.height === 32, [effectiveProps.width, effectiveProps.height]);
+  const isCollapsed = useMemo(() => effectiveProps.width === 200 && effectiveProps.height === 40, [effectiveProps.width, effectiveProps.height]);
   // For main menu, use minimized flag; for other panels, use size-based check
   const shouldExpand = isMainMenu ? minimized : isCollapsed;
   const dualPosition = useMemo(() => uiObject.type === ItemType.PANEL && (uiObject as PanelObject).dualPosition, [uiObject]);
@@ -249,19 +249,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               width: uiObject.width,
               height: uiObject.height,
             },
-            ...(dualPosition && restoreState ? {
-              x: restoreState.x,
-              y: restoreState.y,
-              width: restoreState.width,
-              height: restoreState.height,
-            } : dualPosition ? {
-              width: MAIN_MENU_WIDTH,
-              height: 400,
-            } : {
-              // In single position mode, restore expanded dimensions but keep position
-              width: restoreState?.width ?? MAIN_MENU_WIDTH,
-              height: restoreState?.height ?? 400,
-            })
+            // Always restore from expandedState or use defaults
+            width: restoreState?.width ?? MAIN_MENU_WIDTH,
+            height: restoreState?.height ?? 400,
           },
           _localOnly: true // Minimized state and dimensions are local
         });
@@ -296,11 +286,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
               width: uiObject.width,
               height: uiObject.height,
             },
-            ...(dualPosition && uiObject.collapsedState
-              ? { x: uiObject.collapsedState.x, y: uiObject.collapsedState.y }
-              : undefined),
             width: 200,
-            height: 32, // Title bar height
+            height: 40, // Title bar height (must match containerHeight calculation)
           },
           _localOnly: true // Minimized state and dimensions are local
         });
@@ -603,7 +590,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   // Memoize width calculation to prevent unnecessary recalculations
   const containerWidth = useMemo(() => {
     if (currentSize?.width) return currentSize.width;
-    if (minimized) return undefined; // Will use height calculation
+    if (minimized) return 200; // Use fixed width when minimized
 
     if (isPinnedMode) {
       if ((uiObject as any).pinnedPixelWidth) return (uiObject as any).pinnedPixelWidth;
@@ -614,7 +601,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
 
   // Memoize height calculation to prevent unnecessary recalculations
   const containerHeight = useMemo(() => {
-    if (minimized) return 32;
+    if (minimized) return 40; // Title bar height when minimized
     if (currentSize?.height) return currentSize.height;
 
     if (isPinnedMode) {
@@ -730,7 +717,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         // Main Menu header - always shown, but different when minimized
         <div
           className={`${headerBg} px-2 py-1 flex items-center select-none flex-shrink-0`}
-          style={{ height: 32, position: 'relative' }}
+          style={{ height: 40, position: 'relative' }}
         >
           {/* Left side - Game name and support button */}
           <div
