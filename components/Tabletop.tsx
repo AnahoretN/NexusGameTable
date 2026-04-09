@@ -869,6 +869,35 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('update-deck-cards-shape', handleUpdateDeckCardsShape);
   }, [dispatch]);
 
+  // Listen for deck card back URL updates from deck settings changes
+  useEffect(() => {
+    const handleUpdateDeckCardBack = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        deckId: string;
+        cardBackUrl: string;
+      }>;
+      const { deckId, cardBackUrl } = customEvent.detail;
+
+      // Update the deck's spriteConfig with the new cardBackUrl
+      const deck = state.objects[deckId];
+      if (deck && deck.type === ItemType.DECK) {
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: deckId,
+            spriteConfig: {
+              ...deck.spriteConfig,
+              cardBackUrl
+            }
+          }
+        });
+      }
+    };
+
+    window.addEventListener('update-deck-card-back', handleUpdateDeckCardBack);
+    return () => window.removeEventListener('update-deck-card-back', handleUpdateDeckCardBack);
+  }, [dispatch, state.objects]);
+
   // Listen for clear-cursor-slot events from PoolTabletop
   useEffect(() => {
     const handleClearCursorSlot = (e: Event) => {

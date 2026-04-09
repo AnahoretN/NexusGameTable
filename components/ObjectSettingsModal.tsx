@@ -692,6 +692,19 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
           }
         }));
       }
+
+      // Check if cardBackUrl changed
+      const oldCardBackUrl = oldDeck.spriteConfig?.cardBackUrl;
+      const newCardBackUrl = spriteConfig?.cardBackUrl;
+      if (oldCardBackUrl !== newCardBackUrl) {
+        // Dispatch event to update deck card back display
+        window.dispatchEvent(new CustomEvent('update-deck-card-back', {
+          detail: {
+            deckId,
+            cardBackUrl: newCardBackUrl
+          }
+        }));
+      }
     }
 
     onClose();

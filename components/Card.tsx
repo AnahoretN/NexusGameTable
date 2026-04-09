@@ -443,6 +443,7 @@ export default React.memo(Card, (prevProps, nextProps) => {
   // Compare deck sprite config (affects card back rendering)
   const prevConfig = prevProps.deckSpriteConfig;
   const nextConfig = nextProps.deckSpriteConfig;
+  if (prevConfig?.cardBackUrl !== nextConfig?.cardBackUrl) return false;
   if (prevConfig?.cardBackSpriteUrl !== nextConfig?.cardBackSpriteUrl) return false;
   if (prevConfig?.cardBackSpriteIndex !== nextConfig?.cardBackSpriteIndex) return false;
   if (prevConfig?.cardBackSpriteColumns !== nextConfig?.cardBackSpriteColumns) return false;
