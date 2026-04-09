@@ -710,7 +710,7 @@ export const Tabletop: React.FC = () => {
         fontColor: (archetype as any).fontColor,
         // IMPORTANT: Set zIndex to maintain layer relationships
         zIndex: archetype.zIndex ?? 3000,
-        hyperscaleLayerId: archetype.hyperscaleLayerId ?? 'tokens',
+        hyperscaleLayerId: 'tokens', // Always set to 'tokens' hyper-layer for token copies
       };
 
       // Add token to objects list

@@ -3831,17 +3831,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Get current spawn count or start at 0
       const currentCount = archetype.spawnCount || 0;
 
-      // Determine hyperscale layer for spawned token
+      // Determine hyperscale layer for spawned token - always use 'tokens' layer for token copies
       let hyperscaleLayerId = 'tokens';
-      if (state.hyperscaleLayers.some(l => l.id === 'tokens')) {
-        hyperscaleLayerId = 'tokens';
-      } else if (state.selectedHyperscaleLayerIds.length > 0) {
-        const selectedLayers = state.hyperscaleLayers.filter(l =>
-          state.selectedHyperscaleLayerIds.includes(l.id)
-        );
-        selectedLayers.sort((a, b) => b.maxZIndex - a.maxZIndex);
-        hyperscaleLayerId = selectedLayers[0].id;
-      }
 
       // Get max zIndex within the hyperscale layer
       const layer = state.hyperscaleLayers.find(l => l.id === hyperscaleLayerId);

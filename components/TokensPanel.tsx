@@ -26,6 +26,18 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
   const archetypes = Object.values(state.objects)
     .filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE);
 
+  // Count existing token copies for each archetype
+  const getTokenCopyCount = (archetypeId: string) => {
+    return Object.values(state.objects).filter(obj =>
+      obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetypeId
+    ).length;
+  };
+
+  // Get max copies limit for archetype
+  const getMaxCopies = (archetype: TokenType) => {
+    return (archetype as any).maxCopies ?? 0;
+  };
+
   // Track drag state to distinguish click from drag
   const dragStartTimeRef = useRef<number>(0);
   const dragStartPositionRef = useRef<{ x: number; y: number } | null>(null);
@@ -229,7 +241,11 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
                   data-archetype-card
                   data-archetype-id={archetype.id}
                   className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-pointer transition-colors"
-                  title={`${archetype.name}\n${translate('Click to add to cursor slot', language as Locale)}`}
+                  title={`${archetype.name} (${(() => {
+                    const copyCount = getTokenCopyCount(archetype.id);
+                    const maxCopies = getMaxCopies(archetype);
+                    return maxCopies > 0 ? `${copyCount}/${maxCopies}` : copyCount;
+                  })()})\n${translate('Click to add to cursor slot', language as Locale)}`}
                 >
                   {/* Preview of the token using SvgTokenShape */}
                   <div className="w-full h-full flex items-center justify-center overflow-hidden rounded">
@@ -260,9 +276,17 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
                     <Settings size={10} className="text-gray-400" />
                   </button>
 
-                  {/* Name label */}
+                  {/* Name label with copy count */}
                   <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] truncate px-1 py-0.5 rounded-b">
-                    {archetype.name}
+                    {(() => {
+                      const copyCount = getTokenCopyCount(archetype.id);
+                      const maxCopies = getMaxCopies(archetype);
+                      if (maxCopies > 0) {
+                        return `${archetype.name} (${copyCount}/${maxCopies})`;
+                      } else {
+                        return `${archetype.name} (${copyCount})`;
+                      }
+                    })()}
                   </div>
                 </div>
                 );

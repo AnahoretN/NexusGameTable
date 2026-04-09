@@ -942,11 +942,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       const copyCount = Object.values(state.objects).filter(
                         obj => obj.type === ItemType.TOKEN && (obj as any).archetypeId === archetype.id
                       ).length;
+                      // Get max copies limit for this archetype
+                      const maxCopies = (archetype as any).maxCopies ?? 0;
                       return (
                         <TokenTypeCard
                           key={archetype.id}
                           archetype={archetype}
                           copyCount={copyCount}
+                          maxCopies={maxCopies}
                           onSettings={() => dispatch({
                             type: 'CREATE_WINDOW',
                             payload: {
@@ -2099,7 +2102,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     const copyCount = Object.values(state.objects).filter(
                       o => o.type === ItemType.TOKEN && (o as any).archetypeId === obj.id
                     ).length;
-                    return copyCount > 0 ? `${baseName} (${copyCount})` : baseName;
+                    const maxCopies = (obj as any).maxCopies ?? 0;
+                    if (copyCount > 0) {
+                      return maxCopies > 0 ? `${baseName} (${copyCount}/${maxCopies})` : `${baseName} (${copyCount})`;
+                    }
+                    return baseName;
                   }
                   return baseName;
                 };
@@ -2251,6 +2258,7 @@ const DrawingToolButton: React.FC<DrawingToolButtonProps> = ({ tool, icon, label
 interface TokenTypeCardProps {
   archetype: TokenType;
   copyCount: number;
+  maxCopies: number;
   onSettings: () => void;
 }
 
@@ -2331,7 +2339,7 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onS
       data-archetype-card
       data-archetype-id={archetype.id}
       className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-pointer transition-colors"
-      title={`${archetype.name}\nClick to add to cursor slot`}
+      title={`${archetype.name} (${maxCopies > 0 ? `${copyCount}/${maxCopies}` : copyCount})\nClick to add to cursor slot`}
     >
       {/* Preview of the token using SvgTokenShape */}
       <div className="w-full h-full flex items-center justify-center overflow-hidden rounded">
@@ -2364,7 +2372,7 @@ const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onS
 
       {/* Name label */}
       <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] truncate px-1 py-0.5 rounded-b">
-        {archetype.name} {copyCount > 0 && `(${copyCount})`}
+        {maxCopies > 0 ? `${archetype.name} (${copyCount}/${maxCopies})` : `${archetype.name} (${copyCount})`}
       </div>
     </div>
   );

@@ -970,23 +970,21 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 >
                   <Settings size={14} className="text-white" />
                 </button>
-                {/* Lock button - GM only */}
-                {isGM && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleLock();
-                    }}
-                    className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.locked ? 'bg-purple-600' : ''}`}
-                    title={uiObject.locked ? 'Unlock' : 'Lock'}
-                  >
-                    {uiObject.locked ? <Unlock size={14} className="text-white" /> : <Lock size={14} className="text-white" />}
-                  </button>
-                )}
+                {/* Lock button - available for all players */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleLock();
+                  }}
+                  className={`p-0.5 hover:bg-white/20 rounded transition-colors ${uiObject.locked ? 'bg-purple-600' : ''}`}
+                  title={uiObject.locked ? 'Unlock' : 'Lock'}
+                >
+                  {uiObject.locked ? <Unlock size={14} className="text-white" /> : <Lock size={14} className="text-white" />}
+                </button>
               </>
             )}
-            {/* Lock button for collapsed state - GM only */}
-            {isActuallyMinimized && isGM && (
+            {/* Lock button for collapsed state - available for all players */}
+            {isActuallyMinimized && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -998,31 +996,29 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
                 {uiObject.locked ? <Unlock size={14} className="text-white" /> : <Lock size={14} className="text-white" />}
               </button>
             )}
-            {/* Minimize/Expand button - GM only */}
-            {isGM && (
-              isActuallyMinimized ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleCollapse();
-                  }}
-                  className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                  title="Expand"
-                >
-                  <Plus size={14} className="text-white" />
-                </button>
-              ) : (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleCollapse();
-                  }}
-                  className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                  title="Minimize"
-                >
-                  <Minus size={14} className="text-white" />
-                </button>
-              )
+            {/* Minimize/Expand button - available for all players */}
+            {isActuallyMinimized ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleCollapse();
+                }}
+                className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                title="Expand"
+              >
+                <Plus size={14} className="text-white" />
+              </button>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleCollapse();
+                }}
+                className="p-0.5 hover:bg-white/20 rounded transition-colors"
+                title="Minimize"
+              >
+                <Minus size={14} className="text-white" />
+              </button>
             )}
           </div>
         </div>
