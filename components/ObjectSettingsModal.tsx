@@ -1877,6 +1877,25 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                     rows={5}
                   />
                 </div>
+                {/* Show Tooltip Text on Card (for cards only) */}
+                {isCard && (
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-gray-400 flex items-center gap-2">
+                      <FileText size={12} />
+                      {translate('Show tooltip text on card', language as Locale)}
+                    </label>
+                    <button
+                      onClick={() => update('showTextOnCard', !((data as Card).showTextOnCard))}
+                      className={`w-10 h-5 rounded-full transition-colors ${
+                        (data as Card).showTextOnCard ? 'bg-green-600' : 'bg-slate-700'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        (data as Card).showTextOnCard ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                )}
               </div>
               )}
 

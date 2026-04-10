@@ -180,6 +180,7 @@
   "Card name on first line, description on second line, separate cards with '-'": "Naziv karte u prvom redu, opis u drugom, razdvojajte kartice simbolom '-'",
   "Format: Card name\\nDescription\\n-\\nAnother card\\nDescription": "Format: Naziv karte\\nOpis\\n-\\nDruga karta\\nOpis",
   "Add Cards from Text": "Dodaj karte iz teksta",
+  "Show tooltip text on card": "Prikaži tekst saveta na kartici",
   "Tabletop": "Sto",
   "Pile": "Gomila",
   "Visible to players who cannot see the face of the card": "Vidljivo igračima koji ne vide lice karte",

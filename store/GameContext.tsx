@@ -702,7 +702,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                       id: cardId,
                       type: ItemType.CARD,
                       name: cardData.name,
-                      description: cardData.description,
+                      tooltipText: cardData.description,
                       deckId: deck.id,
                       width: deck.cardWidth || deck.width || DEFAULT_DECK_WIDTH,
                       height: deck.cardHeight || deck.height || DEFAULT_DECK_HEIGHT,

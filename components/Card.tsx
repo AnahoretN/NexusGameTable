@@ -307,11 +307,11 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
 
                 {/* Text on card display - when showTextOnCard is enabled */}
                 {card.faceUp && card.showTextOnCard && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10 bg-white">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10">
                     <div className="w-full h-full flex flex-col items-center justify-center text-center">
                       <h3 className="text-[13px] font-bold text-gray-900 mb-1 break-words w-full">{card.name}</h3>
-                      <p className="text-[11px] text-gray-700 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
-                        {card.description || ''}
+                      <p className="text-[11px] text-gray-900 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
+                        {card.tooltipText || card.description || ''}
                       </p>
                     </div>
                   </div>
@@ -367,11 +367,11 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
 
               {/* Text on card display - when showTextOnCard is enabled */}
               {card.faceUp && card.showTextOnCard && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10 bg-white">
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10">
                   <div className="w-full h-full flex flex-col items-center justify-center text-center">
                     <h3 className="text-[13px] font-bold text-gray-900 mb-1 break-words w-full">{card.name}</h3>
-                    <p className="text-[11px] text-gray-700 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
-                      {card.description || ''}
+                    <p className="text-[11px] text-gray-900 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
+                      {card.tooltipText || card.description || ''}
                     </p>
                   </div>
                 </div>
@@ -409,7 +409,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   };
 
   return (
-    skipTooltip ? cardContent : (
+    skipTooltip || card.showTextOnCard ? cardContent : (
       <Tooltip
         text={card.tooltipText}
         showImage={deckShowTooltipImage && getTooltipImageSrc() !== undefined}

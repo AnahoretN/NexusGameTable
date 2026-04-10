@@ -179,6 +179,7 @@
   "Card format example:\nFireball\n3d6 fire damage to all creatures in area.\n-\nCure Light Wounds\nTarget regains 1d8+1 hit points.\n-\nMagic Missile\nYou create three glowing magic missiles.": "Пример формата карты:\nОгненный шар\nУрон 3d6 огненным уроном всем существам в области.\n-\nЛечение легких ран\nЦель восстанавливает 1d8+1 хитов.\n-\nМагическая стрела\nВы создаете три сверкающих магических стрелы.",
   "Card name on first line, description on second line, separate cards with '-'": "Название карты на первой строке, описание на второй, разделяйте карты символом '-'",
   "Add Cards from Text": "Добавить карты из текста",
+  "Show tooltip text on card": "Показывать текст подсказки на карте",
   "Tabletop": "Стол",
   "Pile": "Стопка",
   "Visible to players who cannot see the face of the card": "Видно игрокам, которые не видят лицевую сторону карты",

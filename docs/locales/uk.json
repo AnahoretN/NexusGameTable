@@ -181,6 +181,7 @@
   "Card name on first line, description on second line, separate cards with '-'": "Назва карти на першому рядку, опис на другому, розділяйте карти символом '-'",
   "Format: Card name\\nDescription\\n-\\nAnother card\\nDescription": "Формат: Назва карти\\nОпис\\n-\\nІнша карта\\nОпис",
   "Add Cards from Text": "Додати карти з тексту",
+  "Show tooltip text on card": "Показувати текст підказки на карті",
   "Tabletop": "Стіл",
   "Pile": "Стос",
   "Visible to players who cannot see the face of the card": "Видно гравцям, які не бачать особову сторону карти",
