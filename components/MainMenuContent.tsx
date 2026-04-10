@@ -498,7 +498,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const handleSaveGame = async () => {
     // Convert blob URLs to base64 before saving
     const convertedObjects = await convertBlobsInObjects(state.objects);
-    const stateToSave = { ...state, objects: convertedObjects };
+    // Create a clean state object without language to preserve user's language preference
+    const { language, ...stateWithoutLanguage } = state;
+    const stateToSave = { ...stateWithoutLanguage, objects: convertedObjects };
 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stateToSave));
     const downloadAnchorNode = document.createElement('a');

@@ -1723,6 +1723,7 @@ const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject; effectiveP
 const PoolPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const { state } = useGame();
 
   // Global mouse up handler to clear shift-drag state
   React.useEffect(() => {
@@ -1774,7 +1775,7 @@ const PoolPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
       style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
       className="h-full"
     >
-      <PoolPanel panel={panel} />
+      <PoolPanel panel={panel} language={state.language} />
     </div>
   );
 };

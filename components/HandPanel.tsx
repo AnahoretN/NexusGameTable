@@ -1223,13 +1223,13 @@ export const HandPanel: React.FC<HandPanelProps> = ({
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
-              <h3 className="text-base font-bold text-white">Settings: {handTabSettings.player.name}</h3>
+              <h3 className="text-base font-bold text-white">{translate('Settings:', language as Locale)} {handTabSettings.player.name}</h3>
             </div>
 
             {/* Tabs */}
             <div className="flex">
               <button className="flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors bg-slate-700 text-white border-b-2 border-purple-500">
-                General
+                {translate('General', language as Locale)}
               </button>
             </div>
 
@@ -1267,6 +1267,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
                     setHandTabSettings(null);
                     setTempSettingsPlayer(null);
                   }}
+                  language={language}
                 />
               </div>
             </div>

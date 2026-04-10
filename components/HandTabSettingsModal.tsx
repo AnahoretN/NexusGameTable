@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Player } from '../types';
+import { Player, AppLanguage } from '../types';
 import { User, Users, X as XIcon } from 'lucide-react';
+import { t as translate, Locale } from '../utils/translations';
 
 interface HandTabSettingsModalProps {
   player: Player;
@@ -10,6 +11,7 @@ interface HandTabSettingsModalProps {
   onSave: (updatedPlayer: Player) => void;
   onScaleChange?: (newScale: number) => void;
   onPlayerChange?: (updatedPlayer: Player) => void;
+  language?: AppLanguage;
 }
 
 type AccessType = 'visible' | 'manageable';
@@ -21,7 +23,8 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
   isGM: _isGM,
   onSave: _onSave,
   onScaleChange,
-  onPlayerChange
+  onPlayerChange,
+  language = 'en'
 }) => {
   const [tempPlayer, setTempPlayer] = useState<Player>({
     ...player,
@@ -100,21 +103,21 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
   // Get player info
   const getPlayerInfo = useCallback((playerId: string) => {
     if (playerId === 'all_players') {
-      return { name: 'All Players', icon: Users };
+      return { name: translate('All Players', language as Locale), icon: Users };
     }
     const foundPlayer = players.find(p => p.id === playerId);
     return {
-      name: foundPlayer?.name || 'Player',
+      name: foundPlayer?.name || translate('Player', language as Locale),
       icon: User
     };
-  }, [players]);
+  }, [players, language, translate]);
 
   return (
     <div onClick={(e) => e.stopPropagation()}>
       {/* Player Name */}
       <div className="p-4 border-b border-slate-700">
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          Player Name
+          {translate('Player Name', language as Locale)}
         </label>
         <input
           type="text"
@@ -128,7 +131,7 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
       {/* Card Scale */}
       <div className="p-4 border-b border-slate-700">
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          Card Scale: {Math.round(cardScale * 100)}%
+          {translate('Card Scale', language as Locale)}: {Math.round(cardScale * 100)}%
         </label>
         <input
           type="range"
@@ -155,7 +158,7 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
 
       {/* Who can see this hand */}
       <div className="p-4 border-b border-slate-700">
-        <h3 className="text-sm font-medium text-slate-300 mb-3">Who Can View This Hand</h3>
+        <h3 className="text-sm font-medium text-slate-300 mb-3">{translate('Who Can View This Hand', language as Locale)}</h3>
         <div className="space-y-2">
           {tempPlayer.handVisibleToPlayerIds && tempPlayer.handVisibleToPlayerIds.length > 0 ? (
             tempPlayer.handVisibleToPlayerIds.map(playerId => {
@@ -181,7 +184,7 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
               );
             })
           ) : (
-            <p className="text-xs text-slate-500 italic">No players with view access yet</p>
+            <p className="text-xs text-slate-500 italic">{translate('No players with view access yet', language as Locale)}</p>
           )}
 
           {/* Add specific player */}
@@ -196,9 +199,9 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
             onMouseDown={(e) => e.stopPropagation()}
             className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2 cursor-pointer relative z-[1001]"
           >
-            <option value="">Add player...</option>
+            <option value="">{translate('Add player...', language as Locale)}</option>
             {(!tempPlayer.handVisibleToPlayerIds || !tempPlayer.handVisibleToPlayerIds.includes('all_players')) && (
-              <option value="all_players">All Players</option>
+              <option value="all_players">{translate('All Players', language as Locale)}</option>
             )}
             {players
               .filter(p => !p.isGM && !tempPlayer.handVisibleToPlayerIds?.includes(p.id))
@@ -211,9 +214,9 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
 
       {/* Who can manage this hand */}
       <div className="p-4">
-        <h3 className="text-sm font-medium text-slate-300 mb-2">Who Can Manage This Hand</h3>
+        <h3 className="text-sm font-medium text-slate-300 mb-2">{translate('Who Can Manage This Hand', language as Locale)}</h3>
         <p className="text-xs text-slate-500 mb-3">
-          Can reorder and manipulate cards in this hand
+          {translate('Can reorder and manipulate cards in this hand', language as Locale)}
         </p>
         <div className="space-y-2">
           {tempPlayer.handManageableByPlayerIds && tempPlayer.handManageableByPlayerIds.length > 0 ? (
@@ -240,7 +243,7 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
               );
             })
           ) : (
-            <p className="text-xs text-slate-500 italic">No players with manage access yet</p>
+            <p className="text-xs text-slate-500 italic">{translate('No players with manage access yet', language as Locale)}</p>
           )}
 
           {/* Add specific player */}
@@ -255,9 +258,9 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
             onMouseDown={(e) => e.stopPropagation()}
             className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2 cursor-pointer relative z-[1001]"
           >
-            <option value="">Add player...</option>
+            <option value="">{translate('Add player...', language as Locale)}</option>
             {(!tempPlayer.handManageableByPlayerIds || !tempPlayer.handManageableByPlayerIds.includes('all_players')) && (
-              <option value="all_players">All Players</option>
+              <option value="all_players">{translate('All Players', language as Locale)}</option>
             )}
             {players
               .filter(p => !p.isGM && !tempPlayer.handManageableByPlayerIds?.includes(p.id))

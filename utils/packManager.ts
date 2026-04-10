@@ -475,7 +475,7 @@ export async function createPack(
         viewTransform: state.viewTransform,
         drawings: state.drawings || [],
         playerPermissions: state.playerPermissions || [],
-        language: state.language,
+        // Don't save language - preserve user's current language preference
         sessionId: state.sessionId,
         hyperscaleLayers: state.hyperscaleLayers,
         selectedHyperscaleLayerIds: state.selectedHyperscaleLayerIds

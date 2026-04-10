@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { PanelTab, Player } from '../types';
+import { PanelTab, Player, AppLanguage } from '../types';
 import { User, Users, X as XIcon } from 'lucide-react';
+import { t as translate, Locale } from '../utils/translations';
 
 interface PoolTabSettingsModalProps {
   tab: PanelTab;
@@ -9,6 +10,7 @@ interface PoolTabSettingsModalProps {
   isGM: boolean;
   onSave: (updatedTab: PanelTab) => void;
   onTabChange?: (updatedTab: PanelTab) => void;
+  language?: AppLanguage;
 }
 
 type AccessType = 'visible' | 'manageable' | 'editable';
@@ -19,7 +21,8 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
   activePlayerId,
   isGM,
   onSave,
-  onTabChange
+  onTabChange,
+  language = 'en'
 }) => {
   const [tempTab, setTempTab] = useState<PanelTab>(tab);
 
@@ -92,21 +95,21 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
   // Get player info
   const getPlayerInfo = useCallback((playerId: string) => {
     if (playerId === 'all_players') {
-      return { name: 'All Players', icon: Users };
+      return { name: translate('All Players', language as Locale), icon: Users };
     }
     const player = players.find(p => p.id === playerId);
     return {
-      name: player?.name || 'Player',
+      name: player?.name || translate('Player', language as Locale),
       icon: User
     };
-  }, [players]);
+  }, [players, language, translate]);
 
   return (
     <>
       {/* Tab Name */}
       <div className="p-4 border-b border-slate-700">
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          Tab Name
+          {translate('Tab Name', language as Locale)}
         </label>
         <input
           type="text"
@@ -119,7 +122,7 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
       {/* Zoom Level */}
       <div className="p-4 border-b border-slate-700">
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          Zoom Level: {Math.round(((tempTab.zoom || 1.02) / 1.02) * 100)}%
+          {translate('Zoom Level', language as Locale)}: {Math.round(((tempTab.zoom || 1.02) / 1.02) * 100)}%
         </label>
         <input
           type="range"
@@ -139,7 +142,7 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
 
       {/* Who can see */}
       <div className="p-4 border-b border-slate-700">
-        <h3 className="text-sm font-medium text-slate-300 mb-3">Who Can View</h3>
+        <h3 className="text-sm font-medium text-slate-300 mb-3">{translate('Who Can View', language as Locale)}</h3>
         <div className="space-y-2">
           {tempTab.visibleToPlayerIds?.map(playerId => {
             const playerInfo = getPlayerInfo(playerId);
@@ -174,9 +177,9 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
             }}
             className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
           >
-            <option value="">Add player...</option>
+            <option value="">{translate('Add player...', language as Locale)}</option>
             {!tempTab.visibleToPlayerIds?.includes('all_players') && (
-              <option value="all_players">All Players</option>
+              <option value="all_players">{translate('All Players', language as Locale)}</option>
             )}
             {players
               .filter(p => !p.isGM && !tempTab.visibleToPlayerIds?.includes(p.id))
@@ -189,9 +192,9 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
 
       {/* Who can manage */}
       <div className="p-4 border-b border-slate-700">
-        <h3 className="text-sm font-medium text-slate-300 mb-2">Who Can Manage</h3>
+        <h3 className="text-sm font-medium text-slate-300 mb-2">{translate('Who Can Manage', language as Locale)}</h3>
         <p className="text-xs text-slate-500 mb-3">
-          Can move and manipulate objects in the pool
+          {translate('Can move and manipulate objects in the pool', language as Locale)}
         </p>
         <div className="space-y-2">
           {tempTab.manageableByPlayerIds?.map(playerId => {
@@ -227,9 +230,9 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
             }}
             className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
           >
-            <option value="">Add player...</option>
+            <option value="">{translate('Add player...', language as Locale)}</option>
             {!tempTab.manageableByPlayerIds?.includes('all_players') && (
-              <option value="all_players">All Players</option>
+              <option value="all_players">{translate('All Players', language as Locale)}</option>
             )}
             {players
               .filter(p => !p.isGM && !tempTab.manageableByPlayerIds?.includes(p.id))
@@ -242,9 +245,9 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
 
       {/* Who can edit */}
       <div className="p-4">
-        <h3 className="text-sm font-medium text-slate-300 mb-2">Who Can Edit</h3>
+        <h3 className="text-sm font-medium text-slate-300 mb-2">{translate('Who Can Edit', language as Locale)}</h3>
         <p className="text-xs text-slate-500 mb-3">
-          Full access: can add/remove objects and modify everything
+          {translate('Full access: can add/remove objects and modify everything', language as Locale)}
         </p>
         <div className="space-y-2">
           {tempTab.editableByPlayerIds?.map(playerId => {
@@ -280,9 +283,9 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
             }}
             className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
           >
-            <option value="">Add player...</option>
+            <option value="">{translate('Add player...', language as Locale)}</option>
             {!tempTab.editableByPlayerIds?.includes('all_players') && (
-              <option value="all_players">All Players</option>
+              <option value="all_players">{translate('All Players', language as Locale)}</option>
             )}
             {players
               .filter(p => !p.isGM && !tempTab.editableByPlayerIds?.includes(p.id))

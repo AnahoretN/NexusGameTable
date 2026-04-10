@@ -401,6 +401,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             diceRolls,
             // Preserve current activePlayerId - don't use the one from pack/save
             activePlayerId: currentActiveId,
+            // Preserve current language - don't override with language from pack/save
+            language: state.language,
             // sessionId from save is preserved if exists (handled by spread above)
         };
     }
