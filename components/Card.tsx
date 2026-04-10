@@ -309,8 +309,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                 {card.faceUp && card.showTextOnCard && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10 bg-white">
                     <div className="w-full h-full flex flex-col items-center justify-center text-center">
-                      <h3 className="text-xs font-bold text-gray-900 mb-1 truncate w-full">{card.name}</h3>
-                      <p className="text-[10px] text-gray-700 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
+                      <h3 className="text-[13px] font-bold text-gray-900 mb-1 break-words w-full">{card.name}</h3>
+                      <p className="text-[11px] text-gray-700 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
                         {card.description || ''}
                       </p>
                     </div>
@@ -369,8 +369,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               {card.faceUp && card.showTextOnCard && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10 bg-white">
                   <div className="w-full h-full flex flex-col items-center justify-center text-center">
-                    <h3 className="text-xs font-bold text-gray-900 mb-1 truncate w-full">{card.name}</h3>
-                    <p className="text-[10px] text-gray-700 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
+                    <h3 className="text-[13px] font-bold text-gray-900 mb-1 break-words w-full">{card.name}</h3>
+                    <p className="text-[11px] text-gray-700 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
                       {card.description || ''}
                     </p>
                   </div>

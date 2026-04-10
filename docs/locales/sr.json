@@ -176,6 +176,7 @@
   "Generate Cards from Sprite": "Generiši karte iz spritea",
   "Text": "Tekst",
   "Card Text Input": "Unos teksta karata",
+  "Card format example:\nFireball\n3d6 fire damage to all creatures in area.\n-\nCure Light Wounds\nTarget regains 1d8+1 hit points.\n-\nMagic Missile\nYou create three glowing magic missiles.": "Primer formata karte:\nVatrena kugla\n3d6 štete od vatre svim bićima u oblasti.\n-\nLečenje lakih rana\nCilj povraća 1d8+1 poena života.\n-\nMagična projektil\nKreirate tri sjajna magična projektila.",
   "Card name on first line, description on second line, separate cards with '-'": "Naziv karte u prvom redu, opis u drugom, razdvojajte kartice simbolom '-'",
   "Format: Card name\\nDescription\\n-\\nAnother card\\nDescription": "Format: Naziv karte\\nOpis\\n-\\nDruga karta\\nOpis",
   "Add Cards from Text": "Dodaj karte iz teksta",

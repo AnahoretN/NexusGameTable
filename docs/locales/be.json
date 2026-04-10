@@ -171,6 +171,7 @@
   "Generate Cards from Sprite": "Генераваць карты са спрайта",
   "Text": "Тэкст",
   "Card Text Input": "Увод тэксту карт",
+  "Card format example:\nFireball\n3d6 fire damage to all creatures in area.\n-\nCure Light Wounds\nTarget regains 1d8+1 hit points.\n-\nMagic Missile\nYou create three glowing magic missiles.": "Прыклад фармату карты:\nАгняны шар\nУрон 3d6 агняным уронам усім істотам у вобласці.\n-\nЛячэнне лёгкіх ран\nМэта аднаўляе 1d8+1 хіт-поінтаў.\n-\nМагічная страла\nВы ствараеце тры свецячыся магічныя стрэлы.",
   "Card name on first line, description on second line, separate cards with '-'": "Назва карты на першым радку, апісанне на другім, раздзяляйце карты сімвалам '-'",
   "Format: Card name\\nDescription\\n-\\nAnother card\\nDescription": "Фармат: Назва карты\\nАпісанне\\n-\\nІншая карта\\nАпісанне",
   "Add Cards from Text": "Дадаць карты з тэксту",

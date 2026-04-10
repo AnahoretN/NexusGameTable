@@ -3010,14 +3010,7 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 <textarea
                   value={textCardsInput}
                   onChange={(e) => setTextCardsInput(e.target.value)}
-                  placeholder={`Огненный шар
-Урон 3d6 огненным уроном всем существам в области.
--
-Лечение легких ран
-Цель восстанавливает 1d8+1 хитов.
--
-Магическая стрела
-Вы создаете три сверкающих магических стрелы.`}
+                  placeholder={translate('Card format example:\nFireball\n3d6 fire damage to all creatures in area.\n-\nCure Light Wounds\nTarget regains 1d8+1 hit points.\n-\nMagic Missile\nYou create three glowing magic missiles.', language as Locale)}
                   className="w-full h-64 bg-slate-900 border border-slate-700 rounded p-3 text-white text-sm resize-y"
                   style={{ minHeight: '200px' }}
                 />
