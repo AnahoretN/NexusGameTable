@@ -208,6 +208,7 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
   // Individual card face URLs (override deck defaults)
   frontFaceUrl?: string; // Custom front face image URL
   backFaceUrl?: string; // Custom back face image URL
+  showTextOnCard?: boolean; // If true, show card description directly on the card face instead of in tooltip
 
   // Alternative card back (per-card override)
   alternativeBack?: AlternativeCardBack; // Alternative card back settings
@@ -279,6 +280,10 @@ export interface Deck extends GameItem {
 
   // Sprite sheet configuration for importing cards from a single image
   spriteConfig?: CardSpriteConfig;
+
+  // Text to Cards functionality
+  textCardsData?: Array<{ name: string; description: string }>; // Parsed text card data
+  showTextOnCards?: boolean; // Whether to show text directly on cards (instead of tooltips)
 
   // Remember proportions button state
   linkCardSize?: boolean;

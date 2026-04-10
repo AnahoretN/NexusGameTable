@@ -297,13 +297,25 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                 )}
 
                 {/* Card name - position based on cardNamePosition setting */}
-                {card.faceUp && cardNamePosition !== 'none' && (
+                {card.faceUp && cardNamePosition !== 'none' && !card.showTextOnCard && (
                   <div className={`absolute inset-x-0 bg-black/60 p-0.5 h-[12.5%] flex items-center justify-center z-10 ${
                       cardNamePosition === 'top' ? 'top-0' : 'bottom-0'
                     }`}>
                       <p className="text-[10px] text-white truncate text-center font-medium w-full">{card.name}</p>
                     </div>
                   )}
+
+                {/* Text on card display - when showTextOnCard is enabled */}
+                {card.faceUp && card.showTextOnCard && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10 bg-white">
+                    <div className="w-full h-full flex flex-col items-center justify-center text-center">
+                      <h3 className="text-xs font-bold text-gray-900 mb-1 truncate w-full">{card.name}</h3>
+                      <p className="text-[10px] text-gray-700 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
+                        {card.description || ''}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </SvgDeckShape>
           ) : (
@@ -345,12 +357,24 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               )}
 
               {/* Card name - position based on cardNamePosition setting */}
-              {card.faceUp && cardNamePosition !== 'none' && (
+              {card.faceUp && cardNamePosition !== 'none' && !card.showTextOnCard && (
                   <div className={`absolute inset-x-0 bg-black/60 p-0.5 h-[12.5%] flex items-center justify-center z-10 ${
                     cardNamePosition === 'top' ? 'top-0' : 'bottom-0'
                   }`}>
                       <p className="text-[10px] text-white truncate text-center font-medium w-full">{card.name}</p>
                   </div>
+              )}
+
+              {/* Text on card display - when showTextOnCard is enabled */}
+              {card.faceUp && card.showTextOnCard && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10 bg-white">
+                  <div className="w-full h-full flex flex-col items-center justify-center text-center">
+                    <h3 className="text-xs font-bold text-gray-900 mb-1 truncate w-full">{card.name}</h3>
+                    <p className="text-[10px] text-gray-700 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
+                      {card.description || ''}
+                    </p>
+                  </div>
+                </div>
               )}
           </div>
           </div>

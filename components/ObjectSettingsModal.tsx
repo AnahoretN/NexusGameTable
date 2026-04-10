@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup } from '../types';
 
-import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { calculateHexHeight, calculateFlatHexHeight } from '../utils/gridUtils';
 import { CARD_SHAPE_DIMS } from '../constants';
@@ -129,7 +129,7 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   }
 }
 
-type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite' | 'groups';
+type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups';
 
 export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
@@ -199,6 +199,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupColor, setNewGroupColor] = useState('#8b5cf6');
   const [draggedDiceId, setDraggedDiceId] = useState<string | null>(null);
+
+  // Text to Cards state
+  const [textCardsInput, setTextCardsInput] = useState('');
 
   // Get all dice objects
   const allDice: DiceObject[] = Object.values(allObjects).filter(
@@ -815,6 +818,18 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
               }`}
             >
               <ImageIcon size={16} /> {translate('Import', language as Locale)}
+            </button>
+          )}
+          {isDeck && (
+            <button
+              onClick={() => setActiveTab('textCards')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'textCards'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <FileText size={16} /> {translate('Text', language as Locale)}
             </button>
           )}
           {isDice && (
@@ -2982,6 +2997,66 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'textCards' && (
+            <div className="space-y-4">
+              {/* Text Input Area */}
+              <div className="pt-4 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <FileText size={14} /> {translate('Card Text Input', language as Locale)}
+                </h4>
+                <textarea
+                  value={textCardsInput}
+                  onChange={(e) => setTextCardsInput(e.target.value)}
+                  placeholder={`Огненный шар
+Урон 3d6 огненным уроном всем существам в области.
+-
+Лечение легких ран
+Цель восстанавливает 1d8+1 хитов.
+-
+Магическая стрела
+Вы создаете три сверкающих магических стрелы.`}
+                  className="w-full h-64 bg-slate-900 border border-slate-700 rounded p-3 text-white text-sm resize-y"
+                  style={{ minHeight: '200px' }}
+                />
+              </div>
+
+              {/* Add Cards Button */}
+              <div className="pt-4">
+                <button
+                  onClick={() => {
+                    // Parse the text input and create cards
+                    const cardEntries = textCardsInput.split('\n-').map(entry => entry.trim()).filter(entry => entry.length > 0);
+                    const cardsData = cardEntries.map(entry => {
+                      const lines = entry.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+                      if (lines.length >= 2) {
+                        return {
+                          name: lines[0],
+                          description: lines.slice(1).join('\n')
+                        };
+                      } else if (lines.length === 1) {
+                        return {
+                          name: lines[0],
+                          description: ''
+                        };
+                      }
+                      return null;
+                    }).filter(card => card !== null);
+
+                    // Create the updated deck with text cards
+                    const updatedDeck = { ...data };
+                    (updatedDeck as Deck).textCardsData = cardsData;
+                    onSave(updatedDeck);
+                    onClose();
+                  }}
+                  disabled={!textCardsInput.trim()}
+                  className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus size={16} /> {translate('Add Cards from Text', language as Locale)}
+                </button>
+              </div>
             </div>
           )}
 

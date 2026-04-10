@@ -689,6 +689,45 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   newObjects[deck.id] = deck;
               }
           }
+
+          // Handle textCardsData - create text-based cards
+          if (deck.textCardsData && deck.textCardsData !== oldDeck.textCardsData) {
+              const textCardsData = deck.textCardsData;
+
+              // Create cards from text data
+              const newCardIds: string[] = [];
+              textCardsData.forEach((cardData, index) => {
+                  const cardId = `${deck.id}-text-card-${Date.now()}-${index}`;
+                  const newCard: Card = {
+                      id: cardId,
+                      type: ItemType.CARD,
+                      name: cardData.name,
+                      description: cardData.description,
+                      deckId: deck.id,
+                      width: deck.cardWidth || deck.width || DEFAULT_DECK_WIDTH,
+                      height: deck.cardHeight || deck.height || DEFAULT_DECK_HEIGHT,
+                      shape: deck.cardShape,
+                      x: 0,
+                      y: 0,
+                      rotation: 0,
+                      location: CardLocation.DECK,
+                      faceUp: true,
+                      isOnTable: true,
+                      locked: false,
+                      showTextOnCard: true,
+                  };
+                  newObjects[cardId] = newCard;
+                  newCardIds.push(cardId);
+              });
+
+              // Update deck's cardIds and baseCardIds
+              deck.cardIds = [...newCardIds, ...deck.cardIds];
+              deck.baseCardIds = [...newCardIds, ...(deck.baseCardIds || [])];
+              newObjects[deck.id] = deck;
+
+              // Clear textCardsData after processing to avoid re-processing
+              deck.textCardsData = undefined;
+          }
       }
 
       // Handle NexusCellObject updates - propagate to all cells in the same board
