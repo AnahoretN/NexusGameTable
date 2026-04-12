@@ -10,6 +10,7 @@
     "start": "vite"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.13.23",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
     "lucide-react": "^0.344.0",

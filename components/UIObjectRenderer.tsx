@@ -627,9 +627,9 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     const handleMouseUp = (_e: MouseEvent) => {
       if (!resizing) return;
 
-      const rect = container.getBoundingClientRect();
-      let newWidth = Math.round(rect.width);
-      let newHeight = Math.round(rect.height);
+      // Use currentSize for accurate final dimensions (what user sees during drag)
+      let newWidth = currentSize ? Math.round(currentSize.width) : Math.round(container.getBoundingClientRect().width);
+      let newHeight = currentSize ? Math.round(currentSize.height) : Math.round(container.getBoundingClientRect().height);
 
       // Apply max size constraint for pool panels on final size
       const isPoolPanel = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.POOL;
@@ -670,9 +670,21 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
             _localOnly: true
           });
         } else {
-          // Unpinned panels: convert to vu and round
-          finalWidth = Math.round((newWidth / pixelsPerVU) * 100) / 100;
-          finalHeight = Math.round((newHeight / pixelsPerVU) * 100) / 100;
+          // Unpinned panels: save exact pixel dimensions to avoid rounding errors
+          // Store in pinnedPixelWidth/Height even for unpinned panels to preserve precision
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: uiObject.id,
+              pinnedPixelWidth: newWidth,
+              pinnedPixelHeight: newHeight
+            },
+            _localOnly: true
+          });
+
+          // Also convert to vu for compatibility (with higher precision)
+          finalWidth = Math.round((newWidth / pixelsPerVU) * 1000) / 1000;
+          finalHeight = Math.round((newHeight / pixelsPerVU) * 1000) / 1000;
         }
 
         // For panels (except main menu), save to local settings AND update player panel settings
@@ -784,11 +796,14 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   const containerWidth = useMemo(() => {
     if (currentSize?.width) return currentSize.width;
 
+    // Always prefer pinnedPixelWidth if available (most precise)
+    if ((uiObject as any).pinnedPixelWidth) return (uiObject as any).pinnedPixelWidth;
+
     if (isPinnedMode) {
-      if ((uiObject as any).pinnedPixelWidth) return (uiObject as any).pinnedPixelWidth;
       if (!isMainMenu) return vuToPx(effectiveProps.width);
     }
-    return effectiveProps.width;
+    // For unpinned panels, effectiveProps.width is in VU, convert to pixels
+    return !isMainMenu ? vuToPx(effectiveProps.width) : effectiveProps.width;
   }, [currentSize, minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.width, vuToPx]);
 
   // Memoize height calculation to prevent unnecessary recalculations
@@ -796,11 +811,14 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     if (minimized) return 40; // Title bar height when minimized
     if (currentSize?.height) return currentSize.height;
 
+    // Always prefer pinnedPixelHeight if available (most precise)
+    if ((uiObject as any).pinnedPixelHeight) return (uiObject as any).pinnedPixelHeight;
+
     if (isPinnedMode) {
-      if ((uiObject as any).pinnedPixelHeight) return (uiObject as any).pinnedPixelHeight;
       if (!isMainMenu) return vuToPx(effectiveProps.height);
     }
-    return effectiveProps.height;
+    // For unpinned panels, effectiveProps.height is in VU, convert to pixels
+    return !isMainMenu ? vuToPx(effectiveProps.height) : effectiveProps.height;
   }, [currentSize, minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.height, vuToPx]);
 
   // Debug logging for container height

@@ -365,7 +365,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
       {/* Pool Content */}
       {canViewTab && activeTab ? (
         <div
-          className="flex-1 relative"
+          className="flex-1 relative overflow-hidden"
           style={{ backgroundColor: '#304458' }}
           data-pool-content={panel.id}
         >

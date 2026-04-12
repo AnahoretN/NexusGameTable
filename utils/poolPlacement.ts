@@ -1,4 +1,4 @@
-import { TableObject, ItemType, CardLocation } from '../types';
+import { TableObject, ItemType, CardLocation, Board as BoardType } from '../types';
 import { STACKING_OFFSET_FACTOR, DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
 
 /**
@@ -140,9 +140,11 @@ export function calculateStackedPosition(
   const x = baseX - (objWidth / 2) + offsetX;
   const y = baseY - (objHeight / 2) + offsetY;
 
-  // Constrain to pool zone bounds
-  const constrainedX = Math.max(poolZone.offsetX, Math.min(x, poolZone.offsetX + poolZone.width - objWidth));
-  const constrainedY = Math.max(poolZone.offsetY, Math.min(y, poolZone.offsetY + poolZone.height - objHeight));
+  // For boards, allow placement anywhere (they'll be clipped by container overflow)
+  // For other objects, constrain to pool zone bounds
+  const isBoard = obj.type === ItemType.BOARD || obj.type === ItemType.NEXUS_BOARD;
+  const constrainedX = isBoard ? x : Math.max(poolZone.offsetX, Math.min(x, poolZone.offsetX + poolZone.width - objWidth));
+  const constrainedY = isBoard ? y : Math.max(poolZone.offsetY, Math.min(y, poolZone.offsetY + poolZone.height - objHeight));
 
   return { x, y, constrainedX, constrainedY };
 }

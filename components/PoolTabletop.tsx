@@ -1473,7 +1473,8 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
         y: number;
       }>;
 
-      if (customEvent.detail.source !== 'tabletop') return;
+      // Accept events from any source (tabletop, pool panels, etc.)
+      // This allows dragging boards between pool panels
 
       const container = containerRef.current;
       if (!container) return;
@@ -1523,12 +1524,17 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
         const objTop = y - objHeight / 2;
         const objBottom = y + objHeight / 2;
 
-        // Check if object is completely within visible content area
-        const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
-                            objTop >= visibleRect.top && objBottom <= visibleRect.bottom;
+        // For boards, allow placement even if partially outside visible area
+        const isBoard = obj?.type === ItemType.BOARD || obj?.type === ItemType.NEXUS_BOARD;
+
+        // Check if object is completely within visible content area (or if it's a board)
+        const isFullyVisible = isBoard || (
+          objLeft >= visibleRect.left && objRight <= visibleRect.right &&
+          objTop >= visibleRect.top && objBottom <= visibleRect.bottom
+        );
 
         if (!isFullyVisible) {
-          // Object would be partially outside visible area - don't allow drop
+          // Object would be partially outside visible area - don't allow drop (unless it's a board)
           return;
         }
 
@@ -1584,15 +1590,26 @@ export const PoolTabletop: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.0
       {/* <div className="absolute top-0 right-0 z-50 bg-red-900 bg-opacity-90 px-2 py-1 rounded text-xs text-white pointer-events-none">
         {Math.round(poolBounds.widthPx)}x{Math.round(poolBounds.heightPx)}px | {pixelsPerVU}px/VU
       </div> */}
-      {/* Pool zone background with grid pattern */}
+      {/* Pool zone background with grid pattern - covers entire container with zoomed pattern */}
       <div
-        ref={contentRef}
-        className="absolute inset-0"
+        className="absolute inset-0 pointer-events-none"
         style={{
           backgroundImage: 'radial-gradient(#465665 1px, transparent 1px)',
-          backgroundSize: '20px 20px',
+          backgroundSize: `${20 * currentZoom}px ${20 * currentZoom}px`,
+          width: poolBounds.widthPx * currentZoom,
+          height: poolBounds.heightPx * currentZoom,
+        }}
+      />
+
+      {/* Content container - scale to match zoom */}
+      <div
+        ref={contentRef}
+        className="absolute overflow-hidden"
+        style={{
           transform: `scale(${currentZoom})`,
           transformOrigin: 'top left',
+          width: poolBounds.widthPx,
+          height: poolBounds.heightPx,
         }}
       >
           {/* Render objects (positioned relative to pool zone) */}

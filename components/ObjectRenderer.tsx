@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import { Card, Token, ItemType, TableObject, TokenShape, ContextAction } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp, ArrowDown, Lock, Unlock, Shuffle, Search, Hand, Pin, Undo } from 'lucide-react';
@@ -543,18 +543,62 @@ function getActionButtonConfig(
   return config;
 }
 
-// Memoize ObjectRenderer to prevent unnecessary re-renders
-export const ObjectRendererMemo = React.memo(ObjectRenderer, (prevProps, nextProps) => {
-  // Compare critical props to determine if re-render is needed
-  return (
-    prevProps.obj.id === nextProps.obj.id &&
-    prevProps.obj.rotation === nextProps.obj.rotation &&
-    prevProps.obj.type === nextProps.obj.type &&
-    prevProps.obj.locked === nextProps.obj.locked &&
-    prevProps.obj.isOnTable === nextProps.obj.isOnTable &&
-    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
-    prevProps.isDragging === nextProps.isDragging &&
-    prevProps.isGM === nextProps.isGM &&
-    prevProps.showTokenName === nextProps.showTokenName
-  );
+// Optimized memoized ObjectRenderer to prevent unnecessary re-renders
+export const ObjectRendererMemo = memo(ObjectRenderer, (prevProps, nextProps) => {
+  // Quick ID check first
+  if (prevProps.obj.id !== nextProps.obj.id) return false;
+
+  // Compare critical properties that affect rendering
+  const prevObj = prevProps.obj;
+  const nextObj = nextProps.obj;
+
+  // Position and transform
+  if (prevObj.x !== nextObj.x) return false;
+  if (prevObj.y !== nextObj.y) return false;
+  if (prevObj.rotation !== nextObj.rotation) return false;
+  if (prevObj.width !== nextObj.width) return false;
+  if (prevObj.height !== nextObj.height) return false;
+
+  // Visual properties
+  if (prevObj.content !== nextObj.content) return false;
+  if (prevObj.isOnTable !== nextObj.isOnTable) return false;
+  if (prevObj.locked !== nextObj.locked) return false;
+
+  // Card-specific properties
+  if (prevObj.type === ItemType.CARD && nextObj.type === ItemType.CARD) {
+    const prevCard = prevObj as Card;
+    const nextCard = nextObj as Card;
+
+    if (prevCard.faceUp !== nextCard.faceUp) return false;
+    if (prevCard.spriteUrl !== nextCard.spriteUrl) return false;
+    if (prevCard.spriteIndex !== nextCard.spriteIndex) return false;
+    if (prevCard.spriteColumns !== nextCard.spriteColumns) return false;
+    if (prevCard.spriteRows !== nextCard.spriteRows) return false;
+    if (prevCard.frontFaceUrl !== nextCard.frontFaceUrl) return false;
+    if (prevCard.alternativeBack?.url !== nextCard.alternativeBack?.url) return false;
+  }
+
+  // Token-specific properties
+  if (prevObj.type === ItemType.TOKEN && nextObj.type === ItemType.TOKEN) {
+    const prevToken = prevObj as Token;
+    const nextToken = nextObj as Token;
+
+    if (prevToken.color !== nextToken.color) return false;
+    if (prevToken.borderColor !== nextToken.borderColor) return false;
+    if (prevToken.borderWidth !== nextToken.borderWidth) return false;
+    if (prevToken.opacity !== nextToken.opacity) return false;
+    if (prevToken.borderOpacity !== nextToken.borderOpacity) return false;
+    if (prevToken.fontColor !== nextToken.fontColor) return false;
+  }
+
+  // Rendering props
+  if (prevProps.pixelsPerVU !== nextProps.pixelsPerVU) return false;
+  if (prevProps.isDragging !== nextProps.isDragging) return false;
+  if (prevProps.isGM !== nextProps.isGM) return false;
+  if (prevProps.showTokenName !== nextProps.showTokenName) return false;
+
+  // All props are equal, no re-render needed
+  return true;
 });
+
+ObjectRendererMemo.displayName = 'ObjectRendererMemo';

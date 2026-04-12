@@ -3335,7 +3335,7 @@ export const Tabletop: React.FC = () => {
         }
 
         // Not hovering over deck/pile - drop to pool panel
-        const panelId = poolPanel.getAttribute('data-pool-panel');
+        const panelId = poolPanel.getAttribute('data-pool-content');
         if (panelId) {
           // Get pool panel data to calculate drop position
           const panelObj = state.objects[panelId] as any;
@@ -3629,8 +3629,49 @@ export const Tabletop: React.FC = () => {
       const clientX = e.clientX;
       const clientY = e.clientY;
 
-      // Check if we're over hand panel - use elementFromPoint for more reliable detection
+      // Check if we're over pool panel FIRST (before hand panel)
+      // This allows boards and other objects to be dropped into pool panels
       const elementUnderCursor = document.elementFromPoint(clientX, clientY);
+      const poolPanel = elementUnderCursor?.closest('[data-pool-content]');
+
+      if (poolPanel) {
+        const panelId = poolPanel.getAttribute('data-pool-content');
+        if (panelId) {
+          const panelObj = state.objects[panelId] as any;
+          if (panelObj && panelObj.poolData) {
+            // Always drop to pool panel if cursor is over it
+            // regardless of where the object came from (same panel, different panel, or tabletop)
+            const poolZone = createPoolZoneFromPanel(panelObj.poolData);
+            const panelRect = poolPanel.getBoundingClientRect();
+            const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+
+            // Calculate drop position using utility function
+            const dropPosition = calculatePoolDropPosition(
+              clientX,
+              clientY,
+              poolZone,
+              panelRect,
+              pixelsPerVU
+              );
+
+              // CRITICAL: Clear cursor slot FIRST to prevent visual flicker
+              // This ensures CursorSlotVisualization stops rendering items before they're updated
+              const itemsToDrop = [...currentSlot]; // Copy before clearing
+              setCursorSlot([]);
+              setCursorPosition(null);
+              setCursorSlotSource(null);
+
+              // Then drop objects using utility function
+              dropObjectsToPool(itemsToDrop, dropPosition, poolZone, dispatch, state.objects);
+
+              e.stopPropagation();
+              e.preventDefault();
+              return;
+          }
+        }
+      }
+
+      // Check if we're over hand panel - use elementFromPoint for more reliable detection
       const handPanel = elementUnderCursor?.closest('[data-hand-panel]');
 
       if (handPanel) {
@@ -3687,54 +3728,6 @@ export const Tabletop: React.FC = () => {
         e.stopPropagation();
         e.preventDefault();
         return;
-      }
-
-      // Check if we're over pool panel
-      const poolPanel = elementUnderCursor?.closest('[data-pool-panel]');
-      if (poolPanel) {
-        const panelId = poolPanel.getAttribute('data-pool-panel');
-        if (panelId) {
-          const panelObj = state.objects[panelId] as any;
-          if (panelObj && panelObj.poolData) {
-            // Check if object came from THIS pool panel
-            // If so, drop to main tabletop instead of back to pool panel
-            const firstItem = currentSlot[0];
-            const fromPoolPanel = (firstItem as any)?.fromPoolPanel;
-
-            if (fromPoolPanel === panelId) {
-              // Object came from this pool panel - drop to main tabletop instead
-              // Don't return - continue to drop to main tabletop below
-            } else {
-              // Object came from elsewhere OR from different pool panel - drop to this pool panel
-              const poolZone = createPoolZoneFromPanel(panelObj.poolData);
-              const panelRect = poolPanel.getBoundingClientRect();
-              const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
-
-              // Calculate drop position using utility function
-              const dropPosition = calculatePoolDropPosition(
-                clientX,
-                clientY,
-                poolZone,
-                panelRect,
-                pixelsPerVU
-              );
-
-              // CRITICAL: Clear cursor slot FIRST to prevent visual flicker
-              // This ensures CursorSlotVisualization stops rendering items before they're updated
-              const itemsToDrop = [...currentSlot]; // Copy before clearing
-              setCursorSlot([]);
-              setCursorPosition(null);
-              setCursorSlotSource(null);
-
-              // Then drop objects using utility function
-              dropObjectsToPool(itemsToDrop, dropPosition, poolZone, dispatch, state.objects);
-
-              e.stopPropagation();
-              e.preventDefault();
-              return;
-            }
-          }
-        }
       }
 
       // Check if clicking on a deck or pile - handle it directly here
