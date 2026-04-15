@@ -4,6 +4,7 @@ import { useGame } from '../store/GameContext';
 import { ItemType, TokenType, TokenShape, AppLanguage } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 import { ChevronDown, Settings } from 'lucide-react';
+import { VirtualizedTokensPanel, SimpleTokensPanel, useVirtualizedTokensPanel } from './VirtualizedTokensPanel';
 
 interface TokensPanelProps {
   width?: number;
@@ -217,84 +218,63 @@ export const TokensPanel: React.FC<TokensPanelProps> = ({
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
         {archetypesExpanded && (
-          <div className="grid grid-cols-3 gap-2">
-            {archetypes.length === 0 ? (
-              <div className="col-span-3 text-center py-4 text-gray-500 text-xs">
-                {translate('No token archetypes.', language as Locale)}<br />
-                {translate('Add them from the main menu.', language as Locale)}
-              </div>
-            ) : (
-              archetypes.map((archetype) => {
-                // Calculate aspect ratio based on defaultSize or fall back to 1:1
-                const aspectRatio = archetype.defaultSize
-                  ? archetype.defaultSize.width / archetype.defaultSize.height
-                  : 1;
-
-                // Calculate size to fit within the card while maintaining aspect ratio
-                const baseSize = 70; // Base percentage
-                const tokenWidth = aspectRatio >= 1 ? baseSize : baseSize * aspectRatio;
-                const tokenHeight = aspectRatio <= 1 ? baseSize : baseSize / aspectRatio;
-
-                return (
-                <div
-                  key={archetype.id}
-                  data-archetype-card
-                  data-archetype-id={archetype.id}
-                  className="relative group aspect-square bg-slate-700 rounded-lg border-2 border-slate-600 hover:border-purple-500 cursor-pointer transition-colors"
-                  title={`${archetype.name} (${(() => {
-                    const copyCount = getTokenCopyCount(archetype.id);
-                    const maxCopies = getMaxCopies(archetype);
-                    return maxCopies > 0 ? `${copyCount}/${maxCopies}` : copyCount;
-                  })()})\n${translate('Click to add to cursor slot', language as Locale)}`}
-                >
-                  {/* Preview of the token using SvgTokenShape */}
-                  <div className="w-full h-full flex items-center justify-center overflow-hidden rounded">
-                    <SvgTokenShape
-                      shape={archetype.shape || TokenShape.SQUARE}
-                      width={tokenWidth}
-                      height={tokenHeight}
-                      color={archetype.color || '#ffffff'}
-                      content={archetype.content}
-                      borderColor={(archetype as any).borderColor || '#ffffff'}
-                      borderWidth={(archetype as any).borderWidth ?? 2}
-                      opacity={archetype.opacity ?? 100}
-                      borderOpacity={archetype.borderOpacity ?? 100}
-                      className="drop-shadow-md"
-                      style={{ width: `${tokenWidth}%`, height: `${tokenHeight}%` }}
-                    />
-                  </div>
-
-                  {/* Settings button */}
-                  <button
-                    data-archetype-settings
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleArchetypeSettings(archetype);
-                    }}
-                    className="absolute top-0.5 right-0.5 p-1 bg-slate-800 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Settings size={10} className="text-gray-400" />
-                  </button>
-
-                  {/* Name label with copy count */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] truncate px-1 py-0.5 rounded-b">
-                    {(() => {
-                      const copyCount = getTokenCopyCount(archetype.id);
-                      const maxCopies = getMaxCopies(archetype);
-                      if (maxCopies > 0) {
-                        return `${archetype.name} (${copyCount}/${maxCopies})`;
-                      } else {
-                        return `${archetype.name} (${copyCount})`;
-                      }
-                    })()}
-                  </div>
-                </div>
-                );
-              })
-            )}
-          </div>
+          <VirtualizedTokensContent
+            archetypes={archetypes}
+            width={width}
+            language={language}
+            getTokenCopyCount={getTokenCopyCount}
+            getMaxCopies={getMaxCopies}
+            onArchetypeSettings={handleArchetypeSettings}
+          />
         )}
       </div>
     </div>
+  );
+};
+
+// Internal component to handle virtualization decision
+interface VirtualizedTokensContentProps {
+  archetypes: TokenType[];
+  width: number;
+  language: AppLanguage;
+  getTokenCopyCount: (archetypeId: string) => number;
+  getMaxCopies: (archetype: TokenType) => number;
+  onArchetypeSettings: (archetype: TokenType) => void;
+}
+
+const VirtualizedTokensContent: React.FC<VirtualizedTokensContentProps> = ({
+  archetypes,
+  width,
+  language,
+  getTokenCopyCount,
+  getMaxCopies,
+  onArchetypeSettings,
+}) => {
+  const { shouldVirtualize } = useVirtualizedTokensPanel(archetypes.length);
+
+  if (shouldVirtualize) {
+    return (
+      <VirtualizedTokensPanel
+        archetypes={archetypes}
+        width={width}
+        language={language}
+        getTokenCopyCount={getTokenCopyCount}
+        getMaxCopies={getMaxCopies}
+        onArchetypeSettings={onArchetypeSettings}
+        className="h-full"
+      />
+    );
+  }
+
+  return (
+    <SimpleTokensPanel
+      archetypes={archetypes}
+      width={width}
+      language={language}
+      getTokenCopyCount={getTokenCopyCount}
+      getMaxCopies={getMaxCopies}
+      onArchetypeSettings={onArchetypeSettings}
+      className="h-full"
+    />
   );
 };

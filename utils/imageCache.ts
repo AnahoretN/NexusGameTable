@@ -506,3 +506,234 @@ export async function getIDBCacheInfo(): Promise<{ count: number; totalSize: num
     return { count: 0, totalSize: 0 };
   }
 }
+
+// ============================================================
+// MEMORY-MANAGED IMAGE CACHE (with size limits and LRU eviction)
+// ============================================================
+
+const MAX_CACHE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB default limit
+const MAX_CACHE_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+interface ManagedCacheEntry {
+  data: string;
+  size: number;
+  lastAccess: number;
+  createdAt: number;
+}
+
+interface ManagedImageCache {
+  [imageId: string]: ManagedCacheEntry;
+}
+
+let managedCache: ManagedImageCache = {};
+let currentCacheSize = 0;
+
+/**
+ * Get the current size of the managed cache in bytes
+ */
+export function getManagedCacheSize(): number {
+  return currentCacheSize;
+}
+
+/**
+ * Get the current managed cache
+ */
+export function getManagedCache(): ManagedImageCache {
+  return managedCache;
+}
+
+/**
+ * Add an image to the managed cache with automatic size management
+ */
+export function addToManagedCache(imageId: string, data: string): void {
+  const dataSize = data.length;
+
+  // Check if this image is already in cache
+  if (managedCache[imageId]) {
+    // Update last access time
+    managedCache[imageId].lastAccess = Date.now();
+    return;
+  }
+
+  // If adding this image would exceed the cache size, evict old entries
+  const newSize = currentCacheSize + dataSize;
+  if (newSize > MAX_CACHE_SIZE_BYTES) {
+    evictLRUEntries(newSize - MAX_CACHE_SIZE_BYTES);
+  }
+
+  // Add the new entry
+  managedCache[imageId] = {
+    data,
+    size: dataSize,
+    lastAccess: Date.now(),
+    createdAt: Date.now()
+  };
+
+  currentCacheSize += dataSize;
+}
+
+/**
+ * Get an image from the managed cache (updates last access time)
+ */
+export function getFromManagedCache(imageId: string): string | null {
+  const entry = managedCache[imageId];
+  if (entry) {
+    entry.lastAccess = Date.now();
+    return entry.data;
+  }
+  return null;
+}
+
+/**
+ * Remove an image from the managed cache
+ */
+export function removeFromManagedCache(imageId: string): boolean {
+  const entry = managedCache[imageId];
+  if (entry) {
+    currentCacheSize -= entry.size;
+    delete managedCache[imageId];
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Clear the entire managed cache
+ */
+export function clearManagedCache(): void {
+  managedCache = {};
+  currentCacheSize = 0;
+  logger.log('[ImageCache] Managed cache cleared');
+}
+
+/**
+ * Evict least recently used entries to free up space
+ */
+function evictLRUEntries(bytesToFree: number): void {
+  // Sort entries by last access time (oldest first)
+  const entries = Object.entries(managedCache)
+    .sort(([, a], [, b]) => a.lastAccess - b.lastAccess);
+
+  let freedBytes = 0;
+
+  for (const [imageId, entry] of entries) {
+    if (freedBytes >= bytesToFree) break;
+
+    // Remove this entry
+    currentCacheSize -= entry.size;
+    delete managedCache[imageId];
+    freedBytes += entry.size;
+
+    logger.log(`[ImageCache] Evicted LRU image ${imageId} (${(entry.size / 1024).toFixed(2)}KB)`);
+  }
+
+  logger.log(`[ImageCache] Freed ${(freedBytes / 1024 / 1024).toFixed(2)}MB from cache`);
+}
+
+/**
+ * Clean old entries from the managed cache
+ */
+export function cleanOldManagedCacheEntries(maxAgeMs: number = MAX_CACHE_AGE_MS): number {
+  const now = Date.now();
+  const entriesToRemove: string[] = [];
+  let totalSizeFreed = 0;
+
+  for (const [imageId, entry] of Object.entries(managedCache)) {
+    if (now - entry.createdAt > maxAgeMs) {
+      entriesToRemove.push(imageId);
+      totalSizeFreed += entry.size;
+    }
+  }
+
+  for (const imageId of entriesToRemove) {
+    removeFromManagedCache(imageId);
+  }
+
+  if (entriesToRemove.length > 0) {
+    logger.log(`[ImageCache] Cleaned ${entriesToRemove.length} old entries (${(totalSizeFreed / 1024 / 1024).toFixed(2)}MB)`);
+  }
+
+  return entriesToRemove.length;
+}
+
+/**
+ * Get managed cache statistics
+ */
+export function getManagedCacheStats(): {
+  count: number;
+  totalSize: number;
+  totalSizeMB: string;
+  oldestEntry: number;
+  newestEntry: number;
+  avgEntrySize: number;
+} {
+  const entries = Object.values(managedCache);
+  const now = Date.now();
+
+  if (entries.length === 0) {
+    return {
+      count: 0,
+      totalSize: 0,
+      totalSizeMB: '0.00',
+      oldestEntry: 0,
+      newestEntry: 0,
+      avgEntrySize: 0
+    };
+  }
+
+  const totalSize = entries.reduce((sum, entry) => sum + entry.size, 0);
+  const oldestEntry = Math.min(...entries.map(e => now - e.createdAt));
+  const newestEntry = Math.max(...entries.map(e => now - e.createdAt));
+  const avgEntrySize = totalSize / entries.length;
+
+  return {
+    count: entries.length,
+    totalSize,
+    totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
+    oldestEntry,
+    newestEntry,
+    avgEntrySize
+  };
+}
+
+/**
+ * Start automatic cache cleanup (runs every 5 minutes)
+ */
+export function startManagedCacheCleanup(intervalMs: number = 5 * 60 * 1000): () => void {
+  const interval = setInterval(() => {
+    const stats = getManagedCacheStats();
+
+    // Log current stats
+    logger.log(`[ImageCache] Cleanup check: ${stats.count} entries, ${stats.totalSizeMB}MB`);
+
+    // Clean old entries if cache is getting full
+    if (currentCacheSize > MAX_CACHE_SIZE_BYTES * 0.8) {
+      logger.log('[ImageCache] Cache is 80% full, running cleanup...');
+      cleanOldManagedCacheEntries(MAX_CACHE_AGE_MS / 2); // Clean entries older than 15 days
+    }
+  }, intervalMs);
+
+  // Return cleanup function
+  return () => clearInterval(interval);
+}
+
+/**
+ * Convert managed cache to regular ImageCache format
+ */
+export function managedCacheToImageCache(): ImageCache {
+  const cache: ImageCache = {};
+  for (const [imageId, entry] of Object.entries(managedCache)) {
+    cache[imageId] = entry.data;
+  }
+  return cache;
+}
+
+/**
+ * Initialize managed cache from regular ImageCache
+ */
+export function initManagedCacheFromImageCache(cache: ImageCache): void {
+  for (const [imageId, data] of Object.entries(cache)) {
+    addToManagedCache(imageId, data);
+  }
+  logger.log(`[ImageCache] Initialized managed cache with ${Object.keys(cache).length} images`);
+}

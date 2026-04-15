@@ -2264,7 +2264,7 @@ interface TokenTypeCardProps {
   onSettings: () => void;
 }
 
-const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, onSettings }) => {
+const TokenTypeCard: React.FC<TokenTypeCardProps> = ({ archetype, copyCount, maxCopies, onSettings }) => {
   // Track drag state to distinguish click from drag
   const dragStartTimeRef = useRef<number>(0);
   const dragStartPositionRef = useRef<{ x: number; y: number } | null>(null);

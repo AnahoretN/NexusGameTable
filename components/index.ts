@@ -11,6 +11,11 @@ export {
   SimpleHandList,
   useVirtualizedHandList
 } from './VirtualizedHandList';
+export {
+  VirtualizedTokensPanel,
+  SimpleTokensPanel,
+  useVirtualizedTokensPanel
+} from './VirtualizedTokensPanel';
 
 // Lazy loading images
 export { LazyImage, LazyBackgroundImage, useImagePreloader } from './LazyImage';
@@ -23,4 +28,5 @@ export { SvgTokenShapeMemo } from './SvgTokenShape';
 // Re-export original types
 export type { VirtualizedObjectListProps } from './VirtualizedObjectList';
 export type { VirtualizedHandListProps, SimpleHandListProps } from './VirtualizedHandList';
+export type { VirtualizedTokensPanelProps, SimpleTokensPanelProps } from './VirtualizedTokensPanel';
 export type { LazyImageProps, LazyBackgroundImageProps } from './LazyImage';

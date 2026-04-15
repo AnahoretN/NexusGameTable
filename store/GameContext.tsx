@@ -11,7 +11,17 @@ import { GameState, ViewTransform, initialState } from './gameState';
 import { Action } from './gameActions';
 import { useAutoSave } from './useAutoSave';
 import { usePeerConnection } from './usePeerConnection';
-import { restoreImagesFromCache, extractImagesFromState, getNewImages, loadImageCacheFromIDB } from '../utils/imageCache';
+import {
+  restoreImagesFromCache,
+  extractImagesFromState,
+  getNewImages,
+  loadImageCacheFromIDB,
+  addToManagedCache,
+  getFromManagedCache,
+  initManagedCacheFromImageCache,
+  startManagedCacheCleanup,
+  getManagedCacheStats
+} from '../utils/imageCache';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
 import { logger } from '../utils/logger';
 import { clearCardDimensionsCache } from '../utils/cardUtils';
@@ -5370,6 +5380,46 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createMainMenu(localDispatch);
     }
   }, [isHost]); // Only depend on isHost - connectionStatus changes should NOT re-trigger initialization
+
+  // Initialize managed image cache for better memory management
+  useEffect(() => {
+    let stopCleanup: (() => void) | null = null;
+
+    const initManagedCache = async () => {
+      try {
+        // Load existing images from IndexedDB
+        const existingCache = await loadImageCacheFromIDB();
+
+        // Initialize managed cache with existing images
+        if (Object.keys(existingCache).length > 0) {
+          initManagedCacheFromImageCache(existingCache);
+
+          const stats = getManagedCacheStats();
+          logger.log(`[GameContext] Initialized managed cache: ${stats.count} images, ${stats.totalSizeMB}MB`);
+        }
+
+        // Start automatic cleanup (every 5 minutes)
+        stopCleanup = startManagedCacheCleanup();
+
+        // Log cache stats periodically for monitoring
+        const statsInterval = setInterval(() => {
+          const stats = getManagedCacheStats();
+          if (stats.count > 0) {
+            logger.log(`[GameContext] Cache stats: ${stats.count} images, ${stats.totalSizeMB}MB`);
+          }
+        }, 60000); // Every minute
+
+        return () => {
+          if (stopCleanup) stopCleanup();
+          clearInterval(statsInterval);
+        };
+      } catch (error) {
+        logger.error('[GameContext] Failed to initialize managed cache:', error);
+      }
+    };
+
+    initManagedCache();
+  }, []); // Run once on mount
 
   // Function to create main menu from local settings
   const createMainMenu = useCallback((dispatch: React.Dispatch<Action>) => {
