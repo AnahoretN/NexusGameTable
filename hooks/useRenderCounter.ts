@@ -19,9 +19,6 @@ export function useRenderCounter(componentName: string) {
   useEffect(() => {
     renderCount.current++;
 
-    // Log render count
-    console.log(`[RenderCount] ${componentName}: ${renderCount.current}`);
-
     // Check for prop changes that might indicate unnecessary renders
     const currentProps = arguments[1] || {}; // Get props from second arg
     const changedProps: string[] = [];
@@ -32,12 +29,7 @@ export function useRenderCounter(componentName: string) {
       }
     });
 
-    if (changedProps.length > 0 && renderCount.current > 10) {
-      console.warn(
-        `[RenderCount] ${componentName} has rendered ${renderCount.current} times. ` +
-        `Changed props: ${changedProps.join(', ')}`
-      );
-    }
+    // Render count logging disabled
 
     previousProps.current = currentProps;
   });
@@ -55,12 +47,7 @@ export function useRenderTime(componentName: string, threshold: number = 16) {
     const endTime = performance.now();
     const renderTime = endTime - startTime.current;
 
-    if (renderTime > threshold) {
-      console.warn(
-        `[SlowRender] ${componentName} took ${renderTime.toFixed(2)}ms ` +
-        `(threshold: ${threshold}ms)`
-      );
-    }
+    // Slow render logging disabled
 
     // Reset for next render
     startTime.current = performance.now();
@@ -72,10 +59,9 @@ export function useRenderTime(componentName: string, threshold: number = 16) {
  */
 export function useMemoryLeakDetector(componentName: string) {
   useEffect(() => {
-    console.log(`[MemoryLeakDetector] ${componentName} mounted`);
+    // Memory leak detector logging disabled
 
     return () => {
-      console.log(`[MemoryLeakDetector] ${componentName} unmounted`);
       // Add cleanup checks here if needed
     };
   }, [componentName]);

@@ -2,7 +2,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { useLocalSettings } from '../hooks/useLocalSettings';
-import { ItemType, CardLocation, TableObject, Card as CardType, Token, Token as TokenType, TokenType as TokenArchetype, DiceObject, Randomizer, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, WindowObject, BattlefieldCell, Board, Board as BoardType, NexusBoard, NexusCellObject, HexDirection } from '../types';
+import { ItemType, CardLocation, TableObject, Card as CardType, Token, Token as TokenType, TokenType as TokenArchetype, DiceObject, Randomizer, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, PanelType, WindowObject, BattlefieldCell, Board, Board as BoardType, NexusBoard, NexusCellObject, HexDirection, ContextAction, ClickAction } from '../types';
 import { Card } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { executeContextMenuAction } from '../utils/contextMenuActions';
@@ -34,14 +34,12 @@ import {
 } from '../utils/poolPlacement';
 // import { RemoteObjectAnimation, useRemoteObjectAnimation } from './RemoteObjectAnimation';
 import { PinnedIndicator } from './PinnedIndicator';
-import { ObjectActionButtons } from './ObjectActionButtons';
 import {
   calculateFlexibleHexGrid,
   calculateHorizontalHexGrid,
   addObjectToCellMagnet,
   removeObjectFromCellMagnet,
   removeObjectFromGridCellMagnet,
-  findCellForSnappedObject,
   calculateMagnetPointPositions,
   getHexCenterAtPixel,
   calculateGridCellMagnetPositions,
@@ -134,7 +132,6 @@ export const Tabletop: React.FC = () => {
   // Resizing state for boards
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [isOverResizeHandle, setIsOverResizeHandle] = useState(false);
   const [liveResizeSize, setLiveResizeSize] = useState<{ width: number; height: number } | null>(null); // Live preview during resize
   const liveResizeSizeRef = useRef<{ width: number; height: number } | null>(null); // Ref for immediate access
   const resizeThrottleRef = useRef<number | null>(null);
@@ -150,7 +147,7 @@ export const Tabletop: React.FC = () => {
   // - 'shift' = Shift+click on board (drop only on click, not on mouseup)
   // - 'hold' = Long press or drag (drop on mouseup)
   // - 'archetype' = Click on token archetype in ToolsPanel (don't drop on normal click)
-  const [cursorSlotSource, setCursorSlotSource] = useState<'ctrl' | 'hold' | 'archetype' | null>(null);
+  const [cursorSlotSource, setCursorSlotSource] = useState<'ctrl' | 'hold' | 'shift' | 'archetype' | null>(null);
 
   // Ref to track when we're adding a token (prevent slot from being dropped during add)
   const isAddingTokenRef = useRef(false);
@@ -189,7 +186,6 @@ export const Tabletop: React.FC = () => {
     targetId: string | null;
     addedToSlot: boolean;
   }>({ initialX: 0, initialY: 0, targetId: null, addedToSlot: false });
-  const lastLogTimeRef = useRef<number>(0); // Track last log time for throttling (500ms)
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartPositionRef = useRef<{ id: string; x: number; y: number } | null>(null); // Track initial position for network commit
   const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -362,19 +358,16 @@ export const Tabletop: React.FC = () => {
   // Listen for add-to-cursor-slot events from other components (e.g., HandPanel)
   useEffect(() => {
     const handleAddToSlot = (e: Event) => {
-      const startTime = performance.now();
-
       const customEvent = e as CustomEvent<{
         cardId: string;
         clientX: number;
         clientY: number;
-        source?: 'ctrl' | 'hold';
+        source?: 'ctrl' | 'hold' | 'shift';
         fromPoolPanel?: string;
         cardOverride?: any;
       }>;
       const { cardId, clientX, clientY, source = 'ctrl', fromPoolPanel, cardOverride } = customEvent.detail;
 
-      const itemLookupStart = performance.now();
       const item = state.objects[cardId];
 
       if (!item) {
@@ -424,12 +417,8 @@ export const Tabletop: React.FC = () => {
 
       // Process immediately without setTimeout to ensure cursorSlot is updated before mouseup
       // This fixes the issue where handleGlobalMouseUp sees empty slot (hasItems: false)
-        const processStart = performance.now();
-
         try {
         // Optimized clone - only copy properties needed for cursor slot rendering
-        const cloneStart = performance.now();
-
         let itemClone: TableObject;
 
         if (item.type === ItemType.CARD) {
@@ -580,10 +569,8 @@ export const Tabletop: React.FC = () => {
         }
 
 
-        const updateStart = performance.now();
         setCursorSlot(prev => [...prev, itemClone as CardType | TokenType | BoardType]);
 
-        const dispatchStart = performance.now();
         const updatePayload: any = { id: cardId, inCursorSlot: true, isOnTable: false };
         if (fromPoolPanel) {
           updatePayload.fromPoolPanel = fromPoolPanel;
@@ -591,13 +578,10 @@ export const Tabletop: React.FC = () => {
 
         dispatch({ type: 'UPDATE_OBJECT', payload: updatePayload });
 
-        const posStart = performance.now();
         const pos = { x: clientX, y: clientY };
         setCursorPosition(pos);
         cursorPositionRef.current = pos;
 
-        const totalProcessTime = performance.now() - processStart;
-        const totalFromStart = performance.now() - startTime;
 
         // Remove from processing set immediately
         processingAddToSlotRef.current.delete(cardId);
@@ -673,7 +657,6 @@ export const Tabletop: React.FC = () => {
 
         if (existingCopyCount >= maxCopies) {
           // Show a notification that limit has been reached
-          console.warn(`Maximum token limit (${maxCopies}) reached for archetype: ${archetype.name}`);
           isAddingTokenRef.current = false;
           return;
         }
@@ -882,17 +865,19 @@ export const Tabletop: React.FC = () => {
       // Also clear cardBackSpriteUrl to avoid conflicts - the last changed method should take priority
       const deck = state.objects[deckId];
       if (deck && deck.type === ItemType.DECK) {
-        const { cardBackSpriteUrl, cardBackSpriteIndex, cardBackSpriteColumns, cardBackSpriteRows, ...restConfig } = deck.spriteConfig || {};
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: {
-            id: deckId,
-            spriteConfig: {
-              ...restConfig,
-              cardBackUrl
+        if (deck.spriteConfig) {
+          const { cardBackSpriteUrl, cardBackSpriteIndex, cardBackSpriteColumns, cardBackSpriteRows, ...restConfig } = deck.spriteConfig;
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: deckId,
+              spriteConfig: {
+                ...restConfig,
+                cardBackUrl,
+              }
             }
-          }
-        });
+          });
+        }
       }
     };
 
@@ -902,9 +887,7 @@ export const Tabletop: React.FC = () => {
 
   // Listen for clear-cursor-slot events from PoolTabletop
   useEffect(() => {
-    const handleClearCursorSlot = (e: Event) => {
-      const customEvent = e as CustomEvent<{ reason?: string }>;
-
+    const handleClearCursorSlot = () => {
       // Clear cursor slot and related state
       cursorSlotRef.current = [];
       setCursorSlot([]);
@@ -955,7 +938,6 @@ export const Tabletop: React.FC = () => {
   }, [state.objects]);
 
   // Refs to always have current values in event handlers
-  const draggingCardRef = useRef<CardType | null>(null);
   const hoveredDeckRef = useRef<string | null>(null);
   const hoveredPileRef = useRef<string | null>(null);
 
@@ -969,7 +951,6 @@ export const Tabletop: React.FC = () => {
   }, [hoveredPileId]);
 
   const dragStartRef = useRef<{ x: number; y: number; scrollLeft?: number; scrollTop?: number }>({ x: 0, y: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleMouseUpRef = useRef<(e?: MouseEvent | React.MouseEvent) => void>(() => {});
   const handleMouseMoveRef = useRef<(e: MouseEvent | React.MouseEvent) => void>(() => {});
@@ -1130,7 +1111,7 @@ export const Tabletop: React.FC = () => {
       }) as (BattlefieldCell | NexusCellObject)[];
 
       // Find nearest cell center within snap radius
-      let nearestCell: { x: number; y: number; distanceSq: number } | null = null;
+      let nearestCell: { x: number; y: number; distanceSq: number; board?: any } | null = null;
 
       // Check boards first
       for (const board of boards) {
@@ -1446,7 +1427,6 @@ export const Tabletop: React.FC = () => {
     setLiveResizeSize(null); // Reset live preview size
     liveResizeSizeRef.current = null; // Reset ref
     resizeFinalSizeRef.current = null; // Reset final size ref
-    setIsOverResizeHandle(false); // Reset cursor state
 
     // Global mouseup handler for cleanup
     const handleGlobalMouseUp = () => {
@@ -1471,7 +1451,6 @@ export const Tabletop: React.FC = () => {
       setResizeStart(null);
       setLiveResizeSize(null);
       liveResizeSizeRef.current = null;
-      setIsOverResizeHandle(false);
       resizeFinalSizeRef.current = null;
 
       // Clear throttle timer
@@ -1976,16 +1955,12 @@ export const Tabletop: React.FC = () => {
 
     // Clone the item to store it in the slot - deep copy to preserve all properties
     let itemClone: TableObject;
-    let baseWidth = item.width ?? 50;
-    let baseHeight = item.height ?? 50;
 
     if (item.type === ItemType.CARD) {
       const card = item as CardType;
       // Get deck to check orientation
       const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
       const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
-      baseWidth = card.width ?? deck?.cardWidth ?? 63;
-      baseHeight = card.height ?? deck?.cardHeight ?? 88;
 
       itemClone = {
         id: card.id,
@@ -2020,8 +1995,6 @@ export const Tabletop: React.FC = () => {
       } as CardType;
     } else if (item.type === ItemType.DECK) {
       const deck = item as DeckType;
-      baseWidth = deck.width ?? 100;
-      baseHeight = deck.height ?? 140;
 
       itemClone = {
         ...deck, // Deep copy to preserve all deck properties
@@ -2039,8 +2012,6 @@ export const Tabletop: React.FC = () => {
       } as DeckType;
     } else if (item.type === ItemType.RANDOMIZER) {
       const randomizer = item as Randomizer;
-      baseWidth = randomizer.width ?? 60;
-      baseHeight = randomizer.height ?? 60;
 
       itemClone = {
         ...randomizer, // Deep copy to preserve all randomizer properties
@@ -2053,8 +2024,6 @@ export const Tabletop: React.FC = () => {
       } as Randomizer;
     } else if (item.type === ItemType.COUNTER) {
       const counter = item as Counter;
-      baseWidth = counter.width ?? 60;
-      baseHeight = counter.height ?? 60;
 
       itemClone = {
         ...counter, // Deep copy to preserve all counter properties
@@ -2069,8 +2038,6 @@ export const Tabletop: React.FC = () => {
       } as Counter;
     } else if (item.type === ItemType.DICE_OBJECT) {
       const dice = item as DiceObject;
-      baseWidth = dice.width ?? 60;
-      baseHeight = dice.height ?? 60;
 
       itemClone = {
         ...dice, // Deep copy to preserve all dice properties
@@ -2084,8 +2051,6 @@ export const Tabletop: React.FC = () => {
       } as DiceObject;
     } else if (item.type === ItemType.BOARD) {
       const board = item as BoardType;
-      baseWidth = board.width ?? 500;
-      baseHeight = board.height ?? 500;
 
       itemClone = {
         ...board, // Deep copy to preserve all board properties
@@ -2163,8 +2128,7 @@ export const Tabletop: React.FC = () => {
           inCursorSlot: true,
           isPinnedToViewport: false,
           pinnedScreenPosition: undefined,
-          wasPinnedToViewport: true // Remember it was pinned
-        }
+        } as any
       });
     } else {
       dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
@@ -2247,7 +2211,6 @@ export const Tabletop: React.FC = () => {
     const worldY = p2v(clientY + scrollY);
 
     // Find cell with snapToGrid enabled under cursor for automatic magnetism
-    const snapRadius = 100; // VU - radius to check for cell
     let targetCell: (BattlefieldCell | NexusCellObject) | null = null;
     let targetBoardCell: { board: BoardType; col: number; row: number; cellCenterX: number; cellCenterY: number } | null = null;
 
@@ -2443,12 +2406,12 @@ export const Tabletop: React.FC = () => {
 
     // Add all items from slot back to the game with automatic magnetism
     sortedSlot.forEach((item, sortedIndex) => {
-      const isCard = item.type === ItemType.CARD;
-      const isDeck = item.type === ItemType.DECK;
-      const isRandomizer = item.type === ItemType.RANDOMIZER;
-      const isCounter = item.type === ItemType.COUNTER;
-      const isDice = item.type === ItemType.DICE_OBJECT;
-      const isBoard = item.type === ItemType.BOARD;
+      const isCard = (item as any).type === ItemType.CARD;
+      const isDeck = (item as any).type === ItemType.DECK;
+      const isRandomizer = (item as any).type === ItemType.RANDOMIZER;
+      const isCounter = (item as any).type === ItemType.COUNTER;
+      const isDice = (item as any).type === ItemType.DICE_OBJECT;
+      const isBoard = (item as any).type === ItemType.BOARD;
 
       let baseWidth = item.width ?? 50;
       let baseHeight = item.height ?? 50;
@@ -2496,7 +2459,6 @@ export const Tabletop: React.FC = () => {
       const defaultZIndex = Math.max(minZ, Math.min(maxZ, stackZ));
 
       let finalX: number, finalY: number;
-      let finalRotation: number = item.rotation ?? 0; // Will be updated if snapRotationToGrid is enabled
       let finalZIndex: number = defaultZIndex; // Will be overridden if snapped to cell
 
       // Use automatic magnetism for tokens dropped on cells
@@ -2671,7 +2633,14 @@ export const Tabletop: React.FC = () => {
 
           // Apply board rotation if snapped to a board with snapRotationToGrid enabled
           if (snappedPos.snappedToBoard && snappedPos.snappedToBoard.snapRotationToGrid) {
-            finalRotation = snappedPos.snappedToBoard.rotation ?? 0;
+            // Update rotation separately since DROP_FROM_CURSOR_SLOT doesn't support it
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: item.id,
+                rotation: snappedPos.snappedToBoard.rotation ?? 0
+              }
+            });
           }
         } else {
           snapTargetX = worldX;
@@ -2698,7 +2667,6 @@ export const Tabletop: React.FC = () => {
           x: finalX,
           y: finalY,
           zIndex: finalZIndex,
-          rotation: finalRotation,
         },
       });
     });
@@ -2998,8 +2966,8 @@ export const Tabletop: React.FC = () => {
         const pileCenterY = pileY + deck.height * pileSize / 2;
 
         // Apply grid snapping for tokens and cards (find snap from center, then add offset)
-        let finalX, finalY, finalRotation = item.rotation ?? 0;
-        if (item.type === ItemType.TOKEN || item.type === ItemType.CARD) {
+        let finalX, finalY, finalRotation = (item as any).rotation ?? 0;
+        if ((item as any).type === ItemType.TOKEN || (item as any).type === ItemType.CARD) {
           const snappedPos = getSnappedCoordinates(pileCenterX, pileCenterY, state.objects, item.id);
           // snappedPos is top-left, convert to center, add offset, convert back to top-left
           finalX = snappedPos.x + baseWidth / 2 + offsetX - baseWidth / 2;
@@ -4073,13 +4041,13 @@ export const Tabletop: React.FC = () => {
         // Logic: defragment panels from bottom (9001) up, dragged panel → first free layer
         if (item.type === ItemType.PANEL) {
           const panel = item as PanelObject;
-          const isMainMenu = panel.panelType === 'main_menu';
+          const isMainMenu = panel.panelType === PanelType.MAIN_MENU;
 
           if (!isMainMenu) {
             // Find all panels except main-menu
             const allPanels = Object.values(state.objects)
               .filter(obj => obj.type === ItemType.PANEL)
-              .filter(obj => (obj as PanelObject).panelType !== 'main_menu')
+              .filter(obj => (obj as PanelObject).panelType !== PanelType.MAIN_MENU)
               .map(obj => obj as PanelObject);
 
             if (allPanels.length > 0) {
@@ -4292,7 +4260,7 @@ export const Tabletop: React.FC = () => {
       }
 
       // Boards use cursor slot system (handled above), don't use normal drag
-      if (item.type === ItemType.BOARD) {
+      if ((item as any).type === ItemType.BOARD) {
         return;
       }
 
@@ -4312,7 +4280,7 @@ export const Tabletop: React.FC = () => {
         // Check if this object is pinned to viewport
         const isPinned = (item as any).isPinnedToViewport === true;
         // BOARD objects should always be treated as pinned for drag purposes
-        const isBoard = item.type === ItemType.BOARD;
+        const isBoard = (item as any).type === ItemType.BOARD;
 
         // Calculate the offset from cursor to object's position
         // For pinned objects, use screen coordinates (like UI objects)
@@ -4323,13 +4291,13 @@ export const Tabletop: React.FC = () => {
         if (isPinned) {
           // Pinned objects: use screen coordinates directly
           // item.x for pinned objects is already the screen coordinate
-          offsetX = e.clientX - item.x;
-          offsetY = e.clientY - item.y;
+          offsetX = e.clientX - (item as any).x;
+          offsetY = e.clientY - (item as any).y;
         } else if (isBoard) {
           // Boards: use screen coordinates (not world coordinates) for consistent positioning
           // item.x for boards is stored as screen coordinate
-          offsetX = e.clientX - item.x;
-          offsetY = e.clientY - item.y;
+          offsetX = e.clientX - (item as any).x;
+          offsetY = e.clientY - (item as any).y;
         } else {
           // Unpinned objects: use world coordinates
           // Convert viewport coordinates to world coordinates
@@ -4525,7 +4493,7 @@ export const Tabletop: React.FC = () => {
       // Pinned objects (boards, decks) and UI objects use screen coordinates directly
       const isPinned = (draggingObj as any).isPinnedToViewport === true;
       // BOARD objects should always use screen coordinates for drag
-      const isBoard = draggingObj.type === ItemType.BOARD;
+      const isBoard = (draggingObj as any).type === ItemType.BOARD;
       if (draggingObj.type === ItemType.PANEL || draggingObj.type === ItemType.WINDOW || isPinned || isBoard) {
         // Calculate delta from initial mouse position to avoid drift
         const deltaX = e.clientX - dragStartRef.current.x;
@@ -4533,6 +4501,7 @@ export const Tabletop: React.FC = () => {
 
         // Use initial object position + delta for smooth dragging
         const initialPos = dragStartPositionRef.current;
+        if (!initialPos) return;
         const targetX = initialPos.x + deltaX;
         const targetY = initialPos.y + deltaY;
 
@@ -4580,9 +4549,16 @@ export const Tabletop: React.FC = () => {
       const snapped = getSnappedCoordinates(centerX, centerY, stateRef.current.objects, draggingId);
 
       // Apply board rotation if snapped to a board with snapRotationToGrid enabled
-      let newRotation = draggingObj.rotation ?? 0;
       if (snapped.snappedToBoard && snapped.snappedToBoard.snapRotationToGrid) {
-        newRotation = snapped.snappedToBoard.rotation ?? 0;
+        // Update rotation separately since MOVE_OBJECT doesn't support it
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: draggingId,
+            rotation: snapped.snappedToBoard.rotation ?? 0
+          },
+          _localOnly: true, // Don't send over network during drag
+        });
       }
 
       dispatch({
@@ -4591,18 +4567,12 @@ export const Tabletop: React.FC = () => {
           id: draggingId,
           x: snapped.x,
           y: snapped.y,
-          rotation: newRotation,
         },
         _localOnly: true, // Don't send over network during drag
       });
 
       // Check if cursor is over a deck (for card-to-deck drop)
       if (draggingObj.type === ItemType.CARD) {
-        // Convert cursor screen coordinates to world coordinates
-        // Add scroll position to account for panning
-        const worldX = p2v(e.clientX + state.viewTransform.scroll.x);
-        const worldY = p2v(e.clientY + state.viewTransform.scroll.y);
-
         // Skip pile detection during drag for better performance
         // Piles are only relevant when dropping, not during drag
         // This removes the expensive loop through all objects on every mousemove
@@ -4610,9 +4580,7 @@ export const Tabletop: React.FC = () => {
         // Skip deck detection during drag for better performance
         // Deck hover is only needed for visual feedback, not critical
         // Checking all decks on every mousemove is too expensive
-        if (!foundPile) {
-          setHoveredDeckId(null);
-        }
+        setHoveredDeckId(null);
       }
     }
 
@@ -4656,9 +4624,6 @@ export const Tabletop: React.FC = () => {
     // Note: Cursor slot drop on mouseup is handled by the global handler above
     // This handleMouseUp is only called when there's an active drag/pan/resize operation
 
-    // Save drag threshold state BEFORE clearing it
-    const wasThresholdReached = dragThresholdRef.current.addedToSlot;
-
     // Clear drag threshold state
     dragThresholdRef.current = {
       initialX: 0,
@@ -4668,12 +4633,11 @@ export const Tabletop: React.FC = () => {
     };
 
     // Check if this was a click (not a drag or resize)
-    const wasDragging = draggingId !== null;
     const wasResizing = resizingId !== null;
 
     // Handle interaction state (unified click/drag system)
     if (interactionStateRef.current.objectId && !wasResizing) {
-      const { objectId, isInDragMode } = interactionStateRef.current;
+      const { isInDragMode } = interactionStateRef.current;
 
       if (isInDragMode) {
         // This was a drag - handle drag completion
@@ -4928,7 +4892,7 @@ export const Tabletop: React.FC = () => {
               const relativeVUY = (relativePixelY + scrollTop) / pixelsPerVU;
 
               // Get active tab coordinates
-              const activeTab = panelObj.poolData.tabs?.find((tab: any) => tab.id === panelObj.poolData.activeTabId) || panelObj.poolData.tabs?.[0];
+              const activeTab = panelObj.poolData?.tabs?.find((tab: any) => tab.id === panelObj.poolData?.activeTabId) || panelObj.poolData?.tabs?.[0];
               const tabOffsetX = activeTab?.offsetX ?? 0;
               const tabOffsetY = activeTab?.offsetY ?? 0;
 
@@ -4945,8 +4909,8 @@ export const Tabletop: React.FC = () => {
               const finalY = poolY - (objHeight / 2);
 
               // Constrain to pool zone bounds
-              const poolWidth = panelObj.poolData.width || 1000;
-              const poolHeight = panelObj.poolData.height || 1000;
+              const poolWidth = panelObj.poolData?.width || 1000;
+              const poolHeight = panelObj.poolData?.height || 1000;
 
               const constrainedX = Math.max(tabOffsetX, Math.min(finalX, tabOffsetX + poolWidth - objWidth));
               const constrainedY = Math.max(tabOffsetY, Math.min(finalY, tabOffsetY + poolHeight - objHeight));
@@ -5095,8 +5059,8 @@ export const Tabletop: React.FC = () => {
             });
           } else {
             // Pin - calculate screen position
-            const screenX = (obj.x * zoom) + offset.x;
-            const screenY = (obj.y * zoom) + offset.y;
+            const screenX = (obj.x * state.viewTransform.zoom) + offset.x;
+            const screenY = (obj.y * state.viewTransform.zoom) + offset.y;
 
             dispatch({
               type: 'PIN_TO_VIEWPORT',
@@ -5292,7 +5256,7 @@ export const Tabletop: React.FC = () => {
     };
   }, [localSettings.zoom, updateSetting]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
+  const handleWheel = useCallback(() => {
     // This handler is now a fallback - main handler is on window
   }, []);
 
@@ -5331,8 +5295,6 @@ export const Tabletop: React.FC = () => {
 
     // Always get fresh object from state to ensure we have latest data
     const freshObject = state.objects[contextMenu.object.id] || contextMenu.object;
-
-    const { object } = contextMenu;
 
     // Use shift key from context menu or parameter
     const isShiftPressed = shiftKey !== undefined ? shiftKey : contextMenu.shiftKey;
@@ -5681,17 +5643,6 @@ export const Tabletop: React.FC = () => {
       });
   }, [state.objects, state.activePlayerId]);
 
-  // OPTIMIZATION: Cache for pinned game objects (for position updates)
-  const pinnedGameObjects = useMemo(() => {
-    return (Object.values(state.objects) as TableObject[]).filter(obj =>
-      (obj as any).isPinnedToViewport &&
-      obj.type !== ItemType.PANEL &&
-      obj.type !== ItemType.WINDOW &&
-      obj.type !== ItemType.DECK &&
-      obj.type !== ItemType.BOARD
-    );
-  }, [state.objects]);
-
   const worldBounds = useMemo(() => {
     // For scrollbars: show only playable area (5000×5000) as if that's the entire world
     // Convert to pixels for rendering (using local zoom-adjusted pixelsPerVU)
@@ -5806,7 +5757,7 @@ export const Tabletop: React.FC = () => {
             updates.forEach(update => {
               dispatch({
                 type: 'UPDATE_OBJECT',
-                payload: update
+                payload: update as { id: string; x: number; y: number }
               });
             });
           }
@@ -5996,8 +5947,6 @@ export const Tabletop: React.FC = () => {
             {remoteCursorSlotObjects.map((obj) => {
                 // Calculate global z-index for remote objects in cursor slot
                 // Remote cursor slot objects should appear above everything
-                const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
-                const layerOrder = layer?.order ?? 2;
                 const globalZIndex = 999997; // Remote cursor slot objects always on top
 
                 if (obj.type === ItemType.TOKEN) {
@@ -6087,8 +6036,6 @@ export const Tabletop: React.FC = () => {
             {remoteDraggingObjects.map((obj) => {
                 // Calculate global z-index for remote dragging objects
                 // Remote dragging objects should appear above everything
-                const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
-                const layerMinZ = layer?.minZIndex ?? 3001;
                 const globalZIndex = 999999; // Remote dragging objects always on top
 
                 if (obj.type === ItemType.TOKEN) {
@@ -6176,8 +6123,6 @@ export const Tabletop: React.FC = () => {
             {remoteDraggingObjects.map((obj) => {
                 // Calculate global z-index for shadow objects
                 // Shadow objects being dragged by remote players should appear above everything
-                const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
-                const layerMinZ = layer?.minZIndex ?? 3001;
                 const globalZIndex = 999998; // Shadow objects just below the actively dragging object
 
                 if (obj.type === ItemType.TOKEN) {
@@ -6274,6 +6219,7 @@ export const Tabletop: React.FC = () => {
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
                                 zIndex: globalZIndex,
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                             }}
                         >
                             <SvgTokenShape
@@ -6330,7 +6276,7 @@ export const Tabletop: React.FC = () => {
                     return (
                         <div
                             key={`remote-drag-${obj.id}`}
-                            className="absolute pointer-events-none select-none bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-center p-2 text-white"
+                            className="absolute pointer-events-none select-none bg-slate-900 border-2 border-slate-600 rounded-lg flex items-center justify-center p-2 text-white"
                             style={{
                                 left: v2p(obj.x),
                                 top: v2p(obj.y),
@@ -6340,6 +6286,7 @@ export const Tabletop: React.FC = () => {
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
                                 zIndex: globalZIndex,
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                             }}
                         >
                             <span className="text-xl font-bold">{counter.value}</span>
@@ -6369,6 +6316,7 @@ export const Tabletop: React.FC = () => {
                                 opacity: 0.5,
                                 filter: 'brightness(0.6)',
                                 zIndex: globalZIndex,
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                             }}
                         >
                             <div style={{ transform: `rotate(${deck.rotation || 0}deg)`, width: '100%', height: '100%' }}>
@@ -6517,7 +6465,6 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.BOARD) {
                     const board = obj as BoardType;
                     const isResizing = resizingId === obj.id;
-                    const isDragging = draggingId === obj.id;
                     const canResize = !obj.locked;
                     const gridSize = v2p(board.gridSize || 50); // Convert vu to pixels
                     const gridW_px = v2p(board.gridWidth || board.gridSize || 50);
@@ -6560,8 +6507,6 @@ export const Tabletop: React.FC = () => {
                                         onContextMenu={(e) => handleContextMenu(e, obj)}
                                         onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                         onResizeStart={(e) => isOwner && handleResizeStart(e, obj.id)}
-                                        onResizeHandleEnter={() => setIsOverResizeHandle(true)}
-                                        onResizeHandleLeave={() => setIsOverResizeHandle(false)}
                                         gridSize={gridSize}
                                         gridWidth={gridW_px}
                                         gridHeight={gridH_px}
@@ -6578,7 +6523,6 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.NEXUS_BOARD) {
                     const nexusBoard = obj as NexusBoard;
-                    const isDragging = draggingId === obj.id;
                     const showAddUI = nexusBoardAddingCell === obj.id;
 
                     // Find main cell to position the board correctly
@@ -7282,7 +7226,7 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
+                                className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
                                 style={{
                                     left: v2p(obj.x),
                                     top: v2p(obj.y),
@@ -7291,6 +7235,7 @@ export const Tabletop: React.FC = () => {
                                     transform: `rotate(${obj.rotation}deg)`,
                                     zIndex: globalZIndex,
                                     pointerEvents: isPermeable ? 'none' : 'auto',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                                 }}
                             >
                             {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
@@ -7403,6 +7348,7 @@ export const Tabletop: React.FC = () => {
                                     transform: `rotate(${obj.rotation}deg)`,
                                     pointerEvents: isPermeable ? 'none' : 'auto',
                                     zIndex: globalZIndex,
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                                 }}
                             >
                                 <SvgTokenShape
@@ -7529,7 +7475,6 @@ export const Tabletop: React.FC = () => {
                     const displayWidth = card.width ?? cardSettings.cardWidth ?? 100;
                     const displayHeight = card.height ?? cardSettings.cardHeight ?? 140;
 
-                    const isDragging = draggingId === obj.id;
                     const isCardHidden = (card as any).hidden === true;
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
@@ -7807,7 +7752,8 @@ export const Tabletop: React.FC = () => {
                                 style={{
                                     width: diceWidth,
                                     height: diceHeight,
-                                    transform: `rotate(${obj.rotation}deg)`
+                                    transform: `rotate(${obj.rotation}deg)`,
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                                 }}
                             >
                                 <SvgTokenShape
@@ -7882,11 +7828,12 @@ export const Tabletop: React.FC = () => {
                             <div
                                 onMouseDown={(e) => handleMouseDown(e, obj.id)}
                                 onContextMenu={(e) => handleContextMenu(e, obj)}
-                                className={`bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${draggingClass}`}
+                                className={`bg-slate-900 border-2 border-slate-600 rounded-lg flex items-center justify-between p-2 gap-2 text-white select-none ${draggingClass}`}
                                 style={{
                                     width: counterWidth,
                                     height: counterHeight,
-                                    transform: `rotate(${obj.rotation}deg)`
+                                    transform: `rotate(${obj.rotation}deg)`,
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                                 }}
                             >
                                 <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
@@ -7906,10 +7853,22 @@ export const Tabletop: React.FC = () => {
                 if (obj.type === ItemType.TOKEN || obj.type === ItemType.CARD) {
                     const isToken = obj.type === ItemType.TOKEN;
                     const token = isToken ? (obj as Token) : null;
-                    const card = !isToken ? (obj as Card) : null;
+                    const card = !isToken ? (obj as CardType) : null;
 
                     // Get card settings from deck for cards
-                    let cardSettings = { allowedActions: [], allowedActionsForGM: [], actionButtons: [], singleClickAction: undefined, doubleClickAction: undefined };
+                    let cardSettings: {
+                        allowedActions: ContextAction[] | undefined;
+                        allowedActionsForGM: ContextAction[] | undefined;
+                        actionButtons: ContextAction[] | undefined;
+                        singleClickAction: ClickAction | undefined;
+                        doubleClickAction: ClickAction | undefined;
+                    } = {
+                        allowedActions: [],
+                        allowedActionsForGM: [],
+                        actionButtons: [],
+                        singleClickAction: undefined,
+                        doubleClickAction: undefined
+                    };
                     if (card && card.deckId) {
                         const deck = state.objects[card.deckId] as DeckType;
                         if (deck && deck.type === ItemType.DECK) {

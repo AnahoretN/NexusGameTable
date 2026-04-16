@@ -129,18 +129,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     const parentAction = SUBMENU_TO_PARENT[action];
     const actionToCheck = parentAction || action;
 
-    // Debug logging for deck actions
-    if (object.type === ItemType.DECK && (action === 'topDeck' || action === 'piles' || action === 'returnAll')) {
-      console.log('[ContextMenu] can() check:', {
-        action,
-        parentAction,
-        actionToCheck,
-        allowedActions,
-        allowedActionsForGM,
-        isGM,
-        objectType: object.type
-      });
-    }
 
     let result = false;
     if (isGM) {
@@ -166,9 +154,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       }
     }
 
-    if (object.type === ItemType.DECK && (action === 'topDeck' || action === 'piles' || action === 'returnAll')) {
-      console.log('[ContextMenu] can() result:', { action, result });
-    }
 
     return result;
   };
@@ -808,16 +793,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const otherItems = visibleItems.filter(i => i.action !== 'configure');
   const finalItems = configureItem ? [configureItem, ...otherItems] : otherItems;
 
-  // Debug logging for deck menu items
-  if (object.type === ItemType.DECK) {
-    console.log('[ContextMenu] Deck menu items:', {
-      objectName: object.name,
-      objectType: object.type,
-      allMenuItems: menuItems.map(item => ({ action: item.action, label: item.label, visible: item.visible, hasSubmenu: item.hasSubmenu })),
-      visibleItems: visibleItems.map(item => ({ action: item.action, label: item.label, hasSubmenu: item.hasSubmenu })),
-      finalItems: finalItems.map(item => ({ action: item.action, label: item.label, hasSubmenu: item.hasSubmenu }))
-    });
-  }
 
   const menuStyle: React.CSSProperties = {
     top: menuPosition.top,
@@ -870,19 +845,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
               const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : isTopDeckSubmenu ? topDeckSubmenuOpen : isMoveSubmenu ? moveSubmenuOpen : isReturnSubmenu ? returnSubmenuOpen : layerSubmenuOpen;
 
               const toggleSubmenu = () => {
-                console.log('[ContextMenu] toggleSubmenu called:', {
-                  itemAction: item.action,
-                  itemLabel: item.label,
-                  isRotateSubmenu,
-                  isPilesSubmenu,
-                  isTopDeckSubmenu,
-                  isMoveSubmenu,
-                  isReturnSubmenu,
-                  hasSubmenu: item.hasSubmenu,
-                  hasSubmenuItems: !!item.submenuItems,
-                  submenuItemsLength: item.submenuItems?.length || 0
-                });
-
                 if (isRotateSubmenu) {
                   setRotateSubmenuOpen(!rotateSubmenuOpen);
                   setLayerSubmenuOpen(false);
@@ -931,22 +893,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
               const submenuKey = isRotateSubmenu ? 'rotate' : isPilesSubmenu ? 'piles' : isTopDeckSubmenu ? 'topDeck' : isMoveSubmenu ? 'moveTo' : isReturnSubmenu ? 'returnAll' : 'layer';
               const submenuPos = submenuPositions[submenuKey];
 
-              // Debug logging for deck submenus
-              if (object.type === ItemType.DECK && (isTopDeckSubmenu || isPilesSubmenu || isReturnSubmenu)) {
-                console.log('[ContextMenu] Deck submenu processing:', {
-                  itemAction: item.action,
-                  itemLabel: item.label,
-                  isTopDeckSubmenu,
-                  isPilesSubmenu,
-                  isReturnSubmenu,
-                  isSubmenuOpen,
-                  submenuKey,
-                  submenuPos,
-                  hasSubmenuItems: !!item.submenuItems,
-                  submenuItemsLength: item.submenuItems?.length || 0
-                });
-              }
-
               // Get the correct ref for this submenu
               const getSubmenuRef = () => {
                 if (isRotateSubmenu) return rotateSubmenuRef;
@@ -962,13 +908,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                   <button
                     ref={(el) => { submenuButtonRefs.current[submenuKey] = el; }}
                     onClick={(e) => {
-                      console.log('[ContextMenu] Menu item clicked:', {
-                        itemAction: item.action,
-                        itemLabel: item.label,
-                        hasSubmenu: item.hasSubmenu,
-                        submenuItems: item.submenuItems,
-                        eventType: e.type
-                      });
                       e.stopPropagation();
                       toggleSubmenu();
                     }}

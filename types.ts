@@ -283,6 +283,12 @@ export interface Deck extends GameItem {
 
   // Text to Cards functionality
   textCardsData?: Array<{ name: string; description: string }>; // Parsed text card data
+  textCardsStyle?: {
+    backgroundColor: string;
+    textColor: string;
+    fontSize: string;
+    useSpriteSheet?: boolean;
+  }; // Style settings for text cards
   showTextOnCards?: boolean; // Whether to show text directly on cards (instead of tooltips)
 
   // Remember proportions button state

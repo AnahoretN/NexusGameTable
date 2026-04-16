@@ -65,6 +65,13 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   const spriteBackgroundStyles = React.useMemo(() => {
     const getBackgroundImage = (): string | undefined => {
       if (card.faceUp) {
+        // Check if this is a text card with useSpriteSheet disabled
+        const textCardsStyle = (card as any).textCardsStyle;
+        if (textCardsStyle && textCardsStyle.useSpriteSheet === false) {
+          // Don't use sprite sheet, use background color only
+          return undefined;
+        }
+
         // Use card's spriteUrl, or deck's spriteConfig spriteUrl, or card's content
         const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl || card.content;
         return spriteUrl ? `url(${spriteUrl})` : undefined;
@@ -136,6 +143,18 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
       backgroundPosition: getBackgroundPosition(),
     };
   }, [card.faceUp, card.spriteUrl, card.spriteIndex, card.spriteColumns, card.spriteRows, card.content, card.location, (card as any).alternativeBack, deckSpriteConfig, shouldSeeCardFace]);
+
+  // Memoized text cards styles calculation
+  const textCardsStyles = React.useMemo(() => {
+    const textCardsStyle = (card as any).textCardsStyle;
+    if (!textCardsStyle) return null;
+
+    return {
+      backgroundColor: textCardsStyle.backgroundColor || '#ffffff',
+      color: textCardsStyle.textColor || '#000000',
+      fontSize: textCardsStyle.fontSize || '14px',
+    };
+  }, [(card as any).textCardsStyle]);
 
   // Define button configurations for cards using shared utility
   const getCardButtonConfigs = (): CardButtonConfig[] => {
@@ -268,13 +287,13 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               shape={shape}
               width={displayWidth}
               height={displayHeight}
-              backgroundColor={card.faceUp ? 'white' : '#1e293b'}
+              backgroundColor={card.faceUp ? (textCardsStyles?.backgroundColor || 'white') : '#1e293b'}
               borderColor={isHovered ? '#facc15' : '#374151'}
               borderWidth={2}
               orientation={orientation}
             >
               <div
-                style={{ width: '100%', height: '100%', position: 'relative', ...spriteBackgroundStyles }}
+                style={{ width: '100%', height: '100%', position: 'relative', ...(textCardsStyles || spriteBackgroundStyles) }}
               >
                 {/* Card Back Design Element if Face Down */}
                 {!card.faceUp && (
@@ -309,8 +328,23 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                 {card.faceUp && card.showTextOnCard && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10">
                     <div className="w-full h-full flex flex-col items-center justify-center text-center">
-                      <h3 className="text-[13px] font-bold text-gray-900 mb-1 break-words w-full">{card.name}</h3>
-                      <p className="text-[11px] text-gray-900 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
+                      <h3
+                        className="font-bold mb-1 break-words w-full"
+                        style={{
+                          fontSize: textCardsStyles?.fontSize || '13px',
+                          color: textCardsStyles?.color || 'rgb(17 24 39)' // text-gray-900
+                        }}
+                      >
+                        {card.name}
+                      </h3>
+                      <p
+                        className="whitespace-pre-wrap break-words w-full overflow-auto"
+                        style={{
+                          maxHeight: 'calc(100% - 20px)',
+                          fontSize: textCardsStyles ? `calc(${textCardsStyles.fontSize} * 0.85)` : '11px',
+                          color: textCardsStyles?.color || 'rgb(17 24 39)' // text-gray-900
+                        }}
+                      >
                         {card.tooltipText || card.description || ''}
                       </p>
                     </div>
@@ -323,7 +357,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
             <div
               className={`w-full h-full ${!isGeometric ? 'border-2 border-gray-700 rounded-lg' : ''} ${isHovered && !isGeometric ? 'ring-2 ring-yellow-400' : ''}`}
               style={{
-                  backgroundColor: card.faceUp ? 'white' : '#1e293b',
+                  backgroundColor: card.faceUp ? (textCardsStyles?.backgroundColor || 'white') : '#1e293b',
                   position: 'relative',
                   overflow: 'hidden',
               }}
@@ -333,7 +367,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                 style={{
                   position: 'absolute',
                   inset: 0,
-                  ...spriteBackgroundStyles,
+                  ...(textCardsStyles || spriteBackgroundStyles),
               }}
           >
               {/* Card Back Design Element if Face Down */}
@@ -369,8 +403,23 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
               {card.faceUp && card.showTextOnCard && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-2 z-10">
                   <div className="w-full h-full flex flex-col items-center justify-center text-center">
-                    <h3 className="text-[13px] font-bold text-gray-900 mb-1 break-words w-full">{card.name}</h3>
-                    <p className="text-[11px] text-gray-900 whitespace-pre-wrap break-words w-full overflow-auto" style={{ maxHeight: 'calc(100% - 20px)' }}>
+                    <h3
+                      className="font-bold mb-1 break-words w-full"
+                      style={{
+                        fontSize: textCardsStyles?.fontSize || '13px',
+                        color: textCardsStyles?.color || 'rgb(17 24 39)' // text-gray-900
+                      }}
+                    >
+                      {card.name}
+                    </h3>
+                    <p
+                      className="whitespace-pre-wrap break-words w-full overflow-auto"
+                      style={{
+                        maxHeight: 'calc(100% - 20px)',
+                        fontSize: textCardsStyles ? `calc(${textCardsStyles.fontSize} * 0.85)` : '11px',
+                        color: textCardsStyles?.color || 'rgb(17 24 39)' // text-gray-900
+                      }}
+                    >
                       {card.tooltipText || card.description || ''}
                     </p>
                   </div>

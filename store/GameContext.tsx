@@ -57,13 +57,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const incomingSessionId = action.payload.sessionId;
         const isReconnection = state.sessionId === incomingSessionId;
 
-        console.log('[SYNC_STATE] Session check:', {
-          current: state.sessionId,
-          incoming: incomingSessionId,
-          isReconnection,
-          willRestoreLocalSettings: isReconnection
-        });
-
         // Don't save/restore local panel settings anymore
         // All panel settings should come from host's playerPanelSettings
 
@@ -86,7 +79,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               : incomingObjects;
 
             // Don't restore local panel settings - all settings come from host's playerPanelSettings
-            console.log('[SYNC_STATE] Using host panel settings (player-specific settings applied separately)');
         }
 
         // Remove viewTransform and internal fields from payload to prevent overwriting local settings
@@ -387,7 +379,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const hasGM = mergedPlayers.some(p => p.isGM === true);
         if (!hasGM && mergedPlayers.length > 0) {
             mergedPlayers[0].isGM = true;
-            console.log('[LOAD_GAME] No GM found in save, made player', mergedPlayers[0].id, 'a GM');
         }
 
         // CRITICAL: Ensure players array is never undefined
@@ -706,6 +697,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
               // Create cards from text data
               const newCardIds: string[] = [];
+              const textCardsStyle = deck.textCardsStyle;
+              const useSpriteSheet = textCardsStyle?.useSpriteSheet === true;
+
               textCardsData.forEach((cardData, index) => {
                   const cardId = `${deck.id}-text-card-${Date.now()}-${index}`;
                   const newCard: Card = {
@@ -726,6 +720,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                       locked: false,
                       showTextOnCard: true,
                   };
+
+                  // Only assign sprite sheet properties if useSpriteSheet is enabled
+                  if (useSpriteSheet && deck.spriteConfig) {
+                      newCard.spriteUrl = deck.spriteConfig.spriteUrl;
+                      newCard.spriteIndex = index;
+                      newCard.spriteColumns = deck.spriteConfig.columns;
+                      newCard.spriteRows = deck.spriteConfig.rows;
+                  }
+
+                  // Store text cards style data for custom rendering
+                  if (textCardsStyle) {
+                      (newCard as any).textCardsStyle = textCardsStyle;
+                  }
+
                   newObjects[cardId] = newCard;
                   newCardIds.push(cardId);
               });
@@ -2254,7 +2262,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
               if (existingCopyCount >= maxCopies) {
                 // Limit reached, don't allow cloning
-                console.warn(`Maximum token limit (${maxCopies}) reached for archetype: ${archetype.name}`);
                 return state;
               }
             }
@@ -5131,7 +5138,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   (window as any).__setManualConnection = (conn: any) => {
     // Only update if it's a different connection
     if (conn && conn.peer !== manualConnectionSetupRef.current) {
-      console.log('[GameContext] __setManualConnection called with new connection:', conn?.peer);
       manualConnectionRef.current = conn;
     }
   };

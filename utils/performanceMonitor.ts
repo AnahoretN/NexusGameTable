@@ -73,39 +73,7 @@ export class PerformanceMonitor {
    * Print a formatted report to console
    */
   printReport() {
-    console.group('🔍 Performance Report');
-
-    if (this.measurements.size === 0) {
-      console.log('No measurements recorded yet.');
-    } else {
-      this.measurements.forEach((_, name) => {
-        const stats = this.getStats(name);
-        if (stats) {
-          console.groupCollapsed(`📊 ${name}`);
-          console.log(`Count: ${stats.count}`);
-          console.log(`Avg: ${stats.avg}ms`);
-          console.log(`Min: ${stats.min}ms`);
-          console.log(`Max: ${stats.max}ms`);
-          console.log(`Total: ${stats.sum}ms`);
-          console.groupEnd();
-        }
-      });
-
-      // Summary
-      const totalMeasurements = Array.from(this.measurements.values())
-        .reduce((sum, arr) => sum + arr.length, 0);
-      const totalTime = Array.from(this.measurements.values())
-        .flat()
-        .reduce((sum, val) => sum + val, 0);
-
-      console.groupCollapsed('📈 Summary');
-      console.log(`Total measurements: ${totalMeasurements}`);
-      console.log(`Total time: ${totalTime.toFixed(2)}ms`);
-      console.log(`Average per measurement: ${(totalTime / totalMeasurements).toFixed(2)}ms`);
-      console.groupEnd();
-    }
-
-    console.groupEnd();
+    // Performance report printing disabled
   }
 
   /**
@@ -129,7 +97,6 @@ export class PerformanceMonitor {
    */
   clear() {
     this.measurements.clear();
-    console.log('🗑️ Performance measurements cleared');
   }
 
   /**
@@ -138,7 +105,6 @@ export class PerformanceMonitor {
   getMemoryUsage() {
     const memory = (performance as any).memory;
     if (!memory) {
-      console.log('Memory API not available in this browser');
       return null;
     }
 
@@ -154,13 +120,7 @@ export class PerformanceMonitor {
    */
   printMemoryUsage() {
     const memory = this.getMemoryUsage();
-    if (memory) {
-      console.group('💾 Memory Usage');
-      console.log(`Used: ${memory.usedJSHeapSize}`);
-      console.log(`Total: ${memory.totalJSHeapSize}`);
-      console.log(`Limit: ${memory.jsHeapSizeLimit}`);
-      console.groupEnd();
-    }
+    // Memory usage printing disabled
   }
 }
 
@@ -177,7 +137,6 @@ export function useRenderCount(componentName: string) {
 
   useEffect(() => {
     renderCount.current++;
-    console.log(`[RenderCount] ${componentName}: ${renderCount.current}`);
   });
 
   return renderCount.current;
@@ -191,9 +150,7 @@ export function useRenderTime(componentName: string) {
 
   useEffect(() => {
     const renderTime = performance.now() - renderStartTime.current;
-    if (renderTime > 16) { // Log only if takes more than one frame (16ms at 60fps)
-      console.warn(`[SlowRender] ${componentName}: ${renderTime.toFixed(2)}ms`);
-    }
+    // Slow render warning disabled
   });
 }
 
@@ -235,12 +192,7 @@ export class FPSMonitor {
       const fps = this.frames.length;
       this.frames = [];
 
-      console.log(`🎯 FPS: ${fps}`);
-
-      // Warn if FPS is low
-      if (fps < 30) {
-        console.warn(`⚠️ Low FPS detected: ${fps}`);
-      }
+      // FPS logging disabled
 
       this.lastTime = now;
     }

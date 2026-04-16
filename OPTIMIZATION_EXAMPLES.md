@@ -739,3 +739,382 @@ export const HandPanel: React.FC<HandPanelProps> = ({
 5. **Оптимизируйте хуки:** Исправьте зависимости в `useCallback` и используйте функциональные обновления состояния.
 
 Эти изменения улучшат производительность без потери функциональности и сделают код более консистентным и предсказуемым.
+
+---
+
+## 🚀 Новые оптимизации (2026-04-15)
+
+### 7. WebRTC оптимизация с Throttle и Debounce
+
+```typescript
+// utils/webrtcOptimization.ts - использование в GameContext
+import { throttle, debounce, differentialSyncManager, webrtcStatsMonitor } from './utils/webrtcOptimization';
+
+// Throttled синхронизация состояния (макс. 1 раз в 100ms)
+const throttledStateSync = throttle((state: GameState) => {
+  if (!isHost || !connectionsRef.current || connectionsRef.current.length === 0) {
+    return;
+  }
+
+  const syncStartTime = performance.now();
+
+  // Дифференциальная синхронизация
+  if (differentialSyncManager.shouldSendFullState()) {
+    // Полная синхронизация
+    connectionsRef.current.forEach(conn => {
+      if (conn.open) {
+        const { state: stateWithRefs, imageCache } = extractImagesFromState(state);
+        conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+
+        if (Object.keys(imageCache).length > 0) {
+          conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+        }
+      }
+    });
+  } else {
+    // Частичная синхронизация
+    const partialState = differentialSyncManager.getPartialState(state, Date.now());
+    connectionsRef.current.forEach(conn => {
+      if (conn.open) {
+        conn.send({ type: 'SYNC_STATE', payload: partialState });
+      }
+    });
+  }
+
+  const syncTime = performance.now() - syncStartTime;
+  const stateSize = JSON.stringify(state).length;
+
+  webrtcStatsMonitor.recordSync(
+    !differentialSyncManager.shouldSendFullState(),
+    stateSize,
+    syncTime
+  );
+
+  differentialSyncManager.clearChanges();
+}, 100, { leading: true, trailing: true });
+
+// Debounced синхронизация panel settings (300ms после последнего изменения)
+const debouncedPanelSettingsSync = debounce((settings: PlayerPanelSettings) => {
+  connectionsRef.current.forEach(conn => {
+    if (conn.open) {
+      conn.send({
+        type: 'PLAYER_PANEL_SETTINGS',
+        payload: settings
+      });
+    }
+  });
+}, 300);
+
+// Использование в компоненте
+useEffect(() => {
+  if (isHost) {
+    throttledStateSync(state);
+  }
+}, [state, isHost]);
+```
+
+### 8. Memory Manager для автоматической очистки
+
+```typescript
+// App.tsx - интеграция Memory Manager
+import { memoryManager } from './utils';
+
+function App() {
+  useEffect(() => {
+    // Запуск автоматической очистки каждые 5 минут
+    memoryManager.start();
+
+    // Периодическая статистика (раз в минуту)
+    const statsInterval = setInterval(() => {
+      if (process.env.NODE_ENV === 'development') {
+        const stats = memoryManager.getMemoryStats();
+        if (stats) {
+          console.log('[Memory Stats]', {
+            used: stats.usedJSHeapSize,
+            total: stats.totalJSHeapSize,
+            cleanups: stats.cleanupCount,
+            freed: `${(stats.memoryFreed / 1024 / 1024).toFixed(2)}MB`
+          });
+        }
+      }
+    }, 60000);
+
+    return () => {
+      memoryManager.stop();
+      clearInterval(statsInterval);
+    };
+  }, []);
+
+  return <GameProvider>...</GameProvider>;
+}
+```
+
+### 9. WeakMap для временных данных
+
+```typescript
+// Использование WeakMap для временных вычислений
+import { temporalCache } from './utils/memoryManager';
+
+function processObjectWithCache(obj: TableObject) {
+  // Проверяем, есть ли кэшированные данные
+  const cached = temporalCache.get(obj, 'processedData');
+  if (cached) {
+    return cached;
+  }
+
+  // Дорогие вычисления
+  const result = {
+    bounds: calculateBounds(obj),
+    collisions: detectCollisions(obj),
+    transforms: calculateTransforms(obj)
+  };
+
+  // Сохраняем во временный кэш
+  temporalCache.set(obj, 'processedData', result);
+
+  return result;
+}
+
+// Очистка (опционально - WeakMap очистится автоматически)
+function cleanupObject(obj: TableObject) {
+  temporalCache.delete(obj);
+}
+```
+
+### 10. Zustand store с оптимизированными хуками
+
+```typescript
+// Миграция на Zustand store
+import {
+  useObjectById,
+  useCards,
+  useTokens,
+  useVisibleObjects,
+  useObjectStats,
+  useObjectActions
+} from './store/objectStore';
+
+// Вместо старого подхода:
+function OldComponent() {
+  const { state } = useGame();
+  const cards = Object.values(state.objects).filter(obj => obj.type === ItemType.CARD);
+
+  return <div>{cards.map(card => <Card key={card.id} card={card} />)}</div>;
+}
+
+// Новый подход с Zustand:
+function NewComponent() {
+  const cards = useCards(); // Реагирует только на изменения карт
+
+  return <div>{cards.map(card => <Card key={card.id} card={card} />)}</div>;
+}
+
+// Использование оптимизированных селекторов
+function OptimizedComponents() {
+  // Конкретный объект (реагирует только на его изменения)
+  const card = useObjectById('card-123');
+
+  // Видимые объекты (shallow сравнение)
+  const visibleObjects = useVisibleObjects();
+
+  // Статистика (реагирует только на изменения статистики)
+  const stats = useObjectStats();
+
+  // Actions без ре-рендера при изменении данных
+  const { updateObject, moveObject, deleteObject } = useObjectActions();
+
+  return (
+    <div>
+      <p>Total: {stats.total}</p>
+      <p>Cards: {stats.cards}</p>
+      {card && <Card card={card} />}
+    </div>
+  );
+}
+```
+
+### 11. Bulk операции для массовых изменений
+
+```typescript
+// Использование bulk операций из Zustand store
+import { objectUtils } from './store/objectStore';
+
+function BulkOperationsExample() {
+  const handleBulkMove = () => {
+    // Перемещение нескольких объектов за один вызов
+    objectUtils.bulkMove([
+      { id: 'card1', x: 100, y: 200 },
+      { id: 'card2', x: 150, y: 250 },
+      { id: 'card3', x: 200, y: 300 }
+    ]);
+  };
+
+  const handleBulkUpdate = () => {
+    // Массовое обновление
+    objectUtils.bulkUpdate([
+      { id: 'card1', changes: { faceUp: true } },
+      { id: 'card2', changes: { faceUp: true } },
+      { id: 'card3', changes: { locked: true } }
+    ]);
+  };
+
+  const handleBulkDelete = () => {
+    // Массовое удаление
+    objectUtils.bulkDelete(['card1', 'card2', 'card3']);
+  };
+
+  return (
+    <div>
+      <button onClick={handleBulkMove}>Move Multiple</button>
+      <button onClick={handleBulkUpdate}>Update Multiple</button>
+      <button onClick={handleBulkDelete}>Delete Multiple</button>
+    </div>
+  );
+}
+```
+
+### 12. Performance Monitor для профилирования
+
+```typescript
+// Использование performance monitor
+import { perfMonitor, useRenderCount, useRenderTime } from './utils';
+
+function ProfiledComponent() {
+  // Подсчет рендеров
+  const renderCount = useRenderCount('ProfiledComponent');
+
+  // Измерение времени рендеринга
+  useRenderTime('ProfiledComponent');
+
+  const handleClick = () => {
+    const endMeasure = perfMonitor.startMeasure('handleClick');
+
+    try {
+      // Дорогая операция
+      processData();
+    } finally {
+      endMeasure();
+    }
+  };
+
+  // Печать статистики
+  useEffect(() => {
+    const interval = setInterval(() => {
+      perfMonitor.printReport();
+    }, 30000); // Каждые 30 секунд
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return <button onClick={handleClick}>Process</button>;
+}
+```
+
+### 13. FPS мониторинг
+
+```typescript
+// Мониторинг FPS в реальном времени
+import { fpsMonitor } from './utils';
+
+function GameWithFPSMonitor() {
+  useEffect(() => {
+    fpsMonitor.start();
+
+    return () => {
+      fpsMonitor.stop();
+    };
+  }, []);
+
+  return <div>Game Content</div>;
+}
+```
+
+### 14. Комбинированная оптимизация компонента
+
+```typescript
+// Полностью оптимизированный компонент
+import { memo, useMemo, useCallback } from 'react';
+import { useRenderCount, useRenderTime, perfMonitor } from './utils';
+import { useCards } from './store/objectStore';
+
+const OptimizedCardsPanel = memo(function OptimizedCardsPanel() {
+  // Мониторинг
+  useRenderCount('OptimizedCardsPanel');
+  useRenderTime('OptimizedCardsPanel');
+
+  // Оптимизированное получение данных
+  const cards = useCards();
+
+  // Мемоизированные обработчики
+  const handleCardClick = useCallback((cardId: string) => {
+    console.log('Card clicked:', cardId);
+  }, []);
+
+  const handleCardDrag = useCallback((cardId: string, x: number, y: number) => {
+    const endMeasure = perfMonitor.startMeasure('cardDrag');
+
+    try {
+      // Логика drag&drop
+      dragCard(cardId, x, y);
+    } finally {
+      endMeasure();
+    }
+  }, []);
+
+  // Мемоизированный рендеринг карт
+  const renderedCards = useMemo(() =>
+    cards.map(card => (
+      <Card
+        key={card.id}
+        card={card}
+        onClick={handleCardClick}
+        onDrag={handleCardDrag}
+      />
+    )),
+    [cards, handleCardClick, handleCardDrag]
+  );
+
+  return (
+    <div className="cards-panel">
+      {renderedCards}
+    </div>
+  );
+});
+```
+
+---
+
+## 🎯 Практические рекомендации по внедрению
+
+### Порядок внедрения новых оптимизаций:
+
+1. **Начните с App.tsx** - добавьте MemoryManager
+2. **Обновите GameContext** - интегрируйте WebRTC оптимизацию
+3. **Мигрируйте ключевые компоненты** - замените на Zustand хуки
+4. **Добавьте мониторинг** - используйте performance monitor в development
+5. **Тестируйте постепенно** - проверяйте каждую оптимизацию отдельно
+
+### Быстрый старт:
+
+```typescript
+// 1. В App.tsx
+import { memoryManager } from './utils';
+
+useEffect(() => {
+  memoryManager.start();
+  return () => memoryManager.stop();
+}, []);
+
+// 2. В компонентах
+import { useCards, useObjectById } from './store/objectStore';
+
+const cards = useCards(); // Вместо Object.values(state.objects)
+const card = useObjectById(id); // Вместо state.objects[id]
+
+// 3. Для WebRTC (в GameContext)
+import { throttle, webrtcStatsMonitor } from './utils/webrtcOptimization';
+
+const throttledSync = throttle(syncFunction, 100);
+```
+
+Эти новые оптимизации обеспечат дополнительный прирост производительности и улучшат пользовательский опыт при работе с большими наборами данных.

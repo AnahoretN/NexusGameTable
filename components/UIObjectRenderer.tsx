@@ -192,21 +192,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   const minimized = isActuallyMinimized;
   const visible = uiObject.visible !== false;
 
-  // Debug logging for minimized state
-  if (isDragging) {
-    console.log('[UIObjectRenderer] UI Object drag state:', {
-      id: uiObject.id,
-      type: uiObject.type,
-      panelType: (uiObject as any).panelType,
-      isDragging,
-      uiObjectMinimized: (uiObject as any).minimized,
-      effectivePropsMinimized: effectiveProps.minimized,
-      isActuallyMinimized,
-      uiObjectHeight: uiObject.height,
-      effectivePropsHeight: effectiveProps.height
-    });
-  }
-
   // Preload translations for current language
   useEffect(() => {
     const lang = localStorage.getItem('app-language') as Locale || 'en';
@@ -239,25 +224,8 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       // Currently collapsed - expand to saved state
       const restoreState = effectiveProps.expandedState;
 
-      // Log for debugging
-      console.log('[handleToggleCollapse] Expanding panel:', {
-        panelId: uiObject.id,
-        isMainMenu,
-        restoreState,
-        currentPosition: { x: effectiveProps.x, y: effectiveProps.y },
-        currentDimensions: { width: effectiveProps.width, height: effectiveProps.height },
-        playerPanelSettings
-      });
-
       // Update local settings instead of global state
       if (isPanel && !isMainMenu) {
-        console.log('[handleToggleCollapse] Expanding regular panel:', {
-          id: uiObject.id,
-          restoreState,
-          currentPosition: { x: effectiveProps.x, y: effectiveProps.y },
-          currentDimensions: { width: effectiveProps.width, height: effectiveProps.height }
-        });
-
         // Update the object itself first
         dispatch({
           type: 'UPDATE_OBJECT',
@@ -324,14 +292,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         });
       } else {
         // For main menu and windows, use global state
-        console.log('[handleToggleCollapse] Dispatching UPDATE_OBJECT for main menu:', {
-          id: uiObject.id,
-          minimized: false,
-          restoringDimensions: {
-            width: restoreState?.width,
-            height: restoreState?.height
-          }
-        });
 
         // First update the object dimensions and minimized state
         dispatch({
@@ -373,13 +333,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         // Save current dimensions before collapsing
         const currentWidth = uiObject.width;
         const currentHeight = uiObject.height;
-
-        console.log('[handleToggleCollapse] Minimizing regular panel, saving dimensions:', {
-          id: uiObject.id,
-          currentWidth,
-          currentHeight,
-          currentPosition: { x: uiObject.x, y: uiObject.y }
-        });
 
         // Update the object itself first (to prevent expansion during drag)
         dispatch({
@@ -436,15 +389,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
         // Save current dimensions before collapsing
         const currentWidth = uiObject.width;
         const currentHeight = uiObject.height;
-
-        console.log('[handleToggleCollapse] Minimizing main menu, saving dimensions:', {
-          id: uiObject.id,
-          currentWidth,
-          currentHeight,
-          currentPosition: { x: uiObject.x, y: uiObject.y },
-          currentUiObjectMinimized: (uiObject as any).minimized,
-          currentUiObjectHeight: uiObject.height
-        });
 
         // Update the object minimized state and height
         dispatch({
@@ -820,18 +764,6 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
     // For unpinned panels, effectiveProps.height is in VU, convert to pixels
     return !isMainMenu ? vuToPx(effectiveProps.height) : effectiveProps.height;
   }, [currentSize, minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.height, vuToPx]);
-
-  // Debug logging for container height
-  if (isDragging && (uiObject as any).panelType === 'main_menu') {
-    console.log('[UIObjectRenderer] Main menu container dimensions:', {
-      id: uiObject.id,
-      minimized,
-      isActuallyMinimized,
-      containerHeight,
-      currentSize,
-      isPinnedMode
-    });
-  }
 
   // Memoize container style to prevent unnecessary recalculations
   const containerStyle: React.CSSProperties = useMemo(() => ({
@@ -1980,7 +1912,6 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
 
       if (!targetObj) {
         // Object not found, close the window immediately
-        console.warn('[WindowContent] Object not found for OBJECT_SETTINGS:', windowObj.targetObjectId);
         handleClose();
         return null;
       }

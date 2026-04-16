@@ -796,7 +796,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
             {[2, 1, 0].map(i => (
               <div
                 key={i}
-                className="absolute bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
+                className="absolute bg-slate-800 border-2 border-slate-600 pointer-events-none"
                 style={{
                   width: '100%',
                   height: '100%',
@@ -804,6 +804,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                   left: 0,
                   transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
                   zIndex: -i,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
                   ...shapeStyles
                 }}
               />

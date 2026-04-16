@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup } from '../types';
 
-import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { calculateHexHeight, calculateFlatHexHeight } from '../utils/gridUtils';
 import { CARD_SHAPE_DIMS } from '../constants';
@@ -202,6 +202,10 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
   // Text to Cards state
   const [textCardsInput, setTextCardsInput] = useState('');
+  const [textCardsBackgroundColor, setTextCardsBackgroundColor] = useState('#ffffff');
+  const [textCardsTextColor, setTextCardsTextColor] = useState('#000000');
+  const [textCardsFontSize, setTextCardsFontSize] = useState('14');
+  const [textCardsUseSpriteSheet, setTextCardsUseSpriteSheet] = useState(false);
 
   // Get all dice objects
   const allDice: DiceObject[] = Object.values(allObjects).filter(
@@ -347,6 +351,20 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
       });
       // Initialize sprite config
       setSpriteConfig(deckObj.spriteConfig || null);
+
+      // Initialize text cards style settings
+      if (deckObj.textCardsStyle) {
+        setTextCardsBackgroundColor(deckObj.textCardsStyle.backgroundColor || '#ffffff');
+        setTextCardsTextColor(deckObj.textCardsStyle.textColor || '#000000');
+        setTextCardsFontSize(deckObj.textCardsStyle.fontSize || '14');
+        setTextCardsUseSpriteSheet(deckObj.textCardsStyle.useSpriteSheet || false);
+      } else {
+        // Reset to defaults if no style settings exist
+        setTextCardsBackgroundColor('#ffffff');
+        setTextCardsTextColor('#000000');
+        setTextCardsFontSize('14');
+        setTextCardsUseSpriteSheet(false);
+      }
     }
 
     // Initialize ratios for proportional resize
@@ -3035,6 +3053,73 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                 />
               </div>
 
+              {/* Text Cards Style Settings */}
+              <div className="pt-4 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                  <Palette size={14} /> {translate('Text Cards Style Settings', language as Locale)}
+                </h4>
+
+                {/* First row: Background color and text color */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Background', language as Locale)}</label>
+                    <input
+                      type="color"
+                      value={textCardsBackgroundColor}
+                      onChange={(e) => setTextCardsBackgroundColor(e.target.value)}
+                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Text', language as Locale)}</label>
+                    <input
+                      type="color"
+                      value={textCardsTextColor}
+                      onChange={(e) => setTextCardsTextColor(e.target.value)}
+                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Second row: Use Sprite Sheet toggle and Font size */}
+                <div className="grid grid-cols-[1fr_2fr] gap-2">
+                  <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                    <label className="text-xs text-gray-400">{translate('Use Sprite Sheet', language as Locale)}</label>
+                    <button
+                      onClick={() => setTextCardsUseSpriteSheet(!textCardsUseSpriteSheet)}
+                      className={`w-10 h-5 rounded-full transition-colors ${
+                        textCardsUseSpriteSheet ? 'bg-green-600' : 'bg-slate-700'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        textCardsUseSpriteSheet ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Font Size (px)', language as Locale)}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="8"
+                        max="32"
+                        value={textCardsFontSize}
+                        onChange={(e) => setTextCardsFontSize(e.target.value)}
+                        className="flex-1 accent-purple-500"
+                      />
+                      <input
+                        type="number"
+                        min="8"
+                        max="32"
+                        value={textCardsFontSize}
+                        onChange={(e) => setTextCardsFontSize(e.target.value)}
+                        className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm text-center"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Add Cards Button */}
               <div className="pt-4">
                 <button
@@ -3057,9 +3142,15 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
                       return null;
                     }).filter(card => card !== null);
 
-                    // Create the updated deck with text cards
+                    // Create the updated deck with text cards and style settings
                     const updatedDeck = { ...data };
                     (updatedDeck as Deck).textCardsData = cardsData;
+                    (updatedDeck as Deck).textCardsStyle = {
+                      backgroundColor: textCardsBackgroundColor,
+                      textColor: textCardsTextColor,
+                      fontSize: textCardsFontSize,
+                      useSpriteSheet: textCardsUseSpriteSheet
+                    };
                     onSave(updatedDeck);
                     onClose();
                   }}

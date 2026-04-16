@@ -178,7 +178,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       const pinnedPos = (object as any).pinnedScreenPosition;
 
       if (!pinnedPos) {
-        console.error('❌ No pinned position found!');
         return;
       }
 
