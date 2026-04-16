@@ -12,7 +12,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { SearchDeckModal } from './SearchDeckModal';
 import { TopDeckModal } from './TopDeckModal';
 import { DeckComponent } from './DeckComponent';
-import { UIObjectRendererMemo } from './UIObjectRenderer';
+import { UIObjectRendererOptimizedMemo as UIObjectRendererMemo } from './UIObjectRendererOptimized';
 import { executeActionButtonUniversal, ActionButtonsHandlerContext } from '../utils/actionButtonsHandler';
 import { Tooltip } from './Tooltip';
 import { DrawingCanvas } from './DrawingCanvas';

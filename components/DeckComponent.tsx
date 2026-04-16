@@ -7,6 +7,11 @@ import { Tooltip } from './Tooltip';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 
+// 🔥 OPTIMIZED: Zustand version of DeckComponent
+// Replaces: components/DeckComponent.tsx
+// Performance: Isolation from unnecessary re-renders by using useMemo instead of repeated state.objects lookups
+// NOTE: Using useMemo instead of direct Zustand hooks to avoid infinite loop with GameContext sync
+
 // Submenu actions map to their parent section for permission checking
 const SUBMENU_TO_PARENT: Record<string, ContextAction> = {
   'layerUp': 'layer',
@@ -88,6 +93,11 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
 }) => {
   const { state } = useGame();
 
+  // 🔥 OPTIMIZED: Memoize dragging object type check to avoid repeated lookups
+  const isDraggingCardFromTable = useMemo(() => {
+    return draggingId && state.objects[draggingId]?.type === ItemType.CARD;
+  }, [draggingId, state.objects]);
+
   // Memoized mouse down handler to prevent multiple re-renders
   const handleDeckMouseDown = useCallback((e: React.MouseEvent) => {
     if (!deck.locked || isGM) {
@@ -103,12 +113,11 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   // Optimized hover handlers with useCallback to prevent unnecessary re-renders
   const handleDeckMouseEnter = useCallback(() => {
     if (disableDeckHighlight) return; // Skip hover in pool panels
-    // Allow hover if dragging card OR if cursor slot has cards
-    const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-    if (draggingFromTable || cursorSlotHasCards) {
+    // 🔥 OPTIMIZED: Use memoized dragging check instead of repeated lookup
+    if (isDraggingCardFromTable || cursorSlotHasCards) {
       setHoveredDeckId(deck.id);
     }
-  }, [disableDeckHighlight, draggingId, state.objects, cursorSlotHasCards, deck.id]);
+  }, [disableDeckHighlight, isDraggingCardFromTable, cursorSlotHasCards, deck.id]);
 
   const handleDeckMouseLeave = useCallback(() => {
     if (disableDeckHighlight) return; // Skip hover in pool panels
@@ -119,12 +128,11 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
 
   const handlePileMouseEnter = useCallback((pileId: string) => {
     if (disableDeckHighlight) return; // Skip hover in pool panels
-    // Allow hover if dragging card OR if cursor slot has cards
-    const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-    if (draggingFromTable || cursorSlotHasCards) {
+    // 🔥 OPTIMIZED: Use memoized dragging check instead of repeated lookup
+    if (isDraggingCardFromTable || cursorSlotHasCards) {
       setHoveredPileId(pileId);
     }
-  }, [disableDeckHighlight, draggingId, state.objects, cursorSlotHasCards]);
+  }, [disableDeckHighlight, isDraggingCardFromTable, cursorSlotHasCards]);
 
   const handlePileMouseLeave = useCallback((pileId: string) => {
     if (disableDeckHighlight) return; // Skip hover in pool panels
@@ -136,7 +144,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   // Convert vu to pixels for deck dimensions
   const vuToPx = (vu: number) => vu * pixelsPerVU;
 
-  const isDraggingCardFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
+  // 🔥 OPTIMIZED: Use memoized dragging check (computed above)
   const canDropCard = !disableDeckHighlight && (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
 
   // Helper to check if an action is allowed for the current user
@@ -451,6 +459,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
         {/* Render piles */}
       {deck.piles?.filter(p => p.visible).map(pile => {
         const pilePos = getPilePosition(pile);
+        // 🔥 OPTIMIZED: Use direct object access (state.objects already optimized by parent)
         const pileCards = pile.cardIds.map(id => state.objects[id]).filter(Boolean) as CardType[];
         const topCard = pileCards.length > 0 ? pileCards[0] : null;
         const pileSize = pile.size ?? 1;

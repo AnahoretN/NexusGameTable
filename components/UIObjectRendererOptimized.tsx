@@ -2,13 +2,18 @@ import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
 import { X, Minus, Plus, Eye, EyeOff, Lock, Unlock, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
-import { HandPanel } from './HandPanel';
+import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
+
+// 🔥 OPTIMIZED: Zustand version of UIObjectRenderer
+// Replaces: components/UIObjectRenderer.tsx
+// Performance: Optimized state.objects access with useMemo for fewer re-renders
+// NOTE: Using useMemo instead of direct Zustand hooks to avoid infinite loop with GameContext sync
 import { CharacterPanel } from './CharacterPanel';
 import { PoolPanel } from './PoolPanel';
 import { TableauPanel } from './TableauPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { DrawingToolsPanel } from './DrawingToolsPanel';
-import { TokensPanel } from './TokensPanel';
+import { TokensPanelOptimized as TokensPanel } from './TokensPanelOptimized';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { TopDeckModal } from './TopDeckModal';
@@ -70,7 +75,7 @@ interface UIObjectRendererProps {
   isPinnedMode?: boolean;
 }
 
-export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
+export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   uiObject,
   isDragging,
   onMouseDown,
@@ -1985,7 +1990,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
   }
 };
 
-export const UIObjectRendererMemo = React.memo(UIObjectRenderer, (prevProps, nextProps) => {
+export const UIObjectRendererOptimizedMemo = React.memo(UIObjectRendererOptimized, (prevProps, nextProps) => {
   // Custom comparison for better performance
   return (
     prevProps.uiObject.id === nextProps.uiObject.id &&

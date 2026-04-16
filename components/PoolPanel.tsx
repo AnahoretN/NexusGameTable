@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { PanelObject, PoolPanelData, PanelTab, AppLanguage, ItemType } from '../types';
 import { Plus, Trash2, Lock, X } from 'lucide-react';
-import { PoolTabletop } from './PoolTabletop';
+import { PoolTabletopOptimized as PoolTabletop } from './PoolTabletopOptimized';
 import { findAvailableTerritory } from '../utils/territoryManager';
 import { PoolTabSettingsModal } from './PoolTabSettingsModal';
 import { t as translate, Locale } from '../utils/translations';

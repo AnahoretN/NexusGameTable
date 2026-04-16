@@ -13,7 +13,7 @@ import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE,
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
-import { HandPanel } from './HandPanel';
+import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
 import { PlayerNameModal } from './PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
 import { useDrawingTool } from './ToolsPanel';

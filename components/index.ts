@@ -25,6 +25,21 @@ export { ObjectRendererMemo } from './ObjectRenderer';
 export { default as CardMemo } from './Card';
 export { SvgTokenShapeMemo } from './SvgTokenShape';
 
+// 🔥 NEW: Optimized HandPanel with Zustand
+export { HandPanelOptimized, HandPanelOptimizedMemo } from './HandPanelOptimized';
+
+// 🔥 NEW: Optimized TokensPanel with useMemo
+export { TokensPanelOptimized, TokensPanelOptimizedMemo } from './TokensPanelOptimized';
+
+// 🔥 OPTIMIZED: DeckComponent with useMemo (replaces original DeckComponent)
+export { DeckComponent } from './DeckComponent';
+
+// 🔥 NEW: Optimized PoolTabletop with useMemo
+export { PoolTabletopOptimized, PoolTabletopOptimizedMemo } from './PoolTabletopOptimized';
+
+// 🔥 NEW: Optimized UIObjectRenderer with useMemo
+export { UIObjectRendererOptimized, UIObjectRendererOptimizedMemo } from './UIObjectRendererOptimized';
+
 // Re-export original types
 export type { VirtualizedObjectListProps } from './VirtualizedObjectList';
 export type { VirtualizedHandListProps, SimpleHandListProps } from './VirtualizedHandList';
