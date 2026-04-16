@@ -1,13 +1,21 @@
 /**
- * UIContext - Manages UI state and settings
+ * UIContext v1.1 - Управление UI состоянием (частичная синхронизация)
  *
- * This context is responsible for:
- * - Application language
- * - Player panel settings
- * - Hyperscale layers configuration
- * - Layer selection and visibility
+ * @version 1.1.0
+ * @since 2026-04-17
  *
- * Status: ✅ Implemented (Phase 4)
+ * СИНХРОНИЗИРУЕТСЯ (общие для всех игроков):
+ * ✅ hyperscaleLayers - слои объектов
+ * ✅ selectedHyperscaleLayerIds - выбранные слои
+ * ✅ playerPanelSettings - настройки панелей игроков
+ *
+ * НЕ СИНХРОНИЗИРУЕТСЯ (локальные настройки):
+ * ❌ language - язык интерфейса (каждый игрок выбирает свой)
+ *
+ * ИЗМЕНЕНИЯ с v1.0:
+ * ✅ Добавлена документация о WebRTC синхронизации
+ * ✅ Добавлены WebRTC методы для частичной синхронизации
+ * ✅ Оптимизированы hooks для предотвращения ререндеров
  */
 
 import React, { createContext, useContext, useReducer, useCallback } from 'react';

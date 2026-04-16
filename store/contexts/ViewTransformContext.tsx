@@ -1,11 +1,18 @@
 /**
- * ViewTransformContext - Independent view transform management
+ * ViewTransformContext v2.1 - Локальное управление камерой (НЕ синхронизируется)
  *
- * This context provides view transform state management independent of GameContext.
- * It manages zoom, offset, scroll, and pixels per VU for coordinate transformations.
+ * ⚠️ ВАЖНО: Этот контекст является ЛОКАЛЬНЫМ и НЕ синхронизируется через WebRTC
  *
- * Status: ✅ Independent Implementation (Phase 4)
- * Version: 2.0.0
+ * Каждый игрок имеет собственную позицию камеры, зум и настройки вида.
+ * ViewTransform данные НЕ включаются в WebRTC синхронизацию.
+ *
+ * @version 2.1.0
+ * @since 2026-04-17
+ *
+ * ИЗМЕНЕНИЯ с v2.0:
+ * ✅ Явное указание, что это локальное состояние
+ * ✅ Добавлена документация о WebRTC исключении
+ * ✅ Оптимизированы hooks для предотвращения ререндеров
  */
 
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
