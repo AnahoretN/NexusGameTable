@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
+import { useActivePlayerId, useIsGM, usePlayerList } from '../store/contexts';
 import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType } from '../types';
 import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload } from 'lucide-react';
 import { TextBlock, SliderBlock, TableBlock, InventoryBlock, AvatarBlock, CounterBlock } from './CharacterBlocks';
@@ -18,6 +19,9 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   panel
 }) => {
   const { state, dispatch } = useGame();
+  const activePlayerId = useActivePlayerId();
+  const isGM = useIsGM();
+  const players = usePlayerList();
 
   // Get character data from panel - use latest from state to ensure reactivity
   const characterData = (state.objects[panel.id] as PanelObject)?.characterData || panel.characterData;
@@ -134,8 +138,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   }, [characterData, panel.id, dispatch]);
 
   // Get current player info
-  const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
-  const isGM = currentPlayer?.isGM ?? false;
+  // Note: isGM is now from useIsGM() hook above
 
   // Check permissions for active character
   const canManageCharacter = useMemo(() => {
@@ -143,48 +146,48 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     if (isGM) return true;
 
     // Check if player is owner
-    if (activeCharacter.playerId === state.activePlayerId) return true;
+    if (activeCharacter.playerId === activePlayerId) return true;
 
     // Check if player is in manageable list
-    if (activeCharacter.manageableByPlayerIds?.includes(state.activePlayerId)) return true;
+    if (activeCharacter.manageableByPlayerIds?.includes(activePlayerId)) return true;
 
     // Check if "all_players" is in manageable list
     if (activeCharacter.manageableByPlayerIds?.includes('all_players')) return true;
 
     return false;
-  }, [activeCharacter, isGM, state.activePlayerId]);
+  }, [activeCharacter, isGM, activePlayerId]);
 
   const canEditCharacter = useMemo(() => {
     if (!activeCharacter) return false;
     if (isGM) return true;
 
     // Check if player is owner
-    if (activeCharacter.playerId === state.activePlayerId) return true;
+    if (activeCharacter.playerId === activePlayerId) return true;
 
     // Check if player is in editable list
-    if (activeCharacter.editableByPlayerIds.includes(state.activePlayerId)) return true;
+    if (activeCharacter.editableByPlayerIds.includes(activePlayerId)) return true;
 
     // Check if "all_players" is in editable list
     if (activeCharacter.editableByPlayerIds.includes('all_players')) return true;
 
     return false;
-  }, [activeCharacter, isGM, state.activePlayerId]);
+  }, [activeCharacter, isGM, activePlayerId]);
 
   const canViewCharacter = useMemo(() => {
     if (!activeCharacter) return false;
     if (isGM) return true;
 
     // Check if player is owner
-    if (activeCharacter.playerId === state.activePlayerId) return true;
+    if (activeCharacter.playerId === activePlayerId) return true;
 
     // Check if player is in visible list
-    if (activeCharacter.visibleToPlayerIds.includes(state.activePlayerId)) return true;
+    if (activeCharacter.visibleToPlayerIds.includes(activePlayerId)) return true;
 
     // Check if "all_players" is in visible list
     if (activeCharacter.visibleToPlayerIds.includes('all_players')) return true;
 
     return false;
-  }, [activeCharacter, isGM, state.activePlayerId]);
+  }, [activeCharacter, isGM, activePlayerId]);
 
   // Context menu state for adding blocks
   const [blockContextMenu, setBlockContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -218,10 +221,10 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   // Handler for editing character name
   const handleStartEditCharacterName = useCallback(() => {
     if (!activeCharacter) return;
-    if (!isGM && activeCharacter.playerId !== state.activePlayerId) return;
+    if (!isGM && activeCharacter.playerId !== activePlayerId) return;
     setCharacterNameInput(activeCharacter.characterName);
     setEditingCharacterName(true);
-  }, [activeCharacter, isGM, state.activePlayerId]);
+  }, [activeCharacter, isGM, activePlayerId]);
 
   const handleSaveCharacterName = useCallback(() => {
     if (!characterData || !activeCharacter) return;
@@ -905,7 +908,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         <div className="flex flex-wrap gap-0.5 px-2 pt-1 pb-0.5 border-b border-slate-700">
           {characterData.characters.map(character => {
             const isActive = character.id === activeCharacterId;
-            const isOwnCharacter = character.playerId === state.activePlayerId;
+            const isOwnCharacter = character.playerId === activePlayerId;
 
             return (
               <button
@@ -1347,7 +1350,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
               <div className="space-y-4">
                 <CharacterSettingsModal
                   character={settingsModal.character}
-                  players={state.players}
+                  players={players}
                   onSave={handleSaveCharacterSettings}
                   onCharacterChange={setTempSettingsCharacter}
                 />

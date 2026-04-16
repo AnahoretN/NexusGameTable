@@ -3,6 +3,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { HyperscaleLayer, AppLanguage } from '../types';
 import { useGame } from '../store/GameContext';
+import { useHyperscaleLayers } from '../store/contexts';
 import { X, Check, Palette, Trash2 } from 'lucide-react';
 
 interface HyperscaleLayerSettingsWindowProps {
@@ -21,6 +22,7 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
   language = 'en'
 }) => {
   const { state, dispatch } = useGame();
+  const hyperscaleLayers = useHyperscaleLayers();
 
   // Check if there are objects on this layer
   const hasObjects = Object.values(state.objects).some(
@@ -50,7 +52,7 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
     }
 
     // Check for overlap with other layers
-    const hasOverlap = state.hyperscaleLayers.some(l => {
+    const hasOverlap = hyperscaleLayers.some(l => {
       if (l.id === layer.id) return false; // Skip self
       return (
         (min >= l.minZIndex && min <= l.maxZIndex) ||

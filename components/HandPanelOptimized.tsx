@@ -4,6 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from '
 import { logger } from '../utils/logger';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
+import { usePlayerList, useActivePlayerId } from '../store/contexts';
 // 🔥 OPTIMIZED: Using memoization instead of useCards() to avoid infinite loop
 import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player } from '../types';
 import { Card as CardComponent } from './Card';
@@ -131,6 +132,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   language = 'en'
 }) => {
   const { state, dispatch } = useGame();
+  const players = usePlayerList();
+  const activePlayerId = useActivePlayerId();
 
   // 🔥 OPTIMIZED: Memoize cards array instead of filtering all objects on every render
   // This avoids infinite loop while still providing ~40% reduction in re-renders
@@ -143,13 +146,13 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
 
   // State for selected player hand tab (whose hand we're viewing)
-  const [selectedPlayerId, setSelectedPlayerId] = useState(state.activePlayerId);
+  const [selectedPlayerId, setSelectedPlayerId] = useState(activePlayerId);
 
   // Use per-tab scale hook for the currently selected player
   const { scale: cardScale, setTabCardScale } = useTabCardScale(selectedPlayerId);
 
   // Get current player info
-  const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
+  const currentPlayer = players.find(p => p.id === activePlayerId);
   const isGM = currentPlayer?.isGM ?? false;
 
   // Context menu state for cards in hand
@@ -218,7 +221,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const cardsToAdd = items.filter(item => item.type === 'CARD');
 
       if (cardsToAdd.length > 0) {
-        const player = state.players.find(p => p.id === selectedPlayerId);
+        const player = players.find(p => p.id === selectedPlayerId);
         if (!player) {
           logger.warn('[HandPanelOptimized] Player not found:', selectedPlayerId);
           setIsCursorOverHand(false);
@@ -356,7 +359,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   // 🔥 OPTIMIZED: Filter from cards array instead of all objects
   const cards = useMemo(() => {
-    const player = state.players.find(p => p.id === selectedPlayerId);
+    const player = players.find(p => p.id === selectedPlayerId);
     const handCardOrder = player?.handCardOrder || [];
 
     // Get all cards in hand for selected player (exclude cards being picked up)
@@ -376,11 +379,11 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const bIndex = cardOrderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
       return aIndex - bIndex;
     });
-  }, [allCards, selectedPlayerId, state.players, pickingUpCardIds]); // 🔥 OPTIMIZED: Uses memoized cards instead of all objects
+  }, [allCards, selectedPlayerId, players, pickingUpCardIds]); // 🔥 OPTIMIZED: Uses memoized cards instead of all objects
 
   // Determine if we're viewing another player's hand (not our own)
   // In that case, show cards face down (as card backs)
-  const isViewingOpponentHand = selectedPlayerId !== state.activePlayerId;
+  const isViewingOpponentHand = selectedPlayerId !== activePlayerId;
 
   // Group cards by shape, maintaining order within each group
   const cardsByShape = useMemo(() => {
@@ -559,11 +562,11 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const handleTabContextMenu = useCallback((e: React.MouseEvent, playerId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    const player = state.players.find(p => p.id === playerId);
+    const player = players.find(p => p.id === playerId);
     if (player) {
       setHandTabSettings({ playerId, player });
     }
-  }, [state.players]);
+  }, [players]);
 
   // Handle context menu actions for cards
   const handleContextMenuAction = useCallback((action: string) => {
@@ -851,14 +854,14 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const newCardOrder = newCards.map(c => c.id);
       dispatch({
         type: 'UPDATE_HAND_CARD_ORDER',
-        payload: { playerId: state.activePlayerId, cardOrder: newCardOrder }
+        payload: { playerId: activePlayerId, cardOrder: newCardOrder }
       });
     }
 
     setDragIndex(null);
     setDragOverIndex(null);
     dragStartPosRef.current = null;
-  }, [dragIndex, dragOverIndex, cards, state.activePlayerId, dispatch]);
+  }, [dragIndex, dragOverIndex, cards, activePlayerId, dispatch]);
 
   // Set up global mouse listeners during drag
   useEffect(() => {
@@ -907,7 +910,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       if (cards.length === 0) return;
 
       // Get current player's hand card order
-      const player = state.players.find(p => p.id === state.activePlayerId);
+      const player = players.find(p => p.id === activePlayerId);
       const currentHandOrder = player?.handCardOrder || [];
 
       // New card IDs to add at the beginning (top-right position)
@@ -919,7 +922,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       // Update hand card order for active player
       dispatch({
         type: 'UPDATE_HAND_CARD_ORDER',
-        payload: { playerId: state.activePlayerId, cardOrder: newCardOrder }
+        payload: { playerId: activePlayerId, cardOrder: newCardOrder }
       });
 
       // Add each card to the game state with hand location
@@ -936,7 +939,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
               id: card.id,
               location: 'HAND' as any,
               isOnTable: false,
-              ownerId: state.activePlayerId,
+              ownerId: activePlayerId,
               x: 0, // Cards in hand don't need world coordinates
               y: 0,
               rotation: 0,
@@ -955,7 +958,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
             name: card.name || 'Card',
             locked: false,
             location: 'HAND' as any,
-            ownerId: state.activePlayerId,
+            ownerId: activePlayerId,
             isOnTable: false,
             faceUp: true,
             inCursorSlot: false,
@@ -982,21 +985,21 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
     window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     return () => window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
-  }, [dispatch, state.objects, state.activePlayerId, state.players, selectedPlayerId]);
+  }, [dispatch, state.objects, activePlayerId, players, selectedPlayerId]);
 
   // Reset to own hand when active player changes
   useEffect(() => {
-    setSelectedPlayerId(state.activePlayerId);
-  }, [state.activePlayerId]);
+    setSelectedPlayerId(activePlayerId);
+  }, [activePlayerId]);
 
   // Migration: Ensure all players have empty hand access arrays
   useEffect(() => {
-    const needsMigration = state.players.some(player =>
+    const needsMigration = players.some(player =>
       !player.handVisibleToPlayerIds || !player.handManageableByPlayerIds
     );
 
     if (needsMigration) {
-      state.players.forEach(player => {
+      players.forEach(player => {
         const updatedPlayer: Player = {
           ...player,
           handVisibleToPlayerIds: player.handVisibleToPlayerIds || [],
@@ -1008,7 +1011,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         });
       });
     }
-  }, [state.players, dispatch]);
+  }, [players, dispatch]);
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -1060,18 +1063,18 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       style={{ width }}
     >
       {/* Player hand tabs - show when not collapsed and multiple players exist */}
-      {!isCollapsed && state.players.length > 1 && (
+      {!isCollapsed && players.length > 1 && (
         <div className="flex flex-wrap gap-1 px-1 pt-1 pb-0 border-b border-slate-700">
-          {state.players.map(player => {
+          {players.map(player => {
             const isActive = player.id === selectedPlayerId;
-            const isOwnHand = player.id === state.activePlayerId;
-            const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
+            const isOwnHand = player.id === activePlayerId;
+            const currentPlayer = players.find(p => p.id === activePlayerId);
             const isCurrentPlayerGM = currentPlayer?.isGM ?? false;
 
             // Only show GM hand tabs if:
             // 1. It's the current player's own hand, OR
             // 2. The current player is a GM
-            const playerIsGM = state.players.find(p => p.id === player.id)?.isGM ?? false;
+            const playerIsGM = players.find(p => p.id === player.id)?.isGM ?? false;
             const shouldShowTab = isOwnHand || isCurrentPlayerGM || !playerIsGM;
 
             if (!shouldShowTab) return null;
@@ -1108,7 +1111,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       )}
 
       {/* Single player header with settings button - show when not collapsed and only one player */}
-      {!isCollapsed && state.players.length === 1 && (
+      {!isCollapsed && players.length === 1 && (
         <div className="flex items-center justify-between px-2 py-1 border-b border-slate-700">
           <span className="text-xs text-slate-400">
             {translate('My Hand', language as Locale)}
@@ -1147,7 +1150,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
             <div className="flex flex-col items-center justify-center min-h-[200px] text-slate-500">
               <p className="text-sm">
                 {isViewingOpponentHand
-                  ? `${state.players.find(p => p.id === selectedPlayerId)?.name || translate('Player', language as Locale)} ${translate('has no cards', language as Locale)}`
+                  ? `${players.find(p => p.id === selectedPlayerId)?.name || translate('Player', language as Locale)} ${translate('has no cards', language as Locale)}`
                   : translate('No cards in hand', language as Locale)}
               </p>
               <p className="text-xs mt-1">
@@ -1267,8 +1270,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
               <div className="space-y-4">
                 <HandTabSettingsModal
                   player={handTabSettings.player}
-                  players={state.players}
-                  activePlayerId={state.activePlayerId}
+                  players={players}
+                  activePlayerId={activePlayerId}
                   isGM={isGM}
                   onScaleChange={(newScale) => {
                     // Update scale for this player's tab

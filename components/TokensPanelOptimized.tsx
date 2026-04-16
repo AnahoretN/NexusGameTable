@@ -1,6 +1,7 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
+import { usePlayerPermissions } from '../store/contexts';
 import { ItemType, TokenType, TokenShape, AppLanguage } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 import { ChevronDown, Settings } from 'lucide-react';
@@ -23,6 +24,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
   language = 'en'
 }) => {
   const { state, dispatch, isHost } = useGame();
+  const playerPermissions = usePlayerPermissions();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Token archetypes expanded state
@@ -200,7 +202,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
   // Handle archetype settings
   const handleArchetypeSettings = useCallback((archetype: TokenType) => {
     // Check permissions - GM always has access, non-GM needs configureObjects permission
-    const canConfigure = isHost || state.playerPermissions.configureObjects;
+    const canConfigure = isHost || playerPermissions.configureObjects;
     if (!canConfigure) return; // Silently do nothing if no permission
 
     dispatch({
@@ -211,7 +213,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
         targetObjectId: archetype.id
       }
     });
-  }, [dispatch, isHost, state.playerPermissions.configureObjects]);
+  }, [dispatch, isHost, playerPermissions.configureObjects]);
 
   if (isCollapsed) {
     return (

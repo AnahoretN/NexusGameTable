@@ -1,5 +1,8 @@
 import React, { useEffect, Suspense } from 'react';
 import { GameProvider } from './store/GameContext';
+import { PlayerProvider } from './store/contexts/PlayerContext';
+import { ViewTransformProvider } from './store/contexts/ViewTransformContext';
+import { UIProvider } from './store/contexts/UIContext';
 import { LocalSettingsProvider } from './hooks/useLocalSettings';
 import { Tabletop } from './components/Tabletop';
 import { memoryManager, perfMonitor } from './utils';
@@ -31,12 +34,18 @@ const PerformanceMonitor: React.FC = () => {
 const App: React.FC = () => {
   return (
     <LocalSettingsProvider>
-      <GameProvider>
-        <PerformanceMonitor />
-        <div className="w-full h-screen overflow-hidden">
-          <Tabletop />
-        </div>
-      </GameProvider>
+      <UIProvider>
+        <ViewTransformProvider>
+          <GameProvider>
+            <PlayerProvider>
+              <PerformanceMonitor />
+              <div className="w-full h-screen overflow-hidden">
+                <Tabletop />
+              </div>
+            </PlayerProvider>
+          </GameProvider>
+        </ViewTransformProvider>
+      </UIProvider>
     </LocalSettingsProvider>
   );
 };

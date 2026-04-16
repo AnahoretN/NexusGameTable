@@ -1,6 +1,7 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
+import { usePlayerPermissions } from '../store/contexts';
 import { ItemType, TableObject, TokenType, TokenShape, WindowType, AppLanguage } from '../types';
 import { Pen, Eraser, Ruler, ZoomIn, ZoomOut, ChevronDown, ChevronUp, Settings, MousePointer2 } from 'lucide-react';
 import { SvgTokenShape } from './SvgTokenShape';
@@ -56,6 +57,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   language = 'en'
 }) => {
   const { state, dispatch, isHost } = useGame();
+  const playerPermissions = usePlayerPermissions();
   const containerRef = useRef<HTMLDivElement>(null);
 
 
@@ -308,7 +310,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   // Handle archetype settings
   const handleArchetypeSettings = useCallback((archetype: TokenType) => {
     // Check permissions - GM always has access, non-GM needs configureObjects permission
-    const canConfigure = isHost || state.playerPermissions.configureObjects;
+    const canConfigure = isHost || playerPermissions.configureObjects;
     if (!canConfigure) return; // Silently do nothing if no permission
 
     dispatch({
@@ -319,7 +321,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
         targetObjectId: archetype.id
       }
     });
-  }, [dispatch, isHost, state.playerPermissions.configureObjects]);
+  }, [dispatch, isHost, playerPermissions.configureObjects]);
 
   if (isCollapsed) {
     return (

@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
+import { usePixelsPerVU, usePlayerList, useActivePlayerId, useHyperscaleLayers, useLanguage } from '../store/contexts';
 import { TableObject, ItemType, Deck as DeckType, CardPile, Counter, DiceObject, TokenShape, Board as BoardType, CardLocation, Card } from '../types';
 import { ObjectRenderer } from './ObjectRenderer';
 import { DeckComponent } from './DeckComponent';
@@ -40,10 +41,15 @@ interface PoolTabletopProps {
 
 export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.02 }) => {
   const { state, dispatch } = useGame();
+  const pixelsPerVU = usePixelsPerVU();
+  const players = usePlayerList();
+  const activePlayerId = useActivePlayerId();
+  const hyperscaleLayers = useHyperscaleLayers();
+  const language = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
+  const currentPlayer = players.find(p => p.id === activePlayerId);
   const isGM = currentPlayer?.isGM ?? false;
 
   // View transform - use zoom from props or default to 1.02
@@ -228,7 +234,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     // Use universal action handler for standard actions
     universalExecuteClickAction(obj, action, {
       dispatch,
-      state: { objects: state.objects, activePlayerId: state.activePlayerId },
+      state: { objects: state.objects, activePlayerId: activePlayerId },
       poolZone: { panelId: poolZone.panelId },
       additionalHandlers: {
         onDeleteCandidate: setDeleteCandidateId,
@@ -237,7 +243,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         onOpenTopDeckModal: setTopDeckModalDeck
       }
     }, event ? { clientX: event.clientX, clientY: event.clientY, shiftKey: event.shiftKey } : undefined);
-  }, [dispatch, state.activePlayerId, state.objects, poolZone.panelId, setDeleteCandidateId, animateDiceRoll, setSearchModalDeck, setTopDeckModalDeck]);
+  }, [dispatch, activePlayerId, state.objects, poolZone.panelId, setDeleteCandidateId, animateDiceRoll, setSearchModalDeck, setTopDeckModalDeck]);
 
   // Pile context menu state
   const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
@@ -320,9 +326,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     return getCursorSlotObjects(state.objects).length > 0;
   }, [state.objects]);
 
-  // Calculate pixels per VU
-  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
-
   // Memoize pool bounds calculations for rendering
   const poolBounds = useMemo(() => ({
     minX: poolZone.offsetX,
@@ -391,8 +394,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     // Sort by hyperscale layer order and zIndex (same as main Tabletop)
     const sorted = filtered.sort((a, b) => {
       // First, sort by hyperscale layer order (boards < cards < tokens < interface)
-      const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
-      const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
+      const layerA = hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
+      const layerB = hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
       const orderA = layerA?.order ?? 2;
       const orderB = layerB?.order ?? 2;
       if (orderA !== orderB) return orderA - orderB;
@@ -413,7 +416,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     });
 
     return sorted;
-  }, [state.objects, poolZone, state.hyperscaleLayers]);
+  }, [state.objects, poolZone, hyperscaleLayers]);
 
   // Watch for dice rollStartTime changes to sync animations across players
   useEffect(() => {
@@ -598,7 +601,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           object: targetObject,
           dispatch,
           state,
-          activePlayerId: state.activePlayerId,
+          activePlayerId: activePlayerId,
           setContextMenu,
           setSettingsModalObj,
           setDeleteCandidateId,
@@ -706,7 +709,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           payload: {
             pileId: pile.id,
             deckId: deck.id,
-            playerId: state.activePlayerId
+            playerId: activePlayerId
           }
         });
         setPileContextMenu(null);
@@ -716,7 +719,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         setPileContextMenu(null);
         break;
     }
-  }, [pileContextMenu, state.activePlayerId, dispatch]);
+  }, [pileContextMenu, activePlayerId, dispatch]);
 
   // Cleanup click timers on unmount
   useEffect(() => {
@@ -1874,7 +1877,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                 setSearchModalDeck={setSearchModalDeck}
                 setTopDeckModalDeck={setTopDeckModalDeck}
                 animateDiceRoll={animateDiceRoll}
-                activePlayerId={state.activePlayerId}
+                activePlayerId={activePlayerId}
                 style={{
                   left: relativeX,
                   top: relativeY
@@ -1895,7 +1898,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           onAction={executeMenuAction}
           onClose={() => setContextMenu(null)}
           allObjects={state.objects}
-          language={state.language}
+          language={language}
           shiftKey={contextMenu.shiftKey}
           nexusBoardEditingId={null} // Pool panels don't support Nexus Board editing
           contextMenuType="pool"
@@ -1911,7 +1914,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           deck={pileContextMenu.deck}
           onAction={executePileMenuAction}
           onClose={() => setPileContextMenu(null)}
-          language={state.language}
+          language={language}
         />
       )}
 
@@ -1925,7 +1928,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           }}
           onClose={() => setSettingsModalObj(null)}
           allObjects={state.objects}
-          language={state.language}
+          language={language}
           diceGroups={state.diceGroups}
           dispatch={dispatch}
         />
@@ -1940,7 +1943,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             setSearchModalDeck(null);
             setSearchModalPile(undefined);
           }}
-          language={state.language}
+          language={language}
         />
       )}
 
@@ -1949,7 +1952,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         <TopDeckModal
           deck={topDeckModalDeck}
           onClose={() => setTopDeckModalDeck(null)}
-          language={state.language}
+          language={language}
         />
       )}
 
@@ -1959,7 +1962,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           objectName={(state.objects[deleteCandidateId] as any)?.name || 'Object'}
           onConfirm={confirmDelete}
           onCancel={() => setDeleteCandidateId(null)}
-          language={state.language}
+          language={language}
         />
       )}
     </div>

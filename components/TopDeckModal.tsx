@@ -2,6 +2,7 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
+import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
 import { Deck, Card, CardPile, ContextAction, AppLanguage, TableObject } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
 import { logger } from '../utils/logger';
@@ -25,14 +26,16 @@ interface TopDeckModalProps {
 export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, language = 'en' }) => {
 
   const { state, dispatch } = useGame();
+  const pixelsPerVU = usePixelsPerVU();
+  const players = usePlayerList();
+  const activePlayerId = useActivePlayerId();
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
   // Get pixelsPerVU for converting vu to pixels
-  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
   const vuToPx = useCallback((vu: number) => vu * pixelsPerVU, [pixelsPerVU]);
 
-  const currentPlayerId = state.activePlayerId;
-  const currentPlayer = state.players.find(p => p.id === currentPlayerId);
+  const currentPlayerId = activePlayerId;
+  const currentPlayer = players.find(p => p.id === currentPlayerId);
   const isGM = currentPlayer?.isGM ?? false;
 
   const [cardOrder, setCardOrder] = useState<string[]>(deck.cardIds);
@@ -129,7 +132,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
       payload: {
         id: cardId,
         location: 'HAND' as any,
-        ownerId: state.activePlayerId,
+        ownerId: activePlayerId,
         isOnTable: false,
         faceUp: true
       } as any
@@ -138,7 +141,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
     const newCardOrder = cardOrder.filter(id => id !== cardId);
     dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: newCardOrder } });
     setCardOrder(newCardOrder);
-  }, [dispatch, state.activePlayerId, cardOrder, deck.id]);
+  }, [dispatch, activePlayerId, cardOrder, deck.id]);
 
   // Mill to Bottom - send card to bottom of deck
   const handleMillToBottom = useCallback((cardId: string) => {
@@ -496,7 +499,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
           x={contextMenu.x}
           y={contextMenu.y}
           object={contextMenu.object}
-          isGM={!!state.players.find(p => p.id === state.activePlayerId)?.isGM}
+          isGM={!!players.find(p => p.id === activePlayerId)?.isGM}
           onAction={executeMenuAction}
           onClose={() => setContextMenu(null)}
           allObjects={state.objects}

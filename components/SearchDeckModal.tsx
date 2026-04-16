@@ -2,6 +2,7 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
+import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
 import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, ItemType, Deck as DeckType, AppLanguage } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card as CardComponent } from './Card';
@@ -187,11 +188,13 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = [], l
 
 export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, onClose, language = 'en' }) => {
   const { state, dispatch } = useGame();
+  const pixelsPerVU = usePixelsPerVU();
+  const players = usePlayerList();
+  const activePlayerId = useActivePlayerId();
   const gmInitializedRef = useRef(false);
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
   // Get pixelsPerVU for converting vu to pixels
-  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
   const vuToPx = useCallback((vu: number) => vu * pixelsPerVU, [pixelsPerVU]);
 
   const [cardOrder, setCardOrder] = useState<string[]>(
@@ -212,8 +215,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   // Track modified faceUp states for this player (for LAST_STATE mode)
   const [playerFlipStates, setPlayerFlipStates] = useState<Record<string, boolean>>({});
 
-  const currentPlayerId = state.activePlayerId;
-  const currentPlayer = state.players.find(p => p.id === currentPlayerId);
+  const currentPlayerId = activePlayerId;
+  const currentPlayer = players.find(p => p.id === currentPlayerId);
   const isGM = currentPlayer?.isGM ?? false;
   const visibility = deck.searchWindowVisibility ?? SearchWindowVisibility.FACE_UP;
 
@@ -385,7 +388,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       payload: {
         id: cardId,
         location: 'HAND' as any,
-        ownerId: state.activePlayerId,
+        ownerId: activePlayerId,
         isOnTable: false,
         faceUp: true
       } as any
@@ -401,7 +404,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: newCardOrder } });
     }
     setCardOrder(newCardOrder);
-  }, [dispatch, state.activePlayerId, cardOrder, isPile, pile, deck]);
+  }, [dispatch, activePlayerId, cardOrder, isPile, pile, deck]);
 
   const handleActionButtonClick = useCallback((card: Card, action: ContextAction) => {
     switch (action) {
@@ -505,7 +508,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           payload: {
             id: object.id,
             location: 'HAND' as any,
-            ownerId: state.activePlayerId,
+            ownerId: activePlayerId,
             isOnTable: false,
             faceUp: true
           } as any
@@ -679,7 +682,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, deck.id, state.activePlayerId, cardOrder, isPile, pile, state.objects, deck]);
+  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, deck.id, activePlayerId, cardOrder, isPile, pile, state.objects, deck]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -854,7 +857,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           x={contextMenu.x}
           y={contextMenu.y}
           object={contextMenu.object}
-          isGM={!!state.players.find(p => p.id === state.activePlayerId)?.isGM}
+          isGM={!!players.find(p => p.id === activePlayerId)?.isGM}
           onAction={executeMenuAction}
           onClose={() => setContextMenu(null)}
           allObjects={state.objects}

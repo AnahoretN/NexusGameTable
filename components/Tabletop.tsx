@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
+import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, useHyperscaleLayers, useLayerSelection, useLanguage } from '../store/contexts';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { ItemType, CardLocation, TableObject, Card as CardType, Token, Token as TokenType, TokenType as TokenArchetype, DiceObject, Randomizer, Counter, TokenShape, GridType, CardPile, Deck as DeckType, CardOrientation, CardShape, PanelObject, PanelType, WindowObject, BattlefieldCell, Board, Board as BoardType, NexusBoard, NexusCellObject, HexDirection, ContextAction, ClickAction } from '../types';
 import { Card } from './Card';
@@ -51,23 +52,32 @@ import {
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
+  const { viewTransform } = useViewTransform();
   const { settings: localSettings, updateSetting } = useLocalSettings();
   const { setDraggingOver, clearDraggingOver } = useDragOverStore();
+
+  // PlayerContext hooks - using new contexts
+  const activePlayerId = useActivePlayerId();
+  const isGM = useIsGM();
+  const players = usePlayerList();
+  const hyperscaleLayers = useHyperscaleLayers();
+  const [selectedHyperscaleLayerIds, setLayerSelection] = useLayerSelection();
+  const language = useLanguage();
 
   // Ref to access dragOver state efficiently in mousemove handler
   const dragOverStoreRef = useRef<ReturnType<typeof useDragOverStore.getState> | null>(null);
 
   // Get the base pixelsPerVU conversion factor
-  const basePixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+  const basePixelsPerVU = viewTransform?.pixelsPerVU ?? 1.08;
   // Local zoom multiplier (100 = default, 150 = 50% larger objects, etc.)
   const zoomMultiplier = (localSettings.zoom ?? 100) / 100;
 
   // Helper to get zoom scale for a specific layer (returns 1 if zoom disabled for layer)
   const getLayerZoomScale = useCallback((layerId: string): number => {
-    const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+    const layer = hyperscaleLayers.find(l => l.id === layerId);
     const zoomEnabled = layer?.zoomEnabled ?? true;
     return zoomEnabled ? zoomMultiplier : 1;
-  }, [zoomMultiplier, state.hyperscaleLayers]);
+  }, [zoomMultiplier, hyperscaleLayers]);
 
   // Helper to get inverse scale for layers without zoom (to cancel out global zoom)
   const getLayerInverseScale = useCallback((layerId: string): number => {
@@ -996,9 +1006,6 @@ export const Tabletop: React.FC = () => {
     }
   }, [state.objects]);
 
-  const activePlayer = (state.players || []).find(p => p.id === state.activePlayerId);
-  const isGM = !!activePlayer?.isGM;
-
   // --- Grid Snapping Logic ---
   // Helper function to transform coordinates with board rotation
   const transformPointWithBoardRotation = (localX: number, localY: number, board: BoardType): { x: number, y: number } => {
@@ -1565,7 +1572,7 @@ export const Tabletop: React.FC = () => {
         break;
       case 'draw':
         if (obj.type === ItemType.DECK) {
-          dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: state.activePlayerId } });
+          dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: activePlayerId } });
         }
         break;
       case 'playTopCard':
@@ -1679,7 +1686,7 @@ export const Tabletop: React.FC = () => {
             payload: {
               id: obj.id,
               location: CardLocation.HAND,
-              ownerId: state.activePlayerId,
+              ownerId: activePlayerId,
               isOnTable: false
             }
           });
@@ -1740,10 +1747,10 @@ export const Tabletop: React.FC = () => {
             object: obj,
             dispatch,
             state,
-            activePlayerId: state.activePlayerId,
+            activePlayerId: activePlayerId,
             offset: { x: 0, y: 0 }, // Tabletop always uses 0,0 offset
             isShiftPressed,
-            isGM: state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false,
+            isGM: players.find(p => p.id === activePlayerId)?.isGM ?? false,
             isPoolPanel: false
           });
         }
@@ -1862,7 +1869,7 @@ export const Tabletop: React.FC = () => {
         }
         break;
     }
-  }, [dispatch, state.activePlayerId, state.objects, state.viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition, rollDiceWithGroup]);
+  }, [dispatch, activePlayerId, state.objects, viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition, rollDiceWithGroup]);
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
   const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'ctrl' | 'hold' = 'ctrl', mousePosition?: { x: number; y: number }) => {
@@ -2103,8 +2110,8 @@ export const Tabletop: React.FC = () => {
       // IMPORTANT: Use v2p to convert vu to pixels, and account for scroll position
       const itemCenterX = item.x + (item.width ?? 63) / 2;
       const itemCenterY = item.y + (item.height ?? 88) / 2;
-      const screenX = v2p(itemCenterX) - state.viewTransform.scroll.x;
-      const screenY = v2p(itemCenterY) - state.viewTransform.scroll.y;
+      const screenX = v2p(itemCenterX) - viewTransform.scroll.x;
+      const screenY = v2p(itemCenterY) - viewTransform.scroll.y;
       // Set cursor position to object center on screen
       cursorPositionRef.current = { x: screenX, y: screenY };
       setCursorPosition({ x: screenX, y: screenY });
@@ -2168,7 +2175,7 @@ export const Tabletop: React.FC = () => {
         }
       }
     }
-  }, [cursorSlot.length, dispatch, v2p, state.viewTransform, state.objects, cursorSlotRef]);
+  }, [cursorSlot.length, dispatch, v2p, viewTransform, state.objects, cursorSlotRef]);
 
   // Drop all items from cursor slot at specified screen coordinates
   const dropCursorSlot = useCallback((clientX: number, clientY: number, slotItems?: (CardType | TokenType | BoardType)[]) => {
@@ -2205,8 +2212,8 @@ export const Tabletop: React.FC = () => {
     // Not dropping on a deck - drop items on tabletop
     // Convert screen coordinates to world coordinates
     // clientX/Y are viewport coordinates, add scroll position to get world-relative position
-    const scrollX = state.viewTransform.scroll.x;
-    const scrollY = state.viewTransform.scroll.y;
+    const scrollX = viewTransform.scroll.x;
+    const scrollY = viewTransform.scroll.y;
     const worldX = p2v(clientX + scrollX);
     const worldY = p2v(clientY + scrollY);
 
@@ -2440,7 +2447,7 @@ export const Tabletop: React.FC = () => {
       }
 
       // Clamp zIndex to hyperscale layer bounds
-      const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
+      const itemLayer = hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
       const minZ = itemLayer?.minZIndex ?? 1;
       const maxZ = itemLayer?.maxZIndex ?? 10000;
 
@@ -2694,7 +2701,7 @@ export const Tabletop: React.FC = () => {
     // Set flag to prevent immediate re-pickup
     justDroppedRef.current = true;
     lastDropTimeRef.current = Date.now();
-  }, [cursorSlot, cursorSlotSource, p2v, state.viewTransform, state.objects, state.hyperscaleLayers, dispatch, getCardSettings, getSnappedCoordinates]);
+  }, [cursorSlot, cursorSlotSource, p2v, viewTransform, state.objects, hyperscaleLayers, dispatch, getCardSettings, getSnappedCoordinates]);
 
   // Listen for drop-cursor-slot-at-position events (from drag-to-place in ToolsPanel)
   useEffect(() => {
@@ -2816,7 +2823,7 @@ export const Tabletop: React.FC = () => {
         const offsetY = offsetFromFront * offsetAmount;
 
         // Clamp zIndex to hyperscale layer bounds
-        const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
+        const itemLayer = hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
         const maxZ = itemLayer?.maxZIndex ?? 10000;
         const originalZIndex = (item as any).originalZIndex ?? item.zIndex ?? 0;
         const relativeZ = originalZIndex - minOriginalZ;
@@ -2946,7 +2953,7 @@ export const Tabletop: React.FC = () => {
         const offsetY = offsetFromFront * offsetAmount;
 
         // Clamp zIndex to hyperscale layer bounds
-        const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
+        const itemLayer = hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
         const minZ = itemLayer?.minZIndex ?? 1;
         const maxZ = itemLayer?.maxZIndex ?? 10000;
 
@@ -3310,7 +3317,7 @@ export const Tabletop: React.FC = () => {
           if (panelObj && panelObj.poolData) {
             const poolZone = createPoolZoneFromPanel(panelObj.poolData);
             const panelRect = poolPanel.getBoundingClientRect();
-            const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+            const pixelsPerVU = viewTransform?.pixelsPerVU ?? 1.08;
 
             // Calculate drop position using utility function
             const dropPosition = calculatePoolDropPosition(
@@ -3611,7 +3618,7 @@ export const Tabletop: React.FC = () => {
             // regardless of where the object came from (same panel, different panel, or tabletop)
             const poolZone = createPoolZoneFromPanel(panelObj.poolData);
             const panelRect = poolPanel.getBoundingClientRect();
-            const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
+            const pixelsPerVU = viewTransform?.pixelsPerVU ?? 1.08;
 
             // Calculate drop position using utility function
             const dropPosition = calculatePoolDropPosition(
@@ -4074,7 +4081,7 @@ export const Tabletop: React.FC = () => {
                 dispatch({
                   type: 'UPDATE_PLAYER_PANEL_SETTINGS',
                   payload: {
-                    playerId: state.activePlayerId,
+                    playerId: activePlayerId,
                     panelId: otherPanel.id,
                     settings: { zIndex: newZ }
                   }
@@ -4099,7 +4106,7 @@ export const Tabletop: React.FC = () => {
               dispatch({
                 type: 'UPDATE_PLAYER_PANEL_SETTINGS',
                 payload: {
-                  playerId: state.activePlayerId,
+                  playerId: activePlayerId,
                   panelId: id,
                   settings: { zIndex: draggedPanelNewZ }
                 }
@@ -4120,7 +4127,7 @@ export const Tabletop: React.FC = () => {
         // Mark object as being dragged by local player (shows as shadow/locked to others)
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id, draggingPlayerId: state.activePlayerId, broadcastX: item.x, broadcastY: item.y }
+          payload: { id, draggingPlayerId: activePlayerId, broadcastX: item.x, broadcastY: item.y }
         });
         return;
       }
@@ -4165,11 +4172,11 @@ export const Tabletop: React.FC = () => {
       // This applies to all players including GM
       // EXCEPTION: Objects in current player's cursor slot can always be moved
       // EXCEPTION: Objects in pool zones can always be moved (ignore hyperscale restrictions)
-      const isInCursorSlot = item.draggingPlayerId === state.activePlayerId || (item as any).inCursorSlot;
+      const isInCursorSlot = item.draggingPlayerId === activePlayerId || (item as any).inCursorSlot;
       const isInPoolZone = item.x >= 2500; // Simple check if object is in pool zone
       if (!isInCursorSlot && !isInPoolZone) {
         const objLayer = item.hyperscaleLayerId || 'none';
-        const selectedLayers = state.selectedHyperscaleLayerIds;
+        const selectedLayers = selectedHyperscaleLayerIds;
         const layerAllowed = objLayer === 'none' || selectedLayers.includes(objLayer);
         if (!layerAllowed) {
           return; // Object is in a non-selected hyperscale layer
@@ -4270,7 +4277,7 @@ export const Tabletop: React.FC = () => {
         // Their position is updated in both x/y and pinnedScreenPosition
 
         // Bring dragged object to front (clamped to its hyperscale layer's maxZ)
-        const itemLayer = state.hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
+        const itemLayer = hyperscaleLayers.find(l => l.id === item.hyperscaleLayerId);
         const maxZ = itemLayer?.maxZIndex ?? 10000;
         dispatch({
           type: 'UPDATE_OBJECT',
@@ -4302,8 +4309,8 @@ export const Tabletop: React.FC = () => {
           // Unpinned objects: use world coordinates
           // Convert viewport coordinates to world coordinates
           // Add scroll position to account for panning
-          const mouseWorldX = p2v(e.clientX + state.viewTransform.scroll.x);
-          const mouseWorldY = p2v(e.clientY + state.viewTransform.scroll.y);
+          const mouseWorldX = p2v(e.clientX + viewTransform.scroll.x);
+          const mouseWorldY = p2v(e.clientY + viewTransform.scroll.y);
 
           offsetX = mouseWorldX - item.x;
           offsetY = mouseWorldY - item.y;
@@ -4318,11 +4325,11 @@ export const Tabletop: React.FC = () => {
         // Mark object as being dragged by local player (shows as shadow/locked to others)
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id, draggingPlayerId: state.activePlayerId, broadcastX: item.x, broadcastY: item.y }
+          payload: { id, draggingPlayerId: activePlayerId, broadcastX: item.x, broadcastY: item.y }
         });
       }
     }
-  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, state.activePlayerId, state.selectedHyperscaleLayerIds, dispatch, addToCursorSlot, offset, setDraggingId, setIsPanning]);
+  }, [contextMenu, currentTool, cursorSlot, cursorSlotSource, dropCursorSlot, isGM, state.objects, activePlayerId, selectedHyperscaleLayerIds, dispatch, addToCursorSlot, offset, setDraggingId, setIsPanning]);
 
   // Handle click on battlefield cell for magnetism control
   // Shift+click: add magnet point
@@ -4521,8 +4528,8 @@ export const Tabletop: React.FC = () => {
       // Always update position - the world coordinates work correctly even when cursor is outside
       // Convert viewport coordinates to world coordinates
       // Add scroll position to account for panning
-      const mouseWorldX = p2v(e.clientX + state.viewTransform.scroll.x);
-      const mouseWorldY = p2v(e.clientY + state.viewTransform.scroll.y);
+      const mouseWorldX = p2v(e.clientX + viewTransform.scroll.x);
+      const mouseWorldY = p2v(e.clientY + viewTransform.scroll.y);
 
       // Use the offset to position the object relative to cursor
       const targetX = mouseWorldX - (dragOffsetRef.current?.x || 0);
@@ -4586,8 +4593,8 @@ export const Tabletop: React.FC = () => {
 
     // Handle pile dragging (for free-position piles)
     if (draggingPile && pileDragStartRef.current) {
-      const mouseWorldX = p2v(e.clientX + state.viewTransform.scroll.x);
-      const mouseWorldY = p2v(e.clientY + state.viewTransform.scroll.y);
+      const mouseWorldX = p2v(e.clientX + viewTransform.scroll.x);
+      const mouseWorldY = p2v(e.clientY + viewTransform.scroll.y);
 
       // Calculate new position based on drag start offset
       const newX = mouseWorldX - pileDragStartRef.current.x;
@@ -4606,7 +4613,7 @@ export const Tabletop: React.FC = () => {
         _localOnly: true // Don't send over network during drag
       });
     }
-  }, [isPanning, resizingId, resizeStart, state.activePlayerId, draggingId, draggingPile, offset, dispatch, cursorSlot, isPointInRotatedRect, currentTool, rulerStart, scrollContainerRef, pixelsPerVU, addToCursorSlot, throttledResizeUpdate, syncResizeToNetwork]);
+  }, [isPanning, resizingId, resizeStart, activePlayerId, draggingId, draggingPile, offset, dispatch, cursorSlot, isPointInRotatedRect, currentTool, rulerStart, scrollContainerRef, pixelsPerVU, addToCursorSlot, throttledResizeUpdate, syncResizeToNetwork]);
 
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
     // Clear long-press timer if mouse is released before timeout
@@ -5059,8 +5066,8 @@ export const Tabletop: React.FC = () => {
             });
           } else {
             // Pin - calculate screen position
-            const screenX = (obj.x * state.viewTransform.zoom) + offset.x;
-            const screenY = (obj.y * state.viewTransform.zoom) + offset.y;
+            const screenX = (obj.x * viewTransform.zoom) + offset.x;
+            const screenY = (obj.y * viewTransform.zoom) + offset.y;
 
             dispatch({
               type: 'PIN_TO_VIEWPORT',
@@ -5316,15 +5323,15 @@ export const Tabletop: React.FC = () => {
       try {
         // Get current scroll and zoom values
         const scrollContainer = scrollContainerRef.current;
-        const currentScrollX = scrollContainer?.scrollLeft || state.viewTransform.scroll.x;
-        const currentScrollY = scrollContainer?.scrollTop || state.viewTransform.scroll.y;
+        const currentScrollX = scrollContainer?.scrollLeft || viewTransform.scroll.x;
+        const currentScrollY = scrollContainer?.scrollTop || viewTransform.scroll.y;
         const currentZoom = (localSettings.zoom ?? 100) / 100;
 
         executeContextMenuAction(action, {
           object: freshObject,
           dispatch,
           state,
-          activePlayerId: state.activePlayerId,
+          activePlayerId: activePlayerId,
           offset,
           scrollX: currentScrollX,
           scrollY: currentScrollY,
@@ -5399,7 +5406,7 @@ export const Tabletop: React.FC = () => {
                   payload: {
                       pileId: pile.id,
                       deckId: deck.id,
-                      playerId: state.activePlayerId
+                      playerId: activePlayerId
                   }
               });
               setPileContextMenu(null);
@@ -5444,7 +5451,7 @@ export const Tabletop: React.FC = () => {
           }
           // Exclude objects being dragged by another player (rendered separately as shadow if effect enabled)
           const draggingPlayerId = (obj as any).draggingPlayerId;
-          if (draggingPlayerId && draggingPlayerId !== state.activePlayerId) return false;
+          if (draggingPlayerId && draggingPlayerId !== activePlayerId) return false;
           if (!obj.isOnTable) return false;
           if (obj.type === ItemType.CARD) {
             const card = obj as CardType;
@@ -5473,8 +5480,8 @@ export const Tabletop: React.FC = () => {
       })
       .sort((a, b) => {
           // First, sort by hyperscale layer order (boards < cards < tokens < interface)
-          const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
-          const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
+          const layerA = hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
+          const layerB = hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
           const orderA = layerA?.order ?? 2;
           const orderB = layerB?.order ?? 2;
           if (orderA !== orderB) return orderA - orderB;
@@ -5493,7 +5500,7 @@ export const Tabletop: React.FC = () => {
 
           return 0;
       });
-  }, [state.objects, state.hyperscaleLayers, isGM]);
+  }, [state.objects, hyperscaleLayers, isGM]);
 
   // Objects that are in another player's cursor slot (inCursorSlot=true but not in my local cursorSlot)
   // These are rendered as darkened/semi-transparent and non-interactive
@@ -5531,14 +5538,14 @@ export const Tabletop: React.FC = () => {
       })
       .sort((a, b) => {
           // Sort by hyperscale layer order first, then by zIndex
-          const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
-          const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
+          const layerA = hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
+          const layerB = hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
           const orderA = layerA?.order ?? 2;
           const orderB = layerB?.order ?? 2;
           if (orderA !== orderB) return orderA - orderB;
           return (a.zIndex ?? 0) - (b.zIndex ?? 0);
       });
-  }, [state.objects, state.hyperscaleLayers, cursorSlot, recentlyInMyCursorSlot, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
+  }, [state.objects, hyperscaleLayers, cursorSlot, recentlyInMyCursorSlot, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
 
   // Objects that are being dragged by another player (draggingPlayerId is set but not by local player)
   // These are rendered as darkened/semi-transparent and non-interactive (if effect enabled)
@@ -5554,7 +5561,7 @@ export const Tabletop: React.FC = () => {
         const draggingPlayerId = (obj as any).draggingPlayerId;
         if (!draggingPlayerId) return false;
         // Must NOT be dragged by local player
-        if (draggingPlayerId === state.activePlayerId) return false;
+        if (draggingPlayerId === activePlayerId) return false;
         // Must be on table
         if (!(obj as any).isOnTable) return false;
         if (obj.type === ItemType.CARD) {
@@ -5568,14 +5575,14 @@ export const Tabletop: React.FC = () => {
       })
       .sort((a, b) => {
           // Sort by hyperscale layer order first, then by zIndex
-          const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
-          const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
+          const layerA = hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'tokens'));
+          const layerB = hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'tokens'));
           const orderA = layerA?.order ?? 2;
           const orderB = layerB?.order ?? 2;
           if (orderA !== orderB) return orderA - orderB;
           return (a.zIndex ?? 0) - (b.zIndex ?? 0);
       });
-  }, [state.objects, state.hyperscaleLayers, state.activePlayerId, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
+  }, [state.objects, hyperscaleLayers, activePlayerId, isGM, localSettings.effects.showRemoteCursorSlotObjects]);
 
   // UI objects (panels and windows) - separate from game objects
   const uiObjects = useMemo(() => {
@@ -5586,7 +5593,7 @@ export const Tabletop: React.FC = () => {
         if (obj.type === ItemType.WINDOW) {
           const windowObj = obj as WindowObject;
           // Filter out windows owned by other players
-          if (windowObj.ownerId && windowObj.ownerId !== state.activePlayerId) {
+          if (windowObj.ownerId && windowObj.ownerId !== activePlayerId) {
             return false;
           }
           return windowObj.visible !== false;
@@ -5598,14 +5605,14 @@ export const Tabletop: React.FC = () => {
       })
       .sort((a, b) => {
           // Sort by hyperscale layer order first, then by zIndex
-          const layerA = state.hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'interface'));
-          const layerB = state.hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'interface'));
+          const layerA = hyperscaleLayers.find(l => l.id === (a.hyperscaleLayerId || 'interface'));
+          const layerB = hyperscaleLayers.find(l => l.id === (b.hyperscaleLayerId || 'interface'));
           const orderA = layerA?.order ?? 3;
           const orderB = layerB?.order ?? 3;
           if (orderA !== orderB) return orderA - orderB;
           return (a.zIndex || 1000) - (b.zIndex || 1000);
       });
-  }, [state.objects, state.hyperscaleLayers, state.activePlayerId]);
+  }, [state.objects, hyperscaleLayers, activePlayerId]);
 
   // Split UI objects into pinned and unpinned for separate rendering
   const pinnedUIObjects = useMemo(() => {
@@ -5625,10 +5632,10 @@ export const Tabletop: React.FC = () => {
         if ((obj as any).isPinnedToViewport !== true) return false;
         // Exclude decks being dragged by other players (shown as shadow in remoteDraggingObjects if effect enabled)
         const draggingPlayerId = (obj as any).draggingPlayerId;
-        if (draggingPlayerId && draggingPlayerId !== state.activePlayerId) return false;
+        if (draggingPlayerId && draggingPlayerId !== activePlayerId) return false;
         return true;
       });
-  }, [state.objects, state.activePlayerId]);
+  }, [state.objects, activePlayerId]);
 
   const unpinnedDecks = useMemo(() => {
     return (Object.values(state.objects) as TableObject[])
@@ -5638,10 +5645,10 @@ export const Tabletop: React.FC = () => {
         if ((obj as any).isPinnedToViewport === true) return false;
         // Exclude decks being dragged by other players (shown as shadow in remoteDraggingObjects if effect enabled)
         const draggingPlayerId = (obj as any).draggingPlayerId;
-        if (draggingPlayerId && draggingPlayerId !== state.activePlayerId) return false;
+        if (draggingPlayerId && draggingPlayerId !== activePlayerId) return false;
         return true;
       });
-  }, [state.objects, state.activePlayerId]);
+  }, [state.objects, activePlayerId]);
 
   const worldBounds = useMemo(() => {
     // For scrollbars: show only playable area (5000×5000) as if that's the entire world
@@ -5711,7 +5718,7 @@ export const Tabletop: React.FC = () => {
         dispatch({
           type: 'UPDATE_VIEW_TRANSFORM',
           payload: {
-            ...state.viewTransform,
+            ...viewTransform,
             scroll: { x: scrollLeft, y: scrollTop }
           }
         });
@@ -5800,11 +5807,11 @@ export const Tabletop: React.FC = () => {
             const card = state.objects[cardId] as CardType;
             if (card.type === ItemType.CARD && card.location === CardLocation.HAND) {
                 // Calculate world position for the card
-                const worldX = p2v(e.clientX + state.viewTransform.scroll.x) - (card.width ?? 100) / 2;
-                const worldY = p2v(e.clientY + state.viewTransform.scroll.y) - (card.height ?? 140) / 2;
+                const worldX = p2v(e.clientX + viewTransform.scroll.x) - (card.width ?? 100) / 2;
+                const worldY = p2v(e.clientY + viewTransform.scroll.y) - (card.height ?? 140) / 2;
 
                 // Clamp zIndex to card's hyperscale layer's maxZ
-                const cardLayer = state.hyperscaleLayers.find(l => l.id === card.hyperscaleLayerId);
+                const cardLayer = hyperscaleLayers.find(l => l.id === card.hyperscaleLayerId);
                 const maxZ = cardLayer?.maxZIndex ?? 10000;
 
                 // Cards on table get max zIndex of their layer (same as dragging)
@@ -5868,8 +5875,8 @@ export const Tabletop: React.FC = () => {
         <DrawingCanvas
           width={worldBounds.width}
           height={worldBounds.height}
-          offsetX={state.viewTransform.scroll.x}
-          offsetY={state.viewTransform.scroll.y}
+          offsetX={viewTransform.scroll.x}
+          offsetY={viewTransform.scroll.y}
           cursorSlotLength={cursorSlot.length}
         />
 
@@ -6443,7 +6450,7 @@ export const Tabletop: React.FC = () => {
 
             {/* All objects in unified space */}
             {tableObjects.map((obj) => {
-                const isOwner = !(obj as any).ownerId || (obj as any).ownerId === state.activePlayerId || isGM;
+                const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
                 // Only show grab cursor for unlocked objects that can be dragged
                 // Dice always use default cursor since they're not draggable by mouse in main tabletop
                 const isDice = obj.type === ItemType.DICE_OBJECT;
@@ -6453,7 +6460,7 @@ export const Tabletop: React.FC = () => {
                 // Calculate global z-index using layer's minZIndex as base
                 // This ensures tokens (3001-6000) always render above boards (1-1000)
                 // When dragging, use very high z-index to appear above everything else
-                const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+                const layer = hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
                 const layerMinZ = layer?.minZIndex ?? 3001;
                 const isDragging = draggingId === obj.id;
                 const globalZIndex = isDragging ? 999999 : layerMinZ + (obj.zIndex ?? 0);
@@ -6480,8 +6487,8 @@ export const Tabletop: React.FC = () => {
                         >
                             {(() => {
                                 const objLayer = obj.hyperscaleLayerId || 'none';
-                                const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
-                                const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                                const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+                                const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
                                 const isPermeable = hasSelectedLayers && !isLayerSelected;
 
                                 return (
@@ -6582,8 +6589,8 @@ export const Tabletop: React.FC = () => {
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
                     const objLayer = obj.hyperscaleLayerId || 'none';
-                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
-                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
                     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
                     // Flexible hexagon grid
@@ -6743,8 +6750,8 @@ export const Tabletop: React.FC = () => {
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
                     const objLayer = obj.hyperscaleLayerId || 'none';
-                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
-                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
                     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
                     return (
@@ -6994,8 +7001,8 @@ export const Tabletop: React.FC = () => {
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
                     const objLayer = obj.hyperscaleLayerId || 'none';
-                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
-                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
                     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
                     return (
@@ -7211,8 +7218,8 @@ export const Tabletop: React.FC = () => {
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
                     const objLayer = obj.hyperscaleLayerId || 'none';
-                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
-                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
                     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
                     return (
@@ -7323,8 +7330,8 @@ export const Tabletop: React.FC = () => {
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
                     const objLayer = obj.hyperscaleLayerId || 'none';
-                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
-                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
                     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
                     return (
@@ -7479,8 +7486,8 @@ export const Tabletop: React.FC = () => {
 
                     // Check if object's layer is selected - if not, make it permeable to clicks
                     const objLayer = obj.hyperscaleLayerId || 'none';
-                    const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
-                    const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+                    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
                     // Objects in non-selected layers are permeable (let clicks pass through)
                     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
@@ -7528,12 +7535,12 @@ export const Tabletop: React.FC = () => {
                                   onActionButtonClick={(action) => {
                                     const context: ActionButtonsHandlerContext = {
                                       dispatch,
-                                      activePlayerId: state.activePlayerId,
+                                      activePlayerId: activePlayerId,
                                       objects: state.objects
                                     };
                                     executeActionButtonUniversal(obj, action, context);
                                   }}
-                                language={state.language}
+                                language={language}
                             />
                             </div>
                         </div>
@@ -7550,7 +7557,7 @@ export const Tabletop: React.FC = () => {
 
                 // Calculate global z-index for decks (cards layer: 1001-3000)
                 // When dragging, use very high z-index to appear above everything else
-                const layer = state.hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
+                const layer = hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
                 const layerMinZ = layer?.minZIndex ?? 1001;
                 const isDraggingDeck = draggingId === deckObj.id;
                 const globalZIndex = isDraggingDeck ? 999999 : layerMinZ + (deckObj.zIndex ?? 0);
@@ -7641,7 +7648,7 @@ export const Tabletop: React.FC = () => {
 
                 // Calculate global z-index for decks (cards layer: 1001-3000)
                 // When dragging, use very high z-index to appear above everything else
-                const layer = state.hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
+                const layer = hyperscaleLayers.find(l => l.id === (deckObj.hyperscaleLayerId || 'cards'));
                 const layerMinZ = layer?.minZIndex ?? 1001;
                 const isDraggingDeck = draggingId === deckObj.id;
                 const globalZIndex = isDraggingDeck ? 999999 : layerMinZ + (deckObj.zIndex ?? 0);
@@ -7718,8 +7725,8 @@ export const Tabletop: React.FC = () => {
 
                 // Check if object's layer is selected - if not, make it permeable to clicks
                 const objLayer = obj.hyperscaleLayerId || 'none';
-                const hasSelectedLayers = state.selectedHyperscaleLayerIds.length > 0;
-                const isLayerSelected = objLayer === 'none' || state.selectedHyperscaleLayerIds.includes(objLayer);
+                const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+                const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
                 const isPermeable = hasSelectedLayers && !isLayerSelected;
 
                 // Render dice
@@ -7950,7 +7957,7 @@ export const Tabletop: React.FC = () => {
                 onAction={executeMenuAction}
                 onClose={() => setContextMenu(null)}
                 allObjects={state.objects}
-                language={state.language}
+                language={language}
                 shiftKey={contextMenu.shiftKey}
                 nexusBoardEditingId={nexusBoardAddingCell}
                 contextMenuType="tabletop"
@@ -7961,7 +7968,7 @@ export const Tabletop: React.FC = () => {
             <ObjectSettingsModal
                 object={settingsModalObj}
                 allObjects={state.objects}
-                language={state.language}
+                language={language}
                 onClose={() => setSettingsModalObj(null)}
                 onSave={(updatedObj) => {
                     // If updating a deck with sprite config, generate cards from sprite
@@ -8061,7 +8068,7 @@ export const Tabletop: React.FC = () => {
                 objectName={(state.objects[deleteCandidateId] as any)?.name || 'Object'}
                 onConfirm={confirmDelete}
                 onCancel={() => setDeleteCandidateId(null)}
-                language={state.language}
+                language={language}
             />
         )}
 
@@ -8074,7 +8081,7 @@ export const Tabletop: React.FC = () => {
                 deck={pileContextMenu.deck}
                 onAction={executePileMenuAction}
                 onClose={() => setPileContextMenu(null)}
-                language={state.language}
+                language={language}
             />
         )}
 
@@ -8136,7 +8143,7 @@ export const Tabletop: React.FC = () => {
                     setSearchModalDeck(null);
                     setSearchModalPile(undefined);
                 }}
-                language={state.language}
+                language={language}
             />
         )}
 
@@ -8144,7 +8151,7 @@ export const Tabletop: React.FC = () => {
             <TopDeckModal
                 deck={topDeckModalDeck}
                 onClose={() => setTopDeckModalDeck(null)}
-                language={state.language}
+                language={language}
             />
         )}
 
@@ -8154,7 +8161,7 @@ export const Tabletop: React.FC = () => {
             cursorPosition={cursorPosition}
             cursorPositionRef={cursorPositionRef}
             pixelsPerVU={pixelsPerVU}
-            zoom={state.viewTransform.zoom}
+            zoom={viewTransform.zoom}
             state={state}
             getCardSettings={getCardSettings}
         />

@@ -4,6 +4,7 @@ import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, Car
 import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, RotateCcw, Pin, ImageDown, CornerDownRight, Check, Plus } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 import { useGame } from '../store/GameContext';
+import { useHyperscaleLayers } from '../store/contexts';
 
 interface ContextMenuProps {
   x: number;
@@ -34,6 +35,7 @@ interface MenuItem {
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey: _shiftKey, contextMenuType = 'tabletop' }) => {
   const { state } = useGame();
+  const hyperscaleLayers = useHyperscaleLayers();
 
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
@@ -580,7 +582,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       hasSubmenu: true,
       submenuItems: (() => {
         // Get hyperscale layers, sorted by reverse order (higher maxZIndex = higher in list)
-        const sortedLayers = [...state.hyperscaleLayers]
+        const sortedLayers = [...hyperscaleLayers]
           .sort((a, b) => b.maxZIndex - a.maxZIndex);
 
         // Check if player/GM can see this layer in context menu

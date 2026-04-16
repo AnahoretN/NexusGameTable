@@ -4,6 +4,7 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
+import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerPermissions, useLanguage, useHyperscaleLayers, useSelectedLayers } from '../store/contexts';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM, isGM } from '../utils/playerUtils';
@@ -68,8 +69,17 @@ interface MainMenuContentProps {
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const { state, dispatch, peerId } = useGame();
+  const { viewTransform } = useViewTransform();
   const { settings: localSettings, updateSetting } = useLocalSettings();
-  const language: AppLanguage = state.language || 'en';
+
+  // PlayerContext hooks - using new contexts
+  const activePlayerId = useActivePlayerId();
+  const isGM = useIsGM();
+  const players = usePlayerList();
+  const playerPermissions = usePlayerPermissions();
+  const language = useLanguage();
+  const hyperscaleLayers = useHyperscaleLayers();
+  const selectedLayersFromContext = useSelectedLayers();
 
   // Translation helper - must be memoized to update when language changes
   const t = useMemo(() => (key: { en: string; ru: string; be?: string; uk?: string; sr?: string }): string => {
@@ -258,7 +268,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     }));
   };
 
-  const currentUserIsGM = state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
+  const currentUserIsGM = players.find(p => p.id === activePlayerId)?.isGM ?? false;
 
   // Get main menu panel for bounds and minimized state
   const mainMenuPanel = useMemo(() => {
@@ -753,12 +763,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 deleteCandidateId={deleteCandidateId}
                 setDeleteCandidateId={setDeleteCandidateId}
                 isGM={currentUserIsGM}
-                canCreateObjects={currentUserIsGM || state.playerPermissions.createObjects}
-                canConfigureObjects={currentUserIsGM || state.playerPermissions.configureObjects}
-                canDeleteObjects={currentUserIsGM || state.playerPermissions.deleteObjects}
-                canHideObjects={currentUserIsGM || state.playerPermissions.hideObjects}
-                language={state.language}
+                canCreateObjects={currentUserIsGM || playerPermissions.createObjects}
+                canConfigureObjects={currentUserIsGM || playerPermissions.configureObjects}
+                canDeleteObjects={currentUserIsGM || playerPermissions.deleteObjects}
+                canHideObjects={currentUserIsGM || playerPermissions.hideObjects}
+                language={language}
                 isShiftPressed={isShiftPressed}
+                viewTransform={viewTransform}
               />
             ))}
           </div>
@@ -1004,17 +1015,17 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{translate('Active Players', language as Locale)}</h3>
-              {state.players
+              {players
                 .map(p => {
-                  const isCurrentPlayer = p.id === state.activePlayerId;
-                  const gameMaster = findGM(state.players);
+                  const isCurrentPlayer = p.id === activePlayerId;
+                  const gameMaster = findGM(players);
                   const isGameMaster = p.id === gameMaster?.id;
-                  const currentPlayerObj = state.players.find(pl => pl.id === state.activePlayerId);
-                  const isGMView = isGM(currentPlayerObj);
+                  const currentPlayerObj = players.find(pl => pl.id === activePlayerId);
+                  const isGMView = currentPlayerObj?.isGM || false;
 
                   // Check if current user is the host (can switch between GM and GM Player modes)
                   // Host is defined as the user who is currently using the GM account (either 'gm' or 'gm-player' mode)
-                  const isHostUser = isGMView || state.activePlayerId === 'gm-player';
+                  const isHostUser = isGMView || activePlayerId === 'gm-player';
 
                   // Determine which buttons to show
                   let showSwitchButton = false;
@@ -1089,8 +1100,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             dispatch({ type: 'UPDATE_PLAYER_NAME', payload: { playerId: renamePlayerId, name: newName } });
             setRenamePlayerId(null);
           }}
-          defaultName={state.players.find(p => p.id === renamePlayerId)?.name || 'Player'}
-          title={renamePlayerId === state.activePlayerId ? 'Edit Your Name' : 'Edit Player Name'}
+          defaultName={players.find(p => p.id === renamePlayerId)?.name || 'Player'}
+          title={renamePlayerId === activePlayerId ? 'Edit Your Name' : 'Edit Player Name'}
         />
       )}
 
@@ -1199,7 +1210,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   </label>
                   <input
                     type="text"
-                    defaultValue={state.players.find(p => p.id === state.activePlayerId)?.name || 'Host'}
+                    defaultValue={players.find(p => p.id === activePlayerId)?.name || 'Host'}
                     id="host-name-input"
                     className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
                   />
@@ -1530,6 +1541,7 @@ interface CategorySectionProps {
   canHideObjects: boolean;
   language: AppLanguage;
   isShiftPressed: boolean;
+  viewTransform: any;
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({
@@ -1545,6 +1557,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   canHideObjects,
   language,
   isShiftPressed,
+  viewTransform,
 }) => {
   // Load expanded state from localStorage, default to false (collapsed)
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -1584,9 +1597,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
     // Convert screen coordinates to world coordinates (in pixels first)
     // Objects are rendered inside transform container with: translate(offset.x, offset.y) scale(zoom)
-    const zoom = state.viewTransform.zoom;
-    const offsetX = state.viewTransform.offset.x;
-    const offsetY = state.viewTransform.offset.y;
+    const zoom = viewTransform.zoom;
+    const offsetX = viewTransform.offset.x;
+    const offsetY = viewTransform.offset.y;
 
     const worldX_px = (screenX - offsetX) / zoom;
     const worldY_px = (screenY - offsetY) / zoom;
@@ -1844,17 +1857,15 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         let targetLayerId: string | undefined;
 
         // First priority: 'boards' layer if it exists
-        const boardsLayer = state.hyperscaleLayers.find(l => l.id === 'boards');
+        const boardsLayer = hyperscaleLayers.find(l => l.id === 'boards');
         if (boardsLayer) {
           targetLayerId = 'boards';
-        } else if (state.selectedHyperscaleLayerIds.length > 0) {
+        } else if (selectedLayersFromContext.length > 0) {
           // Second priority: use the top-most selected layer
           // Sort selected layers by order (lower = higher priority) and pick the first
-          const selectedLayers = state.hyperscaleLayers.filter(l =>
-            state.selectedHyperscaleLayerIds.includes(l.id)
-          ).sort((a, b) => a.order - b.order);
-          if (selectedLayers.length > 0) {
-            targetLayerId = selectedLayers[0].id;
+          const sortedSelectedLayers = [...selectedLayersFromContext].sort((a, b) => a.order - b.order);
+          if (sortedSelectedLayers.length > 0) {
+            targetLayerId = sortedSelectedLayers[0].id;
           }
         }
 
@@ -1888,11 +1899,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       case 'NEXUS_BOARD': {
         // Find target hyperscale layer
         let targetLayerId: string | undefined = undefined;
-        const selectedLayers = state.hyperscaleLayers.filter(l =>
-          state.selectedHyperscaleLayerIds.includes(l.id)
-        ).sort((a, b) => a.order - b.order);
-        if (selectedLayers.length > 0) {
-          targetLayerId = selectedLayers[0].id;
+        const sortedSelectedLayers = [...selectedLayersFromContext].sort((a, b) => a.order - b.order);
+        if (sortedSelectedLayers.length > 0) {
+          targetLayerId = sortedSelectedLayers[0].id;
         }
 
         const boardId = generateUUID();

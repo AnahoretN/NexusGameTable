@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
+import { usePlayerList, useActivePlayerId, useIsGM } from '../store/contexts';
 import { PanelObject, PoolPanelData, PanelTab, AppLanguage, ItemType } from '../types';
 import { Plus, Trash2, Lock, X } from 'lucide-react';
 import { PoolTabletopOptimized as PoolTabletop } from './PoolTabletopOptimized';
@@ -18,6 +19,9 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   language = 'en'
 }) => {
   const { state, dispatch } = useGame();
+  const players = usePlayerList();
+  const activePlayerId = useActivePlayerId();
+  const isGM = useIsGM();
 
   // Get pool data from panel - use latest from state to ensure reactivity
   const panelObject = state.objects[panel.id] as PanelObject | undefined;
@@ -111,8 +115,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   }, [poolData, panel.id, dispatch, state.objects]);
 
   // Get current player info
-  const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
-  const isGM = currentPlayer?.isGM ?? false;
+  const currentPlayer = players.find(p => p.id === activePlayerId);
 
   // Active tab
   const activeTab = useMemo(() => {
@@ -172,31 +175,31 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
     if (isGM) return true;
 
     // Check if player is in visible list
-    if (activeTab.visibleToPlayerIds.includes(state.activePlayerId)) return true;
+    if (activeTab.visibleToPlayerIds.includes(activePlayerId)) return true;
     if (activeTab.visibleToPlayerIds.includes('all_players')) return true;
 
     return false;
-  }, [activeTab, isGM, state.activePlayerId, poolData]);
+  }, [activeTab, isGM, activePlayerId, poolData]);
 
   const canManageTab = useMemo(() => {
     if (!activeTab || !poolData) return false;
     if (isGM) return true;
 
-    if (activeTab.manageableByPlayerIds.includes(state.activePlayerId)) return true;
+    if (activeTab.manageableByPlayerIds.includes(activePlayerId)) return true;
     if (activeTab.manageableByPlayerIds.includes('all_players')) return true;
 
     return false;
-  }, [activeTab, isGM, state.activePlayerId, poolData]);
+  }, [activeTab, isGM, activePlayerId, poolData]);
 
   const canEditTab = useMemo(() => {
     if (!activeTab || !poolData) return false;
     if (isGM) return true;
 
-    if (activeTab.editableByPlayerIds.includes(state.activePlayerId)) return true;
+    if (activeTab.editableByPlayerIds.includes(activePlayerId)) return true;
     if (activeTab.editableByPlayerIds.includes('all_players')) return true;
 
     return false;
-  }, [activeTab, isGM, state.activePlayerId, poolData]);
+  }, [activeTab, isGM, activePlayerId, poolData]);
 
   // Handler: Select tab
   const handleSelectTab = useCallback((tabId: string) => {
@@ -414,8 +417,8 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
               <div className="space-y-4">
                 <PoolTabSettingsModal
                   tab={settingsModal.tab}
-                  players={state.players}
-                  activePlayerId={state.activePlayerId}
+                  players={players}
+                  activePlayerId={activePlayerId}
                   isGM={isGM}
                   onSave={handleSaveTabSettings}
                   onTabChange={setTempSettingsTab}

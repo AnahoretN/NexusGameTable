@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
 import { X, Minus, Plus, Eye, EyeOff, Lock, Unlock, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
+import { useActivePlayerId, useIsGM, usePlayerList, usePixelsPerVU, usePlayerPermissions, useLanguage, useHyperscaleLayers } from '../store/contexts';
 
 // 🔥 OPTIMIZED: Zustand version of UIObjectRenderer
 // Replaces: components/UIObjectRenderer.tsx
@@ -84,17 +85,22 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   isPinnedMode = false
 }) => {
   const { dispatch, state, isHost } = useGame();
+  const pixelsPerVU = usePixelsPerVU();
+
+  // PlayerContext hooks - synchronized with GameContext
+  const activePlayerId = useActivePlayerId();
+  const isGM = useIsGM();
+  const players = usePlayerList();
+  const playerPermissions = usePlayerPermissions();
+  const language = useLanguage();
+  const hyperscaleLayers = useHyperscaleLayers();
+
   const { isDragging: isDraggingOverPoolState, targetPoolPanelId } = useDragOverStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Check if this is a main menu panel (must be before useState that uses it)
   const isMainMenu = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.MAIN_MENU;
-
-  // Memoize GM check to prevent repeated array searches
-  const isGM = useMemo(() => {
-    return state.players.find(p => p.id === state.activePlayerId)?.isGM ?? false;
-  }, [state.players, state.activePlayerId]);
 
   // Track if this panel is currently being resized
   const [isResizing, setIsResizing] = useState(false);
@@ -128,7 +134,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   // Get player-specific panel settings from GameContext (stored on host)
   // For panels, always use playerPanelSettings if they exist, otherwise use panel properties directly
   // This is much simpler and more performant than the localSettings system
-  const currentPlayerId = state.activePlayerId;
+  const currentPlayerId = activePlayerId;
   const playerPanelSettings = state.playerPanelSettings[currentPlayerId]?.[uiObject.id];
 
   // Memoize effectiveProps to prevent unnecessary recalculations
@@ -187,7 +193,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   ]);
 
   // Get pixelsPerVU for converting vu to pixels (for pinned panels)
-  const pixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.08;
   const vuToPx = useCallback((vu: number) => vuToPixels(vu ?? 0, pixelsPerVU), [pixelsPerVU]);
 
   // Memoize minimized check - use uiObject.minimized directly during drag to avoid stale state
@@ -267,7 +272,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         dispatch({
           type: 'UPDATE_PLAYER_PANEL_SETTINGS',
           payload: {
-            playerId: state.activePlayerId,
+            playerId: activePlayerId,
             panelId: uiObject.id,
             settings: {
               minimized: false,
@@ -284,7 +289,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         dispatch({
           type: 'UPDATE_PLAYER_PANEL_SETTINGS',
           payload: {
-            playerId: state.activePlayerId,
+            playerId: activePlayerId,
             panelId: uiObject.id,
             settings: {
               minimized: false,
@@ -320,7 +325,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         dispatch({
           type: 'UPDATE_PLAYER_PANEL_SETTINGS',
           payload: {
-            playerId: state.activePlayerId,
+            playerId: activePlayerId,
             panelId: uiObject.id,
             settings: {
               minimized: false,
@@ -372,7 +377,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         dispatch({
           type: 'UPDATE_PLAYER_PANEL_SETTINGS',
           payload: {
-            playerId: state.activePlayerId,
+            playerId: activePlayerId,
             panelId: uiObject.id,
             settings: {
               minimized: true,
@@ -416,7 +421,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         dispatch({
           type: 'UPDATE_PLAYER_PANEL_SETTINGS',
           payload: {
-            playerId: state.activePlayerId,
+            playerId: activePlayerId,
             panelId: uiObject.id,
             settings: {
               minimized: true,
@@ -458,7 +463,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
     // For non-panel objects, check permissions
     if (uiObject.type !== ItemType.PANEL) {
-      const canConfigure = isHost || state.playerPermissions.configureObjects;
+      const canConfigure = isHost || playerPermissions.configureObjects;
       if (!canConfigure) return; // Silently do nothing if no permission
     }
 
@@ -483,7 +488,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         y: effectiveProps.y + 50,
       }
     });
-  }, [dispatch, uiObject.id, uiObject.type, state.objects, isHost, state.playerPermissions.configureObjects, effectiveProps.x, effectiveProps.y, isGM]);
+  }, [dispatch, uiObject.id, uiObject.type, state.objects, isHost, playerPermissions.configureObjects, effectiveProps.x, effectiveProps.y, isGM]);
 
   const handleBringToFront = useCallback(() => {
     // Bring to front by setting high z-index
@@ -651,7 +656,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           dispatch({
             type: 'UPDATE_PLAYER_PANEL_SETTINGS',
             payload: {
-              playerId: state.activePlayerId,
+              playerId: activePlayerId,
               panelId: uiObject.id,
               settings: {
                 width: finalWidth,
@@ -671,7 +676,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           dispatch({
             type: 'UPDATE_PLAYER_PANEL_SETTINGS',
             payload: {
-              playerId: state.activePlayerId,
+              playerId: activePlayerId,
               panelId: uiObject.id,
               settings: {
                 width: finalWidth,
@@ -903,7 +908,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                 }}
                 className="text-sm text-purple-400 hover:text-purple-300 flex-shrink-0 transition-colors"
               >
-                [{translate('Links', state.language as Locale)}]
+                [{translate('Links', language as Locale)}]
               </button>
             )}
           </div>
@@ -921,7 +926,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                     setShowGameSettings(true);
                   }}
                   className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                  title={translate('Settings', state.language as Locale)}
+                  title={translate('Settings', language as Locale)}
                 >
                   <Settings size={14} className="text-white" />
                 </button>
@@ -1139,7 +1144,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
-              <h3 className="text-base font-bold text-white">{translate('Game Settings', state.language as Locale)}</h3>
+              <h3 className="text-base font-bold text-white">{translate('Game Settings', language as Locale)}</h3>
             </div>
 
             {/* Content */}
@@ -1151,9 +1156,9 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
               {/* Language Settings */}
               <div className="pt-2">
-                <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Language', state.language as Locale)}</h4>
+                <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Language', language as Locale)}</h4>
                 <select
-                  value={state.language || 'en'}
+                  value={language || 'en'}
                   onChange={async (e) => {
                     const newLang = e.target.value as AppLanguage;
                     localStorage.setItem('app-language', newLang);
@@ -1173,85 +1178,85 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
               {/* Player Permissions */}
               {isGM && (
                 <div className="pt-3 pb-2 border-t border-slate-700">
-                  <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Player Permissions', state.language as Locale)}</h4>
+                  <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Player Permissions', language as Locale)}</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
-                      <span className="text-xs text-gray-300">{translate('Create Objects', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Create Objects', language as Locale)}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           dispatch({
                             type: 'UPDATE_PLAYER_PERMISSIONS',
-                            payload: { ...state.playerPermissions, createObjects: !state.playerPermissions.createObjects }
+                            payload: { ...playerPermissions, createObjects: !playerPermissions.createObjects }
                           });
                         }}
                         className={`w-10 h-5 rounded-full transition-colors ${
-                          state.playerPermissions.createObjects ? 'bg-green-600' : 'bg-slate-700'
+                          playerPermissions.createObjects ? 'bg-green-600' : 'bg-slate-700'
                         }`}
                       >
                         <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          state.playerPermissions.createObjects ? 'translate-x-5' : 'translate-x-0.5'
+                          playerPermissions.createObjects ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
-                      <span className="text-xs text-gray-300">{translate('Configure Objects (Settings)', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Configure Objects (Settings)', language as Locale)}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           dispatch({
                             type: 'UPDATE_PLAYER_PERMISSIONS',
-                            payload: { ...state.playerPermissions, configureObjects: !state.playerPermissions.configureObjects }
+                            payload: { ...playerPermissions, configureObjects: !playerPermissions.configureObjects }
                           });
                         }}
                         className={`w-10 h-5 rounded-full transition-colors ${
-                          state.playerPermissions.configureObjects ? 'bg-green-600' : 'bg-slate-700'
+                          playerPermissions.configureObjects ? 'bg-green-600' : 'bg-slate-700'
                         }`}
                       >
                         <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          state.playerPermissions.configureObjects ? 'translate-x-5' : 'translate-x-0.5'
+                          playerPermissions.configureObjects ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
-                      <span className="text-xs text-gray-300">{translate('Delete Objects', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Delete Objects', language as Locale)}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           dispatch({
                             type: 'UPDATE_PLAYER_PERMISSIONS',
-                            payload: { ...state.playerPermissions, deleteObjects: !state.playerPermissions.deleteObjects }
+                            payload: { ...playerPermissions, deleteObjects: !playerPermissions.deleteObjects }
                           });
                         }}
                         className={`w-10 h-5 rounded-full transition-colors ${
-                          state.playerPermissions.deleteObjects ? 'bg-green-600' : 'bg-slate-700'
+                          playerPermissions.deleteObjects ? 'bg-green-600' : 'bg-slate-700'
                         }`}
                       >
                         <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          state.playerPermissions.deleteObjects ? 'translate-x-5' : 'translate-x-0.5'
+                          playerPermissions.deleteObjects ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </label>
                     <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer ">
-                      <span className="text-xs text-gray-300">{translate('Show/Hide Objects', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Show/Hide Objects', language as Locale)}</span>
                       <button
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           dispatch({
                             type: 'UPDATE_PLAYER_PERMISSIONS',
-                            payload: { ...state.playerPermissions, hideObjects: !state.playerPermissions.hideObjects }
+                            payload: { ...playerPermissions, hideObjects: !playerPermissions.hideObjects }
                           });
                         }}
                         className={`w-10 h-5 rounded-full transition-colors ${
-                          state.playerPermissions.hideObjects ? 'bg-green-600' : 'bg-slate-700'
+                          playerPermissions.hideObjects ? 'bg-green-600' : 'bg-slate-700'
                         }`}
                       >
                         <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          state.playerPermissions.hideObjects ? 'translate-x-5' : 'translate-x-0.5'
+                          playerPermissions.hideObjects ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </label>
@@ -1263,13 +1268,13 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
               <div className="pt-3 pb-2 border-t border-slate-700">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Eye size={14} />
-                  {translate('Effects', state.language as Locale)}
+                  {translate('Effects', language as Locale)}
                 </h4>
                 <label
                   className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer "
-                  title={translate('Show ghost/locked version of objects when another player has them in cursor slot', state.language as Locale)}
+                  title={translate('Show ghost/locked version of objects when another player has them in cursor slot', language as Locale)}
                 >
-                  <span className="text-xs text-gray-300">{translate('Show shadow objects held by other players', state.language as Locale)}</span>
+                  <span className="text-xs text-gray-300">{translate('Show shadow objects held by other players', language as Locale)}</span>
                   <button
                     onClick={(e) => {
                       e.preventDefault();
@@ -1291,43 +1296,43 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
               <div className="pt-3 pb-2 border-t border-slate-700">
                 <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
                   <Keyboard size={14} />
-                  {translate('Hotkeys', state.language as Locale)}
+                  {translate('Hotkeys', language as Locale)}
                 </h4>
 
                 <div className="grid grid-cols-2 gap-1.5">
                   <div className="bg-slate-900 rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Undo', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Undo', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Z</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Close tooltip/menu', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Close tooltip/menu', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Esc</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Add to cursor slot', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Add to cursor slot', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Click</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5">
-                      <span className="text-xs text-gray-300">{translate('Delete without confirmation', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Delete without confirmation', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Delete</kbd>
                     </div>
                   </div>
                   <div className="bg-slate-900 rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Pan view (hold + drag)', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Pan view (hold + drag)', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Drag</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Move the drawing', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Move the drawing', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Marker</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Delete entire drawing', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Delete entire drawing', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Eraser</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5">
-                      <span className="text-xs text-gray-300">{translate('Normal cursor mode', state.language as Locale)}</span>
+                      <span className="text-xs text-gray-300">{translate('Normal cursor mode', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Alt+Marker</kbd>
                     </div>
                   </div>
@@ -1336,20 +1341,20 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
               {/* Storage & Cache Section */}
               <div className="pt-3 pb-2 border-t border-slate-700">
-                <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Storage & Cache', state.language as Locale)}</h4>
+                <h4 className="text-sm font-bold text-gray-300 mb-2">{translate('Storage & Cache', language as Locale)}</h4>
 
                 {hasSavedGameState() && (
                   <div className="bg-slate-900 rounded px-3 py-2 mb-3">
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                       <Clock size={12} />
-                      <span>{translate('Last save: ', state.language as Locale)}{formatTimestamp(getSavedGameTimestamp() || 0)}</span>
+                      <span>{translate('Last save: ', language as Locale)}{formatTimestamp(getSavedGameTimestamp() || 0)}</span>
                     </div>
                   </div>
                 )}
 
                 <button
                   onClick={() => {
-                    if (confirm(translate('Are you sure you want to clear all saved game data? This action cannot be undone.', state.language as Locale))) {
+                    if (confirm(translate('Are you sure you want to clear all saved game data? This action cannot be undone.', language as Locale))) {
                       dispatch({ type: 'CLEAR_SAVED_STATE' });
                       // Reload page to start fresh
                       window.location.reload();
@@ -1358,7 +1363,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors text-sm"
                 >
                   <Trash2 size={14} />
-                  <span>{translate('Clear Cache', state.language as Locale)}</span>
+                  <span>{translate('Clear Cache', language as Locale)}</span>
                 </button>
               </div>
             </div>
@@ -1369,7 +1374,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                 onClick={() => setShowGameSettings(false)}
                 className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded font-medium"
               >
-                {translate('Close', state.language as Locale)}
+                {translate('Close', language as Locale)}
               </button>
             </div>
           </div>
@@ -1382,11 +1387,11 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40" onClick={() => setShowSupportModal(false)}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
-              <h3 className="text-base font-bold text-white">{translate('Links', state.language as Locale)}</h3>
+              <h3 className="text-base font-bold text-white">{translate('Links', language as Locale)}</h3>
             </div>
             <div className="p-6">
               <p className="text-sm text-gray-400 text-center mb-6">
-                {translate('Follow me on social media or support my work through donations!', state.language as Locale)}
+                {translate('Follow me on social media or support my work through donations!', language as Locale)}
               </p>
               <div className="grid grid-cols-3 gap-4">
                 {SUPPORT_LINKS.map((link) => (
@@ -1586,6 +1591,7 @@ const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject; effectiveP
   const [isCardDragTarget, setIsCardDragTarget] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
+  const language = useLanguage();
 
   // Global mouse up handler to clear shift-drag state
   React.useEffect(() => {
@@ -1669,7 +1675,7 @@ const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject; effectiveP
       style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
       className="h-full"
     >
-      <HandPanel width={effectiveProps.width} isDragTarget={isCardDragTarget} isCollapsed={isCollapsed} language={state.language} />
+      <HandPanel width={effectiveProps.width} isDragTarget={isCardDragTarget} isCollapsed={isCollapsed} language={language} />
     </div>
   );
 };
@@ -1679,6 +1685,7 @@ const PoolPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
+  const language = useLanguage();
 
   // Global mouse up handler to clear shift-drag state
   React.useEffect(() => {
@@ -1730,7 +1737,7 @@ const PoolPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
       style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
       className="h-full"
     >
-      <PoolPanel panel={panel} language={state.language} />
+      <PoolPanel panel={panel} language={language} />
     </div>
   );
 };
@@ -1794,6 +1801,7 @@ const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effecti
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
+  const language = useLanguage();
 
   // Global mouse up handler to clear shift-drag state
   React.useEffect(() => {
@@ -1841,7 +1849,7 @@ const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effecti
       style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
       className="h-full"
     >
-      <DrawingToolsPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={state.language} />
+      <DrawingToolsPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={language} />
     </div>
   );
 };
@@ -1851,6 +1859,7 @@ const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProp
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
+  const language = useLanguage();
 
   // Global mouse up handler to clear shift-drag state
   React.useEffect(() => {
@@ -1898,7 +1907,7 @@ const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProp
       style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
       className="h-full"
     >
-      <TokensPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={state.language} />
+      <TokensPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={language} />
     </div>
   );
 };
@@ -1925,7 +1934,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
       if (targetObj.type === ItemType.PANEL) {
         const targetPanel = targetObj as PanelObject;
         // Show panel settings for all panels
-        return <PanelSettingsModal panel={targetPanel} onClose={handleClose} language={state.language} />;
+        return <PanelSettingsModal panel={targetPanel} onClose={handleClose} language={language} />;
       }
 
       // For non-panel objects, use the regular ObjectSettingsModal
@@ -1933,7 +1942,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
         <ObjectSettingsModal
           object={targetObj}
           allObjects={state.objects}
-          language={state.language}
+          language={language}
           onClose={handleClose}
           onSave={(updatedObj) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
@@ -1959,12 +1968,12 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
         <TopDeckModal
           deck={deck}
           onClose={handleClose}
-          language={state.language}
+          language={language}
         />
       ) : null;
     case WindowType.HYPERSCALE_LAYER_SETTINGS:
       const targetLayer = windowObj.targetLayerId
-        ? state.hyperscaleLayers.find(l => l.id === windowObj.targetLayerId)
+        ? hyperscaleLayers.find(l => l.id === windowObj.targetLayerId)
         : null;
       if (!targetLayer) {
         return (
@@ -1978,7 +1987,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
         <HyperscaleLayerSettingsWindow
           layer={targetLayer}
           onClose={handleClose}
-          language={state.language}
+          language={language}
         />
       );
     default:

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
+import { usePlayerList, useActivePlayerId } from '../store/contexts';
 import { PanelObject, TableauPanelData, PanelTab, AppLanguage } from '../types';
 import { Plus, Trash2, Lock } from 'lucide-react';
 
@@ -13,6 +14,8 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
   language = 'en'
 }) => {
   const { state, dispatch } = useGame();
+  const players = usePlayerList();
+  const activePlayerId = useActivePlayerId();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Get tableau data from panel - use latest from state to ensure reactivity
@@ -49,7 +52,7 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
   }, [tableauData, panel.id, dispatch]);
 
   // Get current player info
-  const currentPlayer = state.players.find(p => p.id === state.activePlayerId);
+  const currentPlayer = players.find(p => p.id === activePlayerId);
   const isGM = currentPlayer?.isGM ?? false;
 
   // Active tab
@@ -64,31 +67,31 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
     if (isGM) return true;
 
     // Check if player is in visible list
-    if (activeTab.visibleToPlayerIds.includes(state.activePlayerId)) return true;
+    if (activeTab.visibleToPlayerIds.includes(activePlayerId)) return true;
     if (activeTab.visibleToPlayerIds.includes('all_players')) return true;
 
     return false;
-  }, [activeTab, isGM, state.activePlayerId, tableauData]);
+  }, [activeTab, isGM, activePlayerId, tableauData]);
 
   const canManageTab = useMemo(() => {
     if (!activeTab || !tableauData) return false;
     if (isGM) return true;
 
-    if (activeTab.manageableByPlayerIds.includes(state.activePlayerId)) return true;
+    if (activeTab.manageableByPlayerIds.includes(activePlayerId)) return true;
     if (activeTab.manageableByPlayerIds.includes('all_players')) return true;
 
     return false;
-  }, [activeTab, isGM, state.activePlayerId, tableauData]);
+  }, [activeTab, isGM, activePlayerId, tableauData]);
 
   const canEditTab = useMemo(() => {
     if (!activeTab || !tableauData) return false;
     if (isGM) return true;
 
-    if (activeTab.editableByPlayerIds.includes(state.activePlayerId)) return true;
+    if (activeTab.editableByPlayerIds.includes(activePlayerId)) return true;
     if (activeTab.editableByPlayerIds.includes('all_players')) return true;
 
     return false;
-  }, [activeTab, isGM, state.activePlayerId, tableauData]);
+  }, [activeTab, isGM, activePlayerId, tableauData]);
 
   // Handler: Select tab
   const handleSelectTab = useCallback((tabId: string) => {

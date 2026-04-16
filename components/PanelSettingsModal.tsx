@@ -3,6 +3,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { PanelObject, PanelType, AppLanguage } from '../types';
 import { useGame } from '../store/GameContext';
+import { useActivePlayerId } from '../store/contexts';
 import { Settings, Maximize2, Check } from 'lucide-react';
 
 type PanelSettingsTab = 'general';
@@ -22,6 +23,7 @@ interface PanelSettingsModalProps {
  */
 export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, onClose, language = 'en' }) => {
   const { dispatch, state, isHost } = useGame();
+  const activePlayerId = useActivePlayerId();
 
   const [activeTab, setActiveTab] = React.useState<PanelSettingsTab>('general');
   const [title, setTitle] = React.useState(panel.title);
@@ -44,7 +46,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
   }, [panel.title, panel.x, panel.y, panel.width, panel.height, panel.dualPosition, panel.zIndex]);
 
   const handleSave = () => {
-    const currentPlayerId = state.activePlayerId;
+    const currentPlayerId = activePlayerId;
 
     // Update individual panel settings for this player (stored on host)
     if (isHost) {

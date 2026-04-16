@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
+import { useActivePlayerId } from '../store/contexts';
 import { useDrawingTool } from './ToolsPanel';
 import { ItemType, Stroke, StrokePoint, Drawing } from '../types';
 
@@ -141,6 +142,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   cursorSlotLength = 0
 }) => {
   const { state, dispatch, isHost } = useGame();
+  const activePlayerId = useActivePlayerId();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<StrokePoint[]>([]);
@@ -767,7 +769,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       color: markerColor,
       thickness: markerThickness,
       timestamp: Date.now(),
-      author: state.activePlayerId
+      author: activePlayerId
     };
 
     // For guests, send FINISH_DRAWING_STROKE instead of CREATE_DRAWING_OBJECT
@@ -930,7 +932,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (ctx) redrawCanvas(ctx);
-  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartDrawingPos, currentStroke, currentTool, markerColor, markerThickness, markerOpacity, state.activePlayerId, drawings, dispatch, redrawCanvas, findOverlappingDrawings, getStrokeBounds, isHost]);
+  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartDrawingPos, currentStroke, currentTool, markerColor, markerThickness, markerOpacity, activePlayerId, drawings, dispatch, redrawCanvas, findOverlappingDrawings, getStrokeBounds, isHost]);
 
   // Handler for mouse leave (must be before conditional return)
   const handleMouseLeave = useCallback(() => {

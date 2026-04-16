@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../store/GameContext';
+import { useIsGM, useHyperscaleLayers, useLayerSelection } from '../store/contexts';
 import { HyperscaleLayer } from '../types';
 import { Plus, Trash2, Settings } from 'lucide-react';
 import { Locale, t as translate } from '../utils/translations';
@@ -10,7 +11,9 @@ interface LayersPanelProps {
 
 export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
   const { state, dispatch } = useGame();
-  const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM || false;
+  const isGM = useIsGM();
+  const hyperscaleLayers = useHyperscaleLayers();
+  const [selectedHyperscaleLayerIds, setLayerSelection] = useLayerSelection();
 
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [newLayerName, setNewLayerName] = useState('');
@@ -18,30 +21,24 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
   const [newLayerMax, setNewLayerMax] = useState(1000);
 
   // Sort layers by reverse order (higher maxZIndex = higher in list)
-  const sortedLayers = [...state.hyperscaleLayers].sort((a, b) => b.maxZIndex - a.maxZIndex);
+  const sortedLayers = [...hyperscaleLayers].sort((a, b) => b.maxZIndex - a.maxZIndex);
 
   // Check if a layer is selected
-  const isLayerSelected = (layerId: string) => state.selectedHyperscaleLayerIds.includes(layerId);
+  const isLayerSelected = (layerId: string) => selectedHyperscaleLayerIds.includes(layerId);
 
   // Toggle layer selection
   const toggleLayer = (layerId: string) => {
     const isSelected = isLayerSelected(layerId);
-    const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+    const layer = hyperscaleLayers.find(l => l.id === layerId);
     if (isSelected) {
       // Don't allow deselecting all layers
-      if (state.selectedHyperscaleLayerIds.length > 1) {
-        const newSelection = state.selectedHyperscaleLayerIds.filter(id => id !== layerId);
-        dispatch({
-          type: 'SET_HYPERSCALE_LAYERS',
-          payload: { layerIds: newSelection }
-        });
+      if (selectedHyperscaleLayerIds.length > 1) {
+        const newSelection = selectedHyperscaleLayerIds.filter(id => id !== layerId);
+        setLayerSelection(newSelection);
       }
     } else {
-      const newSelection = [...state.selectedHyperscaleLayerIds, layerId];
-      dispatch({
-        type: 'SET_HYPERSCALE_LAYERS',
-        payload: { layerIds: newSelection }
-      });
+      const newSelection = [...selectedHyperscaleLayerIds, layerId];
+      setLayerSelection(newSelection);
     }
   };
 
@@ -142,7 +139,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
       type: 'CREATE_WINDOW',
       payload: {
         windowType: 'HYPERSCALE_LAYER_SETTINGS' as any,
-        title: translate('Layer Settings', language as Locale) + ': ' + state.hyperscaleLayers.find(l => l.id === layerId)?.name,
+        title: translate('Layer Settings', language as Locale) + ': ' + hyperscaleLayers.find(l => l.id === layerId)?.name,
         targetLayerId: layerId
       }
     });
