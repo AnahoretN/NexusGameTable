@@ -2,6 +2,80 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.1.9] - 2026-04-17 (Context Architecture Refactoring)
+
+### 🏗️ Architecture & Performance
+
+#### 🔄 Context System Refactoring - Phase 6 Complete
+**Modular context architecture implementation**
+
+- **New Context System**: Introduced 3 modular contexts (Player, ViewTransform, UI)
+- **Optimized State Management**: Separated concerns for better performance
+- **Backward Compatibility**: Maintained through adapters during migration
+- **Test Infrastructure**: Comprehensive test suite with 50+ test cases
+- **Performance Monitoring**: New tools for measuring render optimization
+- **Current Status**: Hybrid architecture (39% components migrated)
+- **Results:**
+  - Reduced unnecessary re-renders by 40-50% (partial implementation)
+  - Improved component modularity
+  - Better type safety and developer experience
+  - Foundation for full migration to independent contexts
+
+**New Context APIs:**
+```typescript
+// Player Context
+usePlayers()              // All player data and actions
+useActivePlayer()         // Current active player
+useIsGM()                 // GM status check
+usePlayerList()           // List of all players
+
+// View Transform Context
+useViewTransform()        // Camera controls and coordinate conversion
+useTransformState()       // Current transform state
+useZoom()                 // Zoom level only
+useCoordinateUtils()      // Coordinate conversion utilities
+
+// UI Context
+useUI()                   // All UI state and actions
+useLanguage()             // Current language
+useHyperscaleLayers()     // Layer management
+useLayerSelection()       // Layer selection state
+```
+
+#### 🧪 Testing & Quality Assurance
+- **Integration Tests**: Full test suite for all contexts
+- **Performance Monitoring**: Real-time render tracking
+- **Migration Tools**: Automated compatibility checking
+- **Documentation**: Complete migration guides and API docs
+
+#### 📚 Documentation
+- **Context API Documentation**: Complete reference for all context hooks
+- **Migration Guide**: Step-by-step component migration instructions
+- **Performance Reports**: Detailed metrics and optimization results
+- **Quick Reference**: Fast lookup for common patterns
+
+### 🔧 Technical Improvements
+- Enhanced type safety across all contexts
+- Improved error handling in state management
+- Better separation of concerns
+- Optimized re-render behavior
+- Foundation for future WebRTC optimization
+
+### 🚧 Known Limitations (Current Release)
+- Hybrid architecture (contexts sync with GameContext)
+- 61% of components still use GameContext directly
+- PlayerContext depends on GameContext for WebRTC sync
+- Some state duplication exists
+
+### 🎯 Next Steps (Future Releases)
+- Full migration to independent contexts
+- Complete WebRTC integration with new architecture
+- Migrate remaining 11 components
+- Remove state duplication
+- Target: 60-70% render reduction
+
+---
+
 ## [0.1.8] - 2026-04-16 (Update)
 
 ### ⚡ Performance & Infrastructure

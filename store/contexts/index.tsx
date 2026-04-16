@@ -126,8 +126,8 @@ export function ContextProviders({ children }: { children: React.ReactNode }) {
 /**
  * Version information for the context module
  */
-export const CONTEXT_VERSION = '1.0.0';
-export const CONTEXT_BUILD_DATE = '2026-04-16';
+export const CONTEXT_VERSION = '1.1.0';
+export const CONTEXT_BUILD_DATE = '2026-04-17';
 
 /**
  * Context module metadata
