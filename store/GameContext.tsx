@@ -5649,7 +5649,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
         const broadcastState = { ...currentState, objects: filteredObjects };
-        console.log(`[P2P Optimized] State for broadcast: ${Object.keys(broadcastState.objects).length} objects, raw size: ${JSON.stringify(broadcastState).length} chars`);
         return broadcastState;
       })();
 
@@ -5682,17 +5681,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // 🔥 OPTIMIZED: Measure sync time and track statistics
           measureSyncTime(
             () => {
-              // Debug logging
-              if (Object.keys(imagesToSend).length > 0) {
-                console.log(`[P2P Optimized] Sending ${Object.keys(imagesToSend).length} images to ${peerId}, total size: ${JSON.stringify(imagesToSend).length} chars`);
-              }
-
               // Debug: Check if state actually has references
               const stateJson = JSON.stringify(stateWithRefs);
               const hasBase64 = stateJson.includes('data:image/');
               const hasRefs = stateJson.includes('img_ref://');
-
-              console.log(`[P2P Optimized] Sending ${isFirstConnection ? 'FULL (new connection)' : (isPartialSync ? 'PARTIAL' : 'FULL')} SYNC_STATE to ${peerId}, size: ${stateJson.length} chars, hasBase64: ${hasBase64}, hasRefs: ${hasRefs}`);
 
               // Send state with image references
               conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });

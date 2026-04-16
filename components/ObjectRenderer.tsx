@@ -5,6 +5,7 @@ import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp
 import { getCardSettings } from '../utils/cardUtils';
 import { executeActionButtonUniversal } from '../utils/actionButtonsHandler';
 import { logger } from '../utils/logger';
+import { LazyBackgroundImage } from './LazyImage';
 
 interface ObjectRendererProps {
   obj: TableObject;
@@ -47,6 +48,21 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
   // When dragging, use very high z-index to appear above everything
   // Otherwise use original object's z-index to maintain layer position
   const zIndex = isDragging ? 999999 : (obj.zIndex || 1000);
+
+  // Optimized event handlers to prevent unnecessary re-renders
+  const handleObjectMouseDown = useCallback((e: React.MouseEvent) => {
+    // Ignore clicks on action buttons
+    if ((e.target as HTMLElement).closest('button')) {
+      return;
+    }
+    onMouseDown?.(e);
+  }, [onMouseDown]);
+
+  const handleActionButtonClick = useCallback((e: React.MouseEvent, action: () => void) => {
+    e.stopPropagation();
+    e.preventDefault();
+    action();
+  }, []);
 
   if (obj.type === ItemType.CARD) {
     const card = obj as Card;
@@ -195,30 +211,34 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
             ...style
           }}
           className={`bg-slate-700 border border-slate-600 rounded shadow-lg relative ${className}`}
-          onMouseDown={(e) => {
-            // Ignore clicks on action buttons
-            if ((e.target as HTMLElement).closest('button')) {
-              return;
-            }
-            onMouseDown?.(e);
-          }}
+          onMouseDown={handleObjectMouseDown}
           onContextMenu={onContextMenu}
         >
           {card.faceUp ? (
             <div className="w-full h-full rounded overflow-hidden">
               {card.spriteUrl && card.spriteColumns && card.spriteRows && card.spriteIndex !== undefined ? (
-                <div
+                <LazyBackgroundImage
+                  src={card.spriteUrl}
+                  className="w-full h-full"
                   style={{
-                    width: '100%',
-                    height: '100%',
-                    ...backgroundStyles
+                    backgroundSize: `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`,
+                    backgroundPosition: `${((card.spriteIndex % card.spriteColumns) / (card.spriteColumns - 1)) * 100}% ${(Math.floor(card.spriteIndex / card.spriteColumns) / (card.spriteRows - 1)) * 100}%`,
+                    backgroundRepeat: 'no-repeat',
+                    imageRendering: 'pixelated'
                   }}
+                  rootMargin="100px"
+                  threshold={0.01}
                 />
               ) : card.content ? (
-                <img
+                <LazyBackgroundImage
                   src={card.content}
-                  alt={card.name}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full"
+                  style={{
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }}
+                  rootMargin="100px"
+                  threshold={0.01}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-white text-xs p-1">
@@ -227,10 +247,20 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
               )}
             </div>
           ) : (
-            <div className="w-full h-full rounded flex items-center justify-center" style={backgroundStyles}>
+            <LazyBackgroundImage
+              src={backgroundStyles.backgroundImage?.replace(/url\(['"]?([^'"]+)['"]?\)/, '$1') || ''}
+              className="w-full h-full rounded flex items-center justify-center"
+              style={{
+                backgroundSize: backgroundStyles.backgroundSize,
+                backgroundPosition: backgroundStyles.backgroundPosition,
+                backgroundRepeat: backgroundStyles.backgroundRepeat
+              }}
+              rootMargin="100px"
+              threshold={0.01}
+            >
               {/* Decorative element for card back */}
               <div className="w-8 h-8 rounded-full border-2 border-slate-600 opacity-50"></div>
-            </div>
+            </LazyBackgroundImage>
           )}
 
           {/* Action buttons for cards - positioned relative to card */}
@@ -245,11 +275,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
                 return (
                   <button
                     key={action}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      buttonConfig.action();
-                    }}
+                    onClick={(e) => handleActionButtonClick(e, buttonConfig.action)}
                     className={`${buttonConfig.className} pointer-events-auto p-2 rounded-lg`}
                     title={buttonConfig.title}
                   >

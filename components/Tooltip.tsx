@@ -1,5 +1,33 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+
+// Global tooltip tracker for memory management
+interface TooltipTracker {
+  [id: string]: {
+    timestamp: number;
+    element: HTMLElement;
+  };
+}
+
+const globalTooltipTracker: TooltipTracker = {};
+const MAX_TOOLTIP_AGE = 60000; // 1 minute
+const CLEANUP_INTERVAL = 30000; // 30 seconds
+
+// Global cleanup function
+function cleanupOldTooltips() {
+  const now = Date.now();
+  Object.keys(globalTooltipTracker).forEach(id => {
+    const tooltip = globalTooltipTracker[id];
+    if (now - tooltip.timestamp > MAX_TOOLTIP_AGE) {
+      delete globalTooltipTracker[id];
+    }
+  });
+}
+
+// Start global cleanup interval
+if (typeof window !== 'undefined') {
+  setInterval(cleanupOldTooltips, CLEANUP_INTERVAL);
+}
 
 interface TooltipProps {
   text?: string;
@@ -31,8 +59,23 @@ export const Tooltip: React.FC<TooltipProps> = ({
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<number | null>(null);
+  const tooltipId = useRef<string>(`tooltip-${Date.now()}-${Math.random()}`);
 
-  const handleMouseEnter = () => {
+  // Register tooltip in global tracker when visible
+  useEffect(() => {
+    if (isVisible && containerRef.current) {
+      globalTooltipTracker[tooltipId.current] = {
+        timestamp: Date.now(),
+        element: containerRef.current
+      };
+    }
+
+    return () => {
+      delete globalTooltipTracker[tooltipId.current];
+    };
+  }, [isVisible]);
+
+  const handleMouseEnter = useCallback(() => {
     // Only show if we have tooltip content
     // Show if there's text OR if showImage is enabled with a valid image source
     if (!text && (!showImage || !imageSrc)) return;
@@ -46,20 +89,20 @@ export const Tooltip: React.FC<TooltipProps> = ({
     timeoutRef.current = window.setTimeout(() => {
       setIsVisible(true);
     }, 500);
-  };
+  }, [text, showImage, imageSrc]);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
     // Update position on mouse move
     setPosition({ x: e.clientX, y: e.clientY });
-  };
+  }, []);
 
-  const handleMouseLeave = () => {
+  const handleMouseLeave = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
     setIsVisible(false);
-  };
+  }, []);
 
   // Cleanup timeout on unmount
   useEffect(() => {

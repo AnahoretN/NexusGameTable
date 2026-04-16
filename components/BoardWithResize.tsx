@@ -3,6 +3,7 @@ import { TableObject, Token as TokenType, Board as BoardType, GridType } from '.
 import { HexGridMemo } from './HexGrid';
 import { SquareGridMemo } from './SquareGrid';
 import { calculateFlatHexHeight } from '../utils/gridUtils';
+import { LazyBackgroundImage } from './LazyImage';
 
 interface BoardWithResizeProps {
     token: TokenType | BoardType;
@@ -104,22 +105,27 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             onMouseDown={onMouseDown}
             onContextMenu={onContextMenu}
             className="absolute flex items-center justify-center text-white font-bold select-none"
-            style={{
-                left: 0,
-                top: 0,
-                width: '100%',   // Use full width of parent container
-                height: '100%',  // Use full height of parent container
-                backgroundColor: token.color || '#34495e',
-                backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                border: '2px solid #212f3c',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-                transform: `rotate(${obj.rotation}deg)`,
-                cursor: cursor,
-                overflow: 'hidden',
-            }}
         >
+            <LazyBackgroundImage
+                src={(obj as any).content || ''}
+                className="w-full h-full"
+                style={{
+                    left: 0,
+                    top: 0,
+                    width: '100%',
+                    height: '100%',
+                    backgroundColor: token.color || '#34495e',
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    border: '2px solid #212f3c',
+                    boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+                    transform: `rotate(${obj.rotation}deg)`,
+                    cursor: cursor,
+                    overflow: 'hidden',
+                }}
+                rootMargin="100px"
+                threshold={0.01}
+            >
             {/* Grid overlay - direct rendering for all grid types */}
             {shouldShowGrid && (
                 <>
@@ -165,7 +171,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 />
             )}
 
-        </div>
+        </LazyBackgroundImage>
     );
 };
 

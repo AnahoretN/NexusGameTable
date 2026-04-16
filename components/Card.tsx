@@ -172,6 +172,36 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
       .slice(0, 4);
   };
 
+  // Optimized event handlers with useCallback to prevent unnecessary re-renders
+  const handleCardClick = React.useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClick?.();
+  }, [onClick]);
+
+  const handleCardFlip = React.useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onFlip?.(e);
+  }, [onFlip]);
+
+  const handleToHand = React.useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToHand?.(e);
+  }, [onToHand]);
+
+  const handleReturnToDeck = React.useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onReturnToDeck?.(e);
+  }, [onReturnToDeck]);
+
+  const handleActionButtonClick = React.useCallback((action: ContextAction, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onActionButtonClick?.(action);
+  }, [onActionButtonClick]);
+
+  const handleStopPropagation = React.useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+  }, []);
+
   const renderActionButtons = () => {
     // If actionButtons are provided and non-empty, use that setting
     const hasActionButtons = actionButtons && actionButtons.length > 0;
@@ -183,8 +213,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           {buttons.map(btn => (
             <button
               key={btn.action}
-              onClick={(e) => { e.stopPropagation(); onActionButtonClick(btn.action); }}
-              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => handleActionButtonClick(btn.action, e)}
+              onMouseDown={handleStopPropagation}
               className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
               title={btn.title}
             >
@@ -203,8 +233,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
         <>
           {onToHand && (
             <button
-              onClick={(e) => { e.stopPropagation(); onToHand(e); }}
-              onMouseDown={(e) => e.stopPropagation()}
+              onClick={handleToHand}
+              onMouseDown={handleStopPropagation}
               className="pointer-events-auto p-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white shadow"
               title="To Hand"
             >
@@ -213,8 +243,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           )}
           {onFlip && (
             <button
-              onClick={(e) => { e.stopPropagation(); onFlip(e); }}
-              onMouseDown={(e) => e.stopPropagation()}
+              onClick={handleCardFlip}
+              onMouseDown={handleStopPropagation}
               className="pointer-events-auto p-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-white shadow"
               title="Flip"
             >
@@ -223,8 +253,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           )}
           {onReturnToDeck && (
             <button
-              onClick={(e) => { e.stopPropagation(); onReturnToDeck(e); }}
-              onMouseDown={(e) => e.stopPropagation()}
+              onClick={handleReturnToDeck}
+              onMouseDown={handleStopPropagation}
               className="pointer-events-auto p-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-white shadow"
               title="Return to Deck"
             >
@@ -265,7 +295,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
       )}
 
       <div
-        onClick={onClick}
+        onClick={handleCardClick}
         className={`relative transition-transform duration-200 select-none overflow-hidden`}
         style={{
           width: displayWidth,

@@ -100,6 +100,39 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     }
   }, [deck.id, deck.locked, isGM, deck.singleClickAction, deck.doubleClickAction, handleMouseDown, executeClickAction]);
 
+  // Optimized hover handlers with useCallback to prevent unnecessary re-renders
+  const handleDeckMouseEnter = useCallback(() => {
+    if (disableDeckHighlight) return; // Skip hover in pool panels
+    // Allow hover if dragging card OR if cursor slot has cards
+    const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
+    if (draggingFromTable || cursorSlotHasCards) {
+      setHoveredDeckId(deck.id);
+    }
+  }, [disableDeckHighlight, draggingId, state.objects, cursorSlotHasCards, deck.id]);
+
+  const handleDeckMouseLeave = useCallback(() => {
+    if (disableDeckHighlight) return; // Skip hover in pool panels
+    if (hoveredDeckId === deck.id) {
+      setHoveredDeckId(null);
+    }
+  }, [disableDeckHighlight, hoveredDeckId, deck.id]);
+
+  const handlePileMouseEnter = useCallback((pileId: string) => {
+    if (disableDeckHighlight) return; // Skip hover in pool panels
+    // Allow hover if dragging card OR if cursor slot has cards
+    const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
+    if (draggingFromTable || cursorSlotHasCards) {
+      setHoveredPileId(pileId);
+    }
+  }, [disableDeckHighlight, draggingId, state.objects, cursorSlotHasCards]);
+
+  const handlePileMouseLeave = useCallback((pileId: string) => {
+    if (disableDeckHighlight) return; // Skip hover in pool panels
+    if (hoveredPileId === pileId) {
+      setHoveredPileId(null);
+    }
+  }, [disableDeckHighlight, hoveredPileId]);
+
   // Convert vu to pixels for deck dimensions
   const vuToPx = (vu: number) => vu * pixelsPerVU;
 
@@ -469,20 +502,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
             {/* Pile container - keeps normal z-index */}
             <div
               data-pile-id={pile.id}
-              onMouseEnter={() => {
-                if (disableDeckHighlight) return; // Skip hover in pool panels
-                // Allow hover if dragging card OR if cursor slot has cards
-                const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-                if (draggingFromTable || cursorSlotHasCards) {
-                  setHoveredPileId(pile.id);
-                }
-              }}
-              onMouseLeave={() => {
-                if (disableDeckHighlight) return; // Skip hover in pool panels
-                if (hoveredPileId === pile.id) {
-                  setHoveredPileId(null);
-                }
-              }}
+              onMouseEnter={() => handlePileMouseEnter(pile.id)}
+              onMouseLeave={() => handlePileMouseLeave(pile.id)}
               className={`absolute group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingPile?.pile.id === pile.id ? 'opacity-50 scale-95 cursor-grabbing' : ''}`}
               style={{
                 left: pilePos.x,
@@ -665,20 +686,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
           data-object-id={deck.id}
           onMouseDown={handleDeckMouseDown}
           onContextMenu={(e) => handleContextMenu(e, deck)}
-          onMouseEnter={() => {
-            if (disableDeckHighlight) return; // Skip hover in pool panels
-            // Allow hover if dragging card OR if cursor slot has cards
-            const draggingFromTable = draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-            if (draggingFromTable || cursorSlotHasCards) {
-              setHoveredDeckId(deck.id);
-            }
-          }}
-          onMouseLeave={() => {
-            if (disableDeckHighlight) return; // Skip hover in pool panels
-            if (hoveredDeckId === deck.id) {
-              setHoveredDeckId(null);
-            }
-          }}
+          onMouseEnter={handleDeckMouseEnter}
+          onMouseLeave={handleDeckMouseLeave}
           className={`absolute group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           style={{
             left: 0,
