@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense } from 'react';
 import { GameProvider } from './store/GameContext';
 import { LocalSettingsProvider } from './hooks/useLocalSettings';
 import { Tabletop } from './components/Tabletop';

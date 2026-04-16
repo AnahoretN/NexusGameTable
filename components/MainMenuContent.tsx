@@ -22,65 +22,14 @@ import { LayersPanel } from './LayersPanel';
 import { useManualConnection } from '../store/useManualConnection';
 import { createPack, loadPack } from '../utils/packManager';
 import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
-
-/**
- * Convert blob URL to base64 data URL
- */
-const convertBlobToBase64 = async (blobUrl: string): Promise<string> => {
-  if (!blobUrl?.startsWith('blob:')) {
-    return blobUrl; // Not a blob URL, return as is
-  }
-
-  try {
-    const response = await fetch(blobUrl);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    logger.warn('Failed to convert blob to base64:', error);
-    return blobUrl; // Return original on error
-  }
-};
+import { blobConverter } from '../utils/blobConverter';
 
 /**
  * Convert all blob URLs in objects to base64 data URLs
+ * 🚀 OPTIMIZED: Uses blobConverter for non-blocking async conversion
  */
 const convertBlobsInObjects = async (objects: Record<string, TableObject>): Promise<Record<string, TableObject>> => {
-  const convertedObjects: Record<string, TableObject> = {};
-
-  for (const [id, obj] of Object.entries(objects)) {
-    const convertedObj = { ...obj };
-
-    // Convert content (image URL) if it's a blob URL (only for objects that have content property)
-    if ('content' in convertedObj && convertedObj.content && convertedObj.content.startsWith('blob:')) {
-      convertedObj.content = await convertBlobToBase64(convertedObj.content);
-    }
-
-    // Convert alternativeBack URL if present
-    if ((convertedObj as any).alternativeBack?.url?.startsWith('blob:')) {
-      (convertedObj as any).alternativeBack.url = await convertBlobToBase64((convertedObj as any).alternativeBack.url);
-    }
-
-    // Convert spriteConfig URLs if present
-    if ((convertedObj as any).spriteConfig) {
-      const spriteConfig = { ...(convertedObj as any).spriteConfig };
-      if (spriteConfig.spriteUrl?.startsWith('blob:')) {
-        spriteConfig.spriteUrl = await convertBlobToBase64(spriteConfig.spriteUrl);
-      }
-      if (spriteConfig.cardBackUrl?.startsWith('blob:')) {
-        spriteConfig.cardBackUrl = await convertBlobToBase64(spriteConfig.cardBackUrl);
-      }
-      (convertedObj as any).spriteConfig = spriteConfig;
-    }
-
-    convertedObjects[id] = convertedObj;
-  }
-
-  return convertedObjects;
+  return blobConverter.convertBlobsInObjects(objects);
 };
 
 // Get icon component for object type

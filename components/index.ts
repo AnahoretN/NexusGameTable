@@ -40,6 +40,48 @@ export { PoolTabletopOptimized, PoolTabletopOptimizedMemo } from './PoolTabletop
 // 🔥 NEW: Optimized UIObjectRenderer with useMemo
 export { UIObjectRendererOptimized, UIObjectRendererOptimizedMemo } from './UIObjectRendererOptimized';
 
+// 🚀 NEW: Code Splitting - Lazy-loaded components
+export {
+  DeleteConfirmModalLazy,
+  SearchDeckModalLazy,
+  TopDeckModalLazy,
+  ObjectSettingsModalLazy,
+  CharacterSettingsModalLazy,
+  PanelSettingsModalLazy,
+  HandTabSettingsModalLazy,
+  PoolTabSettingsModalLazy,
+  PlayerNameModalLazy,
+  PackLoadingModalLazy,
+  InitialLoadModalLazy,
+  MainMenuContentLazy,
+  // TabletopLazy - NOTE: Use regular Tabletop import for now
+  ContextMenuLazy,
+  PileContextMenuLazy,
+  DrawingCanvasLazy,
+  NexusBoardLazy,
+  UIObjectRendererLazy,
+  LoadingFallback
+} from './LazyComponents';
+
+// 🚀 NEW: MainMenuContent optimized sub-components
+export {
+  TypeIcon,
+  ObjectListItem,
+  FilterButton,
+  SearchInput,
+  StatsDisplay,
+  LoadingSpinner,
+  EmptyState
+} from './MainMenuComponents';
+
+// 🚀 NEW: MainMenuContent optimized version
+export { default as MainMenuContentOptimized } from './MainMenuContentOptimized';
+export {
+  useFilteredObjects,
+  useObjectStats,
+  usePaginatedObjects
+} from './MainMenuContentOptimized';
+
 // Re-export original types
 export type { VirtualizedObjectListProps } from './VirtualizedObjectList';
 export type { VirtualizedHandListProps, SimpleHandListProps } from './VirtualizedHandList';

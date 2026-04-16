@@ -15,6 +15,12 @@ import {
   createOptimizedPeerJSConfig,
   WEBRTC_OPTIMIZATION_CONFIG
 } from '../utils/webrtcOptimization';
+import {
+  compressWebRTCData,
+  decompressWebRTCData,
+  printCompressionReport,
+  dataCompressionManager
+} from '../utils/dataCompression';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type ImageCache = Record<string, string>; // imageId -> base64 data
@@ -146,24 +152,36 @@ export function usePeerConnection(
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
     if (data.type === 'SYNC_STATE') {
       // Received full state update (Guest receives from Host)
-      // Images in state are references - restore them from local cache
-      const payloadSize = JSON.stringify(data.payload).length;
-      console.log(`[P2P Network] 📦 Received SYNC_STATE (${payloadSize} chars)`);
+      // Check if data is compressed
+      const isCompressed = data.compressed === true;
+      const payload = isCompressed
+        ? decompressWebRTCData(data.payload, true)
+        : data.payload;
+
+      const payloadSize = isCompressed
+        ? data.payload.length
+        : JSON.stringify(payload).length;
+
+      console.log(`[P2P Network] 📦 Received SYNC_STATE (${payloadSize} chars, compressed: ${isCompressed})`);
       console.log(`[P2P Network] 📊 State contains:`, {
-        objects: Object.keys(data.payload.objects || {}).length,
-        players: data.payload.players?.length || 0,
-        diceRolls: data.payload.diceRolls?.length || 0
+        objects: Object.keys(payload.objects || {}).length,
+        players: payload.players?.length || 0,
+        diceRolls: payload.diceRolls?.length || 0
       });
 
       // Restore images from local cache before dispatching
-      const restoredState = restoreImagesFromCache(data.payload, localImageCacheRef.current);
+      const restoredState = restoreImagesFromCache(payload, localImageCacheRef.current);
 
       localDispatch({ type: 'SYNC_STATE', payload: restoredState });
       console.log(`[P2P Network] ✅ SYNC_STATE dispatched to game state`);
     } else if (data.type === 'IMAGE_CACHE') {
       // Received image cache from host (Guest only)
-      const newImages = data.payload;
-      console.log(`[P2P Network] 🖼️ Received IMAGE_CACHE (${Object.keys(newImages).length} images)`);
+      const isCompressed = data.compressed === true;
+      const newImages = isCompressed
+        ? decompressWebRTCData(data.payload, true)
+        : data.payload;
+
+      console.log(`[P2P Network] 🖼️ Received IMAGE_CACHE (${Object.keys(newImages).length} images, compressed: ${isCompressed})`);
       localImageCacheRef.current = { ...localImageCacheRef.current, ...newImages };
       // Re-dispatch to update state with restored images
       localDispatch({ type: 'RESTORE_IMAGES', payload: newImages });
@@ -439,12 +457,42 @@ export function usePeerConnection(
         const stateSize = JSON.stringify(stateWithRefs).length;
 
         console.log(`[P2P Host] 📤 Sending SYNC_STATE to guest (${stateSize} chars)`);
-        conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+
+        // Compress SYNC_STATE data
+        const compressedState = compressWebRTCData(stateWithRefs);
+        const stateWasCompressed = compressedState.length < stateSize;
+
+        if (stateWasCompressed) {
+          const savedPercent = ((1 - compressedState.length / stateSize) * 100).toFixed(1);
+          console.log(`[P2P Host] 🗜️ Compressed SYNC_STATE: ${stateSize} → ${compressedState.length} chars (${savedPercent}% smaller)`);
+          conn.send({
+            type: 'SYNC_STATE',
+            payload: compressedState,
+            compressed: true
+          });
+        } else {
+          conn.send({ type: 'SYNC_STATE', payload: stateWithRefs, compressed: false });
+        }
 
         if (Object.keys(imageCache).length > 0) {
           const cacheSize = JSON.stringify(imageCache).length;
           console.log(`[P2P Host] 📤 Sending IMAGE_CACHE to guest (${Object.keys(imageCache).length} images, ${cacheSize} chars)`);
-          conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+
+          // Compress IMAGE_CACHE data
+          const compressedCache = compressWebRTCData(imageCache);
+          const cacheWasCompressed = compressedCache.length < cacheSize;
+
+          if (cacheWasCompressed) {
+            const savedPercent = ((1 - compressedCache.length / cacheSize) * 100).toFixed(1);
+            console.log(`[P2P Host] 🗜️ Compressed IMAGE_CACHE: ${cacheSize} → ${compressedCache.length} chars (${savedPercent}% smaller)`);
+            conn.send({
+              type: 'IMAGE_CACHE',
+              payload: compressedCache,
+              compressed: true
+            });
+          } else {
+            conn.send({ type: 'IMAGE_CACHE', payload: imageCache, compressed: false });
+          }
         }
 
         // Initialize cache for this guest
@@ -534,6 +582,24 @@ export function usePeerConnection(
 // Expose diagnostic function to global scope for debugging
 if (typeof window !== 'undefined') {
   (window as any).nexusP2PDebug = {
+    ...((window as any).nexusP2PDebug || {}),
+    getCompressionStats: () => {
+      const stats = dataCompressionManager.getStats();
+      console.log('[P2P Compression] 📊 Compression Statistics:');
+      console.log(`[P2P Compression] 📦 Operations: ${stats.entries}`);
+      console.log(`[P2P Compression] 📏 Original: ${(stats.totalOriginalSize / 1024).toFixed(2)} KB`);
+      console.log(`[P2P Compression] 🗜️ Compressed: ${(stats.totalCompressedSize / 1024).toFixed(2)} KB`);
+      console.log(`[P2P Compression] 💾 Saved: ${((1 - stats.averageCompressionRatio) * 100).toFixed(1)}%`);
+      console.log(`[P2P Compression] ⚡ Avg Time: ${(stats.totalCompressionTime / stats.entries).toFixed(2)}ms`);
+      return stats;
+    },
+    printCompressionReport: () => {
+      printCompressionReport();
+    },
+    setCompressionEnabled: (enabled: boolean) => {
+      dataCompressionManager.setEnabled(enabled);
+      console.log(`[P2P Compression] Compression ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    },
     getDiagnostics: () => {
       const peer = (window as any).__nexusPeer;
       const conn = (window as any).__nexusHostConnection;
@@ -627,4 +693,5 @@ if (typeof window !== 'undefined') {
     }
   };
   console.log(`[P2P Diagnostic] 💡 Type nexusP2PDebug.getDiagnostics() in console for diagnostic info`);
+  console.log(`[P2P Compression] 💡 Type nexusP2PDebug.getCompressionStats() for compression info`);
 }
