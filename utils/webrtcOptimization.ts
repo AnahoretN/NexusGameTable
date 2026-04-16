@@ -111,11 +111,21 @@ export const WEBRTC_OPTIMIZATION_CONFIG = {
   // Debounce panel settings sync to wait 300ms after last change
   PANEL_SETTINGS_DEBOUNCE: 300,
 
-  // Optimize ICE servers to only 3 most reliable
+  // Core STUN servers (most reliable)
   OPTIMIZED_ICE_SERVERS: [
     { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:global.stun.twilio.com:3478' },
     { urls: 'stun:stun.l.google.com:19302' },
+  ],
+
+  // Additional fallback STUN servers for countries with restricted internet
+  FALLBACK_ICE_SERVERS: [
+    { urls: 'stun:stun.nextcloud.com:443' },
+    { urls: 'stun:stun.framasoft.org:443' },
+    { urls: 'stun:stun.miwifi.com:3478' },
+    { urls: 'stun:stun.voip.blackberry.com:3478' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
   ],
 
   // Increase polling intervals for better performance
@@ -217,12 +227,15 @@ class DifferentialSyncManager {
 
 export const differentialSyncManager = new DifferentialSyncManager();
 
-// Optimized ICE servers configuration
+// Optimized ICE servers configuration (with fallbacks for restricted internet regions)
 export function getOptimizedIceServers(): { urls: string }[] {
-  return WEBRTC_OPTIMIZATION_CONFIG.OPTIMIZED_ICE_SERVERS;
+  return [
+    ...WEBRTC_OPTIMIZATION_CONFIG.OPTIMIZED_ICE_SERVERS,
+    ...WEBRTC_OPTIMIZATION_CONFIG.FALLBACK_ICE_SERVERS
+  ];
 }
 
-// Create optimized PeerJS configuration
+// Create optimized PeerJS configuration with global accessibility
 export function createOptimizedPeerJSConfig() {
   return {
     config: {

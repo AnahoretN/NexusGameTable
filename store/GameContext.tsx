@@ -22,6 +22,14 @@ import {
   startManagedCacheCleanup,
   getManagedCacheStats
 } from '../utils/imageCache';
+import {
+  throttle,
+  debounce,
+  differentialSyncManager,
+  webrtcStatsMonitor,
+  measureSyncTime,
+  WEBRTC_OPTIMIZATION_CONFIG
+} from '../utils/webrtcOptimization';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
 import { logger } from '../utils/logger';
 import { clearCardDimensionsCache } from '../utils/cardUtils';
@@ -40,6 +48,15 @@ const GameContext = createContext<{
 } | null>(null);
 
 const gameReducer = (state: GameState, action: Action): GameState => {
+  // 🔥 OPTIMIZED: Track changes for differential sync (exclude SYNC_STATE to avoid loops)
+  if (action.type !== 'SYNC_STATE' && action.type !== 'RESTORE_IMAGES') {
+    differentialSyncManager.addChange({
+      type: 'object',
+      action: action,
+      timestamp: Date.now()
+    });
+  }
+
   switch (action.type) {
     case 'SYNC_STATE': {
         // When receiving full state from host, we want to keep our active ID correct locally
@@ -5607,82 +5624,126 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
   }, [isHost, connectionStatus, hostConnectionRef]);
 
-  // Host Broadcast Loop: whenever state changes, send to all guests
-  // We use a debounce or throttle in a real app, here we just check if meaningful change occurred
-  useEffect(() => {
-      if (isHost && connectionsRef.current && connectionsRef.current.length > 0 && imageCachesRef.current) {
-          // Filter out local windows before broadcasting
-          const stateForBroadcast = (() => {
-              const filteredObjects: Record<string, TableObject> = {};
-              Object.entries(state.objects).forEach(([id, obj]) => {
-                  // Skip windows with ownerId (they are local to the owner)
-                  if (obj.type === ItemType.WINDOW && (obj as WindowObject).ownerId) {
-                      return;
-                  }
-                  // For objects being dragged by host, use broadcast coordinates (prevents showing drag path)
-                  if ((obj as any).draggingPlayerId === state.activePlayerId && (obj as any).broadcastX !== undefined) {
-                    // Create a copy with broadcast coordinates instead of current position
-                    const broadcastObj = { ...obj, x: (obj as any).broadcastX, y: (obj as any).broadcastY };
-                    filteredObjects[id] = broadcastObj;
-                  } else {
-                    filteredObjects[id] = obj;
-                  }
-              });
-              const broadcastState = { ...state, objects: filteredObjects };
-              // Debug: log state size
-              console.log(`[P2P Debug] State for broadcast: ${Object.keys(broadcastState.objects).length} objects, raw size: ${JSON.stringify(broadcastState).length} chars`);
-              return broadcastState;
-          })();
-
-          // Extract images and replace with references for each connection
-          connectionsRef.current.forEach(conn => {
-              if (conn.open) {
-                  const peerId = conn.peer;
-                  const existingCache = imageCachesRef.current!.get(peerId);
-                  const isFirstConnection = !existingCache || Object.keys(existingCache).length === 0;
-
-                  // Extract images to cache and get state with references
-                  const { state: stateWithRefs, imageCache: newCache } = extractImagesFromState(stateForBroadcast, existingCache || {});
-
-                  // For first connection, send ALL images. For updates, send only new ones.
-                  const imagesToSend = isFirstConnection ? newCache : getNewImages(newCache, existingCache || {});
-
-                  // Debug logging
-                  if (Object.keys(imagesToSend).length > 0) {
-                      console.log(`[P2P Debug] Sending ${Object.keys(imagesToSend).length} images to ${peerId}, total size: ${JSON.stringify(imagesToSend).length} chars`);
-                  }
-
-                  // Debug: Check if state actually has references
-                  const stateJson = JSON.stringify(stateWithRefs);
-                  const hasBase64 = stateJson.includes('data:image/');
-                  const hasRefs = stateJson.includes('img_ref://');
-                  console.log(`[P2P Debug] Sending SYNC_STATE to ${peerId}, size: ${stateJson.length} chars, hasBase64: ${hasBase64}, hasRefs: ${hasRefs}`);
-
-                  // Send state with image references
-                  conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
-
-                  // Send images (all images for new connection, only new for existing)
-                  if (Object.keys(imagesToSend).length > 0) {
-                      conn.send({ type: 'IMAGE_CACHE', payload: imagesToSend });
-                      // Update the cache for this guest
-                      imageCachesRef.current!.set(peerId, newCache);
-                  }
-              }
-          });
+  // 🔥 OPTIMIZED: Create throttled broadcast function with WebRTC optimizations
+  const createOptimizedBroadcastFunction = useCallback(() => {
+    return throttle((currentState: GameState) => {
+      if (!isHost || !connectionsRef.current || connectionsRef.current.length === 0 || !imageCachesRef.current) {
+        return;
       }
+
+      // Filter out local windows before broadcasting
+      const stateForBroadcast = (() => {
+        const filteredObjects: Record<string, TableObject> = {};
+        Object.entries(currentState.objects).forEach(([id, obj]) => {
+          // Skip windows with ownerId (they are local to the owner)
+          if (obj.type === ItemType.WINDOW && (obj as WindowObject).ownerId) {
+            return;
+          }
+          // For objects being dragged by host, use broadcast coordinates (prevents showing drag path)
+          if ((obj as any).draggingPlayerId === currentState.activePlayerId && (obj as any).broadcastX !== undefined) {
+            // Create a copy with broadcast coordinates instead of current position
+            const broadcastObj = { ...obj, x: (obj as any).broadcastX, y: (obj as any).broadcastY };
+            filteredObjects[id] = broadcastObj;
+          } else {
+            filteredObjects[id] = obj;
+          }
+        });
+        const broadcastState = { ...currentState, objects: filteredObjects };
+        console.log(`[P2P Optimized] State for broadcast: ${Object.keys(broadcastState.objects).length} objects, raw size: ${JSON.stringify(broadcastState).length} chars`);
+        return broadcastState;
+      })();
+
+      // Extract images and replace with references for each connection
+      connectionsRef.current.forEach(conn => {
+        if (conn.open) {
+          const peerId = conn.peer;
+          const existingCache = imageCachesRef.current!.get(peerId);
+          const isFirstConnection = !existingCache || Object.keys(existingCache).length === 0;
+
+          // 🔥 FIX: Always send FULL state for new connections, use differential sync only for updates
+          let stateToSend = stateForBroadcast;
+          let isPartialSync = false;
+
+          if (!isFirstConnection) {
+            // For existing connections, check if we can use differential sync
+            const shouldSendFullState = differentialSyncManager.shouldSendFullState();
+            if (!shouldSendFullState) {
+              stateToSend = differentialSyncManager.getPartialState(stateForBroadcast, Date.now());
+              isPartialSync = stateToSend._isPartial || false;
+            }
+          }
+
+          // Extract images to cache and get state with references
+          const { state: stateWithRefs, imageCache: newCache } = extractImagesFromState(stateToSend, existingCache || {});
+
+          // For first connection, send ALL images. For updates, send only new ones.
+          const imagesToSend = isFirstConnection ? newCache : getNewImages(newCache, existingCache || {});
+
+          // 🔥 OPTIMIZED: Measure sync time and track statistics
+          measureSyncTime(
+            () => {
+              // Debug logging
+              if (Object.keys(imagesToSend).length > 0) {
+                console.log(`[P2P Optimized] Sending ${Object.keys(imagesToSend).length} images to ${peerId}, total size: ${JSON.stringify(imagesToSend).length} chars`);
+              }
+
+              // Debug: Check if state actually has references
+              const stateJson = JSON.stringify(stateWithRefs);
+              const hasBase64 = stateJson.includes('data:image/');
+              const hasRefs = stateJson.includes('img_ref://');
+
+              console.log(`[P2P Optimized] Sending ${isFirstConnection ? 'FULL (new connection)' : (isPartialSync ? 'PARTIAL' : 'FULL')} SYNC_STATE to ${peerId}, size: ${stateJson.length} chars, hasBase64: ${hasBase64}, hasRefs: ${hasRefs}`);
+
+              // Send state with image references
+              conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+
+              // Send images (all images for new connection, only new for existing)
+              if (Object.keys(imagesToSend).length > 0) {
+                conn.send({ type: 'IMAGE_CACHE', payload: imagesToSend });
+                // Update the cache for this guest
+                imageCachesRef.current!.set(peerId, newCache);
+              }
+
+              return { stateSize: stateJson.length, isPartial: isPartialSync };
+            },
+            (result, syncTime) => {
+              // 🔥 OPTIMIZED: Record statistics
+              webrtcStatsMonitor.recordSync(result.isPartial, result.stateSize, syncTime);
+            }
+          );
+        }
+      });
 
       // Also broadcast to manual P2P connection guest
       if (isHost && manualConnectionRef.current && manualConnectionRef.current.open === true) {
-          console.log('[Manual P2P] Broadcasting state change to manual connection guest');
-          const { state: stateWithRefs, imageCache } = extractImagesFromState(state);
-          try {
-              manualConnectionRef.current.send({ type: 'SYNC_STATE', payload: stateWithRefs });
-              if (Object.keys(imageCache).length > 0) {
-                  manualConnectionRef.current.send({ type: 'IMAGE_CACHE', payload: imageCache });
-              }
-          } catch (e) {
-              console.error('[Manual P2P] Error broadcasting state:', e);
+        console.log('[Manual P2P] Broadcasting state change to manual connection guest');
+        const { state: stateWithRefs, imageCache } = extractImagesFromState(stateForBroadcast);
+        try {
+          manualConnectionRef.current.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+          if (Object.keys(imageCache).length > 0) {
+            manualConnectionRef.current.send({ type: 'IMAGE_CACHE', payload: imageCache });
           }
+        } catch (e) {
+          console.error('[Manual P2P] Error broadcasting state:', e);
+        }
+      }
+
+      // 🔥 OPTIMIZED: Clear differential sync changes after broadcast
+      differentialSyncManager.clearChanges();
+    }, WEBRTC_OPTIMIZATION_CONFIG.STATE_SYNC_THROTTLE);
+  }, [isHost]);
+
+  // 🔥 OPTIMIZED: Create and store the throttled broadcast function
+  const optimizedBroadcastRef = useRef<ReturnType<typeof throttle> | null>(null);
+  useEffect(() => {
+    optimizedBroadcastRef.current = createOptimizedBroadcastFunction();
+  }, [createOptimizedBroadcastFunction]);
+
+  // 🔥 OPTIMIZED: Host Broadcast Loop - Now using throttled broadcast function
+  useEffect(() => {
+      // 🔥 OPTIMIZED: Use throttled broadcast function instead of direct sends
+      if (optimizedBroadcastRef.current) {
+        optimizedBroadcastRef.current.execute(state);
       }
   }, [state, isHost]);
 
@@ -5798,3 +5859,40 @@ export const useGame = () => {
   if (!context) throw new Error('useGame must be used within a GameProvider');
   return context;
 };
+
+// 🔥 OPTIMIZED: Expose WebRTC diagnostics to global scope for debugging
+if (typeof window !== 'undefined') {
+  (window as any).nexusWebRTCDebug = {
+    getStats: () => {
+      const stats = webrtcStatsMonitor.getStats();
+      console.log('[WebRTC Stats] 📊 WebRTC Performance Statistics:');
+      console.log(`Total Syncs: ${stats.stateSyncs}`);
+      console.log(`Partial Syncs: ${stats.partialSyncs} (${stats.stateSyncs > 0 ? Math.round((stats.partialSyncs / stats.stateSyncs) * 100) : 0}%)`);
+      console.log(`Full Syncs: ${stats.fullSyncs}`);
+      console.log(`Data Sent: ${(stats.bytesSent / 1024).toFixed(2)} KB`);
+      console.log(`Avg Sync Time: ${stats.averageSyncTime.toFixed(2)} ms`);
+      console.log(`Last Sync: ${stats.lastSyncTime > 0 ? new Date(stats.lastSyncTime).toLocaleTimeString() : 'Never'}`);
+      return stats;
+    },
+    printStats: () => {
+      webrtcStatsMonitor.printStats();
+    },
+    resetStats: () => {
+      webrtcStatsMonitor.resetStats();
+      console.log('[WebRTC Stats] 🔄 Statistics reset');
+    },
+    getDifferentialSyncInfo: () => {
+      const changeCount = differentialSyncManager.getChangeCount();
+      const shouldFull = differentialSyncManager.shouldSendFullState();
+      console.log('[Differential Sync] 📊 Change Tracking Info:');
+      console.log(`Pending Changes: ${changeCount}`);
+      console.log(`Should Send Full State: ${shouldFull} (threshold: ${WEBRTC_OPTIMIZATION_CONFIG.MAX_CHANGES_FOR_FULL_SYNC})`);
+      return {
+        changeCount,
+        shouldSendFullState: shouldFull,
+        threshold: WEBRTC_OPTIMIZATION_CONFIG.MAX_CHANGES_FOR_FULL_SYNC
+      };
+    }
+  };
+  console.log('[WebRTC Debug] 💡 Type nexusWebRTCDebug.getStats() for WebRTC performance info');
+}

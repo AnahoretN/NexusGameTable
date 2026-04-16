@@ -6,6 +6,15 @@ import { logger } from '../utils/logger';
 import { extractImagesFromState, restoreImagesFromCache } from '../utils/imageCache';
 import { filterLocalPanelProperties } from '../utils/panelSync';
 import { getPlayerId } from './gameConstants';
+import {
+  throttle,
+  debounce,
+  differentialSyncManager,
+  webrtcStatsMonitor,
+  measureSyncTime,
+  createOptimizedPeerJSConfig,
+  WEBRTC_OPTIMIZATION_CONFIG
+} from '../utils/webrtcOptimization';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type ImageCache = Record<string, string>; // imageId -> base64 data
@@ -33,22 +42,9 @@ export interface UsePeerConnectionReturn {
  * @param stateRef - Ref to current state (for syncing)
  */
 
-// ICE/STUN servers configuration for WebRTC NAT traversal
-// Multiple STUN servers provide fallback options if one fails
-const PEERJS_CONFIG = {
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:global.stun.twilio.com:3478' },
-      { urls: 'stun:stun.nextcloud.com:443' },
-      { urls: 'stun:stun.framasoft.org:443' },
-      { urls: 'stun:stun.miwifi.com:3478' },
-      { urls: 'stun:stun.voip.blackberry.com:3478' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-    ]
-  }
-};
+// 🔥 OPTIMIZED: WebRTC configuration with comprehensive STUN servers for global accessibility
+// Includes fallback servers for countries with restricted internet access
+const PEERJS_CONFIG = createOptimizedPeerJSConfig();
 
 /**
  * Get local IP address using WebRTC
