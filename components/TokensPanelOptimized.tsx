@@ -1,16 +1,25 @@
+/**
+ * TokensPanelOptimized v2.0 - Migrated to new context architecture
+ *
+ * @version 2.0.0
+ * @since 2026-04-17
+ *
+ * ИЗМЕНЕНИЯ с v1.0:
+ * ✅ Полностью убрана зависимость от useGame()
+ * ✅ Использует ObjectStore для игровых объектов
+ * ✅ Использует PlayerContext v2.0 для player данных
+ * ✅ Оптимизированные hooks для предотвращения ререндеров
+ * ✅ Сохранена вся функциональность оригинала
+ */
+
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useGame } from '../store/GameContext';
-import { usePlayerPermissions } from '../store/contexts';
+import { useObjectsData, useObjectActions } from '../store/objectStore';
+import { usePlayerPermissions, useIsGM } from '../store/contexts';
 import { ItemType, TokenType, TokenShape, AppLanguage } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 import { ChevronDown, Settings } from 'lucide-react';
 import { VirtualizedTokensPanel, SimpleTokensPanel, useVirtualizedTokensPanel } from './VirtualizedTokensPanel';
-
-// 🔥 OPTIMIZED: Zustand version of TokensPanel
-// Replaces: components/TokensPanel.tsx
-// Performance: ~60% fewer re-renders by using useMemo instead of filtering all objects on every render
-// NOTE: Using useMemo instead of direct Zustand hooks to avoid infinite loop with GameContext sync
 
 interface TokensPanelProps {
   width?: number;
@@ -23,24 +32,26 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
   isCollapsed = false,
   language = 'en'
 }) => {
-  const { state, dispatch, isHost } = useGame();
+  // ✅ НОВЫЕ КОНТЕКСТЫ
+  const objects = useObjectsData();
+  const { updateObject } = useObjectActions();
+
   const playerPermissions = usePlayerPermissions();
+  const isGM = useIsGM();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Token archetypes expanded state
   const [archetypesExpanded, setArchetypesExpanded] = useState(true);
 
-  // 🔥 OPTIMIZED: Memoize token archetypes instead of filtering all objects on every render
+  // 🔥 OPTIMIZED: Memoize token archetypes
   const archetypes = useMemo(() => {
-    return Object.values(state.objects)
-      .filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE);
-  }, [state.objects]);
+    return Object.values(objects).filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE);
+  }, [objects]);
 
   // 🔥 OPTIMIZED: Memoize all tokens for efficient copy counting
   const allTokens = useMemo(() => {
-    return Object.values(state.objects)
-      .filter(obj => obj.type === ItemType.TOKEN);
-  }, [state.objects]);
+    return Object.values(objects).filter(obj => obj.type === ItemType.TOKEN);
+  }, [objects]);
 
   // 🔥 OPTIMIZED: Create Map for efficient archetype lookup
   const archetypeMap = useMemo(() => {
@@ -117,7 +128,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
           if (archetypeCard) {
             const archetypeId = archetypeCard.dataset.archetypeId;
             if (archetypeId) {
-              // 🔥 OPTIMIZED: Use memoized archetype map instead of state.objects lookup
+              // 🔥 OPTIMIZED: Use memoized archetype map instead of objects lookup
               const archetype = archetypeMap.get(archetypeId);
               if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
                 isDraggingTokenRef.current = true;
@@ -172,7 +183,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
         if (dragDuration < 200 && dragDistance < 3) {
           const archetypeId = archetypeCard.dataset.archetypeId;
           if (archetypeId) {
-            // 🔥 OPTIMIZED: Use memoized archetype map instead of state.objects lookup
+            // 🔥 OPTIMIZED: Use memoized archetype map instead of objects lookup
             const archetype = archetypeMap.get(archetypeId);
             if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
               handleArchetypeClick(archetype, e.clientX, e.clientY);
@@ -202,18 +213,14 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
   // Handle archetype settings
   const handleArchetypeSettings = useCallback((archetype: TokenType) => {
     // Check permissions - GM always has access, non-GM needs configureObjects permission
-    const canConfigure = isHost || playerPermissions.configureObjects;
+    const canConfigure = isGM || playerPermissions.configureObjects;
     if (!canConfigure) return; // Silently do nothing if no permission
 
-    dispatch({
-      type: 'CREATE_WINDOW',
-      payload: {
-        windowType: 'OBJECT_SETTINGS' as any,
-        title: 'Settings: ' + archetype.name,
-        targetObjectId: archetype.id
-      }
-    });
-  }, [dispatch, isHost, playerPermissions.configureObjects]);
+    // Dispatch event to open settings window
+    window.dispatchEvent(new CustomEvent('open-object-settings', {
+      detail: { objectId: archetype.id }
+    }));
+  }, [isGM, playerPermissions.configureObjects]);
 
   if (isCollapsed) {
     return (
@@ -282,7 +289,7 @@ const VirtualizedTokensContent: React.FC<VirtualizedTokensContentProps> = ({
   getMaxCopies,
   onArchetypeSettings
 }) => {
-  const { shouldVirtualize } = useVirtualizedTokensPanel();
+  const { shouldVirtualize } = useVirtualizedTokensPanel(archetypes.length);
 
   if (shouldVirtualize) {
     return <VirtualizedTokensPanel archetypes={archetypes} width={width} language={language} getTokenCopyCount={getTokenCopyCount} getMaxCopies={getMaxCopies} onArchetypeSettings={onArchetypeSettings} />;
@@ -291,9 +298,11 @@ const VirtualizedTokensContent: React.FC<VirtualizedTokensContentProps> = ({
   return <SimpleTokensPanel archetypes={archetypes} width={width} language={language} getTokenCopyCount={getTokenCopyCount} getMaxCopies={getMaxCopies} onArchetypeSettings={onArchetypeSettings} />;
 };
 
-// Memoize TokensPanelOptimized to prevent unnecessary re-renders
+// Memoize TokensPanelOptimizedV2
 export const TokensPanelOptimizedMemo = React.memo(TokensPanelOptimized, (prevProps, nextProps) => {
   return prevProps.width === nextProps.width &&
          prevProps.isCollapsed === nextProps.isCollapsed &&
          prevProps.language === nextProps.language;
 });
+
+export default TokensPanelOptimized;

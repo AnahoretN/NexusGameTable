@@ -273,12 +273,12 @@ export const SimpleTokensPanel: React.FC<SimpleTokensPanelProps> = ({
 /**
  * Hook to determine if tokens panel should be virtualized
  */
-export function useVirtualizedTokensPanel(archetypeCount: number) {
-  const shouldVirtualize = archetypeCount > 15; // Virtualize if more than 15 archetypes
+export function useVirtualizedTokensPanel(archetypeCount?: number) {
+  const shouldVirtualize = (archetypeCount ?? 0) > 15; // Virtualize if more than 15 archetypes
 
   return {
     shouldVirtualize,
-    archetypeCount,
+    archetypeCount: archetypeCount ?? 0,
     recommendedColumns: 3,
     gap: 8,
   };

@@ -729,7 +729,7 @@ export const Tabletop: React.FC = () => {
       }
 
       // Set source to 'shift' to behave like Shift+click (drop on click, not on mouseup)
-      setCursorSlotSource('ctrl');
+      setCursorSlotSource('shift');
 
       isAddingTokenRef.current = false;
     };
@@ -1872,7 +1872,7 @@ export const Tabletop: React.FC = () => {
   }, [dispatch, activePlayerId, state.objects, viewTransform, cursorSlot, setCursorSlot, setCursorSlotSource, setCursorPosition, rollDiceWithGroup]);
 
   // Add object to cursor slot (Shift+click or long-press on card/token)
-  const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'ctrl' | 'hold' = 'ctrl', mousePosition?: { x: number; y: number }) => {
+  const addToCursorSlot = useCallback((id: string, item: TableObject, source: 'ctrl' | 'hold' | 'shift' = 'ctrl', mousePosition?: { x: number; y: number }) => {
     // IMPORTANT: Check if cursor is over a token archetype button - if so, don't add to slot
     // This prevents accidental pickup when clicking token type buttons
     const elementUnderCursor = document.elementFromPoint(mousePosition?.x ?? 0, mousePosition?.y ?? 0);
@@ -3183,11 +3183,32 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      // IMPORTANT: Check for Ctrl/Meta to allow adding NEW items to slot FIRST
+      // IMPORTANT: Check for Ctrl/Meta/Shift to allow adding NEW items to slot FIRST
       // This must happen BEFORE other checks to ensure Shift+click works properly
-      // When Ctrl/Meta is pressed, NEVER drop - always allow adding more items to slot
-      if (e.ctrlKey || e.metaKey) {
+      // When Ctrl/Meta/Shift is pressed, NEVER drop - always allow adding more items to slot
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
         return; // Let handleMouseDown add the clicked item to slot
+      }
+
+      // Check if clicking on an archetype card (token type in ToolsPanel or MainMenu)
+      // IMPORTANT: Check this BEFORE cursor slot check to allow adding tokens even when slot is not empty
+      const archetypeCard = target.closest('[data-archetype-card]');
+      if (archetypeCard) {
+        return; // Don't drop cursor slot when clicking on archetype cards
+      }
+
+      // Check if clicking on TokensPanel - don't drop, let the panel handle adding more tokens
+      // IMPORTANT: Check this BEFORE cursor slot check to allow adding tokens even when slot is not empty
+      const tokensPanel = target.closest('[data-tokens-panel]');
+      if (tokensPanel) {
+        return;
+      }
+
+      // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
+      // IMPORTANT: Check this BEFORE cursor slot check to allow adding tokens even when slot is not empty
+      const toolsPanel = target.closest('[data-tools-panel]');
+      if (toolsPanel) {
+        return;
       }
 
       // IMPORTANT: Use cursorSlotRef.current instead of cursorSlot to avoid race condition
@@ -3196,27 +3217,9 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      // Check if clicking on an archetype card (token type in ToolsPanel or MainMenu)
-      const archetypeCard = target.closest('[data-archetype-card]');
-      if (archetypeCard) {
-        return; // Don't drop cursor slot when clicking on archetype cards
-      }
-
       // If Ctrl/Meta is pressed and slot has items, still allow drop (user wants to drop)
       // When cursorSlotSource === 'shift', we WANT to drop on click even if Shift is pressed
       // This fixes the issue where PLAY_TOP_CARD sets source='ctrl' but Ctrl check prevents drop
-
-      // Check if clicking on ToolsPanel - don't drop, let the panel handle adding more tokens
-      const toolsPanel = target.closest('[data-tools-panel]');
-      if (toolsPanel) {
-        return;
-      }
-
-      // Check if clicking on TokensPanel - don't drop, let the panel handle adding more tokens
-      const tokensPanel = target.closest('[data-tokens-panel]');
-      if (tokensPanel) {
-        return;
-      }
 
       // Check if clicking inside hand panel - dispatch event to add cards to hand
       // IMPORTANT: Check hand panel BEFORE main menu, because hand panel is inside main menu
@@ -4195,7 +4198,7 @@ export const Tabletop: React.FC = () => {
       )) {
         e.preventDefault();
         e.stopPropagation();
-        addToCursorSlot(id, item);
+        addToCursorSlot(id, item, 'shift');
         return;
       }
 
