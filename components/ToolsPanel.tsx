@@ -2,6 +2,7 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { usePlayerPermissions } from '../store/contexts';
+import { useObjects } from '../store/objectStore';
 import { ItemType, TableObject, TokenType, TokenShape, WindowType, AppLanguage } from '../types';
 import { Pen, Eraser, Ruler, ZoomIn, ZoomOut, ChevronDown, ChevronUp, Settings, MousePointer2 } from 'lucide-react';
 import { SvgTokenShape } from './SvgTokenShape';
@@ -56,7 +57,8 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   onToggleCollapse,
   language = 'en'
 }) => {
-  const { state, dispatch, isHost } = useGame();
+  const { dispatch, isHost } = useGame();
+  const objects = useObjects();
   const playerPermissions = usePlayerPermissions();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -168,7 +170,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   const [archetypesExpanded, setArchetypesExpanded] = useState(true);
 
   // Get all token archetypes
-  const archetypes = Object.values(state.objects)
+  const archetypes = Object.values(objects)
     .filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE);
 
   // Handle tool selection
@@ -228,7 +230,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
           if (archetypeCard) {
             const archetypeId = archetypeCard.dataset.archetypeId;
             if (archetypeId) {
-              const archetype = state.objects[archetypeId] as TokenType;
+              const archetype = objects[archetypeId] as TokenType;
               if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
                 isDraggingTokenRef.current = true;
                 dragArchetypeIdRef.current = archetypeId;
@@ -281,7 +283,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
         if (dragDuration < 200 && dragDistance < 3) {
           const archetypeId = archetypeCard.dataset.archetypeId;
           if (archetypeId) {
-            const archetype = state.objects[archetypeId] as TokenType;
+            const archetype = objects[archetypeId] as TokenType;
             if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
               handleArchetypeClick(archetype, e.clientX, e.clientY);
             }
@@ -305,7 +307,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
       document.removeEventListener('mousemove', handleMouseMoveCapture, { capture: true } as any);
       document.removeEventListener('mouseup', handleMouseUpCapture, { capture: true } as any);
     };
-  }, [state.objects, handleArchetypeClick]);
+  }, [objects, handleArchetypeClick]);
 
   // Handle archetype settings
   const handleArchetypeSettings = useCallback((archetype: TokenType) => {

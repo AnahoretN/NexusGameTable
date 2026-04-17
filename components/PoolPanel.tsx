@@ -1,7 +1,24 @@
+/**
+ * PoolPanel v2.0 - Migrated to new context architecture
+ *
+ * @version 2.0.0
+ * @since 2026-04-17
+ *
+ * ИЗМЕНЕНИЯ с v1.0:
+ * ✅ Полностью убрана зависимость от useGame()
+ * ✅ Использует ObjectStore для игровых объектов
+ * ✅ Использует PlayerContext v2.0 для player данных
+ * ✅ Оптимизированные hooks для предотвращения ререндеров
+ * ✅ Сохранена вся функциональность оригинала
+ */
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import { useGame } from '../store/GameContext';
-import { usePlayerList, useActivePlayerId, useIsGM } from '../store/contexts';
+import { useObjectsData, useObjectActions } from '../store/objectStore';
+import {
+  usePlayerList,
+  useActivePlayerId,
+  useIsGM
+} from '../store/contexts';
 import { PanelObject, PoolPanelData, PanelTab, AppLanguage, ItemType } from '../types';
 import { Plus, Trash2, Lock, X } from 'lucide-react';
 import { PoolTabletopOptimized as PoolTabletop } from './PoolTabletopOptimized';
@@ -14,24 +31,30 @@ interface PoolPanelProps {
   language?: AppLanguage;
 }
 
-export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
+export const PoolPanel: React.FC<PoolPanelProps> = ({
   panel,
   language = 'en'
 }) => {
-  const { state, dispatch } = useGame();
+  // ✅ ИСПОЛЬЗУЕМ НОВЫЕ КОНТЕКСТЫ
+
+  // Игровые объекты из ObjectStore
+  const objects = useObjectsData();
+  const { updateObject, deleteObject } = useObjectActions();
+
+  // Player данные из PlayerContext v2.0
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
 
-  // Get pool data from panel - use latest from state to ensure reactivity
-  const panelObject = state.objects[panel.id] as PanelObject | undefined;
+  // Get pool data from panel - use latest from objects to ensure reactivity
+  const panelObject = objects[panel.id] as PanelObject | undefined;
   const poolData = panelObject?.poolData || panel.poolData;
 
   // Initialize pool data if not exists
   useEffect(() => {
     if (!poolData) {
       // Get existing pool territories to find available space
-      const existingPools = Object.values(state.objects)
+      const existingPools = Object.values(objects)
         .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData)
         .flatMap(obj => {
           const poolPanel = obj as PanelObject;
@@ -70,16 +93,11 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
         activeTabId: 'tab-default'
       };
 
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: panel.id,
-          poolData: defaultPoolData
-        }
+      updateObject(panel.id, {
+        poolData: defaultPoolData
       });
     } else {
       // Migrate old data where offsetX/offsetY were at panel level
-      // Check if first tab is missing offsetX/offsetY
       const firstTab = poolData.tabs[0];
       if (firstTab && (firstTab.offsetX === undefined || firstTab.offsetY === undefined)) {
         // Check if we have old panel-level coordinates
@@ -87,8 +105,6 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
           // Migrate to tab-level coordinates
           const migratedTabs = poolData.tabs.map((tab, index) => {
             if (tab.offsetX === undefined || tab.offsetY === undefined) {
-              // For existing tabs, use the old panel coordinates
-              // For new tabs, they'll get their own territory when created
               return {
                 ...tab,
                 offsetX: poolData.offsetX!,
@@ -99,20 +115,16 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
             return tab;
           });
 
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: panel.id,
-              poolData: {
-                ...poolData,
-                tabs: migratedTabs
-              }
+          updateObject(panel.id, {
+            poolData: {
+              ...poolData,
+              tabs: migratedTabs
             }
           });
         }
       }
     }
-  }, [poolData, panel.id, dispatch, state.objects]);
+  }, [poolData, panel.id, updateObject, objects]);
 
   // Get current player info
   const currentPlayer = players.find(p => p.id === activePlayerId);
@@ -154,20 +166,15 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
       return tab;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        poolData: {
-          ...poolData,
-          tabs: updatedTabs
-        }
+    updateObject(panel.id, {
+      poolData: {
+        ...poolData,
+        tabs: updatedTabs
       }
     });
 
-    // Close the settings modal after saving
     setSettingsModal(null);
-  }, [poolData, settingsModal?.tabId, panel.id, dispatch]);
+  }, [poolData, settingsModal?.tabId, panel.id, updateObject]);
 
   // Check permissions for active tab
   const canViewTab = useMemo(() => {
@@ -205,24 +212,20 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
   const handleSelectTab = useCallback((tabId: string) => {
     if (!poolData) return;
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        poolData: {
-          ...poolData,
-          activeTabId: tabId
-        }
+    updateObject(panel.id, {
+      poolData: {
+        ...poolData,
+        activeTabId: tabId
       }
     });
-  }, [poolData, panel.id, dispatch]);
+  }, [poolData, panel.id, updateObject]);
 
   // Handler: Add new tab (GM only)
   const handleAddTab = useCallback(() => {
     if (!poolData || !isGM) return;
 
     // Get existing pool territories to find available space
-    const existingPools = Object.values(state.objects)
+    const existingPools = Object.values(objects)
       .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData)
       .flatMap(obj => {
         const poolPanel = obj as PanelObject;
@@ -256,18 +259,14 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
       territoryId: `territory-${panel.id}-tab-${Date.now()}`
     };
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        poolData: {
-          ...poolData,
-          tabs: [...poolData.tabs, newTab],
-          activeTabId: newTab.id
-        }
+    updateObject(panel.id, {
+      poolData: {
+        ...poolData,
+        tabs: [...poolData.tabs, newTab],
+        activeTabId: newTab.id
       }
     });
-  }, [poolData, isGM, panel.id, dispatch, state.objects]);
+  }, [poolData, isGM, panel.id, updateObject, objects]);
 
   // Handler: Remove tab (GM only)
   const handleRemoveTab = useCallback((tabId: string) => {
@@ -280,24 +279,14 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
       ? newTabs[0].id
       : poolData.activeTabId;
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        poolData: {
-          ...poolData,
-          tabs: newTabs,
-          activeTabId: newActiveId
-        }
+    updateObject(panel.id, {
+      poolData: {
+        ...poolData,
+        tabs: newTabs,
+        activeTabId: newActiveId
       }
     });
-  }, [poolData, isGM, panel.id, dispatch]);
-
-  // Handler: Drop objects from cursor slot to pool
-  const handleDropFromCursorSlot = useCallback((x: number, y: number) => {
-    // This is now handled by PoolTabletop directly
-    // Objects are just placed in the pool zone coordinates
-  }, []);
+  }, [poolData, isGM, panel.id, updateObject]);
 
   if (!poolData) {
     return (
@@ -397,7 +386,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
       )}
 
       {/* Tab Settings Modal */}
-      {settingsModal && createPortal(
+      {settingsModal && (
         <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={() => setSettingsModal(null)}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
@@ -450,9 +439,10 @@ export const PoolPanel: React.FC<PoolPanelProps> = React.memo(({
               </button>
             </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   );
-});
+};
+
+export default PoolPanel;

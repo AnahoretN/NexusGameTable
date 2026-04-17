@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { PanelObject, PanelType, AppLanguage } from '../types';
 import { useGame } from '../store/GameContext';
 import { useActivePlayerId } from '../store/contexts';
+import { useObjectActions } from '../store/objectStore';
 import { Settings, Maximize2, Check } from 'lucide-react';
 
 type PanelSettingsTab = 'general';
@@ -22,7 +23,8 @@ interface PanelSettingsModalProps {
  * When a player opens this modal, they see and modify their own settings only.
  */
 export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, onClose, language = 'en' }) => {
-  const { dispatch, state, isHost } = useGame();
+  const { dispatch, isHost } = useGame(); // Keep for player panel settings
+  const { updateObject } = useObjectActions();
   const activePlayerId = useActivePlayerId();
 
   const [activeTab, setActiveTab] = React.useState<PanelSettingsTab>('general');
@@ -97,19 +99,14 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
     }
 
     // Also update local panel for immediate visual feedback
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        title,
-        x: Math.round(x),
-        y: Math.round(y),
-        width: Math.round(width),
-        height: Math.round(height),
-        dualPosition,
-        zIndex
-      },
-      _localOnly: true // Don't sync this to other players
+    updateObject(panel.id, {
+      title,
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.round(width),
+      height: Math.round(height),
+      dualPosition,
+      zIndex
     });
 
     onClose();

@@ -1,7 +1,25 @@
+/**
+ * TableauPanel v2.0 - Migrated to new context architecture
+ *
+ * @version 2.0.0
+ * @since 2026-04-17
+ *
+ * ИЗМЕНЕНИЯ с v1.0:
+ * ✅ Полностью убрана зависимость от useGame()
+ * ✅ Использует ObjectStore для игровых объектов
+ * ✅ Использует PlayerContext v2.0 для player данных
+ * ✅ Оптимизированные hooks для предотвращения ререндеров
+ * ✅ Сохранена вся функциональность оригинала
+ */
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useGame } from '../store/GameContext';
-import { usePlayerList, useActivePlayerId } from '../store/contexts';
-import { PanelObject, TableauPanelData, PanelTab, AppLanguage } from '../types';
+import { useObjectsData, useObjectActions } from '../store/objectStore';
+import {
+  usePlayerList,
+  useActivePlayerId,
+  useIsGM
+} from '../store/contexts';
+import { PanelObject, TableauPanelData, PanelTab, AppLanguage, ItemType } from '../types';
 import { Plus, Trash2, Lock } from 'lucide-react';
 
 interface TableauPanelProps {
@@ -13,13 +31,19 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
   panel,
   language = 'en'
 }) => {
-  const { state, dispatch } = useGame();
+  // ✅ ИСПОЛЬЗУЕМ НОВЫЕ КОНТЕКСТЫ
+
+  // Игровые объекты из ObjectStore
+  const objects = useObjectsData();
+  const { updateObject } = useObjectActions();
+
+  // Player данные из PlayerContext v2.0
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Get tableau data from panel - use latest from state to ensure reactivity
-  const panelObject = state.objects[panel.id] as PanelObject | undefined;
+  // Get tableau data from panel - use latest from objects to ensure reactivity
+  const panelObject = objects[panel.id] as PanelObject | undefined;
   const tableauData = panelObject?.tableauData || panel.tableauData;
 
   // Initialize tableau data if not exists
@@ -41,15 +65,11 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
         }
       };
 
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: panel.id,
-          tableauData: defaultTableauData
-        }
+      updateObject(panel.id, {
+        tableauData: defaultTableauData
       });
     }
-  }, [tableauData, panel.id, dispatch]);
+  }, [tableauData, panel.id, updateObject]);
 
   // Get current player info
   const currentPlayer = players.find(p => p.id === activePlayerId);
@@ -97,17 +117,13 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
   const handleSelectTab = useCallback((tabId: string) => {
     if (!tableauData) return;
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        tableauData: {
-          ...tableauData,
-          activeTabId: tabId
-        }
+    updateObject(panel.id, {
+      tableauData: {
+        ...tableauData,
+        activeTabId: tabId
       }
     });
-  }, [tableauData, panel.id, dispatch]);
+  }, [tableauData, panel.id, updateObject]);
 
   // Handler: Add new tab (GM only)
   const handleAddTab = useCallback(() => {
@@ -121,22 +137,18 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
       editableByPlayerIds: []
     };
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        tableauData: {
-          ...tableauData,
-          tabs: [...tableauData.tabs, newTab],
-          tabObjects: {
-            ...tableauData.tabObjects,
-            [newTab.id]: []
-          },
-          activeTabId: newTab.id
-        }
+    updateObject(panel.id, {
+      tableauData: {
+        ...tableauData,
+        tabs: [...tableauData.tabs, newTab],
+        tabObjects: {
+          ...tableauData.tabObjects,
+          [newTab.id]: []
+        },
+        activeTabId: newTab.id
       }
     });
-  }, [tableauData, isGM, panel.id, dispatch]);
+  }, [tableauData, isGM, panel.id, updateObject]);
 
   // Handler: Remove tab (GM only)
   const handleRemoveTab = useCallback((tabId: string) => {
@@ -152,19 +164,15 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
       ? newTabs[0].id
       : tableauData.activeTabId;
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        tableauData: {
-          ...tableauData,
-          tabs: newTabs,
-          tabObjects: newTabObjects,
-          activeTabId: newActiveId
-        }
+    updateObject(panel.id, {
+      tableauData: {
+        ...tableauData,
+        tabs: newTabs,
+        tabObjects: newTabObjects,
+        activeTabId: newActiveId
       }
     });
-  }, [tableauData, isGM, panel.id, dispatch]);
+  }, [tableauData, isGM, panel.id, updateObject]);
 
   if (!tableauData) {
     return (
@@ -246,3 +254,5 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
     </div>
   );
 };
+
+export default TableauPanel;

@@ -3,6 +3,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
+import { useObjects, useObjectActions } from '../store/objectStore';
 import { Deck, Card, CardPile, ContextAction, AppLanguage, TableObject } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
 import { logger } from '../utils/logger';
@@ -25,7 +26,9 @@ interface TopDeckModalProps {
 
 export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, language = 'en' }) => {
 
-  const { state, dispatch } = useGame();
+  const { dispatch } = useGame(); // Keep for card-specific operations
+  const objects = useObjects();
+  const { updateObject, deleteObject } = useObjectActions();
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
@@ -52,8 +55,8 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
 
   const cards = useMemo(() =>
-    cardOrder.map(id => state.objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
-    [cardOrder, state.objects, isGM]
+    cardOrder.map(id => objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
+    [cardOrder, objects, isGM]
   );
 
   // Get the mill pile (pile with isMillPile = true)
@@ -92,7 +95,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
 
     // Set all cards face down first
     deck.cardIds.forEach((cardId, index) => {
-      const card = state.objects[cardId] as Card;
+      const card = objects[cardId] as Card;
       if (!card) return;
 
       // Top card (index 0) should be face up, others face down
@@ -109,7 +112,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   // Sync cardOrder with deck.cardIds
   // This ensures cards reorder visually after move operations
   useEffect(() => {
-    const currentDeck = state.objects[deck.id] as Deck;
+    const currentDeck = objects[deck.id] as Deck;
     if (currentDeck && currentDeck.cardIds) {
       const prevIds = prevCardIdsRef.current;
       // Only sync if deck.cardIds has changed (reorder operation)
@@ -118,7 +121,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
       }
       prevCardIdsRef.current = [...currentDeck.cardIds];
     }
-  }, [state.objects, deck.id]);
+  }, [objects, deck.id]);
 
   // Flip handler
   const handleFlip = useCallback((cardId: string) => {
@@ -127,21 +130,17 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
 
   // To Hand handler
   const handleToHand = useCallback((cardId: string) => {
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: cardId,
-        location: 'HAND' as any,
-        ownerId: activePlayerId,
-        isOnTable: false,
-        faceUp: true
-      } as any
+    updateObject(cardId, {
+      location: 'HAND' as any,
+      ownerId: activePlayerId,
+      isOnTable: false,
+      faceUp: true
     });
 
     const newCardOrder = cardOrder.filter(id => id !== cardId);
-    dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: newCardOrder } });
+    updateObject(deck.id, { cardIds: newCardOrder });
     setCardOrder(newCardOrder);
-  }, [dispatch, activePlayerId, cardOrder, deck.id]);
+  }, [updateObject, activePlayerId, cardOrder, deck.id]);
 
   // Mill to Bottom - send card to bottom of deck
   const handleMillToBottom = useCallback((cardId: string) => {
@@ -222,14 +221,11 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         break;
       case 'toggleHide':
         const isHidden = card.hidden === true;
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: { id: card.id, hidden: !isHidden }
-        });
+        updateObject(card.id, { hidden: !isHidden });
         break;
       case 'setCardBack':
         if (card.deckId) {
-          const parentDeck = state.objects[card.deckId] as Deck;
+          const parentDeck = objects[card.deckId] as Deck;
           if (parentDeck && parentDeck.spriteConfig) {
             // Clear cardBackUrl to avoid conflicts - the last changed method should take priority
             const { cardBackUrl, ...restConfig } = parentDeck.spriteConfig;
@@ -240,38 +236,35 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
               cardBackSpriteColumns: card.spriteColumns ?? 1,
               cardBackSpriteRows: card.spriteRows ?? 1,
             };
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: { id: parentDeck.id, spriteConfig: updatedSpriteConfig }
-            });
+            updateObject(parentDeck.id, { spriteConfig: updatedSpriteConfig });
           }
         }
         break;
       case 'destroy':
         // Destroy permanently removes card from the deck
         const destroyFilteredOrder = cardOrder.filter(id => id !== card.id);
-        const currentDeck = state.objects[deck.id] as Deck;
+        const currentDeck = objects[deck.id] as Deck;
         const currentBaseCardIds = currentDeck?.baseCardIds || deck.baseCardIds || [];
         const destroyFilteredBaseCardIds = currentBaseCardIds.filter(id => id !== card.id);
 
-        // Remove the card object from state.objects
-        dispatch({ type: 'DELETE_OBJECT', payload: { id: card.id } });
+        // Remove the card object from objects
+        deleteObject(card.id);
 
-        dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds } });
+        updateObject(deck.id, { cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds });
         setCardOrder(destroyFilteredOrder);
         break;
       case 'delete':
         const filteredOrder = cardOrder.filter(id => id !== card.id);
-        const deleteCurrentDeck = state.objects[deck.id] as Deck;
+        const deleteCurrentDeck = objects[deck.id] as Deck;
         const deleteCurrentBaseCardIds = deleteCurrentDeck?.baseCardIds || deck.baseCardIds || [];
         const deleteFilteredBaseCardIds = deleteCurrentBaseCardIds.filter(id => id !== card.id);
 
-        dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: filteredOrder, baseCardIds: deleteFilteredBaseCardIds } });
+        updateObject(deck.id, { cardIds: filteredOrder, baseCardIds: deleteFilteredBaseCardIds });
         setCardOrder(filteredOrder);
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, handleFlip, handleToHand, handleMoveToTopDeck, handleMoveToBottomDeck, handleMill, handleClone, dispatch, cardOrder, state.objects, deck.id, deck.baseCardIds]);
+  }, [contextMenu, handleFlip, handleToHand, handleMoveToTopDeck, handleMoveToBottomDeck, handleMill, handleClone, updateObject, deleteObject, cardOrder, objects, deck.id, deck.baseCardIds]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -502,7 +495,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
           isGM={!!players.find(p => p.id === activePlayerId)?.isGM}
           onAction={executeMenuAction}
           onClose={() => setContextMenu(null)}
-          allObjects={state.objects}
+          allObjects={objects}
           hideCardActions={true}
           isSearchWindow={true}
           language={language}
@@ -515,7 +508,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
           object={settingsModalObj}
           language={language}
           onSave={(updatedObj) => {
-            dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
+            updateObject(updatedObj.id, updatedObj);
             setSettingsModalObj(null);
           }}
           onClose={() => setSettingsModalObj(null)}

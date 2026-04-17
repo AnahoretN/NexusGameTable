@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { shallow } from 'zustand/shallow';
+import { useMemo } from 'react';
 import { TableObject, ItemType, Card, Token, Deck } from '../types';
 
 // Object store interface
@@ -13,6 +14,7 @@ interface ObjectStore {
 
   // Actions
   setObject: (id: string, object: TableObject) => void;
+  addObject: (object: TableObject) => void;
   updateObject: (id: string, updates: Partial<TableObject>) => void;
   deleteObject: (id: string) => void;
   moveObject: (id: string, x: number, y: number) => void;
@@ -37,6 +39,11 @@ export const useObjectStore = create<ObjectStore>((set, get) => ({
   setObject: (id, object) =>
     set(state => ({
       objects: { ...state.objects, [id]: object },
+    })),
+
+  addObject: (object) =>
+    set(state => ({
+      objects: { ...state.objects, [object.id]: object },
     })),
 
   updateObject: (id, updates) =>
@@ -311,48 +318,78 @@ export function useObjectStats() {
 
 /**
  * Hook to get object store actions (no re-render on data changes)
+ * Uses direct selector for stable references
  */
 export function useObjectActions() {
-  return useObjectStore(
-    state => ({
-      setObject: state.setObject,
-      updateObject: state.updateObject,
-      deleteObject: state.deleteObject,
-      moveObject: state.moveObject,
-      setObjects: state.setObjects,
-      clearObjects: state.clearObjects,
-    }),
-    shallow
-  );
+  const setObject = useObjectStore(state => state.setObject);
+  const addObject = useObjectStore(state => state.addObject);
+  const updateObject = useObjectStore(state => state.updateObject);
+  const deleteObject = useObjectStore(state => state.deleteObject);
+  const moveObject = useObjectStore(state => state.moveObject);
+  const setObjects = useObjectStore(state => state.setObjects);
+  const clearObjects = useObjectStore(state => state.clearObjects);
+
+  return useMemo(() => ({
+    setObject,
+    addObject,
+    updateObject,
+    deleteObject,
+    moveObject,
+    setObjects,
+    clearObjects,
+  }), [setObject, addObject, updateObject, deleteObject, moveObject, setObjects, clearObjects]);
+}
+
+/**
+ * Hook to get only objects data (no actions)
+ * Use this when you only need to read objects to avoid unnecessary re-renders
+ */
+export function useObjectsData() {
+  return useObjectStore(state => state.objects);
 }
 
 /**
  * Hook to get both data and actions
  * Use this when you need both read and write access
+ * Uses direct selectors for stable references
  */
 export function useObjects() {
-  return useObjectStore(
-    state => ({
-      // Data
-      objects: state.objects,
-      // Actions
-      setObject: state.setObject,
-      updateObject: state.updateObject,
-      deleteObject: state.deleteObject,
-      moveObject: state.moveObject,
-      setObjects: state.setObjects,
-      clearObjects: state.clearObjects,
-      // Selectors
-      getObjectById: state.getObjectById,
-      getObjectsByType: state.getObjectsByType,
-      getVisibleObjects: state.getVisibleObjects,
-      getObjectsOnTable: state.getObjectsOnTable,
-      getObjectsByLayer: state.getObjectsByLayer,
-      getObjectsByOwner: state.getObjectsByOwner,
-      searchObjects: state.searchObjects,
-    }),
-    shallow
-  );
+  const objects = useObjectStore(state => state.objects);
+  const setObject = useObjectStore(state => state.setObject);
+  const addObject = useObjectStore(state => state.addObject);
+  const updateObject = useObjectStore(state => state.updateObject);
+  const deleteObject = useObjectStore(state => state.deleteObject);
+  const moveObject = useObjectStore(state => state.moveObject);
+  const setObjects = useObjectStore(state => state.setObjects);
+  const clearObjects = useObjectStore(state => state.clearObjects);
+  const getObjectById = useObjectStore(state => state.getObjectById);
+  const getObjectsByType = useObjectStore(state => state.getObjectsByType);
+  const getVisibleObjects = useObjectStore(state => state.getVisibleObjects);
+  const getObjectsOnTable = useObjectStore(state => state.getObjectsOnTable);
+  const getObjectsByLayer = useObjectStore(state => state.getObjectsByLayer);
+  const getObjectsByOwner = useObjectStore(state => state.getObjectsByOwner);
+  const searchObjects = useObjectStore(state => state.searchObjects);
+
+  return useMemo(() => ({
+    // Data
+    objects,
+    // Actions
+    setObject,
+    addObject,
+    updateObject,
+    deleteObject,
+    moveObject,
+    setObjects,
+    clearObjects,
+    // Selectors
+    getObjectById,
+    getObjectsByType,
+    getVisibleObjects,
+    getObjectsOnTable,
+    getObjectsByLayer,
+    getObjectsByOwner,
+    searchObjects,
+  }), [objects, setObject, addObject, updateObject, deleteObject, moveObject, setObjects, clearObjects, getObjectById, getObjectsByType, getVisibleObjects, getObjectsOnTable, getObjectsByLayer, getObjectsByOwner, searchObjects]);
 }
 
 // Utility functions for bulk operations

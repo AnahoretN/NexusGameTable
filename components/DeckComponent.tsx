@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { Layers, Lock, Unlock, Shuffle, Hand, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react';
 import { useGame } from '../store/GameContext';
+import { useObjectById } from '../store/objectStore';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation, ContextAction } from '../types';
 import { DECK_OFFSET } from '../constants';
 import { Tooltip } from './Tooltip';
@@ -91,12 +92,13 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   style,
   disableDeckHighlight = false,
 }) => {
-  const { state } = useGame();
+  // 🔥 OPTIMIZED: Get specific dragging object to prevent unnecessary re-renders
+  const draggingObject = useObjectById(draggingId || '');
 
   // 🔥 OPTIMIZED: Memoize dragging object type check to avoid repeated lookups
   const isDraggingCardFromTable = useMemo(() => {
-    return draggingId && state.objects[draggingId]?.type === ItemType.CARD;
-  }, [draggingId, state.objects]);
+    return draggingId && draggingObject?.type === ItemType.CARD;
+  }, [draggingId, draggingObject]);
 
   // Memoized mouse down handler to prevent multiple re-renders
   const handleDeckMouseDown = useCallback((e: React.MouseEvent) => {

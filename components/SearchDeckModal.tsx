@@ -3,6 +3,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
+import { useObjects, useObjectActions } from '../store/objectStore';
 import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, ItemType, Deck as DeckType, AppLanguage } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card as CardComponent } from './Card';
@@ -187,7 +188,9 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = [], l
 };
 
 export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, onClose, language = 'en' }) => {
-  const { state, dispatch } = useGame();
+  const { dispatch } = useGame(); // Keep for card-specific operations
+  const objects = useObjects();
+  const { updateObject, deleteObject, addObject } = useObjectActions();
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
@@ -238,22 +241,19 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       if (!deck.gmSearchFaceUp) {
         const initialStates: Record<string, boolean> = {};
         cardOrder.forEach(cardId => {
-          const card = state.objects[cardId] as Card;
+          const card = objects[cardId] as Card;
           if (card) {
             initialStates[cardId] = true;
           }
         });
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: { id: deck.id, gmSearchFaceUp: initialStates }
-        });
+        updateObject(deck.id, { gmSearchFaceUp: initialStates });
         setGmFlipStates(initialStates);
       } else {
         setGmFlipStates(deck.gmSearchFaceUp);
       }
       gmInitializedRef.current = true;
     }
-  }, [isGM]);
+  }, [isGM, updateObject]);
 
   // Determine if a card should be shown face up based on visibility mode
   const getCardFaceUp = useCallback((card: Card): boolean => {
@@ -288,8 +288,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const title = isPile ? `${pile.name} - ${deck.name}` : deck.name;
 
   const cards = useMemo(() =>
-    cardOrder.map(id => state.objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
-    [cardOrder, state.objects, isGM]
+    cardOrder.map(id => objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
+    [cardOrder, objects, isGM]
   );
 
   const cardActionButtons = deck.cardActionButtons || [];
@@ -301,7 +301,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   // This ensures cards reorder visually after move operations
   useEffect(() => {
     if (!isPile) {
-      const currentDeck = state.objects[deck.id] as Deck;
+      const currentDeck = objects[deck.id] as Deck;
       if (currentDeck && currentDeck.cardIds) {
         const prevIds = prevCardIdsRef.current;
         // Only sync if deck.cardIds has changed (reorder operation)
@@ -311,17 +311,17 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         prevCardIdsRef.current = [...currentDeck.cardIds];
       }
     }
-  }, [state.objects, deck.id, isPile]);
+  }, [objects, deck.id, isPile]);
 
   // Initialize prevCardIdsRef when deck changes
   useEffect(() => {
     if (!isPile) {
-      const currentDeck = state.objects[deck.id] as Deck;
+      const currentDeck = objects[deck.id] as Deck;
       if (currentDeck && currentDeck.cardIds) {
         prevCardIdsRef.current = [...currentDeck.cardIds];
       }
     }
-  }, [deck.id, isPile, state.objects]);
+  }, [deck.id, isPile, objects]);
 
   const getCardDimensions = useCallback((card: Card) => {
     const actualCardWidth = card.width ?? DEFAULT_DECK_WIDTH;
@@ -369,10 +369,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       const newState = !currentState;
       const updated = { ...gmFlipStates, [cardId]: newState };
       setGmFlipStates(updated);
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: deck.id, gmSearchFaceUp: updated }
-      });
+      updateObject(deck.id, { gmSearchFaceUp: updated });
     } else if (visibility === SearchWindowVisibility.LAST_STATE) {
       setPlayerFlipStates(prev => {
         const currentState = prev[cardId] ?? true;
@@ -380,18 +377,14 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       });
     }
     dispatch({ type: 'FLIP_CARD', payload: { cardId } });
-  }, [dispatch, visibility, isGM, gmFlipStates, deck.id]);
+  }, [dispatch, updateObject, visibility, isGM, gmFlipStates, deck.id]);
 
   const handleToHand = useCallback((cardId: string) => {
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: cardId,
-        location: 'HAND' as any,
-        ownerId: activePlayerId,
-        isOnTable: false,
-        faceUp: true
-      } as any
+    updateObject(cardId, {
+      location: 'HAND' as any,
+      ownerId: activePlayerId,
+      isOnTable: false,
+      faceUp: true
     });
 
     const newCardOrder = cardOrder.filter(id => id !== cardId);
@@ -399,12 +392,12 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       const updatedPiles = deck.piles?.map(p =>
         p.id === pile.id ? { ...p, cardIds: newCardOrder } : p
       );
-      dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
+      updateObject(deck.id, { piles: updatedPiles });
     } else {
-      dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: newCardOrder } });
+      updateObject(deck.id, { cardIds: newCardOrder });
     }
     setCardOrder(newCardOrder);
-  }, [dispatch, activePlayerId, cardOrder, isPile, pile, deck]);
+  }, [updateObject, activePlayerId, cardOrder, isPile, pile, deck]);
 
   const handleActionButtonClick = useCallback((card: Card, action: ContextAction) => {
     switch (action) {
@@ -438,7 +431,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         break;
       case 'moveToDiscard':
         if (card.deckId) {
-          const cardDeck = state.objects[card.deckId] as DeckType | undefined;
+          const cardDeck = objects[card.deckId] as DeckType | undefined;
           if (cardDeck?.piles) {
             const millPile = cardDeck.piles.find(p => p.isMillPile);
             if (millPile) {
@@ -459,7 +452,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         dispatch({ type: 'CLONE_OBJECT', payload: { id: card.id }});
         break;
     }
-  }, [handleFlip, handleToHand, dispatch, cardOrder, isPile, pile, state.objects]);
+  }, [handleFlip, handleToHand, dispatch, cardOrder, isPile, pile, objects]);
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
@@ -487,10 +480,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           const newState = !currentState;
           const updated = { ...gmFlipStates, [object.id]: newState };
           setGmFlipStates(updated);
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: { id: deck.id, gmSearchFaceUp: updated }
-          });
+          updateObject(deck.id, { gmSearchFaceUp: updated });
         } else if (visibility === SearchWindowVisibility.LAST_STATE) {
           setPlayerFlipStates(prev => {
             const currentState = prev[object.id] ?? true;
@@ -503,24 +493,20 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: 90 }});
         break;
       case 'moveToHand':
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: {
-            id: object.id,
-            location: 'HAND' as any,
-            ownerId: activePlayerId,
-            isOnTable: false,
-            faceUp: true
-          } as any
+        updateObject(object.id, {
+          location: 'HAND' as any,
+          ownerId: activePlayerId,
+          isOnTable: false,
+          faceUp: true
         });
         const moveToHandCardOrder = cardOrder.filter(id => id !== object.id);
         if (isPile && pile) {
           const updatedPiles = deck.piles?.map(p =>
             p.id === pile.id ? { ...p, cardIds: moveToHandCardOrder } : p
           );
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
+          updateObject(deck.id, { piles: updatedPiles });
         } else {
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: moveToHandCardOrder } });
+          updateObject(deck.id, { cardIds: moveToHandCardOrder });
         }
         setCardOrder(moveToHandCardOrder);
         break;
@@ -553,7 +539,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       case 'moveToDiscard': {
         const card = object as Card;
         if (card.deckId) {
-          const cardDeck = state.objects[card.deckId] as DeckType | undefined;
+          const cardDeck = objects[card.deckId] as DeckType | undefined;
           if (cardDeck?.piles) {
             const millPile = cardDeck.piles.find(p => p.isMillPile);
             if (millPile) {
@@ -583,10 +569,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           };
 
           // Add the cloned card to the objects
-          dispatch({ type: 'ADD_OBJECT', payload: newCard });
+          addObject(newCard);
 
           // Get current deck state
-          const currentDeck = state.objects[deck.id] as Deck;
+          const currentDeck = objects[deck.id] as Deck;
           const currentCardIds = currentDeck?.cardIds || deck.cardIds;
           const currentBaseCardIds = currentDeck?.baseCardIds || deck.baseCardIds;
 
@@ -598,10 +584,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             const updatedPiles = (currentDeck?.piles || deck.piles)?.map(p =>
               p.id === pile.id ? { ...p, cardIds: [...pile.cardIds, newCard.id] } : p
             );
-            dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles, cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds } });
+            updateObject(deck.id, { piles: updatedPiles, cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds });
             setCardOrder([...cardOrder, newCard.id]);
           } else {
-            dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds } });
+            updateObject(deck.id, { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds });
             setCardOrder(updatedCardIds);
           }
         } else {
@@ -612,16 +598,13 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       }
       case 'toggleHide':
         const isHidden = (object as Card).hidden === true;
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: { id: object.id, hidden: !isHidden }
-        });
+        updateObject(object.id, { hidden: !isHidden });
         break;
       case 'delete':
         const filteredOrder = cardOrder.filter(id => id !== object.id);
         // GM deletion removes card from baseCardIds (permanent removal from deck's card pool)
         // Get the current baseCardIds from state to ensure we're working with latest data
-        const currentDeck = state.objects[deck.id] as Deck;
+        const currentDeck = objects[deck.id] as Deck;
         const currentBaseCardIds = currentDeck?.baseCardIds || deck.baseCardIds || [];
         const filteredBaseCardIds = currentBaseCardIds.filter(id => id !== object.id);
 
@@ -629,9 +612,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           const updatedPiles = (currentDeck?.piles || deck.piles)?.map(p =>
             p.id === pile.id ? { ...p, cardIds: filteredOrder } : p
           );
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles, baseCardIds: filteredBaseCardIds } });
+          updateObject(deck.id, { piles: updatedPiles, baseCardIds: filteredBaseCardIds });
         } else {
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: filteredOrder, baseCardIds: filteredBaseCardIds } });
+          updateObject(deck.id, { cardIds: filteredOrder, baseCardIds: filteredBaseCardIds });
         }
         setCardOrder(filteredOrder);
         break;
@@ -640,20 +623,20 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         // This means the card won't come back even with "Return All" action
         const destroyFilteredOrder = cardOrder.filter(id => id !== object.id);
         // Get the current baseCardIds from state to ensure we're working with latest data
-        const destroyCurrentDeck = state.objects[deck.id] as Deck;
+        const destroyCurrentDeck = objects[deck.id] as Deck;
         const destroyCurrentBaseCardIds = destroyCurrentDeck?.baseCardIds || deck.baseCardIds || [];
         const destroyFilteredBaseCardIds = destroyCurrentBaseCardIds.filter(id => id !== object.id);
 
-        // Also remove the card object from state.objects to completely forget about it
-        dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id } });
+        // Also remove the card object from objects to completely forget about it
+        deleteObject(object.id);
 
         if (isPile && pile) {
           const destroyUpdatedPiles = (destroyCurrentDeck?.piles || deck.piles)?.map(p =>
             p.id === pile.id ? { ...p, cardIds: destroyFilteredOrder } : p
           );
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: destroyUpdatedPiles, baseCardIds: destroyFilteredBaseCardIds } });
+          updateObject(deck.id, { piles: destroyUpdatedPiles, baseCardIds: destroyFilteredBaseCardIds });
         } else {
-          dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds } });
+          updateObject(deck.id, { cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds });
         }
         setCardOrder(destroyFilteredOrder);
         break;
@@ -661,7 +644,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         // Set the current card's image as the deck's card back
         const card = object as Card;
         if (card.deckId) {
-          const parentDeck = state.objects[card.deckId] as Deck;
+          const parentDeck = objects[card.deckId] as Deck;
           if (parentDeck && parentDeck.spriteConfig) {
             // If the card is from a sprite sheet, save the sprite info for the card back
             // Also clear cardBackUrl to avoid conflicts - the last changed method should take priority
@@ -673,16 +656,13 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
               cardBackSpriteColumns: card.spriteColumns ?? 1,
               cardBackSpriteRows: card.spriteRows ?? 1,
             };
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: { id: parentDeck.id, spriteConfig: updatedSpriteConfig }
-            });
+            updateObject(parentDeck.id, { spriteConfig: updatedSpriteConfig });
           }
         }
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, deck.id, activePlayerId, cardOrder, isPile, pile, state.objects, deck]);
+  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, updateObject, deleteObject, addObject, deck.id, activePlayerId, cardOrder, isPile, pile, objects, deck]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -810,9 +790,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                   const updatedPiles = deck.piles?.map(p =>
                     p.id === pile.id ? { ...p, cardIds: newOrder } : p
                   );
-                  dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, piles: updatedPiles } });
+                  updateObject(deck.id, { piles: updatedPiles });
                 } else {
-                  dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, cardIds: newOrder } });
+                  updateObject(deck.id, { cardIds: newOrder });
                 }
                 setCardOrder(newOrder);
               }}
@@ -831,10 +811,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                     dispatch({ type: 'FLIP_CARD', payload: { cardId: card.id }});
                   });
                   setGmFlipStates(updated);
-                  dispatch({
-                    type: 'UPDATE_OBJECT',
-                    payload: { id: deck.id, gmSearchFaceUp: updated }
-                  });
+                  updateObject(deck.id, { gmSearchFaceUp: updated });
                 } else {
                   // For players: just flip all cards
                   cards.forEach(card => {
@@ -860,7 +837,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           isGM={!!players.find(p => p.id === activePlayerId)?.isGM}
           onAction={executeMenuAction}
           onClose={() => setContextMenu(null)}
-          allObjects={state.objects}
+          allObjects={objects}
           hideCardActions={true}
           isSearchWindow={true}
           language={language}
@@ -873,7 +850,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           object={settingsModalObj}
           language={language}
           onSave={(updatedObj) => {
-            dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
+            updateObject(updatedObj.id, updatedObj);
             setSettingsModalObj(null);
           }}
           onClose={() => setSettingsModalObj(null)}
