@@ -140,37 +140,50 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   // Memoize effectiveProps to prevent unnecessary recalculations
   const effectiveProps = useMemo(() => {
     // Simple direct computation - no complex dependencies
-    // IMPORTANT: During dragging, always use uiObject.x/y directly, not playerPanelSettings
+    // IMPORTANT: During dragging, always use uiObject properties directly, not playerPanelSettings
     // This prevents panels from jumping to stale positions from playerPanelSettings
-    return (playerPanelSettings && !isDragging) ? {
+    // Also use uiObject properties for width/height to prevent size resets during drag
+    if (playerPanelSettings && !isDragging) {
       // Player settings from host (synced across reconnects) - take priority
       // But NOT during dragging - use current object position during drag
-      x: playerPanelSettings.x !== undefined ? playerPanelSettings.x : uiObject.x,
-      y: playerPanelSettings.y !== undefined ? playerPanelSettings.y : uiObject.y,
-      width: playerPanelSettings.width !== undefined ? playerPanelSettings.width : uiObject.width,
-      height: playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiObject.height,
-      minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,
-      isPinnedToViewport: playerPanelSettings.isPinnedToViewport !== undefined ? playerPanelSettings.isPinnedToViewport : (uiObject as any).isPinnedToViewport || false,
-      // Use panel properties for other settings, but prefer playerPanelSettings for state
-      pinnedScreenPosition: playerPanelSettings.pinnedScreenPosition !== undefined ? playerPanelSettings.pinnedScreenPosition : (uiObject as any).pinnedScreenPosition,
-      expandedState: playerPanelSettings.expandedState !== undefined ? playerPanelSettings.expandedState : (uiObject as any).expandedState,
-      collapsedState: playerPanelSettings.collapsedState !== undefined ? playerPanelSettings.collapsedState : (uiObject as any).collapsedState,
-      expandedPinnedPosition: playerPanelSettings.expandedPinnedPosition !== undefined ? playerPanelSettings.expandedPinnedPosition : (uiObject as any).expandedPinnedPosition,
-      collapsedPinnedPosition: playerPanelSettings.collapsedPinnedPosition !== undefined ? playerPanelSettings.collapsedPinnedPosition : (uiObject as any).collapsedPinnedPosition,
-    } : {
+      // IMPORTANT: Use uiObject width/height if they differ from playerPanelSettings to prevent size reset
+      const uiWidth = uiObject.width;
+      const uiHeight = uiObject.height;
+      const playerWidth = playerPanelSettings.width !== undefined ? playerPanelSettings.width : uiWidth;
+      const playerHeight = playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiHeight;
+
+      return {
+        x: playerPanelSettings.x !== undefined ? playerPanelSettings.x : uiObject.x,
+        y: playerPanelSettings.y !== undefined ? playerPanelSettings.y : uiObject.y,
+        // Use uiObject width/height if they're significantly different from playerPanelSettings
+        // This prevents size reset when panel was resized but playerPanelSettings wasn't updated yet
+        width: Math.abs(uiWidth - playerWidth) > 1 ? uiWidth : playerWidth,
+        height: Math.abs(uiHeight - playerHeight) > 1 ? uiHeight : playerHeight,
+        minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,
+        isPinnedToViewport: playerPanelSettings.isPinnedToViewport !== undefined ? playerPanelSettings.isPinnedToViewport : (uiObject as any).isPinnedToViewport || false,
+        // Use panel properties for other settings, but prefer playerPanelSettings for state
+        pinnedScreenPosition: playerPanelSettings.pinnedScreenPosition !== undefined ? playerPanelSettings.pinnedScreenPosition : (uiObject as any).pinnedScreenPosition,
+        expandedState: playerPanelSettings.expandedState !== undefined ? playerPanelSettings.expandedState : (uiObject as any).expandedState,
+        collapsedState: playerPanelSettings.collapsedState !== undefined ? playerPanelSettings.collapsedState : (uiObject as any).collapsedState,
+        expandedPinnedPosition: playerPanelSettings.expandedPinnedPosition !== undefined ? playerPanelSettings.expandedPinnedPosition : (uiObject as any).expandedPinnedPosition,
+        collapsedPinnedPosition: playerPanelSettings.collapsedPinnedPosition !== undefined ? playerPanelSettings.collapsedPinnedPosition : (uiObject as any).collapsedPinnedPosition,
+      };
+    } else {
       // No player settings OR currently dragging - use panel properties directly
-      x: uiObject.x,
-      y: uiObject.y,
-      width: uiObject.width,
-      height: uiObject.height,
-      minimized: (uiObject as any).minimized || false,
-      isPinnedToViewport: (uiObject as any).isPinnedToViewport || false,
-      pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
-      expandedState: (uiObject as any).expandedState,
-      collapsedState: (uiObject as any).collapsedState,
-      expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
-      collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
-    };
+      return {
+        x: uiObject.x,
+        y: uiObject.y,
+        width: uiObject.width,
+        height: uiObject.height,
+        minimized: (uiObject as any).minimized || false,
+        isPinnedToViewport: (uiObject as any).isPinnedToViewport || false,
+        pinnedScreenPosition: (uiObject as any).pinnedScreenPosition,
+        expandedState: (uiObject as any).expandedState,
+        collapsedState: (uiObject as any).collapsedState,
+        expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
+        collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
+      };
+    }
   }, [
     playerPanelSettings,
     isDragging,

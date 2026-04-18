@@ -1496,7 +1496,7 @@ export const Tabletop: React.FC = () => {
     // Local-only update (no network)
     dispatch({
       type: 'UPDATE_OBJECT',
-      payload: { id, width, height },
+      payload: { id, updates: { width, height } },
       _localOnly: true,
     });
 
@@ -1515,7 +1515,7 @@ export const Tabletop: React.FC = () => {
     if (finalSize) {
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id, ...finalSize },
+        payload: { id, updates: finalSize },
       });
       resizeFinalSizeRef.current = null;
     }

@@ -150,7 +150,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           // Clear the rollStartTime after animation completes
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: { id: diceId, rollStartTime: undefined }
+            payload: { id: diceId, updates: { rollStartTime: undefined } }
           });
           initiatedRollsRef.current.delete(diceId);
         }
@@ -167,7 +167,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     // Broadcast the roll start time to all players
     dispatch({
       type: 'UPDATE_OBJECT',
-      payload: { id: dice.id, rollStartTime }
+      payload: { id: dice.id, updates: { rollStartTime } }
     });
 
     // Start local animation
@@ -189,7 +189,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           const rollStartTime = Date.now();
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: { id: dice.id, rollStartTime }
+            payload: { id: dice.id, updates: { rollStartTime } }
           });
           // Use local dice animation
           startDiceAnimation(dice.id, dice.sides, true);
@@ -947,8 +947,10 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       type: 'UPDATE_OBJECT',
       payload: {
         id: draggingObject.id,
-        x: newX,
-        y: newY
+        updates: {
+          x: newX,
+          y: newY
+        }
       }
     });
 
@@ -1037,7 +1039,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       cardsInSlot.forEach((item) => {
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: item.id, inCursorSlot: false, fromPoolPanel: undefined, _localOnly: true }
+          payload: { id: item.id, updates: { inCursorSlot: false, fromPoolPanel: undefined }, _localOnly: true }
         });
       });
 
@@ -1283,8 +1285,16 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
                             objTop >= visibleRect.top && objBottom <= visibleRect.bottom;
 
-        if (!isFullyVisible) {
+        // IMPORTANT: Relax visibility check for cards from PLAY_TOP_CARD action
+        // These cards may have position from deck location, but cursor is over pool panel
+        // Allow drop if at least the center of the object is within visible area
+        const isFromPlayTop = (lastObj as any).__pendingPlayTop !== undefined;
+        const isCenterVisible = e.clientX >= visibleRect.left && e.clientX <= visibleRect.right &&
+                             e.clientY >= visibleRect.top && e.clientY <= visibleRect.bottom;
+
+        if (!isFullyVisible && !(isFromPlayTop && isCenterVisible)) {
           // Object would be partially outside visible area - don't allow drop
+          // Unless it's from PLAY_TOP_CARD and center is visible
           return;
         }
       }
@@ -1439,8 +1449,16 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
                               objTop >= visibleRect.top && objBottom <= visibleRect.bottom;
 
-          if (!isFullyVisible) {
+          // IMPORTANT: Relax visibility check for cards from PLAY_TOP_CARD action
+          // These cards may have position from deck location, but cursor is over pool panel
+          // Allow drop if at least the center of the object is within visible area
+          const isFromPlayTop = (lastObj as any).__pendingPlayTop !== undefined;
+          const isCenterVisible = x >= visibleRect.left && x <= visibleRect.right &&
+                               y >= visibleRect.top && y <= visibleRect.bottom;
+
+          if (!isFullyVisible && !(isFromPlayTop && isCenterVisible)) {
             // Object would be partially outside visible area - don't allow drop
+            // Unless it's from PLAY_TOP_CARD and center is visible
             return;
           }
         }

@@ -1729,12 +1729,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const newCardIds = deck.cardIds.slice(1);
         const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
 
-        // Update card to cursor slot - store pending data on card (temp field)
+        // Update card to cursor slot - IMPORTANT: Update position to deck position
+        // This ensures the card appears at deck location when dragged to pool panel
         const updatedCard: Card = {
             ...card,
             location: CardLocation.CURSOR_SLOT,
             faceUp: faceUp,
             isOnTable: false,
+            x: deck.x, // Position card at deck location
+            y: deck.y, // Position card at deck location
+            inCursorSlot: true, // Mark as in cursor slot
             // Store pending data for when card is dropped
             __pendingPlayTop: pendingPlayTop as any,
         };

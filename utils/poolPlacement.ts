@@ -204,7 +204,7 @@ export function dropObjectsToPool(
         // Parse the grid cell key (format: "boardId:col,row")
         const [boardId, cellKey] = existingGridCellKey.split(':');
         if (boardId && cellKey) {
-          const board = state.objects[boardId] as any;
+          const board = poolObjects[boardId] as any;
           if (board && board.gridCellMagnetPoints && board.gridCellMagnetPoints[cellKey]) {
             // Remove object from board's magnet points
             const updatedMagnetPoints = board.gridCellMagnetPoints[cellKey].magnetPoints
@@ -223,7 +223,9 @@ export function dropObjectsToPool(
               type: 'UPDATE_OBJECT',
               payload: {
                 id: boardId,
-                gridCellMagnetPoints: updatedGridCellMagnetPoints
+                updates: {
+                  gridCellMagnetPoints: updatedGridCellMagnetPoints
+                }
               }
             });
           }
@@ -272,7 +274,16 @@ export function dropObjectsToPool(
 
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: updatePayload
+        payload: {
+          id: updatePayload.id,
+          updates: {
+            x: updatePayload.x,
+            y: updatePayload.y,
+            inCursorSlot: updatePayload.inCursorSlot,
+            gridCellKey: updatePayload.gridCellKey,
+            isOnTable: updatePayload.isOnTable
+          }
+        }
       });
     });
   } catch (error) {
