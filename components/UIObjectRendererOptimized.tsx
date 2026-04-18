@@ -146,19 +146,12 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     if (playerPanelSettings && !isDragging) {
       // Player settings from host (synced across reconnects) - take priority
       // But NOT during dragging - use current object position during drag
-      // IMPORTANT: Use uiObject width/height if they differ from playerPanelSettings to prevent size reset
-      const uiWidth = uiObject.width;
-      const uiHeight = uiObject.height;
-      const playerWidth = playerPanelSettings.width !== undefined ? playerPanelSettings.width : uiWidth;
-      const playerHeight = playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiHeight;
-
       return {
         x: playerPanelSettings.x !== undefined ? playerPanelSettings.x : uiObject.x,
         y: playerPanelSettings.y !== undefined ? playerPanelSettings.y : uiObject.y,
-        // Use uiObject width/height if they're significantly different from playerPanelSettings
-        // This prevents size reset when panel was resized but playerPanelSettings wasn't updated yet
-        width: Math.abs(uiWidth - playerWidth) > 1 ? uiWidth : playerWidth,
-        height: Math.abs(uiHeight - playerHeight) > 1 ? uiHeight : playerHeight,
+        // For width/height, always use uiObject to avoid conflicts with resize
+        width: uiObject.width,
+        height: uiObject.height,
         minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,
         isPinnedToViewport: playerPanelSettings.isPinnedToViewport !== undefined ? playerPanelSettings.isPinnedToViewport : (uiObject as any).isPinnedToViewport || false,
         // Use panel properties for other settings, but prefer playerPanelSettings for state
@@ -198,6 +191,9 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     uiObject.collapsedState,
     uiObject.expandedPinnedPosition,
     uiObject.collapsedPinnedPosition,
+    playerPanelSettings?.x,
+    playerPanelSettings?.y,
+    playerPanelSettings?.minimized,
     playerPanelSettings?.pinnedScreenPosition,
     playerPanelSettings?.expandedState,
     playerPanelSettings?.collapsedState,
@@ -232,10 +228,10 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
   // Memoize collapse checks
   const isCollapsed = useMemo(() => {
-    // During dragging, check uiObject directly, otherwise use effectiveProps
-    const heightToCheck = isDragging ? uiObject.height : effectiveProps.height;
-    return heightToCheck === 40;
-  }, [isDragging, uiObject.height, effectiveProps.height]);
+    // Use minimized flag instead of height check
+    const minimizedToCheck = isDragging ? (uiObject as any).minimized : effectiveProps.minimized;
+    return minimizedToCheck || false;
+  }, [isDragging, uiObject.minimized, effectiveProps.minimized]);
   // For main menu, use minimized flag; for other panels, use size-based check
   const shouldExpand = isMainMenu ? minimized : isCollapsed;
   const dualPosition = useMemo(() => uiObject.type === ItemType.PANEL && (uiObject as PanelObject).dualPosition, [uiObject]);
@@ -255,8 +251,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           payload: {
             id: uiObject.id,
             minimized: false,
-            width: restoreState?.width,
-            height: restoreState?.height,
+            width: restoreState?.width || uiObject.width,
+            height: restoreState?.height || 400,
             collapsedState: {
               x: effectiveProps.x,
               y: effectiveProps.y,
@@ -277,8 +273,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             height: effectiveProps.height,
           },
           // Restore exact dimensions from expandedState
-          width: restoreState?.width,
-          height: restoreState?.height,
+          width: restoreState?.width || uiObject.width,
+          height: restoreState?.height || 400,
         });
 
         // Also update playerPanelSettings in global state
@@ -291,8 +287,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
               minimized: false,
               x: effectiveProps.x,
               y: effectiveProps.y,
-              width: restoreState?.width,
-              height: restoreState?.height,
+              width: restoreState?.width || uiObject.width,
+              height: restoreState?.height || 400,
               expandedState: restoreState // Save expandedState to playerPanelSettings
             }
           }
@@ -308,8 +304,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
               minimized: false,
               x: effectiveProps.x,
               y: effectiveProps.y,
-              width: restoreState?.width,
-              height: restoreState?.height,
+              width: restoreState?.width || uiObject.width,
+              height: restoreState?.height || 400,
             }
           }
         });
@@ -322,8 +318,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           payload: {
             id: uiObject.id,
             minimized: false,
-            width: restoreState?.width, // Restore exact saved width
-            height: restoreState?.height, // Restore exact saved height
+            width: restoreState?.width || uiObject.width, // Restore exact saved width
+            height: restoreState?.height || 400, // Restore exact saved height
             collapsedState: {
               x: effectiveProps.x,
               y: effectiveProps.y,
@@ -344,8 +340,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
               minimized: false,
               x: effectiveProps.x,
               y: effectiveProps.y,
-              width: restoreState?.width,
-              height: restoreState?.height,
+              width: restoreState?.width || uiObject.width,
+              height: restoreState?.height || 400,
             }
           }
         });
@@ -354,8 +350,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       // Currently expanded - collapse and minimize
       if (isPanel && !isMainMenu) {
         // Save current dimensions before collapsing
-        const currentWidth = uiObject.width;
-        const currentHeight = uiObject.height;
+        const currentWidth = effectiveProps.width;
+        const currentHeight = effectiveProps.height;
 
         // Update the object itself first (to prevent expansion during drag)
         dispatch({
@@ -365,8 +361,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             minimized: true,
             height: 40,
             expandedState: {
-              x: uiObject.x,
-              y: uiObject.y,
+              x: effectiveProps.x,
+              y: effectiveProps.y,
               width: currentWidth,
               height: currentHeight,
             },
@@ -378,8 +374,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         updateLocalSettings({
           minimized: true,
           expandedState: {
-            x: uiObject.x,
-            y: uiObject.y,
+            x: effectiveProps.x,
+            y: effectiveProps.y,
             width: currentWidth,
             height: currentHeight,
           },
@@ -394,13 +390,13 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             panelId: uiObject.id,
             settings: {
               minimized: true,
-              x: uiObject.x,
-              y: uiObject.y,
+              x: effectiveProps.x,
+              y: effectiveProps.y,
               width: currentWidth,
               height: 40,
               expandedState: {
-                x: uiObject.x,
-                y: uiObject.y,
+                x: effectiveProps.x,
+                y: effectiveProps.y,
                 width: currentWidth,
                 height: currentHeight,
               }
@@ -410,8 +406,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       } else {
         // For main menu and windows, use global state
         // Save current dimensions before collapsing
-        const currentWidth = uiObject.width;
-        const currentHeight = uiObject.height;
+        const currentWidth = effectiveProps.width;
+        const currentHeight = effectiveProps.height;
 
         // Update the object minimized state and height
         dispatch({
@@ -421,8 +417,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             minimized: true,
             height: 40, // Title bar height (must match containerHeight calculation)
             expandedState: {
-              x: uiObject.x,
-              y: uiObject.y,
+              x: effectiveProps.x,
+              y: effectiveProps.y,
               width: currentWidth,
               height: currentHeight,
             },
@@ -438,13 +434,13 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             panelId: uiObject.id,
             settings: {
               minimized: true,
-              x: uiObject.x,
-              y: uiObject.y,
+              x: effectiveProps.x,
+              y: effectiveProps.y,
               width: currentWidth,
               height: 40,
               expandedState: {
-                x: uiObject.x,
-                y: uiObject.y,
+                x: effectiveProps.x,
+                y: effectiveProps.y,
                 width: currentWidth,
                 height: currentHeight,
               }
@@ -598,6 +594,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       let newWidth = currentSize ? Math.round(currentSize.width) : Math.round(container.getBoundingClientRect().width);
       let newHeight = currentSize ? Math.round(currentSize.height) : Math.round(container.getBoundingClientRect().height);
 
+
       // Apply max size constraint for pool panels on final size
       const isPoolPanel = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.POOL;
       const SCROLLBAR_SIZE = 20; // Approximate scrollbar width/height
@@ -617,7 +614,10 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       }
 
       // Only update store if size actually changed
-      if (Math.abs(newWidth - startWidth) > 5 || Math.abs(newHeight - startHeight) > 5) {
+      const widthChanged = Math.abs(newWidth - startWidth) > 5;
+      const heightChanged = Math.abs(newHeight - startHeight) > 5;
+
+      if (widthChanged || heightChanged) {
         // For pinned panels, save pixel dimensions directly; for unpinned, save in vu
         let finalWidth, finalHeight;
 
@@ -625,29 +625,9 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           // Pinned panels: save exact pixel dimensions
           finalWidth = newWidth;
           finalHeight = newHeight;
-
-          // Also update pinned pixel dimensions
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: uiObject.id,
-              pinnedPixelWidth: finalWidth,
-              pinnedPixelHeight: finalHeight
-            },
-            _localOnly: true
-          });
         } else {
           // Unpinned panels: save exact pixel dimensions to avoid rounding errors
           // Store in pinnedPixelWidth/Height even for unpinned panels to preserve precision
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: uiObject.id,
-              pinnedPixelWidth: newWidth,
-              pinnedPixelHeight: newHeight
-            },
-            _localOnly: true
-          });
 
           // Also convert to vu for compatibility (with higher precision)
           finalWidth = Math.round((newWidth / pixelsPerVU) * 1000) / 1000;
@@ -658,43 +638,100 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         if (isPanel && !isMainMenu) {
           updateLocalSettings({ width: finalWidth, height: finalHeight });
 
-          // Update the panel object itself for immediate visual feedback
+          // Prepare update payload with both size and expandedState
+          const updates: any = {
+            width: finalWidth,
+            height: finalHeight,
+          };
+
+          // Also update expandedState to preserve new size when collapsing/expanding
+          if (!effectiveProps.minimized) {
+            updates.expandedState = {
+              ...(effectiveProps.expandedState || {}),
+              width: finalWidth,
+              height: finalHeight
+            };
+          }
+
+          // Single dispatch to update the panel object
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: { id: uiObject.id, width: finalWidth, height: finalHeight },
-            _localOnly: true // Size changes are local
+            payload: {
+              id: uiObject.id,
+              updates
+            },
+            _localOnly: true // Size changes are local for panels
           });
 
           // Also update individual panel settings for this player (stored on host)
+          const playerSettingsPayload: any = {
+            width: finalWidth,
+            height: finalHeight,
+          };
+
+          if (!effectiveProps.minimized) {
+            playerSettingsPayload.expandedState = {
+              ...(effectiveProps.expandedState || {}),
+              width: finalWidth,
+              height: finalHeight
+            };
+          }
+
           dispatch({
             type: 'UPDATE_PLAYER_PANEL_SETTINGS',
             payload: {
               playerId: activePlayerId,
               panelId: uiObject.id,
-              settings: {
-                width: finalWidth,
-                height: finalHeight
-              }
+              settings: playerSettingsPayload
             }
           });
         } else {
           // For main menu and windows, use global state
+          const updates: any = {
+            width: finalWidth,
+            height: finalHeight,
+          };
+
+          // Also update expandedState to preserve new size when collapsing/expanding
+          if (!effectiveProps.minimized) {
+            updates.expandedState = {
+              ...(effectiveProps.expandedState || {}),
+              width: finalWidth,
+              height: finalHeight
+            };
+          }
+
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: { id: uiObject.id, width: finalWidth, height: finalHeight },
-            _localOnly: true // Size changes are local
+            payload: {
+              id: uiObject.id,
+              updates
+            },
+            _localOnly: true // Size changes are local for windows too
           });
 
           // Also update individual panel settings for this player (stored on host)
+          const playerSettingsPayload: any = {
+            width: finalWidth,
+            height: finalHeight,
+          };
+
+          if (!effectiveProps.minimized) {
+            playerSettingsPayload.expandedState = {
+              ...(effectiveProps.expandedState || {}),
+              width: finalWidth,
+              height: finalHeight
+            };
+          }
+
+          console.log('🔧 Dispatching UPDATE_PLAYER_PANEL_SETTINGS (menu/window):', playerSettingsPayload);
+
           dispatch({
             type: 'UPDATE_PLAYER_PANEL_SETTINGS',
             payload: {
               playerId: activePlayerId,
               panelId: uiObject.id,
-              settings: {
-                width: finalWidth,
-                height: finalHeight
-              }
+              settings: playerSettingsPayload
             }
           });
         }
@@ -762,10 +799,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   // Memoize width calculation to prevent unnecessary recalculations
   const containerWidth = useMemo(() => {
     if (currentSize?.width) return currentSize.width;
-
-    // Always prefer pinnedPixelWidth if available (most precise)
     if ((uiObject as any).pinnedPixelWidth) return (uiObject as any).pinnedPixelWidth;
-
     if (isPinnedMode) {
       if (!isMainMenu) return vuToPx(effectiveProps.width);
     }
@@ -1679,7 +1713,7 @@ const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject; effectiveP
     }
   };
 
-  const isCollapsed = effectiveProps.width === 200 && effectiveProps.height === 40;
+  const isCollapsed = effectiveProps.minimized || false;
 
   return (
     <div
@@ -1853,7 +1887,7 @@ const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effecti
     }
   };
 
-  const isCollapsed = effectiveProps.width === 200 && effectiveProps.height === 40;
+  const isCollapsed = effectiveProps.minimized || false;
 
   return (
     <div
@@ -1911,7 +1945,7 @@ const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProp
     }
   };
 
-  const isCollapsed = effectiveProps.width === 200 && effectiveProps.height === 40;
+  const isCollapsed = effectiveProps.minimized || false;
 
   return (
     <div
