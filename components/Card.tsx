@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Card as CardType, CardShape, CardOrientation, ContextAction, CardNamePosition, CardSpriteConfig, AppLanguage } from '../types';
+import { Card as CardType, CardShape, CardOrientation, CardLocation, ContextAction, CardNamePosition, CardSpriteConfig, AppLanguage } from '../types';
 import { Layers, Hand, Eye, EyeOff } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { getCardButtonConfig, ButtonAction, CardButtonConfig } from '../utils/buttonConfig';
@@ -162,7 +162,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
     return buttons
       .filter(action => {
         // Don't show "Move to Hand" button when card is already in HAND location
-        if (action === 'moveToHand' && card.location === 'HAND') {
+        if (action === 'moveToHand' && card.location === CardLocation.HAND) {
           return false;
         }
         return true;

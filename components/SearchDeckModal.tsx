@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
-import { useObjects, useObjectActions } from '../store/objectStore';
+import { useObjectActions } from '../store/objectStore';
 import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, ItemType, Deck as DeckType, AppLanguage } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card as CardComponent } from './Card';
@@ -188,9 +188,18 @@ const getCardButtonConfigs = (card: Card, actionButtons: ContextAction[] = [], l
 };
 
 export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, onClose, language = 'en' }) => {
-  const { dispatch } = useGame(); // Keep for card-specific operations
-  const objects = useObjects();
-  const { updateObject, deleteObject, addObject } = useObjectActions();
+  const { state: gameState, dispatch } = useGame();
+  const objects = gameState.objects; // ✅ FIXED: Use GameContext instead of objectStore
+
+  // Helper function to update objects via GameContext
+  const updateDeck = useCallback((deckId: string, updates: any) => {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: deckId, updates }
+    });
+  }, [dispatch]);
+
+  const { deleteObject, addObject } = useObjectActions();
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
@@ -246,14 +255,14 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             initialStates[cardId] = true;
           }
         });
-        updateObject(deck.id, { gmSearchFaceUp: initialStates });
+        updateDeck(deck.id, { gmSearchFaceUp: initialStates });
         setGmFlipStates(initialStates);
       } else {
         setGmFlipStates(deck.gmSearchFaceUp);
       }
       gmInitializedRef.current = true;
     }
-  }, [isGM, updateObject]);
+  }, [isGM, updateDeck]);
 
   // Determine if a card should be shown face up based on visibility mode
   const getCardFaceUp = useCallback((card: Card): boolean => {
@@ -369,7 +378,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       const newState = !currentState;
       const updated = { ...gmFlipStates, [cardId]: newState };
       setGmFlipStates(updated);
-      updateObject(deck.id, { gmSearchFaceUp: updated });
+      updateDeck(deck.id, { gmSearchFaceUp: updated });
     } else if (visibility === SearchWindowVisibility.LAST_STATE) {
       setPlayerFlipStates(prev => {
         const currentState = prev[cardId] ?? true;
@@ -377,11 +386,11 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       });
     }
     dispatch({ type: 'FLIP_CARD', payload: { cardId } });
-  }, [dispatch, updateObject, visibility, isGM, gmFlipStates, deck.id]);
+  }, [dispatch, updateDeck, visibility, isGM, gmFlipStates, deck.id]);
 
   const handleToHand = useCallback((cardId: string) => {
-    updateObject(cardId, {
-      location: 'HAND' as any,
+    updateDeck(cardId, {
+      location: CardLocation.HAND as any,
       ownerId: activePlayerId,
       isOnTable: false,
       faceUp: true
@@ -392,12 +401,12 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       const updatedPiles = deck.piles?.map(p =>
         p.id === pile.id ? { ...p, cardIds: newCardOrder } : p
       );
-      updateObject(deck.id, { piles: updatedPiles });
+      updateDeck(deck.id, { piles: updatedPiles });
     } else {
-      updateObject(deck.id, { cardIds: newCardOrder });
+      updateDeck(deck.id, { cardIds: newCardOrder });
     }
     setCardOrder(newCardOrder);
-  }, [updateObject, activePlayerId, cardOrder, isPile, pile, deck]);
+  }, [updateDeck, activePlayerId, cardOrder, isPile, pile, deck]);
 
   const handleActionButtonClick = useCallback((card: Card, action: ContextAction) => {
     switch (action) {
@@ -480,7 +489,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           const newState = !currentState;
           const updated = { ...gmFlipStates, [object.id]: newState };
           setGmFlipStates(updated);
-          updateObject(deck.id, { gmSearchFaceUp: updated });
+          updateDeck(deck.id, { gmSearchFaceUp: updated });
         } else if (visibility === SearchWindowVisibility.LAST_STATE) {
           setPlayerFlipStates(prev => {
             const currentState = prev[object.id] ?? true;
@@ -493,8 +502,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: 90 }});
         break;
       case 'moveToHand':
-        updateObject(object.id, {
-          location: 'HAND' as any,
+        updateDeck(object.id, {
+          location: CardLocation.HAND as any,
           ownerId: activePlayerId,
           isOnTable: false,
           faceUp: true
@@ -504,9 +513,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           const updatedPiles = deck.piles?.map(p =>
             p.id === pile.id ? { ...p, cardIds: moveToHandCardOrder } : p
           );
-          updateObject(deck.id, { piles: updatedPiles });
+          updateDeck(deck.id, { piles: updatedPiles });
         } else {
-          updateObject(deck.id, { cardIds: moveToHandCardOrder });
+          updateDeck(deck.id, { cardIds: moveToHandCardOrder });
         }
         setCardOrder(moveToHandCardOrder);
         break;
@@ -584,10 +593,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
             const updatedPiles = (currentDeck?.piles || deck.piles)?.map(p =>
               p.id === pile.id ? { ...p, cardIds: [...pile.cardIds, newCard.id] } : p
             );
-            updateObject(deck.id, { piles: updatedPiles, cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds });
+            updateDeck(deck.id, { piles: updatedPiles, cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds });
             setCardOrder([...cardOrder, newCard.id]);
           } else {
-            updateObject(deck.id, { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds });
+            updateDeck(deck.id, { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds });
             setCardOrder(updatedCardIds);
           }
         } else {
@@ -598,7 +607,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       }
       case 'toggleHide':
         const isHidden = (object as Card).hidden === true;
-        updateObject(object.id, { hidden: !isHidden });
+        updateDeck(object.id, { hidden: !isHidden });
         break;
       case 'delete':
         const filteredOrder = cardOrder.filter(id => id !== object.id);
@@ -612,9 +621,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           const updatedPiles = (currentDeck?.piles || deck.piles)?.map(p =>
             p.id === pile.id ? { ...p, cardIds: filteredOrder } : p
           );
-          updateObject(deck.id, { piles: updatedPiles, baseCardIds: filteredBaseCardIds });
+          updateDeck(deck.id, { piles: updatedPiles, baseCardIds: filteredBaseCardIds });
         } else {
-          updateObject(deck.id, { cardIds: filteredOrder, baseCardIds: filteredBaseCardIds });
+          updateDeck(deck.id, { cardIds: filteredOrder, baseCardIds: filteredBaseCardIds });
         }
         setCardOrder(filteredOrder);
         break;
@@ -634,9 +643,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           const destroyUpdatedPiles = (destroyCurrentDeck?.piles || deck.piles)?.map(p =>
             p.id === pile.id ? { ...p, cardIds: destroyFilteredOrder } : p
           );
-          updateObject(deck.id, { piles: destroyUpdatedPiles, baseCardIds: destroyFilteredBaseCardIds });
+          updateDeck(deck.id, { piles: destroyUpdatedPiles, baseCardIds: destroyFilteredBaseCardIds });
         } else {
-          updateObject(deck.id, { cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds });
+          updateDeck(deck.id, { cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds });
         }
         setCardOrder(destroyFilteredOrder);
         break;
@@ -656,13 +665,13 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
               cardBackSpriteColumns: card.spriteColumns ?? 1,
               cardBackSpriteRows: card.spriteRows ?? 1,
             };
-            updateObject(parentDeck.id, { spriteConfig: updatedSpriteConfig });
+            updateDeck(parentDeck.id, { spriteConfig: updatedSpriteConfig });
           }
         }
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, updateObject, deleteObject, addObject, deck.id, activePlayerId, cardOrder, isPile, pile, objects, deck]);
+  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, updateDeck, deleteObject, addObject, deck.id, activePlayerId, cardOrder, isPile, pile, objects, deck]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -790,9 +799,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                   const updatedPiles = deck.piles?.map(p =>
                     p.id === pile.id ? { ...p, cardIds: newOrder } : p
                   );
-                  updateObject(deck.id, { piles: updatedPiles });
+                  updateDeck(deck.id, { piles: updatedPiles });
                 } else {
-                  updateObject(deck.id, { cardIds: newOrder });
+                  updateDeck(deck.id, { cardIds: newOrder });
                 }
                 setCardOrder(newOrder);
               }}
@@ -811,7 +820,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
                     dispatch({ type: 'FLIP_CARD', payload: { cardId: card.id }});
                   });
                   setGmFlipStates(updated);
-                  updateObject(deck.id, { gmSearchFaceUp: updated });
+                  updateDeck(deck.id, { gmSearchFaceUp: updated });
                 } else {
                   // For players: just flip all cards
                   cards.forEach(card => {
@@ -850,7 +859,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           object={settingsModalObj}
           language={language}
           onSave={(updatedObj) => {
-            updateObject(updatedObj.id, updatedObj);
+            updateDeck(updatedObj.id, updatedObj);
             setSettingsModalObj(null);
           }}
           onClose={() => setSettingsModalObj(null)}

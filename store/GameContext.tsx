@@ -584,33 +584,34 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           'collapsedPinnedPosition'    // Collapsed pinned position is local
         ];
 
-        // Check if payload contains only local-only properties
-        const payloadKeys = Object.keys(action.payload);
-        const hasOnlyLocalProps = payloadKeys.every(key => localOnlyProps.includes(key));
+        // Check if updates contain only local-only properties
+        const updates = action.payload.updates || {};
+        const updateKeys = Object.keys(updates);
+        const hasOnlyLocalProps = updateKeys.every(key => localOnlyProps.includes(key));
 
         // If only local properties are being updated, skip this action for panels/windows
-        if (hasOnlyLocalProps && payloadKeys.length > 0) {
+        if (hasOnlyLocalProps && updateKeys.length > 0) {
           return state;
         }
 
-        // Filter out local properties from the payload
-        const filteredPayload: any = {};
-        Object.entries(action.payload).forEach(([key, value]) => {
+        // Filter out local properties from the updates
+        const filteredUpdates: any = {};
+        Object.entries(updates).forEach(([key, value]) => {
           if (!localOnlyProps.includes(key)) {
-            filteredPayload[key] = value;
+            filteredUpdates[key] = value;
           }
         });
 
         // If all properties were filtered out, skip this action
-        if (Object.keys(filteredPayload).length === 0) {
+        if (Object.keys(filteredUpdates).length === 0) {
           return state;
         }
 
-        // Use filtered payload instead of original
-        action.payload = filteredPayload;
+        // Use filtered updates instead of original
+        action.payload.updates = filteredUpdates;
       }
 
-      const updatedObj = { ...obj, ...action.payload } as TableObject;
+      const updatedObj = { ...obj, ...action.payload.updates } as TableObject;
 
       // Clamp zIndex to hyperscale layer bounds
       const layerId = updatedObj.hyperscaleLayerId || obj.hyperscaleLayerId || 'tokens';
@@ -773,10 +774,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
           // Properties that should be synced across all cells (NOT including opacity)
           const syncableProps = ['locked', 'isPinnedToViewport', 'hyperscaleLayerId', 'zIndex'];
-          const hasSyncableChange = syncableProps.some(prop => action.payload[prop as keyof typeof action.payload] !== undefined);
+          const updates = action.payload.updates || {};
+          const hasSyncableChange = syncableProps.some(prop => updates[prop as keyof typeof updates] !== undefined);
 
           if (hasSyncableChange) {
-              const payload = action.payload as any;
+              const payload = updates as any;
               Object.values(state.objects).forEach(o => {
                   if (o.type === ItemType.NEXUS_CELL && o.id !== cell.id) {
                       const otherCell = o as NexusCellObject;

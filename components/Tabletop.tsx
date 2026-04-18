@@ -586,7 +586,7 @@ export const Tabletop: React.FC = () => {
           updatePayload.fromPoolPanel = fromPoolPanel;
         }
 
-        dispatch({ type: 'UPDATE_OBJECT', payload: updatePayload });
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: updatePayload.id, updates: updatePayload } });
 
         const pos = { x: clientX, y: clientY };
         setCursorPosition(pos);
@@ -764,7 +764,7 @@ export const Tabletop: React.FC = () => {
       // Update the token-copy with new values from archetype
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: copyId, ...updates }
+        payload: { id: copyId, updates }
       });
     };
 
@@ -795,9 +795,11 @@ export const Tabletop: React.FC = () => {
             type: 'UPDATE_OBJECT',
             payload: {
               id: obj.id,
-              // Update to deck's current dimensions instead of deleting
-              width: cardWidth,
-              height: cardHeight
+              updates: {
+                // Update to deck's current dimensions instead of deleting
+                width: cardWidth,
+                height: cardHeight
+              }
             }
           });
         }
@@ -824,7 +826,9 @@ export const Tabletop: React.FC = () => {
             type: 'UPDATE_OBJECT',
             payload: {
               id: obj.id,
-              rotationStep: rotationStep
+              updates: {
+                rotationStep: rotationStep
+              }
             }
           });
         }
@@ -851,7 +855,9 @@ export const Tabletop: React.FC = () => {
             type: 'UPDATE_OBJECT',
             payload: {
               id: obj.id,
-              shape: cardShape
+              updates: {
+                shape: cardShape
+              }
             }
           });
         }
@@ -881,9 +887,11 @@ export const Tabletop: React.FC = () => {
             type: 'UPDATE_OBJECT',
             payload: {
               id: deckId,
-              spriteConfig: {
-                ...restConfig,
-                cardBackUrl,
+              updates: {
+                spriteConfig: {
+                  ...restConfig,
+                  cardBackUrl,
+                }
               }
             }
           });
@@ -1367,7 +1375,7 @@ export const Tabletop: React.FC = () => {
                 // Clear the rollStartTime after animation completes
                 dispatch({
                   type: 'UPDATE_OBJECT',
-                  payload: { id: diceId, rollStartTime: undefined }
+                  payload: { id: diceId, updates: { rollStartTime: undefined } }
                 });
                 initiatedRollsRef.current.delete(diceId);
             }
@@ -1384,7 +1392,7 @@ export const Tabletop: React.FC = () => {
     // Broadcast the roll start time to all players
     dispatch({
       type: 'UPDATE_OBJECT',
-      payload: { id: dice.id, rollStartTime }
+      payload: { id: dice.id, updates: { rollStartTime } }
     });
 
     // Start local animation
@@ -1816,14 +1824,14 @@ export const Tabletop: React.FC = () => {
         // Remove object from table (hide it)
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: obj.id, isOnTable: false }
+          payload: { id: obj.id, updates: { isOnTable: false } }
         });
         break;
       case 'show':
         // Show hidden object on table
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: obj.id, isOnTable: true }
+          payload: { id: obj.id, updates: { isOnTable: true } }
         });
         break;
       case 'swingClockwise':
@@ -1933,7 +1941,10 @@ export const Tabletop: React.FC = () => {
           // Update board with new magnet points
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: updatedBoard
+            payload: {
+              id: updatedBoard.id,
+              updates: updatedBoard
+            }
           });
 
           // Move remaining objects to their new magnet positions
@@ -1942,8 +1953,10 @@ export const Tabletop: React.FC = () => {
               type: 'UPDATE_OBJECT',
               payload: {
                 id: movedObj.objectId,
-                x: movedObj.x,
-                y: movedObj.y
+                updates: {
+                  x: movedObj.x,
+                  y: movedObj.y
+                }
               }
             });
           }
@@ -1953,7 +1966,9 @@ export const Tabletop: React.FC = () => {
             type: 'UPDATE_OBJECT',
             payload: {
               id: id,
-              gridCellKey: undefined
+              updates: {
+                gridCellKey: undefined
+              }
             }
           });
         }
@@ -2132,13 +2147,15 @@ export const Tabletop: React.FC = () => {
         type: 'UPDATE_OBJECT',
         payload: {
           id,
-          inCursorSlot: true,
-          isPinnedToViewport: false,
-          pinnedScreenPosition: undefined,
-        } as any
+          updates: {
+            inCursorSlot: true,
+            isPinnedToViewport: false,
+            pinnedScreenPosition: undefined,
+          }
+        }
       });
     } else {
-      dispatch({ type: 'UPDATE_OBJECT', payload: { id, inCursorSlot: true } });
+      dispatch({ type: 'UPDATE_OBJECT', payload: { id, updates: { inCursorSlot: true } } });
     }
 
     // Clean up magnet points - when picking up an object, remove it from any cell's magnet points
@@ -2780,7 +2797,7 @@ export const Tabletop: React.FC = () => {
       cardsInSlot.forEach((item) => {
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: item.id, inCursorSlot: false, fromPoolPanel: undefined }
+          payload: { id: item.id, updates: { inCursorSlot: false, fromPoolPanel: undefined } }
         });
       });
 
@@ -2881,7 +2898,7 @@ export const Tabletop: React.FC = () => {
       cardsInSlot.forEach((item) => {
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: item.id, inCursorSlot: false, fromPoolPanel: undefined }
+          payload: { id: item.id, updates: { inCursorSlot: false, fromPoolPanel: undefined } }
         });
       });
 
@@ -2994,12 +3011,14 @@ export const Tabletop: React.FC = () => {
           type: 'UPDATE_OBJECT',
           payload: {
             id: item.id,
-            inCursorSlot: false,
-            fromPoolPanel: undefined,
-            x: finalX,
-            y: finalY,
-            zIndex,
-            rotation: finalRotation,
+            updates: {
+              inCursorSlot: false,
+              fromPoolPanel: undefined,
+              x: finalX,
+              y: finalY,
+              zIndex,
+              rotation: finalRotation,
+            }
           }
         });
       });
@@ -3892,6 +3911,17 @@ export const Tabletop: React.FC = () => {
     // Pan view with Ctrl+drag - works EVERYWHERE (including objects, UI, boards)
     // Ctrl+Drag is exclusively for pan view, overrides all other interactions
     if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
+      // Check if clicking on an object - if so, add to cursor slot instead of panning
+      if (id) {
+        const item = state.objects[id];
+        if (item && item.type !== ItemType.PANEL && item.type !== ItemType.WINDOW) {
+          // Add to cursor slot instead of panning
+          addToCursorSlot(id, item, 'ctrl', { x: e.clientX, y: e.clientY });
+          return;
+        }
+      }
+
+      // Only pan if clicking on empty space or UI elements
       setIsPanning(true);
       // Store initial mouse position AND scroll position for direct scroll manipulation
       dragStartRef.current = {
@@ -4943,13 +4973,15 @@ export const Tabletop: React.FC = () => {
                 type: 'UPDATE_OBJECT',
                 payload: {
                   id: draggingId,
-                  x: constrainedX,
-                  y: constrainedY,
-                  inCursorSlot: false,
-                  fromPoolPanel: undefined,
-                  draggingPlayerId: null,
-                  broadcastX: undefined,
-                  broadcastY: undefined
+                  updates: {
+                    x: constrainedX,
+                    y: constrainedY,
+                    inCursorSlot: false,
+                    fromPoolPanel: undefined,
+                    draggingPlayerId: null,
+                    broadcastX: undefined,
+                    broadcastY: undefined
+                  }
                 }
               });
 
@@ -5101,8 +5133,10 @@ export const Tabletop: React.FC = () => {
             type: 'UPDATE_OBJECT',
             payload: {
               id: pinnedDeck.id,
-              x: newRenderX,
-              y: newRenderY
+              updates: {
+                x: newRenderX,
+                y: newRenderY
+              }
             }
           });
         }

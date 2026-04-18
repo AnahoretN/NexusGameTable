@@ -7,3 +7,10 @@ export * from './typeGuards';
 export * from './webrtcOptimization';
 export * from './memoryManager';
 export { perfMonitor, useRenderCount, useRenderTime, fpsMonitor, measureAsync } from './performanceMonitor';
+
+// Performance testing utilities
+export {
+  performanceTestSuite,
+  runQuickPerformanceTest,
+  useTestRenderTracker
+} from './performanceTest';

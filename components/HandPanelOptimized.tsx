@@ -12,16 +12,17 @@
  * ✅ Сохранена вся функциональность оригинала
  */
 
-import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, memo } from 'react';
 import { logger } from '../utils/logger';
 import { createPortal } from 'react-dom';
-import { useObjectsData, useObjectActions } from '../store/objectStore';
+import { useObjectActions } from '../store/objectStore';
 import {
   usePlayerList,
   useActivePlayerId,
   useIsGM,
   usePlayerPermissions
 } from '../store/contexts';
+import { useGame } from '../store/GameContext';
 import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player } from '../types';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
@@ -142,25 +143,43 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   isCollapsed = false,
   language = 'en'
 }) => {
-  // ✅ НОВЫЕ КОНТЕКСТЫ
-  const objects = useObjectsData();
-  const { updateObject, deleteObject, addObject } = useObjectActions();
+  // ✅ ИСПРАВЛЕНО: Получаем objects из GameContext
+  const { state: gameState } = useGame();
+  const objects = gameState.objects;
+  const { dispatch } = useGame();
+
+  // Helper function to update objects via GameContext
+  const updateCard = useCallback((cardId: string, updates: any) => {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: cardId, updates }
+    });
+  }, [dispatch]);
+
+  // Helper function to update players via GameContext
+  const updatePlayerData = useCallback((playerId: string, updates: any) => {
+    dispatch({
+      type: 'UPDATE_PLAYER',
+      payload: { id: playerId, updates }
+    });
+  }, [dispatch]);
+
+  // Для операций, которые еще не мигрированы, используем objectStore
+  const { deleteObject, addObject } = useObjectActions();
 
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
   const playerPermissions = usePlayerPermissions();
 
-  // 🔥 OPTIMIZED: Memoize cards array
-  const allCards = useMemo(() => {
-    return Object.values(objects).filter(obj => obj.type === ItemType.CARD) as Card[];
-  }, [objects]);
-
   const containerRef = useRef<HTMLDivElement>(null);
   const scaleMenuRef = useRef<HTMLDivElement>(null);
 
-  // State for selected player hand tab
+  // State for selected player hand tab - MUST be declared before useMemo
   const [selectedPlayerId, setSelectedPlayerId] = useState(activePlayerId);
+
+  const allCardObjects = Object.values(objects).filter(obj => obj.type === ItemType.CARD) as Card[];
+  const allCards = allCardObjects;
 
   // Use per-tab scale hook for the currently selected player
   const { scale: cardScale, setTabCardScale } = useTabCardScale(selectedPlayerId);
@@ -242,17 +261,30 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         const newCardIds = cardsToAdd.map(card => card.id);
         const updatedHandCardOrder = [...currentHandCardOrder, ...newCardIds];
 
-        // Update player via PlayerContext
-        updateObject(player.id, {
-          handCardOrder: updatedHandCardOrder
+        // ✅ ИСПРАВЛЕНО: Update player via GameContext dispatch
+        dispatch({
+          type: 'UPDATE_PLAYER',
+          payload: {
+            id: player.id,
+            updates: {
+              handCardOrder: updatedHandCardOrder
+            }
+          }
         });
 
         cardsToAdd.forEach(card => {
-          updateObject(card.id, {
-            location: CardLocation.HAND,
-            ownerId: selectedPlayerId,
-            inCursorSlot: false,
-            isOnTable: true
+          // ✅ FIXED: Use GameContext dispatch instead of objectStore
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: card.id,
+              updates: {
+                location: CardLocation.HAND,
+                ownerId: selectedPlayerId,
+                inCursorSlot: false,
+                isOnTable: false
+              }
+            }
           });
         });
 
@@ -286,7 +318,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       window.removeEventListener('cursor-slot-move', handleCursorSlotMove);
       window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     };
-  }, [selectedPlayerId, players, updateObject]);
+  }, [selectedPlayerId, players, updateCard, updatePlayerData]);
 
   // Listen for cursor slot drop events
   useEffect(() => {
@@ -335,6 +367,12 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         return;
       }
 
+      // ✅ FIXED: Update the card to hide it from tabletop
+      updateCard(cardId, {
+        inCursorSlot: true,
+        isOnTable: false
+      });
+
       setPickingUpCardIds(prev => new Set([...prev, cardId]));
     };
 
@@ -343,48 +381,44 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     return () => {
       window.removeEventListener('add-to-cursor-slot', handleAddToCursorSlot);
     };
-  }, [objects]);
+  }, [updateCard]);
 
   // Filter cards for selected player
-  const cards = useMemo(() => {
-    const player = players.find(p => p.id === selectedPlayerId);
-    const handCardOrder = player?.handCardOrder || [];
+  const player = players.find(p => p.id === selectedPlayerId);
+  const handCardOrder = player?.handCardOrder || [];
 
-    const handCards = allCards.filter(card =>
-      card.location === 'HAND' &&
-      card.ownerId === selectedPlayerId &&
-      !pickingUpCardIds.has(card.id)
-    );
+  const handCards = allCards.filter(card =>
+    card.location === CardLocation.HAND &&
+    card.ownerId === selectedPlayerId &&
+    !pickingUpCardIds.has(card.id)
+  );
 
-    const cardOrderMap = new Map(handCardOrder.map((id, index) => [id, index]));
-    return handCards.sort((a, b) => {
-      const aIndex = cardOrderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-      const bIndex = cardOrderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-      return aIndex - bIndex;
-    });
-  }, [allCards, selectedPlayerId, players, pickingUpCardIds]);
+  const cardOrderMap = new Map(handCardOrder.map((id, index) => [id, index]));
+  const cards = handCards.sort((a, b) => {
+    const aIndex = cardOrderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const bIndex = cardOrderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    return aIndex - bIndex;
+  });
 
   // Determine if viewing opponent's hand
   const isViewingOpponentHand = selectedPlayerId !== activePlayerId;
 
   // Group cards by shape
-  const cardsByShape = useMemo(() => {
-    const groups: Record<string, { cards: Card[]; shape: CardShape | 'Mixed' }> = {};
+  const groups: Record<string, { cards: Card[]; shape: CardShape | 'Mixed' }> = {};
 
-    cards.forEach(card => {
-      const shape = card.shape ?? CardShape.POKER;
-      if (!groups[shape]) {
-        groups[shape] = { cards: [], shape };
-      }
-      groups[shape].cards.push(card);
-    });
+  cards.forEach(card => {
+    const shape = card.shape ?? CardShape.POKER;
+    if (!groups[shape]) {
+      groups[shape] = { cards: [], shape };
+    }
+    groups[shape].cards.push(card);
+  });
 
-    return Object.values(groups).sort((a, b) => {
-      if (a.shape === 'Mixed') return 1;
-      if (b.shape === 'Mixed') return -1;
-      return a.shape.localeCompare(b.shape);
-    });
-  }, [cards]);
+  const cardsByShape = Object.values(groups).sort((a, b) => {
+    if (a.shape === 'Mixed') return 1;
+    if (b.shape === 'Mixed') return -1;
+    return a.shape.localeCompare(b.shape);
+  });
 
   // Compute card dimensions
   const computeCardDimensions = useCallback((card: Card) => {
@@ -401,31 +435,31 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const handleFlip = useCallback((cardId: string) => {
     const obj = objects[cardId] as Card;
     if (obj) {
-      updateObject(cardId, { faceUp: !obj.faceUp });
+      updateCard(cardId, { faceUp: !obj.faceUp });
     }
-  }, [objects, updateObject]);
+  }, [objects, updateCard]);
 
   const handleRotateClockwise = useCallback((cardId: string) => {
     const obj = objects[cardId] as any;
     const rotationStep = obj?.rotationStep ?? 45;
-    updateObject(cardId, { rotation: (obj?.rotation || 0) + rotationStep });
-  }, [objects, updateObject]);
+    updateCard(cardId, { rotation: (obj?.rotation || 0) + rotationStep });
+  }, [objects, updateCard]);
 
   const handleRotateCounterClockwise = useCallback((cardId: string) => {
     const obj = objects[cardId] as any;
     const rotationStep = obj?.rotationStep ?? 45;
-    updateObject(cardId, { rotation: (obj?.rotation || 0) - rotationStep });
-  }, [objects, updateObject]);
+    updateCard(cardId, { rotation: (obj?.rotation || 0) - rotationStep });
+  }, [objects, updateCard]);
 
   const handleSwingingClockwise = useCallback((cardId: string) => {
     const obj = objects[cardId] as any;
-    updateObject(cardId, { swinging: (obj?.swinging || 0) + 15 });
-  }, [objects, updateObject]);
+    updateCard(cardId, { swinging: (obj?.swinging || 0) + 15 });
+  }, [objects, updateCard]);
 
   const handleSwingingCounterClockwise = useCallback((cardId: string) => {
     const obj = objects[cardId] as any;
-    updateObject(cardId, { swinging: (obj?.swinging || 0) - 15 });
-  }, [objects, updateObject]);
+    updateCard(cardId, { swinging: (obj?.swinging || 0) - 15 });
+  }, [objects, updateCard]);
 
   const handleLayerUp = useCallback((cardId: string) => {
     // Implement layer up logic
@@ -449,12 +483,12 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   }, [objects, addObject]);
 
   const handleMoveToHand = useCallback((cardId: string) => {
-    updateObject(cardId, {
+    updateCard(cardId, {
       location: CardLocation.HAND,
       ownerId: selectedPlayerId,
       isOnTable: false
     });
-  }, [updateObject, selectedPlayerId]);
+  }, [updateCard, selectedPlayerId]);
 
   const handleMoveToTopDeck = useCallback((cardId: string) => {
     // Implement deck logic
@@ -712,7 +746,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const newCardOrder = newCards.map(c => c.id);
       const player = players.find(p => p.id === selectedPlayerId);
       if (player) {
-        updateObject(player.id, {
+        updatePlayerData(player.id, {
           handCardOrder: newCardOrder
         });
       }
@@ -721,7 +755,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     setDragIndex(null);
     setDragOverIndex(null);
     dragStartPosRef.current = null;
-  }, [dragIndex, dragOverIndex, cards, selectedPlayerId, players, updateObject]);
+  }, [dragIndex, dragOverIndex, cards, selectedPlayerId, players, updatePlayerData]);
 
   // Set up global mouse listeners during drag
   useEffect(() => {
@@ -775,7 +809,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const newCardOrder = [...newCardIds, ...currentHandOrder];
 
       if (player) {
-        updateObject(player.id, {
+        updatePlayerData(player.id, {
           handCardOrder: newCardOrder
         });
       }
@@ -784,8 +818,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         const existingCard = objects[card.id] as Card | undefined;
 
         if (existingCard) {
-          updateObject(card.id, {
-            location: 'HAND' as any,
+          updateCard(card.id, {
+            location: CardLocation.HAND as any,
             isOnTable: false,
             ownerId: activePlayerId,
             x: 0,
@@ -803,7 +837,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
             content: card.content || card.frontFaceUrl || '',
             name: card.name || 'Card',
             locked: false,
-            location: 'HAND' as any,
+            location: CardLocation.HAND as any,
             ownerId: activePlayerId,
             isOnTable: false,
             faceUp: true,
@@ -827,7 +861,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
     window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     return () => window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
-  }, [objects, activePlayerId, players, selectedPlayerId, updateObject, addObject]);
+  }, [objects, activePlayerId, players, selectedPlayerId, updateCard, updatePlayerData, addObject]);
 
   // Reset to own hand when active player changes
   useEffect(() => {
@@ -866,7 +900,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // Helper function to count cards for a player
   const countCardsForPlayer = useCallback((playerId: string) => {
     return allCards.filter(card =>
-      card.location === 'HAND' &&
+      card.location === CardLocation.HAND &&
       card.ownerId === playerId &&
       !pickingUpCardIds.has(card.id)
     ).length;
@@ -1092,7 +1126,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                   }}
                   onPlayerChange={setTempSettingsPlayer}
                   onSave={(updatedPlayer) => {
-                    updateObject(updatedPlayer.id, updatedPlayer);
+                    updatePlayerData(updatedPlayer.id, updatedPlayer);
                     setHandTabSettings(null);
                     setTempSettingsPlayer(null);
                   }}
@@ -1111,7 +1145,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
               <button
                 onClick={() => {
                   if (tempSettingsPlayer) {
-                    updateObject(tempSettingsPlayer.id, tempSettingsPlayer);
+                    updatePlayerData(tempSettingsPlayer.id, tempSettingsPlayer);
                   }
                   setHandTabSettings(null);
                   setTempSettingsPlayer(null);

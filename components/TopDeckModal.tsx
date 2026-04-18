@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
-import { useObjects, useObjectActions } from '../store/objectStore';
+import { useObjectActions } from '../store/objectStore';
 import { Deck, Card, CardPile, ContextAction, AppLanguage, TableObject } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
 import { logger } from '../utils/logger';
@@ -26,9 +26,18 @@ interface TopDeckModalProps {
 
 export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, language = 'en' }) => {
 
-  const { dispatch } = useGame(); // Keep for card-specific operations
-  const objects = useObjects();
-  const { updateObject, deleteObject } = useObjectActions();
+  const { state: gameState, dispatch } = useGame();
+  const objects = gameState.objects; // ✅ FIXED: Use GameContext instead of objectStore
+
+  // Helper function to update objects via GameContext
+  const updateObjectViaContext = useCallback((objectId: string, updates: any) => {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: objectId, updates }
+    });
+  }, [dispatch]);
+
+  const { deleteObject } = useObjectActions();
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
@@ -130,17 +139,17 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
 
   // To Hand handler
   const handleToHand = useCallback((cardId: string) => {
-    updateObject(cardId, {
-      location: 'HAND' as any,
+    updateObjectViaContext(cardId, {
+      location: CardLocation.HAND as any,
       ownerId: activePlayerId,
       isOnTable: false,
       faceUp: true
     });
 
     const newCardOrder = cardOrder.filter(id => id !== cardId);
-    updateObject(deck.id, { cardIds: newCardOrder });
+    updateObjectViaContext(deck.id, { cardIds: newCardOrder });
     setCardOrder(newCardOrder);
-  }, [updateObject, activePlayerId, cardOrder, deck.id]);
+  }, [updateObjectViaContext, activePlayerId, cardOrder, deck.id]);
 
   // Mill to Bottom - send card to bottom of deck
   const handleMillToBottom = useCallback((cardId: string) => {
@@ -221,7 +230,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         break;
       case 'toggleHide':
         const isHidden = card.hidden === true;
-        updateObject(card.id, { hidden: !isHidden });
+        updateObjectViaContext(card.id, { hidden: !isHidden });
         break;
       case 'setCardBack':
         if (card.deckId) {
