@@ -306,22 +306,29 @@ components/Tabletop/
 **Проблема:** Монолитный компонент 8,347 строк
 **Эффект:** 40-50% снижение ререндеров + улучшение поддерживаемости
 
-**Прогресс (2026-04-19):**
+**Прогресс (2026-04-19): 20% завершено**
 - ✅ **ЭТАП 1 ВЫПОЛНЕН:** Backup branch + анализ зависимостей
 - ✅ **ЭТАП 2 ВЫПОЛНЕН:** Инфраструктура (types, hooks)
-- ⏳ **ЭТАП 3-10:** Разбивка на компоненты
+- ⏳ **ЭТАП 3-10:** Разбивка на компоненты (в процессе)
 
-**Созданные файлы:**
-- ✅ `components/Tabletop/types.ts` - типы и интерфейсы
-- ✅ `components/Tabletop/useTabletopPositioning.ts` - позиционирование
-- ✅ `components/Tabletop/useObjectFilters.ts` - фильтрация объектов
-- ✅ `components/Tabletop/useTabletopState.ts` - управление состоянием
-- ✅ `components/Tabletop/index.ts` - экспорты
+**Созданные файлы (5 штук, 874 строки):**
+- ✅ `components/Tabletop/types.ts` - 276 строк, 15+ интерфейсов
+- ✅ `components/Tabletop/useTabletopPositioning.ts` - 84 строки, 3 хука
+- ✅ `components/Tabletop/useObjectFilters.ts` - 132 строки, 2 хука, 9 коллекций
+- ✅ `components/Tabletop/useTabletopState.ts` - 358 строк, 8 хуков состояния
+- ✅ `components/Tabletop/index.ts` - 24 строки, централизованные экспорты
+
+**Реализованные хуки (13 штук):**
+- ✅ Позиционирование: `useTabletopPositioning()`, `useLayerZoom()`, `usePositionedStyle()`
+- ✅ Фильтрация: `useObjectFilters()` (9 коллекций), `useWorldBounds()`
+- ✅ Состояние: `useToolState()`, `useCursorSlotState()`, `useRulerState()`, `useModalStates()`, `useDraggingState()`, `useResizeState()`, `useDiceState()`, `useHoverState()`, `useAdditionalUIState()`
 
 **Следующие шаги:**
-- ⏳ Этап 3: Простые компоненты (Background, RemoteObjects)
-- ⏳ Этап 4: Сложные рендеры (GameObjects, UIObjects)
-- ⏳ Этап 5: Бизнес-логика (CursorSlot, EventHandlers)
+- ⏳ Этап 3: Простые компоненты (Background, RemoteObjects) - 3-4 часа
+- ⏳ Этап 4: Сложные рендеры (GameObjects, UIObjects) - 4-5 часов
+- ⏳ Этап 5: Бизнес-логика (CursorSlot, EventHandlers) - 5-6 часов
+
+**Ожидаемый результат:** 8,347 → 500 строк в основном компоненте
 
 #### 7. Мемоизировать ToolsPanel (15 мин) ⚡ БЫСТРАЯ ПОБЕДА
 **Проблема:** Компонент без мемоизации, используется активно

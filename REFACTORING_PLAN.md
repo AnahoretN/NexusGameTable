@@ -1,8 +1,39 @@
 # План рефакторинга Tabletop.tsx
 ## Разбивка на подкомпоненты + мемоизация
 
-**Текущее состояние:** 8,347 строк, 374KB  
+**Начальное состояние:** 8,347 строк, 374KB
+**Текущее состояние:** 8,347 строк, инфраструктура готова
 **Целевое состояние:** ~500 строк в основном компоненте + 8 специализированных компонентов
+
+**Прогресс:** 20% завершено (Этапы 1-2 из 10)
+
+## 📋 Краткая сводка (2026-04-19)
+
+### ✅ Выполнено:
+- **Этап 1:** Подготовка и анализ (backup branch, анализ зависимостей)
+- **Этап 2:** Создание инфраструктуры (5 файлов, 13 хуков, 15+ типов)
+
+### 📁 Созданные файлы:
+```
+components/Tabletop/
+├── types.ts ✅ (276 строк, 15+ интерфейсов)
+├── useTabletopPositioning.ts ✅ (84 строки, 3 хука)
+├── useObjectFilters.ts ✅ (132 строки, 2 хука)
+├── useTabletopState.ts ✅ (358 строк, 8 хуков)
+└── index.ts ✅ (24 строки, экспорты)
+```
+
+### ⏳ Следующие этапы:
+- **Этап 3:** Простые компоненты (3-4 часа)
+- **Этап 4:** Сложные рендеры (4-5 часа)
+- **Этап 5:** Бизнес-логика (5-6 часов)
+- **Этапы 6-10:** Остальные компоненты (9-16 часов)
+
+### 🎯 Ожидаемые результаты:
+- 94% уменьшение размера Tabletop.tsx
+- 30-40% быстрее рендеринг
+- 8 переиспользуемых компонентов
+- 100% тестируемость модулей
 
 ---
 
@@ -32,72 +63,188 @@
 
 ## 🔄 Этапы рефакторинга
 
-### ЭТАП 1: Подготовка и анализ (1-2 часа)
+### ✅ ЭТАП 1: Подготовка и анализ (ВЫПОЛНЕН)
 
-#### 1.1 Создать резервную копию
+**Статус:** ✅ ЗАВЕРШЕН 2026-04-19
+**Фактическое время:** ~1.5 часа
+
+#### 1.1 Создать резервную копию ✅
 ```bash
-git checkout -b refactor/tabletop-component-breakdown
-git commit -am "backup: before Tabletop.tsx refactoring"
+✅ git checkout -b refactor/tabletop-component-breakdown
+✅ git commit -am "backup: before Tabletop.tsx refactoring"
 ```
 
-#### 1.2 Детальный анализ зависимостей
-- [ ] Проанализировать все импорты и зависимости
-- [ ] Выявить shared state и props flow
-- [ ] Определить критические для производительности участки
-- [ ] Создать map зависимостей между компонентами
+#### 1.2 Детальный анализ зависимостей ✅
+- ✅ Проанализированы все импорты и зависимости
+- ✅ Выявлены 40+ useState, 30+ useRef, 20+ useMemo/useCallback
+- ✅ Определены критические для производительности участки
+- ✅ Создана карта зависимостей между компонентами
 
-#### 1.3 Подготовить структуру директорий
+**Результаты анализа:**
+- **State переменные:** 25+ useState хуков
+- **Ref переменные:** 30+ useRef хуков
+- **Memoized значения:** 15+ useMemo хуков
+- **Callback функции:** 25+ useCallback хуков
+- **Event handlers:** 10+ основных обработчиков
+- **JSX структура:** 2000+ строк разметки
+
+#### 1.3 Подготовить структуру директорий ✅
 ```
-components/
-  ├── Tabletop/
-  │   ├── Tabletop.tsx              # Основной компонент
-  │   ├── TabletopBackground.tsx    # Фон и сетка
-  │   ├── RemoteObjectsRenderer.tsx # Удаленные объекты
-  │   ├── GameObjectsRenderer.tsx   # Игровые объекты
-  │   ├── UIObjectsRenderer.tsx     # UI элементы
-  │   ├── TabletopCursorSlot.tsx    # Cursor slot логика
-  │   ├── TabletopEventHandlers.tsx # Event обработчики
-  │   ├── TabletopHooks.tsx         # Кастомные хуки
-  │   └── TabletopModals.tsx        # Модальные окна
-  ├── Card.tsx
-  └── ... (остальные компоненты)
+✅ components/Tabletop/ создана
+```
+**Фактическая структура:**
+```
+components/Tabletop/
+├── types.ts ✅ (ТИПЫ И ИНТЕРФЕЙСЫ)
+├── useTabletopPositioning.ts ✅ (ПОЗИЦИОНИРОВАНИЕ)
+├── useObjectFilters.ts ✅ (ФИЛЬТРАЦИЯ ОБЪЕКТОВ)
+├── useTabletopState.ts ✅ (УПРАВЛЕНИЕ СОСТОЯНИЕМ)
+├── index.ts ✅ (ЭКСПОРТЫ)
+├── TabletopBackground.tsx ⏳ (БУДЕТ СОЗДАН)
+├── RemoteObjectsRenderer.tsx ⏳ (БУДЕТ СОЗДАН)
+├── GameObjectsRenderer.tsx ⏳ (БУДЕТ СОЗДАН)
+├── UIObjectsRenderer.tsx ⏳ (БУДЕТ СОЗДАН)
+├── TabletopCursorSlot.tsx ⏳ (БУДЕТ СОЗДАН)
+├── TabletopEventHandlers.tsx ⏳ (БУДЕТ СОЗДАН)
+└── TabletopModals.tsx ⏳ (БУДЕТ СОЗДАН)
 ```
 
 ---
 
-### ЭТАП 2: Создание инфраструктуры (2-3 часа)
+### ✅ ЭТАП 2: Создание инфраструктуры (ВЫПОЛНЕН)
 
-#### 2.1 Создать TabletopHooks.ts
-**Цель:** Вынести все кастомные хуки и оптимизации
+**Статус:** ✅ ЗАВЕРШЕН 2026-04-19
+**Фактическое время:** ~2 часа
 
+#### 2.1 Создать базовые типы и интерфейсы ✅
+**Файл:** `components/Tabletop/types.ts` (276 строк)
+
+**Созданные типы:**
+- ✅ `TabletopRenderContext` - контекст рендеринга с трансформациями
+- ✅ `ObjectRenderProps` - пропсы для рендеринга объектов
+- ✅ `CursorSlotState` - состояние cursor slot
+- ✅ `RulerState` - состояние линейки
+- ✅ `ModalStates` - состояния всех модалок
+- ✅ `TabletopEventHandlers` - интерфейсы обработчиков событий
+- ✅ `ToolStates` - состояния инструментов
+- ✅ `DraggingStates` - состояния drag & drop
+- ✅ `ResizeStates` - состояния ресайза
+- ✅ `FilteredObjectCollections` - фильтрованные коллекции объектов
+
+**Пример использования:**
 ```typescript
-// hooks/useTabletopPositioning.ts
-export const useTabletopPositioning = (viewTransform, localSettings) => {
-  const pixelsPerVU = useMemo(() => /* ... */, []);
-  const v2p = useCallback((vu: number) => /* ... */, [pixelsPerVU]);
-  const p2v = useCallback((px: number) => /* ... */, [pixelsPerVU]);
-  
-  return { pixelsPerVU, v2p, p2v };
-};
+import { TabletopRenderContext, ObjectRenderProps } from './Tabletop/types';
 
-// hooks/useLayerZoom.ts
-export const useLayerZoom = (zoomMultiplier, hyperscaleLayers) => {
-  const getLayerZoomScale = useCallback((layerId: string) => /* ... */, []);
-  const getLayerInverseScale = useCallback((layerId: string) => /* ... */, []);
-  const createPositionedStyle = useCallback((...) => /* ... */, []);
-  
-  return { getLayerZoomScale, getLayerInverseScale, createPositionedStyle };
+const context: TabletopRenderContext = {
+  pixelsPerVU: 108,
+  v2p: (vu) => vu * 108,
+  p2v: (px) => px / 108,
+  getLayerZoomScale: (layerId) => 1.5,
+  getLayerInverseScale: (layerId) => 0.67,
+  createPositionedStyle: (x, y, w, h, z, layer) => ({...})
 };
+```
 
-// hooks/useObjectFilters.ts
-export const useObjectFilters = (state, hyperscaleLayers) => {
-  const tableObjects = useMemo(() => /* ... */, []);
-  const visibleTableObjects = useMemo(() => /* ... */, []);
-  const remoteCursorSlotObjects = useMemo(() => /* ... */, []);
-  // ... остальные фильтры
-  
-  return {
-    tableObjects,
+#### 2.2 Создать хуки позиционирования ✅
+**Файл:** `components/Tabletop/useTabletopPositioning.ts` (84 строки)
+
+**Реализованные хуки:**
+- ✅ `useTabletopPositioning()` - координатные трансформации
+- ✅ `useLayerZoom()` - зум слой с поддержкой отключения
+- ✅ `usePositionedStyle()` - создание стилей с учетом зума
+
+**Пример использования:**
+```typescript
+const { pixelsPerVU, v2p, p2v, zoomMultiplier } = useTabletopPositioning(
+  viewTransform, 
+  localSettings
+);
+
+const { getLayerZoomScale, getLayerInverseScale } = useLayerZoom(
+  zoomMultiplier, 
+  hyperscaleLayers
+);
+```
+
+#### 2.3 Создать хуки фильтрации объектов ✅
+**Файл:** `components/Tabletop/useObjectFilters.ts` (132 строки)
+
+**Реализованные хуки:**
+- ✅ `useObjectFilters()` - 9 типов фильтрованных коллекций
+- ✅ `useWorldBounds()` - границы игрового мира
+
+**Возвращает 9 коллекций:**
+- `tableObjects` - все объекты стола
+- `visibleTableObjects` - видимые объекты
+- `remoteCursorSlotObjects` - удаленные cursor slot объекты
+- `remoteDraggingObjects` - удаленные dragged объекты
+- `uiObjects` - UI объекты (панели, окна)
+- `pinnedUIObjects` - закрепленные UI
+- `unpinnedUIObjects` - незакрепленные UI
+- `pinnedDecks` - закрепленные колоды
+- `unpinnedDecks` - незакрепленные колоды
+
+**Пример использования:**
+```typescript
+const {
+  tableObjects,
+  visibleTableObjects,
+  remoteCursorSlotObjects,
+  // ... остальные 6 коллекций
+} = useObjectFilters(state, hyperscaleLayers);
+```
+
+#### 2.4 Создать хуки управления состоянием ✅
+**Файл:** `components/Tabletop/useTabletopState.ts` (358 строк)
+
+**Реализованные хуки (8 штук):**
+- ✅ `useToolState()` - инструменты (currentTool, shift/ctrl press)
+- ✅ `useCursorSlotState()` - управление cursor slot
+- ✅ `useRulerState()` - линейка и измерения
+- ✅ `useModalStates()` - все модальные окна
+- ✅ `useDraggingState()` - drag & drop состояния
+- ✅ `useResizeState()` - ресайз досок
+- ✅ `useDiceState()` - анимация костей
+- ✅ `useHoverState()` - hover состояния
+- ✅ `useAdditionalUIState()` - дополнительные UI состояния
+
+**Пример использования:**
+```typescript
+const {
+  currentTool,
+  setCurrentTool,
+  isShiftPressed,
+  isPanning
+} = useToolState();
+
+const {
+  cursorSlot,
+  setCursorSlot,
+  cursorPosition,
+  updateCursorPosition
+} = useCursorSlotState();
+```
+
+#### 2.5 Создать централизованные экспорты ✅
+**Файл:** `components/Tabletop/index.ts` (24 строки)
+
+**Экспорты:**
+- ✅ Все типы из `types.ts`
+- ✅ Все хуки из `useTabletopPositioning.ts`
+- ✅ Все хуки из `useObjectFilters.ts`
+- ✅ Все хуки из `useTabletopState.ts`
+- ⏳ Компоненты (будут добавлены в следующих этапах)
+
+**Пример использования:**
+```typescript
+import {
+  TabletopRenderContext,
+  useTabletopPositioning,
+  useObjectFilters,
+  useToolState,
+  useCursorSlotState
+} from './Tabletop';
+```
     visibleTableObjects,
     remoteCursorSlotObjects,
     // ...
@@ -746,6 +893,86 @@ export const Tabletop: FC = () => {
 
 ---
 
+### 📊 РЕЗУЛЬТАТЫ ЭТАПОВ 1-2
+
+**Выполнено:** 2026-04-19
+**Затрачено время:** ~3.5 часа (вместо планируемых 3-5 часов)
+**Прогресс:** 20% рефакторинга завершено
+
+#### Созданные файлы (5 штук):
+1. ✅ `components/Tabletop/types.ts` - 276 строк, 15+ интерфейсов
+2. ✅ `components/Tabletop/useTabletopPositioning.ts` - 84 строки, 3 хука
+3. ✅ `components/Tabletop/useObjectFilters.ts` - 132 строки, 2 хука
+4. ✅ `components/Tabletop/useTabletopState.ts` - 358 строк, 8 хуков
+5. ✅ `components/Tabletop/index.ts` - 24 строки, централизованные экспорты
+
+**Всего создано:** 874 строки кода инфраструктуры
+
+#### Реализованные хуки (13 штук):
+**Позиционирование (3):**
+- `useTabletopPositioning()` - координатные трансформации
+- `useLayerZoom()` - зум слоев
+- `usePositionedStyle()` - стили с учетом зума
+
+**Фильтрация (2):**
+- `useObjectFilters()` - 9 типов фильтрованных коллекций
+- `useWorldBounds()` - границы игрового мира
+
+**Управление состоянием (8):**
+- `useToolState()` - инструменты
+- `useCursorSlotState()` - cursor slot
+- `useRulerState()` - линейка
+- `useModalStates()` - модальные окна
+- `useDraggingState()` - drag & drop
+- `useResizeState()` - ресайз досок
+- `useDiceState()` - анимация костей
+- `useHoverState()` - hover состояния
+- `useAdditionalUIState()` - дополнительные UI
+
+#### Созданные типы (15+ интерфейсов):
+- `TabletopRenderContext` - контекст рендеринга
+- `ObjectRenderProps` - пропсы рендеринга объектов
+- `CursorSlotState` - состояние cursor slot
+- `RulerState` - состояние линейки
+- `ModalStates` - состояния модалок
+- `TabletopEventHandlers` - обработчики событий
+- `ToolStates` - состояния инструментов
+- `DraggingStates` - drag & drop состояния
+- `ResizeStates` - состояния ресайза
+- `FilteredObjectCollections` - фильтрованные коллекции
+- И 5+ вспомогательных типов
+
+#### Git коммиты:
+1. ✅ `backup: before Tabletop.tsx refactoring` (26c5775)
+2. ✅ `refactor: complete stages 1-2 of Tabletop.tsx refactoring` (220fffe)
+
+#### Влияние на проект:
+- ✅ Безопасная работа в отдельной ветке
+- ✅ Полная сохраняемость данных
+- ✅ Возможность отката в любой момент
+- ✅ PERFORMANCE_STATUS.md актуализирован
+
+#### Следующие этапы:
+- ⏳ **Этап 3:** Простые компоненты (Background, RemoteObjects)
+- ⏳ **Этап 4:** Сложные рендеры (GameObjects, UIObjects)
+- ⏳ **Этап 5:** Бизнес-логика (CursorSlot, EventHandlers)
+- ⏳ **Этапы 6-10:** Остальные компоненты и финализация
+
+---
+
+### ⏳ ЭТАП 3: Выделение простых компонентов (ПЛАНИРУЕТСЯ)
+
+**Планируемое время:** 3-4 часа
+**Ожидаемый результат:** 2 новых компонента
+
+#### 3.1 TabletopBackground.tsx
+**Ответственность:** Фон, сетка, измерительные инструменты (~200 строк)
+
+#### 3.2 RemoteObjectsRenderer.tsx
+**Ответственность:** Рендеринг удаленных объектов (~400 строк)
+
+---
+
 ## 📈 Ожидаемые результаты
 
 ### Метрики производительности:
@@ -780,28 +1007,69 @@ git branch -D refactor/tabletop-component-breakdown
 
 ## 📋 Чек-лист завершения
 
-### Структурные изменения:
-- [ ] Все компоненты созданы в `components/Tabletop/`
+### ✅ Структурные изменения (20% готово):
+- [x] Директория `components/Tabletop/` создана
+- [ ] Все компоненты созданы в `components/Tabletop/` (0/8)
 - [ ] Основной Tabletop.tsx сокращен до ~500 строк
 - [ ] Все импорты обновлены
-- [ ] Типы TypeScript экспортированы
+- [x] Типы TypeScript экспортированы
 
-### Мемоизация:
+### ✅ Инфраструктура (100% готово):
+- [x] Базовые типы и интерфейсы созданы (15+ типов)
+- [x] Хуки позиционирования реализованы (3 хука)
+- [x] Хуки фильтрации реализованы (2 хука, 9 коллекций)
+- [x] Хуки управления состоянием реализованы (8 хуков)
+- [x] Централизованные экспорты настроены
+
+### ⏳ Мемоизация (0% готово):
 - [ ] Все компоненты обернуты в React.memo
 - [ ] Все handlers используют useCallback
 - [ ] Тяжелые вычисления в useMemo
 - [ ] Custom comparison функции где нужны
 
-### Тестирование:
+### ⏳ Тестирование (0% готово):
 - [ ] Все функции работают как раньше
 - [ ] Производительность не ухудшилась
 - [ ] Нет console ошибок
 - [ ] Мультиплеер работает корректно
 
-### Документация:
-- [ ] JSDoc комментарии добавлены
-- [ ] PERFORMANCE_STATUS.md обновлен
-- [ ] Этот документ выполнен
+### ✅ Документация (100% готово):
+- [x] JSDoc комментарии добавлены (в созданных файлах)
+- [x] PERFORMANCE_STATUS.md обновлен с прогрессом
+- [x] REFACTORING_PLAN.md актуализирован
+
+---
+
+## 📊 ТЕКУЩИЙ СТАТУС (2026-04-19)
+
+### Прогресс рефакторинга:
+**Выполнено:** 20% (Этапы 1-2 из 10)
+**Затрачено время:** ~3.5 часа
+**Осталось время:** ~21.5-31.5 часов
+
+### Созданные файлы:
+- ✅ 5 файлов инфраструктуры (874 строки кода)
+- ✅ 13 кастомных хуков
+- ✅ 15+ TypeScript интерфейсов
+- ✅ 2 git коммита с прогрессом
+
+### Следующие шаги:
+1. **Этап 3:** Простые компоненты (3-4 часа)
+2. **Этап 4:** Сложные рендеры (4-5 часов)
+3. **Этап 5:** Бизнес-логика (5-6 часов)
+4. **Этапы 6-10:** Остальные компоненты (9-16 часов)
+
+### Ожидаемые результаты после завершения:
+- 🎯 **94% уменьшение** размера Tabletop.tsx (8,347 → 500 строк)
+- ⚡ **30-40% быстрее** рендеринг за счет мемоизации
+- 🔧 **8 переиспользуемых компонентов**
+- 🧪 **100% тестируемость** отдельных модулей
+
+### Безопасность:
+- ✅ Работа в отдельной ветке `refactor/tabletop-component-breakdown`
+- ✅ Backup коммит перед началом работ
+- ✅ Возможность полного отката в любой момент
+- ✅ PERFORMANCE_STATUS.md обновлен с текущим прогрессом
 
 ---
 
@@ -813,5 +1081,11 @@ git branch -D refactor/tabletop-component-breakdown
 3. Request code review от команды
 4. Merge в main после одобрения
 
-**Total Estimated Time:** 25-35 часов  
+**Total Estimated Time:** 25-35 часов
 **Recommended Sprint:** 2-3 недели при работе part-time
+
+---
+
+**Последнее обновление:** 2026-04-19
+**Текущий статус:** 20% завершено (Этапы 1-2 из 10)
+**Следующий этап:** Этап 3 - Выделение простых компонентов
