@@ -194,38 +194,34 @@
 - ✅ Overscan 300px для плавной прокрутки
 - ✅ Плавная работа с 500+ объектами на столе
 
-## ❌ Остающиеся оптимизации
+## 🔄 В процессе рефакторинга
 
-### 1. Tabletop.tsx (8,289 строк) - ЕДИНСТВЕННАЯ КРИТИЧЕСКАЯ ПРОБЛЕМА
+### 1. Tabletop.tsx (8,347 строк) - РЕФАКТОРИНГ В ПРОЦЕССЕ 🚧
 **Проблема:** Монолитный компонент с 20+ useState, 15+ useRef
 
-**Текущая структура:**
-```typescript
-export const Tabletop: React.FC = () => {
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [isPanning, setIsPanning] = useState(false);
-  const [currentTool, setCurrentTool] = useState<string>('none');
-  // ... 17+ других useState
-  // 15+ useRef
-  // 2000+ строк JSX
-};
-```
+**Текущий прогресс (2026-04-19):**
+- ✅ **ЭТАП 1 ВЫПОЛНЕН:** Создан backup branch и анализ зависимостей
+- ✅ **ЭТАП 2 ВЫПОЛНЕН:** Создана инфраструктура для рефакторинга
+- ⏳ **ЭТАП 3-10:** В процессе - разбивка на компоненты
 
-**Требуемая структура:**
+**Созданная структура:**
 ```
 components/Tabletop/
-├── index.tsx (~200 строк)
-├── ObjectLayer.tsx (~300 строк)
-├── DragDropHandler.tsx (~400 строк)
-├── GridOverlay.tsx (~200 строк)
-├── CursorManagement.tsx (~300 строк)
-└── hooks/
-    ├── useTabletopDrag.ts
-    ├── useTabletools.ts
-    └── useViewport.ts
+├── types.ts ✅ (типы и интерфейсы)
+├── useTabletopPositioning.ts ✅ (позиционирование и трансформации)
+├── useObjectFilters.ts ✅ (фильтрация объектов)
+├── useTabletopState.ts ✅ (управление состоянием)
+├── index.ts ✅ (экспорты)
+├── TabletopBackground.tsx ⏳ (будет создан)
+├── RemoteObjectsRenderer.tsx ⏳ (будет создан)
+├── GameObjectsRenderer.tsx ⏳ (будет создан)
+├── UIObjectsRenderer.tsx ⏳ (будет создан)
+├── TabletopCursorSlot.tsx ⏳ (будет создан)
+├── TabletopEventHandlers.tsx ⏳ (будет создан)
+└── TabletopModals.tsx ⏳ (будет создан)
 ```
 
-**Потенциальный эффект:** 60-70% снижение ререндеров
+**Потенциальный эффект:** 60-70% снижение ререндеров + улучшение поддерживаемости
 
 ### 2. Мемоизация компонентов - ЗАВЕРШЕНО НА 90% ✅
 **Мемоизированы (18 компонентов):**
@@ -306,7 +302,28 @@ components/Tabletop/
 
 ### 🔥 Приоритетные задачи (актуальные на 2026-04-19)
 
-#### 6. Мемоизировать ToolsPanel (15 мин) ⚡ БЫСТРАЯ ПОБЕДА
+#### 6. Tabletop.tsx рефакторинг (В ПРОЦЕССЕ) 🚧 ВЫСОКИЙ ПРИОРИТЕТ
+**Проблема:** Монолитный компонент 8,347 строк
+**Эффект:** 40-50% снижение ререндеров + улучшение поддерживаемости
+
+**Прогресс (2026-04-19):**
+- ✅ **ЭТАП 1 ВЫПОЛНЕН:** Backup branch + анализ зависимостей
+- ✅ **ЭТАП 2 ВЫПОЛНЕН:** Инфраструктура (types, hooks)
+- ⏳ **ЭТАП 3-10:** Разбивка на компоненты
+
+**Созданные файлы:**
+- ✅ `components/Tabletop/types.ts` - типы и интерфейсы
+- ✅ `components/Tabletop/useTabletopPositioning.ts` - позиционирование
+- ✅ `components/Tabletop/useObjectFilters.ts` - фильтрация объектов
+- ✅ `components/Tabletop/useTabletopState.ts` - управление состоянием
+- ✅ `components/Tabletop/index.ts` - экспорты
+
+**Следующие шаги:**
+- ⏳ Этап 3: Простые компоненты (Background, RemoteObjects)
+- ⏳ Этап 4: Сложные рендеры (GameObjects, UIObjects)
+- ⏳ Этап 5: Бизнес-логика (CursorSlot, EventHandlers)
+
+#### 7. Мемоизировать ToolsPanel (15 мин) ⚡ БЫСТРАЯ ПОБЕДА
 **Проблема:** Компонент без мемоизации, используется активно
 **Эффект:** 5-10% снижение ререндеров при взаимодействии с инструментами
 
@@ -321,18 +338,6 @@ export const ToolsPanelMemo = React.memo(MainToolsPanel, (prevProps, nextProps) 
   );
 });
 ```
-
-#### 7. Разбить Tabletop.tsx (3-4 дня) 🚨 ВЫСОКИЙ ПРИОРИТЕТ
-**Проблема:** Монолитный компонент 8,347 строк
-**Эффект:** 40-50% снижение ререндеров + улучшение поддерживаемости
-
-**План разбивки:**
-- Выделить ObjectLayer компонент (~300 строк)
-- Создать DragDropHandler компонент (~400 строк)
-- Создать GridOverlay компонент (~200 строк)
-- Создать hooks/useTabletopDrag.ts
-- Создать hooks/useTabletools.ts
-- Создать hooks/useViewport.ts
 
 ### Среднесрочные задачи (2-3 недели)
 
