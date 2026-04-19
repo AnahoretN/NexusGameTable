@@ -144,6 +144,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const { state, dispatch, isHost } = useGame();
   const activePlayerId = useActivePlayerId();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const lastEraserProcessTimeRef = useRef<number>(0);
+  const eraserModifiedDrawingsRef = useRef<Map<string, Drawing>>(new Map());
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<StrokePoint[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
@@ -158,6 +160,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
   const [dragStartDrawingPos, setDragStartDrawingPos] = useState<{ x: number; y: number } | null>(null);
 
+  // Local cache for immediate eraser feedback
+  const [localDrawingsCache, setLocalDrawingsCache] = useState<Map<string, Drawing>>(new Map());
+
   // Track initial stroke data for network commit on drawing end (guests only)
   const strokeStartDataRef = useRef<{ color: string; thickness: number } | null>(null);
 
@@ -167,6 +172,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       obj.type === ItemType.DRAWING && obj.isOnTable
     );
   }, [state.objects]);
+
+  // Update local cache when drawings change from Redux (separate useEffect to avoid issues)
+  useEffect(() => {
+    setLocalDrawingsCache(new Map(drawings.map(d => [d.id, d])));
+  }, [drawings]);
 
   // Track ALT and Shift keys
   useEffect(() => {
@@ -235,19 +245,22 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   }, []);
 
   // Eraser settings
-  const [eraserThickness, setEraserThickness] = useState(20);
+  const [eraserThickness, setEraserThickness] = useState(100);
 
   // Listen for eraser settings changes
   useEffect(() => {
     const handleEraserSettingsChange = (e: Event) => {
       const customEvent = e as CustomEvent<{ thickness: number }>;
-      setEraserThickness(customEvent.detail.thickness);
+      console.log('🖌️ Eraser thickness changed to:', customEvent.detail.thickness);
+	      setEraserThickness(customEvent.detail.thickness);
     };
 
     window.addEventListener('eraser-settings-changed', handleEraserSettingsChange);
 
-    return () => window.removeEventListener('eraser-settings-changed', handleEraserSettingsChange);
-  }, []);
+    return () => {
+      window.removeEventListener('eraser-settings-changed', handleEraserSettingsChange);
+    };
+  }, []); // Run once on mount
 
   // Listen for settings sync response
   useEffect(() => {
@@ -264,14 +277,26 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     return () => window.removeEventListener('marker-settings-sync', handleSettingsSync);
   }, []);
 
-  const redrawCanvas = useCallback((ctx: CanvasRenderingContext2D) => {
+  const redrawCanvas = useCallback((ctx: CanvasRenderingContext2D, useCache = false) => {
     if (!canvasRef.current) return;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
-    // Draw all Drawing objects (uses memoized drawings from outer scope)
-    drawings.forEach(drawing => {
+    // Use either cache, eraser modifications, or regular drawings
+    let drawingsToDraw = drawings;
+
+    if (useCache) {
+      drawingsToDraw = Array.from(localDrawingsCache.values());
+    } else if (eraserModifiedDrawingsRef.current.size > 0) {
+      // Apply eraser modifications on top of regular drawings
+      drawingsToDraw = drawings.map(d =>
+        eraserModifiedDrawingsRef.current.get(d.id) || d
+      );
+    }
+
+    // Draw all Drawing objects
+    drawingsToDraw.forEach(drawing => {
       // Apply drawing opacity (convert 1-100 to 0-1)
       const opacity = (drawing.opacity ?? 100) / 100;
       ctx.globalAlpha = opacity;
@@ -347,7 +372,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
       ctx.stroke();
     }
-  }, [drawings, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, eraserThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
+  }, [drawings, localDrawingsCache, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, eraserThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
+
+  // Helper function to redraw with cache for immediate eraser feedback
+  const redrawCanvasWithCache = useCallback((ctx: CanvasRenderingContext2D) => {
+    redrawCanvas(ctx, true);
+  }, [redrawCanvas]);
 
   const getWorldPosition = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -443,15 +473,19 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   }, [state.objects, offsetX, offsetY]); // Only depend on things that affect drawing display
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    console.log('🖱️ handleMouseDown called, currentTool:', currentTool);
     if (currentTool !== 'marker' && currentTool !== 'eraser') return;
     if (isOverPanel) return; // Don't draw when over a panel
     if (e.altKey) return; // Don't draw/erase when ALT is pressed (normal cursor mode)
 
     const pos = getWorldPosition(e.clientX, e.clientY);
+    console.log('🖱️ Position:', pos);
 
     // Check if Shift is pressed with eraser - delete entire drawing
     if (currentTool === 'eraser' && e.shiftKey) {
-      const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawings);
+      // Use cached drawings for more up-to-date data
+      const drawingsToUse = localDrawingsCache.size > 0 ? Array.from(localDrawingsCache.values()) : drawings;
+      const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawingsToUse);
 
       if (clickedDrawing && !clickedDrawing.locked) {
         // Delete the entire drawing
@@ -466,7 +500,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     // Check if Shift is pressed for drawing drag mode (only when cursor slot has items)
     // If cursor slot is empty, allow Shift+drag to move drawings instead
     if (currentTool === 'marker' && e.shiftKey && cursorSlotLength > 0) {
-      const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawings);
+      // Use cached drawings for more up-to-date data
+      const drawingsToUse = localDrawingsCache.size > 0 ? Array.from(localDrawingsCache.values()) : drawings;
+      const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawingsToUse);
 
       if (clickedDrawing && !clickedDrawing.locked) {
         // Start dragging the drawing
@@ -482,7 +518,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     // Shift with empty cursor slot: allow drawing AND allow moving drawings
     if (e.shiftKey && currentTool === 'marker' && cursorSlotLength === 0) {
-      const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawings);
+      // Use cached drawings for more up-to-date data
+      const drawingsToUse = localDrawingsCache.size > 0 ? Array.from(localDrawingsCache.values()) : drawings;
+      const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawingsToUse);
 
       if (clickedDrawing && !clickedDrawing.locked) {
         // Start dragging the drawing instead of drawing
@@ -499,7 +537,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     setCurrentStroke([{ x: pos.x, y: pos.y }]);
     // Store stroke start data for network commit (guests only)
     strokeStartDataRef.current = { color: markerColor, thickness: markerThickness };
-  }, [currentTool, getWorldPosition, isOverPanel, drawings, markerColor, markerThickness, cursorSlotLength]);
+
+    // Debug logging
+    console.log('🖱️ Mouse down, tool:', currentTool, 'isDrawing set to true');
+  }, [currentTool, getWorldPosition, isOverPanel, drawings, markerColor, markerThickness, cursorSlotLength, localDrawingsCache]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     // Check if cursor is over a panel or any UI element via DOM
@@ -589,24 +630,58 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       const screenX = pos.x - offsetX;
       const screenY = pos.y - offsetY;
 
-      // Show eraser cursor (fully opaque white circle)
+      // Show eraser cursor (fully opaque white circle) - always show cursor
       ctx.beginPath();
-      ctx.arc(screenX, screenY, markerThickness / 2, 0, Math.PI * 2);
+      ctx.arc(screenX, screenY, eraserThickness / 2, 0, Math.PI * 2);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Partial eraser: remove only touched points from strokes (uses memoized drawings)
+      // Throttle eraser processing to prevent performance issues
+      const now = Date.now();
+      if (now - lastEraserProcessTimeRef.current < 100) { // Limit to ~10fps for better performance
+        return; // Skip processing but cursor already shown
+      }
+      lastEraserProcessTimeRef.current = now;
+
+      console.log(`🧽 Processing eraser: thickness=${eraserThickness}, radius=${eraserThickness / 2}`);
+
+      // Partial eraser: remove only touched points from strokes (uses cached drawings for immediate feedback)
       const eraserRadius = eraserThickness / 2;
 
-      drawings.forEach(drawing => {
+      // Use modified drawings from ref if available, otherwise use original drawings
+      const drawingsToErase = eraserModifiedDrawingsRef.current.size > 0
+        ? drawings.map(d => eraserModifiedDrawingsRef.current.get(d.id) || d)
+        : drawings;
+
+      console.log('🧽 Eraser processing - Position:', { x: pos.x, y: pos.y }, 'Radius:', eraserRadius, 'Drawings to erase:', drawingsToErase.length);
+
+      let anyStrokesModified = false;
+
+      drawingsToErase.forEach(drawing => {
+        console.log('🎨 Processing drawing:', drawing.id, 'Position:', { x: drawing.x, y: drawing.y }, 'Strokes:', drawing.strokes.length);
+
+        // Calculate drawing bounds
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        drawing.strokes.forEach(stroke => {
+          stroke.points.forEach(point => {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+          });
+        });
+
+        console.log('📐 Drawing bounds:', { minX, minY, maxX, maxY });
+
         let strokesModified = false;
         const newStrokes: Stroke[] = [];
 
-        drawing.strokes.forEach((stroke) => {
+        drawing.strokes.forEach((stroke, strokeIndex) => {
           // Find points that should be erased (within eraser radius)
           const segments: StrokePoint[][] = [];
           let currentSegment: StrokePoint[] = [];
+          let pointsErased = 0;
 
           stroke.points.forEach((point) => {
             const worldX = point.x + drawing.x;
@@ -616,6 +691,23 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             const distance = Math.sqrt(dx * dx + dy * dy);
             // Use exact eraser radius without adding stroke thickness
             const isErased = distance < eraserRadius;
+
+            // Debug eraser detection
+            if (pointsErased === 0 && distance < eraserRadius + 10) {
+              console.log('🔍 Eraser check:', {
+                strokeId: stroke.id,
+                point: { x: point.x, y: point.y },
+                worldPos: { x: worldX, y: worldY },
+                eraserPos: { x: pos.x, y: pos.y },
+                distance,
+                eraserRadius,
+                isErased
+              });
+            }
+
+            if (isErased) {
+              pointsErased++;
+            }
 
             if (!isErased) {
               // Point survives - add to current segment
@@ -634,16 +726,21 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             segments.push(currentSegment);
           }
 
+
           // Create new strokes from surviving segments
           if (segments.length === 0) {
             // Entire stroke was erased
             strokesModified = true;
+            anyStrokesModified = true;
+            console.log('🗑️ Entire stroke erased:', stroke.id);
           } else if (segments.length === 1 && segments[0].length === stroke.points.length) {
             // Nothing was erased, keep original stroke
             newStrokes.push(stroke);
           } else {
             // Stroke was partially erased, create new strokes from segments
             strokesModified = true;
+            anyStrokesModified = true;
+            console.log('✂️ Stroke partially erased:', stroke.id, 'Original points:', stroke.points.length, 'Segments:', segments.length);
             segments.forEach((segmentPoints, segIndex) => {
               if (segmentPoints.length >= 2) {
                 newStrokes.push({
@@ -663,16 +760,48 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           }
         });
 
+        // Create updated drawing variable (declare outside the if block for wider scope)
+        let updatedDrawing = null;
+
         // Update the drawing if strokes were modified
         if (strokesModified) {
+
           if (newStrokes.length === 0) {
-            // All strokes were erased, delete the drawing
-            dispatch({
-              type: 'DELETE_OBJECT',
-              payload: { id: drawing.id }
+            // All strokes were erased, delete from cache
+            // Mark as deleted in ref for real-time feedback
+            eraserModifiedDrawingsRef.current.set(drawing.id, { ...drawing, strokes: [] });
+
+            setLocalDrawingsCache(prev => {
+              const newCache = new Map(prev);
+              newCache.delete(drawing.id);
+              // Use the updated cache immediately for redraw
+              setTimeout(() => {
+                const ctx = canvasRef.current?.getContext('2d');
+                if (ctx) redrawCanvas(ctx, true);
+              }, 0);
+              return newCache;
             });
+            // Note: DELETE dispatch removed to prevent update loops - will be sent in handleMouseUp
           } else {
-            // Update with new strokes
+            // Update cache with new strokes
+            updatedDrawing = { ...drawing, strokes: newStrokes };
+
+            // Update the ref immediately for real-time feedback
+            eraserModifiedDrawingsRef.current.set(drawing.id, updatedDrawing);
+
+            setLocalDrawingsCache(prev => {
+              const newCache = new Map(prev);
+              newCache.set(drawing.id, updatedDrawing);
+              // Use the updated cache immediately for redraw
+              setTimeout(() => {
+                const ctx = canvasRef.current?.getContext('2d');
+                if (ctx) redrawCanvas(ctx, true);
+              }, 0);
+              return newCache;
+            });
+
+            // Also dispatch to Redux
+            console.log('📤 Dispatching UPDATE_OBJECT for drawing:', drawing.id, 'with strokes:', newStrokes.length);
             dispatch({
               type: 'UPDATE_OBJECT',
               payload: {
@@ -681,11 +810,65 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               }
             });
           }
+          // Note: Dispatch removed to prevent update loops - will be sent in handleMouseUp
         }
+
+        console.log('🔍 End of drawing processing - anyStrokesModified:', anyStrokesModified, 'strokesModified:', strokesModified);
       });
 
-      // Redraw to show changes
-      if (ctx) redrawCanvas(ctx);
+      // Force immediate redraw with updated data inline (only if modifications were made)
+      if (anyStrokesModified && ctx) {
+        const updatedDrawings = eraserModifiedDrawingsRef.current.size > 0
+          ? drawings.map(d => eraserModifiedDrawingsRef.current.get(d.id) || d)
+          : drawings;
+
+        console.log('🎨 Immediate redraw with', updatedDrawings.length, 'drawings, strokes:', updatedDrawings.map(d => d.strokes.length));
+
+        // Clear canvas
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+
+        // Draw all drawings with updated data
+        updatedDrawings.forEach(d => {
+          // Skip drawings with no strokes (completely erased)
+          if (d.strokes.length === 0) return;
+
+          const drawingToDraw = d;
+
+          // Apply drawing opacity
+          const opacity = (drawingToDraw.opacity ?? 100) / 100;
+          ctx.globalAlpha = opacity;
+
+          drawingToDraw.strokes.forEach(stroke => {
+            if (stroke.points.length < 2) return;
+
+            ctx.beginPath();
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = stroke.thickness;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            stroke.points.forEach((point, index) => {
+              const screenX = point.x + drawingToDraw.x - offsetX;
+              const screenY = point.y + drawingToDraw.y - offsetY;
+
+              if (index === 0) {
+                ctx.moveTo(screenX, screenY);
+              } else {
+                ctx.lineTo(screenX, screenY);
+              }
+            });
+
+            ctx.stroke();
+          });
+
+          ctx.globalAlpha = 1;
+        });
+      }
+
+      // Redraw to show changes using cached data (only if no modifications were made)
+      if (ctx && !anyStrokesModified) {
+        redrawCanvas(ctx, true);
+      }
     } else {
       // Marker: draw current stroke preview
       ctx.beginPath();
@@ -745,11 +928,58 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
     // For eraser, we don't create strokes - partial erasing happens in handleMouseMove
     if (currentTool === 'eraser') {
+      console.log('🖱️ Mouse UP - Eraser finished, eraserModifiedDrawingsRef size:', eraserModifiedDrawingsRef.current.size);
+
       setIsDrawing(false);
       setCurrentStroke([]);
+
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
+
+      // Final dispatch to update Redux with eraser results
+      eraserModifiedDrawingsRef.current.forEach((updatedDrawing) => {
+        console.log('📤 Processing final update for drawing:', updatedDrawing.id, 'strokes:', updatedDrawing.strokes.length);
+
+        const originalDrawing = drawings.find(d => d.id === updatedDrawing.id);
+        if (!originalDrawing && updatedDrawing.strokes.length > 0) {
+          // This shouldn't happen, but handle it - new drawing was created
+          console.log('🆕 New drawing created - sending UPDATE_OBJECT');
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: updatedDrawing.id,
+              strokes: updatedDrawing.strokes
+            }
+          });
+        } else if (updatedDrawing.strokes.length === 0) {
+          // Drawing was completely erased - send DELETE
+          console.log('🗑️ Drawing completely erased - sending DELETE_OBJECT');
+          dispatch({
+            type: 'DELETE_OBJECT',
+            payload: { id: updatedDrawing.id }
+          });
+        } else if (!originalDrawing || JSON.stringify(originalDrawing.strokes) !== JSON.stringify(updatedDrawing.strokes)) {
+          // Drawing was partially erased - send UPDATE
+          console.log('✏️ Drawing partially erased - sending UPDATE_OBJECT with', updatedDrawing.strokes.length, 'strokes');
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: updatedDrawing.id,
+              strokes: updatedDrawing.strokes
+            }
+          });
+        } else {
+          console.log('⚠️ No changes detected for drawing:', updatedDrawing.id);
+        }
+      });
+
+      // Clear the eraser modifications ref after dispatching to Redux
+      console.log('🧹 Clearing eraserModifiedDrawingsRef');
+      eraserModifiedDrawingsRef.current.clear();
+
       if (ctx) redrawCanvas(ctx);
+      console.log('🎨 Canvas redrawn after eraser completion');
+
       return;
     }
 
@@ -1004,3 +1234,16 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     />
   );
 };
+
+// Memoize DrawingCanvas to prevent unnecessary re-renders
+export default React.memo(DrawingCanvas, (prevProps, nextProps) => {
+  // Re-render only when critical props change
+  if (prevProps.width !== nextProps.width) return false;
+  if (prevProps.height !== nextProps.height) return false;
+  if (prevProps.offsetX !== nextProps.offsetX) return false;
+  if (prevProps.offsetY !== nextProps.offsetY) return false;
+  if (prevProps.cursorSlotLength !== nextProps.cursorSlotLength) return false;
+
+  // All props are the same - skip re-render
+  return true;
+});

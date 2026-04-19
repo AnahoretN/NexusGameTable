@@ -870,6 +870,25 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   );
 };
 
+// Memoize SearchDeckModal to prevent unnecessary re-renders
+export default React.memo(SearchDeckModal, (prevProps, nextProps) => {
+  // Re-render only if deck, pile, or language changes
+  if (prevProps.deck.id !== nextProps.deck.id) return false;
+  if (prevProps.language !== nextProps.language) return false;
+
+  // Check if pile references changed
+  const prevPileId = prevProps.pile?.id;
+  const nextPileId = nextProps.pile?.id;
+  if (prevPileId !== nextPileId) return false;
+
+  // Check deck properties that affect rendering
+  if (prevProps.deck.name !== nextProps.deck.name) return false;
+  if (prevProps.deck.cardIds?.length !== nextProps.deck.cardIds?.length) return false;
+
+  // All checks passed - skip re-render
+  return true;
+});
+
 // Empty component for compatibility - no longer provides drag preview
 export const SearchDeckDragPreview: React.FC = () => {
   return null;

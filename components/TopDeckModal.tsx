@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
 import { useObjectActions } from '../store/objectStore';
-import { Deck, Card, CardPile, ContextAction, AppLanguage, TableObject } from '../types';
+import { Deck, Card, CardPile, ContextAction, AppLanguage, TableObject, CardLocation } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
 import { logger } from '../utils/logger';
 import { Card as CardComponent } from './Card';
@@ -116,7 +116,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
 
     // Initialize prevCardIdsRef
     prevCardIdsRef.current = [...deck.cardIds];
-  }, [deck.cardIds, state.objects, dispatch]);
+  }, [deck.cardIds, objects, dispatch]);
 
   // Sync cardOrder with deck.cardIds
   // This ensures cards reorder visually after move operations
@@ -245,7 +245,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
               cardBackSpriteColumns: card.spriteColumns ?? 1,
               cardBackSpriteRows: card.spriteRows ?? 1,
             };
-            updateObject(parentDeck.id, { spriteConfig: updatedSpriteConfig });
+            updateObjectViaContext(parentDeck.id, { spriteConfig: updatedSpriteConfig });
           }
         }
         break;
@@ -259,7 +259,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         // Remove the card object from objects
         deleteObject(card.id);
 
-        updateObject(deck.id, { cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds });
+        updateObjectViaContext(deck.id, { cardIds: destroyFilteredOrder, baseCardIds: destroyFilteredBaseCardIds });
         setCardOrder(destroyFilteredOrder);
         break;
       case 'delete':
@@ -268,12 +268,12 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         const deleteCurrentBaseCardIds = deleteCurrentDeck?.baseCardIds || deck.baseCardIds || [];
         const deleteFilteredBaseCardIds = deleteCurrentBaseCardIds.filter(id => id !== card.id);
 
-        updateObject(deck.id, { cardIds: filteredOrder, baseCardIds: deleteFilteredBaseCardIds });
+        updateObjectViaContext(deck.id, { cardIds: filteredOrder, baseCardIds: deleteFilteredBaseCardIds });
         setCardOrder(filteredOrder);
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, handleFlip, handleToHand, handleMoveToTopDeck, handleMoveToBottomDeck, handleMill, handleClone, updateObject, deleteObject, cardOrder, objects, deck.id, deck.baseCardIds]);
+  }, [contextMenu, handleFlip, handleToHand, handleMoveToTopDeck, handleMoveToBottomDeck, handleMill, handleClone, updateObjectViaContext, deleteObject, cardOrder, objects, deck.id, deck.baseCardIds]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -517,7 +517,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
           object={settingsModalObj}
           language={language}
           onSave={(updatedObj) => {
-            updateObject(updatedObj.id, updatedObj);
+            updateObjectViaContext(updatedObj.id, updatedObj);
             setSettingsModalObj(null);
           }}
           onClose={() => setSettingsModalObj(null)}

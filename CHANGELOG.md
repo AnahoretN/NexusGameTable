@@ -283,13 +283,9 @@ const { updateObject, deleteObject, moveObject } = useObjectActions();
 - `components/PoolTabletopOptimized.v2.tsx` (migration example)
 
 **Documentation:**
-- `WEBRTC_ANALYSIS.md` - WebRTC sync analysis
-- `WEBRTC_TEST_PLAN.md` - Testing strategy
-- `COMPONENT_MIGRATION_GUIDE.md` - Migration guide for developers
-- `MIGRATION_PROGRESS_REPORT.md` - Progress tracking
-- `FULL_MIGRATION_PLAN.md` - Complete migration plan
-- `FINAL_MIGRATION_DOCUMENTATION.md` - Technical documentation
-- `FINAL_COMPLETION_REPORT.md` - This report
+- `PERFORMANCE_STATUS.md` - Complete performance analysis and optimization status
+- `DOCUMENTATION.md` - Complete feature documentation
+- `DEVELOPER_GUIDE.md` - Contributing guidelines
 
 **Application:**
 - `App.v2.tsx` - Updated with new provider hierarchy
@@ -354,9 +350,9 @@ updateObject(id, updates);
 - Use `useObjects()` for game objects
 
 **Migration Required:**
-- 11 components still need migration to new contexts
-- Use `COMPONENT_MIGRATION_GUIDE.md` for instructions
-- Estimated time: 1-2 days for all components
+- 80+ components still need migration to new contexts
+- See `PERFORMANCE_STATUS.md` for complete analysis and instructions
+- Estimated time: 2-3 weeks for full migration
 
 ### 🎯 Results
 

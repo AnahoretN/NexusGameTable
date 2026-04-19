@@ -72,7 +72,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   const [markerOpacity, setMarkerOpacity] = useState(100);
 
   // Eraser settings
-  const [eraserThickness, setEraserThickness] = useState(20);
+  const [eraserThickness, setEraserThickness] = useState(100);
 
   // Zoom settings
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -435,15 +435,16 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
           {selectedTool === 'eraser' && (
             <div className="space-y-3 mt-3 p-3 bg-slate-900 rounded-lg">
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Size', language as Locale)}: {markerThickness}px</label>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Size', language as Locale)}: {eraserThickness}px</label>
                 <input
                   type="range"
                   min="1"
                   max="100"
-                  value={markerThickness}
+                  value={eraserThickness}
                   onChange={(e) => {
                     const newThickness = Number(e.target.value);
-                    setMarkerThickness(newThickness);
+                    console.log('🎛️ ToolsPanel: Eraser slider changed to:', newThickness);
+	                    setEraserThickness(newThickness);
                     // Force immediate sync for cursor update
                     window.dispatchEvent(new CustomEvent('eraser-settings-changed', {
                       detail: { thickness: newThickness }
@@ -595,6 +596,18 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     </div>
   );
 };
+
+// Memoize ToolsPanel to prevent unnecessary re-renders
+export default React.memo(ToolsPanel, (prevProps, nextProps) => {
+  // Re-render only when critical props change
+  if (prevProps.isCollapsed !== nextProps.isCollapsed) return false;
+  if (prevProps.width !== nextProps.width) return false;
+  if (prevProps.height !== nextProps.height) return false;
+  if (prevProps.language !== nextProps.language) return false;
+
+  // All checks passed - skip re-render
+  return true;
+});
 
 // Hook to get current drawing tool
 export function useDrawingTool(): DrawingTool {

@@ -33,6 +33,7 @@ import { Settings } from 'lucide-react';
 import { useTabCardScale } from '../hooks/useTabCardScale';
 import { HandTabSettingsModal } from './HandTabSettingsModal';
 import { t as translate, Locale } from '../utils/translations';
+import { VirtualizedHandList, useVirtualizedHandList } from './VirtualizedHandList';
 
 // Memoized component for individual card in hand panel
 interface HandCardItemProps {
@@ -1005,6 +1006,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
             <>
               {cardsByShape.map((group, groupIndex) => {
                 const groupOffset = groupIndex === 0 ? 0 : cardsByShape.slice(0, groupIndex).reduce((sum, g) => sum + g.cards.length, 0);
+                const { shouldVirtualize } = useVirtualizedHandList(group.cards.length);
 
                 return (
                   <div key={group.shape} className="mb-3">
@@ -1019,61 +1021,120 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                           : group.shape === CardShape.POKER ? 'POKER'
                           : group.shape}
                     </div>
-                    <div className="flex flex-wrap gap-[2px] w-full">
-                      {group.cards.map((card, index) => {
-                        const cardSettings = computeCardSettings(card);
-                        const cardActionButtons = cardSettings.cardActionButtons;
-                        const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
-                        const deck = card.deckId ? (objects[card.deckId] as DeckType | undefined) : undefined;
 
-                        const buttons = getCardButtonConfigsWithActions(
-                          cardActionButtons,
-                          {
-                            onFlip: () => handleFlip(card.id),
-                            onRotateClockwise: () => handleRotateClockwise(card.id),
-                            onRotateCounterClockwise: () => handleRotateCounterClockwise(card.id),
-                            onSwingingClockwise: () => handleSwingingClockwise(card.id),
-                            onSwingingCounterClockwise: () => handleSwingingCounterClockwise(card.id),
-                            onLayerUp: () => handleLayerUp(card.id),
-                            onLayerDown: () => handleLayerDown(card.id),
-                            onClone: () => handleClone(card.id),
-                            onMoveToHand: () => handleMoveToHand(card.id),
-                            onMoveToTopDeck: () => handleMoveToTopDeck(card.id),
-                            onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id),
-                            onMoveToDiscard: () => handleMoveToDiscard(card.id)
-                          },
-                          card.faceUp ?? true,
-                          card.locked ?? false,
-                          language
-                        );
+                    {shouldVirtualize ? (
+                      <VirtualizedHandList
+                        cards={group.cards}
+                        pixelsPerVU={cardScale}
+                        cardWidth={100}
+                        cardHeight={140}
+                        cardSpacing={10}
+                        vertical={false}
+                        renderCard={(card, index) => {
+                          const cardSettings = computeCardSettings(card);
+                          const cardActionButtons = cardSettings.cardActionButtons;
+                          const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
+                          const deck = card.deckId ? (objects[card.deckId] as DeckType | undefined) : undefined;
 
-                        const actualIndex = groupOffset + index;
-                        const _isDragging = dragIndex === actualIndex;
-                        const _isDragOver = dragOverIndex === actualIndex;
+                          const buttons = getCardButtonConfigsWithActions(
+                            cardActionButtons,
+                            {
+                              onFlip: () => handleFlip(card.id),
+                              onRotateClockwise: () => handleRotateClockwise(card.id),
+                              onRotateCounterClockwise: () => handleRotateCounterClockwise(card.id),
+                              onSwingingClockwise: () => handleSwingingClockwise(card.id),
+                              onSwingingCounterClockwise: () => handleSwingingCounterClockwise(card.id),
+                              onLayerUp: () => handleLayerUp(card.id),
+                              onLayerDown: () => handleLayerDown(card.id),
+                              onClone: () => handleClone(card.id),
+                              onMoveToHand: () => handleMoveToHand(card.id),
+                              onMoveToTopDeck: () => handleMoveToTopDeck(card.id),
+                              onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id),
+                              onMoveToDiscard: () => handleMoveToDiscard(card.id)
+                            },
+                            card.faceUp ?? true,
+                            card.locked ?? false,
+                            language
+                          );
 
-                        const displayedCard = isViewingOpponentHand ? { ...card, faceUp: false } : card;
+                          const actualIndex = groupOffset + index;
+                          const displayedCard = isViewingOpponentHand ? { ...card, faceUp: false } : card;
 
-                        return (
-                          <HandCardItem
-                            key={card.id}
-                            card={card}
-                            displayedCard={displayedCard}
-                            actualIndex={actualIndex}
-                            cardWidth={cardWidth}
-                            cardHeight={cardHeight}
-                            cardSettings={cardSettings}
-                            deck={deck}
-                            isViewingOpponentHand={isViewingOpponentHand}
-                            isDragging={dragIndex === actualIndex}
-                            isDragOver={dragOverIndex === actualIndex}
-                            buttons={buttons}
-                            language={language}
-                            onMouseDown={handleCardMouseDown}
-                            onContextMenu={handleCardContextMenu}
-                          />
-                        );
-                      })}
-                    </div>
+                          return (
+                            <HandCardItem
+                              key={card.id}
+                              card={card}
+                              displayedCard={displayedCard}
+                              actualIndex={actualIndex}
+                              cardWidth={cardWidth}
+                              cardHeight={cardHeight}
+                              cardSettings={cardSettings}
+                              deck={deck}
+                              isViewingOpponentHand={isViewingOpponentHand}
+                              isDragging={dragIndex === actualIndex}
+                              isDragOver={dragOverIndex === actualIndex}
+                              buttons={buttons}
+                              language={language}
+                              onMouseDown={handleCardMouseDown}
+                              onContextMenu={handleCardContextMenu}
+                            />
+                          );
+                        }}
+                      />
+                    ) : (
+                      <div className="flex flex-wrap gap-[2px] w-full">
+                        {group.cards.map((card, index) => {
+                          const cardSettings = computeCardSettings(card);
+                          const cardActionButtons = cardSettings.cardActionButtons;
+                          const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
+                          const deck = card.deckId ? (objects[card.deckId] as DeckType | undefined) : undefined;
+
+                          const buttons = getCardButtonConfigsWithActions(
+                            cardActionButtons,
+                            {
+                              onFlip: () => handleFlip(card.id),
+                              onRotateClockwise: () => handleRotateClockwise(card.id),
+                              onRotateCounterClockwise: () => handleRotateCounterClockwise(card.id),
+                              onSwingingClockwise: () => handleSwingingClockwise(card.id),
+                              onSwingingCounterClockwise: () => handleSwingingCounterClockwise(card.id),
+                              onLayerUp: () => handleLayerUp(card.id),
+                              onLayerDown: () => handleLayerDown(card.id),
+                              onClone: () => handleClone(card.id),
+                              onMoveToHand: () => handleMoveToHand(card.id),
+                              onMoveToTopDeck: () => handleMoveToTopDeck(card.id),
+                              onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id),
+                              onMoveToDiscard: () => handleMoveToDiscard(card.id)
+                            },
+                            card.faceUp ?? true,
+                            card.locked ?? false,
+                            language
+                          );
+
+                          const actualIndex = groupOffset + index;
+                          const displayedCard = isViewingOpponentHand ? { ...card, faceUp: false } : card;
+
+                          return (
+                            <HandCardItem
+                              key={card.id}
+                              card={card}
+                              displayedCard={displayedCard}
+                              actualIndex={actualIndex}
+                              cardWidth={cardWidth}
+                              cardHeight={cardHeight}
+                              cardSettings={cardSettings}
+                              deck={deck}
+                              isViewingOpponentHand={isViewingOpponentHand}
+                              isDragging={dragIndex === actualIndex}
+                              isDragOver={dragOverIndex === actualIndex}
+                              buttons={buttons}
+                              language={language}
+                              onMouseDown={handleCardMouseDown}
+                              onContextMenu={handleCardContextMenu}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}

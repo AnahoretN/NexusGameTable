@@ -64,7 +64,7 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
   const [markerOpacity, setMarkerOpacity] = useState(100);
 
   // Eraser settings
-  const [eraserThickness, setEraserThickness] = useState(20);
+  const [eraserThickness, setEraserThickness] = useState(100);
 
   // Sync tool state with other components (bidirectional)
   useEffect(() => {
@@ -244,20 +244,22 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
           <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
             <div>
               <label className="block text-[10px] text-gray-400 mb-1">
-                {translate('Size', language as Locale)}: {markerThickness}px
+                {translate('Size', language as Locale)}: {eraserThickness}px
               </label>
               <input
                 type="range"
                 min="1"
                 max="100"
-                value={markerThickness}
+                value={eraserThickness}
                 onChange={(e) => {
                   const newThickness = Number(e.target.value);
-                  setMarkerThickness(newThickness);
+                  console.log('🎛️ Eraser slider changed to:', newThickness);
+                  setEraserThickness(newThickness);
                   // Force immediate sync for cursor update
                   window.dispatchEvent(new CustomEvent('eraser-settings-changed', {
                     detail: { thickness: newThickness }
                   }));
+                  console.log('🎛️ Dispatched eraser-settings-changed event with thickness:', newThickness);
                 }}
                 className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
               />

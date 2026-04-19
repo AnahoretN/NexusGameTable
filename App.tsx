@@ -1,11 +1,14 @@
-import React, { useEffect, Suspense } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { GameProvider } from './store/GameContext';
 import { PlayerProvider } from './store/contexts/PlayerContext';
 import { ViewTransformProvider } from './store/contexts/ViewTransformContext';
 import { UIProvider } from './store/contexts/UIContext';
 import { LocalSettingsProvider } from './hooks/useLocalSettings';
-import { Tabletop } from './components/Tabletop';
 import { memoryManager, perfMonitor } from './utils';
+
+// Lazy load components for better initial load performance
+const Tabletop = lazy(() => import('./components/Tabletop').then(m => ({ default: m.Tabletop })));
+const MainMenuContent = lazy(() => import('./components/MainMenuContent').then(m => ({ default: m.MainMenuContent })));
 
 // Performance monitoring component
 const PerformanceMonitor: React.FC = () => {
@@ -40,7 +43,13 @@ const App: React.FC = () => {
             <PlayerProvider>
               <PerformanceMonitor />
               <div className="w-full h-screen overflow-hidden">
-                <Tabletop />
+                <Suspense fallback={
+                  <div className="w-full h-screen flex items-center justify-center bg-slate-900">
+                    <div className="text-white text-lg">Loading...</div>
+                  </div>
+                }>
+                  <Tabletop />
+                </Suspense>
               </div>
             </PlayerProvider>
           </GameProvider>

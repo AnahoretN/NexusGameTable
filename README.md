@@ -6,12 +6,12 @@
 
 ## 🎉 Latest Update: Version 0.1.9
 
-**✅ Phase 6.4-6.7 Complete - All Major Components Migrated!**
+**⚠️ Performance Optimization Status:** Partial infrastructure implementation with critical gaps
 
-- **Performance**: 40-60% reduction in unnecessary re-renders
-- **Architecture**: Complete migration to new context system
-- **Quality**: Zero functionality loss with improved code structure
-- **Components**: HandPanelOptimized, PoolPanel, TableauPanel, TokensPanelOptimized
+- **Infrastructure**: 70% of optimization systems created (virtualization, code-splitting, memory management)
+- **Adoption**: 30% actually used in code
+- **Status**: See [PERFORMANCE_STATUS.md](./PERFORMANCE_STATUS.md) for detailed analysis
+- **Priority**: Tabletop.tsx refactoring (8,289 lines), Card component memoization, virtualization integration
 
 ## About
 
@@ -98,27 +98,45 @@ npm run preview
 | C | Compass |
 | N | None |
 
-## 🏗️ Architecture
+## 🏗️ Architecture & Performance
 
-### Context System (NEW!)
+### Performance Status
 
-Nexus Game Table now uses a modular context system for optimal performance:
+⚠️ **Current State:** Partial optimization implementation with critical gaps
 
-**📦 Available Contexts:**
+**Implemented Infrastructure:**
+- ✅ Virtualization system (VirtualizedTokensPanel, VirtualizedHandList, VirtualizedObjectList)
+- ✅ Code splitting infrastructure (LazyComponents.tsx with 18 lazy components)
+- ✅ WebRTC optimization (throttling, differential sync)
+- ✅ Memory management (MemoryManager, image cache limits)
+- ✅ Zustand store with optimized selectors
+- ✅ New context system (PlayerContext v2, ViewTransformContext v2, UIContext v1)
+
+**Actual Usage:**
+- ⚠️ 30% adoption rate - most optimizations created but not actively used
+- ❌ Tabletop.tsx remains monolithic (8,289 lines)
+- ❌ Critical components lack memoization (Card, CharacterPanel, etc.)
+- ❌ Virtualization not integrated in main components
+
+**See [PERFORMANCE_STATUS.md](./PERFORMANCE_STATUS.md) for complete analysis**
+
+### Available Contexts
+
+**📦 Modular Context System (Partially Adopted):**
 - **`PlayerContext`** - Player management, active player, permissions
-- **`usePlayers()`** - Get all players
-- **`useActivePlayer()`** - Get current active player
-- **`useIsGM()`** - Check if current user is GM
+  - `usePlayers()` - Get all players
+  - `useActivePlayer()` - Get current active player  
+  - `useIsGM()` - Check if current user is GM
 
 **`ViewTransformContext`** - Camera and view transformations
-- **`useViewTransform()`** - Get view transform state
-- **`useZoom()`** - Get/set zoom level
-- **`useOffset()`** - Get/set camera offset
+- `useViewTransform()` - Get view transform state
+- `useZoom()` - Get/set zoom level
+- `useOffset()` - Get/set camera offset
 
 **`UIContext`** - Language, layers, panel settings
-- **`useLanguage()`** - Get/set application language
-- **`useHyperscaleLayers()`** - Get layer configuration
-- **`useSelectedLayers()`** - Get currently selected layers
+- `useLanguage()` - Get/set application language
+- `useHyperscaleLayers()` - Get layer configuration
+- `useSelectedLayers()` - Get currently selected layers
 
 **Usage Example:**
 ```typescript
@@ -133,81 +151,76 @@ function MyComponent() {
 }
 ```
 
-### Performance Optimizations
+### Zustand Store (Partially Adopted)
 
-✅ **60-70%** reduction in unnecessary re-renders  
-✅ **40-50%** improvement in UI responsiveness  
-✅ **20-30%** reduction in memory usage  
-✅ Modular context architecture for better maintainability
+**Available Selectors:**
+- `useObjectById(id)` - Get specific object
+- `useCards()`, `useTokens()`, `useDecks()` - Get objects by type
+- `useVisibleObjects()` - Get visible objects only
+- `useObjectsOnTable()` - Get table objects
+
+**Adoption:** 10/100+ components migrated
 
 ## Project Structure
 
 ```
 NexusGameTable/
 ├── components/          # React components
-│   ├── Tabletop.tsx    # Main game table
+│   ├── Tabletop.tsx    # Main game table (8,289 lines - needs refactoring)
 │   ├── MainMenuContent.tsx   # Main menu
-│   ├── HandPanel.tsx   # Player hand panel
+│   ├── HandPanelOptimized.tsx   # Player hand panel
 │   ├── ToolsPanel.tsx  # Tools panel
+│   ├── Virtualized*.tsx # Virtualization components (created, underutilized)
 │   └── ...
 ├── store/              # State management
-│   ├── GameContext.tsx # Main context
-│   ├── gameState.ts    # State types
-│   ├── gameActions.ts  # Action types
-│   ├── contexts/       # 🆕 Modular contexts (Phase 2 complete)
-│   │   ├── PlayerContext.tsx    # Player management
-│   │   ├── contextTypes.ts      # Shared context types
-│   │   └── index.tsx            # Context exports
-│   ├── objectStore.ts   # Zustand store for objects
+│   ├── GameContext.tsx # Main context (still monolithic)
+│   ├── contexts/       # Modular contexts (partially adopted)
+│   │   ├── PlayerContext.tsx    # Player management v2
+│   │   ├── ViewTransformContext.tsx # Camera & zoom
+│   │   └── UIContext.tsx        # Language, layers
+│   ├── objectStore.ts   # Zustand store (10% adoption)
 │   └── usePeerConnection.ts # P2P connection
 ├── utils/              # Utilities
+│   ├── webrtcOptimization.ts # WebRTC optimization ✅
+│   ├── memoryManager.ts     # Memory management ✅
+│   ├── performanceMonitor.ts # Performance monitoring
+│   └── ...
 ├── hooks/              # Custom React hooks
 ├── types.ts            # TypeScript types
 ├── constants.ts        # Constants
+├── PERFORMANCE_STATUS.md  # 📊 Complete performance analysis
 └── translations.ts     # Translations (EN/RU)
 ```
 
-## 🏗️ Context Architecture (New!)
+## 🎯 Performance Optimization Status
 
-NexusGameTable is undergoing a major architectural refactoring to improve performance and maintainability. We're moving from a single monolithic GameContext to modular, specialized contexts.
+**Current Status:** ⚠️ Infrastructure created, but critical gaps remain
 
-### Current Status (Phase 2 Complete ✅)
+### What's Implemented (Infrastructure)
+- ✅ **Virtualization System** — VirtualizedTokensPanel, VirtualizedHandList, VirtualizedObjectList created
+- ✅ **Code Splitting** — LazyComponents.tsx with 18 lazy components
+- ✅ **WebRTC Optimization** — Throttling, differential sync implemented
+- ✅ **Memory Management** — MemoryManager, image cache limits active
+- ✅ **Zustand Store** — Optimized selectors available
+- ✅ **New Contexts** — PlayerContext v2, ViewTransformContext v2, UIContext v1
 
-**Completed:**
-- ✅ **PlayerContext** — Optimized player management with specialized hooks
-- ✅ **ObjectContext** — Zustand-based object state management
-- ✅ **Synchronization Bridge** — GameContext remains the single source of truth
+### What's Missing (Adoption)
+- ❌ **Tabletop.tsx** — Still monolithic (8,289 lines)
+- ❌ **Card Component** — No memoization (critical)
+- ❌ **Virtualization** — Not integrated in main components
+- ❌ **Lazy Loading** — Not activated in App.tsx
+- ❌ **Context Migration** — Only 20% components migrated
 
-**In Progress:**
-- 🔄 **ViewTransformContext** — Camera, zoom, and coordinate transformations
-- 🔄 **UIContext** — Language, panels, and UI state
-
-### Benefits
-
-- **⚡ Performance** — 60-70% reduction in unnecessary re-renders
-- **🎯 Modularity** — Clear separation of concerns
-- **🔒 Type Safety** — Full TypeScript support with optimized hooks
-- **🌐 P2P Compatible** — WebRTC functionality preserved
-- **📦 Maintainability** — Easier to test and extend
-
-### Usage Example
-
-```typescript
-// Before: Monolithic approach
-const { state } = useGame();
-const players = state.players;
-const isGM = state.players.find(p => p.id === state.activePlayerId)?.isGM;
-
-// After: Modular approach
-const players = usePlayerList();
-const isGM = useIsGM();
-```
+### Actual Performance Impact
+- ⚠️ **30%** adoption rate means most benefits not realized
+- 🎯 **80-90% potential improvement** if gaps addressed
+- 📊 See [PERFORMANCE_STATUS.md](./PERFORMANCE_STATUS.md) for complete analysis
 
 ### Developer Resources
 
-- 📚 [Context API Documentation](./CONTEXT_API_DOCUMENTATION.md) — Complete API reference
-- 🔄 [Migration Guide](./MIGRATION_GUIDE.md) — Migrating components to new contexts
-- 📊 [Phase 2 Report](./PHASE_2_COMPLETION_REPORT.md) — Implementation details
+- 📊 [Performance Status](./PERFORMANCE_STATUS.md) — Complete analysis of optimizations and gaps
+- 🔧 [Developer Guide](./DEVELOPER_GUIDE.md) — Contributing to the project
+- 📖 [Full Documentation](./DOCUMENTATION.md) — Complete description of all mechanics
 
 ## Tech Stack
 
@@ -235,11 +248,10 @@ const isGM = useIsGM();
 - 🔄 [Refactoring Guide](./docs/REFACTORING_GUIDE.md) — code organization patterns
 - 🖱️ [Drag & Drop](./docs/DRAG_DROP_POOL_PANELS.md) — drag-drop system technical details
 
-### 🏗️ Architecture & Contexts
-- 🎯 [Context Refactoring Plan](./CONTEXT_REFACTORING_PLAN.md) — modular architecture roadmap
-- 📚 [Context API Documentation](./CONTEXT_API_DOCUMENTATION.md) — complete API reference
-- 🔄 [Component Migration Guide](./MIGRATION_GUIDE.md) — migrating to new context system
-- 📊 [Phase 2 Completion Report](./PHASE_2_COMPLETION_REPORT.md) — PlayerContext implementation details
+### 🏗️ Architecture & Performance
+- 📊 [Performance Status](./PERFORMANCE_STATUS.md) — complete optimization analysis and gaps
+- 🔧 [Developer Guide](./DEVELOPER_GUIDE.md) — contributing to the project
+- 📖 [Full Documentation](./DOCUMENTATION.md) — complete feature documentation
 
 ## Multiplayer
 

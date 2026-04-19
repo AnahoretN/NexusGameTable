@@ -94,7 +94,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
-  const [selectedTool, setSelectedTool] = useState<'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom'>('none');
+  // Use centralized drawing tool state instead of local state
+  const currentDrawingTool = useDrawingTool();
+
+  // Function to change drawing tool (updates centralized state via events)
+  const setSelectedTool = (tool: 'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom') => {
+    window.dispatchEvent(new CustomEvent('drawing-tool-changed', { detail: { tool } }));
+  };
+
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   // Pack modal state
   const [packModalOpen, setPackModalOpen] = useState(false);
@@ -142,7 +149,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [markerColor, setMarkerColor] = useState('#ff0000');
   const [markerThickness, setMarkerThickness] = useState(10);
   const [markerOpacity, setMarkerOpacity] = useState(100);
-  const currentDrawingTool = useDrawingTool();
 
   // Hand card scale state with localStorage persistence
   const { setHandCardScale } = useHandCardScale();
@@ -238,13 +244,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   useEffect(() => {
     const handleToolRequest = () => {
       window.dispatchEvent(new CustomEvent('drawing-tool-sync', {
-        detail: { tool: selectedTool }
+        detail: { tool: currentDrawingTool }
       }));
     };
 
     window.addEventListener('drawing-tool-request', handleToolRequest);
     return () => window.removeEventListener('drawing-tool-request', handleToolRequest);
-  }, [selectedTool]);
+  }, [currentDrawingTool]);
 
   // Update marker settings and notify drawing components
   const updateMarkerColor = (color: string) => {
@@ -796,19 +802,19 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               <div>
                 <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
                 <div className="grid grid-cols-5 gap-2">
-                  <DrawingToolButton tool="none" icon={<MousePointer2 size={15} />} label={translate('Cursor', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="marker" icon={<Pen size={15} />} label={translate('Marker', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="eraser" icon={<Eraser size={15} />} label={translate('Eraser', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="ruler" icon={<Ruler size={15} />} label={translate('Ruler', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="zoom" icon={<Search size={15} />} label={translate('Zoom', language as Locale)} selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="none" icon={<MousePointer2 size={15} />} label={translate('Cursor', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="marker" icon={<Pen size={15} />} label={translate('Marker', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="eraser" icon={<Eraser size={15} />} label={translate('Eraser', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="ruler" icon={<Ruler size={15} />} label={translate('Ruler', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="zoom" icon={<Search size={15} />} label={translate('Zoom', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
                 </div>
               </div>
 
               {/* Marker Settings (shown when marker or eraser is selected) */}
-              {(selectedTool === 'marker' || selectedTool === 'eraser') && (
+              {(currentDrawingTool === 'marker' || currentDrawingTool === 'eraser') && (
                 <div className="p-3 bg-slate-800 rounded-lg space-y-3">
                   {/* Color picker */}
-                  {selectedTool === 'marker' && (
+                  {currentDrawingTool === 'marker' && (
                     <div>
                       <input
                         type="color"
@@ -864,7 +870,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               )}
 
               {/* Zoom Settings (shown when zoom tool is selected) */}
-              {selectedTool === 'zoom' && (
+              {currentDrawingTool === 'zoom' && (
                 <div className="p-3 bg-slate-800 rounded-lg space-y-3">
                   {/* Zoom slider */}
                   <div>

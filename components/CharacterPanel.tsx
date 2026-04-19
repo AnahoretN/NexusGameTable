@@ -1422,3 +1422,26 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     </div>
   );
 };
+
+// Memoize CharacterPanel to prevent unnecessary re-renders
+export default React.memo(CharacterPanel, (prevProps, nextProps) => {
+  // Re-render only if panel or collapse state changes
+  if (prevProps.panel.id !== nextProps.panel.id) return false;
+  if (prevProps.isCollapsed !== nextProps.isCollapsed) return false;
+
+  // Compare character data if panel is the same
+  const prevCharacterData = (prevProps.panel as any).characterData;
+  const nextCharacterData = (nextProps.panel as any).characterData;
+
+  // If character data references are the same, skip re-render
+  if (prevCharacterData === nextCharacterData) return true;
+
+  // Quick check: compare active character ID
+  if (prevCharacterData?.activeCharacterId !== nextCharacterData?.activeCharacterId) return false;
+
+  // Check if characters array length changed
+  if (prevCharacterData?.characters?.length !== nextCharacterData?.characters?.length) return false;
+
+  // All checks passed - skip re-render
+  return true;
+});

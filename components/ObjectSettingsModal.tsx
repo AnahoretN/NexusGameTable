@@ -131,7 +131,7 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
 
 type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups';
 
-export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch }) => {
+const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
 
@@ -3299,3 +3299,9 @@ export const ObjectSettingsModal: React.FC<ObjectSettingsModalProps> = ({ object
 
   return createPortal(modalContent, document.body);
 };
+
+// Memoize ObjectSettingsModal to prevent unnecessary re-renders 🔥
+export const ObjectSettingsModal = React.memo<ObjectSettingsModalProps>(ObjectSettingsModalComponent, (prevProps, nextProps) => {
+  return prevProps.object.id === nextProps.object.id &&
+         prevProps.language === nextProps.language;
+});

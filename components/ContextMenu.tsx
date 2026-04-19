@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer, NexusCellObject } from '../types';
 import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, RotateCcw, Pin, ImageDown, CornerDownRight, Check, Plus } from 'lucide-react';
@@ -33,7 +33,72 @@ interface MenuItem {
   isSeparator?: boolean;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey: _shiftKey, contextMenuType = 'tabletop' }) => {
+// Memoized submenu item component
+const SubmenuItem = memo<{
+  subItem: MenuItem;
+  onAction: (action: string, shiftKey?: boolean) => void;
+  onClose: () => void;
+}>(({ subItem, onAction, onClose }) => {
+  if (subItem.isSeparator) {
+    return <div key={subItem.action} className="h-px bg-slate-700 my-1 mx-2" />;
+  }
+
+  const subAction = subItem.action.toString();
+
+  return (
+    <button
+      key={subItem.action}
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        onAction(subAction);
+        onClose();
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer pointer-events-auto relative z-[9999996]"
+      style={{ pointerEvents: 'auto' }}
+    >
+      {subItem.icon}
+      <span>{subItem.label}</span>
+    </button>
+  );
+});
+
+SubmenuItem.displayName = 'SubmenuItem';
+
+// Memoized regular menu item component
+const RegularMenuItem = memo<{
+  item: MenuItem;
+  onAction: (action: string, shiftKey?: boolean) => void;
+  onClose: () => void;
+}>(({ item, onAction, onClose }) => {
+  return (
+    <React.Fragment>
+      <button
+        type="button"
+        onClick={(e) => {
+          // Pass actual shift key state for delete action
+          if (item.action === 'delete') {
+            onAction(item.action, e.shiftKey);
+          } else {
+            onAction(item.action);
+          }
+          onClose();
+        }}
+        className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors cursor-pointer ${item.action === 'delete' || item.action === 'destroy' ? 'text-red-400 hover:text-red-300' : 'text-gray-200'}`}
+      >
+        {item.icon}
+        <span>{item.label}</span>
+      </button>
+      {item.separator && <div className="h-px bg-slate-700 my-1 mx-2" />}
+    </React.Fragment>
+  );
+});
+
+RegularMenuItem.displayName = 'RegularMenuItem';
+
+const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey: _shiftKey, contextMenuType = 'tabletop' }) => {
   const { state } = useGame();
   const hyperscaleLayers = useHyperscaleLayers();
 
@@ -62,7 +127,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   const returnSubmenuRef = React.useRef<HTMLDivElement>(null);
 
   // Helper to get card settings from deck (cards always inherit from deck)
-  const getCardSettings = (card: Card) => {
+  const getCardSettings = useCallback((card: Card) => {
     if (card.deckId) {
       const deck = allObjects[card.deckId] as DeckType;
       if (deck && deck.type === ItemType.DECK) {
@@ -84,7 +149,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       singleClickAction: undefined,
       doubleClickAction: undefined,
     };
-  };
+  }, [allObjects]);
 
   // Mapping of submenu actions to their parent section actions
   // When a parent section is enabled, its submenu actions are automatically available
@@ -113,7 +178,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   };
 
   // Helper to check if an action is allowed for the current user
-  const can = (action: ContextAction) => {
+  const can = useCallback((action: ContextAction) => {
     let allowedActions: ContextAction[] | undefined;
     let allowedActionsForGM: ContextAction[] | undefined;
 
@@ -158,7 +223,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
 
 
     return result;
-  };
+  }, [object, isGM, getCardSettings]);
 
   // Close layer submenu when clicking outside
   React.useEffect(() => {
@@ -331,7 +396,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
   }, [layerSubmenuOpen, rotateSubmenuOpen, topDeckSubmenuOpen, pilesSubmenuOpen, moveSubmenuOpen, returnSubmenuOpen, submenuDimensions]);
 
   // "Move to.." section for cards - defined here to be inserted early
-  const moveToSection: MenuItem[] = object.type === ItemType.CARD ? (() => {
+  const moveToSection: MenuItem[] = useMemo(() => {
+    if (object.type !== ItemType.CARD) return [];
+
     const card = object as Card;
     const deck = card.deckId ? allObjects[card.deckId] as DeckType : null;
     const piles = deck?.piles || [];
@@ -390,9 +457,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
         submenuItems
       }
     ] : [];
-  })() : [];
+  }, [object, allObjects, hideCardActions, isSearchWindow, language, can]);
 
-  const menuItems: MenuItem[] = [
+  const menuItems: MenuItem[] = useMemo(() => [
     {
       label: translate('Configure...', language as Locale),
       action: 'configure',
@@ -787,13 +854,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
       icon: <Trash2 size={14} />,
       visible: !isSearchWindow && !hideCardActions && can('delete')
     },
-  ];
+  ], [object, isGM, hideCardActions, isSearchWindow, language, nexusBoardEditingId, contextMenuType, hyperscaleLayers, moveToSection, can]);
 
   // Filter visible items
-  const visibleItems = menuItems.filter(item => item.visible);
-  const configureItem = visibleItems.find(i => i.action === 'configure');
-  const otherItems = visibleItems.filter(i => i.action !== 'configure');
-  const finalItems = configureItem ? [configureItem, ...otherItems] : otherItems;
+  const visibleItems = useMemo(() => menuItems.filter(item => item.visible), [menuItems]);
+  const configureItem = useMemo(() => visibleItems.find(i => i.action === 'configure'), [visibleItems]);
+  const otherItems = useMemo(() => visibleItems.filter(i => i.action !== 'configure'), [visibleItems]);
+  const finalItems = useMemo(() => configureItem ? [configureItem, ...otherItems] : otherItems, [configureItem, otherItems]);
 
 
   const menuStyle: React.CSSProperties = {
@@ -931,35 +998,17 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {/* Render submenu items using generic renderer */}
+                      {/* Render submenu items */}
                       {item.submenuItems && item.submenuItems.length > 0 ? (
                         <>
-                          {item.submenuItems.filter(subItem => subItem.visible).map((subItem) => {
-                            if (subItem.isSeparator) {
-                              return (
-                                <div key={subItem.action} className="h-px bg-slate-700 my-1 mx-2" />
-                              );
-                            }
-                            const subAction = subItem.action.toString();
-                            return (
-                              <button
-                                key={subItem.action}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  onAction(subAction);
-                                  onClose();
-                                }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer pointer-events-auto relative z-[9999996]"
-                                style={{ pointerEvents: 'auto' }}
-                              >
-                                {subItem.icon}
-                                <span>{subItem.label}</span>
-                              </button>
-                            );
-                          })}
+                          {item.submenuItems.filter(subItem => subItem.visible).map((subItem) => (
+                            <SubmenuItem
+                              key={subItem.action}
+                              subItem={subItem}
+                              onAction={onAction}
+                              onClose={onClose}
+                            />
+                          ))}
                         </>
                       ) : (
                         <>
@@ -987,25 +1036,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
               );
             }
             return (
-                <React.Fragment key={item.action || idx}>
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                          // Pass actual shift key state for delete action
-                          if (item.action === 'delete') {
-                            onAction(item.action, e.shiftKey);
-                          } else {
-                            onAction(item.action);
-                          }
-                          onClose();
-                        }}
-                        className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors cursor-pointer ${item.action === 'delete' || item.action === 'destroy' ? 'text-red-400 hover:text-red-300' : 'text-gray-200'}`}
-                    >
-                        {item.icon}
-                        <span>{item.label}</span>
-                    </button>
-                    {item.separator && <div className="h-px bg-slate-700 my-1 mx-2" />}
-                </React.Fragment>
+              <RegularMenuItem
+                key={item.action}
+                item={item}
+                onAction={onAction}
+                onClose={onClose}
+              />
             );
         })}
       </div>
@@ -1013,3 +1049,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, object, isGM, on
     document.body
   );
 };
+
+export const ContextMenu = memo(ContextMenuComponent);
+ContextMenu.displayName = 'ContextMenu';

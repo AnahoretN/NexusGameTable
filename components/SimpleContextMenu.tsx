@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { LucideIcon } from 'lucide-react';
 
@@ -15,7 +15,32 @@ interface SimpleContextMenuProps {
   items: MenuItem[];
 }
 
-export const SimpleContextMenu: React.FC<SimpleContextMenuProps> = ({ x, y, onClose, items }) => {
+// Memoized menu item component
+const SimpleMenuItem = memo<{
+  item: MenuItem;
+  index: number;
+  onClose: () => void;
+}>(({ item, index, onClose }) => {
+  const handleClick = useCallback(() => {
+    item.action();
+    onClose();
+  }, [item, onClose]);
+
+  return (
+    <button
+      key={index}
+      onClick={handleClick}
+      className="w-full px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3 transition-colors"
+    >
+      {item.icon && <span className="text-slate-400">{item.icon}</span>}
+      <span>{item.name}</span>
+    </button>
+  );
+});
+
+SimpleMenuItem.displayName = 'SimpleMenuItem';
+
+export const SimpleContextMenu: React.FC<SimpleContextMenuProps> = memo(({ x, y, onClose, items }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -86,19 +111,16 @@ export const SimpleContextMenu: React.FC<SimpleContextMenuProps> = ({ x, y, onCl
       }}
     >
       {items.map((item, index) => (
-        <button
+        <SimpleMenuItem
           key={index}
-          onClick={() => {
-            item.action();
-            onClose();
-          }}
-          className="w-full px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3 transition-colors"
-        >
-          {item.icon && <span className="text-slate-400">{item.icon}</span>}
-          <span>{item.name}</span>
-        </button>
+          item={item}
+          index={index}
+          onClose={onClose}
+        />
       ))}
     </div>,
     document.body
   );
-};
+});
+
+SimpleContextMenu.displayName = 'SimpleContextMenu';
