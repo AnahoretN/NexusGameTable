@@ -73,7 +73,7 @@ export class PerformanceMonitor {
    * Print a formatted report to console
    */
   printReport() {
-    // Performance report printing disabled
+    // Performance reporting disabled
   }
 
   /**

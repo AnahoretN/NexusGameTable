@@ -454,9 +454,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         // Dispatch load action
         dispatch({ type: 'LOAD_GAME', payload: json as GameState });
 
-        // Success message with summary
-        logger.log(`Game loaded successfully: ${objectCount} objects, ${playerCount} players`);
-
         // Reset file input to allow loading the same file again if needed
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
@@ -498,7 +495,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     setIsCreatingPack(true);
     try {
       await createPack(state, packName.trim(), packDescription.trim() || undefined);
-      logger.log(translate('Pack saved successfully!', language as Locale));
       setPackModalOpen(false);
       setPackName('');
       setPackDescription('');

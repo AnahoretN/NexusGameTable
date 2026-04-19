@@ -64,21 +64,10 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
   // Use shared tool settings context
   const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings } = useToolSettings();
 
-  // Force logging on every render to track updates
-  console.log('🔧🔧🔧 ToolsPanel RENDER - Current tool:', settings.selectedTool, 'Eraser thickness:', settings.eraser.thickness);
-
-  // Debug logging to check if context is working
-  useEffect(() => {
-    console.log('🔧 ToolsPanel: Current settings:', settings);
-    console.log('🔧 ToolsPanel: Eraser thickness:', settings.eraser.thickness);
-  }, [settings]);
-
   // Add logging for update functions
   const handleUpdateEraserSettings = useCallback((newSettings: Partial<{ thickness: number }>) => {
-    console.log('🔧 ToolsPanel: Calling updateEraserSettings with:', newSettings);
-    console.log('🔧 ToolsPanel: Current thickness before update:', settings.eraser.thickness);
     updateEraserSettings(newSettings);
-  }, [updateEraserSettings, settings.eraser.thickness]);
+  }, [updateEraserSettings]);
 
   // Token archetypes expanded state
   const [archetypesExpanded, setArchetypesExpanded] = useState(true);
@@ -89,10 +78,8 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
 
   // Handle tool selection
   const handleToolSelect = useCallback((tool: DrawingTool) => {
-    console.log('🔧 ToolsPanel: Tool selected:', tool);
-    console.log('🔧 ToolsPanel: Current tool before change:', settings.selectedTool);
     setSelectedTool(tool);
-  }, [setSelectedTool, settings.selectedTool]);
+  }, [setSelectedTool]);
 
   // Track drag state to distinguish click from drag
   const dragStartTimeRef = useRef<number>(0);

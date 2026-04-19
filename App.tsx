@@ -17,12 +17,9 @@ const PerformanceMonitor: React.FC = () => {
     // Start memory manager
     memoryManager.start();
 
-    // Optional: Set up periodic performance logging
+    // Optional: Set up periodic performance logging (disabled)
     const perfLogInterval = setInterval(() => {
-      if (process.env.NODE_ENV === 'development') {
-        perfMonitor.printReport();
-        memoryManager.printMemoryStats();
-      }
+      // Performance logging disabled
     }, 300000); // Every 5 minutes
 
 

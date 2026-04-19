@@ -142,23 +142,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'RESTORE_IMAGES': {
         // Restore images from cache - replace image references with base64 data
         const newImages = action.payload;
-        console.log(`[P2P Debug Guest] RESTORE_IMAGES called with ${Object.keys(newImages).length} images`);
-
         // Check if state has image references
-        const stateJson = JSON.stringify(state.objects);
-        const hasRefs = stateJson.includes('img_ref://');
-        console.log(`[P2P Debug Guest] State has image refs: ${hasRefs}`);
-
         const restoredObjects: Record<string, TableObject> = {};
         Object.entries(state.objects).forEach(([id, obj]) => {
             restoredObjects[id] = restoreImagesFromCache(obj, newImages);
         });
-
-        // Verify restoration
-        const restoredJson = JSON.stringify(restoredObjects);
-        const stillHasRefs = restoredJson.includes('img_ref://');
-        const hasBase64 = restoredJson.includes('data:image/');
-        console.log(`[P2P Debug Guest] After restore - stillHasRefs: ${stillHasRefs}, hasBase64: ${hasBase64}`);
 
         return {
             ...state,
@@ -5863,13 +5851,6 @@ if (typeof window !== 'undefined') {
   (window as any).nexusWebRTCDebug = {
     getStats: () => {
       const stats = webrtcStatsMonitor.getStats();
-      console.log('[WebRTC Stats] 📊 WebRTC Performance Statistics:');
-      console.log(`Total Syncs: ${stats.stateSyncs}`);
-      console.log(`Partial Syncs: ${stats.partialSyncs} (${stats.stateSyncs > 0 ? Math.round((stats.partialSyncs / stats.stateSyncs) * 100) : 0}%)`);
-      console.log(`Full Syncs: ${stats.fullSyncs}`);
-      console.log(`Data Sent: ${(stats.bytesSent / 1024).toFixed(2)} KB`);
-      console.log(`Avg Sync Time: ${stats.averageSyncTime.toFixed(2)} ms`);
-      console.log(`Last Sync: ${stats.lastSyncTime > 0 ? new Date(stats.lastSyncTime).toLocaleTimeString() : 'Never'}`);
       return stats;
     },
     printStats: () => {
@@ -5877,14 +5858,10 @@ if (typeof window !== 'undefined') {
     },
     resetStats: () => {
       webrtcStatsMonitor.resetStats();
-      console.log('[WebRTC Stats] 🔄 Statistics reset');
     },
     getDifferentialSyncInfo: () => {
       const changeCount = differentialSyncManager.getChangeCount();
       const shouldFull = differentialSyncManager.shouldSendFullState();
-      console.log('[Differential Sync] 📊 Change Tracking Info:');
-      console.log(`Pending Changes: ${changeCount}`);
-      console.log(`Should Send Full State: ${shouldFull} (threshold: ${WEBRTC_OPTIMIZATION_CONFIG.MAX_CHANGES_FOR_FULL_SYNC})`);
       return {
         changeCount,
         shouldSendFullState: shouldFull,
@@ -5892,5 +5869,4 @@ if (typeof window !== 'undefined') {
       };
     }
   };
-  console.log('[WebRTC Debug] 💡 Type nexusWebRTCDebug.getStats() for WebRTC performance info');
 }

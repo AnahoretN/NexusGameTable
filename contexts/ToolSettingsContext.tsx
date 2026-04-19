@@ -82,10 +82,8 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
   };
 
   const updateMarkerSettings = (newSettings: Partial<MarkerSettings>) => {
-    console.log('🔧 Context: updateMarkerSettings called with:', newSettings);
     setSettings(prev => {
       const updatedMarker = { ...prev.marker, ...newSettings };
-      console.log('🔧 Context: Updated marker settings:', updatedMarker);
       return {
         ...prev,
         marker: updatedMarker
@@ -104,10 +102,8 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
   };
 
   const updateEraserSettings = (newSettings: Partial<EraserSettings>) => {
-    console.log('🔧 Context: updateEraserSettings called with:', newSettings);
     setSettings(prev => {
       const updatedEraser = { ...prev.eraser, ...newSettings };
-      console.log('🔧 Context: Updated eraser settings:', updatedEraser);
       return {
         ...prev,
         eraser: updatedEraser
@@ -126,18 +122,14 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
   };
 
   const updateZoomSettings = (newSettings: Partial<ZoomSettings>) => {
-    console.log('🔧 Context: updateZoomSettings called with:', newSettings);
-
     // Convert zoom level (50-200) to zoom factor (0.5-2.0) and update actual game camera
     if (newSettings.level !== undefined) {
       const zoomFactor = newSettings.level / 100; // Convert 50-200 to 0.5-2.0
-      console.log('🔧 Context: Setting actual game camera zoom to:', zoomFactor);
       setZoom(zoomFactor); // Update the real game camera
     }
 
     setSettings(prev => {
       const updatedZoom = { ...prev.zoom, ...newSettings };
-      console.log('🔧 Context: Updated zoom settings:', updatedZoom);
       return {
         ...prev,
         zoom: updatedZoom

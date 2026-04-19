@@ -51,7 +51,6 @@ export class MemoryManager {
    */
   start(): void {
     if (this.isActive) {
-      logger.warn('[MemoryManager] Already running');
       return;
     }
 
@@ -59,9 +58,6 @@ export class MemoryManager {
     this.cleanupInterval = setInterval(() => {
       this.performCleanup();
     }, MEMORY_MANAGER_CONFIG.CLEANUP_INTERVAL);
-
-    logger.log('[MemoryManager] Started automatic cleanup',
-      `interval: ${MEMORY_MANAGER_CONFIG.CLEANUP_INTERVAL / 1000}s`);
   }
 
   /**
@@ -78,7 +74,6 @@ export class MemoryManager {
     }
 
     this.isActive = false;
-    logger.log('[MemoryManager] Stopped automatic cleanup');
   }
 
   /**
@@ -87,8 +82,6 @@ export class MemoryManager {
   performCleanup(): void {
     const startTime = performance.now();
     const beforeMemory = this.getMemoryUsage();
-
-    logger.log('[MemoryManager] Starting cleanup...');
 
     // Perform cleanup operations
     this.cleanupOldDrawings();

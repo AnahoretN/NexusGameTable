@@ -7,7 +7,7 @@ const isDevelopment = import.meta.env.DEV;
 
 export const logger = {
   log: (...args: unknown[]) => {
-    // Logging disabled
+    // All logging disabled
   },
 
   warn: (...args: unknown[]) => {
@@ -15,7 +15,7 @@ export const logger = {
   },
 
   error: (...args: unknown[]) => {
-    // Always log errors, even in production
+    // Keep only error logging
     console.error('[Nexus]', ...args);
   },
 

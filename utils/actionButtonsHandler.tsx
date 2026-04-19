@@ -25,8 +25,6 @@ export function executeActionButtonUniversal(
   action: string,
   context: ActionButtonsHandlerContext
 ) {
-  logger.log('[executeActionButtonUniversal] Action:', action, 'for object:', obj.id, 'type:', obj.type, 'activePlayerId:', context.activePlayerId);
-
   const { dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, objects } = context;
 
   switch (action) {
@@ -227,7 +225,6 @@ export function executeActionButtonUniversal(
     case 'piles':
       if (obj.type === ItemType.DECK) {
         // Open piles modal or context menu
-        logger.log('[executeActionButtonUniversal] Piles action for deck:', obj.id);
       }
       break;
 
@@ -255,6 +252,6 @@ export function executeActionButtonUniversal(
       break;
 
     default:
-      logger.log('[executeActionButtonUniversal] Action not implemented:', action);
+      // Action not implemented
   }
 }

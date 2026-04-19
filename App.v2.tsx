@@ -50,10 +50,7 @@ function WebRTCIntegration({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isHost && connectionStatus === 'connected') {
-      logger.info('[WebRTC Integration] Host ready for WebRTC sync with new architecture');
-
-      // WebRTC логика для хоста будет здесь
-      // (будет реализована в следующем этапе)
+      // WebRTC logic for host will be here
     }
   }, [isHost, connectionStatus]);
 
@@ -69,13 +66,10 @@ const PerformanceMonitor: React.FC = () => {
     // Start memory manager
     memoryManager.start();
 
-    // Optional: Set up periodic performance logging
+    // Performance logging disabled
     const perfLogInterval = setInterval(() => {
-      if (process.env.NODE_ENV === 'development') {
-        perfMonitor.printReport();
-        memoryManager.printMemoryStats();
-      }
-    }, 300000); // Every 5 minutes
+      // Performance logging disabled
+    }, 300000);
 
     return () => {
       memoryManager.stop();
