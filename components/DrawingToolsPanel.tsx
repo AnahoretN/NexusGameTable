@@ -1,12 +1,11 @@
 import { t as translate, Locale } from '../utils/translations';
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { AppLanguage } from '../types';
 import { Pen, Eraser, Ruler, ZoomIn, MousePointer2 } from 'lucide-react';
+import { useToolSettings, DrawingTool } from '../contexts/ToolSettingsContext';
 
-// Drawing tools
-export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'zoom';
-
+// Drawing tools configuration
 interface DrawingToolConfig {
   id: DrawingTool;
   labelKey: string;
@@ -42,107 +41,40 @@ function getToolTranslation(language: AppLanguage, key: string): string {
   return translate(toolTranslations[key] || key, language as Locale);
 }
 
-interface DrawingToolsPanelProps {
+interface ToolsPanelProps {
   width?: number;
   isCollapsed?: boolean;
   language?: AppLanguage;
 }
 
-export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
+export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   width = 280,
   isCollapsed = false,
   language = 'en'
 }) => {
   const { settings: localSettings, updateSetting } = useLocalSettings();
 
-  // Current selected tool
-  const [selectedTool, setSelectedTool] = useState<DrawingTool>('none');
+  // Use shared tool settings context
+  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings } = useToolSettings();
 
-  // Marker settings
-  const [markerColor, setMarkerColor] = useState('#ff0000');
-  const [markerThickness, setMarkerThickness] = useState(10);
-  const [markerOpacity, setMarkerOpacity] = useState(100);
-
-  // Eraser settings
-  const [eraserThickness, setEraserThickness] = useState(100);
-
-  // Sync tool state with other components (bidirectional)
+  // Debug logging to check if context is working
   useEffect(() => {
-    const handleToolSync = (e: Event) => {
-      const customEvent = e as CustomEvent<{ tool: DrawingTool }>;
-      setSelectedTool(customEvent.detail.tool);
-    };
+    console.log('🎨 DrawingToolsPanel: Current settings:', settings);
+  }, [settings]);
 
-    const handleToolRequest = () => {
-      window.dispatchEvent(new CustomEvent('drawing-tool-sync', {
-        detail: { tool: selectedTool }
-      }));
-    };
-
-    window.addEventListener('drawing-tool-sync', handleToolSync);
-    window.addEventListener('drawing-tool-request', handleToolRequest);
-
-    // Request current tool state on mount
-    window.dispatchEvent(new Event('drawing-tool-request'));
-
-    return () => {
-      window.removeEventListener('drawing-tool-sync', handleToolSync);
-      window.removeEventListener('drawing-tool-request', handleToolRequest);
-    };
-  }, [selectedTool]);
-
-  // Sync marker settings (bidirectional)
-  useEffect(() => {
-    // Emit when local state changes
-    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
-      detail: { color: markerColor, thickness: markerThickness, opacity: markerOpacity }
-    }));
-
-    // Listen for changes from other components
-    const handleMarkerSync = (e: Event) => {
-      const customEvent = e as CustomEvent<{ color: string; thickness: number; opacity: number }>;
-      setMarkerColor(customEvent.detail.color);
-      setMarkerThickness(customEvent.detail.thickness);
-      if (customEvent.detail.opacity !== undefined) {
-        setMarkerOpacity(customEvent.detail.opacity);
-      }
-    };
-
-    window.addEventListener('marker-settings-sync', handleMarkerSync);
-
-    return () => {
-      window.removeEventListener('marker-settings-sync', handleMarkerSync);
-    };
-  }, [markerColor, markerThickness, markerOpacity]);
-
-  // Sync eraser settings (bidirectional)
-  useEffect(() => {
-    // Emit when local state changes
-    window.dispatchEvent(new CustomEvent('eraser-settings-changed', {
-      detail: { thickness: eraserThickness }
-    }));
-
-    // Listen for changes from other components
-    const handleEraserSync = (e: Event) => {
-      const customEvent = e as CustomEvent<{ thickness: number }>;
-      setEraserThickness(customEvent.detail.thickness);
-    };
-
-    window.addEventListener('eraser-settings-sync', handleEraserSync);
-
-    return () => {
-      window.removeEventListener('eraser-settings-sync', handleEraserSync);
-    };
-  }, [eraserThickness]);
-
-  // Handle tool selection
+  // Handle tool selection with logging
   const handleToolSelect = useCallback((tool: DrawingTool) => {
+    console.log('🎨 DrawingToolsPanel: Tool selected:', tool);
+    console.log('🎨 DrawingToolsPanel: Current tool before change:', settings.selectedTool);
     setSelectedTool(tool);
-    // Dispatch event to notify other components about tool change
-    window.dispatchEvent(new CustomEvent('drawing-tool-changed', { detail: { tool } }));
-    // Sync immediately with all other panels
-    window.dispatchEvent(new CustomEvent('drawing-tool-sync', { detail: { tool } }));
-  }, []);
+  }, [setSelectedTool, settings.selectedTool]);
+
+  // Add logging for marker settings updates
+  const handleUpdateMarkerSettings = useCallback((newSettings: Partial<{ color: string; thickness: number; opacity: number }>) => {
+    console.log('🎨 DrawingToolsPanel: Calling updateMarkerSettings with:', newSettings);
+    console.log('🎨 DrawingToolsPanel: Current marker settings:', settings.marker);
+    updateMarkerSettings(newSettings);
+  }, [updateMarkerSettings, settings.marker]);
 
   if (isCollapsed) {
     return (
@@ -172,7 +104,7 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
               key={tool.id}
               onClick={() => handleToolSelect(tool.id)}
               className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${
-                selectedTool === tool.id
+                settings.selectedTool === tool.id
                   ? 'bg-purple-600 text-white'
                   : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
               }`}
@@ -185,14 +117,14 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
         </div>
 
         {/* Marker Settings (shown when marker is selected) */}
-        {selectedTool === 'marker' && (
+        {settings.selectedTool === 'marker' && (
           <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
             {/* Color picker */}
             <div>
               <input
                 type="color"
-                value={markerColor}
-                onChange={(e) => setMarkerColor(e.target.value)}
+                value={settings.marker.color}
+                onChange={(e) => handleUpdateMarkerSettings({ color: e.target.value })}
                 className="w-full h-10 bg-slate-800 border border-slate-700 rounded cursor-pointer"
               />
             </div>
@@ -200,14 +132,14 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
             {/* Thickness slider */}
             <div>
               <label className="block text-[10px] text-gray-400 mb-1">
-                {translate('Size', language as Locale)}: {markerThickness}px
+                {translate('Size', language as Locale)}: {settings.marker.thickness}px
               </label>
               <input
                 type="range"
                 min="1"
                 max="100"
-                value={markerThickness}
-                onChange={(e) => setMarkerThickness(Number(e.target.value))}
+                value={settings.marker.thickness}
+                onChange={(e) => handleUpdateMarkerSettings({ thickness: Number(e.target.value) })}
                 className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
               />
               <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
@@ -220,14 +152,14 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
             {/* Opacity slider */}
             <div>
               <label className="block text-[10px] text-gray-400 mb-1">
-                {translate('Opacity', language as Locale)}: {markerOpacity}%
+                {translate('Opacity', language as Locale)}: {settings.marker.opacity}%
               </label>
               <input
                 type="range"
                 min="1"
                 max="100"
-                value={markerOpacity}
-                onChange={(e) => setMarkerOpacity(Number(e.target.value))}
+                value={settings.marker.opacity}
+                onChange={(e) => handleUpdateMarkerSettings({ opacity: Number(e.target.value) })}
                 className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
               />
               <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
@@ -240,31 +172,22 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
         )}
 
         {/* Eraser Settings (shown when eraser is selected) */}
-        {selectedTool === 'eraser' && (
+        {settings.selectedTool === 'eraser' && (
           <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
             <div>
               <label className="block text-[10px] text-gray-400 mb-1">
-                {translate('Size', language as Locale)}: {eraserThickness}px
+                {translate('Size', language as Locale)}: {settings.eraser.thickness}px
               </label>
               <input
                 type="range"
-                min="1"
+                min="15"
                 max="100"
-                value={eraserThickness}
-                onChange={(e) => {
-                  const newThickness = Number(e.target.value);
-                  console.log('🎛️ Eraser slider changed to:', newThickness);
-                  setEraserThickness(newThickness);
-                  // Force immediate sync for cursor update
-                  window.dispatchEvent(new CustomEvent('eraser-settings-changed', {
-                    detail: { thickness: newThickness }
-                  }));
-                  console.log('🎛️ Dispatched eraser-settings-changed event with thickness:', newThickness);
-                }}
+                value={settings.eraser.thickness}
+                onChange={(e) => updateEraserSettings({ thickness: Number(e.target.value) })}
                 className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
               />
               <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                <span>1px</span>
+                <span>15px</span>
                 <span>50px</span>
                 <span>100px</span>
               </div>
@@ -273,20 +196,20 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
         )}
 
         {/* Zoom Settings (shown when zoom is selected) */}
-        {selectedTool === 'zoom' && (
+        {settings.selectedTool === 'zoom' && (
           <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
             {/* Zoom slider */}
             <div>
               <label className="block text-[10px] text-gray-400 mb-1">
-                {translate('Zoom', language as Locale)}: {localSettings.zoom ?? 100}%
+                {translate('Zoom', language as Locale)}: {settings.zoom.level}%
               </label>
               <input
                 type="range"
                 min="50"
                 max="200"
                 step="5"
-                value={localSettings.zoom ?? 100}
-                onChange={(e) => updateSetting('zoom', Number(e.target.value))}
+                value={settings.zoom.level}
+                onChange={(e) => updateZoomSettings({ level: Number(e.target.value) })}
                 className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
               />
               <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
@@ -305,101 +228,3 @@ export const DrawingToolsPanel: React.FC<DrawingToolsPanelProps> = ({
     </div>
   );
 };
-
-// Hook to get current drawing tool
-export function useDrawingTool(): DrawingTool {
-  const [tool, setTool] = useState<DrawingTool>('none');
-
-  useEffect(() => {
-    const handleToolChange = (e: Event) => {
-      const customEvent = e as CustomEvent<{ tool: DrawingTool }>;
-      setTool(customEvent.detail.tool);
-    };
-
-    const handleToolSync = (e: Event) => {
-      const customEvent = e as CustomEvent<{ tool: DrawingTool }>;
-      setTool(customEvent.detail.tool);
-    };
-
-    window.addEventListener('drawing-tool-changed', handleToolChange);
-    window.addEventListener('drawing-tool-sync', handleToolSync);
-
-    // Request current tool state on mount
-    window.dispatchEvent(new Event('drawing-tool-request'));
-
-    return () => {
-      window.removeEventListener('drawing-tool-changed', handleToolChange);
-      window.removeEventListener('drawing-tool-sync', handleToolSync);
-    };
-  }, []);
-
-  return tool;
-}
-
-// Hook to get marker settings
-export function useMarkerSettings(): { color: string; thickness: number; opacity: number } {
-  const [settings, setSettings] = useState({ color: '#ff0000', thickness: 10, opacity: 100 });
-
-  useEffect(() => {
-    const handleMarkerChange = (e: Event) => {
-      const customEvent = e as CustomEvent<{ color: string; thickness: number; opacity?: number }>;
-      setSettings({
-        color: customEvent.detail.color,
-        thickness: customEvent.detail.thickness,
-        opacity: customEvent.detail.opacity ?? 100
-      });
-    };
-
-    const handleMarkerSync = (e: Event) => {
-      const customEvent = e as CustomEvent<{ color: string; thickness: number; opacity?: number }>;
-      setSettings({
-        color: customEvent.detail.color,
-        thickness: customEvent.detail.thickness,
-        opacity: customEvent.detail.opacity ?? 100
-      });
-    };
-
-    window.addEventListener('marker-settings-changed', handleMarkerChange);
-    window.addEventListener('marker-settings-sync', handleMarkerSync);
-
-    // Request current settings on mount
-    window.dispatchEvent(new Event('marker-settings-request'));
-
-    return () => {
-      window.removeEventListener('marker-settings-changed', handleMarkerChange);
-      window.removeEventListener('marker-settings-sync', handleMarkerSync);
-    };
-  }, []);
-
-  return settings;
-}
-
-// Hook to get eraser settings
-export function useEraserSettings(): { thickness: number } {
-  const [settings, setSettings] = useState({ thickness: 20 });
-
-  useEffect(() => {
-    const handleEraserChange = (e: Event) => {
-      const customEvent = e as CustomEvent<{ thickness: number }>;
-      setSettings(customEvent.detail);
-    };
-
-    const handleEraserSync = (e: Event) => {
-      const customEvent = e as CustomEvent<{ thickness: number }>;
-      setSettings(customEvent.detail);
-    };
-
-    window.addEventListener('eraser-settings-changed', handleEraserChange);
-    window.addEventListener('eraser-settings-sync', handleEraserSync);
-
-    // Request current settings on mount
-    window.dispatchEvent(new Event('marker-settings-request')); // Uses same request event
-
-    return () => {
-      window.removeEventListener('eraser-settings-changed', handleEraserChange);
-      window.removeEventListener('eraser-settings-sync', handleEraserSync);
-    };
-  }, []);
-
-  return settings;
-}

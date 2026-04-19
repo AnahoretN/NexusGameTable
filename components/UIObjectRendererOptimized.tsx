@@ -13,7 +13,7 @@ import { CharacterPanel } from './CharacterPanel';
 import { PoolPanel } from './PoolPanel';
 import { TableauPanel } from './TableauPanel';
 import { MainMenuContent } from './MainMenuContent';
-import { DrawingToolsPanel } from './DrawingToolsPanel';
+import { ToolsPanel } from './DrawingToolsPanel';
 import { TokensPanelOptimized as TokensPanel } from './TokensPanelOptimized';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -1505,7 +1505,7 @@ const PanelContent: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ p
     case PanelType.POOL:
       return <PoolPanelWithDragDetection panel={panel} />;
     case PanelType.TOOLS:
-      return <DrawingToolsPanelWithDragDetection panel={panel} effectiveProps={effectiveProps} />;
+      return <ToolsPanelWithDragDetection panel={panel} effectiveProps={effectiveProps} />;
     case PanelType.TOKENS:
       return <TokensPanelWithDragDetection panel={panel} effectiveProps={effectiveProps} />;
     // TODO: Add other panel types
@@ -1843,8 +1843,8 @@ const TableauPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel
   );
 };
 
-// DrawingToolsPanel with Shift+drag detection
-const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel: _panel, effectiveProps }) => {
+// ToolsPanel with Shift+drag detection
+const ToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel: _panel, effectiveProps }) => {
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { state } = useGame();
@@ -1896,7 +1896,7 @@ const DrawingToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effecti
       style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
       className="h-full"
     >
-      <DrawingToolsPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={language} />
+      <ToolsPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={language} />
     </div>
   );
 };

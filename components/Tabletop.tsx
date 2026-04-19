@@ -5305,7 +5305,12 @@ export const Tabletop: React.FC = () => {
   }, []);
 
   // Sync scroll and pixelsPerVU to global state (for save/load)
+  // Sync viewTransform.zoom and localSettings.zoom bidirectionally
+  const isUpdatingFromLocalSettingsRef = useRef(false);
+
+  // Update viewTransform from localSettings
   React.useEffect(() => {
+    isUpdatingFromLocalSettingsRef.current = true;
     const currentScroll = scrollContainerRef.current?.scrollLeft || 0;
     const currentScrollTop = scrollContainerRef.current?.scrollTop || 0;
     // Calculate base pixelsPerVU without local zoom multiplier
@@ -5314,9 +5319,24 @@ export const Tabletop: React.FC = () => {
 
     dispatch({
       type: 'UPDATE_VIEW_TRANSFORM',
-      payload: { offset: { x: 0, y: 0 }, zoom: 1, scroll: { x: currentScroll, y: currentScrollTop }, pixelsPerVU: basePixelsPerVU }
+      payload: { offset: { x: 0, y: 0 }, zoom: zoomMultiplier, scroll: { x: currentScroll, y: currentScrollTop }, pixelsPerVU: basePixelsPerVU }
     });
+
+    // Reset flag after dispatch
+    setTimeout(() => {
+      isUpdatingFromLocalSettingsRef.current = false;
+    }, 0);
   }, [pixelsPerVU, localSettings.zoom, dispatch]);
+
+  // Update localSettings from viewTransform (for tool settings changes)
+  React.useEffect(() => {
+    if (viewTransform.zoom !== undefined && !isUpdatingFromLocalSettingsRef.current) {
+      const zoomLevel = Math.round(viewTransform.zoom * 100);
+      if (zoomLevel !== (localSettings.zoom ?? 100)) {
+        updateSetting('zoom', zoomLevel);
+      }
+    }
+  }, [viewTransform.zoom, updateSetting, localSettings.zoom]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
       // Don't show context menu when ruler, marker, or eraser tool is active
@@ -5925,6 +5945,7 @@ export const Tabletop: React.FC = () => {
                 left: 0,
                 width: worldBounds.width,
                 height: worldBounds.height,
+                transform: `scale(${viewTransform.zoom})`,
             }}
         >
             {/* Ruler overlay - inside world container for correct coordinate system */}

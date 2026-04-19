@@ -17,7 +17,7 @@ import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
 import { PlayerNameModal } from './PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
-import { useDrawingTool } from './ToolsPanel';
+import { useToolSettings, useDrawingTool } from '../contexts/ToolSettingsContext';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
 import { useManualConnection } from '../store/useManualConnection';
@@ -94,13 +94,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
-  // Use centralized drawing tool state instead of local state
+  // Use centralized tool settings context
+  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings } = useToolSettings();
   const currentDrawingTool = useDrawingTool();
-
-  // Function to change drawing tool (updates centralized state via events)
-  const setSelectedTool = (tool: 'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom') => {
-    window.dispatchEvent(new CustomEvent('drawing-tool-changed', { detail: { tool } }));
-  };
 
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   // Pack modal state
@@ -144,11 +140,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       }
     }
   }, [manualConnection.state.step]);
-
-  // Drawing settings (shared via events with drawing components)
-  const [markerColor, setMarkerColor] = useState('#ff0000');
-  const [markerThickness, setMarkerThickness] = useState(10);
-  const [markerOpacity, setMarkerOpacity] = useState(100);
 
   // Hand card scale state with localStorage persistence
   const { setHandCardScale } = useHandCardScale();
@@ -227,52 +218,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
-
-  // Sync marker settings with drawing components via events
-  useEffect(() => {
-    const handleMarkerSettingsRequest = () => {
-      window.dispatchEvent(new CustomEvent('marker-settings-sync', {
-        detail: { color: markerColor, thickness: markerThickness, opacity: markerOpacity }
-      }));
-    };
-
-    window.addEventListener('marker-settings-request', handleMarkerSettingsRequest);
-    return () => window.removeEventListener('marker-settings-request', handleMarkerSettingsRequest);
-  }, [markerColor, markerThickness, markerOpacity]);
-
-  // Sync drawing tool state with drawing components
-  useEffect(() => {
-    const handleToolRequest = () => {
-      window.dispatchEvent(new CustomEvent('drawing-tool-sync', {
-        detail: { tool: currentDrawingTool }
-      }));
-    };
-
-    window.addEventListener('drawing-tool-request', handleToolRequest);
-    return () => window.removeEventListener('drawing-tool-request', handleToolRequest);
-  }, [currentDrawingTool]);
-
-  // Update marker settings and notify drawing components
-  const updateMarkerColor = (color: string) => {
-    setMarkerColor(color);
-    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
-      detail: { color, thickness: markerThickness, opacity: markerOpacity }
-    }));
-  };
-
-  const updateMarkerThickness = (thickness: number) => {
-    setMarkerThickness(thickness);
-    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
-      detail: { color: markerColor, thickness, opacity: markerOpacity }
-    }));
-  };
-
-  const updateMarkerOpacity = (opacity: number) => {
-    setMarkerOpacity(opacity);
-    window.dispatchEvent(new CustomEvent('marker-settings-changed', {
-      detail: { color: markerColor, thickness: markerThickness, opacity }
-    }));
-  };
 
   const currentUserIsGM = players.find(p => p.id === activePlayerId)?.isGM ?? false;
 
@@ -802,40 +747,38 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               <div>
                 <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
                 <div className="grid grid-cols-5 gap-2">
-                  <DrawingToolButton tool="none" icon={<MousePointer2 size={15} />} label={translate('Cursor', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="marker" icon={<Pen size={15} />} label={translate('Marker', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="eraser" icon={<Eraser size={15} />} label={translate('Eraser', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="ruler" icon={<Ruler size={15} />} label={translate('Ruler', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
-                  <DrawingToolButton tool="zoom" icon={<Search size={15} />} label={translate('Zoom', language as Locale)} selectedTool={currentDrawingTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="none" icon={<MousePointer2 size={15} />} label={translate('Cursor', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="marker" icon={<Pen size={15} />} label={translate('Marker', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="eraser" icon={<Eraser size={15} />} label={translate('Eraser', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="ruler" icon={<Ruler size={15} />} label={translate('Ruler', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="zoom" icon={<Search size={15} />} label={translate('Zoom', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
                 </div>
               </div>
 
-              {/* Marker Settings (shown when marker or eraser is selected) */}
-              {(currentDrawingTool === 'marker' || currentDrawingTool === 'eraser') && (
+              {/* Marker Settings (shown when marker is selected) */}
+              {settings.selectedTool === 'marker' && (
                 <div className="p-3 bg-slate-800 rounded-lg space-y-3">
                   {/* Color picker */}
-                  {currentDrawingTool === 'marker' && (
-                    <div>
-                      <input
-                        type="color"
-                        value={markerColor}
-                        onChange={(e) => updateMarkerColor(e.target.value)}
-                        className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <input
+                      type="color"
+                      value={settings.marker.color}
+                      onChange={(e) => updateMarkerSettings({ color: e.target.value })}
+                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                    />
+                  </div>
 
                   {/* Thickness slider */}
                   <div>
                     <label className="block text-[10px] text-gray-400 mb-1">
-                      {translate('Size', language as Locale)}: {markerThickness}px
+                      {translate('Size', language as Locale)}: {settings.marker.thickness}px
                     </label>
                     <input
                       type="range"
                       min="1"
                       max="100"
-                      value={markerThickness}
-                      onChange={(e) => updateMarkerThickness(Number(e.target.value))}
+                      value={settings.marker.thickness}
+                      onChange={(e) => updateMarkerSettings({ thickness: Number(e.target.value) })}
                       className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                     />
                     <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
@@ -845,45 +788,68 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     </div>
                   </div>
 
-                  {/* Opacity slider - only for marker, not eraser */}
-                  {currentDrawingTool === 'marker' && (
-                    <div>
-                      <label className="block text-[10px] text-gray-400 mb-1">
-                        {translate('Opacity', language as Locale)}: {markerOpacity}%
-                      </label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="100"
-                        value={markerOpacity}
-                        onChange={(e) => updateMarkerOpacity(Number(e.target.value))}
-                        className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                      />
-                      <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                        <span>1%</span>
-                        <span>50%</span>
-                        <span>100%</span>
-                      </div>
+                  {/* Opacity slider */}
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-1">
+                      {translate('Opacity', language as Locale)}: {settings.marker.opacity}%
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={settings.marker.opacity}
+                      onChange={(e) => updateMarkerSettings({ opacity: Number(e.target.value) })}
+                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                    />
+                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                      <span>1%</span>
+                      <span>50%</span>
+                      <span>100%</span>
                     </div>
-                  )}
+                  </div>
+                </div>
+              )}
+
+              {/* Eraser Settings (shown when eraser is selected) */}
+              {settings.selectedTool === 'eraser' && (
+                <div className="p-3 bg-slate-800 rounded-lg space-y-3">
+                  {/* Thickness slider */}
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-1">
+                      {translate('Size', language as Locale)}: {settings.eraser.thickness}px
+                    </label>
+                    <input
+                      type="range"
+                      min="15"
+                      max="100"
+                      value={settings.eraser.thickness}
+                      onChange={(e) => updateEraserSettings({ thickness: Number(e.target.value) })}
+                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                    />
+                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                      <span>15px</span>
+                      <span>50px</span>
+                      <span>100px</span>
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* Zoom Settings (shown when zoom tool is selected) */}
-              {currentDrawingTool === 'zoom' && (
+              {settings.selectedTool === 'zoom' && (
                 <div className="p-3 bg-slate-800 rounded-lg space-y-3">
                   {/* Zoom slider */}
                   <div>
                     <label className="block text-[10px] text-gray-400 mb-1">
-                      {t({ en: 'Zoom', ru: 'Масштаб', be: 'Маштаб', uk: 'Масштаб', sr: 'Zum' })}: {localSettings.zoom ?? 100}%
+                      {translate('Zoom', language as Locale)}: {settings.zoom.level}%
                     </label>
                     <input
                       type="range"
                       min="50"
                       max="200"
                       step="5"
-                      value={localSettings.zoom ?? 100}
-                      onChange={(e) => updateSetting('zoom', Number(e.target.value))}
+                      value={settings.zoom.level}
+                      onChange={(e) => updateZoomSettings({ level: Number(e.target.value) })}
                       className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
                     />
                     <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
@@ -894,7 +860,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   </div>
 
                   <p className="text-[9px] text-gray-500 italic">
-                    {t({ en: 'Configure layer zoom in Layer Settings', ru: 'Настройте зум слоя в настройках слоя', be: 'Наладзьце зум слоя ў наладах слоя', uk: 'Налаштуйте зум шару в налаштуваннях шару', sr: 'Podesite zum sloja u postavkama sloja' })}
+                    {translate('Configure layer zoom in Layer Settings', language as Locale)}
                   </p>
                 </div>
               )}
@@ -2201,7 +2167,6 @@ interface DrawingToolButtonProps {
 const DrawingToolButton: React.FC<DrawingToolButtonProps> = ({ tool, icon, label, selectedTool, setSelectedTool }) => {
   const handleClick = () => {
     setSelectedTool(tool);
-    window.dispatchEvent(new CustomEvent('drawing-tool-changed', { detail: { tool } }));
   };
 
   return (

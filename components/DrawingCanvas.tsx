@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
 import { useActivePlayerId } from '../store/contexts';
-import { useDrawingTool } from './ToolsPanel';
+import { useDrawingTool } from '../contexts/ToolSettingsContext';
 import { ItemType, Stroke, StrokePoint, Drawing } from '../types';
 
 interface DrawingCanvasProps {
@@ -245,17 +245,28 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   }, []);
 
   // Eraser settings
-  const [eraserThickness, setEraserThickness] = useState(100);
+  const [eraserThickness, setEraserThickness] = useState(20);
 
   // Listen for eraser settings changes
   useEffect(() => {
     const handleEraserSettingsChange = (e: Event) => {
       const customEvent = e as CustomEvent<{ thickness: number }>;
-      console.log('🖌️ Eraser thickness changed to:', customEvent.detail.thickness);
-	      setEraserThickness(customEvent.detail.thickness);
+      console.log('🖌️ RECEIVED eraser-settings-changed event! Thickness:', customEvent.detail.thickness);
+	      const newThickness = Math.max(15, customEvent.detail.thickness);
+setEraserThickness(newThickness);
+
+// Redraw canvas to show updated cursor size
+setTimeout(() => {
+  const ctx = canvasRef.current?.getContext('2d');
+  if (ctx) redrawCanvas(ctx);
+}, 0);
     };
 
     window.addEventListener('eraser-settings-changed', handleEraserSettingsChange);
+    // Request initial settings
+    console.log('📡 Dispatching eraser-settings-request event...');
+    window.dispatchEvent(new Event('eraser-settings-request'));
+    console.log('📡 eraser-settings-request dispatched');
 
     return () => {
       window.removeEventListener('eraser-settings-changed', handleEraserSettingsChange);
@@ -644,10 +655,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       }
       lastEraserProcessTimeRef.current = now;
 
-      console.log(`🧽 Processing eraser: thickness=${eraserThickness}, radius=${eraserThickness / 2}`);
+      // Eraser effect is 30% larger than the setting for better coverage
+      const eraserRadius = eraserThickness * 0.65;
+
+      console.log(`🧽 Processing eraser: thickness=${eraserThickness}, visualRadius=${eraserThickness / 2}, effectRadius=${eraserRadius.toFixed(1)}`);
 
       // Partial eraser: remove only touched points from strokes (uses cached drawings for immediate feedback)
-      const eraserRadius = eraserThickness / 2;
 
       // Use modified drawings from ref if available, otherwise use original drawings
       const drawingsToErase = eraserModifiedDrawingsRef.current.size > 0
@@ -799,18 +812,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               }, 0);
               return newCache;
             });
-
-            // Also dispatch to Redux
-            console.log('📤 Dispatching UPDATE_OBJECT for drawing:', drawing.id, 'with strokes:', newStrokes.length);
-            dispatch({
-              type: 'UPDATE_OBJECT',
-              payload: {
-                id: drawing.id,
-                strokes: newStrokes
-              }
-            });
           }
-          // Note: Dispatch removed to prevent update loops - will be sent in handleMouseUp
+          // Note: Redux dispatch removed during erasing to prevent conflicts - will be sent in handleMouseUp
         }
 
         console.log('🔍 End of drawing processing - anyStrokesModified:', anyStrokesModified, 'strokesModified:', strokesModified);
@@ -936,11 +939,17 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
 
+      // Store the modifications before clearing
+      const finalModifications = Array.from(eraserModifiedDrawingsRef.current.entries());
+      console.log('💾 Stored', finalModifications.length, 'final modifications before clearing');
+
       // Final dispatch to update Redux with eraser results
-      eraserModifiedDrawingsRef.current.forEach((updatedDrawing) => {
+      finalModifications.forEach(([drawingId, updatedDrawing]) => {
         console.log('📤 Processing final update for drawing:', updatedDrawing.id, 'strokes:', updatedDrawing.strokes.length);
 
         const originalDrawing = drawings.find(d => d.id === updatedDrawing.id);
+        console.log('🔍 Original drawing has', originalDrawing?.strokes.length || 0, 'strokes');
+
         if (!originalDrawing && updatedDrawing.strokes.length > 0) {
           // This shouldn't happen, but handle it - new drawing was created
           console.log('🆕 New drawing created - sending UPDATE_OBJECT');
@@ -948,7 +957,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             type: 'UPDATE_OBJECT',
             payload: {
               id: updatedDrawing.id,
-              strokes: updatedDrawing.strokes
+              updates: {
+                strokes: updatedDrawing.strokes
+              }
             }
           });
         } else if (updatedDrawing.strokes.length === 0) {
@@ -961,24 +972,40 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         } else if (!originalDrawing || JSON.stringify(originalDrawing.strokes) !== JSON.stringify(updatedDrawing.strokes)) {
           // Drawing was partially erased - send UPDATE
           console.log('✏️ Drawing partially erased - sending UPDATE_OBJECT with', updatedDrawing.strokes.length, 'strokes');
-          dispatch({
+          console.log('📝 Payload:', { id: updatedDrawing.id, strokes: updatedDrawing.strokes.length });
+
+          const action = {
             type: 'UPDATE_OBJECT',
             payload: {
               id: updatedDrawing.id,
-              strokes: updatedDrawing.strokes
+              updates: {
+                strokes: updatedDrawing.strokes
+              }
             }
-          });
+          };
+
+          console.log('🚀 Dispatching action:', action);
+          dispatch(action);
+          console.log('✅ Action dispatched');
+
+          // Debug: check Redux state after dispatch
+          setTimeout(() => {
+            console.log('🔍 500ms after dispatch - checking if Redux updated...');
+            // This will help us see if Redux actually updated
+          }, 500);
         } else {
           console.log('⚠️ No changes detected for drawing:', updatedDrawing.id);
         }
       });
 
+      console.log('📊 All dispatches completed. Current drawings prop has', drawings.length, 'items');
+
       // Clear the eraser modifications ref after dispatching to Redux
       console.log('🧹 Clearing eraserModifiedDrawingsRef');
       eraserModifiedDrawingsRef.current.clear();
 
-      if (ctx) redrawCanvas(ctx);
-      console.log('🎨 Canvas redrawn after eraser completion');
+      // Note: No need to manually redraw here - Redux update will trigger component re-render
+      console.log('✅ Eraser completion - Redux update sent, component will re-render automatically');
 
       return;
     }
