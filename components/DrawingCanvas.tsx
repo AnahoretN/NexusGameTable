@@ -251,22 +251,14 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   useEffect(() => {
     const handleEraserSettingsChange = (e: Event) => {
       const customEvent = e as CustomEvent<{ thickness: number }>;
-      console.log('🖌️ RECEIVED eraser-settings-changed event! Thickness:', customEvent.detail.thickness);
 	      const newThickness = Math.max(15, customEvent.detail.thickness);
 setEraserThickness(newThickness);
-
-// Redraw canvas to show updated cursor size
-setTimeout(() => {
-  const ctx = canvasRef.current?.getContext('2d');
-  if (ctx) redrawCanvas(ctx);
-}, 0);
+// No need to redraw - eraser settings only affect new erasing actions
     };
 
     window.addEventListener('eraser-settings-changed', handleEraserSettingsChange);
     // Request initial settings
-    console.log('📡 Dispatching eraser-settings-request event...');
     window.dispatchEvent(new Event('eraser-settings-request'));
-    console.log('📡 eraser-settings-request dispatched');
 
     return () => {
       window.removeEventListener('eraser-settings-changed', handleEraserSettingsChange);
@@ -484,13 +476,11 @@ setTimeout(() => {
   }, [state.objects, offsetX, offsetY]); // Only depend on things that affect drawing display
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    console.log('🖱️ handleMouseDown called, currentTool:', currentTool);
     if (currentTool !== 'marker' && currentTool !== 'eraser') return;
     if (isOverPanel) return; // Don't draw when over a panel
     if (e.altKey) return; // Don't draw/erase when ALT is pressed (normal cursor mode)
 
     const pos = getWorldPosition(e.clientX, e.clientY);
-    console.log('🖱️ Position:', pos);
 
     // Check if Shift is pressed with eraser - delete entire drawing
     if (currentTool === 'eraser' && e.shiftKey) {
@@ -548,9 +538,6 @@ setTimeout(() => {
     setCurrentStroke([{ x: pos.x, y: pos.y }]);
     // Store stroke start data for network commit (guests only)
     strokeStartDataRef.current = { color: markerColor, thickness: markerThickness };
-
-    // Debug logging
-    console.log('🖱️ Mouse down, tool:', currentTool, 'isDrawing set to true');
   }, [currentTool, getWorldPosition, isOverPanel, drawings, markerColor, markerThickness, cursorSlotLength, localDrawingsCache]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -658,8 +645,6 @@ setTimeout(() => {
       // Eraser effect is 30% larger than the setting for better coverage
       const eraserRadius = eraserThickness * 0.65;
 
-      console.log(`🧽 Processing eraser: thickness=${eraserThickness}, visualRadius=${eraserThickness / 2}, effectRadius=${eraserRadius.toFixed(1)}`);
-
       // Partial eraser: remove only touched points from strokes (uses cached drawings for immediate feedback)
 
       // Use modified drawings from ref if available, otherwise use original drawings
@@ -667,13 +652,9 @@ setTimeout(() => {
         ? drawings.map(d => eraserModifiedDrawingsRef.current.get(d.id) || d)
         : drawings;
 
-      console.log('🧽 Eraser processing - Position:', { x: pos.x, y: pos.y }, 'Radius:', eraserRadius, 'Drawings to erase:', drawingsToErase.length);
-
       let anyStrokesModified = false;
 
       drawingsToErase.forEach(drawing => {
-        console.log('🎨 Processing drawing:', drawing.id, 'Position:', { x: drawing.x, y: drawing.y }, 'Strokes:', drawing.strokes.length);
-
         // Calculate drawing bounds
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         drawing.strokes.forEach(stroke => {
@@ -684,8 +665,6 @@ setTimeout(() => {
             maxY = Math.max(maxY, point.y);
           });
         });
-
-        console.log('📐 Drawing bounds:', { minX, minY, maxX, maxY });
 
         let strokesModified = false;
         const newStrokes: Stroke[] = [];
@@ -704,19 +683,6 @@ setTimeout(() => {
             const distance = Math.sqrt(dx * dx + dy * dy);
             // Use exact eraser radius without adding stroke thickness
             const isErased = distance < eraserRadius;
-
-            // Debug eraser detection
-            if (pointsErased === 0 && distance < eraserRadius + 10) {
-              console.log('🔍 Eraser check:', {
-                strokeId: stroke.id,
-                point: { x: point.x, y: point.y },
-                worldPos: { x: worldX, y: worldY },
-                eraserPos: { x: pos.x, y: pos.y },
-                distance,
-                eraserRadius,
-                isErased
-              });
-            }
 
             if (isErased) {
               pointsErased++;
@@ -745,7 +711,6 @@ setTimeout(() => {
             // Entire stroke was erased
             strokesModified = true;
             anyStrokesModified = true;
-            console.log('🗑️ Entire stroke erased:', stroke.id);
           } else if (segments.length === 1 && segments[0].length === stroke.points.length) {
             // Nothing was erased, keep original stroke
             newStrokes.push(stroke);
@@ -753,7 +718,6 @@ setTimeout(() => {
             // Stroke was partially erased, create new strokes from segments
             strokesModified = true;
             anyStrokesModified = true;
-            console.log('✂️ Stroke partially erased:', stroke.id, 'Original points:', stroke.points.length, 'Segments:', segments.length);
             segments.forEach((segmentPoints, segIndex) => {
               if (segmentPoints.length >= 2) {
                 newStrokes.push({
@@ -815,8 +779,6 @@ setTimeout(() => {
           }
           // Note: Redux dispatch removed during erasing to prevent conflicts - will be sent in handleMouseUp
         }
-
-        console.log('🔍 End of drawing processing - anyStrokesModified:', anyStrokesModified, 'strokesModified:', strokesModified);
       });
 
       // Force immediate redraw with updated data inline (only if modifications were made)
@@ -824,8 +786,6 @@ setTimeout(() => {
         const updatedDrawings = eraserModifiedDrawingsRef.current.size > 0
           ? drawings.map(d => eraserModifiedDrawingsRef.current.get(d.id) || d)
           : drawings;
-
-        console.log('🎨 Immediate redraw with', updatedDrawings.length, 'drawings, strokes:', updatedDrawings.map(d => d.strokes.length));
 
         // Clear canvas
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -931,8 +891,6 @@ setTimeout(() => {
 
     // For eraser, we don't create strokes - partial erasing happens in handleMouseMove
     if (currentTool === 'eraser') {
-      console.log('🖱️ Mouse UP - Eraser finished, eraserModifiedDrawingsRef size:', eraserModifiedDrawingsRef.current.size);
-
       setIsDrawing(false);
       setCurrentStroke([]);
 
@@ -941,18 +899,13 @@ setTimeout(() => {
 
       // Store the modifications before clearing
       const finalModifications = Array.from(eraserModifiedDrawingsRef.current.entries());
-      console.log('💾 Stored', finalModifications.length, 'final modifications before clearing');
 
       // Final dispatch to update Redux with eraser results
       finalModifications.forEach(([drawingId, updatedDrawing]) => {
-        console.log('📤 Processing final update for drawing:', updatedDrawing.id, 'strokes:', updatedDrawing.strokes.length);
-
         const originalDrawing = drawings.find(d => d.id === updatedDrawing.id);
-        console.log('🔍 Original drawing has', originalDrawing?.strokes.length || 0, 'strokes');
 
         if (!originalDrawing && updatedDrawing.strokes.length > 0) {
           // This shouldn't happen, but handle it - new drawing was created
-          console.log('🆕 New drawing created - sending UPDATE_OBJECT');
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -964,16 +917,12 @@ setTimeout(() => {
           });
         } else if (updatedDrawing.strokes.length === 0) {
           // Drawing was completely erased - send DELETE
-          console.log('🗑️ Drawing completely erased - sending DELETE_OBJECT');
           dispatch({
             type: 'DELETE_OBJECT',
             payload: { id: updatedDrawing.id }
           });
         } else if (!originalDrawing || JSON.stringify(originalDrawing.strokes) !== JSON.stringify(updatedDrawing.strokes)) {
           // Drawing was partially erased - send UPDATE
-          console.log('✏️ Drawing partially erased - sending UPDATE_OBJECT with', updatedDrawing.strokes.length, 'strokes');
-          console.log('📝 Payload:', { id: updatedDrawing.id, strokes: updatedDrawing.strokes.length });
-
           const action = {
             type: 'UPDATE_OBJECT',
             payload: {
@@ -984,29 +933,14 @@ setTimeout(() => {
             }
           };
 
-          console.log('🚀 Dispatching action:', action);
           dispatch(action);
-          console.log('✅ Action dispatched');
-
-          // Debug: check Redux state after dispatch
-          setTimeout(() => {
-            console.log('🔍 500ms after dispatch - checking if Redux updated...');
-            // This will help us see if Redux actually updated
-          }, 500);
-        } else {
-          console.log('⚠️ No changes detected for drawing:', updatedDrawing.id);
         }
       });
 
-      console.log('📊 All dispatches completed. Current drawings prop has', drawings.length, 'items');
-
       // Clear the eraser modifications ref after dispatching to Redux
-      console.log('🧹 Clearing eraserModifiedDrawingsRef');
       eraserModifiedDrawingsRef.current.clear();
 
       // Note: No need to manually redraw here - Redux update will trigger component re-render
-      console.log('✅ Eraser completion - Redux update sent, component will re-render automatically');
-
       return;
     }
 

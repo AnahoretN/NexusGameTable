@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useViewTransform } from '../store/contexts/ViewTransformContext';
 
 // Drawing tools
@@ -69,6 +69,11 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
   const [settings, setSettings] = useState<ToolSettings>(DEFAULT_TOOL_SETTINGS);
   const { setZoom } = useViewTransform(); // Access to real game camera zoom
 
+  // Use refs to track previous values for effect comparison
+  const prevMarkerSettingsRef = useRef<MarkerSettings>(settings.marker);
+  const prevEraserSettingsRef = useRef<EraserSettings>(settings.eraser);
+  const prevZoomSettingsRef = useRef<ZoomSettings>(settings.zoom);
+
   const setSelectedTool = (tool: DrawingTool) => {
     setSettings(prev => {
       // Only update if actually different
@@ -89,16 +94,6 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
         marker: updatedMarker
       };
     });
-
-    // Notify external components AFTER state update
-    setTimeout(() => {
-      setSettings(currentSettings => {
-        window.dispatchEvent(new CustomEvent('marker-settings-changed', {
-          detail: currentSettings.marker
-        }));
-        return currentSettings;
-      });
-    }, 0);
   };
 
   const updateEraserSettings = (newSettings: Partial<EraserSettings>) => {
@@ -109,16 +104,6 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
         eraser: updatedEraser
       };
     });
-
-    // Notify external components AFTER state update
-    setTimeout(() => {
-      setSettings(currentSettings => {
-        window.dispatchEvent(new CustomEvent('eraser-settings-changed', {
-          detail: currentSettings.eraser
-        }));
-        return currentSettings;
-      });
-    }, 0);
   };
 
   const updateZoomSettings = (newSettings: Partial<ZoomSettings>) => {
@@ -135,17 +120,40 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
         zoom: updatedZoom
       };
     });
-
-    // Notify external components AFTER state update
-    setTimeout(() => {
-      setSettings(currentSettings => {
-        window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
-          detail: currentSettings.zoom
-        }));
-        return currentSettings;
-      });
-    }, 0);
   };
+
+  // Notify external components when marker settings change
+  useEffect(() => {
+    const prevMarker = prevMarkerSettingsRef.current;
+    if (settings.marker !== prevMarker) {
+      window.dispatchEvent(new CustomEvent('marker-settings-changed', {
+        detail: settings.marker
+      }));
+      prevMarkerSettingsRef.current = settings.marker;
+    }
+  }, [settings.marker]);
+
+  // Notify external components when eraser settings change
+  useEffect(() => {
+    const prevEraser = prevEraserSettingsRef.current;
+    if (settings.eraser !== prevEraser) {
+      window.dispatchEvent(new CustomEvent('eraser-settings-changed', {
+        detail: settings.eraser
+      }));
+      prevEraserSettingsRef.current = settings.eraser;
+    }
+  }, [settings.eraser]);
+
+  // Notify external components when zoom settings change
+  useEffect(() => {
+    const prevZoom = prevZoomSettingsRef.current;
+    if (settings.zoom !== prevZoom) {
+      window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
+        detail: settings.zoom
+      }));
+      prevZoomSettingsRef.current = settings.zoom;
+    }
+  }, [settings.zoom]);
 
   return (
     <ToolSettingsContext.Provider value={{ settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings }}>

@@ -738,7 +738,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         {activeTab === 'tools' && (
           <div className="flex flex-col h-full">
             {/* Upper section - Drawing tools and tokens */}
-            <div className="flex-[3] overflow-y-auto p-3 space-y-3 min-h-0">
+            <div className="flex-[3] overflow-y-auto px-3 py-2 space-y-3 min-h-0">
               {/* Drawing Tools Section */}
               <div>
                 <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
@@ -753,7 +753,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
               {/* Marker Settings (shown when marker is selected) */}
               {settings.selectedTool === 'marker' && (
-                <div className="p-3 bg-slate-800 rounded-lg space-y-3">
+                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
                   {/* Color picker */}
                   <div>
                     <input
@@ -808,7 +808,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
               {/* Eraser Settings (shown when eraser is selected) */}
               {settings.selectedTool === 'eraser' && (
-                <div className="p-3 bg-slate-800 rounded-lg space-y-3">
+                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
                   {/* Thickness slider */}
                   <div>
                     <label className="block text-[10px] text-gray-400 mb-1">
@@ -833,7 +833,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
               {/* Zoom Settings (shown when zoom tool is selected) */}
               {settings.selectedTool === 'zoom' && (
-                <div className="p-3 bg-slate-800 rounded-lg space-y-3">
+                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
                   {/* Zoom slider */}
                   <div>
                     <label className="block text-[10px] text-gray-400 mb-1">
@@ -1479,6 +1479,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     </div>
   );
 };
+
+export const MainMenuContentMemoized = React.memo(MainMenuContent);
+MainMenuContentMemoized.displayName = 'MainMenuContentMemoized';
 
 // Category section component
 interface CategorySectionProps {

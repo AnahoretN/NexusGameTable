@@ -27,6 +27,7 @@ import { PLAYABLE_AREA_SIZE } from '../constants';
 import { generateUUID } from '../utils/uuid';
 import { clampScrollToPlayableArea } from '../utils/viewportConstraints';
 import { vuToPixels, pixelsToVu } from '../utils/vuSystem';
+import { filterVisibleObjects, calculateViewportBounds, CullingConfig } from '../utils/viewportCulling';
 import { CursorSlotVisualization } from './CursorSlotVisualization';
 import {
   calculatePoolDropPosition,
@@ -5559,6 +5560,42 @@ export const Tabletop: React.FC = () => {
       });
   }, [state.objects, hyperscaleLayers, isGM]);
 
+  // Viewport culling optimization - only render objects visible in viewport
+  // This significantly improves performance with 100+ objects
+  const visibleTableObjects = useMemo(() => {
+    // Get viewport bounds from viewTransform (scroll position)
+    const scrollX = viewTransform?.scroll.x ?? 0;
+    const scrollY = viewTransform?.scroll.y ?? 0;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Culling configuration - only cull if there are many objects
+    const cullingConfig: CullingConfig = {
+      overscan: 300, // 300px buffer zone for smooth scrolling
+      enabled: true, // Enable viewport culling
+      minObjectsToCull: 30 // Only cull if more than 30 objects
+    };
+
+    // Calculate viewport bounds
+    const { bounds, shouldCull } = calculateViewportBounds(
+      scrollX,
+      scrollY,
+      viewportWidth,
+      viewportHeight,
+      pixelsPerVU,
+      tableObjects.length,
+      cullingConfig
+    );
+
+    // Filter to only visible objects if culling is enabled
+    if (shouldCull) {
+      return filterVisibleObjects(tableObjects, bounds, cullingConfig);
+    }
+
+    // Return all objects if culling is disabled
+    return tableObjects;
+  }, [tableObjects, viewTransform, pixelsPerVU]);
+
   // Objects that are in another player's cursor slot (inCursorSlot=true but not in my local cursorSlot)
   // These are rendered as darkened/semi-transparent and non-interactive
   const remoteCursorSlotObjects = useMemo(() => {
@@ -6506,8 +6543,8 @@ export const Tabletop: React.FC = () => {
                 return null;
             })}
 
-            {/* All objects in unified space */}
-            {tableObjects.map((obj) => {
+            {/* All objects in unified space - with viewport culling optimization */}
+            {visibleTableObjects.map((obj) => {
                 const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
                 // Only show grab cursor for unlocked objects that can be dragged
                 // Dice always use default cursor since they're not draggable by mouse in main tabletop

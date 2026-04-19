@@ -40,41 +40,14 @@ export { PoolTabletopOptimized, PoolTabletopOptimizedMemo } from './PoolTabletop
 // 🔥 NEW: Optimized UIObjectRenderer with useMemo
 export { UIObjectRendererOptimized, UIObjectRendererOptimizedMemo } from './UIObjectRendererOptimized';
 
-// 🚀 NEW: Code Splitting - Lazy-loaded components
-export {
-  DeleteConfirmModalLazy,
-  SearchDeckModalLazy,
-  TopDeckModalLazy,
-  ObjectSettingsModalLazy,
-  CharacterSettingsModalLazy,
-  PanelSettingsModalLazy,
-  HandTabSettingsModalLazy,
-  PoolTabSettingsModalLazy,
-  PlayerNameModalLazy,
-  PackLoadingModalLazy,
-  InitialLoadModalLazy,
-  MainMenuContentLazy,
-  // TabletopLazy - NOTE: Use regular Tabletop import for now
-  ContextMenuLazy,
-  PileContextMenuLazy,
-  DrawingCanvasLazy,
-  NexusBoardLazy,
-  UIObjectRendererLazy,
-  LoadingFallback
-} from './LazyComponents';
+// 🚀 Code Splitting - Lazy-loaded components (removed - not in use)
+// All components use direct imports for better performance and stability
 
-// 🚀 NEW: MainMenuContent optimized sub-components
-export {
-  TypeIcon,
-  ObjectListItem,
-  FilterButton,
-  SearchInput,
-  StatsDisplay,
-  LoadingSpinner,
-  EmptyState
-} from './MainMenuComponents';
+// 🚀 MainMenuContent optimized sub-components (removed - not in use)
+// All functionality is integrated directly into MainMenuContent.tsx
 
 // 🚀 NEW: MainMenuContent optimized version
+export { MainMenuContentMemoized } from './MainMenuContent';
 export { default as MainMenuContentOptimized } from './MainMenuContentOptimized';
 export {
   useFilteredObjects,

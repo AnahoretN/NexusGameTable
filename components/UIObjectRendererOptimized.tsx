@@ -13,7 +13,7 @@ import { CharacterPanel } from './CharacterPanel';
 import { PoolPanel } from './PoolPanel';
 import { TableauPanel } from './TableauPanel';
 import { MainMenuContent } from './MainMenuContent';
-import { ToolsPanel } from './DrawingToolsPanel';
+import { PanelToolsPanel } from './ToolsPanel';
 import { TokensPanelOptimized as TokensPanel } from './TokensPanelOptimized';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -723,8 +723,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
               height: finalHeight
             };
           }
-
-          console.log('🔧 Dispatching UPDATE_PLAYER_PANEL_SETTINGS (menu/window):', playerSettingsPayload);
 
           dispatch({
             type: 'UPDATE_PLAYER_PANEL_SETTINGS',
@@ -1896,7 +1894,7 @@ const ToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps
       style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
       className="h-full"
     >
-      <ToolsPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={language} />
+      <PanelToolsPanel width={effectiveProps.width} isCollapsed={isCollapsed} language={language} />
     </div>
   );
 };
