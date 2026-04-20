@@ -1,6 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useViewTransform } from '../store/contexts/ViewTransformContext';
 
+// Global function to update zoom settings from outside the context
+let externalZoomUpdater: ((level: number) => void) | null = null;
+if (typeof window !== 'undefined') {
+  (window as any).updateToolSettingsZoom = (level: number) => {
+    if (externalZoomUpdater) {
+      externalZoomUpdater(level);
+    }
+  };
+}
+
 // Drawing tools
 export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'zoom';
 
@@ -67,12 +77,13 @@ interface ToolSettingsProviderProps {
 
 export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ children }) => {
   const [settings, setSettings] = useState<ToolSettings>(DEFAULT_TOOL_SETTINGS);
-  const { setZoom } = useViewTransform(); // Access to real game camera zoom
+  const { setZoom, viewTransform } = useViewTransform(); // Access to real game camera zoom
 
   // Use refs to track previous values for effect comparison
   const prevMarkerSettingsRef = useRef<MarkerSettings>(settings.marker);
   const prevEraserSettingsRef = useRef<EraserSettings>(settings.eraser);
   const prevZoomSettingsRef = useRef<ZoomSettings>(settings.zoom);
+  const isInternalZoomChangeRef = useRef(false); // Track if zoom change is internal
 
   const setSelectedTool = (tool: DrawingTool) => {
     setSettings(prev => {
@@ -110,6 +121,7 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
     // Convert zoom level (50-200) to zoom factor (0.5-2.0) and update actual game camera
     if (newSettings.level !== undefined) {
       const zoomFactor = newSettings.level / 100; // Convert 50-200 to 0.5-2.0
+      isInternalZoomChangeRef.current = true; // Mark as internal change
       setZoom(zoomFactor); // Update the real game camera
     }
 
@@ -154,6 +166,56 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
       prevZoomSettingsRef.current = settings.zoom;
     }
   }, [settings.zoom]);
+
+  // Sync zoom from ViewTransformContext to ToolSettingsContext (bi-directional sync)
+  useEffect(() => {
+    // Skip if this change was initiated from within ToolSettingsContext
+    if (isInternalZoomChangeRef.current) {
+      isInternalZoomChangeRef.current = false;
+      return;
+    }
+
+    // Convert zoom factor (0.5-2.0) to zoom level (50-200)
+    const zoomLevel = Math.round(viewTransform.zoom * 100);
+
+    // Only update if significantly different to avoid loops
+    if (Math.abs(zoomLevel - settings.zoom.level) > 1) {
+      setSettings(prev => ({
+        ...prev,
+        zoom: { ...prev.zoom, level: zoomLevel }
+      }));
+    }
+  }, [viewTransform.zoom]);
+
+  // Listen for external zoom updates (e.g., from Ctrl+scroll in Tabletop)
+  useEffect(() => {
+    const handleZoomChange = (event: CustomEvent) => {
+      const newLevel = event.detail.level;
+      if (typeof newLevel === 'number' && Math.abs(newLevel - settings.zoom.level) > 1) {
+        setSettings(prev => ({
+          ...prev,
+          zoom: { ...prev.zoom, level: newLevel }
+        }));
+      }
+    };
+
+    window.addEventListener('zoom-settings-changed', handleZoomChange as EventListener);
+    return () => window.removeEventListener('zoom-settings-changed', handleZoomChange as EventListener);
+  }, [settings.zoom.level]);
+
+  // Register external updater function
+  useEffect(() => {
+    externalZoomUpdater = (level: number) => {
+      setSettings(prev => ({
+        ...prev,
+        zoom: { ...prev.zoom, level }
+      }));
+    };
+
+    return () => {
+      externalZoomUpdater = null;
+    };
+  }, []);
 
   return (
     <ToolSettingsContext.Provider value={{ settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings }}>

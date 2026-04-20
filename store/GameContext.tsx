@@ -5380,9 +5380,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const worldY = 10; // 10 vu from top
           const { deck, cards } = createStandardDeck();
 
+          // Update deck position
           deck.x = worldX;
           deck.y = worldY;
           deck.hyperscaleLayerId = 'cards';
+
+          // Update card positions directly in the cards array before dispatch
+          cards.forEach(card => {
+            card.x = worldX;
+            card.y = worldY;
+          });
 
           // Add all cards first
           cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));

@@ -351,7 +351,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         if (mainMenuPanel?.minimized) {
           dispatch({
             type: 'UPDATE_OBJECT',
-            payload: { id: mainMenuPanel.id, minimized: false }
+            payload: { id: mainMenuPanel.id, updates: { minimized: false } }
           });
         }
         setDragOverHand(true);
@@ -2054,7 +2054,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     <span className="flex-1 truncate font-normal">{getDisplayName()}</span>
                     {canHideObjects && (
                       <button
-                        onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, locked: !isLocked } })}
+                        onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { locked: !isLocked } } })}
                         className={`p-1 rounded text-xs ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} opacity-0 group-hover:opacity-100`}
                         title={isLocked ? 'Unlock' : 'Lock'}
                       >
@@ -2063,7 +2063,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     )}
                     {canHideObjects && (
                       <button
-                        onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } })}
+                        onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } } })}
                         className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 text-xs"
                         title={isVisible ? 'Hide' : 'Show'}
                       >

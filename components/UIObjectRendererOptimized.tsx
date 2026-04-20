@@ -461,7 +461,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
   const handleHide = useCallback(() => {
     // Hide panel instead of closing it
-    dispatch({ type: 'UPDATE_OBJECT', payload: { id: uiObject.id, visible: false } });
+    dispatch({ type: 'UPDATE_OBJECT', payload: { id: uiObject.id, updates: { visible: false } } });
   }, [dispatch, uiObject.id]);
 
   const handleOpenSettings = useCallback(() => {
@@ -1960,6 +1960,7 @@ const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProp
 // Window content renderer
 const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }) => {
   const { state, dispatch } = useGame();
+  const language = useLanguage();
 
   const handleClose = () => {
     dispatch({ type: 'CLOSE_UI_OBJECT', payload: { id: windowObj.id } });

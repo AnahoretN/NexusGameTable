@@ -26,7 +26,8 @@ export function drawCardReducer(state: any, action: any): any {
         location: CardLocation.HAND,
         ownerId: playerId,
         isOnTable: false,
-        x: 0, y: 0, // Position in hand is managed by HandPanel
+        x: deck.x, // Use deck's X position
+        y: deck.y, // Use deck's Y position
         faceUp: false // Cards are drawn face down
       };
       drawnCardIds.push(cardId);

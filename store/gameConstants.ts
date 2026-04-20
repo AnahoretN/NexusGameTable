@@ -132,6 +132,10 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
   const totalCards = 55; // 65 - 10 (empty cards removed)
   const cardBackSpriteIndex = 54; // 55th card (0-based index) is the card back
 
+  // Deck position (will be set by caller, but use 0,0 as default for cards in deck)
+  const deckX = 0;
+  const deckY = 0;
+
   // Create 54 playing cards (standard deck)
   for (let i = 0; i < 54; i++) {
     const cid = generateUUID();
@@ -139,7 +143,8 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
     const card: Card = {
       id: cid,
       type: ItemType.CARD,
-      x: 0, y: 0,
+      x: deckX, // Use deck position (will be updated when deck is positioned)
+      y: deckY, // Use deck position (will be updated when deck is positioned)
       width: defaultDims.width,
       height: defaultDims.height,
       rotation: 0,

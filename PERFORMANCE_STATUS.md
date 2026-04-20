@@ -202,7 +202,12 @@
 **Текущий прогресс (2026-04-19):**
 - ✅ **ЭТАП 1 ВЫПОЛНЕН:** Создан backup branch и анализ зависимостей
 - ✅ **ЭТАП 2 ВЫПОЛНЕН:** Создана инфраструктура для рефакторинга
-- ⏳ **ЭТАП 3-10:** В процессе - разбивка на компоненты
+- ✅ **ЭТАП 3 ВЫПОЛНЕН:** Простые компоненты (Background, RemoteObjects)
+- ✅ **ЭТАП 4 ВЫПОЛНЕН:** Сложные рендеры (GameObjects, UIObjects)
+- ✅ **ЭТАП 5 ВЫПОЛНЕН:** Бизнес-логика (CursorSlot, EventHandlers)
+- ✅ **ЭТАП 6 ВЫПОЛНЕН:** Модальные окна (TabletopModals)
+- ✅ **ЭТАП 7 ВЫПОЛНЕН:** Финальная интеграция (TabletopRefactored)
+- ⏳ **ЭТАП 8-10:** В процессе - мемоизация, тестирование, документация
 
 **Созданная структура:**
 ```
@@ -212,13 +217,15 @@ components/Tabletop/
 ├── useObjectFilters.ts ✅ (фильтрация объектов)
 ├── useTabletopState.ts ✅ (управление состоянием)
 ├── index.ts ✅ (экспорты)
-├── TabletopBackground.tsx ⏳ (будет создан)
-├── RemoteObjectsRenderer.tsx ⏳ (будет создан)
-├── GameObjectsRenderer.tsx ⏳ (будет создан)
-├── UIObjectsRenderer.tsx ⏳ (будет создан)
-├── TabletopCursorSlot.tsx ⏳ (будет создан)
-├── TabletopEventHandlers.tsx ⏳ (будет создан)
-└── TabletopModals.tsx ⏳ (будет создан)
+├── TabletopBackground.tsx ✅ (фон, сетка, линейка)
+├── RemoteObjectsRenderer.tsx ✅ (удаленные объекты)
+├── GameObjectsRenderer.tsx ✅ (игровые объекты)
+├── UIObjectsRenderer.tsx ✅ (UI элементы)
+├── TabletopCursorSlot.tsx ✅ (управление cursor slot)
+├── TabletopEventHandlers.tsx ✅ (обработка событий)
+├── TabletopModals.tsx ✅ (модальные окна)
+├── TabletopRefactored.tsx ✅ (рефакторенный Tabletop)
+└── TABLETOP_REFACTORED_GUIDE.md ✅ (документация)
 ```
 
 **Потенциальный эффект:** 60-70% снижение ререндеров + улучшение поддерживаемости
@@ -324,9 +331,12 @@ components/Tabletop/
 - ✅ Состояние: `useToolState()`, `useCursorSlotState()`, `useRulerState()`, `useModalStates()`, `useDraggingState()`, `useResizeState()`, `useDiceState()`, `useHoverState()`, `useAdditionalUIState()`
 
 **Следующие шаги:**
-- ⏳ Этап 3: Простые компоненты (Background, RemoteObjects) - 3-4 часа
-- ⏳ Этап 4: Сложные рендеры (GameObjects, UIObjects) - 4-5 часов
-- ⏳ Этап 5: Бизнес-логика (CursorSlot, EventHandlers) - 5-6 часов
+- ✅ Этап 3: Простые компоненты (Background, RemoteObjects) - ВЫПОЛНЕН
+- ✅ Этап 4: Сложные рендеры (GameObjects, UIObjects) - ВЫПОЛНЕН
+- ✅ Этап 5: Бизнес-логика (CursorSlot, EventHandlers) - ВЫПОЛНЕН
+- ✅ Этап 6: Модальные окна (TabletopModals) - ВЫПОЛНЕН
+- ✅ Этап 7: Финальная интеграция (TabletopRefactored) - ВЫПОЛНЕН
+- ⏳ Этапы 8-10: Тестирование и оптимизация - 6-10 часов
 
 **Ожидаемый результат:** 8,347 → 500 строк в основном компоненте
 
