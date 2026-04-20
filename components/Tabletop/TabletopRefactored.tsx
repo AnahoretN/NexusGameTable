@@ -164,6 +164,7 @@ export const Tabletop: React.FC = () => {
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [liveResizeSize, setLiveResizeSize] = useState<{ width: number; height: number } | null>(null);
   const liveResizeSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const resizeFinalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   // Dice state
   const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
