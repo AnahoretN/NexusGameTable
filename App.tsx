@@ -8,7 +8,7 @@ import { ToolSettingsProvider } from './contexts/ToolSettingsContext';
 import { memoryManager, perfMonitor } from './utils';
 
 // Lazy load components for better initial load performance
-const Tabletop = lazy(() => import('./components/Tabletop').then(m => ({ default: m.Tabletop })));
+const Tabletop = lazy(() => import('./components/Tabletop/TabletopRefactored').then(m => ({ default: m.Tabletop })));
 const MainMenuContent = lazy(() => import('./components/MainMenuContent').then(m => ({ default: m.MainMenuContentMemoized })));
 
 // Performance monitoring component
