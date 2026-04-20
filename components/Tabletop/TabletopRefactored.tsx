@@ -111,10 +111,10 @@ export const Tabletop: React.FC = () => {
     v2p,
     p2v,
     zoomMultiplier,
-    getLayerZoomScale,
-    getLayerInverseScale,
-    createPositionedStyle,
-  } = useTabletopPositioning(viewTransform, localSettings, hyperscaleLayers);
+  } = useTabletopPositioning(viewTransform, localSettings);
+
+  const { getLayerZoomScale, getLayerInverseScale } = useLayerZoom(zoomMultiplier, hyperscaleLayers);
+  const { createPositionedStyle } = usePositionedStyle(getLayerInverseScale);
 
   // === Object Filtering ===
   const {
@@ -211,10 +211,14 @@ export const Tabletop: React.FC = () => {
     setDraggingId,
     setResizingId,
     setResizeStart,
+    rulerStart,
     setRulerStart,
+    rulerCurrent,
     setRulerCurrent,
+    isRulerRightClick,
     setIsRulerRightClick,
     setContextMenu,
+    setDeleteCandidateId,
     setIsPanning: () => {},
     scrollContainerRef,
     viewTransform,
@@ -225,6 +229,7 @@ export const Tabletop: React.FC = () => {
     isGM,
     hyperscaleLayers,
     localSettings,
+    updateSetting,
     liveResizeSizeRef,
     setLiveResizeSize,
     resizeFinalSizeRef,
@@ -232,6 +237,8 @@ export const Tabletop: React.FC = () => {
     longPressTimerRef,
     clickTooltipTimerRef,
     clickTooltipBoundsRef,
+    dragThresholdRef,
+    dragOffsetRef,
     setClickTooltip,
     setNexusBoardAddingCell,
     setSettingsModalObj,

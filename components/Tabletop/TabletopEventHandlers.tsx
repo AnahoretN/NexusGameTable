@@ -21,10 +21,14 @@ interface TabletopEventHandlersProps {
   setDraggingId: React.Dispatch<React.SetStateAction<string | null>>;
   setResizingId: React.Dispatch<React.SetStateAction<string | null>>;
   setResizeStart: React.Dispatch<React.SetStateAction<{ x: number; y: number; width: number; height: number } | null>>;
+  rulerStart: { x: number; y: number } | null;
   setRulerStart: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
+  rulerCurrent: { x: number; y: number } | null;
   setRulerCurrent: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
+  isRulerRightClick: boolean;
   setIsRulerRightClick: React.Dispatch<React.SetStateAction<boolean>>;
   setContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>>;
+  setDeleteCandidateId: React.Dispatch<React.SetStateAction<string | null>>;
   setIsPanning: React.Dispatch<React.SetStateAction<boolean>>;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   viewTransform: any;
@@ -35,6 +39,7 @@ interface TabletopEventHandlersProps {
   isGM: boolean;
   hyperscaleLayers: any[];
   localSettings: any;
+  updateSetting: (key: string | number | symbol, value: any) => void;
   liveResizeSizeRef: React.RefObject<{ width: number; height: number } | null>;
   setLiveResizeSize: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>;
   resizeFinalSizeRef: React.RefObject<{ width: number; height: number } | null>;
@@ -42,6 +47,13 @@ interface TabletopEventHandlersProps {
   longPressTimerRef: React.RefObject<number | null>;
   clickTooltipTimerRef: React.RefObject<number | null>;
   clickTooltipBoundsRef: React.RefObject<{ left: number; right: number; top: number; bottom: number } | null>;
+  dragThresholdRef: React.RefObject<{
+    initialX: number;
+    initialY: number;
+    targetId: string | null;
+    addedToSlot: boolean;
+  }>;
+  dragOffsetRef: React.RefObject<{ x: number; y: number } | null>;
   setClickTooltip: React.Dispatch<React.SetStateAction<{ cardId: string; x: number; y: number } | null>>;
   setNexusBoardAddingCell: React.Dispatch<React.SetStateAction<string | null>>;
   setSettingsModalObj: React.Dispatch<React.SetStateAction<TableObject | null>>;
@@ -73,10 +85,14 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setDraggingId,
     setResizingId,
     setResizeStart,
+    rulerStart,
     setRulerStart,
+    rulerCurrent,
     setRulerCurrent,
+    isRulerRightClick,
     setIsRulerRightClick,
     setContextMenu,
+    setDeleteCandidateId,
     setIsPanning,
     scrollContainerRef,
     viewTransform,
@@ -87,6 +103,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     isGM,
     hyperscaleLayers,
     localSettings,
+    updateSetting,
     liveResizeSizeRef,
     setLiveResizeSize,
     resizeFinalSizeRef,
@@ -94,6 +111,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     longPressTimerRef,
     clickTooltipTimerRef,
     clickTooltipBoundsRef,
+    dragThresholdRef,
+    dragOffsetRef,
     setClickTooltip,
     setNexusBoardAddingCell,
     setSettingsModalObj,

@@ -206,10 +206,14 @@ export const Tabletop: React.FC = () => {
     setDraggingId,
     setResizingId,
     setResizeStart,
+    rulerStart,
     setRulerStart,
+    rulerCurrent,
     setRulerCurrent,
+    isRulerRightClick,
     setIsRulerRightClick,
     setContextMenu,
+    setDeleteCandidateId,
     setIsPanning: () => {},
     scrollContainerRef,
     viewTransform,
@@ -220,6 +224,7 @@ export const Tabletop: React.FC = () => {
     isGM,
     hyperscaleLayers,
     localSettings,
+    updateSetting,
     liveResizeSizeRef,
     setLiveResizeSize,
     resizeFinalSizeRef,
@@ -227,6 +232,8 @@ export const Tabletop: React.FC = () => {
     longPressTimerRef,
     clickTooltipTimerRef,
     clickTooltipBoundsRef,
+    dragThresholdRef,
+    dragOffsetRef,
     setClickTooltip,
     setNexusBoardAddingCell,
     setSettingsModalObj,
@@ -270,7 +277,7 @@ export const Tabletop: React.FC = () => {
         }
         break;
       case 'rotate':
-        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: 45 } });
         break;
       case 'draw':
         if (obj.type === ItemType.DECK) {
@@ -282,7 +289,15 @@ export const Tabletop: React.FC = () => {
           const deck = obj as DeckType;
           if (deck.cardIds.length > 0) {
             const topCardId = deck.cardIds[deck.cardIds.length - 1];
-            dispatch({ type: 'PLAY_CARD', payload: { cardId: topCardId, x: deck.x, y: deck.y + 50, faceUp: true } });
+            // Just draw the card, PLAY_CARD doesn't exist in this format
+            dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: activePlayerId } });
+            // Move it to the correct position afterwards
+            setTimeout(() => {
+              const card = state.objects[topCardId];
+              if (card) {
+                dispatch({ type: 'MOVE_OBJECT', payload: { id: topCardId, x: deck.x + 50, y: deck.y + 50 } });
+              }
+            }, 50);
           }
         }
         break;
