@@ -32,6 +32,30 @@ const HEX_RATIO = 1.15;
 
 // Cache for grid cell center calculations to improve performance
 const gridCellCenterCache = new Map<string, { x: number; y: number; timestamp: number }>();
+
+/**
+ * Calculate grid dimensions using same logic as BoardWithResize for consistency
+ * This ensures that magnetic snapping uses the same grid dimensions as rendering
+ * @param board - The board object
+ * @returns Grid dimensions {gridW, gridH}
+ */
+export function calculateGridDimensions(board: Board): { gridW: number; gridH: number } {
+  const gridW = board.gridWidth || board.gridSize || 50;
+
+  // Calculate grid height using same logic as BoardWithResize for consistency
+  let gridH: number;
+  if (board.gridHeight !== undefined) {
+    gridH = board.gridHeight;
+  } else if (board.gridType === GridType.HEX) {
+    gridH = Math.round(gridW * HEX_RATIO * 100) / 100;
+  } else if (board.gridType === GridType.HEX_HORIZONTAL) {
+    gridH = Math.round(calculateFlatHexHeight(gridW) * 100) / 100;
+  } else {
+    gridH = board.gridSize || 50;
+  }
+
+  return { gridW, gridH };
+}
 const MAX_CACHE_SIZE = 2000;
 const CACHE_TTL = 5000; // 5 seconds
 
@@ -50,6 +74,20 @@ export function clearGridCellCache(boardId: string): void {
  */
 export function clearAllGridCellCache(): void {
   gridCellCenterCache.clear();
+}
+
+/**
+ * Clear cache entries for a specific board
+ */
+export function clearBoardCellCache(boardId: string): void {
+  const keysToDelete: string[] = [];
+  for (const key of gridCellCenterCache.keys()) {
+    if (key.startsWith(`${boardId}-`)) {
+      keysToDelete.push(key);
+    }
+  }
+  keysToDelete.forEach(key => gridCellCenterCache.delete(key));
+  console.log('🗑️ [gridUtils] Cleared cache for board:', boardId, 'entries:', keysToDelete.length);
 }
 
 /**
@@ -95,23 +133,37 @@ export function calculateGridCellCenter(
   col: number,
   row: number
 ): { x: number; y: number } {
-  // Create cache key including board properties that affect calculation
-  const cacheKey = `${board.id}-${board.x}-${board.y}-${board.gridType}-${board.gridWidth || board.gridSize}-${board.gridHeight || board.gridSize}-${col}-${row}`;
+  // Calculate grid dimensions using same logic as BoardWithResize for consistency
+  const { gridW, gridH } = calculateGridDimensions(board);
 
-  // Check cache
-  const cached = gridCellCenterCache.get(cacheKey);
-  if (cached) {
-    return { x: cached.x, y: cached.y };
-  }
+  // Debug logging to track grid size values
+  console.log('🔢 [calculateGridCellCenter] Input:', {
+    boardId: board.id,
+    col, row,
+    boardX: board.x,
+    boardY: board.y,
+    gridType: board.gridType,
+    gridWidth: board.gridWidth,
+    gridHeight: board.gridHeight,
+    gridSize: board.gridSize,
+    effectiveGridW: gridW,
+    effectiveGridH: gridH
+  });
+
+  // DISABLE CACHE for now to ensure fresh calculations
+  // This will help debug the hex grid positioning issue
+  // const cacheKey = `${board.id}-${board.x}-${board.y}-${board.gridType}-${board.gridWidth || board.gridSize}-${board.gridHeight || board.gridSize}-${col}-${row}`;
+  // const cached = gridCellCenterCache.get(cacheKey);
+  // if (cached) {
+  //   console.log('💾 [calculateGridCellCenter] Cache hit:', { cacheKey, cached });
+  //   return { x: cached.x, y: cached.y };
+  // }
 
   // Perform periodic cleanup
   if (gridCellCenterCache.size > 0 && gridCellCenterCache.size % 100 === 0) {
     cleanupExpiredCacheEntries();
     cleanupCacheSize();
   }
-
-  const gridW = board.gridWidth || board.gridSize || 50;
-  const gridH = board.gridHeight || board.gridSize || 50;
 
   let result: { x: number; y: number };
 
@@ -127,6 +179,7 @@ export function calculateGridCellCenter(
     const dy = gridH - hCap;
     const offsetX = gridW / 2;
 
+    // Position already represents hex center (same formula as HexGrid.tsx)
     result = {
       x: board.x + col * dx + (row % 2 === 1 ? offsetX : 0),
       y: board.y + row * dy
@@ -138,6 +191,8 @@ export function calculateGridCellCenter(
     const dy = gridH;
     const offsetY = gridH / 2;
 
+    // Position already represents hex center (same formula as HexGrid.tsx)
+    // For flat-top: x has no row offset, y has column offset
     result = {
       x: board.x + col * dx,
       y: board.y + row * dy + (col % 2 === 1 ? offsetY : 0)
@@ -150,12 +205,12 @@ export function calculateGridCellCenter(
     };
   }
 
-  // Cache the result
-  gridCellCenterCache.set(cacheKey, {
-    x: result.x,
-    y: result.y,
-    timestamp: Date.now()
-  });
+  // Cache the result (DISABLED for now to ensure fresh calculations)
+  // gridCellCenterCache.set(cacheKey, {
+  //   x: result.x,
+  //   y: result.y,
+  //   timestamp: Date.now()
+  // });
 
   return result;
 }
@@ -1195,6 +1250,14 @@ export function addObjectToGridCellMagnet(
     const existingPoint = existingPoints.find((p: MagnetPoint) => p.objectId === objectId);
     if (existingPoint) {
       const pos = positions[existingPoint.pointIndex];
+      const obj = objects[objectId];
+      const objW = obj?.width ?? 50;
+      const objH = obj?.height ?? 50;
+      // Return top-left position for consistency
+      const topLeftPos = {
+        x: pos.x - objW / 2,
+        y: pos.y - objH / 2
+      };
       return {
         updatedBoard: {
           gridCellMagnetPoints: {
@@ -1202,7 +1265,7 @@ export function addObjectToGridCellMagnet(
             [key]: { ...existingCellData, magnetPoints: existingPoints }
           }
         },
-        snapPosition: pos,
+        snapPosition: topLeftPos,
         movedObjects: []
       };
     }
@@ -1251,7 +1314,15 @@ export function addObjectToGridCellMagnet(
   }
 
   // Get snap position for the new object (center position)
-  const snapPosition = positions[newPointIndex];
+  const snapCenterPosition = positions[newPointIndex];
+  const obj = objects[objectId];
+  const objW = obj?.width ?? 50;
+  const objH = obj?.height ?? 50;
+  // Convert center position to top-left position for consistency
+  const snapPosition = {
+    x: snapCenterPosition.x - objW / 2,
+    y: snapCenterPosition.y - objH / 2
+  };
 
   return {
     updatedBoard: {

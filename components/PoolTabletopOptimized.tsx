@@ -1941,7 +1941,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         <ObjectSettingsModal
           object={settingsModalObj}
           onSave={(updatedObj) => {
-            dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
+            dispatch({ type: 'UPDATE_OBJECT', payload: { id: updatedObj.id, updates: updatedObj } });
             setSettingsModalObj(null);
           }}
           onClose={() => setSettingsModalObj(null)}

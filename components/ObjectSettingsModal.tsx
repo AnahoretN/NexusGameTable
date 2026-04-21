@@ -5,7 +5,7 @@ import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counte
 
 import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
-import { calculateHexHeight, calculateFlatHexHeight } from '../utils/gridUtils';
+import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from '../utils/gridUtils';
 import { CARD_SHAPE_DIMS } from '../constants';
 
 // Hex grid constants
@@ -634,7 +634,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
       });
     }
 
-    // For boards: clear magnet points when snap settings are disabled
+    // For boards: clear magnet points when snap settings are disabled or grid size changes
     if (toSave.type === ItemType.BOARD) {
       const board = toSave as Board;
       const originalBoard = object as Board;
@@ -643,9 +643,33 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
       const snapToGridDisabled = originalBoard.snapToGrid === true && board.snapToGrid === false;
       const snapCardsToGridDisabled = originalBoard.snapCardsToGrid === true && board.snapCardsToGrid === false;
 
-      // If either setting was disabled, clear all magnet points
-      if (snapToGridDisabled || snapCardsToGridDisabled) {
+      // Check if grid dimensions changed
+      const originalGridW = originalBoard.gridWidth || originalBoard.gridSize || 50;
+      const originalGridH = originalBoard.gridHeight || originalBoard.gridSize || 50;
+      const newGridW = board.gridWidth || board.gridSize || 50;
+      const newGridH = board.gridHeight || board.gridSize || 50;
+      const gridDimensionsChanged = originalGridW !== newGridW || originalGridH !== newGridH;
+
+      // Clear magnet points if snap settings disabled OR grid dimensions changed
+      if (snapToGridDisabled || snapCardsToGridDisabled || gridDimensionsChanged) {
         (toSave as Board).gridCellMagnetPoints = undefined;
+      }
+
+      // Clear grid cell cache for this board when dimensions change
+      if (gridDimensionsChanged) {
+        clearBoardCellCache(board.id);
+      }
+
+      // Sync gridSize with gridWidth/gridHeight for backward compatibility
+      // Use the average of width and height, or just width if they're equal
+      if (board.gridWidth !== undefined || board.gridHeight !== undefined) {
+        if (board.gridWidth && board.gridHeight) {
+          board.gridSize = Math.round((board.gridWidth + board.gridHeight) / 2);
+        } else if (board.gridWidth) {
+          board.gridSize = board.gridWidth;
+        } else if (board.gridHeight) {
+          board.gridSize = board.gridHeight;
+        }
       }
     }
 
@@ -1639,10 +1663,16 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                             const roundHeight = shouldRound(value);
                             updateMultiple({
                               gridWidth: value,
-                              gridHeight: roundHeight ? Math.round(height * 100) / 100 : height
+                              gridHeight: roundHeight ? Math.round(height * 100) / 100 : height,
+                              gridSize: Math.round(value) // Sync gridSize for backward compatibility
                             });
                           } else {
-                            update('gridWidth', value);
+                            // For square grid when not linked, still update gridHeight to match
+                            updateMultiple({
+                              gridWidth: value,
+                              gridHeight: value,
+                              gridSize: value
+                            });
                           }
                         }}
                         className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
@@ -1702,10 +1732,16 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                             const roundWidth = shouldRound(value);
                             updateMultiple({
                               gridHeight: value,
-                              gridWidth: roundWidth ? Math.round(width * 100) / 100 : width
+                              gridWidth: roundWidth ? Math.round(width * 100) / 100 : width,
+                              gridSize: Math.round((width + value) / 2) // Average for hex grids
                             });
                           } else {
-                            update('gridHeight', value);
+                            // For square grid when not linked, still update gridWidth to match
+                            updateMultiple({
+                              gridHeight: value,
+                              gridWidth: value,
+                              gridSize: value
+                            });
                           }
                         }}
                         className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${

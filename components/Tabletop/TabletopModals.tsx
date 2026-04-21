@@ -203,7 +203,10 @@ export const TabletopModals = memo(({
 
     dispatch({
       type: 'UPDATE_OBJECT',
-      object: updatedObj
+      payload: {
+        id: updatedObj.id,
+        updates: updatedObj
+      }
     });
     setSettingsModalObj(null);
   }, [
@@ -282,7 +285,7 @@ export const TabletopModals = memo(({
           activePlayerId={activePlayerId}
           isGM={isGM}
           language={language}
-          onUpdate={handleObjectSettingsUpdate}
+          onSave={handleObjectSettingsUpdate}
           onClose={handleCloseSettingsModal}
         />
       )}

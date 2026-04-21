@@ -1991,7 +1991,7 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
           language={language}
           onClose={handleClose}
           onSave={(updatedObj) => {
-            dispatch({ type: 'UPDATE_OBJECT', payload: updatedObj });
+            dispatch({ type: 'UPDATE_OBJECT', payload: { id: updatedObj.id, updates: updatedObj } });
             handleClose();
           }}
         />

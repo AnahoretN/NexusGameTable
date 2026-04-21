@@ -7,6 +7,7 @@ import { DECK_OFFSET } from '../constants';
 import { Tooltip } from './Tooltip';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
+import { executeClickAction } from '../utils/objectActionHandlers';
 
 // 🔥 OPTIMIZED: Zustand version of DeckComponent
 // Replaces: components/DeckComponent.tsx

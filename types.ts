@@ -216,6 +216,7 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
   // Additional card properties
   isHorizontal?: boolean; // Used internally for cursor slot rendering
   fromPoolPanel?: string; // ID of pool panel this card was picked up from (if any)
+  gridCellKey?: string; // Format: "boardId:col,row" for grid cell magnetism
   __pendingPlayTop?: { // Internal: stores pending play-top data for undo when card is dropped
     deckId: string;
     previousCardIds: string[];

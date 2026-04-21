@@ -25,9 +25,24 @@ export const useObjectFilters = (
 ) => {
   // All table objects (convert from object record to array)
   const tableObjects = useMemo(() => {
-    return (Object.values(state.objects || {}) as TableObject[]).filter(
-      (obj) => obj.type !== ItemType.PANEL && obj.type !== ItemType.WINDOW && obj.type !== ItemType.DECK
-    );
+    return (Object.values(state.objects || {}) as TableObject[]).filter((obj) => {
+      // Exclude panels, windows, decks (they are rendered separately)
+      if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) {
+        return false;
+      }
+
+      // Exclude cards that are in deck (location: DECK) - they are part of the deck
+      if (obj.type === ItemType.CARD && (obj as CardType).location === CardLocation.DECK) {
+        return false;
+      }
+
+      // Exclude objects in local cursor slot (they are rendered by CursorSlotVisualization)
+      if ((obj as any).inCursorSlot && !(obj as any).cursorSlotOwnerId) {
+        return false;
+      }
+
+      return true;
+    });
   }, [state.objects]);
 
   // Visible table objects (viewport culling would be applied here with viewport bounds)

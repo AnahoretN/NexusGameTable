@@ -1,5 +1,5 @@
 import { TableObject, ItemType, BattlefieldCell, NexusCellObject, Board, GridType } from '../../types';
-import { removeObjectFromCellMagnet, removeObjectFromGridCellMagnet, generateGridCellKey, parseGridCellKey, calculateGridCellCenter } from '../../utils/gridUtils';
+import { removeObjectFromCellMagnet, removeObjectFromGridCellMagnet, generateGridCellKey, parseGridCellKey, calculateGridCellCenter, calculateGridDimensions } from '../../utils/gridUtils';
 
 /**
  * Reducer functions for object manipulation actions
@@ -134,9 +134,8 @@ export function addObjectReducer(state: any, action: any): any {
           // Parse cell key to get col and row
           const { col, row } = parseGridCellKey(cellKey);
 
-          // Calculate cell dimensions
-          const gridW = board.gridWidth || board.gridSize || 50;
-          const gridH = board.gridHeight || board.gridSize || 50;
+          // Calculate cell dimensions using consistent logic
+          const { gridW, gridH } = calculateGridDimensions(board);
 
           // Use helper function to calculate cell center
           const cellCenter = calculateGridCellCenter(board, col, row);
@@ -355,9 +354,8 @@ export function addObjectReducer(state: any, action: any): any {
           // Parse cell key to get col and row
           const { col, row } = parseGridCellKey(cellKey);
 
-          // Calculate cell dimensions
-          const gridW = board.gridWidth || board.gridSize || 50;
-          const gridH = board.gridHeight || board.gridSize || 50;
+          // Calculate cell dimensions using consistent logic
+          const { gridW, gridH } = calculateGridDimensions(board);
 
           // Use helper function to calculate cell center
           const cellCenter = calculateGridCellCenter(board, col, row);

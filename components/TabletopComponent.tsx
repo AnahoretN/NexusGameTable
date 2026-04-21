@@ -629,9 +629,7 @@ export const Tabletop: React.FC = () => {
         cursorPositionRef={cursorPositionRef}
         pixelsPerVU={pixelsPerVU}
         zoom={viewTransform?.zoom ?? 1}
-        currentTool={currentTool}
-        isShiftPressed={isShiftPressed}
-        language={language}
+        state={state}
       />
 
       {/* Modals Layer */}

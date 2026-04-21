@@ -1,16 +1,14 @@
 import React, { memo } from 'react';
 import { CursorSlotVisualization } from '../CursorSlotVisualization';
-import { Card as CardType, Token as TokenType, Board as BoardType } from '../../types';
+import { Card as CardType, Token as TokenType, Board as BoardType, Deck as DeckType, CardOrientation } from '../../types';
 
 interface TabletopCursorSlotProps {
-  cursorSlot: (CardType | TokenType | BoardType)[];
+  cursorSlot: (CardType | TokenType | BoardType | DeckType)[];
   cursorPosition: { x: number; y: number } | null;
   cursorPositionRef: React.RefObject<{ x: number; y: number } | null>;
   pixelsPerVU: number;
   zoom: number;
-  currentTool: string;
-  isShiftPressed: boolean;
-  language: string;
+  state: { objects: Record<string, any> };
 }
 
 export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
@@ -19,10 +17,18 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
   cursorPositionRef,
   pixelsPerVU,
   zoom,
-  currentTool,
-  isShiftPressed,
-  language
+  state
 }) => {
+  // Helper function to get card settings
+  const getCardSettings = (card: CardType) => {
+    const isHorizontal = card.isHorizontal ?? false;
+    return {
+      cardWidth: card.width,
+      cardHeight: card.height,
+      cardOrientation: isHorizontal ? CardOrientation.HORIZONTAL : CardOrientation.VERTICAL
+    };
+  };
+
   // Don't render if cursor slot is empty
   if (cursorSlot.length === 0) {
     return null;
@@ -37,9 +43,8 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
         cursorPositionRef={cursorPositionRef}
         pixelsPerVU={pixelsPerVU}
         zoom={zoom}
-        currentTool={currentTool}
-        isShiftPressed={isShiftPressed}
-        language={language}
+        state={state}
+        getCardSettings={getCardSettings}
       />
     </>
   );
@@ -50,9 +55,7 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
     prevProps.cursorPosition === nextProps.cursorPosition &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
     prevProps.zoom === nextProps.zoom &&
-    prevProps.currentTool === nextProps.currentTool &&
-    prevProps.isShiftPressed === nextProps.isShiftPressed &&
-    prevProps.language === nextProps.language
+    prevProps.state === nextProps.state
   );
 });
 
@@ -65,9 +68,7 @@ export const TabletopCursorSlotMemo = memo(TabletopCursorSlot, (prevProps, nextP
     prevProps.cursorPosition === nextProps.cursorPosition &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
     prevProps.zoom === nextProps.zoom &&
-    prevProps.currentTool === nextProps.currentTool &&
-    prevProps.isShiftPressed === nextProps.isShiftPressed &&
-    prevProps.language === nextProps.language
+    prevProps.state === nextProps.state
   );
 });
 

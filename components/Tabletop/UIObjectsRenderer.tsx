@@ -75,6 +75,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
           <DeckComponent
             deck={deckObj}
             state={state}
+            allObjects={state.objects}
             activePlayerId={activePlayerId}
             isGM={isGM}
             executeClickAction={executeClickAction}
@@ -112,6 +113,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
         <DeckComponent
           deck={deckObj}
           state={state}
+          allObjects={state.objects}
           activePlayerId={activePlayerId}
           isGM={isGM}
           executeClickAction={executeClickAction}

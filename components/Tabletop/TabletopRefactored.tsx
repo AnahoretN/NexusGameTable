@@ -13,22 +13,21 @@
  * @reduction 95%
  */
 
-import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useGame } from '../../store/GameContext';
-import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, useHyperscaleLayers, useLayerSelection, useLanguage } from '../../store/contexts';
+import { useActivePlayerId, useIsGM, useViewTransform, useHyperscaleLayers, useLayerSelection, useLanguage } from '../../store/contexts';
 import { useLocalSettings } from '../../hooks/useLocalSettings';
 import { useDragOverStore } from '../../store/dragOverState';
-import { PLAYABLE_AREA_SIZE } from '../../constants';
-import { generateUUID } from '../../utils/uuid';
 import { clampScrollToPlayableArea } from '../../utils/viewportConstraints';
-import { vuToPixels } from '../../utils/vuSystem';
-import { CursorSlotVisualization } from '../CursorSlotVisualization';
-import { Tooltip } from '../Tooltip';
+import { executeClickAction as executeObjectClickAction } from '../../utils/objectActionHandlers';
 
 // Import refactored Tabletop components
 import {
   useTabletopPositioning,
+  useLayerZoom,
+  usePositionedStyle,
   useObjectFilters,
+  useWorldBounds,
   TabletopBackground,
   RemoteObjectsRenderer,
   GameObjectsRenderer,
@@ -37,11 +36,11 @@ import {
   useTabletopEventHandlers,
   TabletopModals
 } from './index';
+import { ClickTooltip } from './ClickTooltip';
 
 // Import types
-import type { TableObject, TabletopRenderContext } from './types';
-import { Card as CardType, Token, Board, CardPile, Deck as DeckType } from './types';
-import { ItemType } from '../../types';
+import type { TabletopRenderContext } from './types';
+import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, TokenShape } from '../../types';
 
 /**
  * Tabletop Component (Refactored)
@@ -93,16 +92,15 @@ import { ItemType } from '../../types';
  */
 export const Tabletop: React.FC = () => {
   // === Game Context & Player Info ===
-  const { state, dispatch, isHost } = useGame();
+  const { state, dispatch } = useGame();
   const { viewTransform, setZoom } = useViewTransform();
   const { settings: localSettings, updateSetting } = useLocalSettings();
-  const { setDraggingOver, clearDraggingOver } = useDragOverStore();
+  const { clearDraggingOver } = useDragOverStore();
 
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
-  const players = usePlayerList();
   const hyperscaleLayers = useHyperscaleLayers();
-  const [selectedHyperscaleLayerIds, setLayerSelection] = useLayerSelection();
+  const [selectedHyperscaleLayerIds] = useLayerSelection();
   const language = useLanguage();
 
   // === Positioning & View Transforms ===
@@ -116,18 +114,19 @@ export const Tabletop: React.FC = () => {
   const { getLayerZoomScale, getLayerInverseScale } = useLayerZoom(zoomMultiplier, hyperscaleLayers);
   const { createPositionedStyle } = usePositionedStyle(getLayerInverseScale);
 
+  // === World Bounds ===
+  const worldBounds = useWorldBounds();
+
   // === Object Filtering ===
   const {
     visibleTableObjects,
     remoteCursorSlotObjects,
     remoteDraggingObjects,
-    uiObjects,
     pinnedUIObjects,
     unpinnedUIObjects,
     pinnedDecks,
     unpinnedDecks,
-    worldBounds,
-  } = useObjectFilters(state, activePlayerId, pixelsPerVU, hyperscaleLayers);
+  } = useObjectFilters(state, hyperscaleLayers);
 
   // === State Management ===
   // Tool state
@@ -136,9 +135,9 @@ export const Tabletop: React.FC = () => {
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
 
   // Cursor slot state
-  const [cursorSlot, setCursorSlot] = useState<(CardType | Token | Board)[]>([]);
+  const [cursorSlot, setCursorSlot] = useState<(Card | Token | Board | Deck)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
-  const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const cursorPositionRef = useRef<{ x: number; y: number } | null>(null) as React.MutableRefObject<{ x: number; y: number } | null>;
   const [cursorSlotSource, setCursorSlotSource] = useState<'ctrl' | 'hold' | 'shift' | 'archetype' | null>(null);
 
   // Ruler state
@@ -150,14 +149,13 @@ export const Tabletop: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>(null);
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
-  const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
-  const [searchModalDeck, setSearchModalDeck] = useState<DeckType | null>(null);
+  const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: Deck } | null>(null);
+  const [searchModalDeck, setSearchModalDeck] = useState<Deck | null>(null);
   const [searchModalPile, setSearchModalPile] = useState<CardPile | undefined>(undefined);
-  const [topDeckModalDeck, setTopDeckModalDeck] = useState<DeckType | null>(null);
+  const [topDeckModalDeck, setTopDeckModalDeck] = useState<Deck | null>(null);
 
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [draggingPile, setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
 
   // Resizing state
   const [resizingId, setResizingId] = useState<string | null>(null);
@@ -166,19 +164,12 @@ export const Tabletop: React.FC = () => {
   const liveResizeSizeRef = useRef<{ width: number; height: number } | null>(null);
   const resizeFinalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
-  // Dice state
-  const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
-
-  // Hover state
-  const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
-  const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
-
   // Additional UI state
   const [nexusBoardAddingCell, setNexusBoardAddingCell] = useState<string | null>(null);
   const [clickTooltip, setClickTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const clickTooltipTimerRef = useRef<number | null>(null);
   const clickTooltipBoundsRef = useRef<{ left: number; right: number; top: number; bottom: number } | null>(null);
-  const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: DeckType } | null>(null);
+  const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: Deck } | null>(null);
 
   // Refs
   const isAddingTokenRef = useRef(false);
@@ -188,8 +179,13 @@ export const Tabletop: React.FC = () => {
     initialY: number;
     targetId: string | null;
     addedToSlot: boolean;
-  }>({ initialX: 0, initialY: 0, targetId: null, addedToSlot: false });
-  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  }>({ initialX: 0, initialY: 0, targetId: null, addedToSlot: false }) as React.MutableRefObject<{
+    initialX: number;
+    initialY: number;
+    targetId: string | null;
+    addedToSlot: boolean;
+  }>;
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null) as React.MutableRefObject<{ x: number; y: number } | null>;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // === Event Handlers ===
@@ -200,9 +196,10 @@ export const Tabletop: React.FC = () => {
     setCursorSlot,
     setCursorPosition,
     cursorPositionRef,
-    cursorSlotSource,
     setCursorSlotSource,
+    cursorSlotSource,
     currentTool,
+    setCurrentTool,
     isShiftPressed,
     setIsShiftPressed,
     isCtrlPressed,
@@ -229,7 +226,7 @@ export const Tabletop: React.FC = () => {
     isGM,
     hyperscaleLayers,
     localSettings,
-    updateSetting,
+    updateSetting: updateSetting as (key: string | number | symbol, value: any) => void,
     liveResizeSizeRef,
     setLiveResizeSize,
     resizeFinalSizeRef,
@@ -264,7 +261,6 @@ export const Tabletop: React.FC = () => {
     pixelsPerVU,
     v2p,
     p2v,
-    zoomMultiplier,
     getLayerZoomScale,
     getLayerInverseScale,
     createPositionedStyle,
@@ -350,15 +346,20 @@ export const Tabletop: React.FC = () => {
                   const y = p2v(e.clientY - rect.top + (viewTransform?.scroll?.y || 0));
 
                   dispatch({
-                    type: 'CREATE_OBJECT',
+                    type: 'ADD_OBJECT',
                     payload: {
-                      type: 'token',
+                      id: `token-${Date.now()}-${Math.random()}`,
+                      type: ItemType.TOKEN,
                       x,
                       y,
                       width: 100,
                       height: 100,
                       content: result,
-                      name: file.name
+                      name: file.name,
+                      rotation: 0,
+                      locked: false,
+                      isOnTable: true,
+                      shape: TokenShape.CIRCLE
                     }
                   });
                 }
@@ -385,20 +386,17 @@ export const Tabletop: React.FC = () => {
                 type: 'DRAW_CARD',
                 payload: {
                   deckId: data.deckId,
-                  playerId: activePlayerId,
-                  x,
-                  y
+                  playerId: activePlayerId
                 }
               });
             } else if (data.type === 'token' && data.archetypeId) {
               // Create token from archetype
               dispatch({
-                type: 'CREATE_TOKEN_FROM_ARCHETYPE',
+                type: 'SPAWN_TOKEN_FROM_ARCHETYPE',
                 payload: {
                   archetypeId: data.archetypeId,
                   x,
-                  y,
-                  playerId: activePlayerId
+                  y
                 }
               });
             } else if (data.type === 'object' && data.objectId) {
@@ -406,7 +404,7 @@ export const Tabletop: React.FC = () => {
               const obj = state.objects[data.objectId];
               if (obj) {
                 dispatch({
-                  type: 'UPDATE_OBJECT_POSITION',
+                  type: 'MOVE_OBJECT',
                   payload: {
                     id: data.objectId,
                     x,
@@ -510,6 +508,23 @@ export const Tabletop: React.FC = () => {
         currentTool={currentTool}
         onContextMenu={handleContextMenu}
         onMouseDown={handleMouseDown}
+        executeClickAction={(obj: any, action: string, event?: React.MouseEvent) => {
+          // Create action context
+          const actionContext = {
+            dispatch,
+            state: {
+              objects: state.objects,
+              activePlayerId,
+              diceGroups: state.diceGroups
+            }
+          };
+          executeObjectClickAction(obj, action, actionContext, event);
+        }}
+        handleContextMenu={handleContextMenu}
+        dispatch={dispatch}
+        setSearchModalDeck={setSearchModalDeck}
+        setTopDeckModalDeck={setTopDeckModalDeck}
+        setDeleteCandidateId={setDeleteCandidateId}
       />
 
       {/* Cursor Slot Visualization */}
@@ -519,9 +534,7 @@ export const Tabletop: React.FC = () => {
         cursorPositionRef={cursorPositionRef}
         pixelsPerVU={pixelsPerVU}
         zoom={viewTransform?.zoom ?? 1}
-        currentTool={currentTool}
-        isShiftPressed={isShiftPressed}
-        language={language}
+        state={state}
       />
 
       {/* Modals Layer */}
@@ -548,15 +561,11 @@ export const Tabletop: React.FC = () => {
       />
 
       {/* Tooltip Layer */}
-      {clickTooltip && (
-        <Tooltip
-          cardId={clickTooltip.cardId}
+      {clickTooltip && state.objects[clickTooltip.cardId] && (
+        <ClickTooltip
+          card={state.objects[clickTooltip.cardId] as Card}
           x={clickTooltip.x}
           y={clickTooltip.y}
-          state={state}
-          dispatch={dispatch}
-          activePlayerId={activePlayerId}
-          language={language}
         />
       )}
     </div>

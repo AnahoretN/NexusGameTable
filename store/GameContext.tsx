@@ -480,6 +480,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const isDice = action.payload.type === ItemType.DICE_OBJECT;
       const isPanel = action.payload.type === ItemType.PANEL;
 
+
       const newObj = {
           ...action.payload,
       } as any;
@@ -546,11 +547,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         newObj.baseCardIds = [...(newObj.cardIds || [])];
       }
 
-      return {
+      const result = {
         ...state,
         objects: { ...state.objects, [action.payload.id]: newObj },
         lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
       };
+
+
+      return result;
     }
     case 'UPDATE_OBJECT': {
       const obj = state.objects[action.payload.id];
@@ -5212,13 +5216,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           );
 
           // Function to add objects to state
+          // IMPORTANT: Add cards BEFORE decks to ensure deck.cardIds references exist
           const addObjects = (objects: Record<string, TableObject>) => {
-            Object.values(objects).forEach(obj => {
-              if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
-                return;
-              }
-              localDispatch({ type: 'ADD_OBJECT', payload: obj });
-            });
+            const objectValues = Object.values(objects);
+
+            // Separate cards and decks for proper ordering
+            const cards = objectValues.filter(obj => obj.type === ItemType.CARD);
+            const decks = objectValues.filter(obj => obj.type === ItemType.DECK);
+            const otherObjects = objectValues.filter(obj =>
+              obj.type !== ItemType.CARD &&
+              obj.type !== ItemType.DECK &&
+              !(obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU)
+            );
+
+            // Add cards first (so they exist when decks are added)
+            cards.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
+
+            // Then add decks (which reference cards via cardIds)
+            decks.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
+
+            // Finally add all other objects
+            otherObjects.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
           };
 
           // Restore other state (drawings, players, etc.)
@@ -5380,6 +5398,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const worldY = 10; // 10 vu from top
           const { deck, cards } = createStandardDeck();
 
+
           // Update deck position
           deck.x = worldX;
           deck.y = worldY;
@@ -5395,6 +5414,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
           // Then add the deck
           localDispatch({ type: 'ADD_OBJECT', payload: deck });
+
+          // Check final state after a short delay
+          setTimeout(() => {
+            const currentState = stateRef.current;
+            const deckObj = Object.values(currentState.objects).find(obj => obj.id === deck.id) as any;
+            const cardsInDeck = Object.values(currentState.objects).filter(obj =>
+              obj.type === ItemType.CARD && (obj as any).deckId === deck.id
+            );
+
+            console.log('[DEBUG FINAL CHECK]', {
+              deckId: deck.id,
+              deckExists: !!deckObj,
+              deckCardIdsLength: deckObj?.cardIds?.length || 0,
+              cardsWithThisDeckId: cardsInDeck.length,
+              deckCardIdsFirst3: deckObj?.cardIds?.slice(0, 3) || [],
+              existingCardsFirst3: cardsInDeck.slice(0, 3).map(c => ({ id: c.id, name: c.name }))
+            });
+          }, 100);
 
           // IMPORTANT: Mark as initialized AFTER default objects are created
           initializedRef.current = true;
