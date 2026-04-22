@@ -1691,15 +1691,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         return;
       }
 
-      // Only highlight if dragging a CARD (not tokens, boards, or other objects)
-      const firstItem = cursorSlotObjects[0];
-      const isDraggingCard = firstItem?.type === ItemType.CARD;
-
-      if (!isDraggingCard) {
-        setIsHighlightActive(false);
-        return;
-      }
-
+      // Highlight for ANY object type in cursor slot
       // Check if cursor is over the visible pool panel area
       const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
       if (!visibleContentArea) return;
@@ -1737,7 +1729,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     <div
       ref={containerRef}
       data-pool-panel={poolZone.panelId}
-      className={`relative ${getCursorSlotObjects(state.objects).length > 0 && getCursorSlotObjects(state.objects)[0]?.type === ItemType.CARD ? 'cursor-grabbing' : ''}`}
+      className={`relative ${getCursorSlotObjects(state.objects).length > 0 ? 'cursor-grabbing' : ''}`}
       style={{
         width: poolBounds.widthPx,
         height: poolBounds.heightPx,

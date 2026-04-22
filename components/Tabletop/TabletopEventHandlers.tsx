@@ -1946,6 +1946,24 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setDraggingId
   ]);
 
+  // Handle cursor-slot-drop-to-tabletop event from pool panels
+  useEffect(() => {
+    const handleDropFromPool = (e: Event) => {
+      const customEvent = e as CustomEvent<{ x: number; y: number }>;
+      console.log('🎯 [TABLETOP] Received cursor-slot-drop-to-tabletop event:', customEvent.detail);
+
+      // Only drop if we have items in cursor slot
+      if (cursorSlot.length > 0) {
+        dropCursorSlot(customEvent.detail.x, customEvent.detail.y, props);
+      }
+    };
+
+    window.addEventListener('cursor-slot-drop-to-tabletop', handleDropFromPool);
+    return () => {
+      window.removeEventListener('cursor-slot-drop-to-tabletop', handleDropFromPool);
+    };
+  }, [cursorSlot, props]);
+
   // Setup event listeners
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
