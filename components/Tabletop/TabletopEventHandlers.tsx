@@ -531,7 +531,14 @@ const addToCursorSlot = (
         isOnTable: false,
         // Move object far away to hide it while in slot
         x: -999999,
-        y: -999999
+        y: -999999,
+        // Store click offsets for proper drop positioning
+        clickOffsetX_PX: (itemClone as any).clickOffsetX_PX,
+        clickOffsetY_PX: (itemClone as any).clickOffsetY_PX,
+        clickOffsetX: (itemClone as any).clickOffsetX,
+        clickOffsetY: (itemClone as any).clickOffsetY,
+        originalX: (itemClone as any).originalX,
+        originalY: (itemClone as any).originalY
       }
     }
   });

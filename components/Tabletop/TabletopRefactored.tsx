@@ -480,7 +480,14 @@ export const Tabletop: React.FC = () => {
             isOnTable: false,
             // Move object far away to hide it while in slot
             x: -999999,
-            y: -999999
+            y: -999999,
+            // Store click offsets for proper drop positioning
+            clickOffsetX_PX: finalClickOffsetX_PX,
+            clickOffsetY_PX: finalClickOffsetY_PX,
+            clickOffsetX: finalClickOffsetX,
+            clickOffsetY: finalClickOffsetY,
+            originalX: obj.x,
+            originalY: obj.y
           }
         } as any
       });
