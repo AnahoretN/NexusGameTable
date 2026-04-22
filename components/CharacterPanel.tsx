@@ -128,9 +128,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         type: 'UPDATE_OBJECT',
         payload: {
           id: panel.id,
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
+          updates: {
+            characterData: {
+              ...characterData,
+              characters: updatedCharacters
+            }
           }
         }
       });
@@ -241,9 +243,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -290,9 +294,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -355,10 +361,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...baseData,
-          characters: [...updatedCharacters, newCharacter],
-          activeCharacterId: newCharacter.id
+        updates: {
+          characterData: {
+            ...baseData,
+            characters: [...updatedCharacters, newCharacter],
+            activeCharacterId: newCharacter.id
+          }
         }
       }
     });
@@ -380,10 +388,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: newCharacters,
-          activeCharacterId: newActiveId
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: newCharacters,
+            activeCharacterId: newActiveId
+          }
         }
       }
     });
@@ -402,9 +412,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         type: 'UPDATE_OBJECT',
         payload: {
           id: panel.id,
-          characterData: {
-            ...characterData,
-            activeCharacterId: characterId
+          updates: {
+            characterData: {
+              ...characterData,
+              activeCharacterId: characterId
+            }
           }
         }
       });
@@ -430,9 +442,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         type: 'UPDATE_OBJECT',
         payload: {
           id: panel.id,
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
+          updates: {
+            characterData: {
+              ...characterData,
+              characters: updatedCharacters
+            }
           }
         }
       });
@@ -474,9 +488,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -534,9 +550,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
           type: 'UPDATE_OBJECT',
           payload: {
             id: panel.id,
-            characterData: {
-              ...characterData,
-              characters: updatedCharacters
+            updates: {
+              characterData: {
+                ...characterData,
+                characters: updatedCharacters
+              }
             }
           }
         });
@@ -653,9 +671,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -689,9 +709,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -743,9 +765,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -778,9 +802,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -808,9 +834,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -852,9 +880,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
@@ -895,9 +925,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
-        characterData: {
-          ...characterData,
-          characters: updatedCharacters
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
         }
       }
     });
