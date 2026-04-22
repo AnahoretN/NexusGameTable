@@ -319,9 +319,12 @@ export const Tabletop: React.FC = () => {
         cardOverride?: any;
         clickOffsetX?: number;
         clickOffsetY?: number;
+        clickOffsetX_PX?: number;
+        clickOffsetY_PX?: number;
+        fromPoolPanel?: string;
       }>;
 
-      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY } = customEvent.detail;
+      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, fromPoolPanel } = customEvent.detail;
       const obj = state.objects[cardId];
 
       if (!obj) {
@@ -391,26 +394,32 @@ export const Tabletop: React.FC = () => {
       }
 
       // IMPORTANT: Calculate pixel offsets for CursorSlotVisualization
-      // When card is added via "play top", we need PX offsets for proper rendering
-      // If clickOffsetX/Y represent centering (cardWidth/2, cardHeight/2), convert to pixels
+      // If clickOffsetX_PX/Y_PX are provided (from pool panel), use them directly
+      // Otherwise calculate from VU offsets (for "play top" and other cases)
       const cardWidth = card.width ?? deck?.cardWidth ?? 63;
       const cardHeight = card.height ?? deck?.cardHeight ?? 88;
-
-      // Check if the VU offsets represent centering (approximately half of card dimensions)
-      const isCenteredX = Math.abs(finalClickOffsetX - cardWidth / 2) < 1;
-      const isCenteredY = Math.abs(finalClickOffsetY - cardHeight / 2) < 1;
 
       let finalClickOffsetX_PX: number | undefined;
       let finalClickOffsetY_PX: number | undefined;
 
-      if (isCenteredX && isCenteredY) {
-        // For centered positioning, use half of card dimensions in screen pixels
-        finalClickOffsetX_PX = (cardWidth * pixelsPerVU * (viewTransform?.zoom ?? 1)) / 2;
-        finalClickOffsetY_PX = (cardHeight * pixelsPerVU * (viewTransform?.zoom ?? 1)) / 2;
+      if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+        // Use provided screen pixel offsets (from pool panel drag)
+        finalClickOffsetX_PX = clickOffsetX_PX;
+        finalClickOffsetY_PX = clickOffsetY_PX;
       } else {
-        // For non-centered offsets, convert VU to screen pixels (include zoom)
-        finalClickOffsetX_PX = finalClickOffsetX * pixelsPerVU * (viewTransform?.zoom ?? 1);
-        finalClickOffsetY_PX = finalClickOffsetY * pixelsPerVU * (viewTransform?.zoom ?? 1);
+        // Calculate from VU offsets (for "play top" and other cases)
+        const isCenteredX = Math.abs(finalClickOffsetX - cardWidth / 2) < 1;
+        const isCenteredY = Math.abs(finalClickOffsetY - cardHeight / 2) < 1;
+
+        if (isCenteredX && isCenteredY) {
+          // For centered positioning, use half of card dimensions in screen pixels
+          finalClickOffsetX_PX = (cardWidth * pixelsPerVU * (viewTransform?.zoom ?? 1)) / 2;
+          finalClickOffsetY_PX = (cardHeight * pixelsPerVU * (viewTransform?.zoom ?? 1)) / 2;
+        } else {
+          // For non-centered offsets, convert VU to screen pixels (include zoom)
+          finalClickOffsetX_PX = finalClickOffsetX * pixelsPerVU * (viewTransform?.zoom ?? 1);
+          finalClickOffsetY_PX = finalClickOffsetY * pixelsPerVU * (viewTransform?.zoom ?? 1);
+        }
       }
 
       const itemClone = {

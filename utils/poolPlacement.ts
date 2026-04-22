@@ -209,6 +209,17 @@ export function dropObjectsToPool(
       let finalX = dropPosition.baseX;
       let finalY = dropPosition.baseY;
 
+      // Debug: log offset availability
+      console.log('[dropObjectsToPool] Checking offsets for object:', {
+        objectId: obj.id,
+        hasClickOffsetX_PX: (obj as CursorSlotObject).clickOffsetX_PX !== undefined,
+        hasClickOffsetY_PX: (obj as CursorSlotObject).clickOffsetY_PX !== undefined,
+        hasClickOffsetX: (obj as CursorSlotObject).clickOffsetX !== undefined,
+        hasClickOffsetY: (obj as CursorSlotObject).clickOffsetY !== undefined,
+        clickOffsetX_PX: (obj as CursorSlotObject).clickOffsetX_PX,
+        clickOffsetY_PX: (obj as CursorSlotObject).clickOffsetY_PX
+      });
+
       // IMPORTANT: Apply click offset to position object correctly
       // clickOffsetX_PX/Y_PX are in screen pixels from drag start
       // We need to convert them to pool panel VU using current zoom and pixelsPerVU

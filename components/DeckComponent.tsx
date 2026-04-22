@@ -9,6 +9,7 @@ import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { executeClickAction } from '../utils/objectActionHandlers';
 import { vuToPixels } from '../utils/vuSystem';
+import { useCursorSlotHover } from '../hooks';
 
 // 🔥 OPTIMIZED: Zustand version of DeckComponent
 // Replaces: components/DeckComponent.tsx
@@ -443,45 +444,18 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     return () => clearTimeout(timeout);
   }, [isShuffling, visibleCardCount, deck.cardIds, deck.baseCardIds]);
 
-  // Handle cursor slot hover over deck - same approach as HandPanel
+  // Handle cursor slot hover over deck - using shared hook
+  const { isCursorOver: isCursorOverFromHook } = useCursorSlotHover(deckRef, {
+    requireCards: true,
+  });
+
+  // Update local state when hook state changes
   useEffect(() => {
-    const handleCursorSlotMove = (e: Event) => {
-      const customEvent = e as CustomEvent<{
-        x: number;
-        y: number;
-        isOverMainMenu: boolean;
-        hasCards: boolean;
-        items?: Array<{ type: string }>; // Add items array to check types
-      }>;
+    setIsCursorOver(isCursorOverFromHook);
+  }, [isCursorOverFromHook]);
 
-      const { x, y, hasCards, items } = customEvent.detail;
-
-      // Check if there are actual CARDS in cursor slot (not tokens or other objects)
-      // If items array is not provided, fall back to hasCards check (for backwards compatibility)
-      const hasCardsInSlot = items ? items.some(item => item.type === ItemType.CARD) : hasCards;
-
-      // Immediately hide if no cards in cursor slot
-      if (!hasCardsInSlot) {
-        setIsCursorOver(false);
-        return;
-      }
-
-      // Check if cursor is over this deck
-      const deckElement = deckRef.current;
-      if (deckElement) {
-        const rect = deckElement.getBoundingClientRect();
-        const isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-        setIsCursorOver(isOver);
-      } else {
-        setIsCursorOver(false);
-      }
-    };
-
-    const handleCursorSlotDropped = (e: Event) => {
-      // Hide highlight when cards are dropped anywhere
-      setIsCursorOver(false);
-    };
-
+  // Handle cursor-left-deck event (specific to deck component)
+  useEffect(() => {
     const handleCursorLeftDeck = (e: Event) => {
       const customEvent = e as CustomEvent<{ deckId: string }>;
       // Hide highlight when leaving this specific deck
@@ -490,13 +464,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
       }
     };
 
-    window.addEventListener('cursor-slot-move', handleCursorSlotMove);
-    window.addEventListener('cursor-slot-dropped', handleCursorSlotDropped);
     window.addEventListener('cursor-left-deck', handleCursorLeftDeck);
-
     return () => {
-      window.removeEventListener('cursor-slot-move', handleCursorSlotMove);
-      window.removeEventListener('cursor-slot-dropped', handleCursorSlotDropped);
       window.removeEventListener('cursor-left-deck', handleCursorLeftDeck);
     };
   }, [deck.id]);

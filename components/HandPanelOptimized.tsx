@@ -28,6 +28,7 @@ import { Card as CardComponent } from './Card';
 import { ObjectRenderer } from './ObjectRenderer';
 import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
+import { useCursorSlotHover } from '../hooks';
 import { getCardButtonConfigsWithActions } from '../utils/buttonConfig';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { Settings } from 'lucide-react';
@@ -219,41 +220,18 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // Local state for cursor slot hover
   const [isCursorOverHand, setIsCursorOverHand] = useState(false);
 
-  // Listen for cursor slot move events
+  // Use shared hook for cursor slot hover detection
+  const { isCursorOver: isCursorOverFromHook } = useCursorSlotHover(containerRef, {
+    requireDraggingCard: true,
+  });
+
+  // Update local state when hook state changes
   useEffect(() => {
-    const handleCursorSlotMove = (e: Event) => {
-      const customEvent = e as CustomEvent<{
-        x: number;
-        y: number;
-        isOverMainMenu: boolean;
-        hasCards: boolean;
-        isDraggingCard?: boolean; // Only show purple ring if dragging a card
-        items?: Array<{ type: string }>; // Add items array to check types
-      }>;
+    setIsCursorOverHand(isCursorOverFromHook);
+  }, [isCursorOverFromHook]);
 
-      const { x, y, hasCards, isDraggingCard, items } = customEvent.detail;
-
-      // Only show purple ring if dragging a CARD (not tokens or other objects)
-      // Check isDraggingCard first (from MainMenu event), fallback to items check
-      const draggingCard = isDraggingCard !== undefined
-        ? isDraggingCard
-        : items ? items.some(item => item.type === ItemType.CARD) : hasCards;
-
-      if (!draggingCard) {
-        setIsCursorOverHand(false);
-        return;
-      }
-
-      const container = containerRef.current;
-      if (container) {
-        const rect = container.getBoundingClientRect();
-        const isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-        setIsCursorOverHand(isOver);
-      } else {
-        setIsCursorOverHand(false);
-      }
-    };
-
+  // Listen for cursor slot drop events (hand panel specific logic)
+  useEffect(() => {
     const handleCursorSlotDrop = (e: Event) => {
       const customEvent = e as CustomEvent<{ items: any[] }>;
       const { items } = customEvent.detail;
@@ -348,11 +326,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       setIsCursorOverHand(false);
     };
 
-    window.addEventListener('cursor-slot-move', handleCursorSlotMove);
     window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
-
     return () => {
-      window.removeEventListener('cursor-slot-move', handleCursorSlotMove);
       window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     };
   }, [selectedPlayerId, players, dispatch]);
