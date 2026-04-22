@@ -67,6 +67,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const cursorSlotEventSentRef = useRef(false);
   const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Track when item was last added to cursor slot to prevent immediate re-add after drop
+  const cursorSlotLastAddedRef = useRef<number>(0);
 
   // Dice drag tracking for click vs drag detection
   const diceDragRef = useRef<{
@@ -315,6 +317,20 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     };
   }, [state.objects]);
 
+  // Listen for cursor-slot-dropped event to prevent immediate re-add
+  useEffect(() => {
+    const handleCursorSlotDropped = (e: Event) => {
+      const customEvent = e as CustomEvent<{ cardIds: string[] }>;
+      // Update the timestamp to prevent immediate re-add
+      cursorSlotLastAddedRef.current = Date.now();
+    };
+
+    window.addEventListener('cursor-slot-dropped', handleCursorSlotDropped);
+    return () => {
+      window.removeEventListener('cursor-slot-dropped', handleCursorSlotDropped);
+    };
+  }, []);
+
   // Dice animation state
   const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
   const initiatedRollsRef = useRef<Set<string>>(new Set());
@@ -470,6 +486,50 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
     // Check if object is locked - locked objects can't be dragged
     if (obj.locked) return;
+
+    // Check if we just dropped an item (prevent immediate re-add)
+    const timeSinceLastDrop = Date.now() - cursorSlotLastAddedRef.current;
+    if (timeSinceLastDrop < 100) {
+      // Too soon after drop - ignore this click
+      return;
+    }
+
+    // Check if cursor slot already has items - drop them first (unless shift is held)
+    const cursorSlotObjects = getCursorSlotObjects(state.objects);
+    if (cursorSlotObjects.length > 0 && !e.shiftKey) {
+      // Drop existing items to this pool panel at the clicked object's position
+      e.preventDefault();
+      e.stopPropagation();
+
+      const container = containerRef.current;
+      if (container) {
+        const scrollParent = container.closest('.overflow-auto');
+        if (scrollParent) {
+          const containerRect = container.getBoundingClientRect();
+          const dropPosition = calculatePoolDropPositionWithScroll(
+            e.clientX,
+            e.clientY,
+            poolZone,
+            containerRect,
+            scrollParent.scrollLeft,
+            scrollParent.scrollTop,
+            pixelsPerVU,
+            currentZoom
+          );
+          dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
+          cursorSlotLastAddedRef.current = Date.now();
+
+          // Clear cursor slot immediately to prevent it from being processed by main tabletop
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
+              detail: { reason: 'pool-click-drop' }
+            }));
+          }, 0);
+        }
+      }
+      // Don't pick up the new object - just drop the old ones
+      return;
+    }
 
     // For draggable objects (cards, tokens, boards, etc.), add to cursor slot IMMEDIATELY
     // NOTE: Boards ARE draggable in pool panels - use same logic as tokens
@@ -779,6 +839,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             clickOffsetY_PX: offsetYPX
           }
         }));
+
+        // Update timestamp to track when item was added to slot
+        cursorSlotLastAddedRef.current = Date.now();
       }
       return;
     }
@@ -847,6 +910,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             clickOffsetY_PX: offsetYPX
           }
         }));
+
+        // Update timestamp to track when item was added to slot
+        cursorSlotLastAddedRef.current = Date.now();
       }
       return;
     }
@@ -1088,10 +1154,18 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       });
     }
 
+    // Send cursor-left-deck event to remove highlight from deck
+    window.dispatchEvent(new CustomEvent('cursor-left-deck', {
+      detail: { deckId }
+    }));
+
     // Clear cursor slot after successful drop
     window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
       detail: { reason: 'pool-deck-drop' }
     }));
+
+    // Update timestamp to prevent immediate re-add
+    cursorSlotLastAddedRef.current = Date.now();
   }, [state.objects, dispatch]);
 
   // Drop cards to pile in pool panel
@@ -1181,10 +1255,18 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       });
     }
 
+    // Send cursor-left-deck event to remove highlight from deck (for pile drops too)
+    window.dispatchEvent(new CustomEvent('cursor-left-deck', {
+      detail: { deckId }
+    }));
+
     // Clear cursor slot after successful drop
     window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
       detail: { reason: 'pool-pile-drop' }
     }));
+
+    // Update timestamp to prevent immediate re-add
+    cursorSlotLastAddedRef.current = Date.now();
   }, [state.objects, dispatch]);
 
   // Add global mouse listeners for object dragging (for both non-draggable items and draggable objects)
@@ -1376,6 +1458,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Drop objects using utility function
       dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
 
+      // Update timestamp to prevent immediate re-add
+      cursorSlotLastAddedRef.current = Date.now();
+
       // Clear cursor slot AFTER dispatch has been processed
       // Use setTimeout to ensure state updates are processed before clearing cursor slot
       setTimeout(() => {
@@ -1543,6 +1628,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
         // Drop objects using utility function
         dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
+
+        // Update timestamp to prevent immediate re-add
+        cursorSlotLastAddedRef.current = Date.now();
 
         // Clear cursor slot AFTER dispatch has been processed
         // Use setTimeout to ensure state updates are processed before clearing cursor slot

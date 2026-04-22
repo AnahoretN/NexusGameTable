@@ -173,8 +173,9 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
 
   // Deck dimensions are independent of card orientation
   // The deck displays with its own width and height
-  const effectiveWidth = vuToPixels(deck.width);
-  const effectiveHeight = vuToPixels(deck.height);
+  // IMPORTANT: Use pixelsPerVU prop for correct sizing in pool panels
+  const effectiveWidth = (deck.width || 100) * pixelsPerVU;
+  const effectiveHeight = (deck.height || 140) * pixelsPerVU;
 
   // Memoize visible card count calculation
   const visibleCardCount = useMemo(() => {

@@ -347,7 +347,8 @@ export function dropObjectsToPool(
             y: updatePayload.y,
             inCursorSlot: updatePayload.inCursorSlot,
             gridCellKey: updatePayload.gridCellKey,
-            isOnTable: updatePayload.isOnTable
+            isOnTable: updatePayload.isOnTable,
+            ...(updatePayload.location !== undefined && { location: updatePayload.location })
           }
         }
       });

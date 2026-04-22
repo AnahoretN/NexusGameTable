@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { CursorSlotVisualization } from '../CursorSlotVisualization';
 import { Card as CardType, Token as TokenType, Board as BoardType, Deck as DeckType, CardOrientation } from '../../types';
 
@@ -19,15 +19,15 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
   zoom,
   state
 }) => {
-  // Helper function to get card settings
-  const getCardSettings = (card: CardType) => {
+  // Memoize getCardSettings to prevent infinite re-renders
+  const getCardSettings = useCallback((card: CardType) => {
     const isHorizontal = card.isHorizontal ?? false;
     return {
       cardWidth: card.width,
       cardHeight: card.height,
       cardOrientation: isHorizontal ? CardOrientation.HORIZONTAL : CardOrientation.VERTICAL
     };
-  };
+  }, []);
 
   // Don't render if cursor slot is empty
   if (cursorSlot.length === 0) {

@@ -187,6 +187,11 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   // Use per-tab scale hook for the currently selected player
   const { scale: cardScale, setTabCardScale } = useTabCardScale(selectedPlayerId);
+  // Use ref to avoid stale closures in callbacks
+  const cardScaleRef = useRef(cardScale);
+  useEffect(() => {
+    cardScaleRef.current = cardScale;
+  }, [cardScale]);
 
   // Get current player info
   const currentPlayer = players.find(p => p.id === activePlayerId);
@@ -207,9 +212,9 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Long-press state for adding cards to cursor slot
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressCardRef = useRef<{ cardId: string; startX: number; startY: number } | null>(null);
+  // Drag state for adding cards to cursor slot (distance-based, like tabletop)
+  const longPressCardRef = useRef<{ cardId: string; startX: number; startY: number; clickOffsetX_PX?: number; clickOffsetY_PX?: number } | null>(null);
+  const cardPickedUpRef = useRef(false);
 
   // Local state to track cards being picked up
   const [pickingUpCardIds, setPickingUpCardIds] = useState<Set<string>>(new Set());
@@ -314,13 +319,14 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
           ...itemsToAdd.map(item => item.id)
         ]);
 
+        // Reduced timeout from 2000ms to 500ms to allow quicker re-pickup
         setTimeout(() => {
           recentlyDroppedToHandRef.current = new Set(
             Array.from(recentlyDroppedToHandRef.current).filter(id =>
               !itemsToAdd.some(item => item.id === id)
             )
           );
-        }, 2000);
+        }, 500);
       }
 
       setIsCursorOverHand(false);
@@ -356,14 +362,12 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // Cleanup
   useEffect(() => {
     return () => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-      }
       recentlyDroppedToHandRef.current.clear();
     };
   }, []);
 
   // Listen for add-to-cursor-slot events
+  // This handler ONLY updates local state, doesn't block the event
   useEffect(() => {
     const handleAddToCursorSlot = (e: Event) => {
       const customEvent = e as CustomEvent<{
@@ -375,15 +379,17 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
       const { cardId } = customEvent.detail;
 
-      if (recentlyDroppedToHandRef.current.has(cardId)) {
+      console.log('[HandPanel] add-to-cursor-slot event received:', {
+        cardId,
+        source: customEvent.detail.source,
+        pickingUpCardIds: Array.from(pickingUpCardIds)
+      });
+
+      // Check if already picking up this card to avoid duplicates
+      if (pickingUpCardIds.has(cardId)) {
+        console.log('[HandPanel] Card already in pickingUpCardIds, skipping local update:', cardId);
         return;
       }
-
-      // ✅ FIXED: Update the card to hide it from tabletop
-      updateCard(cardId, {
-        inCursorSlot: true,
-        isOnTable: false
-      });
 
       setPickingUpCardIds(prev => new Set([...prev, cardId]));
     };
@@ -393,7 +399,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     return () => {
       window.removeEventListener('add-to-cursor-slot', handleAddToCursorSlot);
     };
-  }, [updateCard]);
+  }, [pickingUpCardIds]);
 
   // Filter cards and tokens for selected player
   const player = players.find(p => p.id === selectedPlayerId);
@@ -581,6 +587,51 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     setScaleMenu(safePos);
   }, [getSafeMenuPosition]);
 
+  // Handle click on hand panel to drop cursor slot items
+  const handlePanelClick = useCallback((e: React.MouseEvent) => {
+    // Check if click is within hand panel (but not on a card or button)
+    const target = e.target as HTMLElement;
+    const isCardOrButton = target.closest('[data-card-id], [data-hand-panel-card], button, a');
+
+    console.log('🖐️ [HAND PANEL] handlePanelClick called:', {
+      target: target.className,
+      isCardOrButton,
+      tagName: target.tagName
+    });
+
+    // Don't handle clicks on cards or buttons
+    if (isCardOrButton) {
+      console.log('❌ [HAND PANEL] Click on card/button, ignoring');
+      return;
+    }
+
+    // Check if there are items in cursor slot (objects with inCursorSlot: true)
+    const itemsInCursorSlot = Object.values(objects).filter(obj =>
+      (obj.type === ItemType.CARD || obj.type === ItemType.TOKEN) &&
+      (obj as any).inCursorSlot === true
+    );
+
+    console.log('🔍 [HAND PANEL] Checking for cursor slot items:', {
+      itemsInCursorSlot: itemsInCursorSlot.length,
+      allInCursorSlot: itemsInCursorSlot.map(i => ({ id: i.id, type: i.type }))
+    });
+
+    if (itemsInCursorSlot.length === 0) {
+      console.log('❌ [HAND PANEL] No items in cursor slot');
+      return;
+    }
+
+    console.log('✅ [HAND PANEL] Click on panel, dropping cursor slot items:', {
+      itemCount: itemsInCursorSlot.length,
+      selectedPlayerId
+    });
+
+    // Dispatch event to drop items to hand
+    window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
+      detail: { items: itemsInCursorSlot }
+    }));
+  }, [objects, selectedPlayerId]);
+
   const handleTabContextMenu = useCallback((e: React.MouseEvent, playerId: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -620,68 +671,68 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   }, [setTabCardScale]);
 
   // Handle card mouse down
-  const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number, _cardElement: HTMLDivElement | null) => {
+  const handleCardMouseDown = useCallback((e: React.MouseEvent, cardId: string, index: number, cardElement: HTMLDivElement | null) => {
     if (e.button !== 0) return;
     if (isViewingOpponentHand) return;
 
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
 
+    console.log('[HandPanel] handleCardMouseDown called:', {
+      cardId,
+      index,
+      target: target.tagName,
+      hasCardElement: !!cardElement
+    });
+
     e.preventDefault();
     e.stopPropagation();
+
+    // Calculate click offset relative to the card element (in screen pixels)
+    let clickOffsetX_PX: number | undefined;
+    let clickOffsetY_PX: number | undefined;
+
+    if (cardElement) {
+      const rect = cardElement.getBoundingClientRect();
+      clickOffsetX_PX = e.clientX - rect.left;
+      clickOffsetY_PX = e.clientY - rect.top;
+
+      console.log('[HandPanel] Calculated click offset for card:', {
+        cardId,
+        cardRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+        clickPosition: { x: e.clientX, y: e.clientY },
+        clickOffset: { x: clickOffsetX_PX, y: clickOffsetY_PX }
+      });
+    } else {
+      console.warn('[HandPanel] cardElement is null, cannot calculate click offset');
+    }
 
     longPressCardRef.current = {
       cardId,
       startX: e.clientX,
-      startY: e.clientY
+      startY: e.clientY,
+      clickOffsetX_PX,
+      clickOffsetY_PX
     };
 
-    longPressTimerRef.current = window.setTimeout(() => {
-      if (longPressCardRef.current) {
-        const card = objects[longPressCardRef.current.cardId] as Card;
-
-        if (card.inCursorSlot || pickingUpCardIds.has(longPressCardRef.current.cardId)) {
-          longPressCardRef.current = null;
-          longPressTimerRef.current = null;
-          setDragIndex(null);
-          return;
-        }
-
-        const cardId = longPressCardRef.current.cardId;
-
-        setPickingUpCardIds(prev => new Set([...prev, cardId]));
-        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-          detail: {
-            cardId,
-            clientX: e.clientX,
-            clientY: e.clientY,
-            source: 'hold'
-          }
-        }));
-        longPressCardRef.current = null;
-        longPressTimerRef.current = null;
-        setDragIndex(null);
-      }
-    }, 250);
+    console.log('[HandPanel] Starting drag for card:', cardId);
 
     dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     setDragIndex(index);
+    cardPickedUpRef.current = false;
   }, [isViewingOpponentHand, objects, pickingUpCardIds]);
 
   // Handle mouse move
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (longPressCardRef.current) {
-      const moveThreshold = 5;
-      const dx = e.clientX - longPressCardRef.current.startX;
-      const dy = e.clientY - longPressCardRef.current.startY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+    if (longPressCardRef.current && !cardPickedUpRef.current) {
+      // Use 2vu distance threshold like in tabletop space
+      const dx_PX = e.clientX - longPressCardRef.current.startX;
+      const dy_PX = e.clientY - longPressCardRef.current.startY;
+      const distance_PX = Math.sqrt(dx_PX * dx_PX + dy_PX * dy_PX);
+      const distance_VU = distance_PX / cardScaleRef.current; // Convert pixels to VU using ref
 
-      if (distance >= moveThreshold) {
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
-
+      if (distance_VU >= 2) {
+        // Card picked up after moving 2vu
         const card = objects[longPressCardRef.current.cardId] as Card;
 
         if (card.inCursorSlot || pickingUpCardIds.has(longPressCardRef.current.cardId)) {
@@ -692,13 +743,32 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
         const cardId = longPressCardRef.current.cardId;
 
+        // IMPORTANT: Check recentlyDroppedToHandRef BEFORE dispatching event
+        if (recentlyDroppedToHandRef.current.has(cardId)) {
+          console.log('[HandPanel] Card was recently dropped to hand, skipping:', cardId);
+          longPressCardRef.current = null;
+          setDragIndex(null);
+          return;
+        }
+
+        // Clear from recentlyDroppedToHandRef when picking up from hand
+        recentlyDroppedToHandRef.current.delete(cardId);
+
         setPickingUpCardIds(prev => new Set([...prev, cardId]));
+        cardPickedUpRef.current = true;
+
+        console.log('[HandPanel] Card picked up after moving 2vu:', { cardId, distance_VU });
+
+        // Pass card data directly to ensure handler has access to it
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId,
             clientX: e.clientX,
             clientY: e.clientY,
-            source: 'hold'
+            source: 'hold',
+            cardOverride: { ...card }, // Pass copy of card data
+            clickOffsetX_PX: longPressCardRef.current.clickOffsetX_PX,
+            clickOffsetY_PX: longPressCardRef.current.clickOffsetY_PX
           }
         }));
         longPressCardRef.current = null;
@@ -737,15 +807,12 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         }
       }
     });
-  }, [dragIndex, longPressCardRef, objects, pickingUpCardIds]);
+  }, [dragIndex, objects, pickingUpCardIds]);
 
   // Handle mouse up
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
     longPressCardRef.current = null;
+    cardPickedUpRef.current = false;
 
     if (dragIndex === null) return;
 
@@ -846,6 +913,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       data-hand-panel="true"
       className="h-full flex flex-col transition-all"
       style={{ width }}
+      onClick={handlePanelClick}
     >
       {/* Player hand tabs */}
       {!isCollapsed && players.length > 1 && (

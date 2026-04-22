@@ -136,9 +136,15 @@ export const Tabletop: React.FC = () => {
 
   // Cursor slot state
   const [cursorSlot, setCursorSlot] = useState<(Card | Token | Board | Deck)[]>([]);
+  const cursorSlotRef = useRef<(Card | Token | Board | Deck)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const cursorPositionRef = useRef<{ x: number; y: number } | null>(null) as React.MutableRefObject<{ x: number; y: number } | null>;
   const [cursorSlotSource, setCursorSlotSource] = useState<'hold' | 'shift' | 'archetype' | null>(null);
+
+  // Sync cursorSlotRef with cursorSlot state
+  useEffect(() => {
+    cursorSlotRef.current = cursorSlot;
+  }, [cursorSlot]);
 
   // Ruler state
   const [rulerStart, setRulerStart] = useState<{ x: number; y: number } | null>(null);
@@ -325,16 +331,35 @@ export const Tabletop: React.FC = () => {
       }>;
 
       const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, fromPoolPanel } = customEvent.detail;
+
+      console.log('[Tabletop] add-to-cursor-slot event received:', {
+        cardId,
+        source,
+        clientX,
+        clientY,
+        hasCardOverride: !!cardOverride,
+        objectExists: !!state.objects[cardId],
+        currentCursorSlotSize: cursorSlotRef.current.length,
+        clickOffsetX_PX,
+        clickOffsetY_PX,
+        hasClickOffsetPX: clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined
+      });
+
       const obj = state.objects[cardId];
 
       if (!obj) {
-        console.warn('[Tabletop] Object not found for add-to-cursor-slot:', cardId);
+        console.error('[Tabletop] Object not found for add-to-cursor-slot:', cardId, 'Available objects:', Object.keys(state.objects));
         return;
       }
 
       // Check if object is already in cursor slot
-      if (cursorSlot.some(item => item.id === cardId)) {
-        console.log('[Tabletop] Object already in cursor slot:', cardId);
+      // Use cursorSlotRef.current to get the latest value (not from closure)
+      if (cursorSlotRef.current.some(item => item.id === cardId)) {
+        console.log('[Tabletop] Object already in cursor slot:', cardId, {
+          slotSize: cursorSlotRef.current.length,
+          slotIds: cursorSlotRef.current.map(i => i.id),
+          objInCursorSlot: (obj as any).inCursorSlot
+        });
         return;
       }
 
@@ -374,13 +399,45 @@ export const Tabletop: React.FC = () => {
           const clickX_VU = p2v(clientX - rect.left + scrollX);
           const clickY_VU = p2v(clientY - rect.top + scrollY);
 
-          // Calculate offset from top-left corner to click position
-          finalClickOffsetX = clickX_VU - obj.x;
-          finalClickOffsetY = clickY_VU - obj.y;
+          // Use cardOverride coordinates if available (for cards from hand/pool)
+          // Otherwise use object coordinates
+          const sourceX = cardOverride?.x !== undefined ? cardOverride.x : obj.x;
+          const sourceY = cardOverride?.y !== undefined ? cardOverride.y : obj.y;
+
+          // For cards with special coordinates (like -999999 from hand), use click offset if provided
+          if (sourceX < -90000 || sourceY < -90000) {
+            // Check if we have pixel offsets from HandPanel
+            if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined && pixelsPerVU) {
+              // Convert pixel offsets to virtual units
+              finalClickOffsetX = clickOffsetX_PX / pixelsPerVU;
+              finalClickOffsetY = clickOffsetY_PX / pixelsPerVU;
+              console.log('[Tabletop] Using pixel offset from HandPanel (converted to VU):', {
+                clickOffsetX_PX,
+                clickOffsetY_PY: clickOffsetY_PX,
+                pixelsPerVU,
+                finalOffsetX_VU: finalClickOffsetX,
+                finalOffsetY_VU: finalClickOffsetY
+              });
+            } else {
+              // Fallback: center on cursor
+              const cardWidth = card.width ?? deck?.cardWidth ?? 63;
+              const cardHeight = card.height ?? deck?.cardHeight ?? 88;
+              finalClickOffsetX = cardWidth / 2;
+              finalClickOffsetY = cardHeight / 2;
+              console.log('[Tabletop] No pixel offset, centering card on cursor');
+            }
+          } else {
+            // Calculate offset from top-left corner to click position
+            finalClickOffsetX = clickX_VU - sourceX;
+            finalClickOffsetY = clickY_VU - sourceY;
+          }
 
           console.log('[Tabletop] Calculated click offset from object position:', {
             cardId,
+            hasCardOverride: !!cardOverride,
             objPosition: { x: obj.x, y: obj.y },
+            overridePosition: cardOverride ? { x: cardOverride.x, y: cardOverride.y } : 'none',
+            sourcePosition: { x: sourceX, y: sourceY },
             clickPosition_VU: { x: clickX_VU, y: clickY_VU },
             calculatedOffset: { x: finalClickOffsetX, y: finalClickOffsetY }
           });
@@ -449,15 +506,16 @@ export const Tabletop: React.FC = () => {
         isOnTable: card.isOnTable ?? false,
         source: source || 'hold',
         originalZIndex: card.zIndex ?? 0,
-        cursorSlotIndex: cursorSlot.length,
+        cursorSlotIndex: cursorSlotRef.current.length,
         timestamp: Date.now(),
         clickOffsetX: finalClickOffsetX,
         clickOffsetY: finalClickOffsetY,
         clickOffsetX_PX: finalClickOffsetX_PX,
         clickOffsetY_PX: finalClickOffsetY_PX,
         // IMPORTANT: Store original position for proper drop calculation
-        originalX: obj.x,
-        originalY: obj.y,
+        // Use cardOverride coordinates if available (for cards from hand/pool)
+        originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+        originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
       } as any; // Use 'any' to avoid type conflicts with Card interface
 
       // Set cursor position FIRST
@@ -466,9 +524,15 @@ export const Tabletop: React.FC = () => {
       setCursorPosition(pos);
 
       // Add to cursor slot
-      const newSlot = [...cursorSlot, itemClone];
+      const newSlot = [...cursorSlotRef.current, itemClone];
       setCursorSlot(newSlot);
       cursorSlotLastAddedRef.current = Date.now();
+
+      // IMPORTANT: Set cursorSlotSource so handleMouseUp knows to drop on mouseup
+      // Only set source if slot was empty before (like in addToCursorSlot)
+      if (cursorSlotRef.current.length === 0) {
+        setCursorSlotSource((source || 'hold') as 'hold' | 'shift' | 'archetype' | null);
+      }
 
       // IMPORTANT: Hide object from table while in cursor slot (same as in addToCursorSlot)
       dispatch({
@@ -486,8 +550,9 @@ export const Tabletop: React.FC = () => {
             clickOffsetY_PX: finalClickOffsetY_PX,
             clickOffsetX: finalClickOffsetX,
             clickOffsetY: finalClickOffsetY,
-            originalX: obj.x,
-            originalY: obj.y
+            // Store original position BEFORE updating to -999999
+            originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+            originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
           }
         } as any
       });
@@ -503,7 +568,9 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('add-to-cursor-slot', handleAddToCursorSlot);
     return () => window.removeEventListener('add-to-cursor-slot', handleAddToCursorSlot);
-  }, [state.objects, cursorSlot, setCursorSlot, setCursorPosition, cursorPositionRef, cursorSlotLastAddedRef, pixelsPerVU, p2v, scrollContainerRef, viewTransform]);
+    // NOTE: cursorSlot and setCursorSlot are intentionally excluded from dependencies
+    // to prevent effect recreation on every slot change which could miss events
+  }, [state.objects, setCursorPosition, cursorPositionRef, cursorSlotLastAddedRef, pixelsPerVU, p2v, scrollContainerRef, viewTransform, setCursorSlotSource]);
 
   // Auto-add newly drawn cards to cursor slot
   // This handles the "draw top card" action which adds cards to hand
@@ -515,8 +582,10 @@ export const Tabletop: React.FC = () => {
     // Find cards that were just added to hand (recently drawn)
     const now = Date.now();
     const recentlyDrawn = cardsInHand.filter(card => {
-      if (cursorSlot.some(item => item.id === card.id)) return false;
+      // Check if already in cursor slot using inCursorSlot flag
       const cardData = card as any;
+      if (cardData.inCursorSlot) return false;
+
       if (cardData.justDrawn && now - (cardData.drawnAt || 0) < 500) {
         return true;
       }
@@ -588,13 +657,25 @@ export const Tabletop: React.FC = () => {
         });
       });
     }
-  }, [state.objects, activePlayerId, cursorSlot, dispatch, setCursorSlot, cursorSlotLastAddedRef]);
+  }, [state.objects, activePlayerId, dispatch, setCursorSlot, cursorSlotLastAddedRef, cursorSlot]);
 
   // Listen for clear-cursor-slot event (dispatched by pool panel drops)
   useEffect(() => {
     const handleClearCursorSlot = (e: Event) => {
-      const customEvent = e as CustomEvent<{ reason?: string }>;
-      console.log('[Tabletop] Received clear-cursor-slot event:', customEvent.detail);
+      // IMPORTANT: Also reset inCursorSlot flag for all objects
+      // This prevents objects from staying in cursor slot state after clear
+      Object.values(state.objects).forEach(obj => {
+        if ((obj as any).inCursorSlot) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: obj.id,
+              inCursorSlot: false
+            }
+          });
+        }
+      });
+
       setCursorSlot([]);
       setCursorPosition(null);
       cursorPositionRef.current = null;
@@ -603,7 +684,7 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('clear-cursor-slot', handleClearCursorSlot);
     return () => window.removeEventListener('clear-cursor-slot', handleClearCursorSlot);
-  }, [setCursorSlot, setCursorPosition, setCursorSlotSource]);
+  }, [setCursorSlot, setCursorPosition, setCursorSlotSource, state.objects, dispatch]);
 
   return (
     <div

@@ -116,17 +116,17 @@ const addToCursorSlot = (
 
   // IMPORTANT: Check if slot actually has items
   // Use cursorSlot.length first (React state), fallback to state.objects check
-  // Objects in cursor slot have isOnTable: false
+  // Objects in cursor slot have inCursorSlot: true (NOT isOnTable: false, which includes cards in hand!)
   const slotHasItemsFromState = cursorSlot.length > 0;
-  const objectsHiddenFromTable = Object.values(state.objects).filter(o =>
+  const objectsInCursorSlot = Object.values(state.objects).filter(o =>
     (o.type === ItemType.CARD || o.type === ItemType.TOKEN) &&
-    'isOnTable' in o && o.isOnTable === false
+    (o as any).inCursorSlot === true
   );
-  const actuallyHasItems = slotHasItemsFromState || objectsHiddenFromTable.length > 0;
+  const actuallyHasItems = slotHasItemsFromState || objectsInCursorSlot.length > 0;
 
   console.log('🔍 [CURSOR SLOT] Actual slot state from state.objects:', {
     cursorSlotLength: cursorSlot.length,
-    hiddenObjectsCount: objectsHiddenFromTable.length,
+    inCursorSlotCount: objectsInCursorSlot.length,
     actuallyHasItems
   });
 
@@ -1279,20 +1279,20 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
     // Check if cursor slot has items
     // Use cursorSlot.length first (React state), fallback to state.objects check
-    // Objects in cursor slot have isOnTable: false
+    // Objects in cursor slot have inCursorSlot: true (NOT isOnTable: false, which includes cards in hand!)
     const slotHasItemsFromState = cursorSlot.length > 0;
-    const objectsHiddenFromTable = Object.values(state.objects).filter(o =>
+    const objectsInCursorSlot = Object.values(state.objects).filter(o =>
       (o.type === ItemType.CARD || o.type === ItemType.TOKEN) &&
-      'isOnTable' in o && o.isOnTable === false
+      (o as any).inCursorSlot === true
     );
-    const actuallyHasItems = slotHasItemsFromState || objectsHiddenFromTable.length > 0;
+    const actuallyHasItems = slotHasItemsFromState || objectsInCursorSlot.length > 0;
 
     // REGULAR CLICK (no shift): if slot has items, drop them
     // This prevents swap behavior
     if (!e.shiftKey && actuallyHasItems) {
       console.log('📦 [MOUSE DOWN] Simple click with slot occupied - dropping all items:', {
         cursorSlotLength: cursorSlot.length,
-        hiddenObjectsCount: objectsHiddenFromTable.length,
+        inCursorSlotCount: objectsInCursorSlot.length,
         clickedObjectId: objId
       });
       e.preventDefault();
@@ -1311,7 +1311,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         type: obj.type,
         name: obj.name,
         cursorSlotLength: cursorSlot.length,
-        hiddenObjectsCount: objectsHiddenFromTable.length
+        inCursorSlotCount: objectsInCursorSlot.length
       });
       e.preventDefault();
       e.stopPropagation();
@@ -1413,7 +1413,19 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     props
   ]);
 
-  // Mouse move handler WITH LOGGING (throttled)
+  // RAF ref for throttling mouse move updates
+  const rafRef = useRef<number>();
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== undefined) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
+  // Mouse move handler (throttled)
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     // Update cursor slot position
     if (cursorSlot.length > 0) {
@@ -1421,82 +1433,71 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       const newY = e.clientY;
 
       if (cursorPositionRef.current?.x !== newX || cursorPositionRef.current?.y !== newY) {
-        // Log only every 10th move to reduce console spam
-        const moveCounter = (handleMouseMove as any).moveCounter || 0;
-        (handleMouseMove as any).moveCounter = moveCounter + 1;
-
-        if (moveCounter % 100 === 0) {
-          console.log('🖱️ [MOUSE MOVE] Updating cursor slot position:', {
-            oldX: cursorPositionRef.current?.x,
-            oldY: cursorPositionRef.current?.y,
-            newX,
-            newY,
-            slotSize: cursorSlot.length
-          });
-        }
-
-        setCursorPosition({ x: newX, y: newY });
+        // Always update ref immediately for smooth dragging
         cursorPositionRef.current = { x: newX, y: newY };
 
-        // Dispatch events for HandPanel and MainMenu to detect hover
-        const eventData = {
-          x: newX,
-          y: newY,
-          isOverMainMenu: false,
-          hasCards: cursorSlot.length > 0,
-          items: cursorSlot.map(item => ({ type: item.type }))
-        };
+        // Throttle state updates using RAF to prevent excessive re-renders
+        if (rafRef.current === undefined) {
+          rafRef.current = requestAnimationFrame(() => {
+            setCursorPosition({ x: newX, y: newY });
+            rafRef.current = undefined;
 
-        // Event for HandPanel to detect hover
-        window.dispatchEvent(new CustomEvent('cursor-slot-move', {
-          detail: eventData
-        }));
+            // Dispatch events for HandPanel and MainMenu to detect hover
+            const eventData = {
+              x: newX,
+              y: newY,
+              isOverMainMenu: false,
+              hasCards: cursorSlot.length > 0,
+              items: cursorSlot.map(item => ({ type: item.type }))
+            };
 
-        // Event for MainMenu to switch to hand tab
-        window.dispatchEvent(new CustomEvent('cursor-position-update', {
-          detail: eventData
-        }));
+            // Event for HandPanel to detect hover
+            window.dispatchEvent(new CustomEvent('cursor-slot-move', {
+              detail: eventData
+            }));
 
-        // Check if cursor is over a deck for highlighting
-        const elementAtCursor = document.elementFromPoint(newX, newY);
-        const deckElement = elementAtCursor?.closest('[data-object-id]');
+            // Event for MainMenu to switch to hand tab
+            window.dispatchEvent(new CustomEvent('cursor-position-update', {
+              detail: eventData
+            }));
 
-        if (deckElement) {
-          const deckId = deckElement.getAttribute('data-object-id');
-          const deckObj = deckId ? state.objects[deckId] : null;
+            // Check if cursor is over a deck for highlighting
+            const elementAtCursor = document.elementFromPoint(newX, newY);
+            const deckElement = elementAtCursor?.closest('[data-object-id]');
 
-          if (deckObj && deckObj.type === ItemType.DECK) {
-            // Track previous deck to detect when cursor leaves
-            const previousDeckId = previousDeckIdRef.current;
+            if (deckElement) {
+              const deckId = deckElement.getAttribute('data-object-id');
+              const deckObj = deckId ? state.objects[deckId] : null;
 
-            if (previousDeckId && previousDeckId !== deckId) {
-              // Cursor left previous deck
-              console.log('🎯 [CURSOR HOVER] Leaving deck:', previousDeckId, 'for deck:', deckId);
-              window.dispatchEvent(new CustomEvent('cursor-left-deck', {
-                detail: { deckId: previousDeckId }
-              }));
+              if (deckObj && deckObj.type === ItemType.DECK) {
+                // Track previous deck to detect when cursor leaves
+                const previousDeckId = previousDeckIdRef.current;
+
+                if (previousDeckId && previousDeckId !== deckId) {
+                  // Cursor left previous deck
+                  window.dispatchEvent(new CustomEvent('cursor-left-deck', {
+                    detail: { deckId: previousDeckId }
+                  }));
+                }
+
+                // Dispatch event for DeckComponent to highlight
+                window.dispatchEvent(new CustomEvent('cursor-over-deck', {
+                  detail: { deckId }
+                }));
+
+                // Store current deck for next comparison
+                previousDeckIdRef.current = deckId;
+              }
+            } else {
+              // Cursor not over any deck, clear previous deck
+              const previousDeckId = previousDeckIdRef.current;
+              if (previousDeckId) {
+                window.dispatchEvent(new CustomEvent('cursor-left-deck', {
+                  detail: { deckId: previousDeckId }
+                }));
+              }
             }
-
-            // Dispatch event for DeckComponent to highlight
-            console.log('🎯 [CURSOR HOVER] Over deck:', deckId);
-            window.dispatchEvent(new CustomEvent('cursor-over-deck', {
-              detail: { deckId }
-            }));
-
-            // Store current deck for next comparison
-            previousDeckIdRef.current = deckId;
-          }
-        } else {
-          // Cursor not over any deck, clear previous deck
-          const previousDeckId = previousDeckIdRef.current;
-          if (previousDeckId) {
-            console.log('🎯 [CURSOR HOVER] Left all decks, was over:', previousDeckId);
-            window.dispatchEvent(new CustomEvent('cursor-left-deck', {
-              detail: { deckId: previousDeckId }
-            }));
-            // Don't clear previousDeckIdRef here - let the next cursor-over-deck event overwrite it
-            // This ensures all deck components receive the cursor-left-deck event
-          }
+          });
         }
       }
     }
@@ -1682,14 +1683,16 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       draggingIdRef.current = null;
     } else if (dragThresholdRef.current.targetId) {
       // No drag occurred (threshold not exceeded) - this was a click
-      // IMPORTANT: Drop cursor slot if it has items (prevents swap behavior)
-      const wasClickNotDrag = true;
+      // IMPORTANT: If item was added to slot via drag threshold, this is NOT a click!
+      const wasAddedToSlot = dragThresholdRef.current.addedToSlot;
+      const wasClickNotDrag = !wasAddedToSlot;
       const hadCursorSlot = cursorSlot.length > 0;
 
       console.log('🖱️ [MOUSE UP] Click detected (threshold not exceeded), resetting drag threshold:', {
         targetId: dragThresholdRef.current.targetId,
         addedToSlot: dragThresholdRef.current.addedToSlot,
-        cursorSlotLength: cursorSlot.length
+        cursorSlotLength: cursorSlot.length,
+        wasClickNotDrag
       });
 
       dragThresholdRef.current = {
@@ -1699,14 +1702,17 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         addedToSlot: false
       };
 
-      // If we had a click (not drag) and cursor slot has items, drop them
-      // This prevents swap behavior where clicking on an object would add it to the slot
-      if (wasClickNotDrag && hadCursorSlot && e) {
-        console.log('📦 [MOUSE UP] Dropping cursor slot on click (preventing swap):', {
+      // Only drop cursor slot if this was truly a click (not drag threshold exceeded)
+      // IMPORTANT: Don't drop if Shift is held - user wants to keep item in slot
+      const isShiftHeld = e?.shiftKey === true;
+
+      if (wasClickNotDrag && hadCursorSlot && e && !isShiftHeld) {
+        console.log('📦 [MOUSE UP] Dropping cursor slot on click (Shift not held):', {
           slotSize: cursorSlot.length,
           clientX: e.clientX,
           clientY: e.clientY,
-          source: cursorSlotSource
+          source: cursorSlotSource,
+          isShiftHeld
         });
 
         dropCursorSlot(e.clientX, e.clientY, props);
@@ -1715,30 +1721,44 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         // Don't continue to the normal drop logic below
         return;
       }
+
+      if (wasClickNotDrag && hadCursorSlot && e && isShiftHeld) {
+        console.log('⏸️ [MOUSE UP] Keeping item in slot (Shift held):', {
+          slotSize: cursorSlot.length,
+          isShiftHeld
+        });
+      }
     }
 
     // Handle cursor slot dropping
-    // Drop if: slot has items AND (source is 'hold' OR (source is 'shift' AND enough time passed))
-    // For source='shift', only drop on mouseUp if it wasn't handled in mouseDown (click on object)
-    const timeSinceLastAdd = Date.now() - cursorSlotLastAddedRef.current;
-    const shouldDropOnMouseUp = cursorSlot.length > 0 && e && cursorSlotSource === 'hold';
+    // Drop if: slot has items AND there's a mouse event AND Shift is NOT held
+    // dropCursorSlot will handle the logic for hand panel, deck, or table
+    const isShiftHeld = e?.shiftKey === true;
+
+    // Debug logging
+    if (cursorSlot.length > 0) {
+      console.log('🔍 [MOUSE UP] Cursor slot check:', {
+        slotSize: cursorSlot.length,
+        hasEvent: !!e,
+        eventClientX: e?.clientX,
+        eventClientY: e?.clientY,
+        cursorSlotSource,
+        isShiftHeld,
+        shouldDrop: cursorSlot.length > 0 && e && !isShiftHeld
+      });
+    }
+
+    const shouldDropOnMouseUp = cursorSlot.length > 0 && e && !isShiftHeld;
 
     if (shouldDropOnMouseUp) {
-      console.log('📦 [MOUSE UP] Dropping cursor slot items (hold source):', {
+      console.log('📦 [MOUSE UP] Dropping cursor slot items:', {
         slotSize: cursorSlot.length,
         clientX: e.clientX,
         clientY: e.clientY,
-        source: cursorSlotSource,
-        timeSinceLastAdd
+        source: cursorSlotSource
       });
 
       dropCursorSlot(e.clientX, e.clientY, props);
-    } else if (cursorSlot.length > 0 && e && cursorSlotSource !== 'hold') {
-      console.log('⏸️ [MOUSE UP] Keeping cursor slot items (shift source):', {
-        slotSize: cursorSlot.length,
-        source: cursorSlotSource,
-        timeSinceLastAdd
-      });
     }
   }, [
     currentTool,
@@ -1752,6 +1772,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     cursorSlotLastAddedRef,
     setDraggingId,
     cursorSlot,
+    cursorSlotSource,
     props
   ]);
 

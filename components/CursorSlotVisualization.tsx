@@ -184,21 +184,19 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
 
   // Check if items from heldItems are now visible on table (not in cursor slot anymore)
   // If so, remove them from heldItems immediately to prevent flicker
+  // Only trigger when cursorSlot changes (items were dropped)
   useEffect(() => {
-    if (heldItems.length > 0) {
-      const stillInCursorSlot = heldItems.filter(heldItem => {
-        const obj = state.objects[heldItem.id];
-        // Keep showing if object doesn't exist yet OR is still in cursor slot
-        // Hide immediately if object exists and is NOT in cursor slot anymore
-        // Also hide if object is on table (isOnTable=true)
-        return !obj || (obj.inCursorSlot && !obj.isOnTable);
-      });
+    if (heldItems.length === 0) return;
 
-      if (stillInCursorSlot.length !== heldItems.length) {
-        setHeldItems(stillInCursorSlot);
-      }
+    // Check if any held item IDs are still in cursorSlot
+    // If an item is no longer in cursorSlot, it means it was dropped
+    const cursorSlotIds = new Set(cursorSlot.map(item => item.id));
+    const stillHeld = heldItems.filter(heldItem => cursorSlotIds.has(heldItem.id));
+
+    if (stillHeld.length !== heldItems.length) {
+      setHeldItems(stillHeld);
     }
-  }, [state.objects, heldItems]);
+  }, [cursorSlot]); // Only depend on cursorSlot changes
 
   const hasItems = cursorSlot.length > 0 || heldItems.length > 0;
   if (!hasItems) return null;
