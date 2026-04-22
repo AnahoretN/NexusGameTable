@@ -38,27 +38,24 @@ const SUBMENU_TO_PARENT: Record<string, ContextAction> = {
 
 interface DeckComponentProps {
   deck: DeckType;
-  draggingId: string | null;
-  hoveredDeckId: string | null;
-  hoveredPileId: string | null;
-  setHoveredDeckId: (id: string | null) => void;
-  setHoveredPileId: (id: string | null) => void;
-  isGM: boolean;
-  draggingClass: string;
-  draggingPile: { pile: CardPile; deck: DeckType } | null;
-  setDraggingPile: (pile: { pile: CardPile; deck: DeckType } | null) => void;
-  pileDragStartRef: React.MutableRefObject<{ x: number; y: number } | null>;
-  setTopDeckModalDeck: (deck: DeckType | null) => void;
-  handleMouseDown: (e: React.MouseEvent, id?: string) => void;
-  handleContextMenu: (e: React.MouseEvent, obj: any) => void;
-  handlePileContextMenu: (e: React.MouseEvent, pile: CardPile, deck: DeckType) => void;
-  setSearchModalDeck: (deck: DeckType | null) => void;
-  setSearchModalPile: (pile: CardPile | undefined) => void;
-  setPilesButtonMenu: (menu: { x: number; y: number; deck: DeckType } | null) => void;
-  setDeleteCandidateId: (id: string | null) => void;
-  executeClickAction: (obj: any, action: string, event?: React.MouseEvent) => void;
-  cursorSlotHasCards: boolean;
-  allObjects: Record<string, any>;
+  draggingId?: string | null;
+  hoveredPileId?: string | null;
+  setHoveredPileId?: (id: string | null) => void;
+  isGM?: boolean;
+  draggingClass?: string;
+  draggingPile?: { pile: CardPile; deck: DeckType } | null;
+  setDraggingPile?: (pile: { pile: CardPile; deck: DeckType } | null) => void;
+  pileDragStartRef?: React.MutableRefObject<{ x: number; y: number } | null>;
+  setTopDeckModalDeck?: (deck: DeckType | null) => void;
+  handleMouseDown?: (e: React.MouseEvent, id?: string) => void;
+  handleContextMenu?: (e: React.MouseEvent, obj: any) => void;
+  handlePileContextMenu?: (e: React.MouseEvent, pile: CardPile, deck: DeckType) => void;
+  setSearchModalDeck?: (deck: DeckType | null) => void;
+  setSearchModalPile?: (pile: CardPile | undefined) => void;
+  setPilesButtonMenu?: (menu: { x: number; y: number; deck: DeckType } | null) => void;
+  setDeleteCandidateId?: (id: string | null) => void;
+  executeClickAction?: (obj: any, action: string, event?: React.MouseEvent) => void;
+  allObjects?: Record<string, any>;
   currentTool?: string;
   pixelsPerVU?: number; // Conversion factor from vu to pixels
   style?: React.CSSProperties; // Additional styles for positioning
@@ -67,14 +64,12 @@ interface DeckComponentProps {
 
 export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   deck,
-  draggingId,
-  hoveredDeckId,
-  hoveredPileId,
-  setHoveredDeckId,
+  draggingId = null,
+  hoveredPileId = null,
   setHoveredPileId,
-  isGM,
-  draggingClass,
-  draggingPile,
+  isGM = false,
+  draggingClass = '',
+  draggingPile = null,
   setDraggingPile,
   pileDragStartRef,
   setTopDeckModalDeck,
@@ -86,8 +81,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   setPilesButtonMenu,
   setDeleteCandidateId,
   executeClickAction,
-  cursorSlotHasCards = false,
-  allObjects,
+  allObjects = {},
   currentTool = 'none',
   pixelsPerVU = 1.0,
   style,
@@ -101,6 +95,11 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     return draggingId && draggingObject?.type === ItemType.CARD;
   }, [draggingId, draggingObject]);
 
+  // Local state for cursor hover detection - same approach as HandPanel
+  // MUST be declared before useCallback that references it
+  const [isCursorOver, setIsCursorOver] = useState(false);
+  const deckRef = useRef<HTMLDivElement>(null);
+
   // Memoized mouse down handler to prevent multiple re-renders
   const handleDeckMouseDown = useCallback((e: React.MouseEvent) => {
     if (!deck.locked || isGM) {
@@ -113,42 +112,40 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     }
   }, [deck.id, deck.locked, isGM, deck.singleClickAction, deck.doubleClickAction, handleMouseDown, executeClickAction]);
 
-  // Optimized hover handlers with useCallback to prevent unnecessary re-renders
+  // Optimized hover handlers - simplified, no longer needed for highlight logic
   const handleDeckMouseEnter = useCallback(() => {
-    if (disableDeckHighlight) return; // Skip hover in pool panels
-    // 🔥 OPTIMIZED: Use memoized dragging check instead of repeated lookup
-    if (isDraggingCardFromTable || cursorSlotHasCards) {
-      setHoveredDeckId(deck.id);
-    }
-  }, [disableDeckHighlight, isDraggingCardFromTable, cursorSlotHasCards, deck.id]);
+    // Highlight is now handled by cursor-slot-move event
+  }, []);
 
   const handleDeckMouseLeave = useCallback(() => {
-    if (disableDeckHighlight) return; // Skip hover in pool panels
-    if (hoveredDeckId === deck.id) {
-      setHoveredDeckId(null);
-    }
-  }, [disableDeckHighlight, hoveredDeckId, deck.id]);
+    // Highlight is now handled by cursor-slot-move event
+  }, []);
 
   const handlePileMouseEnter = useCallback((pileId: string) => {
     if (disableDeckHighlight) return; // Skip hover in pool panels
-    // 🔥 OPTIMIZED: Use memoized dragging check instead of repeated lookup
-    if (isDraggingCardFromTable || cursorSlotHasCards) {
-      setHoveredPileId(pileId);
+    // Keep old logic for piles
+    if (isDraggingCardFromTable || isCursorOver) {
+      if (setHoveredPileId && typeof setHoveredPileId === 'function') {
+        setHoveredPileId(pileId);
+      }
     }
-  }, [disableDeckHighlight, isDraggingCardFromTable, cursorSlotHasCards]);
+  }, [disableDeckHighlight, isDraggingCardFromTable, isCursorOver, setHoveredPileId]);
 
   const handlePileMouseLeave = useCallback((pileId: string) => {
     if (disableDeckHighlight) return; // Skip hover in pool panels
+    // Always clear hover state when mouse leaves, regardless of cursor slot state
     if (hoveredPileId === pileId) {
-      setHoveredPileId(null);
+      if (setHoveredPileId && typeof setHoveredPileId === 'function') {
+        setHoveredPileId(null);
+      }
     }
-  }, [disableDeckHighlight, hoveredPileId]);
+  }, [disableDeckHighlight, hoveredPileId, setHoveredPileId]);
 
   // Convert vu to pixels for deck dimensions
   const vuToPx = (vu: number) => vu * pixelsPerVU;
 
-  // 🔥 OPTIMIZED: Use memoized dragging check (computed above)
-  const canDropCard = !disableDeckHighlight && (isDraggingCardFromTable || cursorSlotHasCards) && hoveredDeckId === deck.id;
+  // 🔥 OPTIMIZED: Simple hover check - same approach as HandPanel
+  const canDropCard = !disableDeckHighlight && isCursorOver;
 
   // Helper to check if an action is allowed for the current user
   const can = (action: ContextAction): boolean => {
@@ -373,7 +370,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   const handlePilesButtonClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     const deckElement = document.querySelector(`[data-object-id="${deck.id}"]`) as HTMLElement;
-    if (deckElement) {
+    if (deckElement && setPilesButtonMenu) {
       const rect = deckElement.getBoundingClientRect();
       setPilesButtonMenu({
         x: rect.left,
@@ -446,6 +443,64 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     return () => clearTimeout(timeout);
   }, [isShuffling, visibleCardCount, deck.cardIds, deck.baseCardIds]);
 
+  // Handle cursor slot hover over deck - same approach as HandPanel
+  useEffect(() => {
+    const handleCursorSlotMove = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        x: number;
+        y: number;
+        isOverMainMenu: boolean;
+        hasCards: boolean;
+        items?: Array<{ type: string }>; // Add items array to check types
+      }>;
+
+      const { x, y, hasCards, items } = customEvent.detail;
+
+      // Check if there are actual CARDS in cursor slot (not tokens or other objects)
+      // If items array is not provided, fall back to hasCards check (for backwards compatibility)
+      const hasCardsInSlot = items ? items.some(item => item.type === ItemType.CARD) : hasCards;
+
+      // Immediately hide if no cards in cursor slot
+      if (!hasCardsInSlot) {
+        setIsCursorOver(false);
+        return;
+      }
+
+      // Check if cursor is over this deck
+      const deckElement = deckRef.current;
+      if (deckElement) {
+        const rect = deckElement.getBoundingClientRect();
+        const isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+        setIsCursorOver(isOver);
+      } else {
+        setIsCursorOver(false);
+      }
+    };
+
+    const handleCursorSlotDropped = (e: Event) => {
+      // Hide highlight when cards are dropped anywhere
+      setIsCursorOver(false);
+    };
+
+    const handleCursorLeftDeck = (e: Event) => {
+      const customEvent = e as CustomEvent<{ deckId: string }>;
+      // Hide highlight when leaving this specific deck
+      if (customEvent.detail.deckId === deck.id) {
+        setIsCursorOver(false);
+      }
+    };
+
+    window.addEventListener('cursor-slot-move', handleCursorSlotMove);
+    window.addEventListener('cursor-slot-dropped', handleCursorSlotDropped);
+    window.addEventListener('cursor-left-deck', handleCursorLeftDeck);
+
+    return () => {
+      window.removeEventListener('cursor-slot-move', handleCursorSlotMove);
+      window.removeEventListener('cursor-slot-dropped', handleCursorSlotDropped);
+      window.removeEventListener('cursor-left-deck', handleCursorLeftDeck);
+    };
+  }, [deck.id]);
+
   // Don't render if deck is in cursor slot (it's being dragged)
   if (deck.inCursorSlot) {
     return null;
@@ -468,49 +523,10 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
         const pileSize = pile.size ?? 1;
 
         // Check if dragging a card and hovering over this pile
-        const isHoveringPile = !disableDeckHighlight && (isDraggingCardFromTable || cursorSlotHasCards) && hoveredPileId === pile.id;
+        const isHoveringPile = !disableDeckHighlight && (isDraggingCardFromTable || isCursorOver) && hoveredPileId === pile.id;
 
         return (
           <React.Fragment key={pile.id}>
-            {/* Highlight overlay - rendered separately with high z-index */}
-            {isHoveringPile && (
-              shouldUseSvgForDeck(cardShape) ? (
-                <div
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: pilePos.x,
-                    top: pilePos.y,
-                    width: effectiveWidth * pileSize,
-                    height: effectiveHeight * pileSize,
-                    transform: `rotate(${deck.rotation}deg)`,
-                    zIndex: 100,
-                  }}
-                >
-                  <SvgDeckShape
-                    shape={cardShape}
-                    width={effectiveWidth * pileSize}
-                    height={effectiveHeight * pileSize}
-                    backgroundColor="transparent"
-                    borderColor="rgb(168 85 247)"
-                    borderWidth={2}
-                    orientation={cardOrientation}
-                  />
-                </div>
-              ) : (
-                <div
-                  className="absolute ring-2 ring-purple-500 ring-opacity-75 pointer-events-none"
-                  style={{
-                    left: pilePos.x,
-                    top: pilePos.y,
-                    width: effectiveWidth * pileSize,
-                    height: effectiveHeight * pileSize,
-                    transform: `rotate(${deck.rotation}deg)`,
-                    zIndex: 100,
-                    ...shapeStyles
-                  }}
-                />
-              )
-            )}
             {/* Pile container - keeps normal z-index */}
             <div
               data-pile-id={pile.id}
@@ -530,16 +546,18 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                 // SVG rendering for geometric shapes
                 <div
                   className="absolute inset-0 flex flex-col items-center justify-center transition-colors cursor-pointer"
-                  onContextMenu={(e) => handlePileContextMenu(e, pile, deck)}
+                  onContextMenu={(e) => handlePileContextMenu?.(e, pile, deck)}
                   onMouseDown={(e) => {
                     if (pile.position === 'free' && !pile.locked && e.button === 0) {
                       e.preventDefault();
                       e.stopPropagation();
-                      setDraggingPile({ pile, deck });
-                      pileDragStartRef.current = {
-                        x: e.clientX - (pile.x ?? 0),
-                        y: e.clientY - (pile.y ?? 0)
-                      };
+                      setDraggingPile?.({ pile, deck });
+                      if (pileDragStartRef) {
+                        pileDragStartRef.current = {
+                          x: e.clientX - (pile.x ?? 0),
+                          y: e.clientY - (pile.y ?? 0)
+                        };
+                      }
                     }
                   }}
                 >
@@ -605,16 +623,18 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                         : 'border-slate-600 cursor-pointer'
                   }`}
                   style={shapeStyles}
-                  onContextMenu={(e) => handlePileContextMenu(e, pile, deck)}
+                  onContextMenu={(e) => handlePileContextMenu?.(e, pile, deck)}
                   onMouseDown={(e) => {
                     if (pile.position === 'free' && !pile.locked && e.button === 0) {
                       e.preventDefault();
                       e.stopPropagation();
-                      setDraggingPile({ pile, deck });
-                      pileDragStartRef.current = {
-                        x: e.clientX - (pile.x ?? 0),
-                        y: e.clientY - (pile.y ?? 0)
-                      };
+                      setDraggingPile?.({ pile, deck });
+                      if (pileDragStartRef) {
+                        pileDragStartRef.current = {
+                          x: e.clientX - (pile.x ?? 0),
+                          y: e.clientY - (pile.y ?? 0)
+                        };
+                      }
                     }
                   }}
                 >
@@ -648,56 +668,34 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                 </div>
               )}
             </div>
+
+            {/* Highlight overlay for pile - same approach as HandPanel */}
+            {isHoveringPile && (
+              <div
+                className="absolute inset-0 pointer-events-none ring-4 ring-purple-500 ring-inset"
+                style={{
+                  left: pilePos.x,
+                  top: pilePos.y,
+                  width: effectiveWidth * pileSize,
+                  height: effectiveHeight * pileSize,
+                  transform: `rotate(${deck.rotation}deg)`,
+                  zIndex: 200,
+                  ...shapeStyles
+                }}
+              />
+            )}
           </React.Fragment>
         );
       })}
 
       {/* Render the deck itself */}
       <React.Fragment>
-        {/* Highlight overlay - rendered separately with high z-index */}
-        {canDropCard && (
-          shouldUseSvgForDeck(cardShape) ? (
-            <div
-              className="absolute pointer-events-none"
-              style={{
-                left: 0,
-                top: 0,
-                width: effectiveWidth,
-                height: effectiveHeight,
-                transform: `rotate(${deck.rotation}deg)`,
-                zIndex: 100,
-              }}
-            >
-              <SvgDeckShape
-                shape={cardShape}
-                width={effectiveWidth}
-                height={effectiveHeight}
-                backgroundColor="transparent"
-                borderColor="rgb(168 85 247)"
-                borderWidth={2}
-                orientation={cardOrientation}
-              />
-            </div>
-          ) : (
-            <div
-              className="absolute ring-4 ring-purple-500 ring-opacity-75 pointer-events-none"
-              style={{
-                left: 0,
-                top: 0,
-                width: effectiveWidth,
-                height: effectiveHeight,
-                transform: `rotate(${deck.rotation}deg)`,
-                zIndex: 100,
-                ...shapeStyles
-              }}
-            />
-          )
-        )}
         {/* Deck container - keeps normal z-index */}
         <div
+          ref={deckRef}
           data-object-id={deck.id}
           onMouseDown={handleDeckMouseDown}
-          onContextMenu={(e) => handleContextMenu(e, deck)}
+          onContextMenu={(e) => handleContextMenu?.(e, deck)}
           onMouseEnter={handleDeckMouseEnter}
           onMouseLeave={handleDeckMouseLeave}
           className={`absolute group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
@@ -870,7 +868,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
 
         {/* Action buttons on bottom edge - like cards */}
         {/* Hide buttons when cursor slot has cards or when drawing tool is active (except zoom) */}
-        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 transition-opacity z-30 pointer-events-none ${cursorSlotHasCards || (currentTool !== 'none' && currentTool !== 'zoom') ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}>
+        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 transition-opacity z-[50] pointer-events-none ${isCursorOver || (currentTool !== 'none' && currentTool !== 'zoom') ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}>
           {(() => {
             // Define all possible buttons based on actionButtons setting
             const actionButtons = deck.actionButtons || [];
@@ -878,21 +876,21 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
             const buttonConfigs: Record<string, { key: string; action: (e?: React.MouseEvent | undefined) => void; className: string; title: string; icon: React.ReactNode }> = {
               draw: {
                 key: 'draw',
-                action: () => executeClickAction(deck, 'draw'),
+                action: () => executeClickAction?.(deck, 'draw'),
                 className: 'bg-blue-600 hover:bg-blue-500',
                 title: 'Draw',
                 icon: <Hand size={14} />
               },
               playTopCard: {
                 key: 'playTopCard',
-                action: (e?: React.MouseEvent) => executeClickAction(deck, 'playTopCard', e),
+                action: (e?: React.MouseEvent) => executeClickAction?.(deck, 'playTopCard', e),
                 className: 'bg-green-600 hover:bg-green-500',
                 title: 'Play Top',
                 icon: <ArrowUp size={14} />
               },
               shuffleDeck: {
                 key: 'shuffleDeck',
-                action: () => executeClickAction(deck, 'shuffleDeck'),
+                action: () => executeClickAction?.(deck, 'shuffleDeck'),
                 className: 'bg-purple-600 hover:bg-purple-500',
                 title: 'Shuffle',
                 icon: <Shuffle size={14} />
@@ -900,8 +898,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
               searchDeck: {
                 key: 'searchDeck',
                 action: () => {
-                  setSearchModalDeck(deck);
-                  setSearchModalPile(undefined);
+                  setSearchModalDeck?.(deck);
+                  setSearchModalPile?.(undefined);
                 },
                 className: 'bg-cyan-600 hover:bg-cyan-500',
                 title: 'Search',
@@ -910,7 +908,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
               topDeck: {
                 key: 'topDeck',
                 action: () => {
-                  setTopDeckModalDeck(deck);
+                  setTopDeckModalDeck?.(deck);
                 },
                 className: 'bg-orange-600 hover:bg-orange-500',
                 title: 'Top Deck',
@@ -925,77 +923,77 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
               },
               returnAll: {
                 key: 'returnAll',
-                action: () => executeClickAction(deck, 'returnAll'),
+                action: () => executeClickAction?.(deck, 'returnAll'),
                 className: 'bg-red-600 hover:bg-red-500',
                 title: 'Return All',
                 icon: <Undo size={14} />
               },
               clone: {
                 key: 'clone',
-                action: () => executeClickAction(deck, 'clone'),
+                action: () => executeClickAction?.(deck, 'clone'),
                 className: 'bg-cyan-600 hover:bg-cyan-500',
                 title: 'Clone',
                 icon: <Copy size={14} />
               },
               delete: {
                 key: 'delete',
-                action: () => setDeleteCandidateId(deck.id),
+                action: () => setDeleteCandidateId?.(deck.id),
                 className: 'bg-red-600 hover:bg-red-500',
                 title: 'Delete',
                 icon: <Trash2 size={14} />
               },
               lock: {
                 key: 'lock',
-                action: () => executeClickAction(deck, 'lock'),
+                action: () => executeClickAction?.(deck, 'lock'),
                 className: 'bg-yellow-600 hover:bg-yellow-500',
                 title: deck.locked ? 'Unlock' : 'Lock',
                 icon: deck.locked ? <Unlock size={14} /> : <Lock size={14} />
               },
               layer: {
                 key: 'layer',
-                action: () => executeClickAction(deck, 'layerUp'),
+                action: () => executeClickAction?.(deck, 'layerUp'),
                 className: 'bg-indigo-600 hover:bg-indigo-500',
                 title: 'Layer Up',
                 icon: <Layers size={14} />
               },
               rotateClockwise: {
                 key: 'rotateClockwise',
-                action: () => executeClickAction(deck, 'rotateClockwise'),
+                action: () => executeClickAction?.(deck, 'rotateClockwise'),
                 className: 'bg-yellow-600 hover:bg-yellow-500',
                 title: 'Rotate Clockwise',
                 icon: <RefreshCw size={14} />
               },
               rotateCounterClockwise: {
                 key: 'rotateCounterClockwise',
-                action: () => executeClickAction(deck, 'rotateCounterClockwise'),
+                action: () => executeClickAction?.(deck, 'rotateCounterClockwise'),
                 className: 'bg-yellow-600 hover:bg-yellow-500',
                 title: 'Rotate Counter-Clockwise',
                 icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
               },
               swingClockwise: {
                 key: 'swingClockwise',
-                action: () => executeClickAction(deck, 'swingClockwise'),
+                action: () => executeClickAction?.(deck, 'swingClockwise'),
                 className: 'bg-orange-600 hover:bg-orange-500',
                 title: 'Swing Clockwise',
                 icon: <RefreshCw size={14} />
               },
               swingCounterClockwise: {
                 key: 'swingCounterClockwise',
-                action: () => executeClickAction(deck, 'swingCounterClockwise'),
+                action: () => executeClickAction?.(deck, 'swingCounterClockwise'),
                 className: 'bg-orange-600 hover:bg-orange-500',
                 title: 'Swing Counter-Clockwise',
                 icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
               },
               millTopCard: {
                 key: 'millTopCard',
-                action: () => executeClickAction(deck, 'millTopCard'),
+                action: () => executeClickAction?.(deck, 'millTopCard'),
                 className: 'bg-teal-600 hover:bg-teal-500',
                 title: 'Mill',
                 icon: <Undo size={14} />
               },
               toBottom: {
                 key: 'toBottom',
-                action: () => executeClickAction(deck, 'toBottom'),
+                action: () => executeClickAction?.(deck, 'toBottom'),
                 className: 'bg-yellow-500 hover:bg-yellow-400',
                 title: 'To Bottom',
                 icon: <ArrowDown size={14} />
@@ -1021,6 +1019,18 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
           })()}
         </div>
         </div>
+
+        {/* Highlight overlay - same approach as HandPanel */}
+        {canDropCard && (
+          <div
+            className="absolute inset-0 pointer-events-none ring-4 ring-purple-500 ring-inset"
+            style={{
+              transform: `rotate(${deck.rotation}deg)`,
+              zIndex: 200,
+              ...shapeStyles
+            }}
+          />
+        )}
       </React.Fragment>
       </div>
     </Tooltip>
@@ -1034,9 +1044,7 @@ export default React.memo(DeckComponent, (prevProps, nextProps) => {
     prevProps.deck.rotation === nextProps.deck.rotation &&
     prevProps.deck.locked === nextProps.deck.locked &&
     prevProps.draggingId === nextProps.draggingId &&
-    prevProps.hoveredDeckId === nextProps.hoveredDeckId &&
     prevProps.hoveredPileId === nextProps.hoveredPileId &&
-    prevProps.cursorSlotHasCards === nextProps.cursorSlotHasCards &&
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.disableDeckHighlight === nextProps.disableDeckHighlight
     // УБРАЛИ сравнение массивов - они вызывают постоянные ререндеры!

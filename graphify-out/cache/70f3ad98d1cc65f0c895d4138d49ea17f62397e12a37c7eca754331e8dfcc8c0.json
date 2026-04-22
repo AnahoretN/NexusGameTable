@@ -1,0 +1,1 @@
+{"nodes": [{"id": "constants_ts", "label": "constants.ts", "file_type": "code", "source_file": "constants.ts", "source_location": "L1"}], "edges": [{"source": "constants_ts", "target": "types", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "constants.ts", "source_location": "L2", "weight": 1.0}], "raw_calls": []}

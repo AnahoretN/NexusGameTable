@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ItemType, Card as CardType, Token as TokenType, CardOrientation, Deck as DeckType, Randomizer, Counter, DiceObject, Board as BoardType } from '../types';
+import { ItemType, Card as CardType, Token as TokenType, CardOrientation, Deck as DeckType, Randomizer, Counter, DiceObject, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing } from '../types';
 import { renderCursorSlotItem } from './CursorSlotItems';
 
 interface CursorSlotVisualizationProps {
-  cursorSlot: (CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType)[];
+  cursorSlot: (CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing)[];
   cursorPosition: { x: number; y: number } | null;
   cursorPositionRef: React.MutableRefObject<{ x: number; y: number } | null>;
   zoom: number;
@@ -17,7 +17,7 @@ interface CursorSlotVisualizationProps {
 }
 
 interface HeldItem {
-  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType;
+  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing;
   x: number;
   y: number;
   width: number;
@@ -31,7 +31,7 @@ interface HeldItem {
  * Helper function to calculate item dimensions
  */
 const calculateItemDimensions = (
-  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType,
+  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing,
   getCardSettings: (card: CardType) => {
     cardWidth?: number;
     cardHeight?: number;
@@ -45,6 +45,10 @@ const calculateItemDimensions = (
   const isCounter = item.type === ItemType.COUNTER;
   const isDice = item.type === ItemType.DICE_OBJECT;
   const isBoard = item.type === ItemType.BOARD;
+  const isBattlefieldCell = item.type === ItemType.BATTLEFIELD_CELL;
+  const isNexusBoard = item.type === ItemType.NEXUS_BOARD;
+  const isNexusCell = item.type === ItemType.NEXUS_CELL;
+  const isDrawing = item.type === ItemType.DRAWING;
 
   let baseWidth = item.width ?? 50;
   let baseHeight = item.height ?? 50;
@@ -64,6 +68,14 @@ const calculateItemDimensions = (
   } else if (isBoard) {
     baseWidth = item.width ?? 500;
     baseHeight = item.height ?? 500;
+  } else if (isBattlefieldCell || isNexusBoard || isNexusCell) {
+    // Use default dimensions for board-related objects
+    baseWidth = item.width ?? 100;
+    baseHeight = item.height ?? 100;
+  } else if (isDrawing) {
+    // Drawings have their own dimensions
+    baseWidth = item.width ?? 200;
+    baseHeight = item.height ?? 200;
   }
 
   return {
@@ -93,17 +105,20 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
   const cleanupTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const rafRef = useRef<number>();
 
-  // Memoize sorted cursor slot to avoid re-sorting on every render
+  // IMPORTANT: Simply use cursorSlot directly - no filtering needed
+  // The cursorSlot state is the source of truth
   const sortedSlot = useMemo(() => {
     if (cursorSlot.length === 0) return [];
     // Sort by originalZIndex in DESCENDING order to preserve layer relationships
-    // Items with higher originalZIndex (top) should be rendered first (on top in stack)
     return [...cursorSlot].sort((a, b) => {
       const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
       const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
       return zB - zA; // Descending order - higher Z first
     });
   }, [cursorSlot]);
+
+  // Remove cursorSlot - not needed anymore
+  // const cursorSlot = useMemo(() => { ... }, [cursorSlot, state.objects]);
 
   // Track items currently being held/dragged
   useEffect(() => {
@@ -115,8 +130,9 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
       const newHeldItems: HeldItem[] = cursorSlot.map((item, index) => {
         const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU);
 
-        const clickOffsetX = (item as any).clickOffsetX;
-        const clickOffsetY = (item as any).clickOffsetY;
+        // Use pixel offsets directly if available
+        const clickOffsetX_PX = (item as any).clickOffsetX_PX;
+        const clickOffsetY_PX = (item as any).clickOffsetY_PX;
         const itemWidth = dimensions.width;
         const itemHeight = dimensions.height;
 
@@ -124,14 +140,24 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
         let finalX = position.x;
         let finalY = position.y;
 
-        if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
-          const offsetXPx = clickOffsetX * pixelsPerVU;
-          const offsetYPx = clickOffsetY * pixelsPerVU;
-          finalX = position.x - offsetXPx;
-          finalY = position.y - offsetYPx;
+        if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+          // Use pixel offsets directly
+          finalX = position.x - clickOffsetX_PX;
+          finalY = position.y - clickOffsetY_PX;
         } else {
-          finalX = position.x - (itemWidth / 2);
-          finalY = position.y - (itemHeight / 2);
+          // Fallback to old VU-based offsets
+          const clickOffsetX = (item as any).clickOffsetX;
+          const clickOffsetY = (item as any).clickOffsetY;
+
+          if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
+            const offsetXPx = clickOffsetX * pixelsPerVU;
+            const offsetYPx = clickOffsetY * pixelsPerVU;
+            finalX = position.x - offsetXPx;
+            finalY = position.y - offsetYPx;
+          } else {
+            finalX = position.x - (itemWidth / 2);
+            finalY = position.y - (itemHeight / 2);
+          }
         }
 
         return {
@@ -178,6 +204,9 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
   if (!hasItems) return null;
   if (!cursorPosition && !cursorPositionRef.current && heldItems.length === 0) return null;
 
+  // If no active items after filtering, don't render
+  if (cursorSlot.length === 0 && heldItems.length === 0) return null;
+
   // Use current position for active slot, last known position for dropped items
   const position = cursorSlot.length > 0
     ? (cursorPositionRef.current ?? cursorPosition)
@@ -187,6 +216,8 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
 
   const finalPosition = position || { x: 0, y: 0 };
 
+  // Render inline (not through portal) to maintain coordinate system compatibility
+  // The z-index is already very high (9999999999) which should be above most UI elements
   return (
     <>
       {/* Active cursor slot items - container at cursor position for relative offsets */}
@@ -202,73 +233,83 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
             willChange: 'transform', // Hint to browser for optimization
           }}
         >
-      {/* Render active cursor slot items */}
-      {cursorSlot.length > 0 && cursorPositionRef.current && sortedSlot.map((item, sortedIndex) => {
-        const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU);
-        const { width, height } = dimensions;
-        const isCard = item.type === ItemType.CARD;
+          {/* Render active cursor slot items */}
+          {sortedSlot.map((item, sortedIndex) => {
+            const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU);
+            const { width, height } = dimensions;
+            const isCard = item.type === ItemType.CARD;
 
-        // Container is already positioned at cursor position, so offsetX/Y are offsets from (0,0) of container
-        // Calculate offset from cursor to object's clicked point
-        let offsetX = 0;
-        let offsetY = 0;
+            // Container is already positioned at cursor position, so offsetX/Y are offsets from (0,0) of container
+            // Calculate offset from cursor to object's clicked point
+            let offsetX = 0;
+            let offsetY = 0;
 
-        const clickOffsetX = (item as any).clickOffsetX;
-        const clickOffsetY = (item as any).clickOffsetY;
+            // Use pixel offsets directly if available (stored as screen pixels)
+            const clickOffsetX_PX = (item as any).clickOffsetX_PX;
+            const clickOffsetY_PX = (item as any).clickOffsetY_PX;
 
-        if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
-          // Convert offset from virtual units to pixels
-          // clickOffsetX is the distance from object's top-left to the clicked point
-          // We want the clicked point to be at the cursor (container's origin)
-          // So we offset the object by NEGATIVE clickOffset
-          offsetX = -(clickOffsetX * pixelsPerVU);
-          offsetY = -(clickOffsetY * pixelsPerVU);
-        } else {
-          // No offset - center on cursor
-          offsetX = -(width / 2);
-          offsetY = -(height / 2);
-        }
+            if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+              // clickOffsetX_PX is the distance from object's top-left to the clicked point, in screen pixels
+              // We want the clicked point to be at the cursor (container's origin)
+              // So we offset the object by NEGATIVE clickOffset (no conversion needed!)
+              offsetX = -clickOffsetX_PX;
+              offsetY = -clickOffsetY_PX;
+            } else {
+              // Fallback: try old VU-based offsets
+              const clickOffsetX = (item as any).clickOffsetX;
+              const clickOffsetY = (item as any).clickOffsetY;
 
-        // Calculate stack offset based on sorted position
-        const offsetFromFront = sortedIndex;
-        const offsetAmount = Math.min(width, height) * 0.05;
-        const stackOffsetX = offsetFromFront * offsetAmount;
-        const stackOffsetY = offsetFromFront * offsetAmount;
+              if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
+                // Convert offset from virtual units to pixels
+                offsetX = -(clickOffsetX * pixelsPerVU);
+                offsetY = -(clickOffsetY * pixelsPerVU);
+              } else {
+                // No offset - center on cursor
+                offsetX = -(width / 2);
+                offsetY = -(height / 2);
+              }
+            }
 
-        // Combine base offset with stack offset
-        const finalOffsetX = offsetX + stackOffsetX;
-        const finalOffsetY = offsetY + stackOffsetY;
+            // Calculate stack offset based on sorted position
+            const offsetFromFront = sortedIndex;
+            const offsetAmount = Math.min(width, height) * 0.05;
+            const stackOffsetX = offsetFromFront * offsetAmount;
+            const stackOffsetY = offsetFromFront * offsetAmount;
 
-        // Use sequential zIndex for proper stacking in visualization
-        const totalItems = sortedSlot.length;
-        const zIndex = isCard ? (totalItems - sortedIndex) : (totalItems - sortedIndex) + 1000;
+            // Combine base offset with stack offset
+            const finalOffsetX = offsetX + stackOffsetX;
+            const finalOffsetY = offsetY + stackOffsetY;
 
-        return renderCursorSlotItem(
-          { item, width, height, offsetX: finalOffsetX, offsetY: finalOffsetY, zIndex, state },
-          item.id
-        );
-      })}
+            // Use sequential zIndex for proper stacking in visualization
+            const totalItems = sortedSlot.length;
+            const zIndex = isCard ? (totalItems - sortedIndex) : (totalItems - sortedIndex) + 1000;
 
-        {/* Stack counter badge - only show if more than 1 item */}
-        {cursorSlot.length > 1 && (() => {
-          const firstItem = cursorSlot[0];
-          // Card dimensions already reflect orientation, no swap needed
-          const badgeWidth = firstItem?.width ?? 63;
-          const badgeHeight = firstItem?.height ?? 88;
-          // Convert vu to pixels for badge positioning
-          const badgeWidthPx = badgeWidth * pixelsPerVU;
-          const badgeHeightPx = badgeHeight * pixelsPerVU;
-          return (
-            <div className="absolute" style={{
-              left: `${badgeWidthPx / 2 + 4}px`,
-              top: `-${badgeHeightPx / 2 + 4}px`,
-            }}>
-              <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
-                {cursorSlot.length}
+            return renderCursorSlotItem(
+              { item, width, height, offsetX: finalOffsetX, offsetY: finalOffsetY, zIndex, state },
+              item.id
+            );
+          })}
+
+          {/* Stack counter badge - only show if more than 1 item */}
+          {cursorSlot.length > 1 && (() => {
+            const firstItem = cursorSlot[0];
+            // Card dimensions already reflect orientation, no swap needed
+            const badgeWidth = firstItem?.width ?? 63;
+            const badgeHeight = firstItem?.height ?? 88;
+            // Convert vu to pixels for badge positioning
+            const badgeWidthPx = badgeWidth * pixelsPerVU;
+            const badgeHeightPx = badgeHeight * pixelsPerVU;
+            return (
+              <div className="absolute" style={{
+                left: `${badgeWidthPx / 2 + 4}px`,
+                top: `-${badgeHeightPx / 2 + 4}px`,
+              }}>
+                <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
+                  {cursorSlot.length}
+                </div>
               </div>
-            </div>
-          );
-        })()}
+            );
+          })()}
         </div>
       )}
 
@@ -289,7 +330,7 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
               top: y,
               userSelect: 'none',
               WebkitUserSelect: 'none',
-              zIndex: 999999999,
+              zIndex: 999999999, // MUCH higher than hand panel (999999)
             }}
           >
             {renderCursorSlotItem(

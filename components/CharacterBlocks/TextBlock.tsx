@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useCallback } from 'react';
 import { CharacterBlock, TextBlockData } from '../../types';
+import { useInlineEdit } from './hooks';
 
 interface TextBlockProps {
   block: CharacterBlock;
@@ -9,61 +10,42 @@ interface TextBlockProps {
 
 export const TextBlock: React.FC<TextBlockProps> = ({ block, editable, onChange }) => {
   const data = block.data as TextBlockData;
-  const [content, setContent] = useState(data.content);
-  const [isEditing, setIsEditing] = useState(false);
 
-  // Update local state when block data changes
-  useEffect(() => {
-    setContent(data.content);
-  }, [data.content]);
+  const handleSave = useCallback((newContent: string) => {
+    onChange({ ...data, content: newContent });
+  }, [data, onChange]);
 
-  // Debounced save to avoid excessive updates
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (content !== data.content) {
-        onChange({ ...data, content });
-      }
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(timer);
-  }, [content, data, onChange]);
-
-  const handleClick = useCallback(() => {
-    if (editable) {
-      setIsEditing(true);
-    }
-  }, [editable]);
-
-  const handleBlur = useCallback(() => {
-    setIsEditing(false);
-    // Immediate save on blur
-    if (content !== data.content) {
-      onChange({ ...data, content });
-    }
-  }, [content, data, onChange]);
+  const contentEdit = useInlineEdit({
+    value: data.content,
+    onSave: handleSave,
+    editable,
+    debounceMs: 500,
+    onEnterSave: false,
+    onEscapeCancel: false
+  });
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
     if (data.maxLength && newContent.length > data.maxLength) {
-      return; // Enforce max length
+      return;
     }
-    setContent(newContent);
-  }, [data.maxLength]);
+    contentEdit.setEditValue(newContent);
+  }, [data.maxLength, contentEdit]);
 
   return (
     <div className="w-full">
-      {isEditing && editable ? (
+      {contentEdit.isEditing && editable ? (
         <textarea
-          value={content}
+          value={contentEdit.editValue}
           onChange={handleChange}
-          onBlur={handleBlur}
+          onBlur={contentEdit.handleBlur}
           className="w-full min-h-[100px] p-1.5 bg-slate-600 text-white rounded resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
           placeholder="Enter text here..."
           autoFocus
         />
       ) : (
         <div
-          onClick={() => editable && handleClick()}
+          onClick={contentEdit.startEdit}
           className={`min-h-[100px] p-1.5 rounded whitespace-pre-wrap break-words text-xs ${
             editable
               ? 'bg-slate-600 text-white cursor-text hover:bg-slate-500'
@@ -71,7 +53,7 @@ export const TextBlock: React.FC<TextBlockProps> = ({ block, editable, onChange 
           }`}
           title={editable ? "Click to edit" : undefined}
         >
-          {content || (
+          {contentEdit.editValue || (
             <span className="text-slate-500 italic">
               {editable ? 'Click to add text...' : 'No content'}
             </span>
@@ -79,10 +61,9 @@ export const TextBlock: React.FC<TextBlockProps> = ({ block, editable, onChange 
         </div>
       )}
 
-      {/* Character count if maxLength is set */}
       {data.maxLength && (
         <div className="text-xs text-slate-400 mt-1">
-          {content.length} / {data.maxLength}
+          {contentEdit.editValue.length} / {data.maxLength}
         </div>
       )}
     </div>

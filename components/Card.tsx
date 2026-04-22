@@ -338,7 +338,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                   <button
                     onClick={(e) => { e.stopPropagation(); onFlip && onFlip(e); }}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className="absolute top-4 left-1/2 -translate-x-1/2 z-20 p-1 bg-black/50 hover:bg-black/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-4 left-1/2 -translate-x-1/2 z-[150] p-1 bg-black/50 hover:bg-black/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
                     title="Flip Card"
                   >
                     {card.faceUp ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -413,7 +413,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
                   <button
                       onClick={(e) => { e.stopPropagation(); onFlip && onFlip(e); }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="absolute top-4 left-1/2 -translate-x-1/2 z-20 p-1 bg-black/50 hover:bg-black/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-4 left-1/2 -translate-x-1/2 z-[150] p-1 bg-black/50 hover:bg-black/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
                       title="Flip Card"
                   >
                       {card.faceUp ? <EyeOff size={14} /> : <Eye size={14} />}

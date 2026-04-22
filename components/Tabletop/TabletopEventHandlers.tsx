@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType } from '../../types';
+import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation } from '../../types';
 import { clampScrollToPlayableArea } from '../../utils/viewportConstraints';
 import {
   parseGridCellKey,
@@ -18,8 +18,8 @@ interface TabletopEventHandlersProps {
   setCursorSlot: React.Dispatch<React.SetStateAction<any[]>>;
   setCursorPosition: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
   cursorPositionRef: React.MutableRefObject<{ x: number; y: number } | null>;
-  setCursorSlotSource: React.Dispatch<React.SetStateAction<'ctrl' | 'hold' | 'shift' | 'archetype' | null>>;
-  cursorSlotSource: 'ctrl' | 'hold' | 'shift' | 'archetype' | null;
+  setCursorSlotSource: React.Dispatch<React.SetStateAction<'hold' | 'shift' | 'archetype' | null>>;
+  cursorSlotSource: 'hold' | 'shift' | 'archetype' | null;
   currentTool: string;
   setCurrentTool: React.Dispatch<React.SetStateAction<string>>;
   isShiftPressed: boolean;
@@ -27,6 +27,7 @@ interface TabletopEventHandlersProps {
   isCtrlPressed: boolean;
   setIsCtrlPressed: React.Dispatch<React.SetStateAction<boolean>>;
   draggingId: string | null;
+  draggingIdRef: React.MutableRefObject<string | null>;
   setDraggingId: React.Dispatch<React.SetStateAction<string | null>>;
   setResizingId: React.Dispatch<React.SetStateAction<string | null>>;
   setResizeStart: React.Dispatch<React.SetStateAction<{ x: number; y: number; width: number; height: number } | null>>;
@@ -63,6 +64,7 @@ interface TabletopEventHandlersProps {
     addedToSlot: boolean;
   }>;
   dragOffsetRef: React.MutableRefObject<{ x: number; y: number } | null>;
+  cursorSlotLastAddedRef: React.MutableRefObject<number>;
   setClickTooltip: React.Dispatch<React.SetStateAction<{ cardId: string; x: number; y: number } | null>>;
   setNexusBoardAddingCell: React.Dispatch<React.SetStateAction<string | null>>;
   setSettingsModalObj: React.Dispatch<React.SetStateAction<TableObject | null>>;
@@ -71,6 +73,7 @@ interface TabletopEventHandlersProps {
   setPilesButtonMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; deck: any } | null>>;
   setTopDeckModalDeck: React.Dispatch<React.SetStateAction<any>>;
   setZoom?: (zoom: number) => void; // Optional setZoom from ViewTransformContext
+  setScroll?: (x: number, y: number) => void; // Optional setScroll from ViewTransformContext
 }
 
 // Helper function to add object to cursor slot WITH LOGGING
@@ -79,7 +82,7 @@ const addToCursorSlot = (
   item: TableObject,
   mousePosition: { x: number; y: number } | undefined,
   props: TabletopEventHandlersProps,
-  source: 'ctrl' | 'hold' | 'shift' = 'ctrl'
+  source: 'hold' | 'shift' = 'hold'
 ) => {
   console.log('🎯 [CURSOR SLOT] addToCursorSlot called:', {
     id,
@@ -96,17 +99,35 @@ const addToCursorSlot = (
     setCursorPosition,
     cursorPositionRef,
     setCursorSlotSource,
+    cursorSlotLastAddedRef,
     state,
     dispatch,
     activePlayerId,
     scrollContainerRef,
     viewTransform,
+    pixelsPerVU,
     p2v
   } = props;
 
   console.log('🔍 [CURSOR SLOT] Current slot state:', {
     slotLength: cursorSlot.length,
     maxItems: 100
+  });
+
+  // IMPORTANT: Check if slot actually has items
+  // Use cursorSlot.length first (React state), fallback to state.objects check
+  // Objects in cursor slot have isOnTable: false
+  const slotHasItemsFromState = cursorSlot.length > 0;
+  const objectsHiddenFromTable = Object.values(state.objects).filter(o =>
+    (o.type === ItemType.CARD || o.type === ItemType.TOKEN) &&
+    'isOnTable' in o && o.isOnTable === false
+  );
+  const actuallyHasItems = slotHasItemsFromState || objectsHiddenFromTable.length > 0;
+
+  console.log('🔍 [CURSOR SLOT] Actual slot state from state.objects:', {
+    cursorSlotLength: cursorSlot.length,
+    hiddenObjectsCount: objectsHiddenFromTable.length,
+    actuallyHasItems
   });
 
   // Check if cursor is over a token archetype button
@@ -117,6 +138,10 @@ const addToCursorSlot = (
     return;
   }
 
+  // Note: BOARD is never added to cursor slot via shift+click
+  // CARD/TOKEN can coexist in slot, no special handling needed
+
+  // Check cursorSlot for the 100 item limit
   if (cursorSlot.length >= 100) {
     console.log('❌ [CURSOR SLOT] Blocked: slot full (100 items max)');
     return; // Max 100 items in slot
@@ -325,39 +350,131 @@ const addToCursorSlot = (
   (itemClone as any).cursorSlotIndex = cursorSlot.length;
   (itemClone as any).timestamp = Date.now();
 
-  // Calculate and store click offset from object center
+  // Calculate and store click offset in SCREEN PIXELS (not virtual units!)
+  // This ensures offset is consistent regardless of scroll position
   if (mousePosition && obj && scrollContainerRef.current) {
     const rect = scrollContainerRef.current.getBoundingClientRect();
     const scrollX = viewTransform?.scroll?.x || 0;
     const scrollY = viewTransform?.scroll?.y || 0;
 
-    // Convert click position to virtual units
+    // Get the ACTUAL DOM element position for comparison
+    // Try multiple methods to find the object element
+    let objElementRect: DOMRect | null = null;
+
+    // Method 1: Try to find via closest from target element
+    const targetElement = (mousePosition as any).target as HTMLElement;
+    if (targetElement) {
+      const objElement = targetElement.closest('[data-object-id]') as HTMLElement;
+      if (objElement) {
+        objElementRect = objElement.getBoundingClientRect();
+      }
+    }
+
+    // Method 2: If closest didn't work, try querySelector with object ID
+    if (!objElementRect) {
+      const objElement = scrollContainerRef.current.querySelector(`[data-object-id="${obj.id}"]`) as HTMLElement;
+      if (objElement) {
+        objElementRect = objElement.getBoundingClientRect();
+      }
+    }
+
+    // Calculate object's VISUAL position on screen (in pixels)
+    // Objects are rendered with: left: v2p(obj.x) = obj.x * pixelsPerVU
+    // where pixelsPerVU already includes zoomMultiplier
+    // The visual position on screen is: rect.left + v2p(obj.x) - scrollX
+    const objScreenX = rect.left + (obj.x * pixelsPerVU) - scrollX;
+    const objScreenY = rect.top + (obj.y * pixelsPerVU) - scrollY;
+
+    console.log('🎯 [CURSOR SLOT] CLICK OFFSET DEBUG:', {
+      objId: item.id,
+      objType: item.type,
+      objPosition_VU: { x: obj.x, y: obj.y },
+      objRotation: obj.rotation || 0,
+      // Calculated position
+      calculatedObjScreenPos: { x: objScreenX, y: objScreenY },
+      // Actual DOM position (if available)
+      actualDOMRect: objElementRect ? {
+        left: objElementRect.left,
+        top: objElementRect.top,
+        width: objElementRect.width,
+        height: objElementRect.height
+      } : 'NOT_FOUND',
+      domVsCalculated: objElementRect ? {
+        diffX: objElementRect.left - objScreenX,
+        diffY: objElementRect.top - objScreenY
+      } : null,
+      // Mouse position
+      mouseScreenPos: { x: mousePosition.x, y: mousePosition.y },
+      // Check if mousePosition matches event.clientX/Y
+      mousePositionMatchesEvent: (mousePosition as any).clientX !== undefined && mousePosition.x === (mousePosition as any).clientX,
+      // Context
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      scroll: { x: scrollX, y: scrollY },
+      pixelsPerVU,
+      searchMethod: objElementRect ? 'querySelector' : 'none',
+      // Additional debug info
+      containerChildren: scrollContainerRef.current?.children.length,
+      dataObjectElements: scrollContainerRef.current?.querySelectorAll('[data-object-id]').length
+    });
+
+    // Use ACTUAL DOM position if available, otherwise fall back to calculated
+    let finalOffsetX_PX: number;
+    let finalOffsetY_PX: number;
+
+    if (objElementRect) {
+      // Use actual DOM element position
+      finalOffsetX_PX = mousePosition.x - objElementRect.left;
+      finalOffsetY_PX = mousePosition.y - objElementRect.top;
+      console.log('✅ [CURSOR SLOT] Using ACTUAL DOM offset:', {
+        x: finalOffsetX_PX,
+        y: finalOffsetY_PX,
+        objLeft: objElementRect.left,
+        objTop: objElementRect.top,
+        mouseX: mousePosition.x,
+        mouseY: mousePosition.y
+      });
+    } else {
+      // Fallback: use calculated position
+      const offsetX_PX = mousePosition.x - objScreenX;
+      const offsetY_PX = mousePosition.y - objScreenY;
+      finalOffsetX_PX = offsetX_PX;
+      finalOffsetY_PX = offsetY_PX;
+      console.warn('⚠️ [CURSOR SLOT] Using CALCULATED offset (DOM element not found):', {
+        x: finalOffsetX_PX,
+        y: finalOffsetY_PX,
+        objId: obj.id
+      });
+    }
+
+    // IMPORTANT: Calculate offset in VIRTUAL UNITS relative to object's game position
+    // This ensures offset works correctly regardless of scroll position
+    // Click position in virtual units (relative to game world origin)
     const clickX_VU = p2v(mousePosition.x - rect.left + scrollX);
     const clickY_VU = p2v(mousePosition.y - rect.top + scrollY);
 
-    // Calculate offset from top-left corner to click position (not from center!)
-    const offsetX = clickX_VU - obj.x;
-    const offsetY = clickY_VU - obj.y;
+    // Offset is the difference between click position and object position (both in VU)
+    const clickOffsetX_VU = clickX_VU - obj.x;
+    const clickOffsetY_VU = clickY_VU - obj.y;
 
-    console.log('🎯 [CURSOR SLOT] Calculating click offset from top-left corner:', {
-      objId: item.id,
-      objPosition: { x: obj.x, y: obj.y },
-      clickPosition_VU: { x: clickX_VU, y: clickY_VU },
-      clickPosition_PX: { x: mousePosition.x, y: mousePosition.y },
-      calculatedOffset: { x: offsetX, y: offsetY },
-      objSize: { width: obj.width, height: obj.height }
+    console.log('🧮 [CURSOR SLOT] Calculated VU offset (scroll-aware):', {
+      clickX_VU,
+      clickY_VU,
+      objX: obj.x,
+      objY: obj.y,
+      clickOffsetX_VU,
+      clickOffsetY_VU,
+      scrollX,
+      scrollY,
+      pixelsPerVU
     });
 
-    // Store offset in virtual units
-    (itemClone as any).clickOffsetX = offsetX;
-    (itemClone as any).clickOffsetY = offsetY;
+    // Store offset in SCREEN PIXELS for CursorSlotVisualization (for visual rendering)
+    (itemClone as any).clickOffsetX_PX = finalOffsetX_PX;
+    (itemClone as any).clickOffsetY_PX = finalOffsetY_PX;
 
-    console.log('💾 [CURSOR SLOT] Stored click offset on clone:', {
-      itemId: itemClone.id,
-      clickOffsetX: offsetX,
-      clickOffsetY: offsetY,
-      cloneXY: { x: itemClone.x, y: itemClone.y }
-    });
+    // Store offset in VIRTUAL UNITS for drop position calculation (scroll-aware!)
+    (itemClone as any).clickOffsetX = clickOffsetX_VU;
+    (itemClone as any).clickOffsetY = clickOffsetY_VU;
 
     // Store original object position for drop calculation
     (itemClone as any).originalX = obj.x;
@@ -370,6 +487,22 @@ const addToCursorSlot = (
     slotIndex: (itemClone as any).cursorSlotIndex
   });
 
+  // Update cursor position FIRST (before state update to ensure ref is set during render)
+  if (mousePosition) {
+    const pos = { x: mousePosition.x, y: mousePosition.y };
+    console.log('🖱️ [CURSOR SLOT] Setting cursor position BEFORE state update:', pos);
+    cursorPositionRef.current = pos;
+    setCursorPosition(pos);
+
+    // Verify ref was set correctly
+    console.log('✅ [CURSOR SLOT] Verified cursorPositionRef.current after set:', {
+      refValue: cursorPositionRef.current,
+      matches: cursorPositionRef.current === pos
+    });
+  } else {
+    console.warn('⚠️ [CURSOR SLOT] No mousePosition provided to addToCursorSlot!');
+  }
+
   // Add to cursor slot
   const newSlot = [...cursorSlot, itemClone as CardType | TokenType | BoardType | DeckType];
   console.log('➕ [CURSOR SLOT] Adding to slot:', {
@@ -380,6 +513,9 @@ const addToCursorSlot = (
   });
 
   setCursorSlot(newSlot);
+
+  // Track when item was added to prevent immediate drop on mouse up
+  cursorSlotLastAddedRef.current = Date.now();
 
   // Remove object from table temporarily (hide it while in slot)
   console.log('🚫 [CURSOR SLOT] Hiding object from table while in slot:', {
@@ -399,14 +535,6 @@ const addToCursorSlot = (
       }
     }
   });
-
-  // Update cursor position
-  if (mousePosition) {
-    const pos = { x: mousePosition.x, y: mousePosition.y };
-    console.log('🖱️ [CURSOR SLOT] Updating cursor position:', pos);
-    setCursorPosition(pos);
-    cursorPositionRef.current = pos;
-  }
 
   console.log('✅ [CURSOR SLOT] Successfully added item to slot:', {
     itemId: id,
@@ -439,7 +567,8 @@ const dropCursorSlot = (
     activePlayerId,
     scrollContainerRef,
     viewTransform,
-    p2v
+    p2v,
+    pixelsPerVU
   } = props;
 
   console.log('🔍 [CURSOR SLOT] Current slot state before drop:', {
@@ -452,8 +581,11 @@ const dropCursorSlot = (
     return;
   }
 
+  // Use a local variable to track items to drop (can be modified below)
+  let itemsToDrop = cursorSlot;
+
   // Notify that items were dropped from cursor slot
-  const droppedIds = cursorSlot.map(item => item.id);
+  const droppedIds = itemsToDrop.map(item => item.id);
   console.log('📢 [CURSOR SLOT] Dispatching cursor-slot-dropped event:', droppedIds);
 
   window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
@@ -469,8 +601,89 @@ const dropCursorSlot = (
     return;
   }
 
+  // Check if cursor is over hand panel - drop cards to hand instead of table
+  const handPanel = elementAtCursor?.closest('[data-hand-panel="true"]');
+  if (handPanel) {
+    console.log('✅ [CURSOR SLOT] Dropping items to hand panel');
+
+    // Filter only CARDS and TOKENS from cursor slot (allow both in hand panel)
+    const items = itemsToDrop.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN);
+    const nonCardItems = itemsToDrop.filter(item => item.type !== ItemType.CARD && item.type !== ItemType.TOKEN);
+
+    console.log('🔍 [CURSOR SLOT] Filtered items:', {
+      total: itemsToDrop.length,
+      cardsAndTokens: items.length,
+      otherItems: nonCardItems.length,
+      otherItemTypes: nonCardItems.map(i => i.type)
+    });
+
+    if (items.length > 0) {
+      window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
+        detail: { items }
+      }));
+    }
+
+    // If there are non-card items, keep them in slot and drop them normally
+    // Otherwise clear the slot
+    if (nonCardItems.length > 0) {
+      setCursorSlot(nonCardItems);
+    } else {
+      setCursorSlot([]);
+      setCursorPosition(null);
+      cursorPositionRef.current = null;
+      setCursorSlotSource(null);
+    }
+
+    return;
+  }
+
+  // Check if cursor is over a deck - drop cards to deck instead of table
+  const deckElement = elementAtCursor?.closest('[data-object-id]');
+  if (deckElement) {
+    const deckId = deckElement.getAttribute('data-object-id');
+    const deckObj = deckId ? state.objects[deckId] : null;
+
+    if (deckObj && deckObj.type === ItemType.DECK) {
+      console.log('✅ [CURSOR SLOT] Dropping cards to deck:', deckId);
+
+      // Filter only cards from cursor slot
+      const cards = itemsToDrop.filter(item => item.type === ItemType.CARD);
+
+      if (cards.length > 0) {
+        // Add cards to deck in reverse order (last in slot = first to be added = ends up on top)
+        [...cards].reverse().forEach((item) => {
+          dispatch({
+            type: 'ADD_CARD_TO_TOP_OF_DECK',
+            payload: { cardId: item.id, deckId }
+          });
+        });
+
+        // Send cursor-left-deck event to remove highlight
+        window.dispatchEvent(new CustomEvent('cursor-left-deck', {
+          detail: { deckId }
+        }));
+      }
+
+      // For non-card items (tokens), drop them on the table at deck position
+      const nonCards = itemsToDrop.filter(item => item.type !== ItemType.CARD);
+      if (nonCards.length > 0) {
+        // These will be handled by the normal drop logic below
+        // Update itemsToDrop to only include non-card items
+        itemsToDrop = nonCards;
+      } else {
+        // Clear cursor slot after successful deck drop
+        setCursorSlot([]);
+        setCursorPosition(null);
+        cursorPositionRef.current = null;
+        setCursorSlotSource(null);
+
+        return;
+      }
+    }
+  }
+
   // Determine zIndex behavior based on source
-  const itemSource = cursorSlot.length > 0 ? (cursorSlot[0] as any).source : null;
+  const itemSource = itemsToDrop.length > 0 ? (itemsToDrop[0] as any).source : null;
   const source = itemSource || cursorSlotSource;
   const useOriginalZIndex = source === 'hold' || source === 'archetype';
 
@@ -487,6 +700,7 @@ const dropCursorSlot = (
     return;
   }
 
+  // p2v already uses pixelsPerVU which includes zoomMultiplier
   const baseX = p2v(clientX - rect.left + (viewTransform?.scroll?.x || 0));
   const baseY = p2v(clientY - rect.top + (viewTransform?.scroll?.y || 0));
 
@@ -500,47 +714,69 @@ const dropCursorSlot = (
   });
 
   // Drop all items from cursor slot
-  cursorSlot.forEach((item, index) => {
+  itemsToDrop.forEach((item, index) => {
     let finalX, finalY;
 
-    // Check if we have stored click offset info
-    if ((item as any).clickOffsetX !== undefined && (item as any).clickOffsetY !== undefined) {
-      // Use stored offset to position object correctly
-      const offsetX = (item as any).clickOffsetX;
-      const offsetY = (item as any).clickOffsetY;
+    // Check if we have stored original position and click offset info
+    if ((item as any).originalX !== undefined && (item as any).originalY !== undefined) {
+      // Calculate offset from original position to current cursor position
+      // This maintains the same offset as when the object was picked up
+      const originalX = (item as any).originalX;
+      const originalY = (item as any).originalY;
 
-      console.log('📍 [CURSOR SLOT] Using stored click offset:', {
-        itemId: item.id,
-        offset: { x: offsetX, y: offsetY },
-        dropPosition: { x: baseX, y: baseY }
-      });
+      // The offset is the difference between the drop position and the original position
+      // We want to maintain the same offset from cursor to object as when picked up
+      const deltaX_VU = baseX - originalX;
+      const deltaY_VU = baseY - originalY;
 
-      // Calculate final position: dropPos - offset
-      // This makes the clicked point end up at the drop position
-      finalX = baseX - offsetX;
-      finalY = baseY - offsetY;
+      // Use the stored click offsets to calculate the final position
+      // clickOffsetX/Y are in VU (virtual units) - these are the source of truth
+      // clickOffsetX_PX/Y_PX are in screen pixels - only used for CursorSlotVisualization
+      const clickOffsetX = (item as any).clickOffsetX;
+      const clickOffsetY = (item as any).clickOffsetY;
 
-      console.log('🎯 [CURSOR SLOT] Calculated final position with offset:', {
-        itemId: item.id,
-        finalPosition: { x: finalX, y: finalY },
-        originalPosition: { x: item.x, y: item.y },
-        calculation: `dropPos(${baseX.toFixed(2)}, ${baseY.toFixed(2)}) - offset(${offsetX.toFixed(2)}, ${offsetY.toFixed(2)})`
-      });
+      if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
+        // Calculate final position: dropPos - clickOffset
+        // This places the object so the clicked point ends up at the drop position
+        finalX = baseX - clickOffsetX;
+        finalY = baseY - clickOffsetY;
+
+        console.log('🎯 [CURSOR SLOT] Calculated final position with VU offset:', {
+          itemId: item.id,
+          finalPosition: { x: finalX, y: finalY },
+          originalPosition: { x: originalX, y: originalY },
+          dropPosition: { x: baseX, y: baseY },
+          clickOffsetX,
+          clickOffsetY,
+          clickOffsetX_PX: (item as any).clickOffsetX_PX,
+          clickOffsetY_PX: (item as any).clickOffsetY_PX,
+          calculation: `dropPos(${baseX.toFixed(2)}, ${baseY.toFixed(2)}) - offset(${clickOffsetX.toFixed(2)}, ${clickOffsetY.toFixed(2)})`
+        });
+      } else {
+        // Fallback: use simple delta from original position
+        finalX = baseX;
+        finalY = baseY;
+
+        console.log('⚠️ [CURSOR SLOT] Using drop position directly (no VU offset):', {
+          itemId: item.id,
+          dropPosition: { x: finalX, y: finalY }
+        });
+      }
     } else {
-      // Fallback: use simple offset if no click offset stored
+      // Fallback: use simple offset if no original position stored
       const offsetX = index * 20;
       const offsetY = index * 20;
       finalX = baseX + offsetX;
       finalY = baseY + offsetY;
 
-      console.log('⚠️ [CURSOR SLOT] No stored offset, using simple offset:', {
+      console.log('⚠️ [CURSOR SLOT] No original position, using simple offset:', {
         itemId: item.id,
         simpleOffset: { x: offsetX, y: offsetY }
       });
     }
 
     // Apply stack offset for multiple items
-    if (cursorSlot.length > 1) {
+    if (itemsToDrop.length > 1) {
       const stackOffsetX = index * 20;
       const stackOffsetY = index * 20;
       finalX += stackOffsetX;
@@ -834,6 +1070,9 @@ const dropCursorSlot = (
     }
 
     // Restore object to table at new position
+    // Change location from HAND to TABLE for cards
+    const currentCard = isCard ? state.objects[item.id] as CardType : null;
+
     dispatch({
       type: 'UPDATE_OBJECT',
       payload: {
@@ -843,7 +1082,10 @@ const dropCursorSlot = (
           isOnTable: true,
           x: finalX,
           y: finalY,
-          zIndex: finalZIndex
+          zIndex: finalZIndex,
+          ...(isCard && currentCard?.location === CardLocation.HAND && {
+            location: CardLocation.TABLE
+          })
         }
       }
     });
@@ -867,6 +1109,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setCursorSlot,
     setCursorPosition,
     setZoom,
+    setScroll,
     cursorPositionRef,
     setCursorSlotSource,
     cursorSlotSource,
@@ -877,6 +1120,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     isCtrlPressed,
     setIsCtrlPressed,
     draggingId,
+    draggingIdRef,
     setDraggingId,
     setResizingId,
     setResizeStart,
@@ -908,6 +1152,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     clickTooltipBoundsRef,
     dragThresholdRef,
     dragOffsetRef,
+    cursorSlotLastAddedRef,
     setClickTooltip,
     setNexusBoardAddingCell,
     setSettingsModalObj,
@@ -916,6 +1161,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setPilesButtonMenu,
     setTopDeckModalDeck,
   } = props;
+
+  // Track previous deck for cursor hover detection
+  const previousDeckIdRef = useRef<string | null>(null);
 
   // Clear tooltip click timer
   useEffect(() => {
@@ -1016,55 +1264,62 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       return;
     }
 
-    // Shift+click immediately adds to cursor slot for cards, tokens, boards, etc.
-    if (e.shiftKey && obj && (
+    // SHIFT+CLICK only works for CARD and TOKEN - BOARD is excluded
+    const isShiftClickOnMovableObject = e.shiftKey && obj && (
       obj.type === ItemType.CARD ||
-      obj.type === ItemType.TOKEN ||
-      obj.type === ItemType.BOARD
-    )) {
+      obj.type === ItemType.TOKEN
+    );
+
+    // Check if cursor slot has items
+    // Use cursorSlot.length first (React state), fallback to state.objects check
+    // Objects in cursor slot have isOnTable: false
+    const slotHasItemsFromState = cursorSlot.length > 0;
+    const objectsHiddenFromTable = Object.values(state.objects).filter(o =>
+      (o.type === ItemType.CARD || o.type === ItemType.TOKEN) &&
+      'isOnTable' in o && o.isOnTable === false
+    );
+    const actuallyHasItems = slotHasItemsFromState || objectsHiddenFromTable.length > 0;
+
+    // REGULAR CLICK (no shift): if slot has items, drop them
+    // This prevents swap behavior
+    if (!e.shiftKey && actuallyHasItems) {
+      console.log('📦 [MOUSE DOWN] Simple click with slot occupied - dropping all items:', {
+        cursorSlotLength: cursorSlot.length,
+        hiddenObjectsCount: objectsHiddenFromTable.length,
+        clickedObjectId: objId
+      });
+      e.preventDefault();
+      e.stopPropagation();
+      dropCursorSlot(e.clientX, e.clientY, props);
+      cursorSlotLastAddedRef.current = Date.now();
+      return;
+    }
+
+    // SHIFT+CLICK on CARD/TOKEN: add to cursor slot
+    // Multiple items can coexist in slot
+    // BOARD is never added to slot via shift+click
+    if (isShiftClickOnMovableObject) {
       console.log('🎯 [SHIFT+CLICK] Adding to cursor slot:', {
         objId,
         type: obj.type,
-        name: obj.name
+        name: obj.name,
+        cursorSlotLength: cursorSlot.length,
+        hiddenObjectsCount: objectsHiddenFromTable.length
       });
-
       e.preventDefault();
       e.stopPropagation();
       addToCursorSlot(objId, obj, { x: e.clientX, y: e.clientY }, props, 'shift');
       return;
     }
 
-    // Ctrl+click adds to cursor slot instead of dragging
-    if (e.ctrlKey || e.metaKey) {
-      if (obj && obj.type !== ItemType.PANEL && obj.type !== ItemType.WINDOW) {
-        console.log('🎯 [CTRL+CLICK] Adding to cursor slot:', {
-          objId,
-          type: obj.type,
-          name: obj.name
-        });
-
-        addToCursorSlot(objId, obj, { x: e.clientX, y: e.clientY }, props, 'ctrl');
-        return;
-      }
-    }
-
-    // If cursor slot has items and we click without shift/ctrl/meta, drop all items first
-    if (!e.shiftKey && !e.ctrlKey && !e.metaKey && cursorSlot.length > 0 && cursorSlotSource !== 'archetype') {
-      console.log('📦 [MOUSE DOWN] Dropping existing slot items:', {
-        slotSize: cursorSlot.length,
-        source: cursorSlotSource
-      });
-
-      dropCursorSlot(e.clientX, e.clientY, props);
-      return;
-    }
-
-    // Handle left-click for dragging - ADD TO CURSOR SLOT
+    // Handle left-click for dragging
+    // IMPORTANT: Regular click (without Shift) does NOT add objects to cursor slot
     if (e.button === 0) {
-      console.log('🖱️ [MOUSE DOWN] Starting drag operation:', {
+      console.log('🖱️ [MOUSE DOWN] Left click on object:', {
         objId,
-        clientX: e.clientX,
-        clientY: e.clientY
+        type: obj?.type,
+        name: obj?.name,
+        shiftKey: e.shiftKey
       });
 
       // Check if object is already in cursor slot
@@ -1075,29 +1330,49 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         return;
       }
 
-      // Immediately add to cursor slot for cards, tokens, boards, decks
-      if (obj && (
-        obj.type === ItemType.CARD ||
-        obj.type === ItemType.TOKEN ||
-        obj.type === ItemType.BOARD ||
-        obj.type === ItemType.DECK
-      )) {
-        console.log('🎯 [MOUSE DOWN] Adding object to cursor slot on mouse down:', {
+      // Check if this is a UI object (panel/window) - moves immediately without threshold
+      const isUIObject = obj?.type === ItemType.PANEL || obj?.type === ItemType.WINDOW;
+
+      if (isUIObject) {
+        // UI objects use immediate drag (no cursor slot, no threshold)
+        console.log('🪟 [MOUSE DOWN] Using immediate drag for UI object:', {
           objId,
-          type: obj.type,
-          name: obj.name
+          type: obj.type
         });
 
-        e.preventDefault();
-        e.stopPropagation();
-        addToCursorSlot(objId, obj, { x: e.clientX, y: e.clientY }, props, 'hold');
+        // Find the actual panel container by looking for data-ui-object attribute
+        let rect = (e.target as HTMLElement).getBoundingClientRect();
+        const panelContainer = (e.target as HTMLElement).closest('[data-ui-object]');
+        if (panelContainer) {
+          rect = panelContainer.getBoundingClientRect();
+        }
+
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+
+        dragOffsetRef.current = { x: clickX, y: clickY };
+        setDraggingId(objId);
+        draggingIdRef.current = objId; // Set ref for immediate access in handleMouseMove
         return;
       }
 
-      // For other objects, use traditional drag system
-      console.log('🔄 [MOUSE DOWN] Using traditional drag for non-slot object:', {
-        objType: obj?.type,
-        objName: obj?.name
+      // For game objects (cards, tokens, boards, decks):
+      // WITHOUT Shift: set up drag threshold for normal dragging (NOT cursor slot)
+      // WITH Shift: objects are added to cursor slot above (no drag threshold needed)
+
+      // Check if we just dropped an item (prevent immediate re-add)
+      const timeSinceLastDrop = Date.now() - cursorSlotLastAddedRef.current;
+      if (timeSinceLastDrop < 100) {
+        console.log('⏸️ [MOUSE DOWN] Skipping drag threshold (just dropped):', {
+          timeSinceLastDrop
+        });
+        return;
+      }
+
+      console.log('🎯 [MOUSE DOWN] Setting up drag threshold (2 VU) for game object:', {
+        objId,
+        type: obj?.type,
+        name: obj?.name
       });
 
       // Set up drag threshold to distinguish clicks from drags
@@ -1108,18 +1383,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         addedToSlot: false
       };
 
-      // Calculate offset from object's top-left corner
-      const rect = (e.target as HTMLElement).getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const clickY = e.clientY - rect.top;
-
-      dragOffsetRef.current = {
-        x: clickX,
-        y: clickY
-      };
-
-      setDraggingId(objId);
-      console.log('✅ [MOUSE DOWN] Traditional drag operation initiated');
+      // Note: setDraggingId is NOT set here for game objects
+      // It will be set only after drag threshold is exceeded in handleMouseMove
+      console.log('✅ [MOUSE DOWN] Drag threshold initiated, waiting for 2 VU movement');
     }
   }, [
     state.objects,
@@ -1140,7 +1406,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     props
   ]);
 
-  // Mouse move handler WITH LOGGING
+  // Mouse move handler WITH LOGGING (throttled)
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
     // Update cursor slot position
     if (cursorSlot.length > 0) {
@@ -1148,16 +1414,83 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       const newY = e.clientY;
 
       if (cursorPositionRef.current?.x !== newX || cursorPositionRef.current?.y !== newY) {
-        console.log('🖱️ [MOUSE MOVE] Updating cursor slot position:', {
-          oldX: cursorPositionRef.current?.x,
-          oldY: cursorPositionRef.current?.y,
-          newX,
-          newY,
-          slotSize: cursorSlot.length
-        });
+        // Log only every 10th move to reduce console spam
+        const moveCounter = (handleMouseMove as any).moveCounter || 0;
+        (handleMouseMove as any).moveCounter = moveCounter + 1;
+
+        if (moveCounter % 100 === 0) {
+          console.log('🖱️ [MOUSE MOVE] Updating cursor slot position:', {
+            oldX: cursorPositionRef.current?.x,
+            oldY: cursorPositionRef.current?.y,
+            newX,
+            newY,
+            slotSize: cursorSlot.length
+          });
+        }
 
         setCursorPosition({ x: newX, y: newY });
         cursorPositionRef.current = { x: newX, y: newY };
+
+        // Dispatch events for HandPanel and MainMenu to detect hover
+        const eventData = {
+          x: newX,
+          y: newY,
+          isOverMainMenu: false,
+          hasCards: cursorSlot.length > 0,
+          items: cursorSlot.map(item => ({ type: item.type }))
+        };
+
+        // Event for HandPanel to detect hover
+        window.dispatchEvent(new CustomEvent('cursor-slot-move', {
+          detail: eventData
+        }));
+
+        // Event for MainMenu to switch to hand tab
+        window.dispatchEvent(new CustomEvent('cursor-position-update', {
+          detail: eventData
+        }));
+
+        // Check if cursor is over a deck for highlighting
+        const elementAtCursor = document.elementFromPoint(newX, newY);
+        const deckElement = elementAtCursor?.closest('[data-object-id]');
+
+        if (deckElement) {
+          const deckId = deckElement.getAttribute('data-object-id');
+          const deckObj = deckId ? state.objects[deckId] : null;
+
+          if (deckObj && deckObj.type === ItemType.DECK) {
+            // Track previous deck to detect when cursor leaves
+            const previousDeckId = previousDeckIdRef.current;
+
+            if (previousDeckId && previousDeckId !== deckId) {
+              // Cursor left previous deck
+              console.log('🎯 [CURSOR HOVER] Leaving deck:', previousDeckId, 'for deck:', deckId);
+              window.dispatchEvent(new CustomEvent('cursor-left-deck', {
+                detail: { deckId: previousDeckId }
+              }));
+            }
+
+            // Dispatch event for DeckComponent to highlight
+            console.log('🎯 [CURSOR HOVER] Over deck:', deckId);
+            window.dispatchEvent(new CustomEvent('cursor-over-deck', {
+              detail: { deckId }
+            }));
+
+            // Store current deck for next comparison
+            previousDeckIdRef.current = deckId;
+          }
+        } else {
+          // Cursor not over any deck, clear previous deck
+          const previousDeckId = previousDeckIdRef.current;
+          if (previousDeckId) {
+            console.log('🎯 [CURSOR HOVER] Left all decks, was over:', previousDeckId);
+            window.dispatchEvent(new CustomEvent('cursor-left-deck', {
+              detail: { deckId: previousDeckId }
+            }));
+            // Don't clear previousDeckIdRef here - let the next cursor-over-deck event overwrite it
+            // This ensures all deck components receive the cursor-left-deck event
+          }
+        }
       }
     }
 
@@ -1171,46 +1504,88 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       }
     }
 
+    // Check drag threshold for game objects (even if not yet dragging)
+    if (dragThresholdRef.current.targetId && !dragThresholdRef.current.addedToSlot) {
+      const targetId = dragThresholdRef.current.targetId;
+      const obj = state.objects[targetId];
+
+      if (obj) {
+        // Convert 2 VU to pixels for threshold check
+        const thresholdPixels = 2 * pixelsPerVU;
+        const deltaX = e.clientX - dragThresholdRef.current.initialX;
+        const deltaY = e.clientY - dragThresholdRef.current.initialY;
+        const hasExceededThreshold = Math.abs(deltaX) > thresholdPixels || Math.abs(deltaY) > thresholdPixels;
+
+        if (hasExceededThreshold) {
+          console.log('🎯 [MOUSE MOVE] Drag threshold exceeded (2 VU), adding to cursor slot:', {
+            targetId,
+            deltaX,
+            deltaY,
+            thresholdPixels
+          });
+
+          // Mark as added to prevent duplicate adds
+          dragThresholdRef.current.addedToSlot = true;
+
+          // Add object to cursor slot (same as shift+click)
+          addToCursorSlot(targetId, obj, { x: e.clientX, y: e.clientY }, props, 'hold');
+        }
+      }
+    }
+
     // Handle dragging objects
-    if (draggingId && dragOffsetRef.current) {
-      const obj = state.objects[draggingId];
+    const currentDraggingId = draggingIdRef.current || draggingId;
+
+    if (currentDraggingId && dragOffsetRef.current) {
+      const obj = state.objects[currentDraggingId];
       if (!obj) return;
 
-      // Check if drag threshold has been exceeded
-      const dragThreshold = 5; // pixels
-      const deltaX = e.clientX - dragThresholdRef.current.initialX;
-      const deltaY = e.clientY - dragThresholdRef.current.initialY;
-      const hasExceededThreshold = Math.abs(deltaX) > dragThreshold || Math.abs(deltaY) > dragThreshold;
+      // Check if this is a UI object (panel/window) - use screen coordinates
+      const isUIObject = obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW;
 
-      if (!hasExceededThreshold && !dragThresholdRef.current.addedToSlot) {
-        return; // Still in click threshold zone
+      if (isUIObject) {
+        // UI objects move immediately without threshold - smooth drag
+        const newX = e.clientX - dragOffsetRef.current.x;
+        const newY = e.clientY - dragOffsetRef.current.y;
+
+        // Update only uiObject position during drag (playerPanelSettings updated on mouseUp)
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: currentDraggingId,
+            updates: {
+              x: newX,
+              y: newY
+            }
+          },
+          _localOnly: true  // Critical: ensures x,y are updated (not filtered by reducer)
+        });
+      } else {
+        // For game objects, use virtual units
+        const rect = scrollContainerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        // p2v already uses pixelsPerVU which includes zoomMultiplier
+        const newX = p2v(e.clientX - rect.left - dragOffsetRef.current.x + (viewTransform?.scroll?.x || 0));
+        const newY = p2v(e.clientY - rect.top - dragOffsetRef.current.y + (viewTransform?.scroll?.y || 0));
+
+        // Update object position
+        dispatch({
+          type: 'UPDATE_OBJECT_POSITION',
+          payload: {
+            id: currentDraggingId,
+            x: newX,
+            y: newY
+          }
+        });
       }
-
-      dragThresholdRef.current.addedToSlot = true;
-
-      const rect = scrollContainerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      // Calculate new position in virtual units
-      const newX = p2v(e.clientX - rect.left - dragOffsetRef.current.x + (viewTransform?.scroll?.x || 0));
-      const newY = p2v(e.clientY - rect.top - dragOffsetRef.current.y + (viewTransform?.scroll?.y || 0));
-
-      // Update object position
-      dispatch({
-        type: 'UPDATE_OBJECT_POSITION',
-        payload: {
-          id: draggingId,
-          x: newX,
-          y: newY
-        }
-      });
 
       // Mark as dragging for remote players
       if (!obj.isDragging) {
         dispatch({
           type: 'SET_DRAGGING',
           payload: {
-            id: draggingId,
+            id: currentDraggingId,
             isDragging: true,
             dragOwnerId: activePlayerId
           }
@@ -1230,6 +1605,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     state.objects,
     scrollContainerRef,
     p2v,
+    pixelsPerVU,
     viewTransform,
     dispatch,
     activePlayerId
@@ -1251,23 +1627,39 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     }
 
     // Handle dragging completion
-    if (draggingId) {
+    const currentDraggingId = draggingIdRef.current || draggingId;
+    if (currentDraggingId) {
       console.log('🔄 [MOUSE UP] Completing drag operation:', {
-        draggingId,
-        wasDragging: state.objects[draggingId]?.isDragging
+        draggingId: currentDraggingId,
+        wasDragging: state.objects[currentDraggingId]?.isDragging
       });
 
-      const obj = state.objects[draggingId];
+      const obj = state.objects[currentDraggingId];
       if (obj && obj.isDragging) {
         dispatch({
           type: 'SET_DRAGGING',
           payload: {
-            id: draggingId,
+            id: currentDraggingId,
             isDragging: false,
             dragOwnerId: null
           }
         });
         console.log('✅ [MOUSE UP] Drag state cleared');
+      }
+
+      // For UI objects, update playerPanelSettings to sync position
+      if (obj && (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW)) {
+        dispatch({
+          type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+          payload: {
+            playerId: activePlayerId,
+            panelId: currentDraggingId,
+            settings: {
+              x: obj.x,
+              y: obj.y
+            }
+          }
+        });
       }
 
       // Reset drag threshold tracking
@@ -1280,17 +1672,66 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       dragOffsetRef.current = null;
       setDraggingId(null);
+      draggingIdRef.current = null;
+    } else if (dragThresholdRef.current.targetId) {
+      // No drag occurred (threshold not exceeded) - this was a click
+      // IMPORTANT: Drop cursor slot if it has items (prevents swap behavior)
+      const wasClickNotDrag = true;
+      const hadCursorSlot = cursorSlot.length > 0;
+
+      console.log('🖱️ [MOUSE UP] Click detected (threshold not exceeded), resetting drag threshold:', {
+        targetId: dragThresholdRef.current.targetId,
+        addedToSlot: dragThresholdRef.current.addedToSlot,
+        cursorSlotLength: cursorSlot.length
+      });
+
+      dragThresholdRef.current = {
+        initialX: 0,
+        initialY: 0,
+        targetId: null,
+        addedToSlot: false
+      };
+
+      // If we had a click (not drag) and cursor slot has items, drop them
+      // This prevents swap behavior where clicking on an object would add it to the slot
+      if (wasClickNotDrag && hadCursorSlot && e) {
+        console.log('📦 [MOUSE UP] Dropping cursor slot on click (preventing swap):', {
+          slotSize: cursorSlot.length,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          source: cursorSlotSource
+        });
+
+        dropCursorSlot(e.clientX, e.clientY, props);
+        cursorSlotLastAddedRef.current = Date.now();
+
+        // Don't continue to the normal drop logic below
+        return;
+      }
     }
 
     // Handle cursor slot dropping
-    if (cursorSlot.length > 0 && e) {
-      console.log('📦 [MOUSE UP] Dropping cursor slot items:', {
+    // Drop if: slot has items AND (source is 'hold' OR (source is 'shift' AND enough time passed))
+    // For source='shift', only drop on mouseUp if it wasn't handled in mouseDown (click on object)
+    const timeSinceLastAdd = Date.now() - cursorSlotLastAddedRef.current;
+    const shouldDropOnMouseUp = cursorSlot.length > 0 && e && cursorSlotSource === 'hold';
+
+    if (shouldDropOnMouseUp) {
+      console.log('📦 [MOUSE UP] Dropping cursor slot items (hold source):', {
         slotSize: cursorSlot.length,
         clientX: e.clientX,
-        clientY: e.clientY
+        clientY: e.clientY,
+        source: cursorSlotSource,
+        timeSinceLastAdd
       });
 
       dropCursorSlot(e.clientX, e.clientY, props);
+    } else if (cursorSlot.length > 0 && e && cursorSlotSource !== 'hold') {
+      console.log('⏸️ [MOUSE UP] Keeping cursor slot items (shift source):', {
+        slotSize: cursorSlot.length,
+        source: cursorSlotSource,
+        timeSinceLastAdd
+      });
     }
   }, [
     currentTool,
@@ -1301,6 +1742,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     dispatch,
     dragThresholdRef,
     dragOffsetRef,
+    cursorSlotLastAddedRef,
     setDraggingId,
     cursorSlot,
     props
@@ -1363,6 +1805,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       container.scrollLeft = constrained.x;
       container.scrollTop = constrained.y;
 
+      // Update scroll position in view transform context
+      setScroll?.(constrained.x, constrained.y);
+
       // Update view transform
       dispatch({
         type: 'UPDATE_VIEW_TRANSFORM',
@@ -1376,6 +1821,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     localSettings.zoom,
     updateSetting,
     setZoom,
+    setScroll,
     scrollContainerRef,
     pixelsPerVU,
     viewTransform,
@@ -1499,14 +1945,16 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('contextmenu', handleGlobalClick);
     window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('mousemove', handleMouseMove);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('contextmenu', handleGlobalClick);
       window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [handleKeyDown, handleKeyUp, handleGlobalClick, handleGlobalMouseUp]);
+  }, [handleKeyDown, handleKeyUp, handleGlobalClick, handleGlobalMouseUp, handleMouseMove]);
 
   return {
     handleContextMenu,

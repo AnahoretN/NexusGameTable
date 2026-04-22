@@ -308,12 +308,15 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
   // Handler: Add new character
   const handleAddCharacter = useCallback(() => {
-    if (!characterData || !isGM) return;
+    if (!isGM) {
+      logger.warn('[CharacterPanel] Cannot add character: not a GM');
+      return;
+    }
 
     const newCharacter: CharacterTab = {
       id: `char-${Date.now()}`,
       characterName: 'New Character',
-      playerId: undefined, // GM can create unassigned characters
+      playerId: undefined,
       subTabs: [
         {
           id: 'subtab-1',
@@ -341,13 +344,20 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       avatarUrl: undefined
     };
 
+    // Use existing characterData or create new one
+    const updatedCharacters = characterData?.characters || [];
+    const baseData = characterData || {
+      presets: [],
+      isUniversal: false
+    };
+
     dispatch({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
         characterData: {
-          ...characterData,
-          characters: [...characterData.characters, newCharacter],
+          ...baseData,
+          characters: [...updatedCharacters, newCharacter],
           activeCharacterId: newCharacter.id
         }
       }
@@ -895,8 +905,20 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
   if (!characterData) {
     return (
-      <div className="h-full flex items-center justify-center bg-slate-800 p-4">
-        <p className="text-slate-400 text-sm">No character data available</p>
+      <div className="h-full flex flex-col items-center justify-center bg-slate-800 p-4">
+        {isGM ? (
+          <div className="text-center">
+            <p className="text-slate-400 text-sm mb-2">Character panel not initialized</p>
+            <button
+              onClick={handleAddCharacter}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
+            >
+              Create First Character
+            </button>
+          </div>
+        ) : (
+          <p className="text-slate-400 text-sm">Waiting for GM to set up characters...</p>
+        )}
       </div>
     );
   }

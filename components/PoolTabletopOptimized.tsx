@@ -98,6 +98,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   const [isDraggingDice, setIsDraggingDice] = useState(false);
   const [isDraggingGeneric, setIsDraggingGeneric] = useState(false);
 
+  // Highlight state when cursor with suitable objects is over pool panel
+  const [isHighlightActive, setIsHighlightActive] = useState(false);
+
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>(null);
 
@@ -318,13 +321,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   const lastSeenRollStartTimeRef = useRef<Record<string, number>>({});
 
   // Deck hover state
-  const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
   const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
-
-  // Check if cursor slot has cards (for deck hover highlight)
-  const cursorSlotHasCards = useMemo(() => {
-    return getCursorSlotObjects(state.objects).length > 0;
-  }, [state.objects]);
 
   // Memoize pool bounds calculations for rendering
   const poolBounds = useMemo(() => ({
@@ -507,21 +504,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       e.preventDefault();
       e.stopPropagation();
 
-      // Check if ctrl key is pressed - add to cursor slot immediately
-      if (e.ctrlKey || e.metaKey) {
-        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-          detail: {
-            cardId: obj.id,
-            clientX: e.clientX,
-            clientY: e.clientY,
-            source: 'ctrl',
-            fromPoolPanel: poolZone.panelId
-          }
-        }));
-        return;
-      }
-
-      // Otherwise, track drag distance (boards use same logic as tokens now)
+      // Track drag distance (boards use same logic as tokens now)
       genericDragRef.current = {
         objectId: obj.id,
         startX: e.clientX,
@@ -742,6 +725,42 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       if (distance > 5 && !diceDragRef.current.isDragging) {
         diceDragRef.current.isDragging = true;
 
+        // Calculate click offset in pool panel VU for proper positioning
+        const obj = state.objects[diceDragRef.current.objectId];
+        let clickOffsetX, clickOffsetY;
+
+        if (obj) {
+          // Use ACTUAL DOM position for precise click offset
+          const objElement = containerRef.current?.querySelector(`[data-object-id="${obj.id}"]`) as HTMLElement;
+          if (objElement) {
+            const objRect = objElement.getBoundingClientRect();
+            // Calculate offset from object's top-left to click point (in screen pixels)
+            const offsetXPX = diceDragRef.current.startX - objRect.left;
+            const offsetYPX = diceDragRef.current.startY - objRect.top;
+            // Convert to VU (accounting for zoom)
+            clickOffsetX = offsetXPX / currentZoom / pixelsPerVU;
+            clickOffsetY = offsetYPX / currentZoom / pixelsPerVU;
+
+            console.log('[PoolTabletop] Using ACTUAL DOM offset for dice:', {
+              objectId: obj.id,
+              objRect: { left: objRect.left, top: objRect.top },
+              clickPos: { x: diceDragRef.current.startX, y: diceDragRef.current.startY },
+              offsetPX: { x: offsetXPX, y: offsetYPX },
+              offsetVU: { x: clickOffsetX, y: clickOffsetY }
+            });
+          } else {
+            // Fallback: use object center
+            const objWidth = obj.width || 60;
+            const objHeight = obj.height || 60;
+            clickOffsetX = objWidth / 2;
+            clickOffsetY = objHeight / 2;
+
+            console.warn('[PoolTabletop] DOM element not found for dice, using center fallback:', {
+              objectId: obj.id
+            });
+          }
+        }
+
         // Add to cursor slot immediately when drag threshold is exceeded
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
@@ -749,7 +768,11 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             clientX: diceDragRef.current.startX,
             clientY: diceDragRef.current.startY,
             source: 'hold',
-            fromPoolPanel: poolZone.panelId
+            fromPoolPanel: poolZone.panelId,
+            clickOffsetX,
+            clickOffsetY,
+            clickOffsetX_PX: offsetXPX,  // Already in screen pixels from getBoundingClientRect
+            clickOffsetY_PX: offsetYPX   // Already in screen pixels from getBoundingClientRect
           }
         }));
       }
@@ -766,6 +789,42 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       if (distance > 5 && !genericDragRef.current.isDragging) {
         genericDragRef.current.isDragging = true;
 
+        // Calculate click offset in pool panel VU for proper positioning
+        const obj = state.objects[genericDragRef.current.objectId];
+        let clickOffsetX, clickOffsetY;
+
+        if (obj) {
+          // Use ACTUAL DOM position for precise click offset
+          const objElement = containerRef.current?.querySelector(`[data-object-id="${obj.id}"]`) as HTMLElement;
+          if (objElement) {
+            const objRect = objElement.getBoundingClientRect();
+            // Calculate offset from object's top-left to click point (in screen pixels)
+            const offsetXPX = genericDragRef.current.startX - objRect.left;
+            const offsetYPX = genericDragRef.current.startY - objRect.top;
+            // Convert to VU (accounting for zoom)
+            clickOffsetX = offsetXPX / currentZoom / pixelsPerVU;
+            clickOffsetY = offsetYPX / currentZoom / pixelsPerVU;
+
+            console.log('[PoolTabletop] Using ACTUAL DOM offset:', {
+              objectId: obj.id,
+              objRect: { left: objRect.left, top: objRect.top },
+              clickPos: { x: genericDragRef.current.startX, y: genericDragRef.current.startY },
+              offsetPX: { x: offsetXPX, y: offsetYPX },
+              offsetVU: { x: clickOffsetX, y: clickOffsetY }
+            });
+          } else {
+            // Fallback: use object center
+            const objWidth = obj.width || 100;
+            const objHeight = obj.height || 100;
+            clickOffsetX = objWidth / 2;
+            clickOffsetY = objHeight / 2;
+
+            console.warn('[PoolTabletop] DOM element not found, using center fallback:', {
+              objectId: obj.id
+            });
+          }
+        }
+
         // Add to cursor slot immediately when drag threshold is exceeded
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
@@ -773,7 +832,11 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             clientX: genericDragRef.current.startX,
             clientY: genericDragRef.current.startY,
             source: 'hold',
-            fromPoolPanel: poolZone.panelId
+            fromPoolPanel: poolZone.panelId,
+            clickOffsetX,
+            clickOffsetY,
+            clickOffsetX_PX: offsetXPX,  // Already in screen pixels from getBoundingClientRect
+            clickOffsetY_PX: offsetYPX   // Already in screen pixels from getBoundingClientRect
           }
         }));
       }
@@ -1232,16 +1295,19 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         return;
       }
 
-      const scrollRect = scrollParent.getBoundingClientRect();
       const scrollLeft = scrollParent.scrollLeft;
       const scrollTop = scrollParent.scrollTop;
+
+      // Use containerRef bounds instead of scrollParent bounds
+      // containerRef is the unscaled PoolTabletop container
+      const containerRect = container.getBoundingClientRect();
 
       // Calculate drop position using utility function
       const dropPosition = calculatePoolDropPositionWithScroll(
         e.clientX,
         e.clientY,
         poolZone,
-        scrollRect,
+        containerRect,
         scrollLeft,
         scrollTop,
         pixelsPerVU,
@@ -1300,13 +1366,15 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       }
 
       // Drop objects using utility function
-      dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects);
+      dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
 
-      // Clear cursor slot after successful drop
-      // Dispatch event to clear cursor slot in main Tabletop
-      window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
-        detail: { reason: 'pool-drop' }
-      }));
+      // Clear cursor slot AFTER dispatch has been processed
+      // Use setTimeout to ensure state updates are processed before clearing cursor slot
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
+          detail: { reason: 'pool-drop' }
+        }));
+      }, 0);
     }
   }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, contextMenu, dropToDeck, dropToPile]);
 
@@ -1414,15 +1482,17 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         const scrollLeft = scrollParent?.scrollLeft || 0;
         const scrollTop = scrollParent?.scrollTop || 0;
 
-        const scrollRect = scrollParent?.getBoundingClientRect();
-        if (!scrollRect) return;
+        // Use container bounds instead of scrollParent bounds
+        // container is the unscaled PoolTabletop container
+        const containerRect = container.getBoundingClientRect();
+        if (!containerRect) return;
 
         // Calculate drop position using utility function
         const dropPosition = calculatePoolDropPositionWithScroll(
           x,
           y,
           poolZone,
-          scrollRect,
+          containerRect,
           scrollLeft,
           scrollTop,
           pixelsPerVU,
@@ -1464,12 +1534,15 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         }
 
         // Drop objects using utility function
-        dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects);
+        dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
 
-        // Clear cursor slot after successful drop
-        window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
-          detail: { reason: 'pool-drop-global' }
-        }));
+        // Clear cursor slot AFTER dispatch has been processed
+        // Use setTimeout to ensure state updates are processed before clearing cursor slot
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
+            detail: { reason: 'pool-drop-global' }
+          }));
+        }, 0);
 
         // Stop event from propagating to Tabletop handler
         e.stopPropagation();
@@ -1601,11 +1674,62 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     };
   }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects]);
 
+  // Track cursor position over pool panel for highlight effect
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const cursorSlotObjects = getCursorSlotObjects(state.objects);
+      if (cursorSlotObjects.length === 0) {
+        setIsHighlightActive(false);
+        return;
+      }
+
+      // Only highlight if dragging a CARD (not tokens, boards, or other objects)
+      const firstItem = cursorSlotObjects[0];
+      const isDraggingCard = firstItem?.type === ItemType.CARD;
+
+      if (!isDraggingCard) {
+        setIsHighlightActive(false);
+        return;
+      }
+
+      // Check if cursor is over the visible pool panel area
+      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
+      if (!visibleContentArea) return;
+
+      const rect = visibleContentArea.getBoundingClientRect();
+      const isOver = e.clientX >= rect.left && e.clientX <= rect.right &&
+                    e.clientY >= rect.top && e.clientY <= rect.bottom;
+
+      setIsHighlightActive(isOver);
+    };
+
+    // Listen to global mousemove
+    window.addEventListener('mousemove', handleMouseMove);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [poolZone.panelId, state.objects]);
+
+  // Apply highlight to the visible pool content area
+  useEffect(() => {
+    const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
+    if (!visibleContentArea) return;
+
+    if (isHighlightActive) {
+      visibleContentArea.style.boxShadow = 'inset 0 0 0 3px #a855f7';
+      visibleContentArea.style.borderRadius = '8px';
+    } else {
+      visibleContentArea.style.boxShadow = '';
+      visibleContentArea.style.borderRadius = '';
+    }
+  }, [isHighlightActive, poolZone.panelId]);
+
   return (
     <div
       ref={containerRef}
       data-pool-panel={poolZone.panelId}
-      className={`relative ${getCursorSlotObjects(state.objects).length > 0 ? 'cursor-grabbing' : ''}`}
+      className={`relative ${getCursorSlotObjects(state.objects).length > 0 && getCursorSlotObjects(state.objects)[0]?.type === ItemType.CARD ? 'cursor-grabbing' : ''}`}
       style={{
         width: poolBounds.widthPx,
         height: poolBounds.heightPx,
@@ -1715,9 +1839,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                   key={obj.id}
                   deck={deckObj}
                   draggingId={isDraggingDeck ? obj.id : null}
-                  hoveredDeckId={hoveredDeckId}
                   hoveredPileId={hoveredPileId}
-                  setHoveredDeckId={setHoveredDeckId}
                   setHoveredPileId={setHoveredPileId}
                   isGM={isGM}
                   draggingClass={isDraggingDeck ? 'dragging' : ''}
@@ -1733,7 +1855,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                   setPilesButtonMenu={() => {}}
                   setDeleteCandidateId={setDeleteCandidateId}
                   executeClickAction={executeClickAction}
-                  cursorSlotHasCards={cursorSlotHasCards}
                   allObjects={state.objects}
                   currentTool={'none'}
                   pixelsPerVU={pixelsPerVU}

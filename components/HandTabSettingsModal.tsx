@@ -1,7 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Player, AppLanguage } from '../types';
-import { User, Users, X as XIcon } from 'lucide-react';
-import { t as translate, Locale } from '../utils/translations';
+import {
+  PermissionEditor,
+  PermissionType,
+  createPermissions
+} from './PermissionEditor';
 
 interface HandTabSettingsModalProps {
   player: Player;
@@ -13,8 +16,6 @@ interface HandTabSettingsModalProps {
   onPlayerChange?: (updatedPlayer: Player) => void;
   language?: AppLanguage;
 }
-
-type AccessType = 'visible' | 'manageable';
 
 export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
   player,
@@ -62,12 +63,11 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
     }
   }, [tempPlayer, onPlayerChange, player.id]);
 
-  const handleAddAccess = useCallback((type: AccessType, playerId: string) => {
+  const handleAddPermission = useCallback((type: PermissionType, playerId: string) => {
     setTempPlayer(prev => {
-      const visibleArray = prev.handVisibleToPlayerIds || [];
-      const manageableArray = prev.handManageableByPlayerIds || [];
-
-      const targetArray = type === 'visible' ? visibleArray : manageableArray;
+      const targetArray = type === 'visible'
+        ? prev.handVisibleToPlayerIds || []
+        : prev.handManageableByPlayerIds || [];
 
       if (targetArray.includes(playerId)) return prev;
 
@@ -83,41 +83,34 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
     });
   }, []);
 
-  const handleRemoveAccess = useCallback((type: AccessType, playerId: string) => {
+  const handleRemovePermission = useCallback((type: PermissionType, playerId: string) => {
     setTempPlayer(prev => {
-      const visibleArray = prev.handVisibleToPlayerIds || [];
-      const manageableArray = prev.handManageableByPlayerIds || [];
-
       const updatedPlayer = { ...prev };
 
       if (type === 'visible') {
-        updatedPlayer.handVisibleToPlayerIds = visibleArray.filter(id => id !== playerId);
+        updatedPlayer.handVisibleToPlayerIds = (prev.handVisibleToPlayerIds || []).filter(id => id !== playerId);
       } else {
-        updatedPlayer.handManageableByPlayerIds = manageableArray.filter(id => id !== playerId);
+        updatedPlayer.handManageableByPlayerIds = (prev.handManageableByPlayerIds || []).filter(id => id !== playerId);
       }
 
       return updatedPlayer;
     });
   }, []);
 
-  // Get player info
-  const getPlayerInfo = useCallback((playerId: string) => {
-    if (playerId === 'all_players') {
-      return { name: translate('All Players', language as Locale), icon: Users };
-    }
-    const foundPlayer = players.find(p => p.id === playerId);
-    return {
-      name: foundPlayer?.name || translate('Player', language as Locale),
-      icon: User
-    };
-  }, [players, language, translate]);
+  const permissions = createPermissions(
+    tempPlayer.handVisibleToPlayerIds,
+    tempPlayer.handManageableByPlayerIds,
+    undefined, // No editable for hands
+    'hand',
+    language
+  );
 
   return (
     <div onClick={(e) => e.stopPropagation()}>
       {/* Player Name */}
       <div className="p-4 border-b border-slate-700">
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          {translate('Player Name', language as Locale)}
+          Player Name
         </label>
         <input
           type="text"
@@ -131,7 +124,7 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
       {/* Card Scale */}
       <div className="p-4 border-b border-slate-700">
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          {translate('Card Scale', language as Locale)}: {Math.round(cardScale * 100)}%
+          Card Scale: {Math.round(cardScale * 100)}%
         </label>
         <input
           type="range"
@@ -156,120 +149,15 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
         </div>
       </div>
 
-      {/* Who can see this hand */}
-      <div className="p-4 border-b border-slate-700">
-        <h3 className="text-sm font-medium text-slate-300 mb-3">{translate('Who Can View This Hand', language as Locale)}</h3>
-        <div className="space-y-2">
-          {tempPlayer.handVisibleToPlayerIds && tempPlayer.handVisibleToPlayerIds.length > 0 ? (
-            tempPlayer.handVisibleToPlayerIds.map(playerId => {
-              const playerInfo = getPlayerInfo(playerId);
-              const Icon = playerInfo.icon;
-              return (
-                <div
-                  key={playerId}
-                  className="flex items-center justify-between bg-purple-900 bg-opacity-40 px-3 py-2 rounded border border-purple-700"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon size={16} className="text-purple-400" />
-                    <span className="text-sm text-white">{playerInfo.name}</span>
-                  </div>
-                  <button
-                    onClick={() => handleRemoveAccess('visible', playerId)}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="p-1 text-slate-400 hover:text-red-400 transition-colors"
-                  >
-                    <XIcon size={16} />
-                  </button>
-                </div>
-              );
-            })
-          ) : (
-            <p className="text-xs text-slate-500 italic">{translate('No players with view access yet', language as Locale)}</p>
-          )}
-
-          {/* Add specific player */}
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) {
-                handleAddAccess('visible', e.target.value);
-                e.target.value = '';
-              }
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2 cursor-pointer relative z-[1001]"
-          >
-            <option value="">{translate('Add player...', language as Locale)}</option>
-            {(!tempPlayer.handVisibleToPlayerIds || !tempPlayer.handVisibleToPlayerIds.includes('all_players')) && (
-              <option value="all_players">{translate('All Players', language as Locale)}</option>
-            )}
-            {players
-              .filter(p => !p.isGM && !tempPlayer.handVisibleToPlayerIds?.includes(p.id))
-              .map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Who can manage this hand */}
-      <div className="p-4">
-        <h3 className="text-sm font-medium text-slate-300 mb-2">{translate('Who Can Manage This Hand', language as Locale)}</h3>
-        <p className="text-xs text-slate-500 mb-3">
-          {translate('Can reorder and manipulate cards in this hand', language as Locale)}
-        </p>
-        <div className="space-y-2">
-          {tempPlayer.handManageableByPlayerIds && tempPlayer.handManageableByPlayerIds.length > 0 ? (
-            tempPlayer.handManageableByPlayerIds.map(playerId => {
-              const playerInfo = getPlayerInfo(playerId);
-              const Icon = playerInfo.icon;
-              return (
-                <div
-                  key={playerId}
-                  className="flex items-center justify-between bg-blue-900 bg-opacity-40 px-3 py-2 rounded border border-blue-700"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon size={16} className="text-blue-400" />
-                    <span className="text-sm text-white">{playerInfo.name}</span>
-                  </div>
-                  <button
-                    onClick={() => handleRemoveAccess('manageable', playerId)}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="p-1 text-slate-400 hover:text-red-400 transition-colors"
-                  >
-                    <XIcon size={16} />
-                  </button>
-                </div>
-              );
-            })
-          ) : (
-            <p className="text-xs text-slate-500 italic">{translate('No players with manage access yet', language as Locale)}</p>
-          )}
-
-          {/* Add specific player */}
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) {
-                handleAddAccess('manageable', e.target.value);
-                e.target.value = '';
-              }
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2 cursor-pointer relative z-[1001]"
-          >
-            <option value="">{translate('Add player...', language as Locale)}</option>
-            {(!tempPlayer.handManageableByPlayerIds || !tempPlayer.handManageableByPlayerIds.includes('all_players')) && (
-              <option value="all_players">{translate('All Players', language as Locale)}</option>
-            )}
-            {players
-              .filter(p => !p.isGM && !tempPlayer.handManageableByPlayerIds?.includes(p.id))
-              .map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-          </select>
-        </div>
-      </div>
+      <PermissionEditor
+        permissions={permissions}
+        players={players}
+        onAddPermission={handleAddPermission}
+        onRemovePermission={handleRemovePermission}
+        language={language}
+        showEmptyState={true}
+        stopPropagation={true}
+      />
     </div>
   );
 };

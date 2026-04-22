@@ -49,7 +49,7 @@ export const useCursorSlotState = () => {
     cursorPositionRef.current = position;
   }, []);
 
-  const [cursorSlotSource, setCursorSlotSource] = useState<'ctrl' | 'hold' | 'shift' | 'archetype' | null>(null);
+  const [cursorSlotSource, setCursorSlotSource] = useState<'hold' | 'shift' | 'archetype' | null>(null);
 
   // Ref for immediate access in event handlers
   const cursorSlotRef = useRef<(CardType | TokenType | BoardType)[]>([]);

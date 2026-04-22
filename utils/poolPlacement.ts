@@ -21,6 +21,12 @@ export type CursorSlotObject = TableObject & {
   inCursorSlot?: boolean;
   originalZIndex?: number;
   cursorSlotSourcePanel?: string; // ID of pool panel where drag started
+  clickOffsetX?: number; // X offset from object top-left to click position (in VU)
+  clickOffsetY?: number; // Y offset from object top-left to click position (in VU)
+  clickOffsetX_PX?: number; // X offset from object top-left to click position (in screen pixels)
+  clickOffsetY_PX?: number; // Y offset from object top-left to click position (in screen pixels)
+  originalX?: number; // Original object X before being picked up
+  originalY?: number; // Original object Y before being picked up
 }
 
 export interface DropPosition {
@@ -76,15 +82,18 @@ export function calculatePoolDropPositionWithScroll(
   clientX: number,
   clientY: number,
   poolZone: PoolZone,
-  scrollRect: DOMRect,
+  containerRect: DOMRect,
   scrollLeft: number,
   scrollTop: number,
   pixelsPerVU: number,
   zoom: number = 1
 ): DropPosition {
-  // Calculate position relative to scroll container
-  const relativeX = (clientX - scrollRect.left + scrollLeft) / zoom / pixelsPerVU;
-  const relativeY = (clientY - scrollRect.top + scrollTop) / zoom / pixelsPerVU;
+  // Calculate position relative to container
+  // IMPORTANT: containerRect is the unscaled PoolTabletop container
+  // Objects are positioned relative to this container, not the scroll parent
+  // Don't divide by zoom because containerRect is already unscaled
+  const relativeX = (clientX - containerRect.left + scrollLeft) / pixelsPerVU;
+  const relativeY = (clientY - containerRect.top + scrollTop) / pixelsPerVU;
 
   // Convert to pool zone coordinates
   const baseX = poolZone.offsetX + relativeX;
@@ -136,9 +145,10 @@ export function calculateStackedPosition(
   const offsetX = offsetFromFront * offsetAmount;
   const offsetY = offsetFromFront * offsetAmount;
 
-  // Calculate position (cursor is at center of object, so subtract half dimensions)
-  const x = baseX - (objWidth / 2) + offsetX;
-  const y = baseY - (objHeight / 2) + offsetY;
+  // baseX/baseY represent the position where object top-left should be (after offset applied)
+  // Apply stacking offset
+  const x = baseX + offsetX;
+  const y = baseY + offsetY;
 
   // For boards, allow placement anywhere (they'll be clipped by container overflow)
   // For other objects, constrain to pool zone bounds
@@ -157,7 +167,9 @@ export function dropObjectsToPool(
   dropPosition: DropPosition,
   poolZone: PoolZone,
   dispatch: (action: any) => void,
-  poolObjects: Record<string, TableObject>
+  poolObjects: Record<string, TableObject>,
+  pixelsPerVU: number = 1,
+  zoom: number = 1
 ): void {
   if (!objects || objects.length === 0) {
     return;
@@ -197,6 +209,48 @@ export function dropObjectsToPool(
       let finalX = dropPosition.baseX;
       let finalY = dropPosition.baseY;
 
+      // IMPORTANT: Apply click offset to position object correctly
+      // clickOffsetX_PX/Y_PX are in screen pixels from drag start
+      // We need to convert them to pool panel VU using current zoom and pixelsPerVU
+      if ((obj as CursorSlotObject).clickOffsetX_PX !== undefined &&
+          (obj as CursorSlotObject).clickOffsetY_PX !== undefined) {
+        const offsetPX_X = (obj as CursorSlotObject).clickOffsetX_PX!;
+        const offsetPX_Y = (obj as CursorSlotObject).clickOffsetY_PX!;
+
+        // Convert screen pixel offsets to pool panel VU using current zoom
+        const offsetX_VU = offsetPX_X / zoom / pixelsPerVU;
+        const offsetY_VU = offsetPX_Y / zoom / pixelsPerVU;
+
+        // Position the object so the grab point is under the cursor
+        // clickOffset is distance from top-left to grab point, so subtract from cursor position
+        finalX = dropPosition.baseX - offsetX_VU;
+        finalY = dropPosition.baseY - offsetY_VU;
+
+        console.log('[dropObjectsToPool] Applied click offset (PX):', {
+          objectId: obj.id,
+          dropPosition: { x: dropPosition.baseX, y: dropPosition.baseY },
+          clickOffsetPX: { x: offsetPX_X, y: offsetPX_Y },
+          clickOffsetVU: { x: offsetX_VU, y: offsetY_VU },
+          adjustedPosition: { x: finalX, y: finalY }
+        });
+      } else if ((obj as CursorSlotObject).clickOffsetX !== undefined &&
+                 (obj as CursorSlotObject).clickOffsetY !== undefined) {
+        // Fallback: use VU offsets (when object from main tabletop without PX offsets)
+        const offsetX = (obj as CursorSlotObject).clickOffsetX!;
+        const offsetY = (obj as CursorSlotObject).clickOffsetY!;
+
+        finalX = dropPosition.baseX - offsetX;
+        finalY = dropPosition.baseY - offsetY;
+
+        console.log('[dropObjectsToPool] Applied click offset (VU fallback):', {
+          objectId: obj.id,
+          dropPosition: { x: dropPosition.baseX, y: dropPosition.baseY },
+          clickOffsetVU: { x: offsetX, y: offsetY },
+          adjustedPosition: { x: finalX, y: finalY }
+        });
+      }
+      // If no offset, object drops at cursor position (top-left corner at cursor)
+
       // IMPORTANT: Clear any existing grid cell attachment when dropping to pool
       // This prevents objects from retaining board attachments from main tabletop
       const existingGridCellKey = (obj as any).gridCellKey;
@@ -231,6 +285,7 @@ export function dropObjectsToPool(
           }
         }
       }
+
 
       const position = calculateStackedPosition(
         finalX,
@@ -294,7 +349,7 @@ export function dropObjectsToPool(
 /**
  * Get cursor slot objects (all draggable objects in cursor slot)
  * Supports: CARD, TOKEN, DECK, DICE_OBJECT, RANDOMIZER, DRAWING, BATTLEFIELD_CELL, BOARD, NEXUS_BOARD, NEXUS_CELL, COUNTER
- * Excludes: PANEL, WINDOW (UI objects)
+ * Excludes: PANEL, WINDOW (UI objects), cards in DECK location
  */
 export function getCursorSlotObjects(objects: Record<string, TableObject>): TableObject[] {
   return Object.values(objects).filter(obj => {
@@ -303,6 +358,12 @@ export function getCursorSlotObjects(objects: Record<string, TableObject>): Tabl
 
     // Only include objects in cursor slot
     if (!(obj as CursorSlotObject).inCursorSlot) return false;
+
+    // Exclude cards that are in a deck (location === 'DECK')
+    // These cards should not trigger highlight or be draggable to pool panel
+    if (obj.type === ItemType.CARD && (obj as any).location === CardLocation.DECK) {
+      return false;
+    }
 
     // Support all game object types that can be in cursor slot
     return [

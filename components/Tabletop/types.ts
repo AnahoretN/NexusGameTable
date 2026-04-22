@@ -59,8 +59,8 @@ export interface CursorSlotState {
   items: CursorSlotItem[];
   /** Current cursor position */
   position: { x: number; y: number } | null;
-  /** Source of cursor slot (ctrl, hold, shift, archetype) */
-  source: 'ctrl' | 'hold' | 'shift' | 'archetype' | null;
+  /** Source of cursor slot (hold, shift, archetype) */
+  source: 'hold' | 'shift' | 'archetype' | null;
 }
 
 /**

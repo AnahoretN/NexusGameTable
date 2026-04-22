@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { CharacterBlock } from '../../types';
+import { useInlineEdit } from './hooks';
 
 interface CounterItem {
   id: string;
@@ -19,8 +20,6 @@ interface CounterBlockProps {
 
 export const CounterBlock: React.FC<CounterBlockProps> = ({ block, editable, onChange }) => {
   const data = block.data as CounterBlockData;
-  const [isEditing, setIsEditing] = useState<string | null>(null);
-  const [editInput, setEditInput] = useState('');
 
   const handleValueChange = useCallback((counterId: string, newValue: number) => {
     if (!editable) return;
@@ -34,82 +33,82 @@ export const CounterBlock: React.FC<CounterBlockProps> = ({ block, editable, onC
     onChange({ ...data, counters: updatedCounters });
   }, [data, editable, onChange]);
 
-  const handleStartEditCounterName = useCallback((counterId: string, currentName: string) => {
-    if (!editable) return;
-    setIsEditing(counterId);
-    setEditInput(currentName);
-  }, [editable]);
-
-  const handleSaveCounterName = useCallback(() => {
-    if (!isEditing) return;
-
-    const newName = editInput.trim() || 'Counter';
+  const handleNameChange = useCallback((counterId: string, newName: string) => {
     const updatedCounters = data.counters.map(counter =>
-      counter.id === isEditing
-        ? { ...counter, name: newName }
-        : counter
+      counter.id === counterId ? { ...counter, name: newName.trim() || 'Counter' } : counter
     );
-
     onChange({ ...data, counters: updatedCounters });
-    setIsEditing(null);
-    setEditInput('');
-  }, [isEditing, editInput, data, onChange]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSaveCounterName();
-    } else if (e.key === 'Escape') {
-      setIsEditing(null);
-      setEditInput('');
-    }
-  }, [handleSaveCounterName]);
+  }, [data, onChange]);
 
   return (
     <div className="w-full">
-      {/* Counters Grid */}
       <div className="grid grid-cols-3 gap-1.5">
         {data.counters.map((counter) => (
-          <div
+          <CounterItem
             key={counter.id}
-            className="bg-slate-600 rounded-lg p-1.5 flex flex-col items-center justify-center relative"
-          >
-            {/* Counter Name */}
-            {isEditing === counter.id ? (
-              <input
-                type="text"
-                value={editInput}
-                onChange={(e) => setEditInput(e.target.value)}
-                onBlur={handleSaveCounterName}
-                onKeyDown={handleKeyDown}
-                className="text-xs font-medium bg-slate-500 text-white px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 w-full mb-1 text-center"
-                autoFocus
-              />
-            ) : (
-              <div
-                className={`text-xs font-medium text-slate-300 mb-1 text-center ${editable ? 'cursor-pointer hover:text-white' : ''}`}
-                onDoubleClick={() => editable && handleStartEditCounterName(counter.id, counter.name)}
-                title={editable ? "Double-click to rename" : counter.name}
-              >
-                {counter.name}
-              </div>
-            )}
-
-            {/* Counter Value */}
-            <div className="flex items-center justify-center bg-slate-700 rounded w-full py-1">
-              {editable ? (
-                <input
-                  type="number"
-                  value={counter.value}
-                  onChange={(e) => handleValueChange(counter.id, parseInt(e.target.value) || 0)}
-                  className="w-full bg-transparent text-white text-base font-semibold text-center focus:outline-none px-2"
-                  min={0}
-                />
-              ) : (
-                <span className="text-white text-base font-semibold text-center block w-full px-2">{counter.value}</span>
-              )}
-            </div>
-          </div>
+            counter={counter}
+            editable={editable}
+            onValueChange={(val) => handleValueChange(counter.id, val)}
+            onNameChange={(name) => handleNameChange(counter.id, name)}
+          />
         ))}
+      </div>
+    </div>
+  );
+};
+
+interface CounterItemProps {
+  counter: CounterItem;
+  editable: boolean;
+  onValueChange: (value: number) => void;
+  onNameChange: (name: string) => void;
+}
+
+const CounterItem: React.FC<CounterItemProps> = ({ counter, editable, onValueChange, onNameChange }) => {
+  const nameEdit = useInlineEdit({
+    value: counter.name,
+    onSave: onNameChange,
+    editable
+  });
+
+  return (
+    <div className="bg-slate-600 rounded-lg p-1.5 flex flex-col items-center justify-center relative">
+      <div className="text-xs font-medium text-slate-300 mb-1 text-center">
+        {nameEdit.isEditing ? (
+          <input
+            type="text"
+            value={nameEdit.editValue}
+            onChange={(e) => nameEdit.setEditValue(e.target.value)}
+            onBlur={nameEdit.saveEdit}
+            onKeyDown={nameEdit.handleKeyDown}
+            className="w-full bg-slate-500 text-white px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center"
+            autoFocus
+          />
+        ) : (
+          <span
+            className={`${editable ? 'cursor-pointer hover:text-white' : ''}`}
+            onDoubleClick={nameEdit.startEdit}
+            title={editable ? "Double-click to rename" : counter.name}
+          >
+            {counter.name}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center justify-center bg-slate-700 rounded w-full py-1">
+        {editable ? (
+          <input
+            type="number"
+            value={counter.value}
+            onChange={(e) => onValueChange(parseInt(e.target.value) || 0)}
+            className="w-full bg-transparent text-white text-base font-semibold text-center focus:outline-none px-2"
+            min={0}
+          />
+        ) : (
+          <span className="text-white text-base font-semibold text-center block w-full px-2">
+            {counter.value}
+          </span>
+        )}
       </div>
     </div>
   );

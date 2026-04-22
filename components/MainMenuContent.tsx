@@ -68,7 +68,7 @@ interface MainMenuContentProps {
 }
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
-  const { state, dispatch, peerId } = useGame();
+  const { state, dispatch, peerId, initializeHost } = useGame();
   const { viewTransform } = useViewTransform();
   const { settings: localSettings, updateSetting } = useLocalSettings();
 
@@ -89,6 +89,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
   const [chatInput, setChatInput] = useState('');
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [waitingForPeerId, setWaitingForPeerId] = useState(false);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   const [dragOverHand, setDragOverHand] = useState(false);
   const [, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
@@ -312,14 +313,20 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         x: number;
         y: number;
         hasCards: boolean;
+        items?: { type: string }[];
       }>;
 
-      const { x, y, hasCards } = customEvent.detail;
+      const { x, y, hasCards, items } = customEvent.detail;
 
       if (!hasCards) {
         setDragOverHand(false);
         return;
       }
+
+      // Check if first item in cursor slot is a CARD (not token or other object)
+      // Only switch to hand tab if dragging a card
+      const firstItemType = items?.[0]?.type;
+      const isDraggingCard = firstItemType === 'CARD';
 
       // Find main menu panel element in DOM to get actual screen position
       const mainMenuElement = document.querySelector('[data-main-menu="true"]') as HTMLElement;
@@ -336,13 +343,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         y >= rect.top &&
         y <= rect.bottom;
 
-      // Dispatch event for HandPanel to show purple ring
+      // Dispatch event for HandPanel to show purple ring (with card type info)
       window.dispatchEvent(new CustomEvent('cursor-slot-move', {
-        detail: { x, y, isOverMainMenu, hasCards }
+        detail: { x, y, isOverMainMenu, hasCards, isDraggingCard }
       }));
 
-      // Only switch to hand tab if cursor is over main menu AND slot has cards
-      if (isOverMainMenu && hasCards) {
+      // Only switch to hand tab if cursor is over main menu AND dragging a card
+      if (isOverMainMenu && isDraggingCard) {
         if (activeTab !== 'hand') {
           setPreviousTab(activeTab);
           setActiveTab('hand');
@@ -392,7 +399,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
   const handleInvite = useCallback(() => {
     if (!peerId) {
-      alert("PeerJS is not ready yet. Please wait a moment and try again.");
+      // Initialize host peer on first invite click
+      setWaitingForPeerId(true);
+      initializeHost();
       return;
     }
 
@@ -403,7 +412,21 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       setInviteCopied(true);
       setTimeout(() => setInviteCopied(false), 2000);
     });
-  }, [peerId]);
+  }, [peerId, initializeHost]);
+
+  // Auto-generate invite link when peerId becomes available
+  useEffect(() => {
+    if (waitingForPeerId && peerId) {
+      setWaitingForPeerId(false);
+      const baseUrl = window.location.href.split('?')[0];
+      const inviteLink = `${baseUrl}?hostId=${peerId}`;
+
+      navigator.clipboard.writeText(inviteLink).then(() => {
+        setInviteCopied(true);
+        setTimeout(() => setInviteCopied(false), 2000);
+      });
+    }
+  }, [waitingForPeerId, peerId]);
 
   const handleSaveGame = async () => {
     // Convert blob URLs to base64 before saving

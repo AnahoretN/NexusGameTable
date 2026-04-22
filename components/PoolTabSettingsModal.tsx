@@ -1,7 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { PanelTab, Player, AppLanguage } from '../types';
-import { User, Users, X as XIcon } from 'lucide-react';
-import { t as translate, Locale } from '../utils/translations';
+import {
+  PermissionEditor,
+  PermissionType,
+  createPermissions
+} from './PermissionEditor';
 
 interface PoolTabSettingsModalProps {
   tab: PanelTab;
@@ -12,8 +15,6 @@ interface PoolTabSettingsModalProps {
   onTabChange?: (updatedTab: PanelTab) => void;
   language?: AppLanguage;
 }
-
-type AccessType = 'visible' | 'manageable' | 'editable';
 
 export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
   tab,
@@ -38,17 +39,13 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
     }
   }, [tempTab, onTabChange, tab.id]);
 
-  const handleAddAccess = useCallback((type: AccessType, playerId: string) => {
+  const handleAddPermission = useCallback((type: PermissionType, playerId: string) => {
     setTempTab(prev => {
-      let targetArray: string[];
-
-      if (type === 'visible') {
-        targetArray = prev.visibleToPlayerIds || [];
-      } else if (type === 'manageable') {
-        targetArray = prev.manageableByPlayerIds || [];
-      } else {
-        targetArray = prev.editableByPlayerIds || [];
-      }
+      const targetArray = type === 'visible'
+        ? prev.visibleToPlayerIds || []
+        : type === 'manageable'
+          ? prev.manageableByPlayerIds || []
+          : prev.editableByPlayerIds || [];
 
       if (targetArray.includes(playerId)) return prev;
 
@@ -66,50 +63,36 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
     });
   }, []);
 
-  const handleRemoveAccess = useCallback((type: AccessType, playerId: string) => {
+  const handleRemovePermission = useCallback((type: PermissionType, playerId: string) => {
     setTempTab(prev => {
-      let targetArray: string[];
-
-      if (type === 'visible') {
-        targetArray = prev.visibleToPlayerIds || [];
-      } else if (type === 'manageable') {
-        targetArray = prev.manageableByPlayerIds || [];
-      } else {
-        targetArray = prev.editableByPlayerIds || [];
-      }
-
       const updatedTab = { ...prev };
 
       if (type === 'visible') {
-        updatedTab.visibleToPlayerIds = targetArray.filter(id => id !== playerId);
+        updatedTab.visibleToPlayerIds = (prev.visibleToPlayerIds || []).filter(id => id !== playerId);
       } else if (type === 'manageable') {
-        updatedTab.manageableByPlayerIds = targetArray.filter(id => id !== playerId);
+        updatedTab.manageableByPlayerIds = (prev.manageableByPlayerIds || []).filter(id => id !== playerId);
       } else {
-        updatedTab.editableByPlayerIds = targetArray.filter(id => id !== playerId);
+        updatedTab.editableByPlayerIds = (prev.editableByPlayerIds || []).filter(id => id !== playerId);
       }
 
       return updatedTab;
     });
   }, []);
 
-  // Get player info
-  const getPlayerInfo = useCallback((playerId: string) => {
-    if (playerId === 'all_players') {
-      return { name: translate('All Players', language as Locale), icon: Users };
-    }
-    const player = players.find(p => p.id === playerId);
-    return {
-      name: player?.name || translate('Player', language as Locale),
-      icon: User
-    };
-  }, [players, language, translate]);
+  const permissions = createPermissions(
+    tempTab.visibleToPlayerIds,
+    tempTab.manageableByPlayerIds,
+    tempTab.editableByPlayerIds,
+    'pool',
+    language
+  );
 
   return (
     <>
       {/* Tab Name */}
       <div className="p-4 border-b border-slate-700">
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          {translate('Tab Name', language as Locale)}
+          Tab Name
         </label>
         <input
           type="text"
@@ -122,7 +105,7 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
       {/* Zoom Level */}
       <div className="p-4 border-b border-slate-700">
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          {translate('Zoom Level', language as Locale)}: {Math.round(((tempTab.zoom || 1.02) / 1.02) * 100)}%
+          Zoom Level: {Math.round(((tempTab.zoom || 1.02) / 1.02) * 100)}%
         </label>
         <input
           type="range"
@@ -140,161 +123,13 @@ export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
         </div>
       </div>
 
-      {/* Who can see */}
-      <div className="p-4 border-b border-slate-700">
-        <h3 className="text-sm font-medium text-slate-300 mb-3">{translate('Who Can View', language as Locale)}</h3>
-        <div className="space-y-2">
-          {tempTab.visibleToPlayerIds?.map(playerId => {
-            const playerInfo = getPlayerInfo(playerId);
-            const Icon = playerInfo.icon;
-            return (
-              <div
-                key={playerId}
-                className="flex items-center justify-between bg-purple-900 bg-opacity-40 px-3 py-2 rounded border border-purple-700"
-              >
-                <div className="flex items-center gap-2">
-                  <Icon size={16} className="text-purple-400" />
-                  <span className="text-sm text-white">{playerInfo.name}</span>
-                </div>
-                <button
-                  onClick={() => handleRemoveAccess('visible', playerId)}
-                  className="p-1 text-slate-400 hover:text-red-400 transition-colors"
-                >
-                  <XIcon size={16} />
-                </button>
-              </div>
-            );
-          })}
-
-          {/* Add specific player */}
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) {
-                handleAddAccess('visible', e.target.value);
-                e.target.value = '';
-              }
-            }}
-            className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
-          >
-            <option value="">{translate('Add player...', language as Locale)}</option>
-            {!tempTab.visibleToPlayerIds?.includes('all_players') && (
-              <option value="all_players">{translate('All Players', language as Locale)}</option>
-            )}
-            {players
-              .filter(p => !p.isGM && !tempTab.visibleToPlayerIds?.includes(p.id))
-              .map(player => (
-                <option key={player.id} value={player.id}>{player.name}</option>
-              ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Who can manage */}
-      <div className="p-4 border-b border-slate-700">
-        <h3 className="text-sm font-medium text-slate-300 mb-2">{translate('Who Can Manage', language as Locale)}</h3>
-        <p className="text-xs text-slate-500 mb-3">
-          {translate('Can move and manipulate objects in the pool', language as Locale)}
-        </p>
-        <div className="space-y-2">
-          {tempTab.manageableByPlayerIds?.map(playerId => {
-            const playerInfo = getPlayerInfo(playerId);
-            const Icon = playerInfo.icon;
-            return (
-              <div
-                key={playerId}
-                className="flex items-center justify-between bg-blue-900 bg-opacity-40 px-3 py-2 rounded border border-blue-700"
-              >
-                <div className="flex items-center gap-2">
-                  <Icon size={16} className="text-blue-400" />
-                  <span className="text-sm text-white">{playerInfo.name}</span>
-                </div>
-                <button
-                  onClick={() => handleRemoveAccess('manageable', playerId)}
-                  className="p-1 text-slate-400 hover:text-red-400 transition-colors"
-                >
-                  <XIcon size={16} />
-                </button>
-              </div>
-            );
-          })}
-
-          {/* Add specific player */}
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) {
-                handleAddAccess('manageable', e.target.value);
-                e.target.value = '';
-              }
-            }}
-            className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
-          >
-            <option value="">{translate('Add player...', language as Locale)}</option>
-            {!tempTab.manageableByPlayerIds?.includes('all_players') && (
-              <option value="all_players">{translate('All Players', language as Locale)}</option>
-            )}
-            {players
-              .filter(p => !p.isGM && !tempTab.manageableByPlayerIds?.includes(p.id))
-              .map(player => (
-                <option key={player.id} value={player.id}>{player.name}</option>
-              ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Who can edit */}
-      <div className="p-4">
-        <h3 className="text-sm font-medium text-slate-300 mb-2">{translate('Who Can Edit', language as Locale)}</h3>
-        <p className="text-xs text-slate-500 mb-3">
-          {translate('Full access: can add/remove objects and modify everything', language as Locale)}
-        </p>
-        <div className="space-y-2">
-          {tempTab.editableByPlayerIds?.map(playerId => {
-            const playerInfo = getPlayerInfo(playerId);
-            const Icon = playerInfo.icon;
-            return (
-              <div
-                key={playerId}
-                className="flex items-center justify-between bg-green-900 bg-opacity-40 px-3 py-2 rounded border border-green-700"
-              >
-                <div className="flex items-center gap-2">
-                  <Icon size={16} className="text-green-400" />
-                  <span className="text-sm text-white">{playerInfo.name}</span>
-                </div>
-                <button
-                  onClick={() => handleRemoveAccess('editable', playerId)}
-                  className="p-1 text-slate-400 hover:text-red-400 transition-colors"
-                >
-                  <XIcon size={16} />
-                </button>
-              </div>
-            );
-          })}
-
-          {/* Add specific player */}
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) {
-                handleAddAccess('editable', e.target.value);
-                e.target.value = '';
-              }
-            }}
-            className="w-full bg-slate-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
-          >
-            <option value="">{translate('Add player...', language as Locale)}</option>
-            {!tempTab.editableByPlayerIds?.includes('all_players') && (
-              <option value="all_players">{translate('All Players', language as Locale)}</option>
-            )}
-            {players
-              .filter(p => !p.isGM && !tempTab.editableByPlayerIds?.includes(p.id))
-              .map(player => (
-                <option key={player.id} value={player.id}>{player.name}</option>
-              ))}
-          </select>
-        </div>
-      </div>
+      <PermissionEditor
+        permissions={permissions}
+        players={players}
+        onAddPermission={handleAddPermission}
+        onRemovePermission={handleRemovePermission}
+        language={language}
+      />
     </>
   );
 };

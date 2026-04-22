@@ -40,7 +40,7 @@ import { ClickTooltip } from './ClickTooltip';
 
 // Import types
 import type { TabletopRenderContext } from './types';
-import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, TokenShape } from '../../types';
+import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, TokenShape, CardOrientation, CardLocation } from '../../types';
 
 /**
  * Tabletop Component (Refactored)
@@ -93,7 +93,7 @@ import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, TokenShape }
 export const Tabletop: React.FC = () => {
   // === Game Context & Player Info ===
   const { state, dispatch } = useGame();
-  const { viewTransform, setZoom } = useViewTransform();
+  const { viewTransform, setZoom, setScroll } = useViewTransform();
   const { settings: localSettings, updateSetting } = useLocalSettings();
   const { clearDraggingOver } = useDragOverStore();
 
@@ -138,7 +138,7 @@ export const Tabletop: React.FC = () => {
   const [cursorSlot, setCursorSlot] = useState<(Card | Token | Board | Deck)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const cursorPositionRef = useRef<{ x: number; y: number } | null>(null) as React.MutableRefObject<{ x: number; y: number } | null>;
-  const [cursorSlotSource, setCursorSlotSource] = useState<'ctrl' | 'hold' | 'shift' | 'archetype' | null>(null);
+  const [cursorSlotSource, setCursorSlotSource] = useState<'hold' | 'shift' | 'archetype' | null>(null);
 
   // Ruler state
   const [rulerStart, setRulerStart] = useState<{ x: number; y: number } | null>(null);
@@ -156,6 +156,12 @@ export const Tabletop: React.FC = () => {
 
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const draggingIdRef = useRef<string | null>(null);
+
+  // Sync draggingIdRef with draggingId state
+  useEffect(() => {
+    draggingIdRef.current = draggingId;
+  }, [draggingId]);
 
   // Resizing state
   const [resizingId, setResizingId] = useState<string | null>(null);
@@ -187,6 +193,7 @@ export const Tabletop: React.FC = () => {
   }>;
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null) as React.MutableRefObject<{ x: number; y: number } | null>;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const cursorSlotLastAddedRef = useRef<number>(0);
 
   // === Event Handlers ===
   const eventHandlers = useTabletopEventHandlers({
@@ -205,6 +212,7 @@ export const Tabletop: React.FC = () => {
     isCtrlPressed,
     setIsCtrlPressed,
     draggingId,
+    draggingIdRef,
     setDraggingId,
     setResizingId,
     setResizeStart,
@@ -236,6 +244,7 @@ export const Tabletop: React.FC = () => {
     clickTooltipBoundsRef,
     dragThresholdRef,
     dragOffsetRef,
+    cursorSlotLastAddedRef,
     setClickTooltip,
     setNexusBoardAddingCell,
     setSettingsModalObj,
@@ -244,6 +253,7 @@ export const Tabletop: React.FC = () => {
     setPilesButtonMenu,
     setTopDeckModalDeck,
     setZoom,
+    setScroll,
   });
 
   const {
@@ -297,6 +307,287 @@ export const Tabletop: React.FC = () => {
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [handleMouseUp]);
+
+  // Handle add-to-cursor-slot events from HandPanel and other sources
+  useEffect(() => {
+    const handleAddToCursorSlot = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        cardId: string;
+        clientX: number;
+        clientY: number;
+        source?: string;
+        cardOverride?: any;
+        clickOffsetX?: number;
+        clickOffsetY?: number;
+      }>;
+
+      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY } = customEvent.detail;
+      const obj = state.objects[cardId];
+
+      if (!obj) {
+        console.warn('[Tabletop] Object not found for add-to-cursor-slot:', cardId);
+        return;
+      }
+
+      // Check if object is already in cursor slot
+      if (cursorSlot.some(item => item.id === cardId)) {
+        console.log('[Tabletop] Object already in cursor slot:', cardId);
+        return;
+      }
+
+      // Note: For CARDS from deck, multiple items can coexist in slot
+      // No need to drop existing items when adding from deck
+
+      console.log('[Tabletop] Adding object to cursor slot from event:', {
+        cardId,
+        type: obj.type,
+        source,
+        clientX,
+        clientY,
+        hasCardOverride: !!cardOverride,
+        hasClickOffset: clickOffsetX !== undefined && clickOffsetY !== undefined
+      });
+
+      // Import and call addToCursorSlot - need to get the function from eventHandlers
+      // Since we can't directly call it here, we'll dispatch an action or use a different approach
+      // For now, let's use the approach of setting the slot directly
+      const card = (cardOverride || obj) as Card;
+      const deck = card.deckId ? state.objects[card.deckId] as any : undefined;
+      const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
+
+      // Calculate click offset if not provided
+      // IMPORTANT: Calculate offset from object position to click position (like in addToCursorSlot)
+      let finalClickOffsetX = clickOffsetX;
+      let finalClickOffsetY = clickOffsetY;
+
+      if (finalClickOffsetX === undefined || finalClickOffsetY === undefined) {
+        // Calculate offset if scrollContainerRef is available
+        if (scrollContainerRef.current) {
+          const rect = scrollContainerRef.current.getBoundingClientRect();
+          const scrollX = viewTransform?.scroll?.x || 0;
+          const scrollY = viewTransform?.scroll?.y || 0;
+
+          // Convert click position to virtual units
+          const clickX_VU = p2v(clientX - rect.left + scrollX);
+          const clickY_VU = p2v(clientY - rect.top + scrollY);
+
+          // Calculate offset from top-left corner to click position
+          finalClickOffsetX = clickX_VU - obj.x;
+          finalClickOffsetY = clickY_VU - obj.y;
+
+          console.log('[Tabletop] Calculated click offset from object position:', {
+            cardId,
+            objPosition: { x: obj.x, y: obj.y },
+            clickPosition_VU: { x: clickX_VU, y: clickY_VU },
+            calculatedOffset: { x: finalClickOffsetX, y: finalClickOffsetY }
+          });
+        } else {
+          // Fallback: center the card on cursor
+          const cardWidth = card.width ?? deck?.cardWidth ?? 63;
+          const cardHeight = card.height ?? deck?.cardHeight ?? 88;
+          finalClickOffsetX = cardWidth / 2;
+          finalClickOffsetY = cardHeight / 2;
+        }
+      }
+
+      // IMPORTANT: Calculate pixel offsets for CursorSlotVisualization
+      // When card is added via "play top", we need PX offsets for proper rendering
+      // If clickOffsetX/Y represent centering (cardWidth/2, cardHeight/2), convert to pixels
+      const cardWidth = card.width ?? deck?.cardWidth ?? 63;
+      const cardHeight = card.height ?? deck?.cardHeight ?? 88;
+
+      // Check if the VU offsets represent centering (approximately half of card dimensions)
+      const isCenteredX = Math.abs(finalClickOffsetX - cardWidth / 2) < 1;
+      const isCenteredY = Math.abs(finalClickOffsetY - cardHeight / 2) < 1;
+
+      let finalClickOffsetX_PX: number | undefined;
+      let finalClickOffsetY_PX: number | undefined;
+
+      if (isCenteredX && isCenteredY) {
+        // For centered positioning, use half of card dimensions in screen pixels
+        finalClickOffsetX_PX = (cardWidth * pixelsPerVU * (viewTransform?.zoom ?? 1)) / 2;
+        finalClickOffsetY_PX = (cardHeight * pixelsPerVU * (viewTransform?.zoom ?? 1)) / 2;
+      } else {
+        // For non-centered offsets, convert VU to screen pixels (include zoom)
+        finalClickOffsetX_PX = finalClickOffsetX * pixelsPerVU * (viewTransform?.zoom ?? 1);
+        finalClickOffsetY_PX = finalClickOffsetY * pixelsPerVU * (viewTransform?.zoom ?? 1);
+      }
+
+      const itemClone = {
+        id: card.id,
+        type: obj.type, // Use the actual object type, not hardcoded CARD
+        name: card.name,
+        content: card.content,
+        frontFaceUrl: card.frontFaceUrl,
+        backFaceUrl: card.backFaceUrl,
+        deckId: card.deckId,
+        width: card.width,
+        height: card.height,
+        faceUp: card.faceUp,
+        isHorizontal: isHorizontal,
+        spriteIndex: card.spriteIndex,
+        spriteColumns: card.spriteColumns,
+        spriteRows: card.spriteRows,
+        spriteUrl: card.spriteUrl,
+        shape: card.shape,
+        x: 0,
+        y: 0,
+        rotation: card.rotation || 0,
+        zIndex: card.zIndex ?? 0,
+        hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
+        location: card.location,
+        locked: card.locked ?? false,
+        isOnTable: card.isOnTable ?? false,
+        source: source || 'hold',
+        originalZIndex: card.zIndex ?? 0,
+        cursorSlotIndex: cursorSlot.length,
+        timestamp: Date.now(),
+        clickOffsetX: finalClickOffsetX,
+        clickOffsetY: finalClickOffsetY,
+        clickOffsetX_PX: finalClickOffsetX_PX,
+        clickOffsetY_PX: finalClickOffsetY_PX,
+        // IMPORTANT: Store original position for proper drop calculation
+        originalX: obj.x,
+        originalY: obj.y,
+      } as any; // Use 'any' to avoid type conflicts with Card interface
+
+      // Set cursor position FIRST
+      const pos = { x: clientX, y: clientY };
+      cursorPositionRef.current = pos;
+      setCursorPosition(pos);
+
+      // Add to cursor slot
+      const newSlot = [...cursorSlot, itemClone];
+      setCursorSlot(newSlot);
+      cursorSlotLastAddedRef.current = Date.now();
+
+      // IMPORTANT: Hide object from table while in cursor slot (same as in addToCursorSlot)
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: cardId,
+          updates: {
+            inCursorSlot: true,
+            isOnTable: false,
+            // Move object far away to hide it while in slot
+            x: -999999,
+            y: -999999
+          }
+        } as any
+      });
+
+      console.log('[Tabletop] Added to cursor slot from event:', {
+        cardId,
+        slotSize: newSlot.length,
+        faceUp: card.faceUp,
+        clickOffset: { x: finalClickOffsetX, y: finalClickOffsetY },
+        originalPosition: { x: obj.x, y: obj.y }
+      });
+    };
+
+    window.addEventListener('add-to-cursor-slot', handleAddToCursorSlot);
+    return () => window.removeEventListener('add-to-cursor-slot', handleAddToCursorSlot);
+  }, [state.objects, cursorSlot, setCursorSlot, setCursorPosition, cursorPositionRef, cursorSlotLastAddedRef, pixelsPerVU, p2v, scrollContainerRef, viewTransform]);
+
+  // Auto-add newly drawn cards to cursor slot
+  // This handles the "draw top card" action which adds cards to hand
+  useEffect(() => {
+    const cardsInHand = Object.values(state.objects).filter(
+      (obj): obj is Card => obj.type === ItemType.CARD && obj.location === CardLocation.HAND && obj.ownerId === activePlayerId
+    );
+
+    // Find cards that were just added to hand (recently drawn)
+    const now = Date.now();
+    const recentlyDrawn = cardsInHand.filter(card => {
+      if (cursorSlot.some(item => item.id === card.id)) return false;
+      const cardData = card as any;
+      if (cardData.justDrawn && now - (cardData.drawnAt || 0) < 500) {
+        return true;
+      }
+      return false;
+    });
+
+    if (recentlyDrawn.length > 0) {
+      console.log('[Tabletop] Auto-adding drawn cards to cursor slot:', recentlyDrawn.map(c => ({
+        id: c.id,
+        faceUp: c.faceUp,
+        deckId: c.deckId
+      })));
+
+      recentlyDrawn.forEach(card => {
+        const deck = card.deckId ? state.objects[card.deckId] as any : undefined;
+        const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
+
+        const itemClone = {
+          id: card.id,
+          type: ItemType.CARD,
+          name: card.name,
+          content: card.content,
+          frontFaceUrl: card.frontFaceUrl,
+          backFaceUrl: card.backFaceUrl,
+          deckId: card.deckId,
+          width: card.width,
+          height: card.height,
+          faceUp: card.faceUp,
+          isHorizontal: isHorizontal,
+          spriteIndex: card.spriteIndex,
+          spriteColumns: card.spriteColumns,
+          spriteRows: card.spriteRows,
+          spriteUrl: card.spriteUrl,
+          shape: card.shape,
+          x: 0,
+          y: 0,
+          rotation: card.rotation || 0,
+          zIndex: card.zIndex ?? 0,
+          hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
+          location: card.location,
+          locked: card.locked ?? false,
+          isOnTable: card.isOnTable ?? false,
+          source: 'hold',
+          originalZIndex: card.zIndex ?? 0,
+          timestamp: Date.now(),
+        } as any;
+
+        console.log('[Tabletop] Creating itemClone for cursor slot:', {
+          cardId: card.id,
+          cardFaceUp: card.faceUp,
+          itemCloneFaceUp: itemClone.faceUp
+        });
+
+        setCursorSlot(prev => {
+          const newItem = { ...itemClone, cursorSlotIndex: prev.length };
+          return [...prev, newItem];
+        });
+        cursorSlotLastAddedRef.current = Date.now();
+
+        // Mark card as being in cursor slot and clear justDrawn flag
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: card.id,
+            inCursorSlot: true,
+            isOnTable: false,
+            justDrawn: false
+          } as any
+        });
+      });
+    }
+  }, [state.objects, activePlayerId, cursorSlot, dispatch, setCursorSlot, cursorSlotLastAddedRef]);
+
+  // Listen for clear-cursor-slot event (dispatched by pool panel drops)
+  useEffect(() => {
+    const handleClearCursorSlot = (e: Event) => {
+      const customEvent = e as CustomEvent<{ reason?: string }>;
+      console.log('[Tabletop] Received clear-cursor-slot event:', customEvent.detail);
+      setCursorSlot([]);
+      setCursorPosition(null);
+      cursorPositionRef.current = null;
+      setCursorSlotSource(null);
+    };
+
+    window.addEventListener('clear-cursor-slot', handleClearCursorSlot);
+    return () => window.removeEventListener('clear-cursor-slot', handleClearCursorSlot);
+  }, [setCursorSlot, setCursorPosition, setCursorSlotSource]);
 
   return (
     <div
@@ -442,6 +733,9 @@ export const Tabletop: React.FC = () => {
           target.scrollLeft = constrained.x;
           target.scrollTop = constrained.y;
         }
+
+        // Update scroll position in view transform context
+        setScroll(constrained.x, constrained.y);
 
         // Update scroll position in global state
         dispatch({

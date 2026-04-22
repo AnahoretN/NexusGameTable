@@ -44,6 +44,7 @@ const GameContext = createContext<{
   connectionStatus: 'disconnected' | 'connecting' | 'connected';
   waitingForPlayerName: { hostId: string } | null;
   setPlayerName: (name: string) => void;
+  initializeHost: () => void;
   stateRef: React.RefObject<GameState>;
 } | null>(null);
 
@@ -1613,18 +1614,30 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
       const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
+      // Determine faceUp based on deck's playTopFaceUp setting
+      const faceUpValue = deck.playTopFaceUp ?? true;
+      console.log('[DRAW_CARD] Card faceUp setting:', {
+        cardId: drawnCardId,
+        deckId: deck.id,
+        deckPlayTopFaceUp: deck.playTopFaceUp,
+        finalFaceUp: faceUpValue
+      });
+
       const updatedCard: Card = {
         ...card,
         location: CardLocation.HAND,
         ownerId: action.payload.playerId,
         deckId: deck.id,
-        faceUp: true,
+        faceUp: faceUpValue, // Use deck's playTopFaceUp setting
         isOnTable: false, // Not visible on tabletop
         shape: deck.cardShape || CardShape.POKER,
         // Inherit card dimensions from deck to maintain correct aspect ratio
         width: deck.cardWidth,
         height: deck.cardHeight,
-      };
+        // Mark as just drawn for auto-add to cursor slot
+        justDrawn: true,
+        drawnAt: Date.now(),
+      } as Card;
       const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
 
       // Add drawn card to the beginning of player's hand card order (top-right position in hand panel)
@@ -5162,7 +5175,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [state]);
 
   // Peer.js connection management
-  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, hostConnectionRef, connectionsRef, imageCachesRef } = usePeerConnection(localDispatch, stateRef);
+  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, imageCachesRef } = usePeerConnection(localDispatch, stateRef);
 
   // Auto-save game state to localStorage (debounced)
   useAutoSave(state, isHost, initializedRef.current);
@@ -5414,24 +5427,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
           // Then add the deck
           localDispatch({ type: 'ADD_OBJECT', payload: deck });
-
-          // Check final state after a short delay
-          setTimeout(() => {
-            const currentState = stateRef.current;
-            const deckObj = Object.values(currentState.objects).find(obj => obj.id === deck.id) as any;
-            const cardsInDeck = Object.values(currentState.objects).filter(obj =>
-              obj.type === ItemType.CARD && (obj as any).deckId === deck.id
-            );
-
-            console.log('[DEBUG FINAL CHECK]', {
-              deckId: deck.id,
-              deckExists: !!deckObj,
-              deckCardIdsLength: deckObj?.cardIds?.length || 0,
-              cardsWithThisDeckId: cardsInDeck.length,
-              deckCardIdsFirst3: deckObj?.cardIds?.slice(0, 3) || [],
-              existingCardsFirst3: cardsInDeck.slice(0, 3).map(c => ({ id: c.id, name: c.name }))
-            });
-          }, 100);
 
           // IMPORTANT: Mark as initialized AFTER default objects are created
           initializedRef.current = true;
@@ -5865,7 +5860,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [localDispatch, isHost]);
 
   return (
-    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, stateRef }}>
+    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, stateRef }}>
       {children}
       <InitialLoadModal
         steps={initialLoadSteps}

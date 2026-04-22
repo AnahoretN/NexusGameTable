@@ -166,6 +166,24 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   );
 }, (prevProps, nextProps) => {
   // Custom comparison for UIObjectsRenderer
+  // Check if draggingId changed - always re-render when dragging
+  if (prevProps.draggingId !== nextProps.draggingId) {
+    return false;
+  }
+
+  // For dragging panels, check position changes in objects
+  if (nextProps.draggingId) {
+    // If something is being dragged, check if positions of UI objects changed
+    const prevUnpinnedPositions = prevProps.unpinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
+    const nextUnpinnedPositions = nextProps.unpinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
+    if (prevUnpinnedPositions !== nextUnpinnedPositions) return false;
+
+    const prevPinnedPositions = prevProps.pinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
+    const nextPinnedPositions = nextProps.pinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
+    if (prevPinnedPositions !== nextPinnedPositions) return false;
+  }
+
+  // Default shallow comparison for other props
   return (
     prevProps.pinnedUIObjects === nextProps.pinnedUIObjects &&
     prevProps.unpinnedUIObjects === nextProps.unpinnedUIObjects &&
@@ -173,7 +191,6 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     prevProps.unpinnedDecks === nextProps.unpinnedDecks &&
     prevProps.context === nextProps.context &&
     prevProps.state === nextProps.state &&
-    prevProps.draggingId === nextProps.draggingId &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.currentTool === nextProps.currentTool &&
@@ -186,6 +203,23 @@ UIObjectsRenderer.displayName = 'UIObjectsRenderer';
 
 // Export memoized component with custom comparison
 export const UIObjectsRendererMemo = memo(UIObjectsRenderer, (prevProps, nextProps) => {
+  // Check if draggingId changed - always re-render when dragging
+  if (prevProps.draggingId !== nextProps.draggingId) {
+    return false;
+  }
+
+  // For dragging panels, check position changes in objects
+  if (nextProps.draggingId) {
+    const prevUnpinnedPositions = prevProps.unpinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
+    const nextUnpinnedPositions = nextProps.unpinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
+    if (prevUnpinnedPositions !== nextUnpinnedPositions) return false;
+
+    const prevPinnedPositions = prevProps.pinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
+    const nextPinnedPositions = nextProps.pinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
+    if (prevPinnedPositions !== nextPinnedPositions) return false;
+  }
+
+  // Default shallow comparison for other props
   return (
     prevProps.pinnedUIObjects === nextProps.pinnedUIObjects &&
     prevProps.unpinnedUIObjects === nextProps.unpinnedUIObjects &&
@@ -193,7 +227,6 @@ export const UIObjectsRendererMemo = memo(UIObjectsRenderer, (prevProps, nextPro
     prevProps.unpinnedDecks === nextProps.unpinnedDecks &&
     prevProps.context === nextProps.context &&
     prevProps.state === nextProps.state &&
-    prevProps.draggingId === nextProps.draggingId &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.currentTool === nextProps.currentTool &&

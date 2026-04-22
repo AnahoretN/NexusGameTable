@@ -900,15 +900,18 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         e.stopPropagation();
       }}
       onMouseDown={(e) => {
-        // When Shift is pressed, enable drag from anywhere on the panel
+        // Always bring to front on click
+        handleBringToFront();
+        // Enable drag when Shift is pressed (drag from anywhere)
+        // or when clicking on the container (normal drag behavior)
         if (e.shiftKey) {
           e.preventDefault();
           e.stopPropagation();
           setIsShiftDragging(true);
-          handleBringToFront();
           onMouseDown(e, uiObject.id);
         }
-        // When Shift is not pressed, let normal click handlers work
+        // When Shift is not pressed, let click handlers work
+        // Drag is handled by the header/title bar
       }}
       onMouseUp={(_e) => {
         if (isShiftDragging) {

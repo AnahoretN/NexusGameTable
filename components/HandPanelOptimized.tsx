@@ -23,8 +23,9 @@ import {
   usePlayerPermissions
 } from '../store/contexts';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player } from '../types';
+import { Card, Token, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player } from '../types';
 import { Card as CardComponent } from './Card';
+import { ObjectRenderer } from './ObjectRenderer';
 import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
 import { getCardButtonConfigsWithActions } from '../utils/buttonConfig';
@@ -179,8 +180,9 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // State for selected player hand tab - MUST be declared before useMemo
   const [selectedPlayerId, setSelectedPlayerId] = useState(activePlayerId);
 
-  const allCardObjects = Object.values(objects).filter(obj => obj.type === ItemType.CARD) as Card[];
-  const allCards = allCardObjects;
+  // Get both CARDS and TOKENS that can be in hand
+  const allHandObjects = Object.values(objects).filter(obj => obj.type === ItemType.CARD || obj.type === ItemType.TOKEN) as (Card | Token)[];
+  const allCards = allHandObjects.filter(obj => obj.type === ItemType.CARD) as Card[];
 
   // Use per-tab scale hook for the currently selected player
   const { scale: cardScale, setTabCardScale } = useTabCardScale(selectedPlayerId);
@@ -225,11 +227,19 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         y: number;
         isOverMainMenu: boolean;
         hasCards: boolean;
+        isDraggingCard?: boolean; // Only show purple ring if dragging a card
+        items?: Array<{ type: string }>; // Add items array to check types
       }>;
 
-      const { x, y, hasCards } = customEvent.detail;
+      const { x, y, hasCards, isDraggingCard, items } = customEvent.detail;
 
-      if (!hasCards) {
+      // Only show purple ring if dragging a CARD (not tokens or other objects)
+      // Check isDraggingCard first (from MainMenu event), fallback to items check
+      const draggingCard = isDraggingCard !== undefined
+        ? isDraggingCard
+        : items ? items.some(item => item.type === ItemType.CARD) : hasCards;
+
+      if (!draggingCard) {
         setIsCursorOverHand(false);
         return;
       }
@@ -248,9 +258,17 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const customEvent = e as CustomEvent<{ items: any[] }>;
       const { items } = customEvent.detail;
 
-      const cardsToAdd = items.filter(item => item.type === 'CARD');
+      // Filter to only allow CARDS in hand panel (tokens should not be added)
+      const itemsToAdd = items.filter(item => item.type === ItemType.CARD);
 
-      if (cardsToAdd.length > 0) {
+      console.log('🖐️ [HAND PANEL] handleCursorSlotDrop:', {
+        totalItems: items.length,
+        itemsToAdd: itemsToAdd.length,
+        itemTypes: items.map(i => ({ id: i.id, type: i.type })),
+        selectedPlayerId
+      });
+
+      if (itemsToAdd.length > 0) {
         const player = players.find(p => p.id === selectedPlayerId);
         if (!player) {
           logger.warn('[HandPanelV2] Player not found:', selectedPlayerId);
@@ -259,8 +277,15 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         }
 
         const currentHandCardOrder = player.handCardOrder || [];
-        const newCardIds = cardsToAdd.map(card => card.id);
-        const updatedHandCardOrder = [...currentHandCardOrder, ...newCardIds];
+        const newItemIds = itemsToAdd.map(item => item.id);
+        const updatedHandCardOrder = [...currentHandCardOrder, ...newItemIds];
+
+        console.log('🖐️ [HAND PANEL] Updating player handCardOrder:', {
+          playerId: player.id,
+          currentLength: currentHandCardOrder.length,
+          newItems: newItemIds,
+          updatedLength: updatedHandCardOrder.length
+        });
 
         // ✅ ИСПРАВЛЕНО: Update player via GameContext dispatch
         dispatch({
@@ -273,17 +298,28 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
           }
         });
 
-        cardsToAdd.forEach(card => {
+        itemsToAdd.forEach(item => {
+          console.log('🖐️ [HAND PANEL] Updating item location to HAND:', {
+            itemId: item.id,
+            itemType: item.type,
+            location: CardLocation.HAND,
+            ownerId: selectedPlayerId
+          });
+
           // ✅ FIXED: Use GameContext dispatch instead of objectStore
+          // For both cards and tokens, set location to HAND and owner
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
-              id: card.id,
+              id: item.id,
               updates: {
                 location: CardLocation.HAND,
                 ownerId: selectedPlayerId,
                 inCursorSlot: false,
-                isOnTable: false
+                isOnTable: false,
+                // Hide item from table by moving it far away
+                x: -999999,
+                y: -999999
               }
             }
           });
@@ -291,19 +327,19 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
         setPickingUpCardIds(prev => {
           const newSet = new Set(prev);
-          cardsToAdd.forEach(card => newSet.delete(card.id));
+          itemsToAdd.forEach(item => newSet.delete(item.id));
           return newSet;
         });
 
         recentlyDroppedToHandRef.current = new Set([
           ...recentlyDroppedToHandRef.current,
-          ...cardsToAdd.map(card => card.id)
+          ...itemsToAdd.map(item => item.id)
         ]);
 
         setTimeout(() => {
           recentlyDroppedToHandRef.current = new Set(
             Array.from(recentlyDroppedToHandRef.current).filter(id =>
-              !cardsToAdd.some(card => card.id === id)
+              !itemsToAdd.some(item => item.id === id)
             )
           );
         }, 2000);
@@ -319,7 +355,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       window.removeEventListener('cursor-slot-move', handleCursorSlotMove);
       window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
     };
-  }, [selectedPlayerId, players, updateCard, updatePlayerData]);
+  }, [selectedPlayerId, players, dispatch]);
 
   // Listen for cursor slot drop events
   useEffect(() => {
@@ -384,18 +420,31 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     };
   }, [updateCard]);
 
-  // Filter cards for selected player
+  // Filter cards and tokens for selected player
   const player = players.find(p => p.id === selectedPlayerId);
   const handCardOrder = player?.handCardOrder || [];
 
-  const handCards = allCards.filter(card =>
-    card.location === CardLocation.HAND &&
-    card.ownerId === selectedPlayerId &&
-    !pickingUpCardIds.has(card.id)
+  // Get both cards and tokens in hand
+  const handItems = allHandObjects.filter(item =>
+    item.location === CardLocation.HAND &&
+    item.ownerId === selectedPlayerId &&
+    !item.inCursorSlot &&
+    !pickingUpCardIds.has(item.id)
   );
 
+  // Debug logging
+  console.log('🖐️ [HAND PANEL] Rendering hand items:', {
+    selectedPlayerId,
+    playerExists: !!player,
+    handCardOrder,
+    allHandObjectsCount: allHandObjects.length,
+    handItemsCount: handItems.length,
+    handItems: handItems.map(i => ({ id: i.id, type: i.type, location: i.location, ownerId: i.ownerId })),
+    pickingUpCardIds: Array.from(pickingUpCardIds)
+  });
+
   const cardOrderMap = new Map(handCardOrder.map((id, index) => [id, index]));
-  const cards = handCards.sort((a, b) => {
+  const cards = handItems.sort((a, b) => {
     const aIndex = cardOrderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
     const bIndex = cardOrderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
     return aIndex - bIndex;
@@ -404,20 +453,31 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // Determine if viewing opponent's hand
   const isViewingOpponentHand = selectedPlayerId !== activePlayerId;
 
-  // Group cards by shape
-  const groups: Record<string, { cards: Card[]; shape: CardShape | 'Mixed' }> = {};
+  // Group items by type and shape
+  const groups: Record<string, { cards: (Card | Token)[]; shape: CardShape | 'Mixed' | 'Token' }> = {};
 
-  cards.forEach(card => {
-    const shape = card.shape ?? CardShape.POKER;
-    if (!groups[shape]) {
-      groups[shape] = { cards: [], shape };
+  cards.forEach(item => {
+    if (item.type === ItemType.TOKEN) {
+      // Tokens go to their own group
+      if (!groups['Token']) {
+        groups['Token'] = { cards: [], shape: 'Token' };
+      }
+      groups['Token'].cards.push(item);
+    } else {
+      // Cards grouped by shape
+      const shape = (item as Card).shape ?? CardShape.POKER;
+      if (!groups[shape]) {
+        groups[shape] = { cards: [], shape };
+      }
+      groups[shape].cards.push(item);
     }
-    groups[shape].cards.push(card);
   });
 
   const cardsByShape = Object.values(groups).sort((a, b) => {
     if (a.shape === 'Mixed') return 1;
     if (b.shape === 'Mixed') return -1;
+    if (a.shape === 'Token') return 1; // Tokens at the end
+    if (b.shape === 'Token') return -1;
     return a.shape.localeCompare(b.shape);
   });
 
@@ -592,23 +652,6 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
 
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const card = objects[cardId] as Card;
-
-      if (card.inCursorSlot || pickingUpCardIds.has(cardId)) {
-        return;
-      }
-
-      setPickingUpCardIds(prev => new Set([...prev, cardId]));
-      window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-        detail: { cardId, clientX: e.clientX, clientY: e.clientY }
-      }));
-      return;
-    }
-
     e.preventDefault();
     e.stopPropagation();
 
@@ -778,91 +821,6 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       window.removeEventListener('mouseup', handleGlobalMouseUp);
     };
   }, [dragIndex, handleMouseMove, handleMouseUp]);
-
-  // Listen for cursor slot drop events
-  useEffect(() => {
-    const handleCursorSlotDrop = (e: Event) => {
-      const customEvent = e as CustomEvent<{
-        items: Array<{
-          id: string;
-          type: string;
-          name?: string;
-          frontFaceUrl?: string;
-          backFaceUrl?: string;
-          deckId?: string;
-          width?: number;
-          height?: number;
-          [key: string]: any;
-        }>;
-      }>;
-
-      const items = customEvent.detail.items;
-      if (!items || items.length === 0) return;
-
-      const cards = items.filter(item => item.type === ItemType.CARD);
-
-      if (cards.length === 0) return;
-
-      const player = players.find(p => p.id === activePlayerId);
-      const currentHandOrder = player?.handCardOrder || [];
-
-      const newCardIds = cards.map(c => c.id);
-      const newCardOrder = [...newCardIds, ...currentHandOrder];
-
-      if (player) {
-        updatePlayerData(player.id, {
-          handCardOrder: newCardOrder
-        });
-      }
-
-      cards.forEach(card => {
-        const existingCard = objects[card.id] as Card | undefined;
-
-        if (existingCard) {
-          updateCard(card.id, {
-            location: CardLocation.HAND as any,
-            isOnTable: false,
-            ownerId: activePlayerId,
-            x: 0,
-            y: 0,
-            rotation: 0,
-            inCursorSlot: false,
-          });
-        } else {
-          const cardPayload: Card = {
-            id: card.id,
-            type: ItemType.CARD,
-            x: 0,
-            y: 0,
-            rotation: 0,
-            content: card.content || card.frontFaceUrl || '',
-            name: card.name || 'Card',
-            locked: false,
-            location: CardLocation.HAND as any,
-            ownerId: activePlayerId,
-            isOnTable: false,
-            faceUp: true,
-            inCursorSlot: false,
-            ...(card.frontFaceUrl && { frontFaceUrl: card.frontFaceUrl }),
-            ...(card.backFaceUrl && { backFaceUrl: card.backFaceUrl }),
-            ...(card.deckId && { deckId: card.deckId }),
-            ...(card.width && { width: card.width }),
-            ...(card.height && { height: card.height }),
-            ...(card.spriteUrl && { spriteUrl: card.spriteUrl }),
-            ...(card.spriteIndex !== undefined && { spriteIndex: card.spriteIndex }),
-            ...(card.spriteColumns && { spriteColumns: card.spriteColumns }),
-            ...(card.spriteRows && { spriteRows: card.spriteRows }),
-            ...(card.shape && { shape: card.shape }),
-          };
-
-          addObject(cardPayload);
-        }
-      });
-    };
-
-    window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
-    return () => window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
-  }, [objects, activePlayerId, players, selectedPlayerId, updateCard, updatePlayerData, addObject]);
 
   // Reset to own hand when active player changes
   useEffect(() => {
@@ -1083,7 +1041,45 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                       />
                     ) : (
                       <div className="flex flex-wrap gap-[2px] w-full">
-                        {group.cards.map((card, index) => {
+                        {group.cards.map((item, index) => {
+                          // Check if this is a token or card
+                          const isToken = item.type === ItemType.TOKEN;
+
+                          if (isToken) {
+                            // Render token using ObjectRenderer
+                            const token = item as Token;
+                            const actualIndex = groupOffset + index;
+
+                            return (
+                              <div
+                                key={token.id}
+                                data-card-index={actualIndex}
+                                className="relative flex-shrink-0 group"
+                                style={{
+                                  width: 88,
+                                  height: 88,
+                                  zIndex: dragIndex === actualIndex ? 100 : dragOverIndex === actualIndex ? 50 : 'auto',
+                                  transform: dragOverIndex === actualIndex ? 'scale(1.05)' : undefined,
+                                }}
+                                onMouseDown={(e) => handleCardMouseDown(e, token.id, actualIndex, e.currentTarget as HTMLDivElement)}
+                                onContextMenu={(e) => handleCardContextMenu(e, token as any)}
+                              >
+                                <ObjectRenderer
+                                  obj={token}
+                                  pixelsPerVU={1}
+                                  currentTool="none"
+                                  isGM={isGM}
+                                  activePlayerId={selectedPlayerId}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onContextMenu={(e) => handleCardContextMenu(e, token as any)}
+                                  disableDeckHighlight={false}
+                                />
+                              </div>
+                            );
+                          }
+
+                          // Render card
+                          const card = item as Card;
                           const cardSettings = computeCardSettings(card);
                           const cardActionButtons = cardSettings.cardActionButtons;
                           const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);

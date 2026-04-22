@@ -35,6 +35,7 @@ export interface UsePeerConnectionReturn {
   connectionStatus: ConnectionStatus;
   waitingForPlayerName: WaitingForPlayerName | null;
   setPlayerName: (name: string) => void;
+  initializeHost: () => void; // Initialize host peer on demand
   hostConnectionRef: React.RefObject<any>;
   connectionsRef: React.RefObject<any[]>;
   imageCachesRef: React.RefObject<Map<string, ImageCache>>; // Map<peerId, ImageCache>
@@ -107,18 +108,6 @@ async function getLocalIPAddress(): Promise<string | null> {
     return null;
   }
 }
-
-// Diagnostic logging on module load
-console.log(`[P2P Diagnostic] ============================================`);
-console.log(`[P2P Diagnostic] 🚀 Nexus Game Table P2P Module Loaded`);
-console.log(`[P2P Diagnostic] 🌐 Browser:`, navigator.userAgent);
-console.log(`[P2P Diagnostic] 📊 Platform:`, navigator.platform);
-console.log(`[P2P Diagnostic] 🔍 WebRTC Support:`, !!(window as any).RTCPeerConnection);
-console.log(`[P2P Diagnostic] 🔍 WebSocket Support:`, !!(window as any).WebSocket);
-console.log(`[P2P Diagnostic] 🔍 getUserMedia Support:`, !!(navigator.mediaDevices?.getUserMedia));
-console.log(`[P2P Diagnostic] 📍 Current URL:`, window.location.href);
-console.log(`[P2P Diagnostic] 🔌 STUN Servers:`, PEERJS_CONFIG.config.iceServers.map(s => s.urls).join(', '));
-console.log(`[P2P Diagnostic] ============================================`);
 
 export function usePeerConnection(
   localDispatch: React.Dispatch<Action>,
@@ -345,6 +334,45 @@ export function usePeerConnection(
       };
     });
 
+    // Reconnection logic with exponential backoff
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+    const BASE_RECONNECT_DELAY = 1000; // 1 second
+
+    const scheduleReconnect = () => {
+      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.error(`[P2P Guest] ❌ Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached`);
+        alert("Failed to connect to peer server after multiple attempts");
+        setConnectionStatus('disconnected');
+        setWaitingForPlayerName(null);
+        return;
+      }
+
+      const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
+      reconnectAttempts++;
+
+      console.log(`[P2P Guest] 🔌 Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms...`);
+
+      setTimeout(() => {
+        if (peer && !peer.destroyed) {
+          try {
+            peer.reconnect();
+            console.log(`[P2P Guest] 🔄 Reconnect triggered`);
+          } catch (e) {
+            console.error(`[P2P Guest] ❌ Reconnect failed:`, e);
+            scheduleReconnect();
+          }
+        }
+      }, delay);
+    };
+
+    peer.on('disconnected', () => {
+      console.warn(`[P2P Guest] ⚠️ Disconnected from PeerJS server`);
+      if (peer && !peer.destroyed) {
+        scheduleReconnect();
+      }
+    });
+
     peer.on('error', (err) => {
       console.error(`[P2P Guest] ❌ PeerJS ERROR:`, err);
       console.error(`[P2P Guest] ❌ Error details:`, {
@@ -353,9 +381,18 @@ export function usePeerConnection(
         stack: err?.stack
       });
       logger.error('Peer error:', err);
-      alert("Failed to connect to peer server");
-      setConnectionStatus('disconnected');
-      setWaitingForPlayerName(null);
+
+      // Only show alert for critical errors (not 'network' errors which may be transient)
+      if (err?.type !== 'network' && err?.type !== 'peer-unavailable') {
+        alert("Failed to connect to peer server");
+        setConnectionStatus('disconnected');
+        setWaitingForPlayerName(null);
+      }
+      // For network errors, try to reconnect
+      else if (err?.type === 'network' && peer && !peer.destroyed) {
+        console.log(`[P2P Guest] 🔄 Network error - attempting reconnection...`);
+        scheduleReconnect();
+      }
     });
 
     // Monitor connection timeout
@@ -376,24 +413,15 @@ export function usePeerConnection(
     connectToHost(hostId, name.trim() || `Player ${Math.floor(Math.random() * 100)}`);
   }, [waitingForPlayerName, connectToHost]);
 
-  // PEERJS SETUP
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hostIdToJoin = params.get('hostId');
-
-    // Cleanup previous peer if exists (React StrictMode double render handling)
-    if (peerRef.current) return;
-
-    // If we have a hostId in URL, show modal for player name first
-    if (hostIdToJoin) {
-      console.log(`[P2P Guest] 📋 Detected hostId in URL: ${hostIdToJoin}`);
-      console.log(`[P2P Guest] 👋 Waiting for player name input...`);
-      setWaitingForPlayerName({ hostId: hostIdToJoin });
+  // Initialize host peer on demand (when user clicks Invite button)
+  const initializeHost = useCallback(() => {
+    // Already initialized or initializing
+    if (peerRef.current) {
+      console.log(`[P2P Host] ℹ️ Peer already initialized, peerId: ${peerRef.current.id}`);
       return;
     }
 
-    // No hostId - we are host, create peer immediately
-    console.log(`[P2P Host] 👑 Starting as HOST`);
+    console.log(`[P2P Host] 👑 Initializing host peer on demand`);
     console.log(`[P2P Host] 🌐 User Agent: ${navigator.userAgent}`);
     console.log(`[P2P Host] 📍 URL: ${window.location.href}`);
 
@@ -422,7 +450,6 @@ export function usePeerConnection(
       }
 
       setPeerId(id);
-      // isHost already set correctly from URL during initialization
       setConnectionStatus('connected');
     });
 
@@ -532,14 +559,51 @@ export function usePeerConnection(
           }
           return originalEmit.apply(this, args as any);
         };
-      });
 
-      // Connection timeout
+        // Connection timeout
+        setTimeout(() => {
+          if (!conn.open) {
+            console.warn(`[P2P Host] ⏰ Connection timeout for guest ${guestPeerId} - connection never opened`);
+          }
+        }, 30000);
+      });
+    });
+
+    // Reconnection logic with exponential backoff for host
+    let hostReconnectAttempts = 0;
+    const MAX_HOST_RECONNECT_ATTEMPTS = 5;
+    const BASE_HOST_RECONNECT_DELAY = 1000;
+
+    const scheduleHostReconnect = () => {
+      if (hostReconnectAttempts >= MAX_HOST_RECONNECT_ATTEMPTS) {
+        console.error(`[P2P Host] ❌ Max reconnection attempts (${MAX_HOST_RECONNECT_ATTEMPTS}) reached`);
+        setConnectionStatus('disconnected');
+        return;
+      }
+
+      const delay = BASE_HOST_RECONNECT_DELAY * Math.pow(2, hostReconnectAttempts);
+      hostReconnectAttempts++;
+
+      console.log(`[P2P Host] 🔌 Reconnection attempt ${hostReconnectAttempts}/${MAX_HOST_RECONNECT_ATTEMPTS} in ${delay}ms...`);
+
       setTimeout(() => {
-        if (!conn.open) {
-          console.warn(`[P2P Host] ⏰ Connection timeout for guest ${guestPeerId} - connection never opened`);
+        if (peer && !peer.destroyed) {
+          try {
+            peer.reconnect();
+            console.log(`[P2P Host] 🔄 Reconnect triggered`);
+          } catch (e) {
+            console.error(`[P2P Host] ❌ Reconnect failed:`, e);
+            scheduleHostReconnect();
+          }
         }
-      }, 30000);
+      }, delay);
+    };
+
+    peer.on('disconnected', () => {
+      console.warn(`[P2P Host] ⚠️ Disconnected from PeerJS server`);
+      if (peer && !peer.destroyed) {
+        scheduleHostReconnect();
+      }
     });
 
     peer.on('error', (err) => {
@@ -550,12 +614,39 @@ export function usePeerConnection(
         stack: err?.stack
       });
       logger.error('Peer error:', err);
-      setConnectionStatus('disconnected');
-    });
 
-    // Cleanup logic to destroy peer on window close/reload
+      // For network errors, try to reconnect instead of failing
+      if (err?.type === 'network' && peer && !peer.destroyed) {
+        console.log(`[P2P Host] 🔄 Network error - attempting reconnection...`);
+        scheduleHostReconnect();
+      } else if (err?.type !== 'network') {
+        // Only set disconnected for non-network errors
+        setConnectionStatus('disconnected');
+      }
+    });
+  }, [localDispatch, handleNetworkData, stateRef]);
+
+  // PEERJS SETUP (only for guest - host initializes on demand)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hostIdToJoin = params.get('hostId');
+
+    // If we have a hostId in URL, show modal for player name first
+    if (hostIdToJoin) {
+      console.log(`[P2P Guest] 📋 Detected hostId in URL: ${hostIdToJoin}`);
+      console.log(`[P2P Guest] 👋 Waiting for player name input...`);
+      setWaitingForPlayerName({ hostId: hostIdToJoin });
+      return;
+    }
+
+    // No hostId = host mode - peer will be initialized when user clicks Invite
+    console.log(`[P2P Init] 🎮 Host mode - PeerJS will initialize on first Invite`);
+  }, []);
+
+  // Cleanup logic to destroy peer on window close/reload
+  useEffect(() => {
     const handleUnload = () => {
-      console.log(`[P2P Host] 🧹 Cleaning up peer on page unload`);
+      console.log(`[P2P Cleanup] 🧹 Cleaning up peer on page unload`);
       if (peerRef.current) {
         peerRef.current.destroy();
       }
@@ -565,13 +656,15 @@ export function usePeerConnection(
     return () => {
       window.removeEventListener('beforeunload', handleUnload);
     };
-  }, [localDispatch, handleNetworkData, stateRef]);
+  }, []);
 
+  // Old useEffect code removed - host now initializes on demand via initializeHost()
   return {
     peerId,
     isHost,
     connectionStatus,
     waitingForPlayerName,
+    initializeHost,
     setPlayerName,
     hostConnectionRef,
     connectionsRef,
@@ -692,6 +785,4 @@ if (typeof window !== 'undefined') {
       });
     }
   };
-  console.log(`[P2P Diagnostic] 💡 Type nexusP2PDebug.getDiagnostics() in console for diagnostic info`);
-  console.log(`[P2P Compression] 💡 Type nexusP2PDebug.getCompressionStats() for compression info`);
 }

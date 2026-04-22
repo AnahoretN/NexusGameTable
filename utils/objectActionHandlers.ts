@@ -103,6 +103,14 @@ export function handlePlayTopCard(
 
   // Prepare card for cursor slot
   const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
+  const cardWidth = deck.cardWidth ?? card.width ?? 63;
+  const cardHeight = deck.cardHeight ?? card.height ?? 88;
+
+  // Calculate click offset to center the card on cursor
+  // This ensures the card is displayed with cursor at center, not at top-left
+  const clickOffsetX = cardWidth / 2;
+  const clickOffsetY = cardHeight / 2;
+
   const cardForSlot: CardType = {
     ...card,
     location: 'CURSOR_SLOT' as any,
@@ -110,8 +118,8 @@ export function handlePlayTopCard(
     isHorizontal,
     isOnTable: false,
     // Inherit card dimensions from deck for correct aspect ratio
-    width: deck.cardWidth,
-    height: deck.cardHeight,
+    width: cardWidth,
+    height: cardHeight,
   };
 
   // Add to cursor slot BEFORE dispatch
@@ -121,7 +129,9 @@ export function handlePlayTopCard(
       clientX: mousePos.x,
       clientY: mousePos.y,
       source: 'shift',
-      cardOverride: cardForSlot
+      cardOverride: cardForSlot,
+      clickOffsetX,
+      clickOffsetY
     }
   }));
 

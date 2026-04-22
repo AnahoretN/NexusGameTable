@@ -102,6 +102,11 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
   const { state } = useGame();
   const hyperscaleLayers = useHyperscaleLayers();
 
+  // Early return if allObjects is not available
+  if (!allObjects) {
+    return null;
+  }
+
   const [layerSubmenuOpen, setLayerSubmenuOpen] = useState(false);
   const [rotateSubmenuOpen, setRotateSubmenuOpen] = useState(false);
   const [pilesSubmenuOpen, setPilesSubmenuOpen] = useState(false);
@@ -128,7 +133,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
 
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = useCallback((card: Card) => {
-    if (card.deckId) {
+    if (card.deckId && allObjects) {
       const deck = allObjects[card.deckId] as DeckType;
       if (deck && deck.type === ItemType.DECK) {
         return {
@@ -398,6 +403,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
   // "Move to.." section for cards - defined here to be inserted early
   const moveToSection: MenuItem[] = useMemo(() => {
     if (object.type !== ItemType.CARD) return [];
+    if (!allObjects) return [];
 
     const card = object as Card;
     const deck = card.deckId ? allObjects[card.deckId] as DeckType : null;
