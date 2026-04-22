@@ -12,6 +12,7 @@ import { ContextMenu } from './ContextMenu';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { CardOrientation } from '../types';
 import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_MODAL_WIDTH_VU, DEFAULT_MODAL_MIN_WIDTH_VU, DEFAULT_MODAL_MAX_WIDTH_VU, DEFAULT_MODAL_HEIGHT_VU } from '../constants';
+import { vuToPixels } from '../utils/vuSystem';
 
 const DEFAULT_MODAL_WIDTH = DEFAULT_MODAL_WIDTH_VU; // vu
 const MIN_MODAL_WIDTH = DEFAULT_MODAL_MIN_WIDTH_VU; // vu
@@ -42,9 +43,6 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
   const modalContainerRef = useRef<HTMLDivElement>(null);
-
-  // Get pixelsPerVU for converting vu to pixels
-  const vuToPx = useCallback((vu: number) => vu * pixelsPerVU, [pixelsPerVU]);
 
   const currentPlayerId = activePlayerId;
   const currentPlayer = players.find(p => p.id === currentPlayerId);
@@ -409,7 +407,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         ref={modalContainerRef}
         data-modal="top-deck"
         className="bg-slate-900 border border-slate-700 flex flex-col relative overflow-hidden"
-        style={{ width: `${vuToPx(modalWidth)}px`, height: `${vuToPx(DEFAULT_MODAL_HEIGHT)}px` }}
+        style={{ width: `${vuToPixels(modalWidth)}px`, height: `${vuToPixels(DEFAULT_MODAL_HEIGHT)}px` }}
       >
         {/* Header - minimal style */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">

@@ -8,6 +8,7 @@ import { Tooltip } from './Tooltip';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { executeClickAction } from '../utils/objectActionHandlers';
+import { vuToPixels } from '../utils/vuSystem';
 
 // 🔥 OPTIMIZED: Zustand version of DeckComponent
 // Replaces: components/DeckComponent.tsx
@@ -142,7 +143,6 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   }, [disableDeckHighlight, hoveredPileId, setHoveredPileId]);
 
   // Convert vu to pixels for deck dimensions
-  const vuToPx = (vu: number) => vu * pixelsPerVU;
 
   // 🔥 OPTIMIZED: Simple hover check - same approach as HandPanel
   const canDropCard = !disableDeckHighlight && isCursorOver;
@@ -172,8 +172,8 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
 
   // Deck dimensions are independent of card orientation
   // The deck displays with its own width and height
-  const effectiveWidth = vuToPx(deck.width);
-  const effectiveHeight = vuToPx(deck.height);
+  const effectiveWidth = vuToPixels(deck.width);
+  const effectiveHeight = vuToPixels(deck.height);
 
   // Memoize visible card count calculation
   const visibleCardCount = useMemo(() => {

@@ -728,6 +728,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // Calculate click offset in pool panel VU for proper positioning
         const obj = state.objects[diceDragRef.current.objectId];
         let clickOffsetX, clickOffsetY;
+        let offsetXPX = 0, offsetYPX = 0;  // Default to center (top-left corner)
 
         if (obj) {
           // Use ACTUAL DOM position for precise click offset
@@ -735,8 +736,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           if (objElement) {
             const objRect = objElement.getBoundingClientRect();
             // Calculate offset from object's top-left to click point (in screen pixels)
-            const offsetXPX = diceDragRef.current.startX - objRect.left;
-            const offsetYPX = diceDragRef.current.startY - objRect.top;
+            offsetXPX = diceDragRef.current.startX - objRect.left;
+            offsetYPX = diceDragRef.current.startY - objRect.top;
             // Convert to VU (accounting for zoom)
             clickOffsetX = offsetXPX / currentZoom / pixelsPerVU;
             clickOffsetY = offsetYPX / currentZoom / pixelsPerVU;
@@ -754,6 +755,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             const objHeight = obj.height || 60;
             clickOffsetX = objWidth / 2;
             clickOffsetY = objHeight / 2;
+            // Also calculate pixel offset for center
+            offsetXPX = (objWidth / 2) * currentZoom * pixelsPerVU;
+            offsetYPX = (objHeight / 2) * currentZoom * pixelsPerVU;
 
             console.warn('[PoolTabletop] DOM element not found for dice, using center fallback:', {
               objectId: obj.id
@@ -771,8 +775,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             fromPoolPanel: poolZone.panelId,
             clickOffsetX,
             clickOffsetY,
-            clickOffsetX_PX: offsetXPX,  // Already in screen pixels from getBoundingClientRect
-            clickOffsetY_PX: offsetYPX   // Already in screen pixels from getBoundingClientRect
+            clickOffsetX_PX: offsetXPX,
+            clickOffsetY_PX: offsetYPX
           }
         }));
       }
@@ -792,6 +796,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // Calculate click offset in pool panel VU for proper positioning
         const obj = state.objects[genericDragRef.current.objectId];
         let clickOffsetX, clickOffsetY;
+        let offsetXPX = 0, offsetYPX = 0;  // Default to center (top-left corner)
 
         if (obj) {
           // Use ACTUAL DOM position for precise click offset
@@ -799,8 +804,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           if (objElement) {
             const objRect = objElement.getBoundingClientRect();
             // Calculate offset from object's top-left to click point (in screen pixels)
-            const offsetXPX = genericDragRef.current.startX - objRect.left;
-            const offsetYPX = genericDragRef.current.startY - objRect.top;
+            offsetXPX = genericDragRef.current.startX - objRect.left;
+            offsetYPX = genericDragRef.current.startY - objRect.top;
             // Convert to VU (accounting for zoom)
             clickOffsetX = offsetXPX / currentZoom / pixelsPerVU;
             clickOffsetY = offsetYPX / currentZoom / pixelsPerVU;
@@ -818,6 +823,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             const objHeight = obj.height || 100;
             clickOffsetX = objWidth / 2;
             clickOffsetY = objHeight / 2;
+            // Also calculate pixel offset for center
+            offsetXPX = (objWidth / 2) * currentZoom * pixelsPerVU;
+            offsetYPX = (objHeight / 2) * currentZoom * pixelsPerVU;
 
             console.warn('[PoolTabletop] DOM element not found, using center fallback:', {
               objectId: obj.id
@@ -835,8 +843,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             fromPoolPanel: poolZone.panelId,
             clickOffsetX,
             clickOffsetY,
-            clickOffsetX_PX: offsetXPX,  // Already in screen pixels from getBoundingClientRect
-            clickOffsetY_PX: offsetYPX   // Already in screen pixels from getBoundingClientRect
+            clickOffsetX_PX: offsetXPX,
+            clickOffsetY_PX: offsetYPX
           }
         }));
       }

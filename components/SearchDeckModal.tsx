@@ -10,6 +10,7 @@ import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DEFAULT_HAND_CARD_WIDTH, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_MODAL_WIDTH_VU, DEFAULT_MODAL_MIN_WIDTH_VU, DEFAULT_MODAL_MAX_WIDTH_VU, DEFAULT_MODAL_HEIGHT_VU } from '../constants';
+import { vuToPixels } from '../utils/vuSystem';
 
 const DEFAULT_MODAL_WIDTH = DEFAULT_MODAL_WIDTH_VU; // vu
 const MIN_MODAL_WIDTH = DEFAULT_MODAL_MIN_WIDTH_VU; // vu
@@ -205,9 +206,6 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const activePlayerId = useActivePlayerId();
   const gmInitializedRef = useRef(false);
   const modalContainerRef = useRef<HTMLDivElement>(null);
-
-  // Get pixelsPerVU for converting vu to pixels
-  const vuToPx = useCallback((vu: number) => vu * pixelsPerVU, [pixelsPerVU]);
 
   const [cardOrder, setCardOrder] = useState<string[]>(
     pile ? pile.cardIds : deck.cardIds
@@ -717,7 +715,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         ref={modalContainerRef}
         data-modal="search-deck"
         className="bg-slate-900 border border-slate-700 flex flex-col relative overflow-hidden"
-        style={{ width: `${vuToPx(modalWidth)}px`, height: `${vuToPx(DEFAULT_MODAL_HEIGHT)}px` }}
+        style={{ width: `${vuToPixels(modalWidth)}px`, height: `${vuToPixels(DEFAULT_MODAL_HEIGHT)}px` }}
       >
         {/* Header - minimal style */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">

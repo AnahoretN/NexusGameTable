@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { NexusBoard as NexusBoardType, HexDirection, TokenShape } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 import { Plus } from 'lucide-react';
+import { vuToPixels } from '../utils/vuSystem';
 
 interface NexusBoardProps {
   board: NexusBoardType;
@@ -47,16 +48,13 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
 }) => {
   const [hoveredDirection, setHoveredDirection] = useState<HexDirection | null>(null);
 
-  // Helper to convert vu to pixels
-  const vuToPx = (vu: number) => vu * pixelsPerVU;
-
   // Use actual main cell dimensions (in vu) for all calculations
   const cellWidth = mainCellWidth ?? board.cellWidth ?? 100;
   const cellHeight = mainCellHeight ?? board.cellHeight ?? 150;
 
   // Convert to pixels for green button rendering
-  const cellWidthPx = vuToPx(cellWidth);
-  const cellHeightPx = vuToPx(cellHeight);
+  const cellWidthPx = vuToPixels(cellWidth);
+  const cellHeightPx = vuToPixels(cellHeight);
 
   // Calculate positions for all cells using hex grid spacing
   const cellPositions = useMemo(() => {
@@ -173,8 +171,8 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
             if (!show) return null;
 
             // Convert VU offsets to pixels for positioning
-            const offsetXPx = vuToPx(offsetX);
-            const offsetYPx = vuToPx(offsetY);
+            const offsetXPx = vuToPixels(offsetX);
+            const offsetYPx = vuToPixels(offsetY);
 
             return (
               <div

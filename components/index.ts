@@ -46,14 +46,8 @@ export { UIObjectRendererOptimized, UIObjectRendererOptimizedMemo } from './UIOb
 // 🚀 MainMenuContent optimized sub-components (removed - not in use)
 // All functionality is integrated directly into MainMenuContent.tsx
 
-// 🚀 NEW: MainMenuContent optimized version
+// 🚀 MainMenuContent
 export { MainMenuContentMemoized } from './MainMenuContent';
-export { default as MainMenuContentOptimized } from './MainMenuContentOptimized';
-export {
-  useFilteredObjects,
-  useObjectStats,
-  usePaginatedObjects
-} from './MainMenuContentOptimized';
 
 // Re-export original types
 export type { VirtualizedObjectListProps } from './VirtualizedObjectList';
