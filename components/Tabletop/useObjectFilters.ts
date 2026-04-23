@@ -12,6 +12,7 @@ import {
   Board as BoardType,
   PanelObject,
   Deck as DeckType,
+  Counter,
   CardLocation
 } from '../../types';
 import { filterVisibleObjects, calculateViewportBounds } from '../../utils/viewportCulling';
@@ -83,6 +84,14 @@ export const useObjectFilters = (
             board.cursorSlotOwnerId !== 'local-player'
           );
         }
+        if (obj.type === ItemType.COUNTER) {
+          const counter = obj as Counter;
+          return (
+            counter.inCursorSlot &&
+            counter.cursorSlotOwnerId &&
+            counter.cursorSlotOwnerId !== 'local-player'
+          );
+        }
         return false;
       })
       .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
@@ -99,6 +108,10 @@ export const useObjectFilters = (
         if (obj.type === ItemType.TOKEN) {
           const token = obj as TokenType;
           return token.isDragging && token.dragOwnerId && token.dragOwnerId !== 'local-player';
+        }
+        if (obj.type === ItemType.COUNTER) {
+          const counter = obj as Counter;
+          return counter.isDragging && counter.dragOwnerId && counter.dragOwnerId !== 'local-player';
         }
         return false;
       })

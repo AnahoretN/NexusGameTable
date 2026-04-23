@@ -5,8 +5,8 @@ import { BoardWithResizeMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { Layers, Lock, RefreshCw, Trash2, Copy } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, ItemType, GridType } from '../../types';
+import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus } from 'lucide-react';
+import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 
 interface GameObjectsRendererProps {
@@ -50,7 +50,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
   onAddNexusCell,
   dispatch
 }) => {
-  const { v2p, createPositionedStyle, getLayerZoomScale, getLayerInverseScale } = context;
+  const { v2p, createPositionedStyle, getLayerZoomScale, getLayerInverseScale, pixelsPerVU } = context;
 
   const renderBoard = (obj: TableObject, globalZIndex: number) => {
     const board = obj as BoardType;
@@ -346,6 +346,73 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
     );
   };
 
+  const renderCounter = (obj: TableObject, globalZIndex: number) => {
+    const counter = obj as Counter;
+    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    const canDrag = !obj.locked;
+    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    const objLayer = obj.hyperscaleLayerId || 'none';
+
+    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
+    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+    const counterWidth = Math.max(counter.width || 60, v2p(100)) / pixelsPerVU;
+    const counterHeight = 50 / pixelsPerVU;
+
+    return (
+      <Tooltip
+        key={obj.id}
+        text={obj.tooltipText}
+        showImage={obj.showTooltipImage}
+        imageSrc={obj.content}
+        scale={obj.tooltipScale}
+      >
+        <div
+          data-object-id={obj.id}
+          onMouseDown={(e) => {
+            if ((e.target as HTMLElement).closest('button')) {
+              return;
+            }
+            if (isOwner) onMouseDown(e, obj.id);
+          }}
+          onContextMenu={(e) => onContextMenu(e, obj)}
+          className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
+          style={createPositionedStyle(
+            v2p(obj.x),
+            v2p(obj.y),
+            v2p(counterWidth),
+            v2p(counterHeight),
+            globalZIndex,
+            objLayer,
+            {
+              transform: `rotate(${obj.rotation || 0}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+              pointerEvents: isPermeable ? 'none' : 'auto',
+            }
+          )}
+        >
+          <button
+            className="p-1 hover:bg-slate-700 rounded"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => dispatch({ type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 } })}
+          >
+            <Minus size={14} />
+          </button>
+          <span className="text-xl font-bold">{counter.value}</span>
+          <button
+            className="p-1 hover:bg-slate-700 rounded"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => dispatch({ type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 } })}
+          >
+            <Plus size={14} />
+          </button>
+
+          {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
+        </div>
+      </Tooltip>
+    );
+  };
+
   const renderGameObject = (obj: TableObject) => {
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
     const isDice = obj.type === ItemType.DICE_OBJECT;
@@ -371,6 +438,10 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
 
     if (obj.type === ItemType.CARD) {
       return renderCard(obj, globalZIndex);
+    }
+
+    if (obj.type === ItemType.COUNTER) {
+      return renderCounter(obj, globalZIndex);
     }
 
     return null;

@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useCallback } from 'react';
-import { Card, Token, ItemType, TableObject, TokenShape, ContextAction } from '../types';
+import { Card, Token, Counter, ItemType, TableObject, TokenShape, ContextAction } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp, ArrowDown, Lock, Unlock, Shuffle, Search, Hand, Pin, Undo } from 'lucide-react';
 import { getCardSettings } from '../utils/cardUtils';
@@ -337,6 +337,78 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
           />
 
           {/* Action buttons for tokens - positioned relative to token */}
+          {obj.actionButtons && obj.actionButtons.length > 0 && dispatch && (
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 z-20 pointer-events-none">
+              {obj.actionButtons.map((action) => {
+                const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects);
+                return buttonConfig ? (
+                  <button
+                    key={action}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      buttonConfig.action();
+                    }}
+                    className={`${buttonConfig.className} pointer-events-auto p-2 rounded-lg`}
+                    title={buttonConfig.title}
+                  >
+                    {buttonConfig.icon}
+                  </button>
+                ) : null;
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (obj.type === ItemType.COUNTER) {
+    const counter = obj as Counter;
+    const counterWidth = (counter.width || 100) * pixelsPerVU;
+    const counterHeight = (counter.height || 60) * pixelsPerVU;
+
+    return (
+      <div className="group relative">
+        <div
+          data-object-id={obj.id}
+          style={{
+            position: 'absolute',
+            width: counterWidth,
+            height: counterHeight,
+            transform: `rotate(${rotation}deg)`,
+            transformOrigin: 'center center',
+            zIndex,
+            cursor: isDragging ? 'grabbing' : 'grab',
+            ...style
+          }}
+          className="relative"
+          onMouseDown={(e) => {
+            if ((e.target as HTMLElement).closest('button')) {
+              return;
+            }
+            onMouseDown?.(e);
+          }}
+          onContextMenu={onContextMenu}
+        >
+          <div
+            className="w-full h-full rounded-lg flex flex-col items-center justify-center shadow-lg"
+            style={{
+              backgroundColor: counter.color || '#10b981',
+              border: '2px solid rgba(255,255,255,0.3)'
+            }}
+          >
+            {counter.name && (
+              <div className="text-xs font-medium text-white/90 mb-1 px-2 truncate max-w-full">
+                {counter.name}
+              </div>
+            )}
+            <div className="text-2xl font-bold text-white">
+              {counter.value}
+            </div>
+          </div>
+
+          {/* Action buttons for counters */}
           {obj.actionButtons && obj.actionButtons.length > 0 && dispatch && (
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 z-20 pointer-events-none">
               {obj.actionButtons.map((action) => {

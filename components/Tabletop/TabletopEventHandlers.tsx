@@ -119,7 +119,7 @@ const addToCursorSlot = (
   // Objects in cursor slot have inCursorSlot: true (NOT isOnTable: false, which includes cards in hand!)
   const slotHasItemsFromState = cursorSlot.length > 0;
   const objectsInCursorSlot = Object.values(state.objects).filter(o =>
-    (o.type === ItemType.CARD || o.type === ItemType.TOKEN) &&
+    (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER) &&
     (o as any).inCursorSlot === true
   );
   const actuallyHasItems = slotHasItemsFromState || objectsInCursorSlot.length > 0;
@@ -613,9 +613,9 @@ const dropCursorSlot = (
   if (handPanel) {
     console.log('✅ [CURSOR SLOT] Dropping items to hand panel');
 
-    // Filter only CARDS and TOKENS from cursor slot (allow both in hand panel)
-    const items = itemsToDrop.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN);
-    const nonCardItems = itemsToDrop.filter(item => item.type !== ItemType.CARD && item.type !== ItemType.TOKEN);
+    // Filter only CARDS, TOKENS and COUNTERS from cursor slot (allow all in hand panel)
+    const items = itemsToDrop.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN || item.type === ItemType.COUNTER);
+    const nonCardItems = itemsToDrop.filter(item => item.type !== ItemType.CARD && item.type !== ItemType.TOKEN && item.type !== ItemType.COUNTER);
 
     console.log('🔍 [CURSOR SLOT] Filtered items:', {
       total: itemsToDrop.length,
@@ -1283,10 +1283,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       return;
     }
 
-    // SHIFT+CLICK only works for CARD and TOKEN - BOARD is excluded
+    // SHIFT+CLICK only works for CARD, TOKEN and COUNTER - BOARD is excluded
     const isShiftClickOnMovableObject = e.shiftKey && obj && (
       obj.type === ItemType.CARD ||
-      obj.type === ItemType.TOKEN
+      obj.type === ItemType.TOKEN ||
+      obj.type === ItemType.COUNTER
     );
 
     // Check if cursor slot has items
@@ -1294,7 +1295,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // Objects in cursor slot have inCursorSlot: true (NOT isOnTable: false, which includes cards in hand!)
     const slotHasItemsFromState = cursorSlot.length > 0;
     const objectsInCursorSlot = Object.values(state.objects).filter(o =>
-      (o.type === ItemType.CARD || o.type === ItemType.TOKEN) &&
+      (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER) &&
       (o as any).inCursorSlot === true
     );
     const actuallyHasItems = slotHasItemsFromState || objectsInCursorSlot.length > 0;
