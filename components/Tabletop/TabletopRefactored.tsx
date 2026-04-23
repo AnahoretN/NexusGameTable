@@ -34,13 +34,14 @@ import {
   UIObjectsRenderer,
   TabletopCursorSlot,
   useTabletopEventHandlers,
-  TabletopModals
+  TabletopModals,
+  useTokenArchetype
 } from './index';
 import { ClickTooltip } from './ClickTooltip';
 
 // Import types
 import type { TabletopRenderContext } from './types';
-import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, TokenShape, CardOrientation, CardLocation } from '../../types';
+import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, TokenShape, CardOrientation } from '../../types';
 
 /**
  * Tabletop Component (Refactored)
@@ -264,6 +265,7 @@ export const Tabletop: React.FC = () => {
 
   const {
     handleContextMenu,
+    handlePileContextMenu,
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
@@ -271,6 +273,20 @@ export const Tabletop: React.FC = () => {
     handleResizeStart,
     handleAddNexusCell,
   } = eventHandlers;
+
+  // === Token Archetype Handler ===
+  useTokenArchetype({
+    cursorSlot,
+    setCursorSlot,
+    setCursorPosition,
+    cursorPositionRef,
+    cursorSlotLastAddedRef,
+    setCursorSlotSource,
+    scrollContainerRef,
+    pixelsPerVU,
+    p2v,
+    isAddingTokenRef,
+  });
 
   // === Render Context ===
   const renderContext: TabletopRenderContext = {
@@ -539,21 +555,19 @@ export const Tabletop: React.FC = () => {
         type: 'UPDATE_OBJECT',
         payload: {
           id: cardId,
-          updates: {
-            inCursorSlot: true,
-            isOnTable: false,
-            // Move object far away to hide it while in slot
-            x: -999999,
-            y: -999999,
-            // Store click offsets for proper drop positioning
-            clickOffsetX_PX: finalClickOffsetX_PX,
-            clickOffsetY_PX: finalClickOffsetY_PX,
-            clickOffsetX: finalClickOffsetX,
-            clickOffsetY: finalClickOffsetY,
-            // Store original position BEFORE updating to -999999
-            originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
-            originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
-          }
+          inCursorSlot: true,
+          isOnTable: false,
+          // Move object far away to hide it while in slot
+          x: -999999,
+          y: -999999,
+          // Store click offsets for proper drop positioning
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          // Store original position BEFORE updating to -999999
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
         } as any
       });
 
@@ -570,94 +584,11 @@ export const Tabletop: React.FC = () => {
     return () => window.removeEventListener('add-to-cursor-slot', handleAddToCursorSlot);
     // NOTE: cursorSlot and setCursorSlot are intentionally excluded from dependencies
     // to prevent effect recreation on every slot change which could miss events
-  }, [state.objects, setCursorPosition, cursorPositionRef, cursorSlotLastAddedRef, pixelsPerVU, p2v, scrollContainerRef, viewTransform, setCursorSlotSource]);
+  }, [state.objects, setCursorPosition, cursorPositionRef, cursorSlotLastAddedRef, pixelsPerVU, p2v, scrollContainerRef, viewTransform, setCursorSlotSource, dispatch]);
 
   // Auto-add newly drawn cards to cursor slot
-  // This handles the "draw top card" action which adds cards to hand
-  useEffect(() => {
-    const cardsInHand = Object.values(state.objects).filter(
-      (obj): obj is Card => obj.type === ItemType.CARD && obj.location === CardLocation.HAND && obj.ownerId === activePlayerId
-    );
-
-    // Find cards that were just added to hand (recently drawn)
-    const now = Date.now();
-    const recentlyDrawn = cardsInHand.filter(card => {
-      // Check if already in cursor slot using inCursorSlot flag
-      const cardData = card as any;
-      if (cardData.inCursorSlot) return false;
-
-      if (cardData.justDrawn && now - (cardData.drawnAt || 0) < 500) {
-        return true;
-      }
-      return false;
-    });
-
-    if (recentlyDrawn.length > 0) {
-      console.log('[Tabletop] Auto-adding drawn cards to cursor slot:', recentlyDrawn.map(c => ({
-        id: c.id,
-        faceUp: c.faceUp,
-        deckId: c.deckId
-      })));
-
-      recentlyDrawn.forEach(card => {
-        const deck = card.deckId ? state.objects[card.deckId] as any : undefined;
-        const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
-
-        const itemClone = {
-          id: card.id,
-          type: ItemType.CARD,
-          name: card.name,
-          content: card.content,
-          frontFaceUrl: card.frontFaceUrl,
-          backFaceUrl: card.backFaceUrl,
-          deckId: card.deckId,
-          width: card.width,
-          height: card.height,
-          faceUp: card.faceUp,
-          isHorizontal: isHorizontal,
-          spriteIndex: card.spriteIndex,
-          spriteColumns: card.spriteColumns,
-          spriteRows: card.spriteRows,
-          spriteUrl: card.spriteUrl,
-          shape: card.shape,
-          x: 0,
-          y: 0,
-          rotation: card.rotation || 0,
-          zIndex: card.zIndex ?? 0,
-          hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
-          location: card.location,
-          locked: card.locked ?? false,
-          isOnTable: card.isOnTable ?? false,
-          source: 'hold',
-          originalZIndex: card.zIndex ?? 0,
-          timestamp: Date.now(),
-        } as any;
-
-        console.log('[Tabletop] Creating itemClone for cursor slot:', {
-          cardId: card.id,
-          cardFaceUp: card.faceUp,
-          itemCloneFaceUp: itemClone.faceUp
-        });
-
-        setCursorSlot(prev => {
-          const newItem = { ...itemClone, cursorSlotIndex: prev.length };
-          return [...prev, newItem];
-        });
-        cursorSlotLastAddedRef.current = Date.now();
-
-        // Mark card as being in cursor slot and clear justDrawn flag
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: {
-            id: card.id,
-            inCursorSlot: true,
-            isOnTable: false,
-            justDrawn: false
-          } as any
-        });
-      });
-    }
-  }, [state.objects, activePlayerId, dispatch, setCursorSlot, cursorSlotLastAddedRef, cursorSlot]);
+  // DISABLED: This effect was causing cards to disappear from hand when count > 15
+  // Cards now stay in hand after drawing and can be manually picked up via drag-and-drop
 
   // Listen for clear-cursor-slot event (dispatched by pool panel drops)
   useEffect(() => {
@@ -912,6 +843,7 @@ export const Tabletop: React.FC = () => {
           executeObjectClickAction(obj, action, actionContext, event);
         }}
         handleContextMenu={handleContextMenu}
+        handlePileContextMenu={handlePileContextMenu}
         dispatch={dispatch}
         setSearchModalDeck={setSearchModalDeck}
         setTopDeckModalDeck={setTopDeckModalDeck}

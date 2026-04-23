@@ -31,9 +31,13 @@ export const useObjectFilters = (
         return false;
       }
 
-      // Exclude cards that are in deck (location: DECK) - they are part of the deck
-      if (obj.type === ItemType.CARD && (obj as CardType).location === CardLocation.DECK) {
-        return false;
+      // Exclude cards that are in deck (location: DECK) or in hand (location: HAND)
+      if (obj.type === ItemType.CARD) {
+        const card = obj as CardType;
+        if (card.location === CardLocation.DECK ||
+            card.location === CardLocation.HAND) {
+          return false;
+        }
       }
 
       // Exclude objects in local cursor slot (they are rendered by CursorSlotVisualization)

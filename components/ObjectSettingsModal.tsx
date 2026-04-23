@@ -1390,6 +1390,48 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                 </div>
               )}
 
+              {/* Auto-generate names (for token types only) */}
+              {isArchetype && (
+                <div className="mt-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(data as any).autoName ?? false}
+                      onChange={e => update('autoName', e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-xs font-bold text-gray-400">{translate('Auto-generate names', language as Locale)}</span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1">{translate('Automatically number tokens as they are created (e.g., "Goblin 1", "Goblin 2").', language as Locale)}</p>
+                </div>
+              )}
+
+              {/* Name Prefix (for token types with auto-name) */}
+              {isArchetype && (data as any).autoName && (
+                <div className="mt-4">
+                  <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Name Prefix', language as Locale)}</label>
+                  <input
+                    type="text"
+                    value={(data as any).namePrefix ?? data.name ?? ''}
+                    onChange={e => update('namePrefix', e.target.value)}
+                    placeholder={translate('Goblin', language as Locale)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">{translate('Prefix used for auto-generated names. Tokens will be named "Prefix 1", "Prefix 2", etc.', language as Locale)}</p>
+                </div>
+              )}
+
+              {/* Spawn Count (for token types - display only) */}
+              {isArchetype && (data as any).autoName && (
+                <div className="mt-4">
+                  <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Tokens Created', language as Locale)}</label>
+                  <div className="bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm">
+                    {(data as any).spawnCount ?? 0}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{translate('Number of tokens that have been created from this type.', language as Locale)}</p>
+                </div>
+              )}
+
               {/* Color + Image URL (for boards) - side by side, Color is smaller */}
               {isBoard && (
                 <div className="grid grid-cols-[80px_1fr] gap-2">

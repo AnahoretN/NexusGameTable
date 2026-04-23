@@ -10,6 +10,7 @@ export * from './types';
 export * from './useTabletopPositioning';
 export * from './useObjectFilters';
 export * from './useTabletopState';
+export * from './useTokenArchetype';
 export { useWorldBounds } from './useObjectFilters';
 
 // Components (Stages 3-7 completed)

@@ -361,7 +361,13 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
           style={{ backgroundColor: '#304458' }}
           data-pool-content={panel.id}
         >
-          <div className="absolute inset-0 overflow-auto">
+          <div
+            className="absolute inset-0 overflow-auto"
+            onWheel={(e) => {
+              // Prevent scroll from propagating to the game tabletop
+              e.stopPropagation();
+            }}
+          >
             <PoolTabletop
               poolZone={{
                 offsetX: activeTab.offsetX,

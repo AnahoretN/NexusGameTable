@@ -1069,7 +1069,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
           {/* Blocks Container - Multi-column layout */}
           {activeSubTab && (
-            <div className="flex-1 overflow-y-auto pr-1 min-h-0 w-full">
+            <div
+              className="flex-1 overflow-y-auto pr-1 min-h-0 w-full"
+              onWheel={(e) => {
+                // Prevent scroll from propagating to the game tabletop
+                e.stopPropagation();
+              }}
+            >
               <div className="flex gap-1.5 h-full">
                 {Array.from({ length: activeSubTab.columns || 1 }, (_, columnIndex) => {
                   const columnId = `column-${columnIndex + 1}`;

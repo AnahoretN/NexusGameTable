@@ -985,7 +985,13 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
               width: 16px !important;
             }
           `}</style>
-          <div className="flex-1 hand-panel-scrollbar overflow-y-auto relative">
+          <div
+            className="flex-1 hand-panel-scrollbar overflow-y-auto relative"
+            onWheel={(e) => {
+              // Prevent scroll from propagating to the game tabletop
+              e.stopPropagation();
+            }}
+          >
             {(isDragTarget || isCursorOverHand) && (
               <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
             )}

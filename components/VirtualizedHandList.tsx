@@ -126,7 +126,8 @@ export const VirtualizedHandList: React.FC<VirtualizedHandListProps> = ({
  * and get optimal configuration
  */
 export function useVirtualizedHandList(cardCount: number) {
-  const shouldVirtualize = cardCount > 15; // Virtualize if more than 15 cards
+  // TEMPORARILY DISABLED to debug cards disappearing issue
+  const shouldVirtualize = false; // cardCount > 15; // Virtualize if more than 15 cards
 
   return {
     shouldVirtualize,

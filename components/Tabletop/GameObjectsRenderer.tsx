@@ -131,6 +131,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
         scale={obj.tooltipScale}
       >
         <div
+          data-object-id={obj.id}
           className="absolute"
           style={createPositionedStyle(
             v2p(boardX),
@@ -182,6 +183,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
         scale={obj.tooltipScale}
       >
         <div
+          data-object-id={obj.id}
           onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
           onContextMenu={(e) => onContextMenu(e, obj)}
           className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
@@ -309,6 +311,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
         scale={obj.tooltipScale}
       >
         <div
+          data-object-id={obj.id}
           onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
           onContextMenu={(e) => onContextMenu(e, obj)}
           className={`absolute ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}

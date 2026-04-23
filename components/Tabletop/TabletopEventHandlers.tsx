@@ -1196,6 +1196,18 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     });
   }, [isShiftPressed, setContextMenu]);
 
+  // Pile context menu handler
+  const handlePileContextMenu = useCallback((e: React.MouseEvent, pile: any, deck: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPileContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      pile,
+      deck
+    });
+  }, [setPileContextMenu]);
+
   // Mouse down handler WITH LOGGING
   const handleMouseDown = useCallback((e: React.MouseEvent, objId?: string) => {
     console.log('🖱️ [MOUSE DOWN] Event triggered:', {
@@ -2004,6 +2016,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   return {
     handleContextMenu,
+    handlePileContextMenu,
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,

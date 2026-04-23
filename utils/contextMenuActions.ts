@@ -346,17 +346,20 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
 
     // Deck-specific actions
     case 'topDeck':
-      // Open top deck modal - dispatch event to main app
-      window.dispatchEvent(new CustomEvent('open-top-deck-modal', {
-        detail: { deckId: object.id }
-      }));
+      // Open top deck modal
+      if (setTopDeckModalDeck && object.type === ItemType.DECK) {
+        setTopDeckModalDeck(object as DeckType);
+      }
       break;
 
     case 'searchDeck':
-      // Open search deck modal - dispatch event to main app
-      window.dispatchEvent(new CustomEvent('open-search-deck-modal', {
-        detail: { deckId: object.id }
-      }));
+      // Open search deck modal (searches entire deck, not a specific pile)
+      if (setSearchModalDeck && object.type === ItemType.DECK) {
+        setSearchModalDeck(object as DeckType);
+        if (setSearchModalPile) {
+          setSearchModalPile(undefined); // No specific pile, search entire deck
+        }
+      }
       break;
 
     case 'shuffleDeck':

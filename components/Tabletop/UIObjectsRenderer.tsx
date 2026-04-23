@@ -20,6 +20,7 @@ interface UIObjectsRendererProps {
   onMouseDown: (e: React.MouseEvent, objId: string) => void;
   executeClickAction: (obj: any, action: string, event?: React.MouseEvent) => void;
   handleContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
+  handlePileContextMenu?: (e: React.MouseEvent, pile: any, deck: any) => void;
   dispatch: React.Dispatch<any>;
   setSearchModalDeck: (deck: DeckType) => void;
   setTopDeckModalDeck: (deck: DeckType) => void;
@@ -41,6 +42,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   onMouseDown,
   executeClickAction,
   handleContextMenu,
+  handlePileContextMenu,
   dispatch,
   setSearchModalDeck,
   setTopDeckModalDeck,
@@ -80,6 +82,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
             isGM={isGM}
             executeClickAction={executeClickAction}
             handleContextMenu={handleContextMenu}
+            handlePileContextMenu={handlePileContextMenu}
             dispatch={dispatch}
             setSearchModalDeck={setSearchModalDeck}
             setTopDeckModalDeck={setTopDeckModalDeck}
@@ -118,6 +121,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
           isGM={isGM}
           executeClickAction={executeClickAction}
           handleContextMenu={handleContextMenu}
+          handlePileContextMenu={handlePileContextMenu}
           dispatch={dispatch}
           setSearchModalDeck={setSearchModalDeck}
           setTopDeckModalDeck={setTopDeckModalDeck}
@@ -198,6 +202,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     prevProps.onMouseDown === nextProps.onMouseDown &&
     prevProps.executeClickAction === nextProps.executeClickAction &&
     prevProps.handleContextMenu === nextProps.handleContextMenu &&
+    prevProps.handlePileContextMenu === nextProps.handlePileContextMenu &&
     prevProps.dispatch === nextProps.dispatch &&
     prevProps.setSearchModalDeck === nextProps.setSearchModalDeck &&
     prevProps.setTopDeckModalDeck === nextProps.setTopDeckModalDeck &&
@@ -240,6 +245,7 @@ export const UIObjectsRendererMemo = memo(UIObjectsRenderer, (prevProps, nextPro
     prevProps.onMouseDown === nextProps.onMouseDown &&
     prevProps.executeClickAction === nextProps.executeClickAction &&
     prevProps.handleContextMenu === nextProps.handleContextMenu &&
+    prevProps.handlePileContextMenu === nextProps.handlePileContextMenu &&
     prevProps.dispatch === nextProps.dispatch &&
     prevProps.setSearchModalDeck === nextProps.setSearchModalDeck &&
     prevProps.setTopDeckModalDeck === nextProps.setTopDeckModalDeck &&

@@ -1634,9 +1634,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Inherit card dimensions from deck to maintain correct aspect ratio
         width: deck.cardWidth,
         height: deck.cardHeight,
-        // Mark as just drawn for auto-add to cursor slot
-        justDrawn: true,
-        drawnAt: Date.now(),
       } as Card;
       const updatedDeck: Deck = { ...deck, cardIds: newCardIds };
 

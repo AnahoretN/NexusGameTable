@@ -134,8 +134,13 @@ export const TabletopModals = memo(({
         setPileContextMenu(null);
         break;
       case 'search_deck':
+      case 'searchDeck':
         setSearchModalDeck(deck);
         setSearchModalPile(undefined);
+        setPileContextMenu(null);
+        break;
+      case 'topDeck':
+        setTopDeckModalDeck(deck);
         setPileContextMenu(null);
         break;
       case 'flip_all_face_up':
@@ -166,6 +171,22 @@ export const TabletopModals = memo(({
         setDeleteCandidateId(pile.id);
         setPileContextMenu(null);
         break;
+      case 'draw':
+        dispatch({ type: 'DRAW_CARD', payload: { deckId: deck.id, playerId: activePlayerId } });
+        setPileContextMenu(null);
+        break;
+      case 'showTop':
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, showTopCard: !deck.showTopCard } });
+        setPileContextMenu(null);
+        break;
+      case 'lock':
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: pile.id, locked: !pile.locked } });
+        setPileContextMenu(null);
+        break;
+      case 'returnAll':
+        dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: deck.id } });
+        setPileContextMenu(null);
+        break;
       default:
         setPileContextMenu(null);
         break;
@@ -175,8 +196,10 @@ export const TabletopModals = memo(({
     dispatch,
     setSearchModalDeck,
     setSearchModalPile,
+    setTopDeckModalDeck,
     setPileContextMenu,
     setDeleteCandidateId,
+    activePlayerId,
   ]);
 
   /**
@@ -306,10 +329,6 @@ export const TabletopModals = memo(({
           y={pileContextMenu.y}
           pile={pileContextMenu.pile}
           deck={pileContextMenu.deck}
-          state={state}
-          dispatch={dispatch}
-          activePlayerId={activePlayerId}
-          isGM={isGM}
           language={language}
           onAction={handlePileContextMenuAction}
           onClose={handleClosePileContextMenu}
