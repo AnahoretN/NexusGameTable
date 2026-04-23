@@ -838,6 +838,11 @@ export const Tabletop: React.FC = () => {
               objects: state.objects,
               activePlayerId,
               diceGroups: state.diceGroups
+            },
+            additionalHandlers: {
+              onDeleteCandidate: setDeleteCandidateId,
+              onOpenSearchDeck: setSearchModalDeck,
+              onOpenTopDeckModal: setTopDeckModalDeck
             }
           };
           executeObjectClickAction(obj, action, actionContext, event);

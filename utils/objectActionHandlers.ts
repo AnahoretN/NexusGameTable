@@ -168,6 +168,10 @@ export function handleLayerDown(obj: TableObject, dispatch: Dispatch<Action>) {
 
 export function handleShuffleDeck(obj: TableObject, context: ActionHandlerContext) {
   if (obj.type === ItemType.DECK) {
+    // Dispatch event for shuffle animation
+    window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
+      detail: { deckId: obj.id }
+    }));
     context.dispatch({
       type: 'SHUFFLE_DECK',
       payload: { deckId: obj.id }
@@ -196,6 +200,129 @@ export function handleHideTop(obj: TableObject, dispatch: Dispatch<Action>) {
       type: 'UPDATE_OBJECT',
       payload: { id: obj.id, showTopCard: false }
     });
+  }
+}
+
+export function handleMillTopCard(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.DECK) {
+    const deck = obj as DeckType;
+    const millPile = deck.piles?.find(p => p.isMillPile);
+    if (millPile && deck.cardIds.length > 0) {
+      const topCardId = deck.cardIds[0];
+      context.dispatch({
+        type: 'ADD_CARD_TO_PILE',
+        payload: {
+          cardId: topCardId,
+          deckId: obj.id,
+          pileId: millPile.id
+        }
+      });
+    }
+  }
+}
+
+export function handleToBottom(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.DECK) {
+    const deck = obj as DeckType;
+    if (deck.cardIds.length > 0) {
+      const topCardId = deck.cardIds[0];
+      const newCardIds = [...deck.cardIds.slice(1), topCardId];
+      context.dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: obj.id, cardIds: newCardIds }
+      });
+    }
+  }
+}
+
+export function handleReturnAll(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.DECK) {
+    context.dispatch({
+      type: 'RETURN_ALL_CARDS_TO_DECK',
+      payload: { deckId: obj.id, shuffleAfter: false }
+    });
+  }
+}
+
+export function handleReturnAllAndShuffle(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.DECK) {
+    window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
+      detail: { deckId: obj.id }
+    }));
+    context.dispatch({
+      type: 'RETURN_ALL_CARDS_TO_DECK',
+      payload: { deckId: obj.id, shuffleAfter: true }
+    });
+  }
+}
+
+export function handleTopDeck(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.DECK && context.additionalHandlers?.onOpenTopDeckModal) {
+    context.additionalHandlers.onOpenTopDeckModal(obj as DeckType);
+  }
+}
+
+export function handlePiles(obj: TableObject) {
+  // Open piles menu - handled by component state
+}
+
+export function handleMillToBottom(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.CARD) {
+    const card = obj as CardType;
+    if (card.deckId) {
+      context.dispatch({
+        type: 'RETURN_TO_DECK',
+        payload: { cardId: obj.id }
+      });
+    }
+  }
+}
+
+export function handleMoveToHand(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.CARD && context.state.activePlayerId) {
+    context.dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: obj.id,
+        location: 'CURSOR_SLOT' as any,
+        ownerId: context.state.activePlayerId,
+        isOnTable: false
+      }
+    });
+  }
+}
+
+export function handleMoveToTopDeck(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.CARD && (obj as CardType).deckId) {
+    context.dispatch({
+      type: 'RETURN_CARD_TO_DECK_TOP',
+      payload: { cardId: obj.id, deckId: (obj as CardType).deckId }
+    });
+  }
+}
+
+export function handleMoveToBottomDeck(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.CARD && (obj as CardType).deckId) {
+    context.dispatch({
+      type: 'RETURN_CARD_TO_DECK_BOTTOM',
+      payload: { cardId: obj.id, deckId: (obj as CardType).deckId }
+    });
+  }
+}
+
+export function handleMoveToDiscard(obj: TableObject, context: ActionHandlerContext) {
+  if (obj.type === ItemType.CARD && (obj as CardType).deckId) {
+    const card = obj as CardType;
+    const deck = context.state.objects[card.deckId] as DeckType | undefined;
+    if (deck?.piles) {
+      const millPile = deck.piles.find(p => p.isMillPile);
+      if (millPile) {
+        context.dispatch({
+          type: 'ADD_CARD_TO_PILE',
+          payload: { deckId: deck.id, pileId: millPile.id, cardId: obj.id }
+        });
+      }
+    }
   }
 }
 
@@ -320,6 +447,41 @@ export function executeClickAction(
       break;
     case 'hideTop':
       handleHideTop(obj, context.dispatch);
+      break;
+    case 'millTopCard':
+      handleMillTopCard(obj, context);
+      break;
+    case 'toBottom':
+      handleToBottom(obj, context);
+      break;
+    case 'returnAll':
+      handleReturnAll(obj, context);
+      break;
+    case 'returnAllAndShuffle':
+      handleReturnAllAndShuffle(obj, context);
+      break;
+    case 'topDeck':
+      handleTopDeck(obj, context);
+      break;
+    case 'piles':
+      handlePiles(obj);
+      break;
+
+    // Card move actions
+    case 'millToBottom':
+      handleMillToBottom(obj, context);
+      break;
+    case 'moveToHand':
+      handleMoveToHand(obj, context);
+      break;
+    case 'moveToTopDeck':
+      handleMoveToTopDeck(obj, context);
+      break;
+    case 'moveToBottomDeck':
+      handleMoveToBottomDeck(obj, context);
+      break;
+    case 'moveToDiscard':
+      handleMoveToDiscard(obj, context);
       break;
 
     // Layer actions
