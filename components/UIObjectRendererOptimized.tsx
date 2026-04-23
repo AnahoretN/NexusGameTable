@@ -71,6 +71,7 @@ interface UIObjectRendererProps {
   uiObject: PanelObject | WindowObject;
   isDragging: boolean;
   onMouseDown: (e: React.MouseEvent, id: string) => void;
+  onContextMenu?: (e: React.MouseEvent, obj: any) => void;
   offset?: { x: number; y: number };
   zoom?: number;
   isPinnedMode?: boolean;
@@ -80,6 +81,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   uiObject,
   isDragging,
   onMouseDown,
+  onContextMenu,
   offset = { x: 0, y: 0 },
   zoom = 1,
   isPinnedMode = false
@@ -896,8 +898,13 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         isShiftDragging || isDragOverPool ? 'ring-2 ring-purple-500 ring-opacity-50' : ''
       }`}
       onContextMenu={(e) => {
+        // Prevent default browser context menu
         e.preventDefault();
-        e.stopPropagation();
+        // Don't stop propagation - let the parent handler process it
+        // Call the parent handler if provided
+        if (onContextMenu) {
+          onContextMenu(e, uiObject);
+        }
       }}
       onMouseDown={(e) => {
         // Always bring to front on click
@@ -2060,7 +2067,8 @@ export const UIObjectRendererOptimizedMemo = React.memo(UIObjectRendererOptimize
     prevProps.uiObject.locked === nextProps.uiObject.locked &&
     prevProps.isDragging === nextProps.isDragging &&
     prevProps.zoom === nextProps.zoom &&
-    prevProps.isPinnedMode === nextProps.isPinnedMode
+    prevProps.isPinnedMode === nextProps.isPinnedMode &&
+    prevProps.onContextMenu === nextProps.onContextMenu
   );
 });
 

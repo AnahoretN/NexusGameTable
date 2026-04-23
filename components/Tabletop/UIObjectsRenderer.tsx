@@ -195,7 +195,13 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     prevProps.isGM === nextProps.isGM &&
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.onContextMenu === nextProps.onContextMenu &&
-    prevProps.onMouseDown === nextProps.onMouseDown
+    prevProps.onMouseDown === nextProps.onMouseDown &&
+    prevProps.executeClickAction === nextProps.executeClickAction &&
+    prevProps.handleContextMenu === nextProps.handleContextMenu &&
+    prevProps.dispatch === nextProps.dispatch &&
+    prevProps.setSearchModalDeck === nextProps.setSearchModalDeck &&
+    prevProps.setTopDeckModalDeck === nextProps.setTopDeckModalDeck &&
+    prevProps.setDeleteCandidateId === nextProps.setDeleteCandidateId
   );
 });
 
@@ -231,7 +237,13 @@ export const UIObjectsRendererMemo = memo(UIObjectsRenderer, (prevProps, nextPro
     prevProps.isGM === nextProps.isGM &&
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.onContextMenu === nextProps.onContextMenu &&
-    prevProps.onMouseDown === nextProps.onMouseDown
+    prevProps.onMouseDown === nextProps.onMouseDown &&
+    prevProps.executeClickAction === nextProps.executeClickAction &&
+    prevProps.handleContextMenu === nextProps.handleContextMenu &&
+    prevProps.dispatch === nextProps.dispatch &&
+    prevProps.setSearchModalDeck === nextProps.setSearchModalDeck &&
+    prevProps.setTopDeckModalDeck === nextProps.setTopDeckModalDeck &&
+    prevProps.setDeleteCandidateId === nextProps.setDeleteCandidateId
   );
 });
 
