@@ -177,6 +177,10 @@ export const useDraggingState = () => {
   } | null>(null);
   const pileDragStartRef = useRef<{ x: number; y: number } | null>(null);
 
+  // Track pinned objects that were unpinned during drag
+  // Map of objectId -> pinnedScreenPosition (to restore after drag)
+  const unpinnedDuringDragRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+
   return {
     draggingId,
     setDraggingId,
@@ -186,7 +190,8 @@ export const useDraggingState = () => {
     draggingPileRef,
     dragOffsetRef,
     dragStartPositionRef,
-    pileDragStartRef
+    pileDragStartRef,
+    unpinnedDuringDragRef
   };
 };
 

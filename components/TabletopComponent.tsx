@@ -133,7 +133,7 @@ export const Tabletop: React.FC = () => {
   const [cursorSlot, setCursorSlot] = useState<(CardType | Token | Board)[]>([]);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const [cursorSlotSource, setCursorSlotSource] = useState<'ctrl' | 'hold' | 'shift' | 'archetype' | null>(null);
+  const [cursorSlotSource, setCursorSlotSource] = useState<'hold' | 'shift' | 'archetype' | null>(null);
 
   // Ruler state
   const [rulerStart, setRulerStart] = useState<{ x: number; y: number } | null>(null);
@@ -185,6 +185,10 @@ export const Tabletop: React.FC = () => {
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const resizeFinalSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const cursorSlotLastAddedRef = useRef<number>(0);
+
+  // Track pinned objects that were unpinned during drag
+  const unpinnedDuringDragRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // === Event Handlers ===
   const eventHandlers = useTabletopEventHandlers({
@@ -234,6 +238,8 @@ export const Tabletop: React.FC = () => {
     clickTooltipBoundsRef,
     dragThresholdRef,
     dragOffsetRef,
+    cursorSlotLastAddedRef,
+    unpinnedDuringDragRef,
     setClickTooltip,
     setNexusBoardAddingCell,
     setSettingsModalObj,

@@ -65,6 +65,7 @@ interface TabletopEventHandlersProps {
   }>;
   dragOffsetRef: React.MutableRefObject<{ x: number; y: number } | null>;
   cursorSlotLastAddedRef: React.MutableRefObject<number>;
+  unpinnedDuringDragRef: React.MutableRefObject<Map<string, { x: number; y: number }>>;
   setClickTooltip: React.Dispatch<React.SetStateAction<{ cardId: string; x: number; y: number } | null>>;
   setNexusBoardAddingCell: React.Dispatch<React.SetStateAction<string | null>>;
   setSettingsModalObj: React.Dispatch<React.SetStateAction<TableObject | null>>;
@@ -100,6 +101,7 @@ const addToCursorSlot = (
     cursorPositionRef,
     setCursorSlotSource,
     cursorSlotLastAddedRef,
+    unpinnedDuringDragRef,
     state,
     dispatch,
     activePlayerId,
@@ -519,8 +521,28 @@ const addToCursorSlot = (
 
   // Remove object from table temporarily (hide it while in slot)
   console.log('🚫 [CURSOR SLOT] Hiding object from table while in slot:', {
-    objectId: id
+    objectId: id,
+    isPinnedToViewport: (obj as any).isPinnedToViewport
   });
+
+  // If object is pinned, unpin it temporarily during drag
+  if ((obj as any).isPinnedToViewport) {
+    console.log('📌 [PIN] Temporarily unpinning object for cursor slot:', id);
+
+    // Store the pinned state to restore later
+    const pinnedPos = (obj as any).pinnedScreenPosition || { x: obj.x, y: obj.y };
+    unpinnedDuringDragRef.current.set(id, pinnedPos);
+
+    // Unpin the object
+    dispatch({
+      type: 'UNPIN_FROM_VIEWPORT',
+      payload: {
+        id: id,
+        worldX: obj.x,
+        worldY: obj.y
+      }
+    });
+  }
 
   dispatch({
     type: 'UPDATE_OBJECT',
@@ -569,6 +591,7 @@ const dropCursorSlot = (
     cursorPositionRef,
     setCursorSlotSource,
     cursorSlotSource,
+    unpinnedDuringDragRef,
     state,
     dispatch,
     activePlayerId,
@@ -1096,6 +1119,26 @@ const dropCursorSlot = (
         }
       }
     });
+
+    // If object was unpinned during drag, repin it at new position
+    if (unpinnedDuringDragRef.current.has(item.id)) {
+      console.log('📌 [PIN] Repinning object after cursor slot drop:', item.id);
+
+      const scrollX = viewTransform?.scroll?.x || 0;
+      const scrollY = viewTransform?.scroll?.y || 0;
+
+      dispatch({
+        type: 'PIN_TO_VIEWPORT',
+        payload: {
+          id: item.id,
+          screenX: finalX - scrollX,
+          screenY: finalY - scrollY
+        }
+      });
+
+      // Remove from tracking
+      unpinnedDuringDragRef.current.delete(item.id);
+    }
   });
 
   // Clear cursor slot
@@ -1160,6 +1203,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     dragThresholdRef,
     dragOffsetRef,
     cursorSlotLastAddedRef,
+    unpinnedDuringDragRef,
     setClickTooltip,
     setNexusBoardAddingCell,
     setSettingsModalObj,
@@ -1357,7 +1401,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         // UI objects use immediate drag (no cursor slot, no threshold)
         console.log('🪟 [MOUSE DOWN] Using immediate drag for UI object:', {
           objId,
-          type: obj.type
+          type: obj.type,
+          isPinnedToViewport: (obj as any).isPinnedToViewport
         });
 
         // Find the actual panel container by looking for data-ui-object attribute
@@ -1373,6 +1418,29 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         dragOffsetRef.current = { x: clickX, y: clickY };
         setDraggingId(objId);
         draggingIdRef.current = objId; // Set ref for immediate access in handleMouseMove
+
+        // If object is pinned, unpin it temporarily during drag
+        if ((obj as any).isPinnedToViewport) {
+          console.log('📌 [PIN] Temporarily unpinning object for drag:', objId);
+
+          // Store the pinned screen position to restore later
+          const pinnedPos = (obj as any).pinnedScreenPosition || { x: obj.x, y: obj.y };
+          unpinnedDuringDragRef.current.set(objId, pinnedPos);
+
+          // Unpin the object (convert to world coordinates)
+          const scrollX = viewTransform?.scroll?.x || 0;
+          const scrollY = viewTransform?.scroll?.y || 0;
+
+          dispatch({
+            type: 'UNPIN_FROM_VIEWPORT',
+            payload: {
+              id: objId,
+              worldX: obj.x,
+              worldY: obj.y
+            }
+          });
+        }
+
         return;
       }
 
@@ -1681,6 +1749,26 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
             }
           }
         });
+
+        // If object was unpinned during drag, repin it
+        if (unpinnedDuringDragRef.current.has(currentDraggingId)) {
+          console.log('📌 [PIN] Repinning object after drag:', currentDraggingId);
+
+          const scrollX = viewTransform?.scroll?.x || 0;
+          const scrollY = viewTransform?.scroll?.y || 0;
+
+          dispatch({
+            type: 'PIN_TO_VIEWPORT',
+            payload: {
+              id: currentDraggingId,
+              screenX: obj.x - scrollX,
+              screenY: obj.y - scrollY
+            }
+          });
+
+          // Remove from tracking
+          unpinnedDuringDragRef.current.delete(currentDraggingId);
+        }
       }
 
       // Reset drag threshold tracking

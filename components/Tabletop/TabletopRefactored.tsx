@@ -170,6 +170,9 @@ export const Tabletop: React.FC = () => {
     draggingIdRef.current = draggingId;
   }, [draggingId]);
 
+  // Track pinned objects that were unpinned during drag
+  const unpinnedDuringDragRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+
   // Resizing state
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -252,6 +255,7 @@ export const Tabletop: React.FC = () => {
     dragThresholdRef,
     dragOffsetRef,
     cursorSlotLastAddedRef,
+    unpinnedDuringDragRef,
     setClickTooltip,
     setNexusBoardAddingCell,
     setSettingsModalObj,
