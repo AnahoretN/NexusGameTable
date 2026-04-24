@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
 import { useObjectActions } from '../store/objectStore';
-import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, ItemType, Deck as DeckType, AppLanguage } from '../types';
+import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, CardLocation, ItemType, Deck as DeckType, AppLanguage } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
@@ -752,7 +752,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         </div>
 
         {/* Cards Grid */}
-        <div className="flex-1 overflow-y-scroll p-2 custom-scrollbar">
+        <div
+          className="flex-1 overflow-y-scroll p-2 custom-scrollbar"
+          onWheel={(e) => e.stopPropagation()}
+        >
           <style>{`.custom-scrollbar::-webkit-scrollbar { width: 12px; } .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 6px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }`}</style>
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-600">

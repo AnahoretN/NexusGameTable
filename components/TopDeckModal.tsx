@@ -434,7 +434,10 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         </div>
 
         {/* Cards Grid */}
-        <div className="flex-1 overflow-y-scroll p-2 custom-scrollbar">
+        <div
+          className="flex-1 overflow-y-scroll p-2 custom-scrollbar"
+          onWheel={(e) => e.stopPropagation()}
+        >
           <style>{`.custom-scrollbar::-webkit-scrollbar { width: 12px; } .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 6px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }`}</style>
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-600">

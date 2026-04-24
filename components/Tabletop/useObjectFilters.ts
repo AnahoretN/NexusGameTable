@@ -32,11 +32,12 @@ export const useObjectFilters = (
         return false;
       }
 
-      // Exclude cards that are in deck (location: DECK) or in hand (location: HAND)
+      // Exclude cards that are in deck (location: DECK), in hand (location: HAND), or in pile (location: PILE)
       if (obj.type === ItemType.CARD) {
         const card = obj as CardType;
         if (card.location === CardLocation.DECK ||
-            card.location === CardLocation.HAND) {
+            card.location === CardLocation.HAND ||
+            card.location === CardLocation.PILE) {
           return false;
         }
       }

@@ -21,6 +21,17 @@ import {
   printCompressionReport,
   dataCompressionManager
 } from '../utils/dataCompression';
+import { joinRoom } from 'trystero';
+
+// Type for Trystero room (since library doesn't export types)
+type TrysteroRoom = {
+  send: (data: any) => void;
+  onData: (callback: (data: any, peerId: string) => void) => () => void;
+  onPeerJoin: (callback: (peerId: string) => void) => () => void;
+  onPeerLeave: (callback: (peerId: string) => void) => () => void;
+  leave: () => void;
+  getPeers: () => string[];
+};
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type ImageCache = Record<string, string>; // imageId -> base64 data
@@ -39,6 +50,7 @@ export interface UsePeerConnectionReturn {
   hostConnectionRef: React.RefObject<any>;
   connectionsRef: React.RefObject<any[]>;
   imageCachesRef: React.RefObject<Map<string, ImageCache>>; // Map<peerId, ImageCache>
+  roomRef: React.RefObject<any>; // Trystero room ref for fallback
 }
 
 /**
@@ -52,6 +64,151 @@ export interface UsePeerConnectionReturn {
 // 🔥 OPTIMIZED: WebRTC configuration with comprehensive STUN servers for global accessibility
 // Includes fallback servers for countries with restricted internet access
 const PEERJS_CONFIG = createOptimizedPeerJSConfig();
+
+// ============================================================================
+// FALLBACK SIGNALING CONFIGURATION
+// ============================================================================
+
+/**
+ * PeerJS Cloud серверы - основной метод сигналинга
+ * Официальные серверы PeerJS с автоматическим failover
+ */
+const PEERJS_FALLBACK_SERVERS = [
+  { host: '0.peerjs.com', port: 443, secure: true, name: 'PeerJS Cloud Primary' },
+  { host: '1.peerjs.com', port: 443, secure: true, name: 'PeerJS Cloud Secondary' },
+  { host: '2.peerjs.com', port: 443, secure: true, name: 'PeerJS Cloud Tertiary' },
+];
+
+/**
+ * Комьюнити серверы - self-hosted опции
+ * Добавьте ваши собственные сервера сюда
+ */
+const COMMUNITY_SERVERS: Array<{ host: string; port: number; secure: boolean; path?: string; name: string }> = [
+  // Примеры для добавления:
+  // { host: 'nexus-signaling-1.herokuapp.com', port: 443, secure: true, name: 'Community Server 1' },
+  // { host: 'nexus-signaling-2.onrender.com', port: 443, secure: true, name: 'Community Server 2' },
+];
+
+/**
+ * WebTorrent трекеры для Trystero - финальный fallback
+ * Децентрализованный метод без центрального сервера
+ */
+const TORRENT_TRACKERS = [
+  'wss://tracker.btorrent.xyz',
+  'wss://tracker.openwebtorrent.com',
+  'wss://tracker.fastcast.nz',
+  'wss://tracker.files.fm:443/announce',
+];
+
+// ============================================================================
+// FALLBACK CONNECTION HELPERS
+// ============================================================================
+
+/**
+ * Результат попытки подключения
+ */
+interface ConnectionAttempt {
+  success: boolean;
+  method: string;
+  peer?: Peer;
+  connection?: any;
+  room?: TrysteroRoom;
+  error?: string;
+}
+
+/**
+ * Попытка подключения через PeerJS сервер с таймаутом
+ */
+async function tryPeerJSServer(
+  serverConfig: { host: string; port: number; secure: boolean; path?: string },
+  timeout: number = 15000
+): Promise<{ peer: Peer } | null> {
+  return new Promise((resolve) => {
+    const peerConfig = {
+      debug: 1,
+      ...PEERJS_CONFIG,
+      ...serverConfig,
+    };
+
+    console.log(`[Connect] Trying PeerJS server: ${serverConfig.host}`);
+
+    const peer = new Peer(peerConfig);
+    let resolved = false;
+
+    const timeoutId = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        console.warn(`[Connect] Timeout connecting to ${serverConfig.host}`);
+        try {
+          peer.destroy();
+        } catch (e) {
+          // Ignore destroy errors
+        }
+        resolve(null);
+      }
+    }, timeout);
+
+    peer.on('open', (id) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeoutId);
+        console.log(`[Connect] ✅ Connected to ${serverConfig.host}, ID: ${id}`);
+        resolve({ peer });
+      }
+    });
+
+    peer.on('error', (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeoutId);
+        console.warn(`[Connect] ❌ Error from ${serverConfig.host}:`, err?.type || err);
+        try {
+          peer.destroy();
+        } catch (e) {
+          // Ignore destroy errors
+        }
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Попытка подключения через Trystero с торрент-трекерами
+ */
+async function tryTrysteroTorrent(
+  roomId: string,
+  timeout: number = 20000
+): Promise<TrysteroRoom | null> {
+  return new Promise((resolve) => {
+    try {
+      console.log(`[Connect] Trying Trystero with torrent trackers...`);
+
+      const config = {
+        appId: 'nexus-game-table',
+        trackers: TORRENT_TRACKERS,
+      };
+
+      const room = joinRoom(config, roomId);
+
+      // Trystero не имеет явного события подключения, но мы можем
+      // проверить что room создан успешно
+      setTimeout(() => {
+        console.log(`[Connect] ✅ Trystero room created: ${roomId}`);
+        resolve(room);
+      }, 1000);
+
+      const timeoutId = setTimeout(() => {
+        console.warn(`[Connect] ❌ Trystero timeout`);
+        resolve(null);
+      }, timeout);
+
+    } catch (error) {
+      console.error(`[Connect] ❌ Trystero error:`, error);
+      resolve(null);
+    }
+  });
+}
 
 /**
  * Get local IP address using WebRTC
@@ -134,8 +291,18 @@ export function usePeerConnection(
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<any[]>([]); // For Host: list of guest connections
   const hostConnectionRef = useRef<any>(null); // For Guest: connection to host
+  const roomRef = useRef<TrysteroRoom | null>(null); // For Trystero fallback
   const imageCachesRef = useRef<Map<string, ImageCache>>(new Map()); // Track sent images per guest
   const localImageCacheRef = useRef<ImageCache>({}); // Guest's local image cache
+  const isIntentionalDisconnectRef = useRef(false); // Track intentional disconnect vs network error
+  const guestReconnectStateRef = useRef({ attempts: 0, startTime: null as number | null }); // Guest reconnect state
+  const hostReconnectStateRef = useRef({ attempts: 0, startTime: null as number | null }); // Host reconnect state
+  const signallingDisconnectedRef = useRef(false); // Track if we intentionally disconnected from signalling (optimization)
+  const expectedPlayerCountRef = useRef(0); // Track expected player count for signalling disconnect timing
+  const signallingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timer for signalling disconnect
+
+  // Signalling server timeout - disconnect after this time of inactivity
+  const SIGNALLING_TIMEOUT_MS = 120000; // 2 minutes
 
   // Central Network Data Handler
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
@@ -232,8 +399,326 @@ export function usePeerConnection(
     }
   }, [localDispatch]);
 
+  // ============================================================================
+  // SIGNALLING SERVER OPTIMIZATION
+  // ============================================================================
+
+  /**
+   * Disconnect from signalling server after P2P connections are established
+   * This reduces server load while keeping P2P connections alive
+   */
+  const disconnectFromSignalling = useCallback((reason: string) => {
+    const peer = peerRef.current;
+    if (peer && !peer.disconnected && !peer.destroyed) {
+      console.log(`[P2P Signalling] 🔌 Disconnecting from signalling server: ${reason}`);
+      signallingDisconnectedRef.current = true;
+      // Clear any pending timeout
+      if (signallingTimeoutRef.current) {
+        clearTimeout(signallingTimeoutRef.current);
+        signallingTimeoutRef.current = null;
+      }
+      try {
+        peer.disconnect();
+        console.log(`[P2P Signalling] ✅ Disconnected from signalling - P2P connections remain active`);
+      } catch (e) {
+        console.error(`[P2P Signalling] Error disconnecting from signalling:`, e);
+      }
+    }
+
+    // Also disconnect Trystero room if active
+    const room = roomRef.current;
+    if (room) {
+      console.log(`[Trystero] 🔌 Leaving room: ${reason}`);
+      try {
+        room.leave();
+        roomRef.current = null;
+        console.log(`[Trystero] ✅ Left room successfully`);
+      } catch (e) {
+        console.error(`[Trystero] Error leaving room:`, e);
+      }
+    }
+  }, []);
+
+  /**
+   * Reset the signalling disconnect timer (called when a new player connects)
+   * This delays the disconnect from signalling server
+   */
+  const resetSignallingTimer = useCallback(() => {
+    // Clear existing timer
+    if (signallingTimeoutRef.current) {
+      clearTimeout(signallingTimeoutRef.current);
+    }
+
+    // Don't set timer if guest (guest disconnects quickly after connection)
+    if (!isHost) {
+      return;
+    }
+
+    // Set new timer
+    console.log(`[P2P Signalling] ⏰ Resetting disconnect timer (${SIGNALLING_TIMEOUT_MS / 1000}s)`);
+    signallingTimeoutRef.current = setTimeout(() => {
+      const currentConnections = connectionsRef.current.length;
+      if (currentConnections > 0) {
+        console.log(`[P2P Signalling] ⏰ Timer expired - ${currentConnections} active connection(s)`);
+        disconnectFromSignalling('Timeout after last player connection');
+      }
+    }, SIGNALLING_TIMEOUT_MS);
+  }, [isHost, disconnectFromSignalling]);
+
+  /**
+   * Reconnect to signalling server (needed for new players or reconnect)
+   */
+  const reconnectToSignalling = useCallback((reason: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const peer = peerRef.current;
+      if (!peer) {
+        reject(new Error('No peer to reconnect'));
+        return;
+      }
+
+      if (peer.destroyed) {
+        reject(new Error('Peer is destroyed, cannot reconnect'));
+        return;
+      }
+
+      if (!peer.disconnected) {
+        console.log(`[P2P Signalling] Already connected to signalling server`);
+        resolve();
+        return;
+      }
+
+      console.log(`[P2P Signalling] 🔌 Reconnecting to signalling server: ${reason}`);
+      signallingDisconnectedRef.current = false;
+
+      // Set up one-time listener for reconnect
+      const onOpen = () => {
+        console.log(`[P2P Signalling] ✅ Reconnected to signalling server`);
+        peer.off('open', onOpen);
+        resolve();
+      };
+
+      const onError = (err: any) => {
+        console.error(`[P2P Signalling] ❌ Failed to reconnect to signalling:`, err);
+        peer.off('open', onOpen);
+        peer.off('error', onError);
+        reject(err);
+      };
+
+      peer.once('open', onOpen);
+      peer.once('error', onError);
+
+      try {
+        peer.reconnect();
+      } catch (e) {
+        peer.off('open', onOpen);
+        peer.off('error', onError);
+        reject(e);
+      }
+    });
+  }, []);
+
   // Connect to Host Logic (Guest Side)
-  const connectToHost = useCallback((hostId: string, playerName: string) => {
+  const connectToHost = useCallback(async (hostId: string, playerName: string) => {
+    console.log(`[P2P Guest] 🔵 Starting connection process to host: ${hostId}`);
+    console.log(`[P2P Guest] 👤 Player name: ${playerName}`);
+    console.log(`[P2P Guest] 🌐 User Agent: ${navigator.userAgent}`);
+    console.log(`[P2P Guest] 📍 URL: ${window.location.href}`);
+
+    // ============================================================================
+    // FALLBACK CONNECTION LOGIC
+    // ============================================================================
+
+    console.log(`[Connect] 🔄 Starting fallback connection sequence...`);
+
+    // Шаг 1: Пробуем все PeerJS Cloud серверы
+    for (const server of PEERJS_FALLBACK_SERVERS) {
+      console.log(`[Connect] Attempting ${server.name} (${server.host})...`);
+      setConnectionStatus('connecting');
+
+      const result = await tryPeerJSServer(server, 15000);
+      if (result) {
+        console.log(`[Connect] ✅ Connected via ${server.name}`);
+        return setupPeerConnection(result.peer, hostId, playerName);
+      }
+      console.log(`[Connect] ❌ ${server.name} failed, trying next...`);
+    }
+
+    // Шаг 2: Пробуем комьюнити серверы
+    for (const server of COMMUNITY_SERVERS) {
+      console.log(`[Connect] Attempting ${server.name} (${server.host})...`);
+      setConnectionStatus('connecting');
+
+      const result = await tryPeerJSServer(server, 15000);
+      if (result) {
+        console.log(`[Connect] ✅ Connected via ${server.name}`);
+        return setupPeerConnection(result.peer, hostId, playerName);
+      }
+      console.log(`[Connect] ❌ ${server.name} failed, trying next...`);
+    }
+
+    // Шаг 3: Пробуем Trystero с торрент-трекерами
+    console.log(`[Connect] Attempting Trystero with torrent trackers...`);
+    setConnectionStatus('connecting');
+
+    const trysteroRoom = await tryTrysteroTorrent(hostId, 20000);
+    if (trysteroRoom) {
+      console.log(`[Connect] ✅ Connected via Trystero`);
+      return setupTrysteroConnection(trysteroRoom, hostId, playerName);
+    }
+
+    // Все методы провалились
+    console.error(`[Connect] ❌ All connection methods failed`);
+    alert("Failed to connect to host. All connection methods failed.");
+    setConnectionStatus('disconnected');
+    setWaitingForPlayerName(null);
+
+    // ============================================================================
+    // HELPER FUNCTIONS
+    // ============================================================================
+
+    /**
+     * Настроить PeerJS соединение после успешного подключения
+     */
+    function setupPeerConnection(peer: Peer, hostId: string, playerName: string) {
+      peerRef.current = peer;
+      (window as any).__nexusPeer = peer;
+
+      console.log(`[P2P Guest] 🎯 Attempting to connect to host ${hostId}...`);
+
+      const conn = peer.connect(hostId);
+      hostConnectionRef.current = conn;
+      (window as any).__nexusHostConnection = conn;
+
+      console.log(`[P2P Guest] 🔗 Connection object created, waiting for connection to open...`);
+
+      conn.on('open', () => {
+        console.log(`[P2P Guest] 🎉 Connection to host SUCCESSFUL!`);
+        setConnectionStatus('connected');
+
+        const persistentPlayerId = getPlayerId();
+        const myPlayer: Player = {
+          id: persistentPlayerId,
+          name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
+          color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+          isGM: false
+        };
+
+        console.log(`[P2P Guest] 👤 Created player object:`, myPlayer);
+
+        localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+        localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
+
+        console.log(`[P2P Guest] 📤 Sending HELO to host...`);
+        conn.send({ type: 'HELO', payload: myPlayer });
+
+        setTimeout(() => {
+          disconnectFromSignalling('P2P connection established with host');
+        }, 2000);
+      });
+
+      conn.on('data', (data: any) => {
+        console.log(`[P2P Guest] 📥 Received data from host:`, data.type);
+        if (data.type === 'CONNECTION_LOCKED') {
+          console.warn(`[P2P Guest] 🔒 Host has locked new connections!`);
+          alert("The host has locked new connections. Please contact the host to join.");
+          setConnectionStatus('disconnected');
+          setWaitingForPlayerName(null);
+          return;
+        }
+        handleNetworkData(data, null);
+      });
+
+      conn.on('close', () => {
+        console.warn(`[P2P Guest] ❌ Connection to host CLOSED`);
+        isIntentionalDisconnectRef.current = true;
+        if (peer && !peer.destroyed) {
+          console.log(`[P2P Guest] 🧹 Destroying peer connection`);
+          peer.destroy();
+        }
+        alert("Connection to Host lost");
+        setConnectionStatus('disconnected');
+        setWaitingForPlayerName(null);
+      });
+
+      conn.on('error', (err) => {
+        console.error(`[P2P Guest] ❌ Connection ERROR:`, err);
+        logger.error("Connection error to host:", err);
+        isIntentionalDisconnectRef.current = true;
+        if (peer && !peer.destroyed) {
+          console.log(`[P2P Guest] 🧹 Destroying peer after connection error`);
+          peer.destroy();
+        }
+        alert("Failed to connect to host");
+        setConnectionStatus('disconnected');
+        setWaitingForPlayerName(null);
+      });
+
+      const originalEmit = conn.emit;
+      conn.emit = function(...args: any[]) {
+        if (args[0] === 'iceStateChange') {
+          console.log(`[P2P Guest] 🧊 ICE State changed:`, args[1] as string);
+        }
+        return originalEmit.apply(this, args as any);
+      };
+
+      peer.on('disconnected', () => {
+        console.warn(`[P2P Guest] ⚠️ Disconnected from PeerJS server`);
+        if (peer && !peer.destroyed && !isIntentionalDisconnectRef.current) {
+          peer.reconnect();
+        }
+      });
+
+      peer.on('error', (err) => {
+        console.error(`[P2P Guest] ❌ PeerJS ERROR:`, err);
+        if (err?.type === 'network' && peer && !peer.destroyed && !isIntentionalDisconnectRef.current) {
+          console.log(`[P2P Guest] 🔄 Network error - attempting reconnection...`);
+          peer.reconnect();
+        } else if (err?.type !== 'network') {
+          setConnectionStatus('disconnected');
+        }
+      });
+    }
+
+    /**
+     * Настроить Trystero соединение
+     */
+    function setupTrysteroConnection(room: TrysteroRoom, hostId: string, playerName: string) {
+      roomRef.current = room;
+
+      console.log(`[Trystero] Setting up data handlers...`);
+
+      // Обработка входящих данных
+      const unsubscribeData = room.onData((data: any, peerId: string) => {
+        console.log(`[Trystero] 📥 Received data from ${peerId}:`, data);
+        handleNetworkData(data, null);
+      });
+
+      // Отправляем HELO хосту
+      const persistentPlayerId = getPlayerId();
+      const myPlayer: Player = {
+        id: persistentPlayerId,
+        name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
+        color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+        isGM: false
+      };
+
+      console.log(`[Trystero] 👤 Sending HELO to host...`);
+      room.send({ type: 'HELO', payload: myPlayer });
+
+      setConnectionStatus('connected');
+      localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+      localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
+
+      // Очистка при отключении
+      room.onPeerLeave((peerId: string) => {
+        console.warn(`[Trystero] Peer ${peerId} left`);
+      });
+    }
+  }, [localDispatch, handleNetworkData, setConnectionStatus, setWaitingForPlayerName]);
+
+  // Оригинальная функция connectToHost для обратной совместимости
+  // (Теперь использует fallback логику выше)
+  const connectToHostLegacy = useCallback((hostId: string, playerName: string) => {
     console.log(`[P2P Guest] 🔵 Starting connection process to host: ${hostId}`);
     console.log(`[P2P Guest] 👤 Player name: ${playerName}`);
     console.log(`[P2P Guest] 🌐 User Agent: ${navigator.userAgent}`);
@@ -245,7 +730,16 @@ export function usePeerConnection(
     console.log(`[P2P Guest] ⏳ Waiting for PeerJS to assign ID...`);
 
     peer.on('open', (id) => {
-      console.log(`[P2P Guest] ✅ PeerJS assigned ID: ${id}`);
+      // Check if this is a reconnect (peerId was already set)
+      const isReconnect = peerRef.current?.id === id;
+      if (isReconnect) {
+        console.log(`[P2P Guest] 🔄 Successfully reconnected to PeerJS server`);
+        // Reset reconnect state on successful reconnect
+        guestReconnectStateRef.current = { attempts: 0, startTime: null };
+        signallingDisconnectedRef.current = false; // Reset signalling disconnect flag
+      } else {
+        console.log(`[P2P Guest] ✅ PeerJS assigned ID: ${id}`);
+      }
       console.log(`[P2P Guest] 🎯 Attempting to connect to host ${hostId}...`);
       // Store for diagnostic access
       (window as any).__nexusPeer = peer;
@@ -290,6 +784,12 @@ export function usePeerConnection(
         // Tell Host we are here
         console.log(`[P2P Guest] 📤 Sending HELO to host...`);
         conn.send({ type: 'HELO', payload: myPlayer });
+
+        // OPTIMIZATION: Disconnect from signalling server after P2P connection is established
+        // P2P connection is now direct, signalling server is no longer needed for data transfer
+        setTimeout(() => {
+          disconnectFromSignalling('P2P connection established with host');
+        }, 2000); // Small delay to ensure HELO is delivered
       });
 
       conn.on('data', (data: any) => {
@@ -306,6 +806,13 @@ export function usePeerConnection(
 
       conn.on('close', () => {
         console.warn(`[P2P Guest] ❌ Connection to host CLOSED`);
+        // Mark as intentional disconnect to prevent reconnect attempts
+        isIntentionalDisconnectRef.current = true;
+        // Clean up peer connection to signalling server
+        if (peer && !peer.destroyed) {
+          console.log(`[P2P Guest] 🧹 Destroying peer connection to signalling server`);
+          peer.destroy();
+        }
         alert("Connection to Host lost");
         setConnectionStatus('disconnected');
         setWaitingForPlayerName(null);
@@ -319,6 +826,12 @@ export function usePeerConnection(
           stack: err?.stack
         });
         logger.error("Connection error to host:", err);
+        // Mark as intentional disconnect and clean up peer
+        isIntentionalDisconnectRef.current = true;
+        if (peer && !peer.destroyed) {
+          console.log(`[P2P Guest] 🧹 Destroying peer after connection error`);
+          peer.destroy();
+        }
         alert("Failed to connect to host");
         setConnectionStatus('disconnected');
         setWaitingForPlayerName(null);
@@ -334,36 +847,59 @@ export function usePeerConnection(
       };
     });
 
-    // Reconnection logic with exponential backoff
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 5;
-    const BASE_RECONNECT_DELAY = 1000; // 1 second
+    // Reconnection logic: try every 5 seconds for 30 seconds, then give up
+    const RECONNECT_INTERVAL = 5000; // 5 seconds
+    const MAX_RECONNECT_TIME = 30000; // 30 seconds total
 
     const scheduleReconnect = () => {
-      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        console.error(`[P2P Guest] ❌ Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached`);
-        alert("Failed to connect to peer server after multiple attempts");
+      // Don't reconnect if this was an intentional disconnect
+      if (isIntentionalDisconnectRef.current) {
+        console.log(`[P2P Guest] ⏹️ Intentional disconnect - skipping reconnect`);
+        return;
+      }
+
+      // Initialize start time on first attempt
+      if (guestReconnectStateRef.current.startTime === null) {
+        guestReconnectStateRef.current.startTime = Date.now();
+      }
+
+      const elapsed = Date.now() - (guestReconnectStateRef.current.startTime || 0);
+      guestReconnectStateRef.current.attempts++;
+
+      if (elapsed >= MAX_RECONNECT_TIME) {
+        console.error(`[P2P Guest] ❌ Reconnect timeout after ${elapsed}ms - giving up`);
+        // Clean up peer to stop server requests
+        isIntentionalDisconnectRef.current = true;
+        if (peer && !peer.destroyed) {
+          console.log(`[P2P Guest] 🧹 Destroying peer after reconnect timeout`);
+          peer.destroy();
+        }
+        alert("Failed to reconnect to peer server. Please refresh the page.");
         setConnectionStatus('disconnected');
         setWaitingForPlayerName(null);
         return;
       }
 
-      const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
-      reconnectAttempts++;
-
-      console.log(`[P2P Guest] 🔌 Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms...`);
+      console.log(`[P2P Guest] 🔌 Reconnection attempt ${guestReconnectStateRef.current.attempts} in ${RECONNECT_INTERVAL}ms... (${elapsed}/${MAX_RECONNECT_TIME}ms elapsed)`);
 
       setTimeout(() => {
+        // Check again before reconnecting - state may have changed
+        if (isIntentionalDisconnectRef.current) {
+          console.log(`[P2P Guest] ⏹️ Intentional disconnect detected - cancelling reconnect`);
+          return;
+        }
+
         if (peer && !peer.destroyed) {
           try {
             peer.reconnect();
             console.log(`[P2P Guest] 🔄 Reconnect triggered`);
           } catch (e) {
             console.error(`[P2P Guest] ❌ Reconnect failed:`, e);
+            // Continue trying
             scheduleReconnect();
           }
         }
-      }, delay);
+      }, RECONNECT_INTERVAL);
     };
 
     peer.on('disconnected', () => {
@@ -384,6 +920,12 @@ export function usePeerConnection(
 
       // Only show alert for critical errors (not 'network' errors which may be transient)
       if (err?.type !== 'network' && err?.type !== 'peer-unavailable') {
+        // Critical error - clean up peer to stop server requests
+        isIntentionalDisconnectRef.current = true;
+        if (peer && !peer.destroyed) {
+          console.log(`[P2P Guest] 🧹 Destroying peer after critical error: ${err?.type}`);
+          peer.destroy();
+        }
         alert("Failed to connect to peer server");
         setConnectionStatus('disconnected');
         setWaitingForPlayerName(null);
@@ -414,7 +956,22 @@ export function usePeerConnection(
   }, [waitingForPlayerName, connectToHost]);
 
   // Initialize host peer on demand (when user clicks Invite button)
-  const initializeHost = useCallback(() => {
+  const initializeHost = useCallback(async () => {
+    // Check if we have a peer that's just disconnected from signalling (optimization)
+    if (peerRef.current && peerRef.current.disconnected && !peerRef.current.destroyed) {
+      console.log(`[P2P Host] 🔄 Peer exists but disconnected from signalling - reconnecting`);
+      try {
+        await reconnectToSignalling('New player needs to join');
+        console.log(`[P2P Host] ✅ Reconnected to signalling - ready for new players`);
+        // Reset timer to allow time for new players to connect
+        resetSignallingTimer();
+        return;
+      } catch (e) {
+        console.error(`[P2P Host] ❌ Failed to reconnect to signalling:`, e);
+        // Fall through to create new peer
+      }
+    }
+
     // Already initialized or initializing
     if (peerRef.current) {
       console.log(`[P2P Host] ℹ️ Peer already initialized, peerId: ${peerRef.current.id}`);
@@ -433,7 +990,16 @@ export function usePeerConnection(
     console.log(`[P2P Host] ⏳ Waiting for PeerJS to assign host ID...`);
 
     peer.on('open', async (id) => {
-      console.log(`[P2P Host] ✅ Host ID assigned: ${id}`);
+      // Check if this is a reconnect (peerId was already set)
+      const isReconnect = peerRef.current?.id === id;
+      if (isReconnect) {
+        console.log(`[P2P Host] 🔄 Successfully reconnected to PeerJS server`);
+        // Reset reconnect state on successful reconnect
+        hostReconnectStateRef.current = { attempts: 0, startTime: null };
+        signallingDisconnectedRef.current = false; // Reset signalling disconnect flag
+      } else {
+        console.log(`[P2P Host] ✅ Host ID assigned: ${id}`);
+      }
       console.log(`[P2P Host] 📋 Share this ID with players or use the Invite button`);
       console.log(`[P2P Host] 🔗 Invite link format: ${window.location.href.split('?')[0]}?hostId=${id}`);
 
@@ -566,37 +1132,70 @@ export function usePeerConnection(
             console.warn(`[P2P Host] ⏰ Connection timeout for guest ${guestPeerId} - connection never opened`);
           }
         }, 30000);
+
+        // OPTIMIZATION: Reset signalling disconnect timer when a new guest connects
+        // This allows time for more players to join before disconnecting from signalling
+        // After SIGNALLING_TIMEOUT_MS (2 minutes) of no new connections, disconnect from signalling
+        setTimeout(() => {
+          if (conn.open) {
+            console.log(`[P2P Host] 📊 Guest ${guestPeerId} connected - resetting signalling timer`);
+            resetSignallingTimer();
+          }
+        }, 1000); // Small delay to ensure connection is fully established
       });
     });
 
-    // Reconnection logic with exponential backoff for host
-    let hostReconnectAttempts = 0;
-    const MAX_HOST_RECONNECT_ATTEMPTS = 5;
-    const BASE_HOST_RECONNECT_DELAY = 1000;
+    // Reconnection logic: try every 5 seconds for 30 seconds, then give up
+    const RECONNECT_INTERVAL = 5000; // 5 seconds
+    const MAX_RECONNECT_TIME = 30000; // 30 seconds total
 
     const scheduleHostReconnect = () => {
-      if (hostReconnectAttempts >= MAX_HOST_RECONNECT_ATTEMPTS) {
-        console.error(`[P2P Host] ❌ Max reconnection attempts (${MAX_HOST_RECONNECT_ATTEMPTS}) reached`);
+      // Don't reconnect if this was an intentional disconnect
+      if (isIntentionalDisconnectRef.current) {
+        console.log(`[P2P Host] ⏹️ Intentional disconnect - skipping reconnect`);
+        return;
+      }
+
+      // Initialize start time on first attempt
+      if (hostReconnectStateRef.current.startTime === null) {
+        hostReconnectStateRef.current.startTime = Date.now();
+      }
+
+      const elapsed = Date.now() - (hostReconnectStateRef.current.startTime || 0);
+      hostReconnectStateRef.current.attempts++;
+
+      if (elapsed >= MAX_RECONNECT_TIME) {
+        console.error(`[P2P Host] ❌ Reconnect timeout after ${elapsed}ms - giving up`);
+        // Clean up peer to stop server requests
+        isIntentionalDisconnectRef.current = true;
+        if (peer && !peer.destroyed) {
+          console.log(`[P2P Host] 🧹 Destroying peer after reconnect timeout`);
+          peer.destroy();
+        }
         setConnectionStatus('disconnected');
         return;
       }
 
-      const delay = BASE_HOST_RECONNECT_DELAY * Math.pow(2, hostReconnectAttempts);
-      hostReconnectAttempts++;
-
-      console.log(`[P2P Host] 🔌 Reconnection attempt ${hostReconnectAttempts}/${MAX_HOST_RECONNECT_ATTEMPTS} in ${delay}ms...`);
+      console.log(`[P2P Host] 🔌 Reconnection attempt ${hostReconnectStateRef.current.attempts} in ${RECONNECT_INTERVAL}ms... (${elapsed}/${MAX_RECONNECT_TIME}ms elapsed)`);
 
       setTimeout(() => {
+        // Check again before reconnecting - state may have changed
+        if (isIntentionalDisconnectRef.current) {
+          console.log(`[P2P Host] ⏹️ Intentional disconnect detected - cancelling reconnect`);
+          return;
+        }
+
         if (peer && !peer.destroyed) {
           try {
             peer.reconnect();
             console.log(`[P2P Host] 🔄 Reconnect triggered`);
           } catch (e) {
             console.error(`[P2P Host] ❌ Reconnect failed:`, e);
+            // Continue trying
             scheduleHostReconnect();
           }
         }
-      }, delay);
+      }, RECONNECT_INTERVAL);
     };
 
     peer.on('disconnected', () => {
@@ -620,11 +1219,16 @@ export function usePeerConnection(
         console.log(`[P2P Host] 🔄 Network error - attempting reconnection...`);
         scheduleHostReconnect();
       } else if (err?.type !== 'network') {
-        // Only set disconnected for non-network errors
+        // Critical error - clean up peer to stop server requests
+        isIntentionalDisconnectRef.current = true;
+        if (peer && !peer.destroyed) {
+          console.log(`[P2P Host] 🧹 Destroying peer after critical error: ${err?.type}`);
+          peer.destroy();
+        }
         setConnectionStatus('disconnected');
       }
     });
-  }, [localDispatch, handleNetworkData, stateRef]);
+  }, [localDispatch, handleNetworkData, stateRef, reconnectToSignalling, resetSignallingTimer]);
 
   // PEERJS SETUP (only for guest - host initializes on demand)
   useEffect(() => {
@@ -643,18 +1247,65 @@ export function usePeerConnection(
     console.log(`[P2P Init] 🎮 Host mode - PeerJS will initialize on first Invite`);
   }, []);
 
-  // Cleanup logic to destroy peer on window close/reload
+  // Cleanup logic to destroy peer on window close/reload and component unmount
   useEffect(() => {
-    const handleUnload = () => {
-      console.log(`[P2P Cleanup] 🧹 Cleaning up peer on page unload`);
-      if (peerRef.current) {
-        peerRef.current.destroy();
+    const cleanupPeer = () => {
+      console.log(`[P2P Cleanup] 🧹 Cleaning up peer connection`);
+      isIntentionalDisconnectRef.current = true;
+
+      // Clear signalling disconnect timer
+      if (signallingTimeoutRef.current) {
+        clearTimeout(signallingTimeoutRef.current);
+        signallingTimeoutRef.current = null;
+      }
+
+      // Close all host connections
+      if (connectionsRef.current.length > 0) {
+        console.log(`[P2P Cleanup] 📋 Closing ${connectionsRef.current.length} guest connections`);
+        connectionsRef.current.forEach(conn => {
+          try {
+            conn.close();
+          } catch (e) {
+            console.error(`[P2P Cleanup] Error closing connection:`, e);
+          }
+        });
+        connectionsRef.current = [];
+      }
+
+      // Close guest connection to host
+      if (hostConnectionRef.current) {
+        try {
+          console.log(`[P2P Cleanup] 🔗 Closing host connection`);
+          hostConnectionRef.current.close();
+        } catch (e) {
+          console.error(`[P2P Cleanup] Error closing host connection:`, e);
+        }
+        hostConnectionRef.current = null;
+      }
+
+      // Destroy peer connection to signalling server
+      if (peerRef.current && !peerRef.current.destroyed) {
+        console.log(`[P2P Cleanup] 🌐 Destroying peer connection to signalling server`);
+        try {
+          peerRef.current.destroy();
+        } catch (e) {
+          console.error(`[P2P Cleanup] Error destroying peer:`, e);
+        }
+        peerRef.current = null;
       }
     };
+
+    const handleUnload = () => {
+      cleanupPeer();
+    };
+
     window.addEventListener('beforeunload', handleUnload);
 
+    // Cleanup on component unmount
     return () => {
+      console.log(`[P2P Cleanup] 🧹 Component unmounting - cleaning up peer`);
       window.removeEventListener('beforeunload', handleUnload);
+      cleanupPeer();
     };
   }, []);
 
@@ -669,6 +1320,11 @@ export function usePeerConnection(
     hostConnectionRef,
     connectionsRef,
     imageCachesRef,
+    roomRef, // Trystero room ref for fallback
+    // Expose signalling control functions for manual management
+    disconnectFromSignalling,
+    reconnectToSignalling,
+    resetSignallingTimer,
   };
 }
 
@@ -717,6 +1373,7 @@ if (typeof window !== 'undefined') {
         destroyed: peer.destroyed,
         disconnected: peer.disconnected,
         connections: Object.keys(peer.connections || {}).length,
+        signallingOptimized: peer.disconnected ? 'Yes - disconnected from signalling (P2P active)' : 'No - still connected to signalling',
       } : 'Not initialized');
       console.log(`[P2P Diagnostic] 🔗 Host Connection:`, conn ? {
         open: conn.open,

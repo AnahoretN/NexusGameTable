@@ -139,10 +139,6 @@ export const TabletopModals = memo(({
         setSearchModalPile(undefined);
         setPileContextMenu(null);
         break;
-      case 'topDeck':
-        setTopDeckModalDeck(deck);
-        setPileContextMenu(null);
-        break;
       case 'flip_all_face_up':
         dispatch({ type: 'FLIP_PILE', pileId: pile.id, faceUp: true });
         setPileContextMenu(null);
@@ -172,11 +168,50 @@ export const TabletopModals = memo(({
         setPileContextMenu(null);
         break;
       case 'draw':
-        dispatch({ type: 'DRAW_CARD', payload: { deckId: deck.id, playerId: activePlayerId } });
+        // Draw from pile (not from deck)
+        dispatch({ type: 'DRAW_FROM_PILE', payload: { pileId: pile.id, deckId: deck.id, playerId: activePlayerId } });
         setPileContextMenu(null);
         break;
       case 'showTop':
-        dispatch({ type: 'UPDATE_OBJECT', payload: { id: deck.id, showTopCard: !deck.showTopCard } });
+        // Toggle showTopCard for pile
+        dispatch({ type: 'TOGGLE_SHOW_TOP_CARD', payload: { deckId: deck.id, pileId: pile.id } });
+        setPileContextMenu(null);
+        break;
+      case 'playTopCard':
+        // Play top card from pile to cursor slot
+        if (pile.cardIds.length > 0) {
+          const topCardId = pile.cardIds[0];
+          const card = state.objects[topCardId];
+          if (card) {
+            const cardWidth = deck.cardWidth ?? card.width ?? 63;
+            const cardHeight = deck.cardHeight ?? card.height ?? 88;
+            const clickOffsetX = cardWidth / 2;
+            const clickOffsetY = cardHeight / 2;
+
+            // Dispatch event to add to cursor slot
+            window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+              detail: {
+                cardId: card.id,
+                clientX: pileContextMenu.x,
+                clientY: pileContextMenu.y,
+                source: 'pile',
+                cardOverride: {
+                  ...card,
+                  location: 'CURSOR_SLOT' as any,
+                  faceUp: pile.faceUp ?? true,
+                  isOnTable: false,
+                  width: cardWidth,
+                  height: cardHeight,
+                },
+                clickOffsetX,
+                clickOffsetY
+              }
+            }));
+
+            // Remove card from pile
+            dispatch({ type: 'DRAW_FROM_PILE', payload: { pileId: pile.id, deckId: deck.id, playerId: activePlayerId } });
+          }
+        }
         setPileContextMenu(null);
         break;
       case 'lock':
@@ -184,7 +219,8 @@ export const TabletopModals = memo(({
         setPileContextMenu(null);
         break;
       case 'returnAll':
-        dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: deck.id } });
+        // Return all cards from this pile to deck only
+        dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: deck.id, fromPile: true, pileId: pile.id } });
         setPileContextMenu(null);
         break;
       default:
@@ -196,10 +232,10 @@ export const TabletopModals = memo(({
     dispatch,
     setSearchModalDeck,
     setSearchModalPile,
-    setTopDeckModalDeck,
     setPileContextMenu,
     setDeleteCandidateId,
     activePlayerId,
+    state.objects,
   ]);
 
   /**

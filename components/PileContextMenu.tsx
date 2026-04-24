@@ -2,7 +2,7 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useMemo, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { CardPile, Deck, AppLanguage } from '../types';
-import { Search, Hand, Undo, Lock, Unlock, Eye, Settings } from 'lucide-react';
+import { Search, Hand, Undo, Lock, Unlock, Eye, Play } from 'lucide-react';
 
 interface PileContextMenuProps {
   x: number;
@@ -76,10 +76,10 @@ export const PileContextMenu: React.FC<PileContextMenuProps> = memo(({ x, y, pil
       visible: true
     },
     {
-      label: translate('Manage Topdeck', language as Locale) || 'Manage Topdeck',
-      action: 'topDeck',
-      icon: <Settings size={14} />,
-      visible: true
+      label: translate('Play top', language as Locale),
+      action: 'playTopCard',
+      icon: <Play size={14} />,
+      visible: pile.cardIds.length > 0
     },
     {
       label: translate('Draw', language as Locale),

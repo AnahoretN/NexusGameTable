@@ -488,7 +488,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
       {deck.piles?.filter(p => p.visible).map(pile => {
         const pilePos = getPilePosition(pile);
         // 🔥 OPTIMIZED: Use direct object access (state.objects already optimized by parent)
-        const pileCards = pile.cardIds.map(id => state.objects[id]).filter(Boolean) as CardType[];
+        const pileCards = pile.cardIds.map(id => allObjects?.[id]).filter(Boolean) as CardType[];
         const topCard = pileCards.length > 0 ? pileCards[0] : null;
         const pileSize = pile.size ?? 1;
 

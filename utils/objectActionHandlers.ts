@@ -229,7 +229,7 @@ export function handleToBottom(obj: TableObject, context: ActionHandlerContext) 
       const newCardIds = [...deck.cardIds.slice(1), topCardId];
       context.dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: obj.id, cardIds: newCardIds }
+        payload: { id: obj.id, updates: { cardIds: newCardIds } }
       });
     }
   }

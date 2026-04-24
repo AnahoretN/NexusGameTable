@@ -679,6 +679,9 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
     if (isDeck) {
       const deckId = data.id;
       const oldDeck = allObjects[deckId] as Deck;
+      if (!oldDeck) {
+        return;
+      }
       const oldCardWidth = oldDeck.cardWidth;
       const oldCardHeight = oldDeck.cardHeight;
       const oldCardOrientation = oldDeck.cardOrientation;
@@ -889,7 +892,10 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+        <div
+          className="flex-1 overflow-y-auto custom-scrollbar p-4"
+          onWheel={(e) => e.stopPropagation()}
+        >
           {activeTab === 'general' && (
             <div className="space-y-4">
               {/* Basic Properties - Name, Size, Rotation */}
@@ -3080,6 +3086,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                   <div
                     className="bg-slate-900 rounded p-2 border border-slate-700 overflow-auto"
                     style={{ maxHeight: '200px' }}
+                    onWheel={(e) => e.stopPropagation()}
                   >
                     <img
                       src={spriteConfig.spriteUrl}

@@ -1,4 +1,5 @@
 import { TableObject, CardLocation, Deck as DeckType, Card, CardPile, TokenShape, ItemType, DiceObject, Counter, NexusCellObject } from '../types';
+import { handlePlayTopCard } from './objectActionHandlers';
 
 /**
  * Common context menu action handlers
@@ -374,10 +375,13 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       dispatch({ type: 'DRAW_CARD', payload: { deckId: object.id, playerId: activePlayerId || state.activePlayerId } });
       break;
 
-    case 'playTopCard':
-      // Play top card from deck to tabletop
-      dispatch({ type: 'PLAY_TOP_CARD', payload: { deckId: object.id } });
+    case 'playTopCard': {
+      // Play top card from deck to tabletop - use handlePlayTopCard for proper cursor slot handling
+      if (object.type === ItemType.DECK) {
+        handlePlayTopCard(object, { state, dispatch }, undefined);
+      }
       break;
+    }
 
     case 'millTopCard':
       // Mill top card (move to mill pile)
@@ -405,7 +409,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
         const newCardIds = [...deckToBottom.cardIds.slice(1), topCardId];
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: object.id, cardIds: newCardIds }
+          payload: { id: object.id, updates: { cardIds: newCardIds } }
         });
       }
       break;

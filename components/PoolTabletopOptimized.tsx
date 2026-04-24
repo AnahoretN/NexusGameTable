@@ -757,12 +757,64 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         });
         setPileContextMenu(null);
         break;
+      case 'playTopCard':
+        // Play top card from pile to cursor slot
+        if (pile.cardIds.length > 0) {
+          const topCardId = pile.cardIds[0];
+          const card = state.objects[topCardId];
+          if (card) {
+            const cardWidth = deck.cardWidth ?? card.width ?? 63;
+            const cardHeight = deck.cardHeight ?? card.height ?? 88;
+            const clickOffsetX = cardWidth / 2;
+            const clickOffsetY = cardHeight / 2;
+
+            // Dispatch event to add to cursor slot
+            window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+              detail: {
+                cardId: card.id,
+                clientX: pileContextMenu.x,
+                clientY: pileContextMenu.y,
+                source: 'pile',
+                cardOverride: {
+                  ...card,
+                  location: 'CURSOR_SLOT' as any,
+                  faceUp: pile.faceUp ?? true,
+                  isOnTable: false,
+                  width: cardWidth,
+                  height: cardHeight,
+                },
+                clickOffsetX,
+                clickOffsetY
+              }
+            }));
+
+            // Remove card from pile
+            dispatch({
+              type: 'DRAW_FROM_PILE',
+              payload: {
+                pileId: pile.id,
+                deckId: deck.id,
+                playerId: activePlayerId
+              }
+            });
+          }
+        }
+        setPileContextMenu(null);
+        break;
       case 'returnAll':
-        dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: deck.id, shuffleAfter: false } });
+        // Return all cards from this pile to deck only
+        dispatch({
+          type: 'RETURN_ALL_CARDS_TO_DECK',
+          payload: {
+            deckId: deck.id,
+            fromPile: true,
+            pileId: pile.id
+          }
+        });
         setPileContextMenu(null);
         break;
     }
-  }, [pileContextMenu, activePlayerId, dispatch]);
+  }, [pileContextMenu, activePlayerId, dispatch, state.objects]);
 
   // Cleanup click timers on unmount
   useEffect(() => {
