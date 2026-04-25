@@ -415,19 +415,18 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       break;
 
     case 'showTop':
-      // Toggle showing top card
-      const deckShowTop = object as DeckType;
+      // Show top card - enable the setting
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, showTopCard: !deckShowTop.showTopCard }
+        payload: { id: object.id, updates: { showTopCard: true } }
       });
       break;
 
     case 'hideTop':
-      // Hide top card (same as showTop with false)
+      // Hide top card - disable the setting
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, showTopCard: false }
+        payload: { id: object.id, updates: { showTopCard: false } }
       });
       break;
 

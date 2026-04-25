@@ -349,7 +349,6 @@ export const Tabletop: React.FC = () => {
         dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } });
         break;
       default:
-        console.warn('Unknown action:', action);
     }
   }, [currentTool, dispatch, activePlayerId, setSearchModalDeck, setTopDeckModalDeck, setDeleteCandidateId]);
 
@@ -526,7 +525,6 @@ export const Tabletop: React.FC = () => {
               }
             }
           } catch (error) {
-            console.warn('Failed to parse drop data:', error);
           }
         }
 

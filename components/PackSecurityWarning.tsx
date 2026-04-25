@@ -79,7 +79,13 @@ export const PackSecurityWarning: React.FC<PackSecurityWarningProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+        <div
+          className="p-4 space-y-4 flex-1 overflow-y-auto"
+          onWheel={(e) => {
+            // Prevent scroll from propagating to the game tabletop
+            e.stopPropagation();
+          }}
+        >
           <p className="text-sm text-gray-300">{t.message}</p>
 
           <ul className="space-y-2">

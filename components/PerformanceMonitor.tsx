@@ -58,7 +58,6 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
   const startMonitoring = () => {
     if (!enabled) return;
 
-    console.log('🚀 Starting performance monitoring...');
     performanceTestSuite.startTest('Application Session');
 
     setPerfData(prev => ({ ...prev, isMonitoring: true }));
@@ -76,7 +75,6 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
    * Stop performance monitoring
    */
   const stopMonitoring = () => {
-    console.log('⏹️ Stopping performance monitoring...');
 
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -147,7 +145,6 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
    */
   const generateReport = () => {
     const report = performanceTestSuite.generateReport();
-    console.log(report);
 
     if (onReportGenerated) {
       onReportGenerated(report);
@@ -156,9 +153,7 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
     // Also save to localStorage
     try {
       localStorage.setItem('performanceReport', report);
-      console.log('✅ Report saved to localStorage');
     } catch (e) {
-      console.warn('Could not save report to localStorage:', e);
     }
 
     return report;
@@ -169,8 +164,6 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
    */
   const exportJSON = () => {
     const json = performanceTestSuite.exportResults();
-    console.log('📄 Performance data (JSON):');
-    console.log(json);
 
     // Download as file
     const blob = new Blob([json], { type: 'application/json' });

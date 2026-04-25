@@ -853,14 +853,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             // Convert to VU (accounting for zoom)
             clickOffsetX = offsetXPX / currentZoom / pixelsPerVU;
             clickOffsetY = offsetYPX / currentZoom / pixelsPerVU;
-
-            console.log('[PoolTabletop] Using ACTUAL DOM offset for dice:', {
-              objectId: obj.id,
-              objRect: { left: objRect.left, top: objRect.top },
-              clickPos: { x: diceDragRef.current.startX, y: diceDragRef.current.startY },
-              offsetPX: { x: offsetXPX, y: offsetYPX },
-              offsetVU: { x: clickOffsetX, y: clickOffsetY }
-            });
           } else {
             // Fallback: use object center
             const objWidth = obj.width || 60;
@@ -870,10 +862,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             // Also calculate pixel offset for center
             offsetXPX = (objWidth / 2) * currentZoom * pixelsPerVU;
             offsetYPX = (objHeight / 2) * currentZoom * pixelsPerVU;
-
-            console.warn('[PoolTabletop] DOM element not found for dice, using center fallback:', {
-              objectId: obj.id
-            });
           }
         }
 
@@ -924,14 +912,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             // Convert to VU (accounting for zoom)
             clickOffsetX = offsetXPX / currentZoom / pixelsPerVU;
             clickOffsetY = offsetYPX / currentZoom / pixelsPerVU;
-
-            console.log('[PoolTabletop] Using ACTUAL DOM offset:', {
-              objectId: obj.id,
-              objRect: { left: objRect.left, top: objRect.top },
-              clickPos: { x: genericDragRef.current.startX, y: genericDragRef.current.startY },
-              offsetPX: { x: offsetXPX, y: offsetYPX },
-              offsetVU: { x: clickOffsetX, y: clickOffsetY }
-            });
           } else {
             // Fallback: use object center
             const objWidth = obj.width || 100;
@@ -941,10 +921,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             // Also calculate pixel offset for center
             offsetXPX = (objWidth / 2) * currentZoom * pixelsPerVU;
             offsetYPX = (objHeight / 2) * currentZoom * pixelsPerVU;
-
-            console.warn('[PoolTabletop] DOM element not found, using center fallback:', {
-              objectId: obj.id
-            });
           }
         }
 
@@ -1420,7 +1396,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
     const cursorSlotObjects = getCursorSlotObjects(state.objects);
 
-    // console.log('[PoolTabletop] handleDropFromCursor called:', {
     //   hasCursorSlotObjects: cursorSlotObjects.length > 0,
     //   count: cursorSlotObjects.length,
     //   poolPanelId: poolZone.panelId

@@ -27,20 +27,26 @@ export const InitialLoadModal: React.FC<InitialLoadModalProps> = ({ steps, isVis
       justifyContent: 'center',
       zIndex: 10000
     }}>
-      <div style={{
-        backgroundColor: '#1e1e2e',
-        color: '#cdd6f4',
-        padding: '40px',
-        borderRadius: '12px',
-        width: `${MAIN_MENU_WIDTH + 100}px`,
-        maxWidth: '95vw',
-        maxHeight: '80vh',
-        overflow: 'auto',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center'
-      }}>
+      <div
+        style={{
+          backgroundColor: '#1e1e2e',
+          color: '#cdd6f4',
+          padding: '40px',
+          borderRadius: '12px',
+          width: `${MAIN_MENU_WIDTH + 100}px`,
+          maxWidth: '95vw',
+          maxHeight: '80vh',
+          overflow: 'auto',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}
+        onWheel={(e) => {
+          // Prevent scroll from propagating to the game tabletop
+          e.stopPropagation();
+        }}
+      >
         <h2 style={{
           marginTop: 0,
           marginBottom: '30px',

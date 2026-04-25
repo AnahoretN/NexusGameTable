@@ -284,7 +284,7 @@ export const TabletopModals = memo(({
 
     dispatch({
       type: 'DELETE_OBJECT',
-      id: deleteCandidateId
+      payload: { id: deleteCandidateId }
     });
     setDeleteCandidateId(null);
   }, [deleteCandidateId, dispatch, setDeleteCandidateId]);

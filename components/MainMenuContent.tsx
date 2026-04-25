@@ -721,7 +721,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             </button>
           </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar relative select-none">
+      <div
+        className="flex-1 overflow-y-auto custom-scrollbar relative select-none"
+        onWheel={(e) => {
+          // Prevent scroll from propagating to the game tabletop
+          e.stopPropagation();
+        }}
+      >
         {activeTab === 'create' && (
           <div className="p-2">
             {categories.map(category => (
@@ -761,7 +767,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         {activeTab === 'tools' && (
           <div className="flex flex-col h-full">
             {/* Upper section - Drawing tools and tokens */}
-            <div className="flex-[3] overflow-y-auto px-3 py-2 space-y-3 min-h-0">
+            <div
+              className="flex-[3] overflow-y-auto px-3 py-2 space-y-3 min-h-0"
+              onWheel={(e) => {
+                // Prevent scroll from propagating to the game tabletop
+                e.stopPropagation();
+              }}
+            >
               {/* Drawing Tools Section */}
               <div>
                 <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
@@ -1120,7 +1132,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       {/* Manual P2P Connection Modal */}
       {showManualConnection && createPortal(
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000]">
-          <div className="bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div
+            className="bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onWheel={(e) => {
+              // Prevent scroll from propagating to the game tabletop
+              e.stopPropagation();
+            }}
+          >
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white">{translate('Direct Connection', language as Locale)}</h2>
               <button

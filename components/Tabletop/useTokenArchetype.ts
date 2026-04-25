@@ -61,10 +61,6 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
   // This adds a new token copy from archetype to cursor slot on each click
   useEffect(() => {
     const handleAddTokenToSlot = (e: Event) => {
-      console.log('[useTokenArchetype] ======================================');
-      console.log('[useTokenArchetype] START - Creating new token from archetype');
-      console.log('[useTokenArchetype] Event type:', e.type);
-
       // Set flag to prevent slot from being dropped during this operation
       isAddingTokenRef.current = true;
 
@@ -76,27 +72,20 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       const { archetypeId, clientX, clientY } = customEvent.detail;
       const archetype = state.objects[archetypeId] as TokenType;
 
-      console.log('[useTokenArchetype] Archetype ID:', archetypeId, 'Name:', archetype?.name);
-
       if (!archetype || archetype.type !== ItemType.TOKEN_TYPE) {
-        console.log('[useTokenArchetype] ERROR: Invalid archetype');
         isAddingTokenRef.current = false;
         return;
       }
       if (cursorSlot.length >= 100) {
-        console.log('[useTokenArchetype] ERROR: Slot full (100 items)');
         isAddingTokenRef.current = false;
         return;
       }
-
-      console.log('[useTokenArchetype] All checks passed, proceeding to create token');
 
       // Get current spawn count for naming
       const currentCount = archetype.spawnCount || 0;
 
       // ALWAYS create a NEW token copy from archetype (not add existing tokens)
       const newTokenId = generateUUID();
-      console.log('[useTokenArchetype] Creating NEW token with ID:', newTokenId);
 
       const defaultSize = archetype.defaultSize || { width: 50, height: 50 };
       const newToken: TokenType = {
@@ -139,11 +128,9 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       };
 
       // Add token to objects list
-      console.log('[useTokenArchetype] Dispatching ADD_OBJECT for token:', newTokenId);
       dispatch({ type: 'ADD_OBJECT', payload: newToken });
 
       // Increment spawn count on archetype atomically
-      console.log('[useTokenArchetype] Incrementing spawnCount for archetype:', archetypeId, 'from', currentCount, 'to', currentCount + 1);
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
@@ -158,15 +145,10 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
       (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
 
-      console.log('[useTokenArchetype] Adding token to cursorSlot. Current length:', cursorSlot.length, 'New length:', cursorSlot.length + 1);
       setCursorSlot(prev => {
-        console.log('[useTokenArchetype] setCursorSlot callback - prev.length:', prev.length);
-        const result = [...prev, tokenClone];
-        console.log('[useTokenArchetype] setCursorSlot callback - result.length:', result.length);
-        return result;
+        return [...prev, tokenClone];
       });
       cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
-      console.log('[useTokenArchetype] END - Token added to slot');
 
       // Set cursor position to show tokens immediately (use provided coords or current mouse position)
       if (clientX !== undefined && clientY !== undefined) {
@@ -196,12 +178,6 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
 
       const { clientX, clientY } = customEvent.detail;
 
-      console.log('[useTokenArchetype] drop-cursor-slot-at-position event received:', {
-        clientX,
-        clientY,
-        currentCursorSlotSize: cursorSlotRef.current.length
-      });
-
       // Only drop if we have items in cursor slot
       if (cursorSlotRef.current.length === 0) {
         return;
@@ -210,8 +186,6 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       // Drop all items from cursor slot at the specified position
       const itemsToDrop = cursorSlotRef.current;
       const droppedIds = itemsToDrop.map(item => item.id);
-
-      console.log('[useTokenArchetype] Dropping cursor slot items:', droppedIds);
 
       // Notify that items were dropped from cursor slot
       window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
@@ -223,14 +197,12 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       const archetypeCard = elementAtCursor?.closest('[data-archetype-card]');
 
       if (archetypeCard) {
-        console.log('[useTokenArchetype] Drop blocked: cursor over archetype card');
         return;
       }
 
       // Check if cursor is over hand panel - drop cards/tokens to hand
       const handPanel = elementAtCursor?.closest('[data-hand-panel="true"]');
       if (handPanel) {
-        console.log('[useTokenArchetype] Dropping items to hand panel');
         const items = itemsToDrop.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN);
         if (items.length > 0) {
           window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
@@ -247,7 +219,6 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       // Calculate drop position
       const rect = scrollContainerRef.current?.getBoundingClientRect();
       if (!rect) {
-        console.log('[useTokenArchetype] Cannot get rect, dropping canceled');
         return;
       }
 
@@ -258,8 +229,18 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       const source = cursorSlotRef.current[0]?.source || 'hold';
       const useOriginalZIndex = source === 'hold' || source === 'archetype';
 
+      // Sort items to preserve visual stack order
+      // For token copies from archetype: use cursorSlotIndex (order added to slot)
+      // For regular tokens: use originalZIndex
+      // Sort ASCENDING by sort key so first added (or lowest Z) is processed first (back of stack)
+      const sortedItems = [...itemsToDrop].sort((a, b) => {
+        const sortKeyA = (a as any).cursorSlotIndex ?? (a as any).originalZIndex ?? a.zIndex ?? 0;
+        const sortKeyB = (b as any).cursorSlotIndex ?? (b as any).originalZIndex ?? b.zIndex ?? 0;
+        return sortKeyA - sortKeyB; // Ascending - first added/lowest Z first (back of stack)
+      });
+
       // Drop all items from cursor slot
-      itemsToDrop.forEach((item, index) => {
+      sortedItems.forEach((item, sortedIndex) => {
         let finalX = baseX;
         let finalY = baseY;
 
@@ -269,29 +250,23 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
         finalX = baseX - tokenWidth / 2;
         finalY = baseY - tokenHeight / 2;
 
-        // Apply stack offset for multiple items
-        if (itemsToDrop.length > 1) {
-          finalX += index * 20;
-          finalY += index * 20;
+        // Apply stack offset - back items (first in sorted array) get MORE offset
+        // This matches CursorSlotVisualization where back items are farther from cursor
+        if (sortedItems.length > 1) {
+          const offsetAmount = Math.min(tokenWidth, tokenHeight) * 0.05;
+          const visualStackIndex = sortedItems.length - 1 - sortedIndex; // Reverse: back=max, front=0
+          finalX += visualStackIndex * offsetAmount;
+          finalY += visualStackIndex * offsetAmount;
         }
 
         let finalZIndex = item.zIndex;
         if (!useOriginalZIndex) {
-          finalZIndex = 10000 + index;
+          // Simple formula: first in sorted array (back) gets lowest zIndex, last (front) gets highest
+          finalZIndex = 10000 + sortedIndex;
         }
-
-        console.log('[useTokenArchetype] Dropping item:', {
-          itemId: item.id,
-          itemType: item.type,
-          x: finalX,
-          y: finalY,
-          zIndex: finalZIndex,
-          existsInState: !!state.objects[item.id]
-        });
 
         // Check if object exists in state before updating
         if (!state.objects[item.id]) {
-          console.error('[useTokenArchetype] Object not found in state:', item.id);
           return;
         }
 
@@ -331,14 +306,8 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
 
       const { copyId, updates } = customEvent.detail;
 
-      console.log('[useTokenArchetype] update-token-copy-from-archetype event received:', {
-        copyId,
-        updates
-      });
-
       // Check if token exists in state
       if (!state.objects[copyId]) {
-        console.error('[useTokenArchetype] Token copy not found in state:', copyId);
         return;
       }
 

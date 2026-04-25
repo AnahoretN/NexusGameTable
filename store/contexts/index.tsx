@@ -160,9 +160,6 @@ export const CONTEXT_INFO = {
  */
 export function checkContextStatus() {
   console.group('🔍 Context Module Status');
-  console.log('Version:', CONTEXT_VERSION);
-  console.log('Build Date:', CONTEXT_BUILD_DATE);
-  console.log('Contexts:', CONTEXT_INFO.contexts);
   console.groupEnd();
 
   return CONTEXT_INFO;
@@ -176,6 +173,4 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     version: CONTEXT_VERSION,
   };
 
-  console.log('[Context Module] 💡 Debug utilities available:');
-  console.log('[Context Module] 💡 - nexusContextDebug.checkContextStatus()');
 }

@@ -1203,7 +1203,13 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div
+              className="flex-1 overflow-y-auto p-4 space-y-3"
+              onWheel={(e) => {
+                // Prevent scroll from propagating to the game tabletop
+                e.stopPropagation();
+              }}
+            >
               {/* Version Info */}
               <div className="text-sm text-gray-400 pb-3 border-b border-slate-700">
                 <p>{APP_NAME} v{APP_VERSION}</p>

@@ -215,7 +215,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
       )}
 
       {/* Layer list */}
-      <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+      <div
+        className="flex-1 overflow-y-auto space-y-1 min-h-0"
+        onWheel={(e) => {
+          // Prevent scroll from propagating to the game tabletop
+          e.stopPropagation();
+        }}
+      >
         {sortedLayers.map((layer) => {
           const isSelected = isLayerSelected(layer.id);
           const canSelect = canSelectLayer(layer);

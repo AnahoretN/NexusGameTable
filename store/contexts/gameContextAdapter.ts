@@ -150,7 +150,7 @@ export function checkLegacyUsage(componentName: string, usedFields: string[]) {
         `[Migration Warning] ${componentName} is using legacy GameContext fields:`,
         legacyFields
       );
-      console.warn(
+      console.info(
         `[Migration Hint] Consider migrating to:`,
         legacyFields.map(field => {
           if (['players', 'activePlayerId', 'playerPermissions'].includes(field)) {
@@ -190,7 +190,6 @@ export function createMigrationPath(componentName: string, currentState: any) {
   if (requiredMigrations.length > 0) {
     console.group(`🔄 Migration Path for ${componentName}`);
     requiredMigrations.forEach(migration => {
-      console.log(`  - ${migration}`);
     });
     console.groupEnd();
   }

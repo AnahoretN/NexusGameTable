@@ -1,25 +1,25 @@
 /**
- * TokensPanelOptimized v2.0 - Migrated to new context architecture
+ * TokensPanelOptimized v2.1 - Fixed token type display
  *
- * @version 2.0.0
- * @since 2026-04-17
+ * @version 2.1.0
+ * @since 2026-04-25
  *
- * ИЗМЕНЕНИЯ с v1.0:
- * ✅ Полностью убрана зависимость от useGame()
- * ✅ Использует ObjectStore для игровых объектов
- * ✅ Использует PlayerContext v2.0 для player данных
- * ✅ Оптимизированные hooks для предотвращения ререндеров
- * ✅ Сохранена вся функциональность оригинала
+ * ИЗМЕНЕНИЯ с v2.0:
+ * ✅ Fixed: TOKEN_TYPE objects now display correctly in separate Tokens Panel
+ * ✅ Uses GameContext state.objects instead of objectStore (objectStore is not synced with TOKEN_TYPE)
+ * ✅ Uses PlayerContext v2.0 for player data
+ * ✅ Optimized hooks for preventing re-renders
  */
 
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useObjectsData, useObjectActions } from '../store/objectStore';
+import { useObjectActions } from '../store/objectStore';
 import { usePlayerPermissions, useIsGM } from '../store/contexts';
 import { ItemType, TokenType, TokenShape, AppLanguage } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 import { ChevronDown, Settings } from 'lucide-react';
 import { VirtualizedTokensPanel, SimpleTokensPanel, useVirtualizedTokensPanel } from './VirtualizedTokensPanel';
+import { useGame } from '../store/GameContext';
 
 interface TokensPanelProps {
   width?: number;
@@ -32,8 +32,8 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
   isCollapsed = false,
   language = 'en'
 }) => {
-  // ✅ НОВЫЕ КОНТЕКСТЫ
-  const objects = useObjectsData();
+  // ✅ Use GameContext for objects (objectStore is not synced with TOKEN_TYPE objects)
+  const { state } = useGame();
   const { updateObject } = useObjectActions();
 
   const playerPermissions = usePlayerPermissions();
@@ -43,15 +43,15 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
   // Token archetypes expanded state
   const [archetypesExpanded, setArchetypesExpanded] = useState(true);
 
-  // 🔥 OPTIMIZED: Memoize token archetypes
+  // 🔥 OPTIMIZED: Memoize token archetypes from GameContext state.objects
   const archetypes = useMemo(() => {
-    return Object.values(objects).filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE);
-  }, [objects]);
+    return Object.values(state.objects).filter((obj): obj is TokenType => obj.type === ItemType.TOKEN_TYPE);
+  }, [state.objects]);
 
   // 🔥 OPTIMIZED: Memoize all tokens for efficient copy counting
   const allTokens = useMemo(() => {
-    return Object.values(objects).filter(obj => obj.type === ItemType.TOKEN);
-  }, [objects]);
+    return Object.values(state.objects).filter(obj => obj.type === ItemType.TOKEN);
+  }, [state.objects]);
 
   // 🔥 OPTIMIZED: Create Map for efficient archetype lookup
   const archetypeMap = useMemo(() => {
@@ -255,7 +255,13 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+      <div
+        className="flex-1 overflow-y-auto custom-scrollbar p-3"
+        onWheel={(e) => {
+          // Prevent scroll from propagating to the game tabletop
+          e.stopPropagation();
+        }}
+      >
         {archetypesExpanded && (
           <VirtualizedTokensContent
             archetypes={archetypes}

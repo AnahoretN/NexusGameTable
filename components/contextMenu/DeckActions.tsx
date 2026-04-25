@@ -17,6 +17,7 @@ export interface DeckActionsProps {
 }
 
 export const DeckActions: React.FC<DeckActionsProps> = ({
+  deck,
   canPerformAction,
   onAction,
   hasCursorSlotCards = false

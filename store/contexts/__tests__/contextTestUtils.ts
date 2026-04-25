@@ -260,7 +260,6 @@ export function measureRenderPerformance(componentName: string, renderFn: () => 
 
   const duration = endTime - startTime;
 
-  console.log(`[Performance] ${componentName} rendered in ${duration.toFixed(2)}ms`);
 
   return {
     duration,
@@ -279,11 +278,9 @@ export function createRenderCounter(componentName: string) {
     count: () => renderCount,
     increment: () => {
       renderCount++;
-      console.log(`[RenderCounter] ${componentName}: ${renderCount} renders`);
     },
     reset: () => {
       renderCount = 0;
-      console.log(`[RenderCounter] ${componentName}: reset`);
     },
   };
 }
@@ -326,39 +323,29 @@ export function createTestEnvironment() {
  */
 export function runContextTests() {
   console.group('🧪 Context Test Suite');
-  console.log('Running context tests...');
 
   try {
     // Test initial states
     assertPlayerState(initialPlayerState);
-    console.log('✅ Initial player state is valid');
 
     assertViewTransformState(initialViewTransformState);
-    console.log('✅ Initial view transform state is valid');
 
     assertUIState(initialUIState);
-    console.log('✅ Initial UI state is valid');
 
     // Test mock data generators
     const mockPlayers = generateMockPlayers(3);
-    console.log(`✅ Generated ${mockPlayers.length} mock players`);
 
     const mockLayers = generateMockLayers(3);
-    console.log(`✅ Generated ${mockLayers.length} mock layers`);
 
     const mockSettings = generateMockPanelSettings(2, 2);
-    console.log(`✅ Generated mock panel settings for ${Object.keys(mockSettings).length} players`);
 
     // Test environment creation
     const testEnv = createTestEnvironment();
-    console.log('✅ Created test environment');
 
-    console.log('✅ All context tests passed!');
     console.groupEnd();
 
     return { success: true, testEnv };
   } catch (error) {
-    console.error('❌ Context test failed:', error);
     console.groupEnd();
     return { success: false, error };
   }
@@ -367,5 +354,4 @@ export function runContextTests() {
 // Auto-run tests in development
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
   (window as any).runContextTests = runContextTests;
-  console.log('[Context Tests] 💡 Type runContextTests() to run the test suite');
 }

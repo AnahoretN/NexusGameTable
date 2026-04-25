@@ -129,7 +129,13 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+          onWheel={(e) => {
+            // Prevent scroll from propagating to the game tabletop
+            e.stopPropagation();
+          }}
+        >
           {/* Error message */}
           {error && (
             <div className="p-2 bg-red-900/50 border border-red-700 rounded text-red-200 text-xs">

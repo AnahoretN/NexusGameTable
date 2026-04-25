@@ -87,7 +87,6 @@ export function clearBoardCellCache(boardId: string): void {
     }
   }
   keysToDelete.forEach(key => gridCellCenterCache.delete(key));
-  console.log('🗑️ [gridUtils] Cleared cache for board:', boardId, 'entries:', keysToDelete.length);
 }
 
 /**

@@ -465,7 +465,6 @@ const layerObjects = useObjectsByLayer('layer-1');
 
 // Get statistics
 const stats = useObjectStats();
-console.log(`Total objects: ${stats.total}, Cards: ${stats.cards}`);
 
 // Get actions only (no re-render on data changes)
 const { updateObject, moveObject } = useObjectActions();

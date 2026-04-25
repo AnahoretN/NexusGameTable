@@ -209,17 +209,6 @@ export function dropObjectsToPool(
       let finalX = dropPosition.baseX;
       let finalY = dropPosition.baseY;
 
-      // Debug: log offset availability
-      console.log('[dropObjectsToPool] Checking offsets for object:', {
-        objectId: obj.id,
-        hasClickOffsetX_PX: (obj as CursorSlotObject).clickOffsetX_PX !== undefined,
-        hasClickOffsetY_PX: (obj as CursorSlotObject).clickOffsetY_PX !== undefined,
-        hasClickOffsetX: (obj as CursorSlotObject).clickOffsetX !== undefined,
-        hasClickOffsetY: (obj as CursorSlotObject).clickOffsetY !== undefined,
-        clickOffsetX_PX: (obj as CursorSlotObject).clickOffsetX_PX,
-        clickOffsetY_PX: (obj as CursorSlotObject).clickOffsetY_PX
-      });
-
       // IMPORTANT: Apply click offset to position object correctly
       // clickOffsetX_PX/Y_PX are in screen pixels from drag start
       // We need to convert them to pool panel VU using current zoom and pixelsPerVU
@@ -236,14 +225,6 @@ export function dropObjectsToPool(
         // clickOffset is distance from top-left to grab point, so subtract from cursor position
         finalX = dropPosition.baseX - offsetX_VU;
         finalY = dropPosition.baseY - offsetY_VU;
-
-        console.log('[dropObjectsToPool] Applied click offset (PX):', {
-          objectId: obj.id,
-          dropPosition: { x: dropPosition.baseX, y: dropPosition.baseY },
-          clickOffsetPX: { x: offsetPX_X, y: offsetPX_Y },
-          clickOffsetVU: { x: offsetX_VU, y: offsetY_VU },
-          adjustedPosition: { x: finalX, y: finalY }
-        });
       } else if ((obj as CursorSlotObject).clickOffsetX !== undefined &&
                  (obj as CursorSlotObject).clickOffsetY !== undefined) {
         // Fallback: use VU offsets (when object from main tabletop without PX offsets)
@@ -252,13 +233,6 @@ export function dropObjectsToPool(
 
         finalX = dropPosition.baseX - offsetX;
         finalY = dropPosition.baseY - offsetY;
-
-        console.log('[dropObjectsToPool] Applied click offset (VU fallback):', {
-          objectId: obj.id,
-          dropPosition: { x: dropPosition.baseX, y: dropPosition.baseY },
-          clickOffsetVU: { x: offsetX, y: offsetY },
-          adjustedPosition: { x: finalX, y: finalY }
-        });
       }
       // If no offset, object drops at cursor position (top-left corner at cursor)
 

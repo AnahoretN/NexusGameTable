@@ -56,7 +56,6 @@ class DataCompressionManager {
 
       return compressed;
     } catch (error) {
-      console.error('[DataCompression] Compression error:', error);
       // Fallback to uncompressed
       return JSON.stringify(data);
     }
@@ -94,12 +93,10 @@ class DataCompressionManager {
 
       return parsed;
     } catch (error) {
-      console.error('[DataCompression] Decompression error:', error);
       // Fallback: try parsing as regular JSON
       try {
         return JSON.parse(compressed);
       } catch (parseError) {
-        console.error('[DataCompression] Fallback parsing failed:', parseError);
         return null;
       }
     }
@@ -142,16 +139,6 @@ class DataCompressionManager {
     const savedBytes = stats.totalOriginalSize - stats.totalCompressedSize;
     const savedPercent = ((savedBytes / stats.totalOriginalSize) * 100).toFixed(1);
 
-    console.log('📊 Data Compression Report:');
-    console.log('═══════════════════════════════════════');
-    console.log(`📦 Total Operations: ${stats.entries}`);
-    console.log(`📏 Original Size: ${this.formatBytes(stats.totalOriginalSize)}`);
-    console.log(`🗜️ Compressed Size: ${this.formatBytes(stats.totalCompressedSize)}`);
-    console.log(`💾 Saved: ${this.formatBytes(savedBytes)} (${savedPercent}%)`);
-    console.log(`⚡ Avg Compression Time: ${(stats.totalCompressionTime / stats.entries).toFixed(2)}ms`);
-    console.log(`⚡ Avg Decompression Time: ${(stats.totalDecompressionTime / stats.entries).toFixed(2)}ms`);
-    console.log(`📈 Compression Ratio: ${(stats.averageCompressionRatio * 100).toFixed(1)}%`);
-    console.log('═══════════════════════════════════════');
   }
 
   /**
@@ -230,5 +217,4 @@ if (typeof window !== 'undefined') {
     setEnabled: (enabled: boolean) => dataCompressionManager.setEnabled(enabled),
   };
 
-  console.log('[DataCompression] 💡 Type nexusDataCompression.printReport() for compression stats');
 }

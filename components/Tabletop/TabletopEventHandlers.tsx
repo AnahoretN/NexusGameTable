@@ -558,15 +558,34 @@ const dropCursorSlot = (
 
   // Sort items by DESCENDING Z to match CursorSlotVisualization
   // This ensures items drop in the same visual order they appear in cursor slot
+  // For archetype tokens with same Z, use cursorSlotIndex to preserve order
   const sortedItems = [...itemsToDrop].sort((a, b) => {
-    const sortKeyA = (a as any).originalZIndex ?? a.zIndex ?? 0;
-    const sortKeyB = (b as any).originalZIndex ?? b.zIndex ?? 0;
-    return sortKeyB - sortKeyA; // Descending - higher Z first (front of stack)
+    const sortKeyA = (a as any).cursorSlotIndex ?? (a as any).originalZIndex ?? a.zIndex ?? 0;
+    const sortKeyB = (b as any).cursorSlotIndex ?? (b as any).originalZIndex ?? b.zIndex ?? 0;
+    return sortKeyB - sortKeyA; // Descending - higher index/Z first (front of stack)
   });
+
+  // Find minimum zIndex for each hyperscale layer on the table
+  // This allows dropped items to be placed below existing items while preserving their relative order
+  const layerMinZIndex: Record<string, number> = {};
+  for (const obj of Object.values(state.objects) as any[]) {
+    const objData = obj as any;
+    if (objData.isOnTable && !objData.inCursorSlot) {
+      const layerId = obj.hyperscaleLayerId ?? 'default';
+      const currentMin = layerMinZIndex[layerId] ?? Infinity;
+      if ((obj.zIndex ?? 0) < currentMin) {
+        layerMinZIndex[layerId] = obj.zIndex ?? 0;
+      }
+    }
+  }
 
   // Drop all items from cursor slot
   sortedItems.forEach((item, sortedIndex) => {
     let finalX, finalY;
+
+    // Get object dimensions for centering
+    const objWidth = item.width ?? 50;
+    const objHeight = item.height ?? 50;
 
     // Check if we have stored original position and click offset info
     if ((item as any).originalX !== undefined && (item as any).originalY !== undefined) {
@@ -581,14 +600,14 @@ const dropCursorSlot = (
         finalX = baseX - clickOffsetX;
         finalY = baseY - clickOffsetY;
       } else {
-        // Fallback: center on drop position
-        finalX = baseX;
-        finalY = baseY;
+        // Fallback: center on drop position (for archetype tokens without clickOffset)
+        finalX = baseX - objWidth / 2;
+        finalY = baseY - objHeight / 2;
       }
     } else {
       // Fallback: center on drop position
-      finalX = baseX;
-      finalY = baseY;
+      finalX = baseX - objWidth / 2;
+      finalY = baseY - objHeight / 2;
     }
 
     // Apply stack offset - matches CursorSlotVisualization exactly
@@ -611,8 +630,12 @@ const dropCursorSlot = (
 
     let finalZIndex = item.zIndex;
     if (!useOriginalZIndex) {
-      // Simple formula: first in sorted array (back) gets lowest zIndex, last (front) gets highest
-      finalZIndex = 10000 + sortedIndex;
+      // Use minimum zIndex of the hyperscale layer, preserving relative order from cursor slot
+      // sortedIndex=0 (front) gets highest Z, sortedIndex=max (back) gets lowest Z
+      const layerId = item.hyperscaleLayerId ?? 'default';
+      const minZ = layerMinZIndex[layerId] ?? 0;
+      // Offset by sortedIndex to preserve visual order: front items stay above back items
+      finalZIndex = minZ - sortedIndex;
     }
 
     if (shouldSnapToGrid) {

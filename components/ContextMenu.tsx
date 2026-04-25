@@ -173,6 +173,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     'millTopCard': 'topDeck',
     'toBottom': 'topDeck',
     'showTop': 'topDeck',
+    'hideTop': 'topDeck',
     'moveToHand': 'moveTo',
     'moveToTopDeck': 'moveTo',
     'moveToBottomDeck': 'moveTo',
@@ -547,7 +548,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         },
         {
           label: (object as Deck).showTopCard ? translate('Hide Top', language as Locale) : translate('Show Top', language as Locale),
-          action: 'showTop',
+          action: (object as Deck).showTopCard ? 'hideTop' : 'showTop',
           icon: <Eye size={14} />,
           visible: can('showTop')
         }

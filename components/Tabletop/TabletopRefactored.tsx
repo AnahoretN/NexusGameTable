@@ -352,49 +352,20 @@ export const Tabletop: React.FC = () => {
 
       const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, fromPoolPanel } = customEvent.detail;
 
-      console.log('[Tabletop] add-to-cursor-slot event received:', {
-        cardId,
-        source,
-        clientX,
-        clientY,
-        hasCardOverride: !!cardOverride,
-        objectExists: !!state.objects[cardId],
-        currentCursorSlotSize: cursorSlotRef.current.length,
-        clickOffsetX_PX,
-        clickOffsetY_PX,
-        hasClickOffsetPX: clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined
-      });
-
       const obj = state.objects[cardId];
 
       if (!obj) {
-        console.error('[Tabletop] Object not found for add-to-cursor-slot:', cardId, 'Available objects:', Object.keys(state.objects));
         return;
       }
 
       // Check if object is already in cursor slot
       // Use cursorSlotRef.current to get the latest value (not from closure)
       if (cursorSlotRef.current.some(item => item.id === cardId)) {
-        console.log('[Tabletop] Object already in cursor slot:', cardId, {
-          slotSize: cursorSlotRef.current.length,
-          slotIds: cursorSlotRef.current.map(i => i.id),
-          objInCursorSlot: (obj as any).inCursorSlot
-        });
         return;
       }
 
       // Note: For CARDS from deck, multiple items can coexist in slot
       // No need to drop existing items when adding from deck
-
-      console.log('[Tabletop] Adding object to cursor slot from event:', {
-        cardId,
-        type: obj.type,
-        source,
-        clientX,
-        clientY,
-        hasCardOverride: !!cardOverride,
-        hasClickOffset: clickOffsetX !== undefined && clickOffsetY !== undefined
-      });
 
       // Import and call addToCursorSlot - need to get the function from eventHandlers
       // Since we can't directly call it here, we'll dispatch an action or use a different approach
@@ -431,36 +402,18 @@ export const Tabletop: React.FC = () => {
               // Convert pixel offsets to virtual units
               finalClickOffsetX = clickOffsetX_PX / pixelsPerVU;
               finalClickOffsetY = clickOffsetY_PX / pixelsPerVU;
-              console.log('[Tabletop] Using pixel offset from HandPanel (converted to VU):', {
-                clickOffsetX_PX,
-                clickOffsetY_PY: clickOffsetY_PX,
-                pixelsPerVU,
-                finalOffsetX_VU: finalClickOffsetX,
-                finalOffsetY_VU: finalClickOffsetY
-              });
             } else {
               // Fallback: center on cursor
               const cardWidth = card.width ?? deck?.cardWidth ?? 63;
               const cardHeight = card.height ?? deck?.cardHeight ?? 88;
               finalClickOffsetX = cardWidth / 2;
               finalClickOffsetY = cardHeight / 2;
-              console.log('[Tabletop] No pixel offset, centering card on cursor');
             }
           } else {
             // Calculate offset from top-left corner to click position
             finalClickOffsetX = clickX_VU - sourceX;
             finalClickOffsetY = clickY_VU - sourceY;
           }
-
-          console.log('[Tabletop] Calculated click offset from object position:', {
-            cardId,
-            hasCardOverride: !!cardOverride,
-            objPosition: { x: obj.x, y: obj.y },
-            overridePosition: cardOverride ? { x: cardOverride.x, y: cardOverride.y } : 'none',
-            sourcePosition: { x: sourceX, y: sourceY },
-            clickPosition_VU: { x: clickX_VU, y: clickY_VU },
-            calculatedOffset: { x: finalClickOffsetX, y: finalClickOffsetY }
-          });
         } else {
           // Fallback: center the card on cursor
           const cardWidth = card.width ?? deck?.cardWidth ?? 63;
@@ -573,14 +526,6 @@ export const Tabletop: React.FC = () => {
           originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
           originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
         } as any
-      });
-
-      console.log('[Tabletop] Added to cursor slot from event:', {
-        cardId,
-        slotSize: newSlot.length,
-        faceUp: card.faceUp,
-        clickOffset: { x: finalClickOffsetX, y: finalClickOffsetY },
-        originalPosition: { x: obj.x, y: obj.y }
       });
     };
 
@@ -737,7 +682,6 @@ export const Tabletop: React.FC = () => {
               }
             }
           } catch (error) {
-            console.warn('Failed to parse drop data:', error);
           }
         }
 

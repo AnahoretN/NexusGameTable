@@ -143,6 +143,10 @@ export const VirtualizedTokensPanel: React.FC<VirtualizedTokensPanelProps> = ({
         overflow: 'auto',
         position: 'relative',
       }}
+      onWheel={(e) => {
+        // Prevent scroll from propagating to the game tabletop
+        e.stopPropagation();
+      }}
     >
       <div
         style={{

@@ -1616,12 +1616,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // Determine faceUp based on deck's playTopFaceUp setting
       const faceUpValue = deck.playTopFaceUp ?? true;
-      console.log('[DRAW_CARD] Card faceUp setting:', {
-        cardId: drawnCardId,
-        deckId: deck.id,
-        deckPlayTopFaceUp: deck.playTopFaceUp,
-        finalFaceUp: faceUpValue
-      });
 
       const updatedCard: Card = {
         ...card,
