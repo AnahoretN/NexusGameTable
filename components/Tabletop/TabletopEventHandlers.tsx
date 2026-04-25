@@ -7,8 +7,7 @@ import {
   calculateGridDimensions,
   removeObjectFromGridCellMagnet,
   addObjectToGridCellMagnet,
-  generateGridCellKey,
-  snapToGrid
+  generateGridCellKey
 } from '../../utils/gridUtils';
 
 interface TabletopEventHandlersProps {
@@ -85,15 +84,6 @@ const addToCursorSlot = (
   props: TabletopEventHandlersProps,
   source: 'hold' | 'shift' = 'hold'
 ) => {
-  console.log('🎯 [CURSOR SLOT] addToCursorSlot called:', {
-    id,
-    itemType: item?.type,
-    itemName: item?.name,
-    source,
-    mousePosition,
-    timestamp: new Date().toISOString()
-  });
-
   const {
     cursorSlot,
     setCursorSlot,
@@ -104,39 +94,20 @@ const addToCursorSlot = (
     unpinnedDuringDragRef,
     state,
     dispatch,
-    activePlayerId,
     scrollContainerRef,
     viewTransform,
     pixelsPerVU,
     p2v
   } = props;
 
-  console.log('🔍 [CURSOR SLOT] Current slot state:', {
-    slotLength: cursorSlot.length,
-    maxItems: 100
-  });
-
   // IMPORTANT: Check if slot actually has items
   // Use cursorSlot.length first (React state), fallback to state.objects check
   // Objects in cursor slot have inCursorSlot: true (NOT isOnTable: false, which includes cards in hand!)
-  const slotHasItemsFromState = cursorSlot.length > 0;
-  const objectsInCursorSlot = Object.values(state.objects).filter(o =>
-    (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER) &&
-    (o as any).inCursorSlot === true
-  );
-  const actuallyHasItems = slotHasItemsFromState || objectsInCursorSlot.length > 0;
-
-  console.log('🔍 [CURSOR SLOT] Actual slot state from state.objects:', {
-    cursorSlotLength: cursorSlot.length,
-    inCursorSlotCount: objectsInCursorSlot.length,
-    actuallyHasItems
-  });
 
   // Check if cursor is over a token archetype button
   const elementUnderCursor = document.elementFromPoint(mousePosition?.x ?? 0, mousePosition?.y ?? 0);
   const archetypeButton = elementUnderCursor?.closest('[data-archetype-card]');
   if (archetypeButton) {
-    console.log('❌ [CURSOR SLOT] Blocked: cursor over archetype button');
     return;
   }
 
@@ -145,13 +116,11 @@ const addToCursorSlot = (
 
   // Check cursorSlot for the 100 item limit
   if (cursorSlot.length >= 100) {
-    console.log('❌ [CURSOR SLOT] Blocked: slot full (100 items max)');
     return; // Max 100 items in slot
   }
 
   // Set source based on how the item was added (only if slot was empty before)
   if (cursorSlot.length === 0) {
-    console.log('📍 [CURSOR SLOT] Setting slot source:', source);
     setCursorSlotSource(source);
   }
 
@@ -159,7 +128,6 @@ const addToCursorSlot = (
   const obj = state.objects[id];
   const gridCellKey = (obj as Token)?.gridCellKey || (obj as CardType)?.gridCellKey;
   if (obj && gridCellKey && (obj.type === ItemType.TOKEN || obj.type === ItemType.CARD)) {
-    console.log('🔓 [CURSOR SLOT] Unhooking from grid cell:', gridCellKey);
     const [boardId, ...cellParts] = gridCellKey.split(':');
     const cellKey = cellParts.join(':');
 
@@ -183,7 +151,6 @@ const addToCursorSlot = (
       );
 
       if (result) {
-        console.log('✅ [CURSOR SLOT] Unhooked from grid:', result);
         const updatedBoard = {
           ...board,
           gridCellMagnetPoints: result.updatedBoard.gridCellMagnetPoints
@@ -224,16 +191,9 @@ const addToCursorSlot = (
   }
 
   // Clone the item to store it in the slot - STORE COMPLETE OBJECT INFO
-  console.log('📋 [CURSOR SLOT] Cloning object for slot...');
   let itemClone: TableObject;
 
   if (item.type === ItemType.CARD) {
-    console.log('🃏 [CURSOR SLOT] Cloning CARD:', {
-      cardId: item.id,
-      deckId: (item as CardType).deckId,
-      faceUp: (item as CardType).faceUp
-    });
-
     const card = item as CardType;
     const deck = card.deckId ? state.objects[card.deckId] as any : undefined;
     const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
@@ -263,11 +223,6 @@ const addToCursorSlot = (
       location: card.location,
     } as CardType;
   } else if (item.type === ItemType.DECK) {
-    console.log('🗃️ [CURSOR SLOT] Cloning DECK:', {
-      deckId: item.id,
-      deckName: item.name
-    });
-
     const deck = item as DeckType;
     itemClone = {
       id: deck.id,
@@ -289,11 +244,6 @@ const addToCursorSlot = (
       locked: deck.locked,
     } as DeckType;
   } else if (item.type === ItemType.TOKEN) {
-    console.log('🔄 [CURSOR SLOT] Cloning TOKEN:', {
-      tokenId: item.id,
-      tokenName: item.name
-    });
-
     const token = item as Token;
     itemClone = {
       id: token.id,
@@ -315,11 +265,6 @@ const addToCursorSlot = (
       hyperscaleLayerId: token.hyperscaleLayerId ?? 'tokens',
     } as Token;
   } else if (item.type === ItemType.BOARD) {
-    console.log('📋 [CURSOR SLOT] Cloning BOARD:', {
-      boardId: item.id,
-      boardName: item.name
-    });
-
     const board = item as BoardType;
     itemClone = {
       id: board.id,
@@ -342,7 +287,6 @@ const addToCursorSlot = (
       hyperscaleLayerId: board.hyperscaleLayerId ?? 'boards',
     } as BoardType;
   } else {
-    console.log('📦 [CURSOR SLOT] Cloning OTHER:', item.type);
     itemClone = { ...item, x: 0, y: 0 }; // ❌ Сбрасываем координаты в слоте курсора
   }
 
@@ -387,38 +331,6 @@ const addToCursorSlot = (
     const objScreenX = rect.left + (obj.x * pixelsPerVU) - scrollX;
     const objScreenY = rect.top + (obj.y * pixelsPerVU) - scrollY;
 
-    console.log('🎯 [CURSOR SLOT] CLICK OFFSET DEBUG:', {
-      objId: item.id,
-      objType: item.type,
-      objPosition_VU: { x: obj.x, y: obj.y },
-      objRotation: obj.rotation || 0,
-      // Calculated position
-      calculatedObjScreenPos: { x: objScreenX, y: objScreenY },
-      // Actual DOM position (if available)
-      actualDOMRect: objElementRect ? {
-        left: objElementRect.left,
-        top: objElementRect.top,
-        width: objElementRect.width,
-        height: objElementRect.height
-      } : 'NOT_FOUND',
-      domVsCalculated: objElementRect ? {
-        diffX: objElementRect.left - objScreenX,
-        diffY: objElementRect.top - objScreenY
-      } : null,
-      // Mouse position
-      mouseScreenPos: { x: mousePosition.x, y: mousePosition.y },
-      // Check if mousePosition matches event.clientX/Y
-      mousePositionMatchesEvent: (mousePosition as any).clientX !== undefined && mousePosition.x === (mousePosition as any).clientX,
-      // Context
-      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-      scroll: { x: scrollX, y: scrollY },
-      pixelsPerVU,
-      searchMethod: objElementRect ? 'querySelector' : 'none',
-      // Additional debug info
-      containerChildren: scrollContainerRef.current?.children.length,
-      dataObjectElements: scrollContainerRef.current?.querySelectorAll('[data-object-id]').length
-    });
-
     // Use ACTUAL DOM position if available, otherwise fall back to calculated
     let finalOffsetX_PX: number;
     let finalOffsetY_PX: number;
@@ -427,25 +339,12 @@ const addToCursorSlot = (
       // Use actual DOM element position
       finalOffsetX_PX = mousePosition.x - objElementRect.left;
       finalOffsetY_PX = mousePosition.y - objElementRect.top;
-      console.log('✅ [CURSOR SLOT] Using ACTUAL DOM offset:', {
-        x: finalOffsetX_PX,
-        y: finalOffsetY_PX,
-        objLeft: objElementRect.left,
-        objTop: objElementRect.top,
-        mouseX: mousePosition.x,
-        mouseY: mousePosition.y
-      });
     } else {
       // Fallback: use calculated position
       const offsetX_PX = mousePosition.x - objScreenX;
       const offsetY_PX = mousePosition.y - objScreenY;
       finalOffsetX_PX = offsetX_PX;
       finalOffsetY_PX = offsetY_PX;
-      console.warn('⚠️ [CURSOR SLOT] Using CALCULATED offset (DOM element not found):', {
-        x: finalOffsetX_PX,
-        y: finalOffsetY_PX,
-        objId: obj.id
-      });
     }
 
     // IMPORTANT: Calculate offset in VIRTUAL UNITS relative to object's game position
@@ -457,18 +356,6 @@ const addToCursorSlot = (
     // Offset is the difference between click position and object position (both in VU)
     const clickOffsetX_VU = clickX_VU - obj.x;
     const clickOffsetY_VU = clickY_VU - obj.y;
-
-    console.log('🧮 [CURSOR SLOT] Calculated VU offset (scroll-aware):', {
-      clickX_VU,
-      clickY_VU,
-      objX: obj.x,
-      objY: obj.y,
-      clickOffsetX_VU,
-      clickOffsetY_VU,
-      scrollX,
-      scrollY,
-      pixelsPerVU
-    });
 
     // Store offset in SCREEN PIXELS for CursorSlotVisualization (for visual rendering)
     (itemClone as any).clickOffsetX_PX = finalOffsetX_PX;
@@ -483,36 +370,15 @@ const addToCursorSlot = (
     (itemClone as any).originalY = obj.y;
   }
 
-  console.log('✨ [CURSOR SLOT] Clone created:', {
-    cloneId: itemClone.id,
-    cloneType: itemClone.type,
-    slotIndex: (itemClone as any).cursorSlotIndex
-  });
-
   // Update cursor position FIRST (before state update to ensure ref is set during render)
   if (mousePosition) {
     const pos = { x: mousePosition.x, y: mousePosition.y };
-    console.log('🖱️ [CURSOR SLOT] Setting cursor position BEFORE state update:', pos);
     cursorPositionRef.current = pos;
     setCursorPosition(pos);
-
-    // Verify ref was set correctly
-    console.log('✅ [CURSOR SLOT] Verified cursorPositionRef.current after set:', {
-      refValue: cursorPositionRef.current,
-      matches: cursorPositionRef.current === pos
-    });
-  } else {
-    console.warn('⚠️ [CURSOR SLOT] No mousePosition provided to addToCursorSlot!');
   }
 
   // Add to cursor slot
   const newSlot = [...cursorSlot, itemClone as CardType | TokenType | BoardType | DeckType];
-  console.log('➕ [CURSOR SLOT] Adding to slot:', {
-    oldLength: cursorSlot.length,
-    newLength: newSlot.length,
-    addedItem: itemClone.id,
-    storedOriginalPosition: { x: (itemClone as any).x, y: (itemClone as any).y }
-  });
 
   setCursorSlot(newSlot);
 
@@ -520,14 +386,8 @@ const addToCursorSlot = (
   cursorSlotLastAddedRef.current = Date.now();
 
   // Remove object from table temporarily (hide it while in slot)
-  console.log('🚫 [CURSOR SLOT] Hiding object from table while in slot:', {
-    objectId: id,
-    isPinnedToViewport: (obj as any).isPinnedToViewport
-  });
-
   // If object is pinned, unpin it temporarily during drag
   if ((obj as any).isPinnedToViewport) {
-    console.log('📌 [PIN] Temporarily unpinning object for cursor slot:', id);
 
     // Store the pinned state to restore later
     const pinnedPos = (obj as any).pinnedScreenPosition || { x: obj.x, y: obj.y };
@@ -564,12 +424,6 @@ const addToCursorSlot = (
       }
     }
   });
-
-  console.log('✅ [CURSOR SLOT] Successfully added item to slot:', {
-    itemId: id,
-    slotSize: newSlot.length,
-    source: source
-  });
 };
 
 // Helper function to drop cursor slot items WITH LOGGING
@@ -578,12 +432,6 @@ const dropCursorSlot = (
   clientY: number,
   props: TabletopEventHandlersProps
 ) => {
-  console.log('🎯 [CURSOR SLOT] dropCursorSlot called:', {
-    clientX,
-    clientY,
-    timestamp: new Date().toISOString()
-  });
-
   const {
     cursorSlot,
     setCursorSlot,
@@ -594,20 +442,12 @@ const dropCursorSlot = (
     unpinnedDuringDragRef,
     state,
     dispatch,
-    activePlayerId,
     scrollContainerRef,
     viewTransform,
-    p2v,
-    pixelsPerVU
+    p2v
   } = props;
 
-  console.log('🔍 [CURSOR SLOT] Current slot state before drop:', {
-    slotLength: cursorSlot.length,
-    items: cursorSlot.map(item => ({ id: item.id, type: item.type }))
-  });
-
   if (cursorSlot.length === 0) {
-    console.log('❌ [CURSOR SLOT] Slot is empty, nothing to drop');
     return;
   }
 
@@ -616,7 +456,6 @@ const dropCursorSlot = (
 
   // Notify that items were dropped from cursor slot
   const droppedIds = itemsToDrop.map(item => item.id);
-  console.log('📢 [CURSOR SLOT] Dispatching cursor-slot-dropped event:', droppedIds);
 
   window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
     detail: { cardIds: droppedIds }
@@ -627,25 +466,16 @@ const dropCursorSlot = (
   const archetypeCard = elementAtCursor?.closest('[data-archetype-card]');
 
   if (archetypeCard) {
-    console.log('❌ [CURSOR SLOT] Drop blocked: cursor over archetype card');
     return;
   }
 
   // Check if cursor is over hand panel - drop cards to hand instead of table
   const handPanel = elementAtCursor?.closest('[data-hand-panel="true"]');
   if (handPanel) {
-    console.log('✅ [CURSOR SLOT] Dropping items to hand panel');
 
     // Filter only CARDS, TOKENS and COUNTERS from cursor slot (allow all in hand panel)
     const items = itemsToDrop.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN || item.type === ItemType.COUNTER);
     const nonCardItems = itemsToDrop.filter(item => item.type !== ItemType.CARD && item.type !== ItemType.TOKEN && item.type !== ItemType.COUNTER);
-
-    console.log('🔍 [CURSOR SLOT] Filtered items:', {
-      total: itemsToDrop.length,
-      cardsAndTokens: items.length,
-      otherItems: nonCardItems.length,
-      otherItemTypes: nonCardItems.map(i => i.type)
-    });
 
     if (items.length > 0) {
       window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
@@ -674,7 +504,6 @@ const dropCursorSlot = (
     const deckObj = deckId ? state.objects[deckId] : null;
 
     if (deckObj && deckObj.type === ItemType.DECK) {
-      console.log('✅ [CURSOR SLOT] Dropping cards to deck:', deckId);
 
       // Filter only cards from cursor slot
       const cards = itemsToDrop.filter(item => item.type === ItemType.CARD);
@@ -717,16 +546,9 @@ const dropCursorSlot = (
   const source = itemSource || cursorSlotSource;
   const useOriginalZIndex = source === 'hold' || source === 'archetype';
 
-  console.log('🎨 [CURSOR SLOT] Drop settings:', {
-    source,
-    useOriginalZIndex,
-    itemSource
-  });
-
   // Calculate drop position
   const rect = scrollContainerRef.current?.getBoundingClientRect();
   if (!rect) {
-    console.log('❌ [CURSOR SLOT] Cannot get rect, dropping canceled');
     return;
   }
 
@@ -734,34 +556,22 @@ const dropCursorSlot = (
   const baseX = p2v(clientX - rect.left + (viewTransform?.scroll?.x || 0));
   const baseY = p2v(clientY - rect.top + (viewTransform?.scroll?.y || 0));
 
-  console.log('📍 [CURSOR SLOT] Drop position calculated:', {
-    baseX,
-    baseY,
-    clientX,
-    clientY,
-    scrollX: viewTransform?.scroll?.x,
-    scrollY: viewTransform?.scroll?.y
+  // Sort items by DESCENDING Z to match CursorSlotVisualization
+  // This ensures items drop in the same visual order they appear in cursor slot
+  const sortedItems = [...itemsToDrop].sort((a, b) => {
+    const sortKeyA = (a as any).originalZIndex ?? a.zIndex ?? 0;
+    const sortKeyB = (b as any).originalZIndex ?? b.zIndex ?? 0;
+    return sortKeyB - sortKeyA; // Descending - higher Z first (front of stack)
   });
 
   // Drop all items from cursor slot
-  itemsToDrop.forEach((item, index) => {
+  sortedItems.forEach((item, sortedIndex) => {
     let finalX, finalY;
 
     // Check if we have stored original position and click offset info
     if ((item as any).originalX !== undefined && (item as any).originalY !== undefined) {
-      // Calculate offset from original position to current cursor position
-      // This maintains the same offset as when the object was picked up
-      const originalX = (item as any).originalX;
-      const originalY = (item as any).originalY;
-
-      // The offset is the difference between the drop position and the original position
-      // We want to maintain the same offset from cursor to object as when picked up
-      const deltaX_VU = baseX - originalX;
-      const deltaY_VU = baseY - originalY;
-
       // Use the stored click offsets to calculate the final position
-      // clickOffsetX/Y are in VU (virtual units) - these are the source of truth
-      // clickOffsetX_PX/Y_PX are in screen pixels - only used for CursorSlotVisualization
+      // clickOffsetX/Y are in VU (virtual units) - this is the source of truth
       const clickOffsetX = (item as any).clickOffsetX;
       const clickOffsetY = (item as any).clickOffsetY;
 
@@ -770,74 +580,40 @@ const dropCursorSlot = (
         // This places the object so the clicked point ends up at the drop position
         finalX = baseX - clickOffsetX;
         finalY = baseY - clickOffsetY;
-
-        console.log('🎯 [CURSOR SLOT] Calculated final position with VU offset:', {
-          itemId: item.id,
-          finalPosition: { x: finalX, y: finalY },
-          originalPosition: { x: originalX, y: originalY },
-          dropPosition: { x: baseX, y: baseY },
-          clickOffsetX,
-          clickOffsetY,
-          clickOffsetX_PX: (item as any).clickOffsetX_PX,
-          clickOffsetY_PX: (item as any).clickOffsetY_PX,
-          calculation: `dropPos(${baseX.toFixed(2)}, ${baseY.toFixed(2)}) - offset(${clickOffsetX.toFixed(2)}, ${clickOffsetY.toFixed(2)})`
-        });
       } else {
-        // Fallback: use simple delta from original position
+        // Fallback: center on drop position
         finalX = baseX;
         finalY = baseY;
-
-        console.log('⚠️ [CURSOR SLOT] Using drop position directly (no VU offset):', {
-          itemId: item.id,
-          dropPosition: { x: finalX, y: finalY }
-        });
       }
     } else {
-      // Fallback: use simple offset if no original position stored
-      const offsetX = index * 20;
-      const offsetY = index * 20;
-      finalX = baseX + offsetX;
-      finalY = baseY + offsetY;
-
-      console.log('⚠️ [CURSOR SLOT] No original position, using simple offset:', {
-        itemId: item.id,
-        simpleOffset: { x: offsetX, y: offsetY }
-      });
+      // Fallback: center on drop position
+      finalX = baseX;
+      finalY = baseY;
     }
 
-    // Apply stack offset for multiple items
-    if (itemsToDrop.length > 1) {
-      const stackOffsetX = index * 20;
-      const stackOffsetY = index * 20;
-      finalX += stackOffsetX;
-      finalY += stackOffsetY;
-
-      console.log('📚 [CURSOR SLOT] Applied stack offset:', {
-        itemId: item.id,
-        stackOffset: { x: stackOffsetX, y: stackOffsetY },
-        adjustedPosition: { x: finalX, y: finalY }
-      });
+    // Apply stack offset - matches CursorSlotVisualization exactly
+    // sortedIndex=0 (front/top) gets no offset, sortedIndex=1 gets offsetAmount, etc.
+    if (sortedItems.length > 1) {
+      const objWidth = item.width ?? 50;
+      const objHeight = item.height ?? 50;
+      const offsetAmount = Math.min(objWidth, objHeight) * 0.05; // 5% like in CursorSlotVisualization
+      const offsetFromFront = sortedIndex; // 0 for front, increasing for items behind
+      finalX += offsetFromFront * offsetAmount;
+      finalY += offsetFromFront * offsetAmount;
     }
-
-    let finalZIndex = item.zIndex;
-    if (!useOriginalZIndex) {
-      finalZIndex = 10000 + index;
-    }
-
-    console.log('📦 [CURSOR SLOT] Dropping item:', {
-      index,
-      itemId: item.id,
-      itemType: item.type,
-      x: finalX,
-      y: finalY,
-      zIndex: finalZIndex,
-      restoringOriginalPosition: { x: (item as any).originalX, y: (item as any).originalY }
-    });
 
     // Check for board grid magnetism
     const isToken = item.type === ItemType.TOKEN;
     const isCard = item.type === ItemType.CARD;
-    const shouldSnapToGrid = isToken || (isCard && item.snapToGrid);
+    // Count tokens in cursor slot - if multiple tokens, drop as stack without magnetism
+    const tokenCount = itemsToDrop.filter(i => i.type === ItemType.TOKEN).length;
+    const shouldSnapToGrid = (isToken && tokenCount <= 1) || (isCard && item.snapToGrid);
+
+    let finalZIndex = item.zIndex;
+    if (!useOriginalZIndex) {
+      // Simple formula: first in sorted array (back) gets lowest zIndex, last (front) gets highest
+      finalZIndex = 10000 + sortedIndex;
+    }
 
     if (shouldSnapToGrid) {
       // Find board under drop position
@@ -847,14 +623,6 @@ const dropCursorSlot = (
       // Calculate object center from final position (accounting for offset)
       const centerX = finalX + objWidth / 2;
       const centerY = finalY + objHeight / 2;
-
-      console.log('🧲 [MAGNET DEBUG] Object drop position:', {
-        itemId: item.id,
-        finalX, finalY,
-        centerX, centerY,
-        cursorPosition: { x: baseX, y: baseY },
-        objWidth, objHeight
-      });
 
       for (const boardId of Object.keys(state.objects)) {
         const board = state.objects[boardId] as BoardType;
@@ -875,19 +643,6 @@ const dropCursorSlot = (
         // Check if board has snapToGrid enabled for this item type
         const snapEnabled = isToken ? board.snapToGrid : board.snapCardsToGrid;
         if (!snapEnabled) continue;
-
-        console.log('🧲 [MAGNET DEBUG] Board found for snap:', {
-          boardId: board.id,
-          boardX: board.x,
-          boardY: board.y,
-          boardWidth: board.width,
-          boardHeight: board.height,
-          gridW: board.gridWidth || board.gridSize || 50,
-          gridH: board.gridHeight || board.gridSize || 50,
-          gridType: board.gridType,
-          snapEnabled,
-          cursorPosition: { x: centerX, y: centerY }
-        });
 
         // Calculate grid cell under the drop position using consistent dimensions
         const { gridW, gridH } = calculateGridDimensions(board);
@@ -991,29 +746,6 @@ const dropCursorSlot = (
 
         const cellCenter = calculateGridCellCenter(board, col, row);
 
-        const expectedCellCenter = {
-          x: board.x + col * gridW + gridW / 2,
-          y: board.y + row * gridH + gridH / 2
-        };
-
-        console.log('🧲 [MAGNET DEBUG] Cell calculated:', {
-          col, row, cellKey,
-          'cellCenter.x': cellCenter.x.toFixed(2),
-          'cellCenter.y': cellCenter.y.toFixed(2),
-          'expectedCellCenter.x': expectedCellCenter.x.toFixed(2),
-          'expectedCellCenter.y': expectedCellCenter.y.toFixed(2),
-          'cursorPosition.x': centerX.toFixed(2),
-          'cursorPosition.y': centerY.toFixed(2),
-          'gridW': gridW,
-          'gridH': gridH,
-          'board.x': board.x,
-          'board.y': board.y,
-          'cellCenterMatch': cellCenter.x === expectedCellCenter.x && cellCenter.y === expectedCellCenter.y,
-          'dx': (cellCenter.x - expectedCellCenter.x).toFixed(2),
-          'dy': (cellCenter.y - expectedCellCenter.y).toFixed(2),
-          'calculation': `expected: ${expectedCellCenter.x.toFixed(2)} = ${board.x} + ${col}*${gridW} + ${gridW/2}`
-        });
-
         // Add object to grid cell magnet points
         const magnetResult = addObjectToGridCellMagnet(
           board,
@@ -1026,21 +758,6 @@ const dropCursorSlot = (
           gridW,
           gridH
         );
-
-        console.log('🧲 [GRID MAGNET] Snapped object to grid cell:', {
-          itemId: item.id,
-          boardId: board.id,
-          cellKey,
-          col,
-          row,
-          snapPosition: magnetResult.snapPosition,
-          cellCenter: cellCenter,
-          expectedSnapPosition: {
-            x: cellCenter.x,
-            y: cellCenter.y
-          },
-          movedObjects: magnetResult.movedObjects
-        });
 
         // Update board with new magnet points
         if (magnetResult.updatedBoard.gridCellMagnetPoints) {
@@ -1075,14 +792,6 @@ const dropCursorSlot = (
         // Snap position is already the top-left position for the object
         finalX = magnetResult.snapPosition.x;
         finalY = magnetResult.snapPosition.y;
-
-        console.log('🧲 [MAGNET DEBUG] Snap applied:', {
-          itemId: item.id,
-          snapPosition: magnetResult.snapPosition,
-          clickOffset: { x: (item as any).clickOffsetX, y: (item as any).clickOffsetY },
-          finalPosition: { x: finalX, y: finalY },
-          calculation: `final = snap(${magnetResult.snapPosition.x.toFixed(2)}, ${magnetResult.snapPosition.y.toFixed(2)})`
-        });
 
         // Store grid cell reference on the object
         dispatch({
@@ -1122,7 +831,6 @@ const dropCursorSlot = (
 
     // If object was unpinned during drag, repin it at new position
     if (unpinnedDuringDragRef.current.has(item.id)) {
-      console.log('📌 [PIN] Repinning object after cursor slot drop:', item.id);
 
       const scrollX = viewTransform?.scroll?.x || 0;
       const scrollY = viewTransform?.scroll?.y || 0;
@@ -1142,13 +850,11 @@ const dropCursorSlot = (
   });
 
   // Clear cursor slot
-  console.log('🧹 [CURSOR SLOT] Clearing slot after drop');
   setCursorSlot([]);
   setCursorPosition(null);
   cursorPositionRef.current = null;
   setCursorSlotSource(null);
 
-  console.log('✅ [CURSOR SLOT] Drop completed successfully');
 };
 
 export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
@@ -1164,10 +870,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setCursorSlotSource,
     cursorSlotSource,
     currentTool,
-    setCurrentTool,
     isShiftPressed,
     setIsShiftPressed,
-    isCtrlPressed,
     setIsCtrlPressed,
     draggingId,
     draggingIdRef,
@@ -1176,41 +880,28 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setResizeStart,
     rulerStart,
     setRulerStart,
-    rulerCurrent,
     setRulerCurrent,
     isRulerRightClick,
     setIsRulerRightClick,
     setContextMenu,
     setDeleteCandidateId,
-    setIsPanning,
     scrollContainerRef,
     viewTransform,
     pixelsPerVU,
-    v2p,
     p2v,
     activePlayerId,
     isGM,
-    hyperscaleLayers,
     localSettings,
     updateSetting,
-    liveResizeSizeRef,
-    setLiveResizeSize,
-    resizeFinalSizeRef,
-    isAddingTokenRef,
     longPressTimerRef,
     clickTooltipTimerRef,
-    clickTooltipBoundsRef,
     dragThresholdRef,
     dragOffsetRef,
     cursorSlotLastAddedRef,
     unpinnedDuringDragRef,
-    setClickTooltip,
     setNexusBoardAddingCell,
-    setSettingsModalObj,
     setPileContextMenu,
-    setSearchModalDeck,
     setPilesButtonMenu,
-    setTopDeckModalDeck,
   } = props;
 
   // Track previous deck for cursor hover detection
@@ -1254,18 +945,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Mouse down handler WITH LOGGING
   const handleMouseDown = useCallback((e: React.MouseEvent, objId?: string) => {
-    console.log('🖱️ [MOUSE DOWN] Event triggered:', {
-      button: e.button,
-      shiftKey: e.shiftKey,
-      ctrlKey: e.ctrlKey,
-      metaKey: e.metaKey,
-      objId,
-      timestamp: new Date().toISOString()
-    });
-
     // Handle clicking on empty space (clear context menus, rulers, etc.)
     if (!objId) {
-      console.log('📍 [MOUSE DOWN] Clicked on empty space');
       // Clear ruler if active
       if (currentTool === 'ruler' && e.button === 0) {
         if (!rulerStart) {
@@ -1273,7 +954,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
           const startX = e.clientX - rect.left;
           const startY = e.clientY - rect.top;
           setRulerStart({ x: p2v(startX), y: p2v(startY) });
-          console.log('📏 [MOUSE DOWN] Ruler started:', { startX, startY });
         }
       }
       return;
@@ -1281,77 +961,49 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
     const obj = state.objects[objId];
     if (!obj) {
-      console.log('❌ [MOUSE DOWN] Object not found:', objId);
       return;
     }
-
-    console.log('🎯 [MOUSE DOWN] Object clicked:', {
-      id: obj.id,
-      type: obj.type,
-      name: obj.name,
-      locked: obj.locked,
-      ownerId: (obj as any).ownerId
-    });
 
     // Check if object is locked or not owned by player
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
     if (obj.locked && !isGM) {
-      console.log('🔒 [MOUSE DOWN] Object locked, access denied');
       return;
     }
     if (!isOwner) {
-      console.log('🚫 [MOUSE DOWN] Not owner, access denied');
       return;
     }
 
     // Handle different tools
     if (currentTool === 'marker') {
-      console.log('✏️ [MOUSE DOWN] Marker tool active');
       // Marker tool logic would go here
       return;
     }
 
     if (currentTool === 'eraser') {
-      console.log('🧹 [MOUSE DOWN] Eraser tool active');
       if (isShiftPressed && isOwner) {
         setDeleteCandidateId(objId);
-        console.log('🗑️ [MOUSE DOWN] Marked for deletion:', objId);
       }
       return;
     }
 
     // Handle right-click for ruler radius
     if (currentTool === 'ruler' && e.button === 2) {
-      console.log('📏 [MOUSE DOWN] Ruler right-click');
       setIsRulerRightClick(true);
       return;
     }
-
-    // SHIFT+CLICK only works for CARD, TOKEN and COUNTER - BOARD is excluded
-    const isShiftClickOnMovableObject = e.shiftKey && obj && (
-      obj.type === ItemType.CARD ||
-      obj.type === ItemType.TOKEN ||
-      obj.type === ItemType.COUNTER
-    );
 
     // Check if cursor slot has items
     // Use cursorSlot.length first (React state), fallback to state.objects check
     // Objects in cursor slot have inCursorSlot: true (NOT isOnTable: false, which includes cards in hand!)
     const slotHasItemsFromState = cursorSlot.length > 0;
-    const objectsInCursorSlot = Object.values(state.objects).filter(o =>
+    const objectsInCursorSlot = (Object.values(state.objects) as TableObject[]).filter(o =>
       (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER) &&
       (o as any).inCursorSlot === true
     );
     const actuallyHasItems = slotHasItemsFromState || objectsInCursorSlot.length > 0;
 
     // REGULAR CLICK (no shift): if slot has items, drop them
-    // This prevents swap behavior
     if (!e.shiftKey && actuallyHasItems) {
-      console.log('📦 [MOUSE DOWN] Simple click with slot occupied - dropping all items:', {
-        cursorSlotLength: cursorSlot.length,
-        inCursorSlotCount: objectsInCursorSlot.length,
-        clickedObjectId: objId
-      });
       e.preventDefault();
       e.stopPropagation();
       dropCursorSlot(e.clientX, e.clientY, props);
@@ -1359,17 +1011,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       return;
     }
 
-    // SHIFT+CLICK on CARD/TOKEN: add to cursor slot
-    // Multiple items can coexist in slot
-    // BOARD is never added to slot via shift+click
-    if (isShiftClickOnMovableObject) {
-      console.log('🎯 [SHIFT+CLICK] Adding to cursor slot:', {
-        objId,
-        type: obj.type,
-        name: obj.name,
-        cursorSlotLength: cursorSlot.length,
-        inCursorSlotCount: objectsInCursorSlot.length
-      });
+    // SHIFT+CLICK: add to slot immediately (accumulate multiple items)
+    // BOARD is excluded - never added to slot via shift+click
+    if (e.shiftKey && obj && obj.type !== ItemType.BOARD && (
+      obj.type === ItemType.CARD ||
+      obj.type === ItemType.TOKEN ||
+      obj.type === ItemType.COUNTER
+    )) {
       e.preventDefault();
       e.stopPropagation();
       addToCursorSlot(objId, obj, { x: e.clientX, y: e.clientY }, props, 'shift');
@@ -1379,17 +1027,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // Handle left-click for dragging
     // IMPORTANT: Regular click (without Shift) does NOT add objects to cursor slot
     if (e.button === 0) {
-      console.log('🖱️ [MOUSE DOWN] Left click on object:', {
-        objId,
-        type: obj?.type,
-        name: obj?.name,
-        shiftKey: e.shiftKey
-      });
-
       // Check if object is already in cursor slot
       const actuallyInSlot = cursorSlot.some(item => item.id === objId);
       if (actuallyInSlot) {
-        console.log('⚠️ [MOUSE DOWN] Object already in slot, ignoring');
         e.stopPropagation();
         return;
       }
@@ -1399,12 +1039,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       if (isUIObject) {
         // UI objects use immediate drag (no cursor slot, no threshold)
-        console.log('🪟 [MOUSE DOWN] Using immediate drag for UI object:', {
-          objId,
-          type: obj.type,
-          isPinnedToViewport: (obj as any).isPinnedToViewport
-        });
-
         // Find the actual panel container by looking for data-ui-object attribute
         let rect = (e.target as HTMLElement).getBoundingClientRect();
         const panelContainer = (e.target as HTMLElement).closest('[data-ui-object]');
@@ -1421,16 +1055,12 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
         // If object is pinned, unpin it temporarily during drag
         if ((obj as any).isPinnedToViewport) {
-          console.log('📌 [PIN] Temporarily unpinning object for drag:', objId);
 
           // Store the pinned screen position to restore later
           const pinnedPos = (obj as any).pinnedScreenPosition || { x: obj.x, y: obj.y };
           unpinnedDuringDragRef.current.set(objId, pinnedPos);
 
           // Unpin the object (convert to world coordinates)
-          const scrollX = viewTransform?.scroll?.x || 0;
-          const scrollY = viewTransform?.scroll?.y || 0;
-
           dispatch({
             type: 'UNPIN_FROM_VIEWPORT',
             payload: {
@@ -1451,17 +1081,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       // Check if we just dropped an item (prevent immediate re-add)
       const timeSinceLastDrop = Date.now() - cursorSlotLastAddedRef.current;
       if (timeSinceLastDrop < 100) {
-        console.log('⏸️ [MOUSE DOWN] Skipping drag threshold (just dropped):', {
-          timeSinceLastDrop
-        });
         return;
       }
-
-      console.log('🎯 [MOUSE DOWN] Setting up drag threshold (2 VU) for game object:', {
-        objId,
-        type: obj?.type,
-        name: obj?.name
-      });
 
       // Set up drag threshold to distinguish clicks from drags
       dragThresholdRef.current = {
@@ -1473,7 +1094,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       // Note: setDraggingId is NOT set here for game objects
       // It will be set only after drag threshold is exceeded in handleMouseMove
-      console.log('✅ [MOUSE DOWN] Drag threshold initiated, waiting for 2 VU movement');
     }
   }, [
     state.objects,
@@ -1594,7 +1214,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     }
 
     // Check drag threshold for game objects (even if not yet dragging)
-    if (dragThresholdRef.current.targetId && !dragThresholdRef.current.addedToSlot) {
+    // DISABLED for Shift: Shift+click adds to slot, Shift+drag does NOT
+    if (dragThresholdRef.current.targetId && !dragThresholdRef.current.addedToSlot && !isShiftPressed) {
       const targetId = dragThresholdRef.current.targetId;
       const obj = state.objects[targetId];
 
@@ -1606,13 +1227,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         const hasExceededThreshold = Math.abs(deltaX) > thresholdPixels || Math.abs(deltaY) > thresholdPixels;
 
         if (hasExceededThreshold) {
-          console.log('🎯 [MOUSE MOVE] Drag threshold exceeded (2 VU), adding to cursor slot:', {
-            targetId,
-            deltaX,
-            deltaY,
-            thresholdPixels
-          });
-
           // Mark as added to prevent duplicate adds
           dragThresholdRef.current.addedToSlot = true;
 
@@ -1702,27 +1316,14 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Mouse up handler WITH LOGGING
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
-    console.log('🖱️ [MOUSE UP] Event triggered:', {
-      hasEvent: !!e,
-      clientX: e?.clientX,
-      clientY: e?.clientY,
-      timestamp: new Date().toISOString()
-    });
-
     // Handle ruler tool right-click release
     if (currentTool === 'ruler' && isRulerRightClick) {
-      console.log('📏 [MOUSE UP] Ruler right-click released');
       setIsRulerRightClick(false);
     }
 
     // Handle dragging completion
     const currentDraggingId = draggingIdRef.current || draggingId;
     if (currentDraggingId) {
-      console.log('🔄 [MOUSE UP] Completing drag operation:', {
-        draggingId: currentDraggingId,
-        wasDragging: state.objects[currentDraggingId]?.isDragging
-      });
-
       const obj = state.objects[currentDraggingId];
       if (obj && obj.isDragging) {
         dispatch({
@@ -1733,7 +1334,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
             dragOwnerId: null
           }
         });
-        console.log('✅ [MOUSE UP] Drag state cleared');
       }
 
       // For UI objects, update playerPanelSettings to sync position
@@ -1752,7 +1352,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
         // If object was unpinned during drag, repin it
         if (unpinnedDuringDragRef.current.has(currentDraggingId)) {
-          console.log('📌 [PIN] Repinning object after drag:', currentDraggingId);
 
           const scrollX = viewTransform?.scroll?.x || 0;
           const scrollY = viewTransform?.scroll?.y || 0;
@@ -1789,13 +1388,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       const wasClickNotDrag = !wasAddedToSlot;
       const hadCursorSlot = cursorSlot.length > 0;
 
-      console.log('🖱️ [MOUSE UP] Click detected (threshold not exceeded), resetting drag threshold:', {
-        targetId: dragThresholdRef.current.targetId,
-        addedToSlot: dragThresholdRef.current.addedToSlot,
-        cursorSlotLength: cursorSlot.length,
-        wasClickNotDrag
-      });
-
       dragThresholdRef.current = {
         initialX: 0,
         initialY: 0,
@@ -1808,26 +1400,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       const isShiftHeld = e?.shiftKey === true;
 
       if (wasClickNotDrag && hadCursorSlot && e && !isShiftHeld) {
-        console.log('📦 [MOUSE UP] Dropping cursor slot on click (Shift not held):', {
-          slotSize: cursorSlot.length,
-          clientX: e.clientX,
-          clientY: e.clientY,
-          source: cursorSlotSource,
-          isShiftHeld
-        });
-
         dropCursorSlot(e.clientX, e.clientY, props);
         cursorSlotLastAddedRef.current = Date.now();
 
         // Don't continue to the normal drop logic below
         return;
-      }
-
-      if (wasClickNotDrag && hadCursorSlot && e && isShiftHeld) {
-        console.log('⏸️ [MOUSE UP] Keeping item in slot (Shift held):', {
-          slotSize: cursorSlot.length,
-          isShiftHeld
-        });
       }
     }
 
@@ -1836,29 +1413,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // dropCursorSlot will handle the logic for hand panel, deck, or table
     const isShiftHeld = e?.shiftKey === true;
 
-    // Debug logging
-    if (cursorSlot.length > 0) {
-      console.log('🔍 [MOUSE UP] Cursor slot check:', {
-        slotSize: cursorSlot.length,
-        hasEvent: !!e,
-        eventClientX: e?.clientX,
-        eventClientY: e?.clientY,
-        cursorSlotSource,
-        isShiftHeld,
-        shouldDrop: cursorSlot.length > 0 && e && !isShiftHeld
-      });
-    }
-
     const shouldDropOnMouseUp = cursorSlot.length > 0 && e && !isShiftHeld;
 
     if (shouldDropOnMouseUp) {
-      console.log('📦 [MOUSE UP] Dropping cursor slot items:', {
-        slotSize: cursorSlot.length,
-        clientX: e.clientX,
-        clientY: e.clientY,
-        source: cursorSlotSource
-      });
-
       dropCursorSlot(e.clientX, e.clientY, props);
     }
   }, [
@@ -1994,7 +1551,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
   }, [state.objects, setResizingId, setResizeStart]);
 
   // Nexus board add cell handler
-  const handleAddNexusCell = useCallback((objId: string, direction: string) => {
+  const handleAddNexusCell = useCallback((_objId: string, _direction: string) => {
     // Simplified implementation
     setNexusBoardAddingCell(null);
     // Logic to add cell would go here
@@ -2072,7 +1629,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
   useEffect(() => {
     const handleDropFromPool = (e: Event) => {
       const customEvent = e as CustomEvent<{ x: number; y: number }>;
-      console.log('🎯 [TABLETOP] Received cursor-slot-drop-to-tabletop event:', customEvent.detail);
 
       // Only drop if we have items in cursor slot
       if (cursorSlot.length > 0) {
