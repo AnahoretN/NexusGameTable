@@ -1,4 +1,5 @@
 import { TableObject, ItemType } from '../../types';
+import { constrainPanelBounds, DEFAULT_SCREEN_WIDTH_VU, DEFAULT_SCREEN_HEIGHT_VU } from '../../utils/panelConstraints';
 
 /**
  * Reducer functions for UI object (panel/window) manipulation actions
@@ -11,14 +12,25 @@ export function createPanelReducer(state: any, action: any): any {
   const { panelType, playerId, x, y, width, height, title } = action.payload;
   const id = `panel-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
+  // Apply constraints to ensure panel fits within screen (all in VU)
+  // Using default screen dimensions; component will refine based on actual viewport
+  const constrained = constrainPanelBounds(
+    x ?? 100,
+    y ?? 100,
+    width ?? 450,
+    height ?? 400,
+    DEFAULT_SCREEN_WIDTH_VU,
+    DEFAULT_SCREEN_HEIGHT_VU
+  );
+
   const panel = {
     id,
     type: ItemType.PANEL,
     name: title || panelType,
-    x,
-    y,
-    width: width ?? 300,
-    height: height ?? 400,
+    x: constrained.x,
+    y: constrained.y,
+    width: constrained.width,
+    height: constrained.height,
     rotation: 0,
     locked: false,
     minimized: false,
@@ -46,14 +58,24 @@ export function createWindowReducer(state: any, action: any): any {
   const { windowType, targetObjectId, x, y, width, height, title } = action.payload;
   const id = `window-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
+  // Apply constraints to ensure window fits within screen (all in VU)
+  const constrained = constrainPanelBounds(
+    x ?? 100,
+    y ?? 100,
+    width ?? 500,
+    height ?? 600,
+    DEFAULT_SCREEN_WIDTH_VU,
+    DEFAULT_SCREEN_HEIGHT_VU
+  );
+
   const windowObj = {
     id,
     type: ItemType.WINDOW,
     name: title || windowType,
-    x,
-    y,
-    width: width ?? 400,
-    height: height ?? 500,
+    x: constrained.x,
+    y: constrained.y,
+    width: constrained.width,
+    height: constrained.height,
     rotation: 0,
     locked: false,
     visible: true,
@@ -174,14 +196,31 @@ export function resizeUIObjectReducer(state: any, action: any): any {
   const obj = state.objects[action.payload.id];
   if (!obj) return state;
 
+  // Apply size constraints (in VU for unpinned panels)
+  // Use provided screen dimensions or defaults
+  const screenWidth = action.payload.screenWidth ?? DEFAULT_SCREEN_WIDTH_VU;
+  const screenHeight = action.payload.screenHeight ?? DEFAULT_SCREEN_HEIGHT_VU;
+
+  const constrained = constrainPanelBounds(
+    obj.x,
+    obj.y,
+    action.payload.width,
+    action.payload.height,
+    screenWidth,
+    screenHeight
+  );
+
   return {
     ...state,
     objects: {
       ...state.objects,
       [action.payload.id]: {
         ...obj,
-        width: action.payload.width,
-        height: action.payload.height
+        width: constrained.width,
+        height: constrained.height,
+        // Update position if size constraint required it
+        x: constrained.x,
+        y: constrained.y,
       }
     }
   };

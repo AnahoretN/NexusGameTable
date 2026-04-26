@@ -27,7 +27,13 @@ import { useLocalSettings } from '../hooks/useLocalSettings';
 import { useLocalPanelSettings } from '../hooks/useLocalPanelSettings';
 import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 import { t as translate, preloadTranslations, Locale } from '../utils/translations';
-import { vuToPixels } from '../utils/vuSystem';
+import { vuToPixels, VU_PER_SCREEN_HEIGHT } from '../utils/vuSystem';
+import {
+  constrainPanelBounds,
+  constrainPanelSize,
+  constrainPanelPosition,
+  getScreenDimensionsInVU
+} from '../utils/panelConstraints';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
@@ -144,16 +150,16 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     // Simple direct computation - no complex dependencies
     // IMPORTANT: During dragging, always use uiObject properties directly, not playerPanelSettings
     // This prevents panels from jumping to stale positions from playerPanelSettings
-    // Also use uiObject properties for width/height to prevent size resets during drag
+    // For position (x,y), ALWAYS use uiObject to avoid conflicts with playerPanelSettings
+    // playerPanelSettings is used for size (width,height) and state (minimized, etc.)
     if (playerPanelSettings && !isDragging) {
-      // Player settings from host (synced across reconnects) - take priority
-      // But NOT during dragging - use current object position during drag
+      // Player settings from host (synced across reconnects) - take priority for size/state
+      // But NOT for position - always use uiObject.x/y to avoid jumping
       return {
-        x: playerPanelSettings.x !== undefined ? playerPanelSettings.x : uiObject.x,
-        y: playerPanelSettings.y !== undefined ? playerPanelSettings.y : uiObject.y,
-        // For width/height, always use uiObject to avoid conflicts with resize
-        width: uiObject.width,
-        height: uiObject.height,
+        x: uiObject.x,
+        y: uiObject.y,
+        width: playerPanelSettings.width !== undefined ? playerPanelSettings.width : uiObject.width,
+        height: playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiObject.height,
         minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,
         isPinnedToViewport: playerPanelSettings.isPinnedToViewport !== undefined ? playerPanelSettings.isPinnedToViewport : (uiObject as any).isPinnedToViewport || false,
         // Use panel properties for other settings, but prefer playerPanelSettings for state
@@ -493,7 +499,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       type: 'CREATE_WINDOW',
       payload: {
         windowType: WindowType.OBJECT_SETTINGS,
-        title: 'Settings',
+        title: 'Properties',
         targetObjectId: uiObject.id,
         x: effectiveProps.x + 50,
         y: effectiveProps.y + 50,
@@ -520,6 +526,13 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     let startY = 0;
     let startWidth = 0;
     let startHeight = 0;
+
+    // Calculate screen dimensions in VU and pixels
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const screenDimVU = getScreenDimensionsInVU(viewportWidth, viewportHeight);
+    const screenWidthPx = viewportWidth;
+    const screenHeightPx = viewportHeight;
 
     const handleMouseDown = (e: MouseEvent) => {
       // Check if clicking on the resize handle (bottom-right corner)
@@ -562,28 +575,39 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       const deltaY = e.clientY - startY;
       const minSize = 200;
 
+      // Calculate max size based on screen bounds
+      let maxWidthPx: number | undefined;
+      let maxHeightPx: number | undefined;
+
+      if (!uiObject.isPinnedToViewport) {
+        // For unpinned panels: max size is screen size in VU, converted to pixels
+        maxWidthPx = screenDimVU.width * pixelsPerVU;
+        maxHeightPx = screenDimVU.height * pixelsPerVU;
+      } else {
+        // For pinned panels: max size is viewport size in pixels
+        maxWidthPx = screenWidthPx;
+        maxHeightPx = screenHeightPx;
+      }
+
       // Check if this is a pool panel and calculate max size
       const isPoolPanel = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.POOL;
-      const SCROLLBAR_SIZE = 20; // Approximate scrollbar width/height
+      const SCROLLBAR_SIZE = 20;
 
-      let maxSize: number | undefined;
       if (isPoolPanel) {
-        // Pool panels are limited to 1000vu + scrollbar size
-        // Convert to pixels: for pinned panels use vuToPx, for unpinned use pixelsPerVU
-        if (uiObject.isPinnedToViewport) {
-          maxSize = vuToPx(1000) + SCROLLBAR_SIZE;
-        } else {
-          // For unpinned panels, dimensions are already in virtual units
-          maxSize = 1000 + (SCROLLBAR_SIZE / pixelsPerVU);
-        }
+        // Pool panels are limited to 1000vu
+        const poolMaxSize = uiObject.isPinnedToViewport
+          ? vuToPx(1000) + SCROLLBAR_SIZE
+          : 1000 * pixelsPerVU + SCROLLBAR_SIZE;
+        maxWidthPx = Math.min(maxWidthPx, poolMaxSize);
+        maxHeightPx = Math.min(maxHeightPx, poolMaxSize);
       }
 
       const newWidth = Math.max(minSize, startWidth + deltaX);
       const newHeight = Math.max(minSize, startHeight + deltaY);
 
-      // Apply max size constraint for pool panels
-      const constrainedWidth = maxSize ? Math.min(newWidth, maxSize) : newWidth;
-      const constrainedHeight = maxSize ? Math.min(newHeight, maxSize) : newHeight;
+      // Apply max size constraints
+      const constrainedWidth = Math.min(newWidth, maxWidthPx);
+      const constrainedHeight = Math.min(newHeight, maxHeightPx);
 
       // Update currentSize for visual feedback
       setCurrentSize({ width: constrainedWidth, height: constrainedHeight });
@@ -595,25 +619,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       // Use currentSize for accurate final dimensions (what user sees during drag)
       let newWidth = currentSize ? Math.round(currentSize.width) : Math.round(container.getBoundingClientRect().width);
       let newHeight = currentSize ? Math.round(currentSize.height) : Math.round(container.getBoundingClientRect().height);
-
-
-      // Apply max size constraint for pool panels on final size
-      const isPoolPanel = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.POOL;
-      const SCROLLBAR_SIZE = 20; // Approximate scrollbar width/height
-
-      if (isPoolPanel) {
-        // Pool panels are limited to 1000vu + scrollbar size
-        if (uiObject.isPinnedToViewport) {
-          const maxSize = vuToPx(1000) + SCROLLBAR_SIZE;
-          newWidth = Math.min(newWidth, maxSize);
-          newHeight = Math.min(newHeight, maxSize);
-        } else {
-          // For unpinned panels, dimensions are in virtual units
-          const maxSize = 1000 + (SCROLLBAR_SIZE / pixelsPerVU);
-          newWidth = Math.min(newWidth, maxSize);
-          newHeight = Math.min(newHeight, maxSize);
-        }
-      }
 
       // Only update store if size actually changed
       const widthChanged = Math.abs(newWidth - startWidth) > 5;
@@ -628,10 +633,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           finalWidth = newWidth;
           finalHeight = newHeight;
         } else {
-          // Unpinned panels: save exact pixel dimensions to avoid rounding errors
-          // Store in pinnedPixelWidth/Height even for unpinned panels to preserve precision
-
-          // Also convert to vu for compatibility (with higher precision)
+          // Unpinned panels: convert to VU for storage
           finalWidth = Math.round((newWidth / pixelsPerVU) * 1000) / 1000;
           finalHeight = Math.round((newHeight / pixelsPerVU) * 1000) / 1000;
         }
@@ -644,6 +646,9 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           const updates: any = {
             width: finalWidth,
             height: finalHeight,
+            // Pass screen dimensions for constraint calculation
+            screenWidth: screenDimVU.width,
+            screenHeight: screenDimVU.height,
           };
 
           // Also update expandedState to preserve new size when collapsing/expanding
@@ -692,6 +697,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           const updates: any = {
             width: finalWidth,
             height: finalHeight,
+            screenWidth: screenDimVU.width,
+            screenHeight: screenDimVU.height,
           };
 
           // Also update expandedState to preserve new size when collapsing/expanding
@@ -759,7 +766,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         setCurrentSize(null);
       }
     };
-  }, [canResize, uiObject.id, isPanel, isMainMenu, pixelsPerVU, vuToPx]);
+  }, [canResize, uiObject.id, isPanel, isMainMenu, pixelsPerVU, vuToPx, effectiveProps, uiObject.isPinnedToViewport, uiObject.type]);
 
   // Global mouse up handler to clear shift-drag state
   useEffect(() => {
@@ -900,6 +907,10 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       onContextMenu={(e) => {
         // Prevent default browser context menu
         e.preventDefault();
+        // Don't open context menu for HandPanel
+        if (uiObject.panelType === PanelType.HAND) {
+          return;
+        }
         // Don't stop propagation - let the parent handler process it
         // Call the parent handler if provided
         if (onContextMenu) {
@@ -1075,7 +1086,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                       handleOpenSettings();
                     }}
                     className="p-0.5 hover:bg-white/20 rounded transition-colors"
-                    title="Settings"
+                    title="Properties"
                   >
                     <Settings size={14} className="text-white" />
                   </button>

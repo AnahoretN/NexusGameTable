@@ -10,7 +10,6 @@
   "Show/Hide Objects": "Показывать/Скрывать объекты",
   "Close": "Закрыть",
   "P2P multiplayer via WebRTC • No server required": "P2P мультиплеер через WebRTC • Без сервера",
-  "Settings": "Настройки",
   "Storage & Cache": "Сохранение и кэш",
   "Game auto-saves to browser and restores on page reload": "Игра автоматически сохраняется в браузере и восстанавливается при перезагрузке страницы",
   "Last save: ": "Последнее сохранение: ",
@@ -427,5 +426,6 @@
   "Full access: can add/remove objects and modify everything": "Полный доступ: может добавлять/удалять объекты и изменять всё",
   "Can reorder and manipulate cards in this hand": "Может переупорядочивать и управлять картами в этой руке",
   "General": "Основное",
-  "Settings:": "Настройки:"
+  "Properties": "Свойства",
+  "Properties:": "Свойства:"
 }

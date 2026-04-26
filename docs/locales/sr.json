@@ -10,7 +10,6 @@
   "Show/Hide Objects": "Prikaži/Sakrij objekte",
   "Close": "Zatvori",
   "P2P multiplayer via WebRTC • No server required": "P2P multiplayer preko WebRTC • Bez servera",
-  "Settings": "Podešavanja",
   "Storage & Cache": "Skladište i keš",
   "Game auto-saves to browser and restores on page reload": "Igra se automatski čuva u pregledaču i vraća se pri učitavanju stranice",
   "Last save: ": "Poslednje čuvanje: ",
@@ -427,5 +426,6 @@
   "Full access: can add/remove objects and modify everything": "Pun pristup: može da dodaje/uklanja objekte i menja sve",
   "Can reorder and manipulate cards in this hand": "Može da menja redosled i upravlja kartama u ovoj ruci",
   "General": "Opšte",
-  "Settings:": "Podešavanja:"
+  "Properties": "Svojstva",
+  "Properties:": "Svojstva:"
 }
