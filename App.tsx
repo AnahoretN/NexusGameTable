@@ -3,13 +3,25 @@ import { GameProvider } from './store/GameContext';
 import { PlayerProvider } from './store/contexts/PlayerContext';
 import { ViewTransformProvider } from './store/contexts/ViewTransformContext';
 import { UIProvider } from './store/contexts/UIContext';
-import { LocalSettingsProvider } from './hooks/useLocalSettings';
+import { LocalSettingsProvider, useLocalSettings } from './hooks/useLocalSettings';
 import { ToolSettingsProvider } from './contexts/ToolSettingsContext';
 import { memoryManager, perfMonitor } from './utils';
 
 // Lazy load components for better initial load performance
 const Tabletop = lazy(() => import('./components/Tabletop/TabletopRefactored').then(m => ({ default: m.default })));
 const MainMenuContent = lazy(() => import('./components/MainMenuContent').then(m => ({ default: m.MainMenuContentMemoized })));
+
+// Theme applier component
+const ThemeApplier: React.FC = () => {
+  const { settings } = useLocalSettings();
+
+  useEffect(() => {
+    // Apply theme to body element
+    document.body.setAttribute('data-theme', settings.interfaceStyle);
+  }, [settings.interfaceStyle]);
+
+  return null;
+};
 
 // Performance monitoring component
 const PerformanceMonitor: React.FC = () => {
@@ -40,6 +52,7 @@ const App: React.FC = () => {
           <UIProvider>
             <GameProvider>
               <PlayerProvider>
+                <ThemeApplier />
                 <PerformanceMonitor />
                 <div className="w-full h-screen overflow-hidden">
                   <Suspense fallback={

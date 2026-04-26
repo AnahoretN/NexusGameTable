@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup } from '../types';
 
-import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
+import { DiceValuesSettings } from './DiceValuesSettings';
 import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from '../utils/gridUtils';
 import { CARD_SHAPE_DIMS } from '../constants';
 
@@ -130,7 +131,7 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   }
 }
 
-type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups';
+type Tab = 'general' | 'values' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups';
 
 const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch, zIndex }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
@@ -887,6 +888,18 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
               }`}
             >
               <FileText size={16} /> {translate('Text', language as Locale)}
+            </button>
+          )}
+          {isDice && (
+            <button
+              onClick={() => setActiveTab('values')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'values'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Smile size={16} /> {translate('Values', language as Locale)}
             </button>
           )}
           {isDice && (
@@ -3258,6 +3271,14 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                 </button>
               </div>
             </div>
+          )}
+
+          {activeTab === 'values' && (
+            <DiceValuesSettings
+              dice={data as DiceObject}
+              onChange={(updates) => setData(prev => ({ ...prev, ...updates }))}
+              language={language as Locale}
+            />
           )}
 
           {activeTab === 'groups' && (

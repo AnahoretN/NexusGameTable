@@ -401,10 +401,10 @@ export function handleRoll(obj: TableObject, context: ActionHandlerContext) {
     // Update cache
     rollMemoCache.set(dice.id, { timestamp: now, value: 0 });
 
-    // Dispatch roll action - reducer now handles dice groups automatically
+    // Dispatch roll action - roll only this dice, not the group
     context.dispatch({
       type: 'ROLL_PHYSICAL_DICE',
-      payload: { id: dice.id }
+      payload: { id: dice.id, rollGroup: false }
     });
 
     // Clean up old cache entries periodically

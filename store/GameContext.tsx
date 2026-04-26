@@ -2102,9 +2102,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const dice = state.objects[action.payload.id] as DiceObject;
         if (!dice || dice.type !== ItemType.DICE_OBJECT) return state;
 
-        // Check if dice belongs to a group - roll all dice in the group
+        // Check if we should roll the group or just this dice
+        // rollGroup=true (or undefined) rolls the group, rollGroup=false rolls only this dice
         const diceIdsToRoll: string[] = [];
-        if (dice.diceGroupId) {
+        if (action.payload.rollGroup === false) {
+            // Roll only this dice, ignore group
+            diceIdsToRoll.push(action.payload.id);
+        } else if (dice.diceGroupId) {
+            // Check if dice belongs to a group - roll all dice in the group
             const group = state.diceGroups?.find((g: any) => g.id === dice.diceGroupId);
             if (group) {
                 diceIdsToRoll.push(...group.diceIds);

@@ -5,7 +5,7 @@ import { BoardWithResizeMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus } from 'lucide-react';
+import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users } from 'lucide-react';
 import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 
@@ -479,14 +479,58 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
               justifyContent: 'center',
               gap: '0.1em',
             }}>
-              <span style={{
-                fontSize: `${valueFontSize}px`,
-                fontWeight: 'bold',
-                color: fontColor,
-                lineHeight: 1,
-              }}>
-                {dice.currentValue ?? 1}
-              </span>
+              {(() => {
+                const currentValue = dice.currentValue ?? 1;
+                const valueOverride = dice.valueOverrides?.[currentValue];
+
+                // Show override if available
+                if (valueOverride) {
+                  if (valueOverride.type === 'image') {
+                    return (
+                      <img
+                        src={valueOverride.value}
+                        alt={`Value ${currentValue}`}
+                        style={{
+                          width: `${valueFontSize * 1.5}px`,
+                          height: `${valueFontSize * 1.5}px`,
+                          objectFit: 'contain',
+                        }}
+                        onError={(e) => {
+                          // Fallback to number if image fails to load
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          ((e.target as HTMLImageElement).parentElement as HTMLElement).querySelector('.fallback-number')?.classList.remove('hidden');
+                        }}
+                      />
+                    );
+                  } else if (valueOverride.type === 'emoji') {
+                    return (
+                      <span style={{
+                        fontSize: `${valueFontSize * 1.2}px`,
+                        lineHeight: 1,
+                      }}>
+                        {valueOverride.value}
+                      </span>
+                    );
+                  }
+                }
+
+                // Default: show number
+                return (
+                  <>
+                    <span
+                      className="fallback-number"
+                      style={{
+                        fontSize: `${valueFontSize}px`,
+                        fontWeight: 'bold',
+                        color: fontColor,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {currentValue}
+                    </span>
+                  </>
+                );
+              })()}
               <span style={{
                 fontSize: `${sidesFontSize}px`,
                 fontWeight: 'normal',
@@ -504,12 +548,32 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
           <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : currentTool === 'zoom' ? 'opacity-100 pointer-events-auto' : currentTool === 'none' ? 'opacity-0 group-hover:opacity-100 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
             {(() => {
               const actionButtons = obj.actionButtons || [];
+              const dice = obj as DiceObject;
+              const isInGroup = !!dice.diceGroupId;
+
               const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
                 roll: {
                   key: 'roll',
-                  action: () => dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id } }),
+                  action: () => dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id, rollGroup: false } }),
                   className: 'bg-purple-600 hover:bg-purple-500',
                   title: 'Roll',
+                  icon: <RefreshCw size={14} />
+                },
+                rollGroup: {
+                  key: 'rollGroup',
+                  action: () => {
+                    // Roll all dice in the group
+                    if (dice.diceGroupId) {
+                      const group = state.diceGroups?.find((g: any) => g.id === dice.diceGroupId);
+                      if (group) {
+                        group.diceIds.forEach((diceId: string) => {
+                          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
+                        });
+                      }
+                    }
+                  },
+                  className: 'bg-blue-600 hover:bg-blue-500',
+                  title: 'Roll Group',
                   icon: <RefreshCw size={14} />
                 },
                 rotate: {
@@ -549,10 +613,17 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                 },
               };
 
-              const buttons = actionButtons
+              let buttons = actionButtons
                 .map(action => buttonConfigs[action])
-                .filter(Boolean)
-                .slice(0, 4);
+                .filter(Boolean);
+
+              // Add rollGroup button if dice is in a group and not already in buttons
+              if (isInGroup && !actionButtons.includes('rollGroup')) {
+                buttons.push(buttonConfigs.rollGroup);
+              }
+
+              // Limit to 4 buttons
+              buttons = buttons.slice(0, 4);
 
               return buttons.map(btn => (
                 <button

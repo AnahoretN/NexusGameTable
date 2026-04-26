@@ -161,7 +161,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
         // Only the initiator dispatches the final result
         if (isInitiator) {
-          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
+          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId, rollGroup: false } });
           // Clear the rollStartTime after animation completes
           dispatch({
             type: 'UPDATE_OBJECT',

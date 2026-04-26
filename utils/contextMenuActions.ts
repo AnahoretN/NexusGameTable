@@ -63,7 +63,8 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     setNexusBoardAddingCell,
     isShiftPressed = false,
     isGM = false,
-    isPoolPanel = false
+    isPoolPanel = false,
+    animateDiceRoll
   } = params;
 
   // Extract zoom, scroll, and offset from state for pin/unpin calculations
@@ -448,8 +449,36 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
 
     // Dice-specific actions
     case 'roll':
-      if (object.type === ItemType.DICE_OBJECT && animateDiceRoll) {
-        animateDiceRoll(object as DiceObject);
+      if (object.type === ItemType.DICE_OBJECT) {
+        if (animateDiceRoll) {
+          animateDiceRoll(object as DiceObject);
+        } else {
+          // For tabletop, dispatch directly with rollGroup=false
+          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: object.id, rollGroup: false } });
+        }
+      }
+      break;
+
+    case 'rollGroup':
+      // Roll all dice in the group
+      if (object.type === ItemType.DICE_OBJECT) {
+        const dice = object as DiceObject;
+        if (dice.diceGroupId) {
+          const group = state.diceGroups?.find((g: any) => g.id === dice.diceGroupId);
+          if (group) {
+            group.diceIds.forEach((diceId: string) => {
+              const groupDice = state.objects[diceId];
+              if (groupDice?.type === ItemType.DICE_OBJECT) {
+                if (animateDiceRoll) {
+                  animateDiceRoll(groupDice as DiceObject);
+                } else {
+                  // For tabletop, dispatch directly (rolls group by default)
+                  dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
+                }
+              }
+            });
+          }
+        }
       }
       break;
 

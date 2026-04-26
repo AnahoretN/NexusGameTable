@@ -2,6 +2,135 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Interface Theme System */
+:root {
+  /* Default theme (current style) */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #334155;
+  --accent-color: #a78bfa;
+  --accent-hover: #c4b5fd;
+  --accent-bg: #7c3aed;
+  --scrollbar-track: #1a202c;
+  --scrollbar-thumb: #4a5568;
+  --scrollbar-thumb-hover: #718096;
+}
+
+/* Dark Fantasy Theme */
+[data-theme="dark-fantasy"] {
+  --bg-primary: #1a0a0a;
+  --bg-secondary: #2d1f1f;
+  --bg-tertiary: #3d2a2a;
+  --text-primary: #f0e6d3;
+  --text-secondary: #b8a88a;
+  --text-muted: #8b7355;
+  --border-color: #4a3535;
+  --accent-color: #cd7f32;
+  --accent-hover: #daa520;
+  --accent-bg: #8b4513;
+  --scrollbar-track: #1a0a0a;
+  --scrollbar-thumb: #4a3535;
+  --scrollbar-thumb-hover: #5c4545;
+}
+
+/* Fairy Tale Theme */
+[data-theme="fairy-tale"] {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-tertiary: #0f3460;
+  --text-primary: #e8f4f8;
+  --text-secondary: #a8d8ea;
+  --text-muted: #76c7c0;
+  --border-color: #533483;
+  --accent-color: #ff6b9d;
+  --accent-hover: #ff9dc4;
+  --accent-bg: #c44569;
+  --scrollbar-track: #1a1a2e;
+  --scrollbar-thumb: #533483;
+  --scrollbar-thumb-hover: #6b4a9e;
+}
+
+/* Cosmos Theme */
+[data-theme="cosmos"] {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #0d1321;
+  --bg-tertiary: #111827;
+  --text-primary: #e0e7ff;
+  --text-secondary: #a5b4fc;
+  --text-muted: #6366f1;
+  --border-color: #1e3a5f;
+  --accent-color: #60a5fa;
+  --accent-hover: #93c5fd;
+  --accent-bg: #2563eb;
+  --scrollbar-track: #0a0e1a;
+  --scrollbar-thumb: #1e3a5f;
+  --scrollbar-thumb-hover: #3b82f6;
+}
+
+/* Science Theme */
+[data-theme="science"] {
+  --bg-primary: #0c0c0c;
+  --bg-secondary: #1a1a1a;
+  --bg-tertiary: #2a2a2a;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --text-muted: #707070;
+  --border-color: #404040;
+  --accent-color: #00ff88;
+  --accent-hover: #00ffaa;
+  --accent-bg: #00cc66;
+  --scrollbar-track: #0c0c0c;
+  --scrollbar-thumb: #404040;
+  --scrollbar-thumb-hover: #00ff88;
+}
+
+/* Apply theme colors to common elements */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Scrollbar theming */
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track) !important;
+  border-left: 1px solid var(--border-color) !important;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb) !important;
+  border: 3px solid var(--scrollbar-track) !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+}
+::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track) !important;
+}
+
+.custom-scrollbar,
+.custom-scrollbar * {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track) !important;
+}
+
+.hand-panel-scrollbar::-webkit-scrollbar-track {
+  background: var(--scrollbar-track) !important;
+  border-left: 1px solid var(--border-color) !important;
+}
+.hand-panel-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb) !important;
+  border: 4px solid var(--scrollbar-track) !important;
+}
+.hand-panel-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+}
+.hand-panel-scrollbar,
+.hand-panel-scrollbar * {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track) !important;
+}
+
 /* Range slider styling - cross-browser */
 input[type="range"].slider-input,
 input[type="range"] {
@@ -18,9 +147,9 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-runnable-track,
 input[type="range"].slider-input::-webkit-slider-runnable-track {
   height: 9px !important;
-  background: #4a5568 !important;
+  background: var(--bg-tertiary) !important;
   border-radius: 4px;
-  border: 1px solid #2d3748;
+  border: 1px solid var(--border-color);
 }
 
 /* Webkit slider thumb (Chrome, Safari, Opera) */
@@ -30,31 +159,31 @@ input[type="range"].slider-input::-webkit-slider-thumb {
   appearance: none !important;
   width: 18px !important;
   height: 18px !important;
-  background: #a78bfa !important;
+  background: var(--accent-color) !important;
   border-radius: 50%;
   margin-top: -5px;
-  border: 2px solid #7c3aed;
+  border: 2px solid var(--accent-bg);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 input[type="range"]::-webkit-slider-thumb:hover,
 input[type="range"].slider-input::-webkit-slider-thumb:hover {
-  background: #c4b5fd !important;
-  border-color: #8b5cf6;
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-bg);
 }
 
 input[type="range"]:focus::-webkit-slider-thumb,
 input[type="range"].slider-input:focus::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.3);
+  box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 /* Firefox slider track */
 input[type="range"]::-moz-range-track,
 input[type="range"].slider-input::-moz-range-track {
   height: 9px !important;
-  background: #4a5568 !important;
+  background: var(--bg-tertiary) !important;
   border-radius: 4px;
-  border: 1px solid #2d3748;
+  border: 1px solid var(--border-color);
   /* Firefox: prevent extra width */
   width: 100%;
   box-sizing: border-box;
@@ -65,9 +194,9 @@ input[type="range"]::-moz-range-thumb,
 input[type="range"].slider-input::-moz-range-thumb {
   width: 18px !important;
   height: 18px !important;
-  background: #a78bfa !important;
+  background: var(--accent-color) !important;
   border-radius: 50%;
-  border: 2px solid #7c3aed;
+  border: 2px solid var(--accent-bg);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   cursor: pointer;
   /* Firefox: prevent extra spacing */
@@ -76,13 +205,13 @@ input[type="range"].slider-input::-moz-range-thumb {
 
 input[type="range"]::-moz-range-thumb:hover,
 input[type="range"].slider-input::-moz-range-thumb:hover {
-  background: #c4b5fd !important;
-  border-color: #8b5cf6;
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-bg);
 }
 
 input[type="range"]:focus::-moz-range-thumb,
 input[type="range"].slider-input:focus::-moz-range-thumb {
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.3);
+  box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 /* Firefox: remove default border and padding */
@@ -93,24 +222,24 @@ input[type="range"]::-moz-focus-outer {
 /* Edge slider track */
 input[type="range"]::-ms-track {
   height: 10px;
-  background: #4a5568;
+  background: var(--bg-tertiary);
   border-radius: 4px;
-  border: 1px solid #2d3748;
+  border: 1px solid var(--border-color);
 }
 
 /* Edge slider thumb */
 input[type="range"]::-ms-thumb {
   width: 18px;
   height: 18px;
-  background: #a78bfa;
+  background: var(--accent-color);
   border-radius: 50%;
-  border: 2px solid #7c3aed;
+  border: 2px solid var(--accent-bg);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 input[type="range"]::-ms-thumb:hover {
-  background: #c4b5fd;
-  border-color: #8b5cf6;
+  background: var(--accent-hover);
+  border-color: var(--accent-bg);
 }
 
 /* Always visible scrollbar styling for webkit browsers */
@@ -175,8 +304,8 @@ input[type="range"]::-ms-thumb:hover {
 }
 
 body {
-  background-color: #1a202c;
-  color: white;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
   margin: 0;
   overflow: hidden;
 }

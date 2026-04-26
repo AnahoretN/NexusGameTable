@@ -29,7 +29,7 @@ export type Action =
   | BaseAction<'SHUFFLE_DECK', { deckId: string }>
   | BaseAction<'FLIP_CARD', { cardId: string }>
   | BaseAction<'ROLL_DICE_LOG', { value: number; playerName: string }>
-  | BaseAction<'ROLL_PHYSICAL_DICE', { id: string }>
+  | BaseAction<'ROLL_PHYSICAL_DICE', { id: string; rollGroup?: boolean }>
   | BaseAction<'UPDATE_COUNTER', { id: string; delta: number }>
   | BaseAction<'SWITCH_ROLE', { playerId: string }>
   | BaseAction<'TOGGLE_LOCK', { id: string }>

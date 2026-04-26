@@ -423,6 +423,13 @@ export interface DiceObject extends GameItem {
   rollTargetValue?: number; // Final value to show after animation completes
   diceGroupId?: string; // ID of the dice group this dice belongs to (optional)
   fromPoolPanel?: string; // ID of pool panel this dice was picked up from (if any)
+  valueOverrides?: Record<number, DiceValueOverride>; // Custom display for dice values (1-indexed)
+}
+
+// Custom display override for a dice value
+export interface DiceValueOverride {
+  type: 'image' | 'icon' | 'emoji'; // Type of override
+  value: string; // URL for image, icon name, or emoji character
 }
 
 // Dice group for rolling multiple dice together

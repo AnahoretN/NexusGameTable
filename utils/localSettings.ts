@@ -28,6 +28,14 @@ export interface LocalPanelSettings {
   collapsedPinnedPosition?: { x: number; y: number };
 }
 
+export interface CustomSignalingServer {
+  host: string;
+  port: number;
+  secure: boolean;
+  path?: string;
+  name: string;
+}
+
 export interface LocalSettings {
   // Main menu position (local for each player)
   mainMenuPosition: {
@@ -48,12 +56,21 @@ export interface LocalSettings {
     // Show shadow/ghost version of objects held by other players in their cursor slot
     showRemoteCursorSlotObjects: boolean;
   };
+  // Interface style/theme
+  interfaceStyle: 'default' | 'dark-fantasy' | 'fairy-tale' | 'cosmos' | 'science';
   // Zoom level for game space (100 = default, affects object sizes)
   zoom: number;
   // Local panel settings - keyed by panel ID
   // These settings override the global panel state for each player
   panelSettings: {
     [panelId: string]: LocalPanelSettings;
+  };
+  // Connection settings
+  connection: {
+    // Custom signaling servers added by user (tried after PeerJS Cloud, before Trystero)
+    customSignalingServers: CustomSignalingServer[];
+    // Whether to use Trystero Torrent Trackers as fallback
+    enableTrysteroTrackers: boolean;
   };
 }
 
@@ -71,8 +88,13 @@ const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   effects: {
     showRemoteCursorSlotObjects: true, // Enabled by default
   },
+  interfaceStyle: 'default', // Default interface style
   zoom: 100, // Default 100%
   panelSettings: {}, // Empty by default - panels will use global settings until customized
+  connection: {
+    customSignalingServers: [], // No custom servers by default
+    enableTrysteroTrackers: false, // Disabled by default
+  },
 };
 
 /**
@@ -233,5 +255,56 @@ export const removeLocalPanelSettings = (panelId: string): void => {
 export const clearAllLocalPanelSettings = (): void => {
   const settings = loadLocalSettings();
   settings.panelSettings = {};
+  saveLocalSettings(settings);
+};
+
+/**
+ * Get connection settings
+ */
+export const getConnectionSettings = (): LocalSettings['connection'] => {
+  const settings = loadLocalSettings();
+  return settings.connection || { customSignalingServers: [], enableTrysteroTrackers: false };
+};
+
+/**
+ * Update connection settings
+ */
+export const updateConnectionSettings = (updates: Partial<LocalSettings['connection']>): void => {
+  const settings = loadLocalSettings();
+  settings.connection = {
+    ...settings.connection,
+    ...updates,
+  };
+  saveLocalSettings(settings);
+};
+
+/**
+ * Add a custom signaling server
+ */
+export const addCustomSignalingServer = (server: Omit<CustomSignalingServer, 'name'>): void => {
+  const settings = loadLocalSettings();
+  const newServer: CustomSignalingServer = {
+    ...server,
+    name: `${server.host}:${server.port}`,
+  };
+  settings.connection.customSignalingServers.push(newServer);
+  saveLocalSettings(settings);
+};
+
+/**
+ * Remove a custom signaling server by index
+ */
+export const removeCustomSignalingServer = (index: number): void => {
+  const settings = loadLocalSettings();
+  settings.connection.customSignalingServers.splice(index, 1);
+  saveLocalSettings(settings);
+};
+
+/**
+ * Clear all custom signaling servers
+ */
+export const clearCustomSignalingServers = (): void => {
+  const settings = loadLocalSettings();
+  settings.connection.customSignalingServers = [];
   saveLocalSettings(settings);
 };

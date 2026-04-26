@@ -1,9 +1,10 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
-import { X, Minus, Plus, Eye, EyeOff, Lock, Unlock, Settings, Trash2, Clock, Keyboard } from 'lucide-react';
+import { X, Minus, Plus, Eye, EyeOff, Lock, Unlock, Settings, Trash2, Clock, Keyboard, Palette, Network, Server, PlusCircle, XCircle } from 'lucide-react';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
 import { useActivePlayerId, useIsGM, usePlayerList, usePixelsPerVU, usePlayerPermissions, useLanguage, useHyperscaleLayers } from '../store/contexts';
+import { getConnectionSettings, updateConnectionSettings, removeCustomSignalingServer, clearCustomSignalingServers, CustomSignalingServer } from '../utils/localSettings';
 
 // 🔥 OPTIMIZED: Zustand version of UIObjectRenderer
 // Replaces: components/UIObjectRenderer.tsx
@@ -24,6 +25,7 @@ import { useGame } from '../store/GameContext';
 import { useDragOverStore } from '../store/dragOverState';
 import { MAIN_MENU_WIDTH } from '../constants';
 import { useLocalSettings } from '../hooks/useLocalSettings';
+import { LocalSettings } from '../utils/localSettings';
 import { useLocalPanelSettings } from '../hooks/useLocalPanelSettings';
 import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
 import { t as translate, preloadTranslations, Locale } from '../utils/translations';
@@ -128,7 +130,43 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   // Main menu specific state
   const [showGameSettings, setShowGameSettings] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
-  const { settings: localSettings, updateEffectSetting } = useLocalSettings();
+  const [showStyleSelector, setShowStyleSelector] = useState(false);
+
+  // Connection settings state
+  const [showAddServerForm, setShowAddServerForm] = useState(false);
+  const [newServerHost, setNewServerHost] = useState('');
+  const [newServerPort, setNewServerPort] = useState('443');
+  const [newServerSecure, setNewServerSecure] = useState(true);
+  const [newServerPath, setNewServerPath] = useState('/peerjs');
+  const [connectionSettings, setConnectionSettings] = useState(getConnectionSettings());
+  const { settings: localSettings, updateSetting, updateEffectSetting } = useLocalSettings();
+
+  // Secret style selector: press 'S' 3 times within 2 seconds
+  useEffect(() => {
+    const sPresses: number[] = [];
+    const SECRET_KEY = 's';
+    const REQUIRED_PRESSES = 3;
+    const TIME_WINDOW = 2000; // 2 seconds
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === SECRET_KEY) {
+        const now = Date.now();
+        // Remove presses outside the time window
+        while (sPresses.length > 0 && sPresses[0] < now - TIME_WINDOW) {
+          sPresses.shift();
+        }
+        sPresses.push(now);
+
+        if (sPresses.length >= REQUIRED_PRESSES) {
+          setShowStyleSelector(prev => !prev); // Toggle visibility
+          sPresses.length = 0; // Reset to prevent immediate re-trigger
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Memoize panel check to prevent repeated type checks
   const isPanel = useMemo(() => uiObject.type === ItemType.PANEL, [uiObject.type]);
@@ -224,6 +262,13 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     const lang = localStorage.getItem('app-language') as Locale || 'en';
     preloadTranslations(lang);
   }, []);
+
+  // Reload connection settings when game settings modal opens
+  useEffect(() => {
+    if (showGameSettings) {
+      setConnectionSettings(getConnectionSettings());
+    }
+  }, [showGameSettings]);
 
   if (!visible) return null;
 
@@ -1247,6 +1292,35 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                 </select>
               </div>
 
+              {/* Interface Style Settings */}
+              <div className="pt-3 pb-2 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+                  <Palette size={14} />
+                  {translate('Interface Style', language as Locale)}
+                </h4>
+                <div className="relative">
+                  <select
+                    value={localSettings.interfaceStyle || 'default'}
+                    onChange={(e) => updateSetting('interfaceStyle', e.target.value as LocalSettings['interfaceStyle'])}
+                    disabled={!showStyleSelector}
+                    className={`w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-white text-sm appearance-none transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                      showStyleSelector
+                        ? 'cursor-pointer hover:bg-slate-800'
+                        : 'cursor-not-allowed opacity-50'
+                    }`}
+                  >
+                    <option value="default">{translate('Default', language as Locale)}</option>
+                    <option value="dark-fantasy">{translate('Dark Fantasy', language as Locale)}</option>
+                    <option value="fairy-tale">{translate('Fairy Tale', language as Locale)}</option>
+                    <option value="cosmos">{translate('Cosmos', language as Locale)}</option>
+                    <option value="science">{translate('Science', language as Locale)}</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <Palette size={16} className={showStyleSelector ? "text-gray-400" : "text-gray-600"} />
+                  </div>
+                </div>
+              </div>
+
               {/* Player Permissions */}
               {isGM && (
                 <div className="pt-3 pb-2 border-t border-slate-700">
@@ -1407,6 +1481,180 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                       <span className="text-xs text-gray-300">{translate('Normal cursor mode', language as Locale)}</span>
                       <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Alt+Marker</kbd>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Connection Settings Section */}
+              <div className="pt-3 pb-2 border-t border-slate-700">
+                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+                  <Network size={14} />
+                  {translate('Connection Settings', language as Locale)}
+                </h4>
+
+                {/* Trystero Toggle */}
+                <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer mb-3">
+                  <div className="flex items-center gap-2">
+                    <Server size={14} className="text-gray-400" />
+                    <span className="text-xs text-gray-300">{translate('Use Trystero Torrent Trackers', language as Locale)}</span>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const newValue = !connectionSettings.enableTrysteroTrackers;
+                      updateConnectionSettings({ enableTrysteroTrackers: newValue });
+                      setConnectionSettings(getConnectionSettings());
+                    }}
+                    className={`w-10 h-5 rounded-full transition-colors ${
+                      connectionSettings.enableTrysteroTrackers ? 'bg-green-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                      connectionSettings.enableTrysteroTrackers ? 'translate-x-5' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </label>
+
+                {/* Custom Signaling Servers */}
+                <div className="bg-slate-900 rounded px-3 py-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-300">{translate('Custom Signaling Servers', language as Locale)}</span>
+                    <div className="flex gap-1">
+                      {connectionSettings.customSignalingServers.length > 0 && (
+                        <button
+                          onClick={() => {
+                            if (confirm(translate('Clear all custom servers?', language as Locale))) {
+                              clearCustomSignalingServers();
+                              setConnectionSettings(getConnectionSettings());
+                            }
+                          }}
+                          className="p-1 hover:bg-red-600 rounded transition-colors"
+                          title={translate('Clear all', language as Locale)}
+                        >
+                          <Trash2 size={12} className="text-gray-400" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowAddServerForm(!showAddServerForm)}
+                        className="p-1 hover:bg-green-600 rounded transition-colors"
+                        title={translate('Add server', language as Locale)}
+                      >
+                        {showAddServerForm ? <XCircle size={12} className="text-gray-400" /> : <PlusCircle size={12} className="text-gray-400" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Add Server Form */}
+                  {showAddServerForm && (
+                    <div className="space-y-2 mb-2 p-2 bg-slate-800 rounded">
+                      <input
+                        type="text"
+                        placeholder={translate('Host (e.g., server.example.com)', language as Locale)}
+                        value={newServerHost}
+                        onChange={(e) => setNewServerHost(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-xs"
+                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          placeholder={translate('Port', language as Locale)}
+                          value={newServerPort}
+                          onChange={(e) => setNewServerPort(e.target.value)}
+                          className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-xs"
+                        />
+                        <input
+                          type="text"
+                          placeholder={translate('Path (optional)', language as Locale)}
+                          value={newServerPath}
+                          onChange={(e) => setNewServerPath(e.target.value)}
+                          className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-xs"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={newServerSecure}
+                          onChange={(e) => setNewServerSecure(e.target.checked)}
+                          className="rounded"
+                        />
+                        {translate('Use SSL/TLS (HTTPS)', language as Locale)}
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            if (newServerHost.trim()) {
+                              updateConnectionSettings({
+                                customSignalingServers: [
+                                  ...connectionSettings.customSignalingServers,
+                                  {
+                                    host: newServerHost.trim(),
+                                    port: parseInt(newServerPort) || 443,
+                                    secure: newServerSecure,
+                                    path: newServerPath.trim() || undefined,
+                                    name: newServerHost.trim(),
+                                  }
+                                ]
+                              });
+                              setConnectionSettings(getConnectionSettings());
+                              setNewServerHost('');
+                              setNewServerPort('443');
+                              setNewServerPath('/peerjs');
+                              setNewServerSecure(true);
+                              setShowAddServerForm(false);
+                            }
+                          }}
+                          className="flex-1 px-2 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs transition-colors"
+                        >
+                          {translate('Add', language as Locale)}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowAddServerForm(false);
+                            setNewServerHost('');
+                            setNewServerPort('443');
+                            setNewServerPath('/peerjs');
+                            setNewServerSecure(true);
+                          }}
+                          className="flex-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs transition-colors"
+                        >
+                          {translate('Cancel', language as Locale)}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Server List */}
+                  <div className="space-y-1">
+                    {connectionSettings.customSignalingServers.length === 0 ? (
+                      <div className="text-xs text-gray-500 italic py-1">
+                        {translate('No custom servers added', language as Locale)}
+                      </div>
+                    ) : (
+                      connectionSettings.customSignalingServers.map((server, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between bg-slate-800 rounded px-2 py-1"
+                        >
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <Server size={10} className={server.secure ? 'text-green-400' : 'text-yellow-400'} />
+                            <span className="text-xs text-gray-300 truncate">
+                              {server.host}:{server.port}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              removeCustomSignalingServer(index);
+                              setConnectionSettings(getConnectionSettings());
+                            }}
+                            className="p-0.5 hover:bg-red-600 rounded transition-colors"
+                            title={translate('Remove', language as Locale)}
+                          >
+                            <X size={12} className="text-gray-400" />
+                          </button>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

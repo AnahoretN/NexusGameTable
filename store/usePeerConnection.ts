@@ -22,6 +22,7 @@ import {
   dataCompressionManager
 } from '../utils/dataCompression';
 import { joinRoom } from 'trystero';
+import { getConnectionSettings } from '../utils/localSettings';
 
 // Type for Trystero room (since library doesn't export types)
 type TrysteroRoom = {
@@ -81,13 +82,18 @@ const PEERJS_FALLBACK_SERVERS = [
 
 /**
  * Комьюнити серверы - self-hosted опции
- * Добавьте ваши собственные сервера сюда
+ * Загружаются из пользовательских настроек
  */
-const COMMUNITY_SERVERS: Array<{ host: string; port: number; secure: boolean; path?: string; name: string }> = [
-  // Примеры для добавления:
-  // { host: 'nexus-signaling-1.herokuapp.com', port: 443, secure: true, name: 'Community Server 1' },
-  // { host: 'nexus-signaling-2.onrender.com', port: 443, secure: true, name: 'Community Server 2' },
-];
+const getCommunityServers = (): Array<{ host: string; port: number; secure: boolean; path?: string; name: string }> => {
+  const connectionSettings = getConnectionSettings();
+  return connectionSettings.customSignalingServers.map(server => ({
+    host: server.host,
+    port: server.port,
+    secure: server.secure,
+    path: server.path,
+    name: server.name,
+  }));
+};
 
 /**
  * WebTorrent трекеры для Trystero - финальный fallback
@@ -530,6 +536,16 @@ export function usePeerConnection(
 
     console.log(`[Connect] 🔄 Starting fallback connection sequence...`);
 
+    // Load connection settings
+    const connectionSettings = getConnectionSettings();
+    const communityServers = getCommunityServers();
+    const useTrystero = connectionSettings.enableTrysteroTrackers;
+
+    console.log(`[Connect] 📋 Connection settings:`, {
+      customServers: communityServers.length,
+      trysteroEnabled: useTrystero,
+    });
+
     // Шаг 1: Пробуем все PeerJS Cloud серверы
     for (const server of PEERJS_FALLBACK_SERVERS) {
       console.log(`[Connect] Attempting ${server.name} (${server.host})...`);
@@ -543,8 +559,8 @@ export function usePeerConnection(
       console.log(`[Connect] ❌ ${server.name} failed, trying next...`);
     }
 
-    // Шаг 2: Пробуем комьюнити серверы
-    for (const server of COMMUNITY_SERVERS) {
+    // Шаг 2: Пробуем комьюнити серверы (пользовательские)
+    for (const server of communityServers) {
       console.log(`[Connect] Attempting ${server.name} (${server.host})...`);
       setConnectionStatus('connecting');
 
@@ -556,14 +572,18 @@ export function usePeerConnection(
       console.log(`[Connect] ❌ ${server.name} failed, trying next...`);
     }
 
-    // Шаг 3: Пробуем Trystero с торрент-трекерами
-    console.log(`[Connect] Attempting Trystero with torrent trackers...`);
-    setConnectionStatus('connecting');
+    // Шаг 3: Пробуем Trystero с торрент-трекерами (если включено)
+    if (useTrystero) {
+      console.log(`[Connect] Attempting Trystero with torrent trackers...`);
+      setConnectionStatus('connecting');
 
-    const trysteroRoom = await tryTrysteroTorrent(hostId, 20000);
-    if (trysteroRoom) {
-      console.log(`[Connect] ✅ Connected via Trystero`);
-      return setupTrysteroConnection(trysteroRoom, hostId, playerName);
+      const trysteroRoom = await tryTrysteroTorrent(hostId, 20000);
+      if (trysteroRoom) {
+        console.log(`[Connect] ✅ Connected via Trystero`);
+        return setupTrysteroConnection(trysteroRoom, hostId, playerName);
+      }
+    } else {
+      console.log(`[Connect] ⏭️ Trystero torrent trackers disabled in settings`);
     }
 
     // Все методы провалились
