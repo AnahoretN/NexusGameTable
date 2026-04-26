@@ -175,8 +175,8 @@ export const Tabletop: React.FC = () => {
 
   // Resizing state
   const [resizingId, setResizingId] = useState<string | null>(null);
-  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [liveResizeSize, setLiveResizeSize] = useState<{ width: number; height: number } | null>(null);
+  const [, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [, setLiveResizeSize] = useState<{ width: number; height: number } | null>(null);
   const liveResizeSizeRef = useRef<{ width: number; height: number } | null>(null);
   const resizeFinalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
@@ -185,7 +185,7 @@ export const Tabletop: React.FC = () => {
   const [clickTooltip, setClickTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const clickTooltipTimerRef = useRef<number | null>(null);
   const clickTooltipBoundsRef = useRef<{ left: number; right: number; top: number; bottom: number } | null>(null);
-  const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: Deck } | null>(null);
+  const [, setPilesButtonMenu] = useState<{ x: number; y: number; deck: Deck } | null>(null);
 
   // Refs
   const isAddingTokenRef = useRef(false);
@@ -271,6 +271,7 @@ export const Tabletop: React.FC = () => {
     handleContextMenu,
     handlePileContextMenu,
     handleMouseDown,
+    handleDoubleClick,
     handleMouseMove,
     handleMouseUp,
     handleWheel,
@@ -350,7 +351,7 @@ export const Tabletop: React.FC = () => {
         fromPoolPanel?: string;
       }>;
 
-      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, fromPoolPanel } = customEvent.detail;
+      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX } = customEvent.detail;
 
       const obj = state.objects[cardId];
 
@@ -541,7 +542,7 @@ export const Tabletop: React.FC = () => {
 
   // Listen for clear-cursor-slot event (dispatched by pool panel drops)
   useEffect(() => {
-    const handleClearCursorSlot = (e: Event) => {
+    const handleClearCursorSlot = () => {
       // IMPORTANT: Also reset inCursorSlot flag for all objects
       // This prevents objects from staying in cursor slot state after clear
       Object.values(state.objects).forEach(obj => {
@@ -759,6 +760,7 @@ export const Tabletop: React.FC = () => {
         nexusBoardAddingCell={nexusBoardAddingCell}
         onContextMenu={handleContextMenu}
         onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
         onResizeStart={handleResizeStart}
         onAddNexusCell={handleAddNexusCell}
         dispatch={dispatch}

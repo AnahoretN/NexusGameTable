@@ -420,6 +420,7 @@ export interface DiceObject extends GameItem {
   shape?: TokenShape;
   rollStartTime?: number; // Timestamp when roll animation started (for syncing across players)
   rolling?: boolean; // Whether the dice is currently rolling (for animation)
+  rollTargetValue?: number; // Final value to show after animation completes
   diceGroupId?: string; // ID of the dice group this dice belongs to (optional)
   fromPoolPanel?: string; // ID of pool panel this dice was picked up from (if any)
 }

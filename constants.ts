@@ -20,7 +20,7 @@ export const SCROLLBAR_WIDTH = 16; // px
 // Default object dimensions in virtual units (vu)
 export const DEFAULT_DECK_WIDTH = 120; // vu
 export const DEFAULT_DECK_HEIGHT = 168; // vu
-export const DEFAULT_DICE_SIZE = 60; // vu
+export const DEFAULT_DICE_SIZE = 65; // vu
 export const DEFAULT_COUNTER_WIDTH = 120; // vu
 export const DEFAULT_COUNTER_HEIGHT = 50; // vu
 export const DEFAULT_PANEL_WIDTH = 300; // vu

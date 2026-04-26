@@ -2101,16 +2101,71 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'ROLL_PHYSICAL_DICE': {
         const dice = state.objects[action.payload.id] as DiceObject;
         if (!dice || dice.type !== ItemType.DICE_OBJECT) return state;
-        const rollValue = Math.floor(Math.random() * dice.sides) + 1;
+
+        // Calculate final value
+        const finalValue = Math.floor(Math.random() * dice.sides) + 1;
         const newRoll: DiceRoll = {
             id: generateUUID(),
-            value: rollValue,
-            playerName: 'Dice Object', 
+            value: finalValue,
+            playerName: 'Dice Object',
             timestamp: Date.now()
         };
+
+        // Start animation immediately (don't rely on useEffect)
+        const animationDuration = 500; // 0.5 seconds
+        const updateCount = 5;
+        const updateInterval = animationDuration / (updateCount + 1);
+        const diceId = action.payload.id;
+        const diceSides = dice.sides;
+
+        let updateIndex = 0;
+        const animateRoll = () => {
+            if (updateIndex < updateCount) {
+                // Show random intermediate value
+                const intermediateValue = Math.floor(Math.random() * diceSides) + 1;
+                // Use the dispatch from the action context if available, otherwise skip
+                if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                    (window as any).__diceRollDispatch({
+                        type: 'UPDATE_OBJECT',
+                        payload: { id: diceId, updates: { currentValue: intermediateValue } }
+                    });
+                }
+                updateIndex++;
+                setTimeout(animateRoll, updateInterval);
+            } else {
+                // Set final value and clear rolling state
+                if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                    (window as any).__diceRollDispatch({
+                        type: 'UPDATE_OBJECT',
+                        payload: {
+                            id: diceId,
+                            updates: {
+                                currentValue: finalValue,
+                                rolling: false,
+                                rollTargetValue: undefined,
+                                rollStartTime: undefined
+                            }
+                        }
+                    });
+                }
+            }
+        };
+
+        // Start animation after state updates
+        setTimeout(animateRoll, 0);
+
         return {
             ...state,
-            objects: { ...state.objects, [action.payload.id]: { ...dice, currentValue: rollValue } },
+            objects: {
+                ...state.objects,
+                [action.payload.id]: {
+                    ...dice,
+                    currentValue: 1,
+                    rolling: true,
+                    rollTargetValue: finalValue,
+                    rollStartTime: Date.now()
+                }
+            },
             diceRolls: [newRoll, ...state.diceRolls].slice(0, 50)
         };
     }
@@ -3641,12 +3696,44 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         panel.dualPosition = true; // Enable dual position mode by default
       }
 
-      // Initialize character data for CHARACTER panels
+      // Initialize character data for CHARACTER panels with first character
       if (panelType === PanelType.CHARACTER) {
+        const firstCharacterId = `char-${Date.now()}`;
         (panel as PanelObject & { characterData: any }).characterData = {
-          characters: [],
+          characters: [
+            {
+              id: firstCharacterId,
+              characterName: 'Character 1',
+              playerId: undefined,
+              subTabs: [
+                {
+                  id: 'subtab-1',
+                  name: 'Main',
+                  blocks: [],
+                  columns: 1
+                },
+                {
+                  id: 'subtab-2',
+                  name: 'Skills',
+                  blocks: [],
+                  columns: 1
+                },
+                {
+                  id: 'subtab-3',
+                  name: 'Inventory',
+                  blocks: [],
+                  columns: 1
+                }
+              ],
+              activeSubTabId: 'subtab-1',
+              visibleToPlayerIds: [],
+              manageableByPlayerIds: [],
+              editableByPlayerIds: [],
+              avatarUrl: undefined
+            }
+          ],
           presets: [],
-          activeCharacterId: '',
+          activeCharacterId: firstCharacterId,
           isUniversal: false
         };
       }
@@ -5160,6 +5247,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       manualConnectionRef.current = conn;
     }
   };
+
+  // Expose dispatch for dice roll animations
+  (window as any).__diceRollDispatch = localDispatch;
 
   useEffect(() => {
       stateRef.current = state;

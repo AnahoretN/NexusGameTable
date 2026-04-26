@@ -6,7 +6,7 @@ import { NexusBoardMemo } from '../NexusBoard';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, ItemType, GridType } from '../../types';
+import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 
 interface GameObjectsRendererProps {
@@ -25,6 +25,7 @@ interface GameObjectsRendererProps {
   nexusBoardAddingCell: string | null;
   onContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   onMouseDown: (e: React.MouseEvent, objId: string) => void;
+  onDoubleClick?: (e: React.MouseEvent, obj: TableObject) => void;
   onResizeStart?: (e: React.MouseEvent, objId: string) => void;
   onAddNexusCell?: (objId: string, direction: string) => void;
   dispatch: React.Dispatch<any>;
@@ -46,6 +47,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
   nexusBoardAddingCell,
   onContextMenu,
   onMouseDown,
+  onDoubleClick,
   onResizeStart,
   onAddNexusCell,
   dispatch
@@ -413,10 +415,166 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
     );
   };
 
+  const renderDice = (obj: TableObject, globalZIndex: number) => {
+    const dice = obj as DiceObject;
+    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    const canDrag = !obj.locked;
+    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    const objLayer = obj.hyperscaleLayerId || 'none';
+
+    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
+    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+    const baseFontSize = Math.min(v2p(obj.width), v2p(obj.height)) / 6;
+    const valueFontSize = baseFontSize * 2.77; // ~30 vu for 65 vu dice
+    const sidesFontSize = baseFontSize * 1.66; // ~18 vu for 65 vu dice
+    const fontColor = (obj as any).fontColor || 'white';
+
+    return (
+      <Tooltip
+        key={obj.id}
+        text={obj.tooltipText}
+        showImage={obj.showTooltipImage}
+        imageSrc={obj.content}
+        scale={obj.tooltipScale}
+      >
+        <div
+          data-object-id={obj.id}
+          onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
+          onDoubleClick={(e) => isOwner && onDoubleClick?.(e, obj)}
+          onContextMenu={(e) => onContextMenu(e, obj)}
+          className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
+          style={createPositionedStyle(
+            v2p(obj.x),
+            v2p(obj.y),
+            v2p(obj.width),
+            v2p(obj.height),
+            globalZIndex,
+            objLayer,
+            {
+              transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+              pointerEvents: isPermeable ? 'none' : 'auto',
+            }
+          )}
+        >
+          <SvgTokenShape
+            shape={dice.shape}
+            width={v2p(obj.width)}
+            height={v2p(obj.height)}
+            color={obj.color || '#6366f1'}
+            content={undefined}
+            rotation={0}
+            borderWidth={obj.borderWidth ?? 2}
+            borderColor={(obj as any).borderColor || 'white'}
+            opacity={obj.opacity ?? 100}
+            borderOpacity={obj.borderOpacity ?? 100}
+            showThickness={true}
+            tokenName={undefined}
+            fontColor={fontColor}
+          >
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.1em',
+            }}>
+              <span style={{
+                fontSize: `${valueFontSize}px`,
+                fontWeight: 'bold',
+                color: fontColor,
+                lineHeight: 1,
+              }}>
+                {dice.currentValue ?? 1}
+              </span>
+              <span style={{
+                fontSize: `${sidesFontSize}px`,
+                fontWeight: 'normal',
+                color: fontColor,
+                lineHeight: 1,
+              }}>
+                d{dice.sides ?? 6}
+              </span>
+            </div>
+          </SvgTokenShape>
+
+          {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
+
+          {/* Action buttons */}
+          <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : currentTool === 'zoom' ? 'opacity-100 pointer-events-auto' : currentTool === 'none' ? 'opacity-0 group-hover:opacity-100 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
+            {(() => {
+              const actionButtons = obj.actionButtons || [];
+              const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+                roll: {
+                  key: 'roll',
+                  action: () => dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id } }),
+                  className: 'bg-purple-600 hover:bg-purple-500',
+                  title: 'Roll',
+                  icon: <RefreshCw size={14} />
+                },
+                rotate: {
+                  key: 'rotate',
+                  action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+                  className: 'bg-green-600 hover:bg-green-500',
+                  title: 'Rotate',
+                  icon: <RefreshCw size={14} />
+                },
+                delete: {
+                  key: 'delete',
+                  action: () => dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
+                  className: 'bg-red-600 hover:bg-red-500',
+                  title: 'Delete',
+                  icon: <Trash2 size={14} />
+                },
+                clone: {
+                  key: 'clone',
+                  action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
+                  className: 'bg-cyan-600 hover:bg-cyan-500',
+                  title: 'Clone',
+                  icon: <Copy size={14} />
+                },
+                lock: {
+                  key: 'lock',
+                  action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: obj.locked ? 'Unlock' : 'Lock',
+                  icon: obj.locked ? <Lock size={14} /> : <Unlock size={14} />
+                },
+                layer: {
+                  key: 'layer',
+                  action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+                  className: 'bg-indigo-600 hover:bg-indigo-500',
+                  title: 'Layer Up',
+                  icon: <Layers size={14} />
+                },
+              };
+
+              const buttons = actionButtons
+                .map(action => buttonConfigs[action])
+                .filter(Boolean)
+                .slice(0, 4);
+
+              return buttons.map(btn => (
+                <button
+                  key={btn.key}
+                  onClick={(e) => { e.stopPropagation(); btn.action(); }}
+                  className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
+                  title={btn.title}
+                >
+                  {btn.icon}
+                </button>
+              ));
+            })()}
+          </div>
+        </div>
+      </Tooltip>
+    );
+  };
+
   const renderGameObject = (obj: TableObject) => {
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    const isDice = obj.type === ItemType.DICE_OBJECT;
-    const canDrag = !obj.locked && !isDice;
+    const canDrag = !obj.locked;
     const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
     const layer = hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
@@ -444,6 +602,10 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
       return renderCounter(obj, globalZIndex);
     }
 
+    if (obj.type === ItemType.DICE_OBJECT) {
+      return renderDice(obj, globalZIndex);
+    }
+
     return null;
   };
 
@@ -469,6 +631,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
     prevProps.nexusBoardAddingCell === nextProps.nexusBoardAddingCell &&
     prevProps.onContextMenu === nextProps.onContextMenu &&
     prevProps.onMouseDown === nextProps.onMouseDown &&
+    prevProps.onDoubleClick === nextProps.onDoubleClick &&
     prevProps.onResizeStart === nextProps.onResizeStart &&
     prevProps.onAddNexusCell === nextProps.onAddNexusCell &&
     prevProps.dispatch === nextProps.dispatch
@@ -494,6 +657,7 @@ export const GameObjectsRendererMemo = memo(GameObjectsRenderer, (prevProps, nex
     prevProps.nexusBoardAddingCell === nextProps.nexusBoardAddingCell &&
     prevProps.onContextMenu === nextProps.onContextMenu &&
     prevProps.onMouseDown === nextProps.onMouseDown &&
+    prevProps.onDoubleClick === nextProps.onDoubleClick &&
     prevProps.onResizeStart === nextProps.onResizeStart &&
     prevProps.onAddNexusCell === nextProps.onAddNexusCell &&
     prevProps.dispatch === nextProps.dispatch

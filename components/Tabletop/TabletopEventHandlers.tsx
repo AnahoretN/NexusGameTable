@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation } from '../../types';
+import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation, DiceObject } from '../../types';
 import { clampScrollToPlayableArea } from '../../utils/viewportConstraints';
 import {
   parseGridCellKey,
@@ -1137,6 +1137,47 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     props
   ]);
 
+  // Double click handler - rolls dice
+  const handleDoubleClick = useCallback((e: React.MouseEvent, obj: TableObject) => {
+    if (!obj) return;
+
+    // Check if object is locked or not owned by player
+    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    if (obj.locked && !isGM) {
+      return;
+    }
+    if (!isOwner) {
+      return;
+    }
+
+    // Only handle dice objects
+    if (obj.type === ItemType.DICE_OBJECT) {
+      e.stopPropagation();
+
+      const dice = obj as DiceObject;
+
+      // Check if dice belongs to a group
+      if (dice.diceGroupId) {
+        const group = state.diceGroups?.find(g => g.id === dice.diceGroupId);
+        if (group) {
+          // Roll all dice in the group
+          group.diceIds.forEach(diceId => {
+            const groupDice = state.objects[diceId];
+            if (groupDice?.type === ItemType.DICE_OBJECT) {
+              dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
+            }
+          });
+        } else {
+          // Group not found, roll single dice
+          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id } });
+        }
+      } else {
+        // Single dice roll (not in a group)
+        dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id } });
+      }
+    }
+  }, [state.objects, state.diceGroups, activePlayerId, isGM, dispatch]);
+
   // RAF ref for throttling mouse move updates
   const rafRef = useRef<number>();
 
@@ -1686,6 +1727,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     handleContextMenu,
     handlePileContextMenu,
     handleMouseDown,
+    handleDoubleClick,
     handleMouseMove,
     handleMouseUp,
     handleWheel,

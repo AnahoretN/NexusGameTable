@@ -938,19 +938,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   if (!characterData) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-slate-800 p-4">
-        {isGM ? (
-          <div className="text-center">
-            <p className="text-slate-400 text-sm mb-2">Character panel not initialized</p>
-            <button
-              onClick={handleAddCharacter}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
-            >
-              Create First Character
-            </button>
-          </div>
-        ) : (
-          <p className="text-slate-400 text-sm">Waiting for GM to set up characters...</p>
-        )}
+        <p className="text-slate-400 text-sm">Character panel not initialized</p>
       </div>
     );
   }
@@ -1355,27 +1343,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
               ]}
             />
           )}
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!isCollapsed && !activeCharacter && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-slate-400">
-            {isGM ? (
-              <div>
-                <p className="mb-2">No characters yet</p>
-                <button
-                  onClick={handleAddCharacter}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
-                >
-                  Add First Character
-                </button>
-              </div>
-            ) : (
-              <p>Waiting for GM to add characters...</p>
-            )}
-          </div>
         </div>
       )}
 
