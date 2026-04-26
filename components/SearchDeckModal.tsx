@@ -872,6 +872,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           language={language}
           diceGroups={gameState.diceGroups}
           dispatch={dispatch}
+          zIndex="z-[100008]"
           onSave={(updatedObj) => {
             updateDeck(updatedObj.id, updatedObj);
             setSettingsModalObj(null);

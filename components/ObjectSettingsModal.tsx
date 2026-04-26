@@ -21,6 +21,7 @@ interface ObjectSettingsModalProps {
   language?: AppLanguage; // Language for translations
   diceGroups?: DiceGroup[]; // Dice groups for grouping dice
   dispatch?: React.Dispatch<any>; // Dispatch function for updating groups
+  zIndex?: string; // Custom z-index for modal (default: z-[100005])
 }
 
 // Translate GridType value to display name
@@ -131,7 +132,7 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
 
 type Tab = 'general' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups';
 
-const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch }) => {
+const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch, zIndex }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
 
@@ -809,7 +810,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-[100005] flex items-center justify-center bg-black/40">
+    <div className={`fixed inset-0 ${zIndex || 'z-[100005]'} flex items-center justify-center bg-black/40`}>
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-center items-center py-2 px-4">

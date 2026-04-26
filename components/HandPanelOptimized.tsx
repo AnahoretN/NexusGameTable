@@ -1617,41 +1617,20 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       )}
 
       {/* Card Settings Modal */}
-      {cardSettingsModal && createPortal(
-        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={(e) => {
-          if (e.target === e.currentTarget) {
+      {cardSettingsModal && (
+        <ObjectSettingsModal
+          object={cardSettingsModal}
+          onSave={(updatedObj) => {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: updatedObj.id, updates: updatedObj }
+            });
             setCardSettingsModal(null);
-          }
-        }}>
-          <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-center items-center py-2 px-4">
-              <h3 className="text-base font-bold text-white">{translate('Card Configuration', language as Locale)}</h3>
-            </div>
-
-            <div className="flex">
-              <button className="flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors bg-slate-700 text-white border-b-2 border-purple-500">
-                {translate('General', language as Locale)}
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-              <ObjectSettingsModal
-                object={cardSettingsModal}
-                onSave={(updatedObj) => {
-                  dispatch({
-                    type: 'UPDATE_OBJECT',
-                    payload: { id: updatedObj.id, updates: updatedObj }
-                  });
-                  setCardSettingsModal(null);
-                }}
-                onClose={() => setCardSettingsModal(null)}
-                allObjects={objects}
-                language={language}
-              />
-            </div>
-          </div>
-        </div>,
-        document.body
+          }}
+          onClose={() => setCardSettingsModal(null)}
+          allObjects={objects}
+          language={language}
+        />
       )}
 
       {/* Context menu for cards in hand */}
