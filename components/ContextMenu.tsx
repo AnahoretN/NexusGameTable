@@ -200,8 +200,6 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
 
     // Check if this is a submenu action - if so, check parent section permission
     const parentAction = SUBMENU_TO_PARENT[action];
-    const actionToCheck = parentAction || action;
-
 
     let result = false;
     if (isGM) {
@@ -209,7 +207,8 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       // undefined/null/empty array = all allowed, specific array = only those allowed
       if (allowedActionsForGM != null && allowedActionsForGM.length > 0) {
         // If GM-specific permissions are defined and not empty, check them
-        result = allowedActionsForGM.includes(actionToCheck) ||
+        // Check BOTH the specific action AND the parent section
+        result = allowedActionsForGM.includes(action) ||
                allowedActionsForGM.includes(parentAction);
       } else {
         // If no GM-specific permissions defined, GM has ALL actions allowed
@@ -220,7 +219,8 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       // Player: check allowedActions with parent section fallback
       // undefined/null/empty array = all allowed, specific array = only those allowed
       if (allowedActions != null && allowedActions.length > 0) {
-        result = allowedActions.includes(actionToCheck) ||
+        // Check BOTH the specific action AND the parent section
+        result = allowedActions.includes(action) ||
                allowedActions.includes(parentAction);
       } else {
         result = true;
@@ -230,6 +230,37 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
 
     return result;
   }, [object, isGM, getCardSettings]);
+
+  // Calculate safe menu position to keep it within viewport
+  React.useEffect(() => {
+    const menuWidth = 250;  // Estimated menu width
+    const menuHeight = 400; // Estimated menu height
+    const padding = 8;
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let left = x;
+    let top = y;
+
+    // Adjust horizontal position
+    if (left + menuWidth + padding > viewportWidth) {
+      left = viewportWidth - menuWidth - padding;
+    }
+    if (left < padding) {
+      left = padding;
+    }
+
+    // Adjust vertical position
+    if (top + menuHeight + padding > viewportHeight) {
+      top = viewportHeight - menuHeight - padding;
+    }
+    if (top < padding) {
+      top = padding;
+    }
+
+    setMenuPosition({ left, top });
+  }, [x, y]);
 
   // Close layer submenu when clicking outside
   React.useEffect(() => {
@@ -468,7 +499,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
 
   const menuItems: MenuItem[] = useMemo(() => [
     {
-      label: translate('Configure...', language as Locale),
+      label: translate('Properties', language as Locale),
       action: 'configure',
       icon: <Settings size={14} />,
       // Hide for token-copies (tokens with archetypeId)

@@ -189,7 +189,7 @@ export function handleShowTop(obj: TableObject, dispatch: Dispatch<Action>) {
   if (obj.type === ItemType.DECK) {
     dispatch({
       type: 'UPDATE_OBJECT',
-      payload: { id: obj.id, showTopCard: true }
+      payload: { id: obj.id, updates: { showTopCard: true } }
     });
   }
 }
@@ -198,7 +198,7 @@ export function handleHideTop(obj: TableObject, dispatch: Dispatch<Action>) {
   if (obj.type === ItemType.DECK) {
     dispatch({
       type: 'UPDATE_OBJECT',
-      payload: { id: obj.id, showTopCard: false }
+      payload: { id: obj.id, updates: { showTopCard: false } }
     });
   }
 }
@@ -284,7 +284,7 @@ export function handleMoveToHand(obj: TableObject, context: ActionHandlerContext
       type: 'UPDATE_OBJECT',
       payload: {
         id: obj.id,
-        location: 'CURSOR_SLOT' as any,
+        updates: { location: 'CURSOR_SLOT' as any },
         ownerId: context.state.activePlayerId,
         isOnTable: false
       }
@@ -343,21 +343,21 @@ export function handleClone(obj: TableObject, dispatch: Dispatch<Action>) {
 export function handleLock(obj: TableObject, dispatch: Dispatch<Action>) {
   dispatch({
     type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, locked: !obj.locked }
+    payload: { id: obj.id, updates: { locked: !obj.locked } }
   });
 }
 
 export function handleShow(obj: TableObject, dispatch: Dispatch<Action>) {
   dispatch({
     type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, isPinnedToViewport: false }
+    payload: { id: obj.id, updates: { isPinnedToViewport: false } }
   });
 }
 
 export function handleHide(obj: TableObject, dispatch: Dispatch<Action>) {
   dispatch({
     type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, isPinnedToViewport: true }
+    payload: { id: obj.id, updates: { isPinnedToViewport: true } }
   });
 }
 
@@ -368,14 +368,14 @@ export function handleHide(obj: TableObject, dispatch: Dispatch<Action>) {
 export function handleSwingClockwise(obj: TableObject, dispatch: Dispatch<Action>) {
   dispatch({
     type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, rotation: (obj.rotation || 0) + 15 }
+    payload: { id: obj.id, updates: { rotation: (obj.rotation || 0) + 15 } }
   });
 }
 
 export function handleSwingCounterClockwise(obj: TableObject, dispatch: Dispatch<Action>) {
   dispatch({
     type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, rotation: (obj.rotation || 0) - 15 }
+    payload: { id: obj.id, updates: { rotation: (obj.rotation || 0) - 15 } }
   });
 }
 
@@ -383,20 +383,44 @@ export function handleSwingCounterClockwise(obj: TableObject, dispatch: Dispatch
 // DICE ACTIONS
 // ============================================
 
+// Memoized roll function to avoid redundant calls
+const rollMemoCache = new Map<string, { timestamp: number; value: number }>();
+const ROLL_MEMO_TTL = 100; // 100ms TTL to prevent duplicate rolls
+
 export function handleRoll(obj: TableObject, context: ActionHandlerContext) {
   if (obj.type === ItemType.DICE_OBJECT) {
     const dice = obj as any;
-    const rollStartTime = Date.now();
+
+    // Check memo cache to prevent duplicate rolls within TTL
+    const now = Date.now();
+    const cached = rollMemoCache.get(dice.id);
+    if (cached && now - cached.timestamp < ROLL_MEMO_TTL) {
+      return; // Skip duplicate roll
+    }
+
+    // Update cache
+    rollMemoCache.set(dice.id, { timestamp: now, value: 0 });
+
+    // Dispatch roll action - reducer now handles dice groups automatically
     context.dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: { id: dice.id, rollStartTime }
+      type: 'ROLL_PHYSICAL_DICE',
+      payload: { id: dice.id }
     });
 
-    // Animate if handler provided
-    if (context.additionalHandlers?.onAnimateDice) {
-      context.additionalHandlers.onAnimateDice(dice);
+    // Clean up old cache entries periodically
+    if (rollMemoCache.size > 100) {
+      for (const [key, value] of rollMemoCache.entries()) {
+        if (now - value.timestamp > ROLL_MEMO_TTL * 10) {
+          rollMemoCache.delete(key);
+        }
+      }
     }
   }
+}
+
+// Clear memo cache (useful for testing or manual reset)
+export function clearRollMemoCache() {
+  rollMemoCache.clear();
 }
 
 // ============================================

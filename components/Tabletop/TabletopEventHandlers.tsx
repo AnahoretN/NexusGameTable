@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation, DiceObject } from '../../types';
 import { clampScrollToPlayableArea } from '../../utils/viewportConstraints';
+import { useIsSettingsModalOpen } from '../../store/contexts';
 import {
   parseGridCellKey,
   calculateGridCellCenter,
@@ -119,13 +120,16 @@ const addToCursorSlot = (
     return; // Max 100 items in slot
   }
 
+  // Check if item is locked - locked objects can't be added to cursor slot
+  const obj = state.objects[id];
+  if (obj.locked) {
+    return; // Locked objects can't be picked up
+  }
+
   // Set source based on how the item was added (only if slot was empty before)
   if (cursorSlot.length === 0) {
     setCursorSlotSource(source);
   }
-
-  // Check if item is snapped to a grid cell and unhook it
-  const obj = state.objects[id];
   const gridCellKey = (obj as Token)?.gridCellKey || (obj as CardType)?.gridCellKey;
   if (obj && gridCellKey && (obj.type === ItemType.TOKEN || obj.type === ItemType.CARD)) {
     const [boardId, ...cellParts] = gridCellKey.split(':');
@@ -927,6 +931,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setPilesButtonMenu,
   } = props;
 
+  // Check if settings modal is open (to block context menus)
+  const isSettingsModalOpen = useIsSettingsModalOpen();
+
   // Track previous deck for cursor hover detection
   const previousDeckIdRef = useRef<string | null>(null);
 
@@ -944,6 +951,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Context menu handler
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
+    // Block context menu if settings modal is open
+    if (isSettingsModalOpen) return;
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({
@@ -952,7 +961,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       object: obj,
       shiftKey: isShiftPressed
     });
-  }, [isShiftPressed, setContextMenu]);
+  }, [isSettingsModalOpen, isShiftPressed, setContextMenu]);
 
   // Pile context menu handler
   const handlePileContextMenu = useCallback((e: React.MouseEvent, pile: any, deck: any) => {
@@ -987,9 +996,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       return;
     }
 
-    // Check if object is locked or not owned by player
+    // Check if object is locked - locked objects can't be interacted with (even for GM)
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    if (obj.locked && !isGM) {
+    if (obj.locked) {
       return;
     }
     if (!isOwner) {
@@ -1141,9 +1150,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
   const handleDoubleClick = useCallback((e: React.MouseEvent, obj: TableObject) => {
     if (!obj) return;
 
-    // Check if object is locked or not owned by player
+    // Check if object is locked - locked objects can't be interacted with (even for GM)
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    if (obj.locked && !isGM) {
+    if (obj.locked) {
       return;
     }
     if (!isOwner) {
@@ -1158,10 +1167,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       // Check if dice belongs to a group
       if (dice.diceGroupId) {
-        const group = state.diceGroups?.find(g => g.id === dice.diceGroupId);
+        const group = state.diceGroups?.find((g: any) => g.id === dice.diceGroupId);
         if (group) {
           // Roll all dice in the group
-          group.diceIds.forEach(diceId => {
+          group.diceIds.forEach((diceId: string) => {
             const groupDice = state.objects[diceId];
             if (groupDice?.type === ItemType.DICE_OBJECT) {
               dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
@@ -1307,13 +1316,40 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       const obj = state.objects[currentDraggingId];
       if (!obj) return;
 
+      // Check if object is locked - locked objects can't be dragged
+      if (obj.locked) {
+        return;
+      }
+
       // Check if this is a UI object (panel/window) - use screen coordinates
       const isUIObject = obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW;
 
       if (isUIObject) {
         // UI objects move immediately without threshold - smooth drag
-        const newX = e.clientX - dragOffsetRef.current.x;
-        const newY = e.clientY - dragOffsetRef.current.y;
+        let newX = e.clientX - dragOffsetRef.current.x;
+        let newY = e.clientY - dragOffsetRef.current.y;
+
+        // Constrain panel within viewport bounds
+        const panelWidth = obj.width || 300;
+        const panelHeight = obj.height || 400;
+        const maxX = window.innerWidth - panelWidth;
+        const maxY = window.innerHeight - panelHeight;
+
+        // Clamp position to keep panel visible
+        newX = Math.max(0, Math.min(maxX, newX));
+        newY = Math.max(0, Math.min(maxY, newY));
+
+        // For unpinned panels, convert screen pixels to world coordinates
+        // World coords account for scroll offset and zoom level
+        if (!(obj as any).isPinnedToViewport) {
+          const scrollX = viewTransform?.scroll?.x || 0;
+          const scrollY = viewTransform?.scroll?.y || 0;
+          const zoom = viewTransform?.zoom || 1;
+
+          // Convert screen pixels to world coords: (screen - scroll) * zoom
+          newX = (newX + scrollX) * zoom;
+          newY = (newY + scrollY) * zoom;
+        }
 
         // Update only uiObject position during drag (playerPanelSettings updated on mouseUp)
         dispatch({
@@ -1402,14 +1438,26 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       // For UI objects, update playerPanelSettings to sync position
       if (obj && (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW)) {
+        // Get current playerPanelSettings to preserve other properties
+        const currentSettings = state.playerPanelSettings?.[activePlayerId]?.[currentDraggingId];
+
+        // Clear x,y from playerPanelSettings so panel uses uiObject position directly
+        // This prevents issues where playerPanelSettings overrides the actual object position
         dispatch({
           type: 'UPDATE_PLAYER_PANEL_SETTINGS',
           payload: {
             playerId: activePlayerId,
             panelId: currentDraggingId,
             settings: {
-              x: obj.x,
-              y: obj.y
+              ...currentSettings,
+              // Don't store x/y in playerPanelSettings - let uiObject be the source of truth
+              x: undefined,
+              y: undefined,
+              // Preserve other properties
+              width: currentSettings?.width ?? obj.width,
+              height: currentSettings?.height ?? obj.height,
+              minimized: currentSettings?.minimized ?? (obj as any).minimized ?? false,
+              isPinnedToViewport: currentSettings?.isPinnedToViewport ?? (obj as any).isPinnedToViewport ?? false,
             }
           }
         });
@@ -1419,13 +1467,19 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
           const scrollX = viewTransform?.scroll?.x || 0;
           const scrollY = viewTransform?.scroll?.y || 0;
+          const zoom = viewTransform?.zoom || 1;
+
+          // Convert world coords to screen coords for pinning
+          // obj.x/y are in world coords (for unpinned panels during drag)
+          const screenX = obj.x / zoom - scrollX;
+          const screenY = obj.y / zoom - scrollY;
 
           dispatch({
             type: 'PIN_TO_VIEWPORT',
             payload: {
               id: currentDraggingId,
-              screenX: obj.x - scrollX,
-              screenY: obj.y - scrollY
+              screenX: screenX,
+              screenY: screenY
             }
           });
 

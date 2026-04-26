@@ -397,7 +397,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
-              <h3 className="text-base font-bold text-white">{translate('Settings:', language as Locale)} {settingsModal.tab.name}</h3>
+              <h3 className="text-base font-bold text-white">{translate('Properties:', language as Locale)} {settingsModal.tab.name}</h3>
             </div>
 
             {/* Tabs */}

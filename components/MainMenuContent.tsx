@@ -10,7 +10,7 @@ import { logger } from '../utils/logger';
 import { findGM, isGM } from '../utils/playerUtils';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package } from 'lucide-react';
-import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH } from '../constants';
+import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
@@ -258,7 +258,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           payload: {
             windowType: WindowType.OBJECT_SETTINGS,
             targetObjectId: panelId,
-            title: 'Hand Panel Settings'
+            title: 'Hand Panel Properties'
           }
         });
       }
@@ -390,8 +390,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         panelType,
         x,
         y,
-        width: MAIN_MENU_WIDTH,
-        height: 400,
+        width: DEFAULT_PANEL_WIDTH,
+        height: DEFAULT_PANEL_HEIGHT,
         title: panelType === PanelType.HAND ? 'Standard Hand Panel' : panelType,
       }
     });
@@ -919,7 +919,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                             type: 'CREATE_WINDOW',
                             payload: {
                               windowType: WindowType.OBJECT_SETTINGS,
-                              title: 'Settings: ' + archetype.name,
+                              title: 'Properties: ' + archetype.name,
                               targetObjectId: archetype.id
                             }
                           })}
@@ -2001,8 +2001,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
             panelType: item.panelType!,
             x: screenX - 150,
             y: screenY - 200,
-            width: MAIN_MENU_WIDTH,
-            height: 400,
+            width: DEFAULT_PANEL_WIDTH,
+            height: DEFAULT_PANEL_HEIGHT,
             title: item.name,
           }
         });
@@ -2134,11 +2134,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                           payload: {
                             windowType: WindowType.OBJECT_SETTINGS,
                             targetObjectId: obj.id,
-                            title: 'Settings'
+                            title: 'Properties'
                           }
                         })}
                         className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 text-xs"
-                        title="Settings"
+                        title="Properties"
                       >
                         <Settings size={10} />
                       </button>

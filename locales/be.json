@@ -10,7 +10,6 @@
   "Show/Hide Objects": "Паказваць/Схаваць аб'екты",
   "Close": "Закрыць",
   "P2P multiplayer via WebRTC • No server required": "P2P мультыплэер праз WebRTC • Без сервера",
-  "Settings": "Налады",
   "Storage & Cache": "Захаванне і кэш",
   "Game auto-saves to browser and restores on page reload": "Гульня аўтаматычна захоўваецца ў браўзеры і аднаўляецца пры перазагрузцы старонкі",
   "Last save: ": "Апошняе захаванне: ",
@@ -437,5 +436,6 @@
   "Full access: can add/remove objects and modify everything": "Поўны доступ: можа дадаваць/выдаляць аб'екты і змяняць усё",
   "Can reorder and manipulate cards in this hand": "Можа змяняць парадак і кіраваць картамі ў гэтай руцэ",
   "General": "Асноўнае",
-  "Settings:": "Налады:"
+  "Properties": "Уласцівасці",
+  "Properties:": "Уласцівасці:"
 }

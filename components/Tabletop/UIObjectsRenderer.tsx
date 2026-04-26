@@ -87,6 +87,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
             setSearchModalDeck={setSearchModalDeck}
             setTopDeckModalDeck={setTopDeckModalDeck}
             setDeleteCandidateId={setDeleteCandidateId}
+            pixelsPerVU={context.pixelsPerVU}
           />
         </div>
       </div>
@@ -126,6 +127,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
           setSearchModalDeck={setSearchModalDeck}
           setTopDeckModalDeck={setTopDeckModalDeck}
           setDeleteCandidateId={setDeleteCandidateId}
+          pixelsPerVU={context.pixelsPerVU}
         />
       </div>
     );

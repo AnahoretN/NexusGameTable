@@ -15,7 +15,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
-import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, useHyperscaleLayers, useLayerSelection, useLanguage } from '../store/contexts';
+import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, useHyperscaleLayers, useLayerSelection, useLanguage, useSettingsModalState } from '../store/contexts';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { useDragOverStore } from '../store/dragOverState';
 import { clampScrollToPlayableArea } from '../utils/viewportConstraints';
@@ -97,6 +97,7 @@ export const Tabletop: React.FC = () => {
   const hyperscaleLayers = useHyperscaleLayers();
   const [selectedHyperscaleLayerIds, setLayerSelection] = useLayerSelection();
   const language = useLanguage();
+  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
 
   // === Positioning & View Transforms ===
   const {
@@ -143,6 +144,16 @@ export const Tabletop: React.FC = () => {
   // Modal states
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>(null);
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
+
+  // Sync settings modal state with UI context
+  useEffect(() => {
+    if (settingsModalObj) {
+      openSettingsModal();
+    } else {
+      closeSettingsModal();
+    }
+  }, [settingsModalObj, openSettingsModal, closeSettingsModal]);
+
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   const [pileContextMenu, setPileContextMenu] = useState<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>(null);
   const [searchModalDeck, setSearchModalDeck] = useState<DeckType | null>(null);

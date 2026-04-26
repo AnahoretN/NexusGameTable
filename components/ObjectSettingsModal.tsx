@@ -784,6 +784,17 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
 
   const updatePile = (index: number, field: keyof CardPile, value: any) => {
     const updated = [...piles];
+
+    // Special handling for isMillPile - only one pile can have mill enabled at a time
+    if (field === 'isMillPile' && value === true) {
+      // Disable mill for all other piles
+      for (let i = 0; i < updated.length; i++) {
+        if (i !== index) {
+          updated[i] = { ...updated[i], isMillPile: false };
+        }
+      }
+    }
+
     updated[index] = { ...updated[index], [field]: value };
     setPiles(updated);
     // Also update data to keep in sync
@@ -802,7 +813,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-center items-center py-2 px-4">
-          <h3 className="text-base font-bold text-white">{translate('Settings', language as Locale)}: {object.name}</h3>
+          <h3 className="text-base font-bold text-white">{translate('Properties', language as Locale)}: {object.name}</h3>
         </div>
 
         {/* Tabs */}

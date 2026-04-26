@@ -118,6 +118,18 @@ function uiReducer(state: UIState, action: UIAction): UIState {
         selectedHyperscaleLayerIds: [],
       };
 
+    case 'OPEN_SETTINGS_MODAL':
+      return {
+        ...state,
+        settingsModalOpen: true,
+      };
+
+    case 'CLOSE_SETTINGS_MODAL':
+      return {
+        ...state,
+        settingsModalOpen: false,
+      };
+
     default:
       return state;
   }
@@ -190,6 +202,15 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     return state.playerPanelSettings[playerId]?.[panelId];
   }, [state.playerPanelSettings]);
 
+  // Settings modal actions
+  const openSettingsModal = useCallback(() => {
+    dispatch({ type: 'OPEN_SETTINGS_MODAL' });
+  }, []);
+
+  const closeSettingsModal = useCallback(() => {
+    dispatch({ type: 'CLOSE_SETTINGS_MODAL' });
+  }, []);
+
   const value: UIContextValue = {
     // State
     ...state,
@@ -215,6 +236,10 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     // Getters
     getSelectedLayers,
     getPanelSettings,
+
+    // Settings modal
+    openSettingsModal,
+    closeSettingsModal,
   };
 
   return (
@@ -332,4 +357,27 @@ export function usePanelSettingsActions(): {
     updatePanelSettings: context.updatePanelSettings,
     removePanelSettings: context.removePanelSettings,
   };
+}
+
+/**
+ * useSettingsModalState - Get settings modal state and actions
+ * Returns tuple: [isOpen, openModal, closeModal]
+ * Use this to manage settings modal state and block context menus
+ */
+export function useSettingsModalState(): [boolean, () => void, () => void] {
+  const context = useUI();
+  return [
+    context.settingsModalOpen,
+    context.openSettingsModal,
+    context.closeSettingsModal,
+  ];
+}
+
+/**
+ * useIsSettingsModalOpen - Check if any settings modal is open
+ * Use this to block context menus and other interactions
+ */
+export function useIsSettingsModalOpen(): boolean {
+  const context = useUI();
+  return context.settingsModalOpen;
 }

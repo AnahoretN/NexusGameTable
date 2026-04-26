@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { useActivePlayerId, useIsGM, usePlayerList } from '../store/contexts';
+import { useActivePlayerId, useIsGM, usePlayerList, useSettingsModalState, useIsSettingsModalOpen } from '../store/contexts';
 import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType } from '../types';
 import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload } from 'lucide-react';
 import { TextBlock, SliderBlock, TableBlock, InventoryBlock, AvatarBlock, CounterBlock } from './CharacterBlocks';
@@ -22,6 +22,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
   const players = usePlayerList();
+  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
 
   // Get character data from panel - use latest from state to ensure reactivity
   const characterData = (state.objects[panel.id] as PanelObject)?.characterData || panel.characterData;
@@ -459,6 +460,15 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     character: CharacterTab;
   } | null>(null);
   const [tempSettingsCharacter, setTempSettingsCharacter] = useState<CharacterTab | null>(null);
+
+  // Sync settings modal state with UI context
+  useEffect(() => {
+    if (settingsModal) {
+      openSettingsModal();
+    } else {
+      closeSettingsModal();
+    }
+  }, [settingsModal, openSettingsModal, closeSettingsModal]);
 
   // Handler: Open character settings
   const handleOpenCharacterSettings = useCallback((characterId: string, e: React.MouseEvent) => {
@@ -1362,7 +1372,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
-              <h3 className="text-base font-bold text-white">Settings: {settingsModal.character.characterName}</h3>
+              <h3 className="text-base font-bold text-white">Properties: {settingsModal.character.characterName}</h3>
             </div>
 
             {/* Tabs */}

@@ -77,7 +77,9 @@ export {
   useLayerSelection,
   useLayerActions,
   usePanelSettings,
-  usePanelSettingsActions
+  usePanelSettingsActions,
+  useSettingsModalState,
+  useIsSettingsModalOpen
 } from './UIContext';
 
 // ============================================================================

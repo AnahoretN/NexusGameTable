@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
-import { usePixelsPerVU, usePlayerList, useActivePlayerId, useHyperscaleLayers, useLanguage } from '../store/contexts';
+import { usePixelsPerVU, usePlayerList, useActivePlayerId, useHyperscaleLayers, useLanguage, useSettingsModalState } from '../store/contexts';
 import { TableObject, ItemType, Deck as DeckType, CardPile, Counter, DiceObject, TokenShape, Board as BoardType, CardLocation, Card } from '../types';
 import { ObjectRenderer } from './ObjectRenderer';
 import { DeckComponent } from './DeckComponent';
@@ -46,6 +46,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   const activePlayerId = useActivePlayerId();
   const hyperscaleLayers = useHyperscaleLayers();
   const language = useLanguage();
+  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -108,6 +109,15 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
   // Settings modal state
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
+
+  // Sync settings modal state with UI context
+  useEffect(() => {
+    if (settingsModalObj) {
+      openSettingsModal();
+    } else {
+      closeSettingsModal();
+    }
+  }, [settingsModalObj, openSettingsModal, closeSettingsModal]);
 
   // Search modal states
   const [searchModalDeck, setSearchModalDeck] = useState<DeckType | null>(null);
@@ -189,16 +199,12 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         setDeleteCandidateId(obj.id);
         return;
       case 'roll':
-        if (obj.type === ItemType.DICE_OBJECT) {
-          const dice = obj as DiceObject;
-          const rollStartTime = Date.now();
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: { id: dice.id, updates: { rollStartTime } }
-          });
-          // Use local dice animation
-          startDiceAnimation(dice.id, dice.sides, true);
-        }
+        // Use universal handler which now handles dice groups correctly
+        universalExecuteClickAction(obj, action, {
+          dispatch,
+          state: { objects, activePlayerId, diceGroups: state.diceGroups },
+          additionalHandlers: { onAnimateDice: animateDiceRoll }
+        });
         return;
       case 'millTopCard':
         if (obj.type === ItemType.DECK) {
@@ -2086,7 +2092,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                       <span
                         className="font-bold text-white drop-shadow-md"
                         style={{
-                          fontSize: `${Math.min(24 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.7)}px`
+                          fontSize: `${25 * pixelsPerVU}px`
                         }}
                       >{displayValue}</span>
                     </div>
@@ -2102,7 +2108,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                       <span
                         className="opacity-75 text-white drop-shadow-md"
                         style={{
-                          fontSize: `${Math.min(9 * (1 + ((dice.height || 60) / 60 - 1) * (2/3)), (dice.width || 60) * 0.25)}px`
+                          fontSize: `${15 * pixelsPerVU}px`
                         }}
                       >d{dice.sides}</span>
                     </div>

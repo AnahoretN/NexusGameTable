@@ -20,7 +20,9 @@ import {
   usePlayerList,
   useActivePlayerId,
   useIsGM,
-  usePlayerPermissions
+  usePlayerPermissions,
+  useSettingsModalState,
+  useIsSettingsModalOpen
 } from '../store/contexts';
 import { useGame } from '../store/GameContext';
 import { Card, Token, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player } from '../types';
@@ -31,11 +33,264 @@ import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
 import { useCursorSlotHover } from '../hooks';
 import { getCardButtonConfigsWithActions } from '../utils/buttonConfig';
 import { MAIN_MENU_WIDTH } from '../constants';
-import { Settings } from 'lucide-react';
+import { Settings, ArrowUp, ArrowDown, Shuffle, ChevronRight, RotateCw } from 'lucide-react';
 import { useTabCardScale } from '../hooks/useTabCardScale';
 import { HandTabSettingsModal } from './HandTabSettingsModal';
+import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { t as translate, Locale } from '../utils/translations';
 import { VirtualizedHandList, useVirtualizedHandList } from './VirtualizedHandList';
+
+// Context Menu for cards in hand
+interface HandCardContextMenuProps {
+  x: number;
+  y: number;
+  card: Card;
+  deck?: DeckType;
+  onClose: () => void;
+  onFlip: () => void;
+  onMoveToTop: () => void;
+  onMoveToBottom: () => void;
+  onMill: () => void;
+  onMoveToPile: (pileId: string) => void;
+  onOpenSettings: () => void;
+  language: AppLanguage;
+}
+
+// Helper function to calculate safe menu position
+const calculateSafeMenuPosition = (
+  x: number,
+  y: number,
+  menuWidth: number = 200,
+  menuHeight: number = 300
+): { left: number; top: number; submenuPosition: 'left' | 'right' } => {
+  const padding = 8;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // Calculate horizontal position
+  let left = x;
+  if (left + menuWidth + padding > viewportWidth) {
+    left = viewportWidth - menuWidth - padding;
+  }
+  if (left < padding) {
+    left = padding;
+  }
+
+  // Calculate vertical position
+  let top = y;
+  if (top + menuHeight + padding > viewportHeight) {
+    top = viewportHeight - menuHeight - padding;
+  }
+  if (top < padding) {
+    top = padding;
+  }
+
+  // Determine submenu position (left or right of parent menu)
+  const submenuPosition: 'left' | 'right' =
+    left + menuWidth + menuWidth + padding > viewportWidth ? 'left' : 'right';
+
+  return { left, top, submenuPosition };
+};
+
+const HandCardContextMenu: React.FC<HandCardContextMenuProps> = ({
+  x, y, card, deck, onClose, onFlip, onMoveToTop, onMoveToBottom, onMill, onMoveToPile, onOpenSettings, language
+}) => {
+  const [moveSubmenuOpen, setMoveSubmenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
+  const moveSubmenuButtonRef = useRef<HTMLButtonElement>(null);
+  const [menuPosition, setMenuPosition] = useState(() => calculateSafeMenuPosition(x, y));
+  const [submenuPosition, setSubmenuPosition] = useState<{ left: number; top: number } | null>(null);
+
+  // Get piles from deck
+  const piles = deck?.piles || [];
+
+  // Find mill pile (pile with isMillPile: true)
+  const millPile = piles.find(p => p.isMillPile);
+
+  // Recalculate position if window resizes
+  useEffect(() => {
+    const handleResize = () => {
+      setMenuPosition(calculateSafeMenuPosition(x, y));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [x, y]);
+
+  // Calculate submenu position when it opens
+  useEffect(() => {
+    if (moveSubmenuOpen && moveSubmenuButtonRef.current) {
+      const buttonRect = moveSubmenuButtonRef.current.getBoundingClientRect();
+      const submenuWidth = 200;
+      const submenuHeight = piles.length > 0 ? 150 + piles.length * 35 : 150;
+      const padding = 8;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      let left: number;
+      let top = buttonRect.top;
+
+      // Determine if submenu should be on left or right
+      if (menuPosition.submenuPosition === 'right') {
+        left = buttonRect.right + padding;
+        // Check if would go off right edge
+        if (left + submenuWidth + padding > viewportWidth) {
+          left = buttonRect.left - submenuWidth - padding;
+        }
+      } else {
+        left = buttonRect.left - submenuWidth - padding;
+        // Check if would go off left edge
+        if (left < padding) {
+          left = buttonRect.right + padding;
+        }
+      }
+
+      // Adjust vertical position if needed
+      if (top + submenuHeight + padding > viewportHeight) {
+        top = Math.max(padding, viewportHeight - submenuHeight - padding);
+      }
+
+      setSubmenuPosition({ left, top });
+    } else {
+      setSubmenuPosition(null);
+    }
+  }, [moveSubmenuOpen, menuPosition.submenuPosition, piles.length]);
+
+  const handleAction = useCallback((action: () => void) => {
+    action();
+    onClose();
+  }, [onClose]);
+
+  // Close menu on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: Event) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[999999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[200px]"
+      style={{ left: menuPosition.left, top: menuPosition.top }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* Configuration */}
+      <button
+        onClick={() => handleAction(onOpenSettings)}
+        className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
+      >
+        <Settings size={16} />
+        <span>{translate('Properties', language as Locale)}</span>
+      </button>
+
+      {/* Separator */}
+      <div className="h-px bg-slate-700 my-1 mx-2" />
+
+      {/* Move Submenu */}
+      <div className="relative">
+        <button
+          ref={moveSubmenuButtonRef}
+          onClick={() => setMoveSubmenuOpen(!moveSubmenuOpen)}
+          className="w-full text-left px-3 py-2 flex items-center justify-between hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
+        >
+          <span className="flex items-center gap-2">
+            <Shuffle size={16} />
+            <span>{translate('Move', language as Locale)}</span>
+          </span>
+          {menuPosition.submenuPosition === 'right' ? (
+            <ChevronRight size={14} />
+          ) : (
+            <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />
+          )}
+        </button>
+
+        {moveSubmenuOpen && submenuPosition && createPortal(
+          <div
+            ref={submenuRef}
+            className="fixed bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[200px] z-[999999]"
+            style={{ left: submenuPosition.left, top: submenuPosition.top }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Move to Top */}
+            <button
+              onClick={() => {
+                handleAction(onMoveToTop);
+                setMoveSubmenuOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
+            >
+              <ArrowUp size={16} />
+              <span>{translate('To Top', language as Locale)}</span>
+            </button>
+
+            {/* Move to Bottom */}
+            <button
+              onClick={() => {
+                handleAction(onMoveToBottom);
+                setMoveSubmenuOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
+            >
+              <ArrowDown size={16} />
+              <span>{translate('To Bottom', language as Locale)}</span>
+            </button>
+
+            {/* Mill - only if mill pile exists */}
+            {millPile && (
+              <button
+                onClick={() => {
+                  handleAction(onMill);
+                  setMoveSubmenuOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
+              >
+                <Shuffle size={16} />
+                <span>{translate('Mill', language as Locale)}</span>
+              </button>
+            )}
+
+            {/* Separator before piles list - only if there are piles */}
+            {piles.length > 0 && <div className="h-px bg-slate-700 my-1 mx-2" />}
+
+            {/* Piles list */}
+            {piles.map((pile) => (
+              <button
+                key={pile.id}
+                onClick={() => {
+                  handleAction(() => onMoveToPile(pile.id));
+                  setMoveSubmenuOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
+              >
+                <span className="w-4" />
+                <span>{pile.name || pile.id}</span>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+      </div>
+
+      {/* Separator before Flip */}
+      <div className="h-px bg-slate-700 my-1 mx-2" />
+
+      {/* Flip - at the bottom */}
+      <button
+        onClick={() => handleAction(onFlip)}
+        className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-700 transition-colors text-gray-200 cursor-pointer"
+      >
+        <RotateCw size={16} />
+        <span>{translate('Flip', language as Locale)}</span>
+      </button>
+    </div>,
+    document.body
+  );
+};
 
 // Memoized component for individual card in hand panel
 interface HandCardItemProps {
@@ -174,6 +429,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
   const playerPermissions = usePlayerPermissions();
+  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scaleMenuRef = useRef<HTMLDivElement>(null);
@@ -203,6 +459,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // Hand tab settings modal state
   const [handTabSettings, setHandTabSettings] = useState<{ playerId: string; player: Player } | null>(null);
   const [tempSettingsPlayer, setTempSettingsPlayer] = useState<Player | null>(null);
+  // Card settings modal state
+  const [cardSettingsModal, setCardSettingsModal] = useState<Card | null>(null);
   // Edit mode for percentage input
   const [isEditingPercentage, setIsEditingPercentage] = useState(false);
   const [editedPercentage, setEditedPercentage] = useState('');
@@ -229,6 +487,25 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const { isCursorOver: isCursorOverFromHook } = useCursorSlotHover(containerRef, {
     requireDraggingCard: true,
   });
+
+  // Sync settings modal state with UI context
+  useEffect(() => {
+    if (handTabSettings) {
+      openSettingsModal();
+    } else {
+      closeSettingsModal();
+    }
+  }, [handTabSettings, openSettingsModal, closeSettingsModal]);
+
+  // Sync card settings modal state with UI context
+  useEffect(() => {
+    if (cardSettingsModal) {
+      openSettingsModal();
+    } else if (!handTabSettings) {
+      // Only close if both modals are closed
+      closeSettingsModal();
+    }
+  }, [cardSettingsModal, handTabSettings, openSettingsModal, closeSettingsModal]);
 
   // Update local state when hook state changes
   useEffect(() => {
@@ -507,10 +784,12 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   // Context menu handler
   const handleCardContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
+    // Block context menu if settings modal is open
+    if (isSettingsModalOpen) return;
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, object: card });
-  }, []);
+  }, [isSettingsModalOpen]);
 
   const getSafeMenuPosition = useCallback((x: number, y: number): { x: number; y: number } => {
     const menuWidth = 280;
@@ -584,30 +863,178 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     }
   }, [players]);
 
-  const handleContextMenuAction = useCallback((action: string) => {
-    if (!contextMenu) return;
-    const object = contextMenu.object as Card;
+  // Context menu handlers for cards in hand
+  const handleCardMoveToTop = useCallback((cardId: string) => {
+    const card = objects[cardId] as Card;
+    if (!card || !card.deckId) return;
 
-    switch (action) {
-      case 'flip':
-        handleFlip(object.id);
-        break;
-      case 'rotateClockwise':
-        handleRotateClockwise(object.id);
-        break;
-      case 'rotateCounterClockwise':
-        handleRotateCounterClockwise(object.id);
-        break;
-      case 'clone':
-        handleClone(object.id);
-        break;
-      case 'delete':
-        deleteObject(object.id);
-        break;
-      // Add other actions as needed
-    }
-    setContextMenu(null);
-  }, [contextMenu, handleFlip, handleRotateClockwise, handleRotateCounterClockwise, handleClone, deleteObject]);
+    const deck = objects[card.deckId] as DeckType;
+    if (!deck || deck.type !== ItemType.DECK) return;
+
+    // Remove card from current position in deck
+    const newCardIds = deck.cardIds.filter(id => id !== cardId);
+
+    // Add to top of deck
+    newCardIds.unshift(cardId);
+
+    // Update deck
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: deck.id,
+        updates: { cardIds: newCardIds }
+      }
+    });
+
+    // Update card location
+    updateCard(cardId, {
+      location: CardLocation.DECK,
+      inCursorSlot: false,
+      isOnTable: false,
+      x: -999999,
+      y: -999999
+    });
+  }, [objects, dispatch, updateCard]);
+
+  const handleCardMoveToBottom = useCallback((cardId: string) => {
+    const card = objects[cardId] as Card;
+    if (!card || !card.deckId) return;
+
+    const deck = objects[card.deckId] as DeckType;
+    if (!deck || deck.type !== ItemType.DECK) return;
+
+    // Remove card from current position in deck
+    const newCardIds = deck.cardIds.filter(id => id !== cardId);
+
+    // Add to bottom of deck
+    newCardIds.push(cardId);
+
+    // Update deck
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: deck.id,
+        updates: { cardIds: newCardIds }
+      }
+    });
+
+    // Update card location
+    updateCard(cardId, {
+      location: CardLocation.DECK,
+      inCursorSlot: false,
+      isOnTable: false,
+      x: -999999,
+      y: -999999
+    });
+  }, [objects, dispatch, updateCard]);
+
+  const handleCardMill = useCallback((cardId: string) => {
+    const card = objects[cardId] as Card;
+    if (!card || !card.deckId) return;
+
+    const deck = objects[card.deckId] as DeckType;
+    if (!deck || deck.type !== ItemType.DECK) return;
+
+    // Find mill pile (pile with isMillPile: true)
+    const millPile = deck.piles?.find(p => p.isMillPile);
+    if (!millPile) return;
+
+    // Remove card from deck
+    const newCardIds = deck.cardIds.filter(id => id !== cardId);
+
+    // Update deck
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: deck.id,
+        updates: { cardIds: newCardIds }
+      }
+    });
+
+    // Add card to pile
+    const updatedPiles = deck.piles?.map(pile => {
+      if (pile.id === millPile.id) {
+        return {
+          ...pile,
+          cardIds: [cardId, ...pile.cardIds]
+        };
+      }
+      return pile;
+    });
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: deck.id,
+        updates: { piles: updatedPiles }
+      }
+    });
+
+    // Update card location
+    updateCard(cardId, {
+      location: CardLocation.PILE,
+      inCursorSlot: false,
+      isOnTable: false,
+      x: -999999,
+      y: -999999
+    });
+  }, [objects, dispatch, updateCard]);
+
+  const handleCardMoveToPile = useCallback((cardId: string, pileId: string) => {
+    const card = objects[cardId] as Card;
+    if (!card || !card.deckId) return;
+
+    const deck = objects[card.deckId] as DeckType;
+    if (!deck || deck.type !== ItemType.DECK) return;
+
+    // Find target pile
+    const targetPile = deck.piles?.find(p => p.id === pileId);
+    if (!targetPile) return;
+
+    // Remove card from deck
+    const newCardIds = deck.cardIds.filter(id => id !== cardId);
+
+    // Update deck
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: deck.id,
+        updates: { cardIds: newCardIds }
+      }
+    });
+
+    // Add card to pile
+    const updatedPiles = deck.piles?.map(pile => {
+      if (pile.id === pileId) {
+        return {
+          ...pile,
+          cardIds: [cardId, ...pile.cardIds]
+        };
+      }
+      return pile;
+    });
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: deck.id,
+        updates: { piles: updatedPiles }
+      }
+    });
+
+    // Update card location
+    updateCard(cardId, {
+      location: CardLocation.PILE,
+      inCursorSlot: false,
+      isOnTable: false,
+      x: -999999,
+      y: -999999
+    });
+  }, [objects, dispatch, updateCard]);
+
+  const handleOpenCardSettings = useCallback((card: Card) => {
+    setCardSettingsModal(card);
+  }, []);
 
   const handleScaleChange = useCallback((newScale: number) => {
     setTabCardScale(newScale);
@@ -857,7 +1284,6 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
               <button
                 key={player.id}
                 onClick={() => setSelectedPlayerId(player.id)}
-                onContextMenu={(e) => handleTabContextMenu(e, player.id)}
                 className={`px-2 py-1 text-xs font-medium rounded-t transition-colors relative ${
                   isActive
                     ? isOwnHand
@@ -919,7 +1345,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
             {(isDragTarget || isCursorOverHand) && (
               <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
             )}
-            <div className="p-1" onContextMenu={handlePanelContextMenu}>
+            <div className="p-1">
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center min-h-[200px] text-slate-500">
               <p className="text-sm">
@@ -1123,7 +1549,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         }}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-center items-center py-2 px-4">
-              <h3 className="text-base font-bold text-white">{translate('Settings:', language as Locale)} {handTabSettings.player.name}</h3>
+              <h3 className="text-base font-bold text-white">{translate('Properties:', language as Locale)} {handTabSettings.player.name}</h3>
             </div>
 
             <div className="flex">
@@ -1190,17 +1616,58 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         document.body
       )}
 
+      {/* Card Settings Modal */}
+      {cardSettingsModal && createPortal(
+        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setCardSettingsModal(null);
+          }
+        }}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-center items-center py-2 px-4">
+              <h3 className="text-base font-bold text-white">{translate('Card Configuration', language as Locale)}</h3>
+            </div>
+
+            <div className="flex">
+              <button className="flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors bg-slate-700 text-white border-b-2 border-purple-500">
+                {translate('General', language as Locale)}
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+              <ObjectSettingsModal
+                object={cardSettingsModal}
+                onSave={(updatedObj) => {
+                  dispatch({
+                    type: 'UPDATE_OBJECT',
+                    payload: { id: updatedObj.id, updates: updatedObj }
+                  });
+                  setCardSettingsModal(null);
+                }}
+                onClose={() => setCardSettingsModal(null)}
+                allObjects={objects}
+                language={language}
+              />
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Context menu for cards in hand */}
       {contextMenu && (
-        <ContextMenu
+        <HandCardContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          object={contextMenu.object}
-          isGM={isGM}
-          onAction={handleContextMenuAction}
+          card={contextMenu.object as Card}
+          deck={(contextMenu.object as Card).deckId ? objects[(contextMenu.object as Card).deckId!] as DeckType : undefined}
           onClose={() => setContextMenu(null)}
-          allObjects={objects}
-          hideCardActions={true}
+          onFlip={() => handleFlip((contextMenu.object as Card).id)}
+          onMoveToTop={() => handleCardMoveToTop((contextMenu.object as Card).id)}
+          onMoveToBottom={() => handleCardMoveToBottom((contextMenu.object as Card).id)}
+          onMill={() => handleCardMill((contextMenu.object as Card).id)}
+          onMoveToPile={(pileId) => handleCardMoveToPile((contextMenu.object as Card).id, pileId)}
+          onOpenSettings={() => handleOpenCardSettings(contextMenu.object as Card)}
           language={language}
         />
       )}
@@ -1210,7 +1677,10 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         <div
           ref={scaleMenuRef}
           className="fixed z-[999999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-3 px-3 min-w-[220px]"
-          style={{ left: scaleMenu.x, top: scaleMenu.y }}
+          style={{
+            left: calculateSafeMenuPosition(scaleMenu.x, scaleMenu.y, 220, 100).left,
+            top: calculateSafeMenuPosition(scaleMenu.x, scaleMenu.y, 220, 100).top
+          }}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="text-xs text-slate-400 mb-2">

@@ -8,9 +8,9 @@ export const useHandCardScale = () => {
   const [scale, setScale] = useState(() => {
     try {
       const saved = localStorage.getItem('hand-card-scale');
-      return saved ? parseFloat(saved) : 1;
+      return saved ? parseFloat(saved) : 1.15; // 115% by default
     } catch {
-      return 1;
+      return 1.15; // 115% by default
     }
   });
 

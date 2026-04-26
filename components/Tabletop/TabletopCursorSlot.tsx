@@ -21,13 +21,14 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
 }) => {
   // Memoize getCardSettings to prevent infinite re-renders
   const getCardSettings = useCallback((card: CardType) => {
+    const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
     const isHorizontal = card.isHorizontal ?? false;
     return {
-      cardWidth: card.width,
-      cardHeight: card.height,
+      cardWidth: card.width ?? deck?.cardWidth,
+      cardHeight: card.height ?? deck?.cardHeight,
       cardOrientation: isHorizontal ? CardOrientation.HORIZONTAL : CardOrientation.VERTICAL
     };
-  }, []);
+  }, [state.objects]);
 
   // Don't render if cursor slot is empty
   if (cursorSlot.length === 0) {

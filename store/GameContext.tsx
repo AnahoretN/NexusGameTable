@@ -2102,71 +2102,97 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const dice = state.objects[action.payload.id] as DiceObject;
         if (!dice || dice.type !== ItemType.DICE_OBJECT) return state;
 
-        // Calculate final value
-        const finalValue = Math.floor(Math.random() * dice.sides) + 1;
-        const newRoll: DiceRoll = {
-            id: generateUUID(),
-            value: finalValue,
-            playerName: 'Dice Object',
-            timestamp: Date.now()
-        };
-
-        // Start animation immediately (don't rely on useEffect)
-        const animationDuration = 500; // 0.5 seconds
-        const updateCount = 5;
-        const updateInterval = animationDuration / (updateCount + 1);
-        const diceId = action.payload.id;
-        const diceSides = dice.sides;
-
-        let updateIndex = 0;
-        const animateRoll = () => {
-            if (updateIndex < updateCount) {
-                // Show random intermediate value
-                const intermediateValue = Math.floor(Math.random() * diceSides) + 1;
-                // Use the dispatch from the action context if available, otherwise skip
-                if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
-                    (window as any).__diceRollDispatch({
-                        type: 'UPDATE_OBJECT',
-                        payload: { id: diceId, updates: { currentValue: intermediateValue } }
-                    });
-                }
-                updateIndex++;
-                setTimeout(animateRoll, updateInterval);
+        // Check if dice belongs to a group - roll all dice in the group
+        const diceIdsToRoll: string[] = [];
+        if (dice.diceGroupId) {
+            const group = state.diceGroups?.find((g: any) => g.id === dice.diceGroupId);
+            if (group) {
+                diceIdsToRoll.push(...group.diceIds);
             } else {
-                // Set final value and clear rolling state
-                if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
-                    (window as any).__diceRollDispatch({
-                        type: 'UPDATE_OBJECT',
-                        payload: {
-                            id: diceId,
-                            updates: {
-                                currentValue: finalValue,
-                                rolling: false,
-                                rollTargetValue: undefined,
-                                rollStartTime: undefined
-                            }
-                        }
-                    });
-                }
+                diceIdsToRoll.push(action.payload.id);
             }
-        };
+        } else {
+            diceIdsToRoll.push(action.payload.id);
+        }
 
-        // Start animation after state updates
-        setTimeout(animateRoll, 0);
+        // Roll each dice and collect rolls
+        const newRolls: DiceRoll[] = [];
+        const updatedObjects: Record<string, any> = {};
+
+        diceIdsToRoll.forEach(diceId => {
+            const diceToRoll = state.objects[diceId] as DiceObject;
+            if (!diceToRoll || diceToRoll.type !== ItemType.DICE_OBJECT) return;
+
+            const finalValue = Math.floor(Math.random() * diceToRoll.sides) + 1;
+            newRolls.push({
+                id: generateUUID(),
+                value: finalValue,
+                playerName: 'Dice Object',
+                timestamp: Date.now()
+            });
+
+            // Start animation for each dice
+            const animationDuration = 500;
+            const updateCount = 5;
+            const updateInterval = animationDuration / (updateCount + 1);
+            let updateIndex = 0;
+            let previousValue = diceToRoll.currentValue;
+
+            const animateRoll = () => {
+                if (updateIndex < updateCount) {
+                    let intermediateValue: number;
+                    if (diceToRoll.sides === 2) {
+                        intermediateValue = previousValue === 1 ? 2 : 1;
+                    } else {
+                        do {
+                            intermediateValue = Math.floor(Math.random() * diceToRoll.sides) + 1;
+                        } while (intermediateValue === previousValue);
+                    }
+                    previousValue = intermediateValue;
+
+                    if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                        (window as any).__diceRollDispatch({
+                            type: 'UPDATE_OBJECT',
+                            payload: { id: diceId, updates: { currentValue: intermediateValue } }
+                        });
+                    }
+                    updateIndex++;
+                    setTimeout(animateRoll, updateInterval);
+                } else {
+                    if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                        (window as any).__diceRollDispatch({
+                            type: 'UPDATE_OBJECT',
+                            payload: {
+                                id: diceId,
+                                updates: {
+                                    currentValue: finalValue,
+                                    rolling: false,
+                                    rollTargetValue: undefined,
+                                    rollStartTime: undefined
+                                }
+                            }
+                        });
+                    }
+                }
+            };
+            setTimeout(animateRoll, 0);
+
+            updatedObjects[diceId] = {
+                ...diceToRoll,
+                currentValue: 1,
+                rolling: true,
+                rollTargetValue: finalValue,
+                rollStartTime: Date.now()
+            };
+        });
 
         return {
             ...state,
             objects: {
                 ...state.objects,
-                [action.payload.id]: {
-                    ...dice,
-                    currentValue: 1,
-                    rolling: true,
-                    rollTargetValue: finalValue,
-                    rollStartTime: Date.now()
-                }
+                ...updatedObjects
             },
-            diceRolls: [newRoll, ...state.diceRolls].slice(0, 50)
+            diceRolls: [...newRolls, ...state.diceRolls].slice(0, 50)
         };
     }
     case 'UPDATE_COUNTER': {

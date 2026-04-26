@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom';
 import { PanelObject, PanelType, AppLanguage } from '../types';
 import { useGame } from '../store/GameContext';
 import { useActivePlayerId } from '../store/contexts';
-import { useObjectActions } from '../store/objectStore';
 import { Settings, Maximize2, Check } from 'lucide-react';
 
 type PanelSettingsTab = 'general';
@@ -23,9 +22,9 @@ interface PanelSettingsModalProps {
  * When a player opens this modal, they see and modify their own settings only.
  */
 export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, onClose, language = 'en' }) => {
-  const { dispatch, isHost } = useGame(); // Keep for player panel settings
-  const { updateObject } = useObjectActions();
+  const { dispatch, isHost, state } = useGame();
   const activePlayerId = useActivePlayerId();
+  const pixelsPerVU = state.viewTransform?.pixelsPerVU || 1;
 
   const [activeTab, setActiveTab] = React.useState<PanelSettingsTab>('general');
   const [title, setTitle] = React.useState(panel.title);
@@ -36,7 +35,41 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
   const [dualPosition, setDualPosition] = React.useState(panel.dualPosition || false);
   const [zIndex, setZIndex] = React.useState(panel.zIndex || 1000);
 
-  // Sync values with current panel state (in case panel was resized while modal is open)
+  // Constraints in VU
+  const WORLD_SIZE = 10000; // Game world size in VU
+  const MIN_PANEL_SIZE = 200; // Minimum panel size in pixels (converted to VU)
+
+  // Convert VU to pixels for display
+  const vuToPx = (vu: number) => vu * pixelsPerVU;
+  // Convert pixels to VU for storage
+  const pxToVu = (px: number) => px / pixelsPerVU;
+
+  // Get bounds in VU
+  const getMaxWidthVU = React.useCallback(() => pxToVu(window.innerWidth - 40), [pixelsPerVU]);
+  const getMaxHeightVU = React.useCallback(() => pxToVu(window.innerHeight - 80), [pixelsPerVU]);
+
+  const clampPosition = React.useCallback((posX: number, posY: number, panelWidth: number, panelHeight: number) => {
+    const maxWVU = getMaxWidthVU();
+    const maxHVU = getMaxHeightVU();
+    const minSizeVU = pxToVu(MIN_PANEL_SIZE);
+
+    // Clamp width and height
+    const clampedWidth = Math.max(minSizeVU, Math.min(panelWidth, maxWVU));
+    const clampedHeight = Math.max(minSizeVU, Math.min(panelHeight, maxHVU));
+
+    // Clamp position to keep panel within world bounds
+    const maxX = WORLD_SIZE - clampedWidth;
+    const maxY = WORLD_SIZE - clampedHeight;
+
+    return {
+      x: Math.max(0, Math.min(maxX, posX)),
+      y: Math.max(0, Math.min(maxY, posY)),
+      width: clampedWidth,
+      height: clampedHeight
+    };
+  }, [getMaxWidthVU, getMaxHeightVU, pixelsPerVU]);
+
+  // Sync values with current panel state
   React.useEffect(() => {
     setTitle(panel.title);
     setX(panel.x);
@@ -50,19 +83,21 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
   const handleSave = () => {
     const currentPlayerId = activePlayerId;
 
+    // Clamp values to world bounds
+    const clamped = clampPosition(x, y, width, height);
+
     // Update individual panel settings for this player (stored on host)
     if (isHost) {
-      // Host updates directly
       dispatch({
         type: 'UPDATE_PLAYER_PANEL_SETTINGS',
         payload: {
           playerId: currentPlayerId,
           panelId: panel.id,
           settings: {
-            x: Math.round(x),
-            y: Math.round(y),
-            width: Math.round(width),
-            height: Math.round(height),
+            x: Math.round(clamped.x),
+            y: Math.round(clamped.y),
+            width: Math.round(clamped.width),
+            height: Math.round(clamped.height),
             minimized: panel.minimized || false,
             isPinnedToViewport: panel.isPinnedToViewport || false,
             pinnedScreenPosition: panel.pinnedScreenPosition,
@@ -74,18 +109,16 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
         }
       });
     } else {
-      // Guest sends request to host to update their settings
-      // This will be synced via the peer connection
       dispatch({
         type: 'UPDATE_PLAYER_PANEL_SETTINGS',
         payload: {
           playerId: currentPlayerId,
           panelId: panel.id,
           settings: {
-            x: Math.round(x),
-            y: Math.round(y),
-            width: Math.round(width),
-            height: Math.round(height),
+            x: Math.round(clamped.x),
+            y: Math.round(clamped.y),
+            width: Math.round(clamped.width),
+            height: Math.round(clamped.height),
             minimized: panel.minimized || false,
             isPinnedToViewport: panel.isPinnedToViewport || false,
             pinnedScreenPosition: panel.pinnedScreenPosition,
@@ -98,15 +131,22 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
       });
     }
 
-    // Also update local panel for immediate visual feedback
-    updateObject(panel.id, {
-      title,
-      x: Math.round(x),
-      y: Math.round(y),
-      width: Math.round(width),
-      height: Math.round(height),
-      dualPosition,
-      zIndex
+    // Also update the panel object itself
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: panel.id,
+        updates: {
+          title,
+          x: Math.round(clamped.x),
+          y: Math.round(clamped.y),
+          width: Math.round(clamped.width),
+          height: Math.round(clamped.height),
+          dualPosition,
+          zIndex
+        }
+      },
+      _localOnly: true
     });
 
     onClose();
@@ -117,7 +157,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-center items-center py-2 px-4">
-          <h3 className="text-base font-bold text-white">{translate('Settings', language as Locale)}: {panel.title}</h3>
+          <h3 className="text-base font-bold text-white">{translate('Properties:', language as Locale)} {panel.title}</h3>
         </div>
 
         {/* Tabs */}
@@ -159,7 +199,12 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                   <input
                     type="number"
                     value={Math.round(x)}
-                    onChange={e => setX(Number(e.target.value))}
+                    onChange={e => {
+                      const val = Number(e.target.value);
+                      // Clamp to valid range (0 to viewport width minus panel width)
+                      const maxX = window.innerWidth - width;
+                      setX(Math.max(0, Math.min(maxX, val)));
+                    }}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                   />
                 </div>
@@ -168,7 +213,12 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                   <input
                     type="number"
                     value={Math.round(y)}
-                    onChange={e => setY(Number(e.target.value))}
+                    onChange={e => {
+                      const val = Number(e.target.value);
+                      // Clamp to valid range (0 to viewport height minus panel height)
+                      const maxY = window.innerHeight - height;
+                      setY(Math.max(0, Math.min(maxY, val)));
+                    }}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                   />
                 </div>
@@ -183,7 +233,12 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                 <input
                   type="number"
                   value={width}
-                  onChange={e => setWidth(Number(e.target.value))}
+                  onChange={e => {
+                    const val = Number(e.target.value);
+                    // Clamp to valid range (200 to viewport width with margin)
+                    const maxWidth = window.innerWidth - 40;
+                    setWidth(Math.max(200, Math.min(maxWidth, val)));
+                  }}
                   className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                 />
               </div>
@@ -192,7 +247,12 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                 <input
                   type="number"
                   value={height}
-                  onChange={e => setHeight(Number(e.target.value))}
+                  onChange={e => {
+                    const val = Number(e.target.value);
+                    // Clamp to valid range (200 to viewport height with margin for header)
+                    const maxHeight = window.innerHeight - 80;
+                    setHeight(Math.max(200, Math.min(maxHeight, val)));
+                  }}
                   className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                 />
               </div>

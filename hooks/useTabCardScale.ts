@@ -10,9 +10,9 @@ export const useTabCardScale = (playerId: string) => {
       // Get scale for specific player from localStorage
       const key = `hand-card-scale-${playerId}`;
       const saved = localStorage.getItem(key);
-      return saved ? parseFloat(saved) : 1;
+      return saved ? parseFloat(saved) : 1.15; // 115% by default
     } catch {
-      return 1;
+      return 1.15; // 115% by default
     }
   });
 

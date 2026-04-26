@@ -2,7 +2,7 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
+import { usePixelsPerVU, usePlayerList, useActivePlayerId, useSettingsModalState } from '../store/contexts';
 import { useObjectActions } from '../store/objectStore';
 import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, CardLocation, ItemType, Deck as DeckType, AppLanguage } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
@@ -204,6 +204,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
+  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
   const gmInitializedRef = useRef(false);
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
@@ -221,6 +222,15 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
   // Settings modal state
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
+
+  // Sync settings modal state with UI context
+  useEffect(() => {
+    if (settingsModalObj) {
+      openSettingsModal();
+    } else {
+      closeSettingsModal();
+    }
+  }, [settingsModalObj, openSettingsModal, closeSettingsModal]);
 
   // Track modified faceUp states for this player (for LAST_STATE mode)
   const [playerFlipStates, setPlayerFlipStates] = useState<Record<string, boolean>>({});

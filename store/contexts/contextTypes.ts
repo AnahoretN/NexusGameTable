@@ -85,6 +85,8 @@ export interface UIState {
   playerPanelSettings: PlayerPanelSettings;
   hyperscaleLayers: HyperscaleLayer[];
   selectedHyperscaleLayerIds: string[];
+  // Track if any settings modal is open (to block context menus)
+  settingsModalOpen: boolean;
 }
 
 export interface UIContextValue extends UIState {
@@ -109,6 +111,10 @@ export interface UIContextValue extends UIState {
   // Getters
   getSelectedLayers: () => HyperscaleLayer[];
   getPanelSettings: (playerId: string, panelId: string) => any;
+
+  // Settings modal state
+  openSettingsModal: () => void;
+  closeSettingsModal: () => void;
 }
 
 export type UIAction =
@@ -121,7 +127,9 @@ export type UIAction =
   | { type: 'TOGGLE_LAYER_SELECTION'; payload: string }
   | { type: 'SET_LAYER_SELECTION'; payload: string[] }
   | { type: 'SELECT_ALL_LAYERS' }
-  | { type: 'DESELECT_ALL_LAYERS' };
+  | { type: 'DESELECT_ALL_LAYERS' }
+  | { type: 'OPEN_SETTINGS_MODAL' }
+  | { type: 'CLOSE_SETTINGS_MODAL' };
 
 // ============================================================================
 // SHARED UTILITIES
@@ -219,6 +227,7 @@ export const initialUIState: UIState = {
     },
   ],
   selectedHyperscaleLayerIds: ['boards', 'cards', 'tokens', 'drawings', 'interface'],
+  settingsModalOpen: false,
 };
 
 /**

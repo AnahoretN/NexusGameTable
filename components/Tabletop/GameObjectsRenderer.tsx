@@ -426,9 +426,8 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
     const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
-    const baseFontSize = Math.min(v2p(obj.width), v2p(obj.height)) / 6;
-    const valueFontSize = baseFontSize * 2.77; // ~30 vu for 65 vu dice
-    const sidesFontSize = baseFontSize * 1.66; // ~18 vu for 65 vu dice
+    const valueFontSize = v2p(25); // 25 vu for dice value
+    const sidesFontSize = v2p(15); // 15 vu for dice sides (d6, d20, etc.)
     const fontColor = (obj as any).fontColor || 'white';
 
     return (

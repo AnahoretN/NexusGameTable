@@ -2,7 +2,7 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { usePixelsPerVU, usePlayerList, useActivePlayerId } from '../store/contexts';
+import { usePixelsPerVU, usePlayerList, useActivePlayerId, useSettingsModalState } from '../store/contexts';
 import { useObjectActions } from '../store/objectStore';
 import { Deck, Card, CardPile, ContextAction, AppLanguage, TableObject, CardLocation } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
@@ -42,6 +42,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
+  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
   const currentPlayerId = activePlayerId;
@@ -60,6 +61,15 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
 
   // Settings modal state
   const [settingsModalObj, setSettingsModalObj] = useState<TableObject | null>(null);
+
+  // Sync settings modal state with UI context
+  useEffect(() => {
+    if (settingsModalObj) {
+      openSettingsModal();
+    } else {
+      closeSettingsModal();
+    }
+  }, [settingsModalObj, openSettingsModal, closeSettingsModal]);
 
   const cards = useMemo(() =>
     cardOrder.map(id => objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),

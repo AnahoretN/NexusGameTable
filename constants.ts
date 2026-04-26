@@ -14,16 +14,16 @@ export const TOKEN_SIZE = 80; // vu
 export const DECK_OFFSET = 3; // vu
 
 // UI Panel dimensions (pixels - not scaled, for interface elements)
-export const MAIN_MENU_WIDTH = 313; // px
-export const SCROLLBAR_WIDTH = 16; // px
+export const MAIN_MENU_WIDTH = 306; // px (reduced by 2% from 313)
+export const SCROLLBAR_WIDTH = 15; // px
 
 // Default object dimensions in virtual units (vu)
 export const DEFAULT_DECK_WIDTH = 120; // vu
 export const DEFAULT_DECK_HEIGHT = 168; // vu
-export const DEFAULT_DICE_SIZE = 65; // vu
+export const DEFAULT_DICE_SIZE = 60; // vu
 export const DEFAULT_COUNTER_WIDTH = 120; // vu
 export const DEFAULT_COUNTER_HEIGHT = 50; // vu
-export const DEFAULT_PANEL_WIDTH = 300; // vu
+export const DEFAULT_PANEL_WIDTH = 450; // vu
 export const DEFAULT_PANEL_HEIGHT = 400; // vu
 export const DEFAULT_HAND_CARD_WIDTH = 120; // vu - Base width for cards in hand panel modals
 

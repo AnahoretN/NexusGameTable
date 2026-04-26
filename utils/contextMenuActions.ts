@@ -112,7 +112,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
         // Already pinned, so unpin
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: object.id, pinnedToViewport: false }
+          payload: { id: object.id, updates: { pinnedToViewport: false } }
         });
       } else {
         // Not pinned, so pin - use DOM query to find the ACTUAL current position of the object
@@ -246,7 +246,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
             type: 'UPDATE_OBJECT',
             payload: {
               id: deck.id,
-              cardIds: updatedCardIds
+              updates: { cardIds: updatedCardIds }
             }
           });
 
@@ -279,14 +279,14 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       const rotationStep = getRotationStep(object, state.objects);
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, rotation: currentRotation - rotationStep }
+        payload: { id: object.id, updates: { rotation: currentRotation - rotationStep } }
       });
       break;
 
     case 'resetRotation':
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, rotation: 0 }
+        payload: { id: object.id, updates: { rotation: 0 } }
       });
       break;
 
@@ -294,7 +294,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       // Swing clockwise (90° rotation)
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, rotation: (object.rotation || 0) + 90 }
+        payload: { id: object.id, updates: { rotation: (object.rotation || 0) + 90 } }
       });
       break;
 
@@ -302,7 +302,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       // Swing counter-clockwise (90° rotation)
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, rotation: (object.rotation || 0) - 90 }
+        payload: { id: object.id, updates: { rotation: (object.rotation || 0) - 90 } }
       });
       break;
 
@@ -310,7 +310,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       dispatch({ type: 'MOVE_LAYER_UP', payload: { id: object.id } });
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, zIndex: 10000 }
+        payload: { id: object.id, updates: { zIndex: 10000 } }
       });
       break;
 
@@ -318,7 +318,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: object.id } });
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, zIndex: 0 }
+        payload: { id: object.id, updates: { zIndex: 0 } }
       });
       break;
 
@@ -333,7 +333,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     case 'show':
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, isOnTable: true }
+        payload: { id: object.id, updates: { isOnTable: true } }
       });
       break;
 
@@ -341,7 +341,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       // Toggle visibility: if hidden, show; if visible, hide
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, isOnTable: !(object as any).isOnTable }
+        payload: { id: object.id, updates: { isOnTable: !(object as any).isOnTable } }
       });
       break;
 
@@ -460,7 +460,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
         // Menu closing is handled by the component
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: object.id, value: counter.baseValue ?? 0 }
+          payload: { id: object.id, updates: { value: counter.baseValue ?? 0 } }
         });
       }
       break;
@@ -476,7 +476,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     case 'toggleHide':
       dispatch({
         type: 'UPDATE_OBJECT',
-        payload: { id: object.id, hidden: !(object as Card).hidden }
+        payload: { id: object.id, updates: { hidden: !(object as Card).hidden } }
       });
       break;
 
@@ -488,7 +488,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
         // Remove from current location and add to player's hand
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: object.id, location: CardLocation.HAND }
+          payload: { id: object.id, updates: { location: CardLocation.HAND } }
         });
       }
       break;

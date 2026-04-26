@@ -6,6 +6,7 @@ import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { Layers, Pencil } from 'lucide-react';
 import { DECK_OFFSET } from '../constants';
 import { logger } from '../utils/logger';
+import { getCardShapeStyles } from '../utils/shapeUtils';
 
 interface CursorSlotItemProps {
   item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing;
@@ -100,6 +101,7 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
   const cardIds = item.cardIds || [];
   const visibleCardCount = cardIds.length;
   const totalCardCount = (item.baseCardIds || cardIds).length;
+  const shapeStyles = getCardShapeStyles(cardShape, cardOrientation);
 
   return (
     <div
@@ -150,7 +152,7 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
               borderWidth={2}
               orientation={cardOrientation}
             >
-              <Layers className="text-slate-400 mb-2" size={shouldUseSvgForDeck(cardShape) ? 18 : 24} />
+              <Layers className="text-slate-400 mb-1" size={shouldUseSvgForDeck(cardShape) ? 12 : 16} />
               <DeckLabel
                 name={item.name}
                 count={visibleCardCount}
@@ -173,13 +175,15 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
                 left: 0,
                 transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
                 zIndex: -i,
+                boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                ...shapeStyles
               }}
             />
           ))}
-          <div className="absolute inset-0 bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex flex-col items-center justify-center">
+          <div className="absolute inset-0 bg-slate-900 border-2 border-slate-500 flex flex-col items-center justify-center" style={shapeStyles}>
             <Layers className="text-slate-400 mb-2" size={24} />
-            <span className="text-xs text-slate-300 font-bold px-2 text-center select-none">{item.name}</span>
-            <span className="text-xs text-slate-500 select-none">{visibleCardCount} / {totalCardCount}</span>
+            <span className="text-xs text-slate-300 font-bold px-2 text-center select-none drop-shadow-md">{item.name}</span>
+            <span className="text-xs text-slate-500 select-none drop-shadow-md">{visibleCardCount} / {totalCardCount}</span>
           </div>
         </>
       )}
