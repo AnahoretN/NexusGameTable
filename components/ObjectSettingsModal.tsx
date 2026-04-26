@@ -3296,7 +3296,10 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                   >
                     <div className="text-sm text-gray-400 mb-2">{translate('No Group', language as Locale)}</div>
                     <div className="space-y-1">
-                      {allDice.filter(d => !d.diceGroupId).map(dice => (
+                      {allDice.filter(d => {
+                        const groupExists = d.diceGroupId && diceGroups.some(g => g.id === d.diceGroupId);
+                        return !groupExists;
+                      }).map(dice => (
                         <div
                           key={dice.id}
                           draggable
@@ -3388,5 +3391,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
 // Memoize ObjectSettingsModal to prevent unnecessary re-renders 🔥
 export const ObjectSettingsModal = React.memo<ObjectSettingsModalProps>(ObjectSettingsModalComponent, (prevProps, nextProps) => {
   return prevProps.object.id === nextProps.object.id &&
-         prevProps.language === nextProps.language;
+         prevProps.language === nextProps.language &&
+         prevProps.diceGroups === nextProps.diceGroups &&
+         prevProps.allObjects === nextProps.allObjects;
 });

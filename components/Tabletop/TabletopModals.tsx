@@ -337,11 +337,13 @@ export const TabletopModals = memo(({
       {settingsModalObj && (
         <ObjectSettingsModal
           object={settingsModalObj}
+          allObjects={state.objects}
           state={state}
           dispatch={dispatch}
           activePlayerId={activePlayerId}
           isGM={isGM}
           language={language}
+          diceGroups={state.diceGroups}
           onSave={handleObjectSettingsUpdate}
           onClose={handleCloseSettingsModal}
         />

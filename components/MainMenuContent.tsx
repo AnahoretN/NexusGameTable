@@ -1112,7 +1112,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       {settingsObject && (
         <ObjectSettingsModal
           object={settingsObject}
+          allObjects={state.objects}
           language={language}
+          diceGroups={state.diceGroups}
+          dispatch={dispatch}
           onClose={() => setSettingsObject(null)}
           onSave={(updatedObj) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: { id: updatedObj.id, updates: updatedObj } });

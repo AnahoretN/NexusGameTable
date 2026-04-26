@@ -2005,6 +2005,8 @@ const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }
           object={targetObj}
           allObjects={state.objects}
           language={language}
+          diceGroups={state.diceGroups}
+          dispatch={dispatch}
           onClose={handleClose}
           onSave={(updatedObj) => {
             dispatch({ type: 'UPDATE_OBJECT', payload: { id: updatedObj.id, updates: updatedObj } });

@@ -858,7 +858,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       {settingsModalObj && (
         <ObjectSettingsModal
           object={settingsModalObj}
+          allObjects={objects}
           language={language}
+          diceGroups={gameState.diceGroups}
+          dispatch={dispatch}
           onSave={(updatedObj) => {
             updateDeck(updatedObj.id, updatedObj);
             setSettingsModalObj(null);

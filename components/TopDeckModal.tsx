@@ -516,7 +516,10 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
       {settingsModalObj && (
         <ObjectSettingsModal
           object={settingsModalObj}
+          allObjects={objects}
           language={language}
+          diceGroups={gameState.diceGroups}
+          dispatch={dispatch}
           onSave={(updatedObj) => {
             updateObjectViaContext(updatedObj.id, updatedObj);
             setSettingsModalObj(null);
