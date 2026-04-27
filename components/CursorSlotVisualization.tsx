@@ -242,14 +242,18 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
             let offsetX = 0;
             let offsetY = 0;
 
-            // Use pixel offsets directly if available (stored as screen pixels)
+            // Use pixel offsets directly if available
             const clickOffsetX_PX = (item as any).clickOffsetX_PX;
             const clickOffsetY_PX = (item as any).clickOffsetY_PX;
 
             if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
-              // clickOffsetX_PX is the distance from object's top-left to the clicked point, in screen pixels
+              // clickOffsetX_PX is the distance from object's top-left to the clicked point
+              // This is ALWAYS in screen pixels now (consistently from all sources)
+              // CursorSlotVisualization is rendered at screen level (no zoom transform),
+              // so we can use the offset directly
+
               // We want the clicked point to be at the cursor (container's origin)
-              // So we offset the object by NEGATIVE clickOffset (no conversion needed!)
+              // So we offset the object by NEGATIVE offset
               offsetX = -clickOffsetX_PX;
               offsetY = -clickOffsetY_PX;
             } else {

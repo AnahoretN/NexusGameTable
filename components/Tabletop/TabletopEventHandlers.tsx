@@ -10,6 +10,10 @@ import {
   addObjectToGridCellMagnet,
   generateGridCellKey
 } from '../../utils/gridUtils';
+import {
+  applyClickOffset,
+  calculateStackOffset
+} from '../../utils/dragDropUtils';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -29,7 +33,9 @@ interface TabletopEventHandlersProps {
   draggingId: string | null;
   draggingIdRef: React.MutableRefObject<string | null>;
   setDraggingId: React.Dispatch<React.SetStateAction<string | null>>;
+  resizingId: string | null;
   setResizingId: React.Dispatch<React.SetStateAction<string | null>>;
+  resizeStart: { x: number; y: number; width: number; height: number } | null;
   setResizeStart: React.Dispatch<React.SetStateAction<{ x: number; y: number; width: number; height: number } | null>>;
   rulerStart: { x: number; y: number } | null;
   setRulerStart: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
@@ -50,9 +56,8 @@ interface TabletopEventHandlersProps {
   hyperscaleLayers: any[];
   localSettings: any;
   updateSetting: (key: string | number | symbol, value: any) => void;
-  liveResizeSizeRef: React.RefObject<{ width: number; height: number } | null>;
+  liveResizeSizeRef: React.MutableRefObject<{ width: number; height: number } | null>;
   setLiveResizeSize: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>;
-  resizeFinalSizeRef: React.RefObject<{ width: number; height: number } | null>;
   isAddingTokenRef: React.RefObject<boolean>;
   longPressTimerRef: React.RefObject<number | null>;
   clickTooltipTimerRef: React.RefObject<number | null>;
@@ -369,6 +374,9 @@ const addToCursorSlot = (
     (itemClone as any).clickOffsetX = clickOffsetX_VU;
     (itemClone as any).clickOffsetY = clickOffsetY_VU;
 
+    // Store source zoom level for accurate coordinate conversion between panels
+    (itemClone as any).sourceZoom = viewTransform?.zoom || 1;
+
     // Store original object position for drop calculation
     (itemClone as any).originalX = obj.x;
     (itemClone as any).originalY = obj.y;
@@ -423,6 +431,7 @@ const addToCursorSlot = (
         clickOffsetY_PX: (itemClone as any).clickOffsetY_PX,
         clickOffsetX: (itemClone as any).clickOffsetX,
         clickOffsetY: (itemClone as any).clickOffsetY,
+        sourceZoom: (itemClone as any).sourceZoom,
         originalX: (itemClone as any).originalX,
         originalY: (itemClone as any).originalY
       }
@@ -597,12 +606,27 @@ const dropCursorSlot = (
       // clickOffsetX/Y are in VU (virtual units) - this is the source of truth
       const clickOffsetX = (item as any).clickOffsetX;
       const clickOffsetY = (item as any).clickOffsetY;
+      const clickOffsetX_PX = (item as any).clickOffsetX_PX;
+      const clickOffsetY_PX = (item as any).clickOffsetY_PX;
 
       if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
         // Calculate final position: dropPos - clickOffset
         // This places the object so the clicked point ends up at the drop position
         finalX = baseX - clickOffsetX;
         finalY = baseY - clickOffsetY;
+      } else if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+        // Use PX offsets when VU offsets are not available
+        // clickOffsetX_PX is ALWAYS in screen pixels now (consistently from all sources)
+        // Use the centralized utility to apply the offset
+        const offsetResult = applyClickOffset(
+          baseX,
+          baseY,
+          clickOffsetX_PX,
+          clickOffsetY_PX,
+          props.pixelsPerVU
+        );
+        finalX = offsetResult.x;
+        finalY = offsetResult.y;
       } else {
         // Fallback: center on drop position (for archetype tokens without clickOffset)
         finalX = baseX - objWidth / 2;
@@ -619,10 +643,9 @@ const dropCursorSlot = (
     if (sortedItems.length > 1) {
       const objWidth = item.width ?? 50;
       const objHeight = item.height ?? 50;
-      const offsetAmount = Math.min(objWidth, objHeight) * 0.05; // 5% like in CursorSlotVisualization
-      const offsetFromFront = sortedIndex; // 0 for front, increasing for items behind
-      finalX += offsetFromFront * offsetAmount;
-      finalY += offsetFromFront * offsetAmount;
+      const stackOffset = calculateStackOffset(sortedIndex, objWidth, objHeight);
+      finalX += stackOffset.offsetX;
+      finalY += stackOffset.offsetY;
     }
 
     // Check for board grid magnetism
@@ -889,12 +912,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     state,
     dispatch,
     cursorSlot,
-    setCursorSlot,
     setCursorPosition,
     setZoom,
     setScroll,
     cursorPositionRef,
-    setCursorSlotSource,
     cursorSlotSource,
     currentTool,
     isShiftPressed,
@@ -903,7 +924,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     draggingId,
     draggingIdRef,
     setDraggingId,
+    resizingId,
     setResizingId,
+    resizeStart,
     setResizeStart,
     rulerStart,
     setRulerStart,
@@ -920,6 +943,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     isGM,
     localSettings,
     updateSetting,
+    liveResizeSizeRef,
+    setLiveResizeSize,
     longPressTimerRef,
     clickTooltipTimerRef,
     dragThresholdRef,
@@ -1375,6 +1400,32 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         });
       }
     }
+
+    // Handle board resizing
+    if (resizingId && resizeStart) {
+      const obj = state.objects[resizingId];
+      if (obj && obj.type === ItemType.BOARD) {
+        const rect = scrollContainerRef.current?.getBoundingClientRect();
+        if (rect) {
+          // Calculate delta in screen pixels
+          const deltaX = e.clientX - resizeStart.x;
+          const deltaY = e.clientY - resizeStart.y;
+
+          // Convert delta to virtual units
+          const zoom = viewTransform?.zoom || 1;
+          const deltaVU_X = deltaX / zoom;
+          const deltaVU_Y = deltaY / zoom;
+
+          // Calculate new size
+          const newWidth = Math.max(50, resizeStart.width + deltaVU_X);
+          const newHeight = Math.max(50, resizeStart.height + deltaVU_Y);
+
+          // Update live preview size
+          liveResizeSizeRef.current = { width: newWidth, height: newHeight };
+          setLiveResizeSize({ width: newWidth, height: newHeight });
+        }
+      }
+    }
   }, [
     cursorSlot.length,
     setCursorPosition,
@@ -1391,7 +1442,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     pixelsPerVU,
     viewTransform,
     dispatch,
-    activePlayerId
+    activePlayerId,
+    resizingId,
+    resizeStart,
+    liveResizeSizeRef,
+    setLiveResizeSize
   ]);
 
   // Mouse up handler WITH LOGGING
@@ -1479,7 +1534,35 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       dragOffsetRef.current = null;
       setDraggingId(null);
       draggingIdRef.current = null;
-    } else if (dragThresholdRef.current.targetId) {
+    }
+
+    // Handle resize completion
+    if (resizingId && liveResizeSizeRef.current) {
+      const obj = state.objects[resizingId];
+      if (obj && obj.type === ItemType.BOARD) {
+        const finalSize = liveResizeSizeRef.current;
+
+        // Apply final size to the object
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: resizingId,
+            updates: {
+              width: finalSize.width,
+              height: finalSize.height
+            }
+          }
+        });
+      }
+
+      // Clear resize state
+      liveResizeSizeRef.current = null;
+      setLiveResizeSize(null);
+      setResizingId(null);
+      setResizeStart(null);
+    }
+
+    if (dragThresholdRef.current.targetId) {
       // No drag occurred (threshold not exceeded) - this was a click
       // IMPORTANT: If item was added to slot via drag threshold, this is NOT a click!
       const wasAddedToSlot = dragThresholdRef.current.addedToSlot;
@@ -1529,7 +1612,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setDraggingId,
     cursorSlot,
     cursorSlotSource,
-    props
+    props,
+    resizingId,
+    resizeStart,
+    liveResizeSizeRef,
+    setLiveResizeSize,
+    setResizingId,
+    setResizeStart
   ]);
 
   // Wheel handler

@@ -1,5 +1,6 @@
 import { TableObject, ItemType, CardLocation, Board as BoardType } from '../types';
 import { STACKING_OFFSET_FACTOR, DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
+import { logger } from './logger';
 
 /**
  * Pool placement utilities for consistent object positioning in pool panels
@@ -21,6 +22,7 @@ export type CursorSlotObject = TableObject & {
   inCursorSlot?: boolean;
   originalZIndex?: number;
   cursorSlotSourcePanel?: string; // ID of pool panel where drag started
+  sourceZoom?: number; // Zoom level of the source panel where drag started
   clickOffsetX?: number; // X offset from object top-left to click position (in VU)
   clickOffsetY?: number; // Y offset from object top-left to click position (in VU)
   clickOffsetX_PX?: number; // X offset from object top-left to click position (in screen pixels)
@@ -210,29 +212,32 @@ export function dropObjectsToPool(
       let finalY = dropPosition.baseY;
 
       // IMPORTANT: Apply click offset to position object correctly
-      // clickOffsetX_PX/Y_PX are in screen pixels from drag start
-      // We need to convert them to pool panel VU using current zoom and pixelsPerVU
-      if ((obj as CursorSlotObject).clickOffsetX_PX !== undefined &&
-          (obj as CursorSlotObject).clickOffsetY_PX !== undefined) {
-        const offsetPX_X = (obj as CursorSlotObject).clickOffsetX_PX!;
-        const offsetPX_Y = (obj as CursorSlotObject).clickOffsetY_PX!;
-
-        // Convert screen pixel offsets to pool panel VU using current zoom
-        const offsetX_VU = offsetPX_X / zoom / pixelsPerVU;
-        const offsetY_VU = offsetPX_Y / zoom / pixelsPerVU;
-
-        // Position the object so the grab point is under the cursor
-        // clickOffset is distance from top-left to grab point, so subtract from cursor position
-        finalX = dropPosition.baseX - offsetX_VU;
-        finalY = dropPosition.baseY - offsetY_VU;
-      } else if ((obj as CursorSlotObject).clickOffsetX !== undefined &&
-                 (obj as CursorSlotObject).clickOffsetY !== undefined) {
-        // Fallback: use VU offsets (when object from main tabletop without PX offsets)
+      // We need to handle different coordinate systems based on where the object came from
+      if ((obj as CursorSlotObject).clickOffsetX !== undefined &&
+          (obj as CursorSlotObject).clickOffsetY !== undefined) {
+        // PREFER VU offsets - these are consistent across different zoom levels
+        // clickOffsetX/Y are in VU (virtual units) and work regardless of source/destination zoom
         const offsetX = (obj as CursorSlotObject).clickOffsetX!;
         const offsetY = (obj as CursorSlotObject).clickOffsetY!;
 
+        // Position the object so the grab point is under the cursor
+        // clickOffset is distance from top-left to grab point, so subtract from cursor position
         finalX = dropPosition.baseX - offsetX;
         finalY = dropPosition.baseY - offsetY;
+      } else if ((obj as CursorSlotObject).clickOffsetX_PX !== undefined &&
+                 (obj as CursorSlotObject).clickOffsetY_PX !== undefined) {
+        // Use PX offsets when VU offsets are not available
+        // clickOffsetX_PX is ALWAYS in screen pixels (consistently from all sources now)
+        const offsetPX_X = (obj as CursorSlotObject).clickOffsetX_PX!;
+        const offsetPX_Y = (obj as CursorSlotObject).clickOffsetY_PX!;
+
+        // Convert screen pixel offsets to pool panel VU
+        const offsetX_VU = offsetPX_X / pixelsPerVU;
+        const offsetY_VU = offsetPX_Y / pixelsPerVU;
+
+        // Position the object so the grab point is under the cursor
+        finalX = dropPosition.baseX - offsetX_VU;
+        finalY = dropPosition.baseY - offsetY_VU;
       }
       // If no offset, object drops at cursor position (top-left corner at cursor)
 
@@ -338,7 +343,7 @@ export function dropObjectsToPool(
  * Excludes: PANEL, WINDOW (UI objects), cards in DECK location
  */
 export function getCursorSlotObjects(objects: Record<string, TableObject>): TableObject[] {
-  return Object.values(objects).filter(obj => {
+  const result = Object.values(objects).filter(obj => {
     // Exclude UI objects
     if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return false;
 
@@ -366,6 +371,16 @@ export function getCursorSlotObjects(objects: Record<string, TableObject>): Tabl
       ItemType.COUNTER
     ].includes(obj.type);
   });
+
+  // Log only when cursor slot has objects (for debugging drop issues)
+  if (result.length > 0) {
+    logger.log('[getCursorSlotObjects] RESULT:', {
+      count: result.length,
+      ids: result.map(o => o.id)
+    });
+  }
+
+  return result;
 }
 
 /**

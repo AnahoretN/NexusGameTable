@@ -199,12 +199,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                   <input
                     type="number"
                     value={Math.round(x)}
-                    onChange={e => {
-                      const val = Number(e.target.value);
-                      // Clamp to valid range (0 to viewport width minus panel width)
-                      const maxX = window.innerWidth - width;
-                      setX(Math.max(0, Math.min(maxX, val)));
-                    }}
+                    onChange={e => setX(Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                   />
                 </div>
@@ -213,12 +208,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                   <input
                     type="number"
                     value={Math.round(y)}
-                    onChange={e => {
-                      const val = Number(e.target.value);
-                      // Clamp to valid range (0 to viewport height minus panel height)
-                      const maxY = window.innerHeight - height;
-                      setY(Math.max(0, Math.min(maxY, val)));
-                    }}
+                    onChange={e => setY(Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                   />
                 </div>
@@ -233,12 +223,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                 <input
                   type="number"
                   value={width}
-                  onChange={e => {
-                    const val = Number(e.target.value);
-                    // Clamp to valid range (200 to viewport width with margin)
-                    const maxWidth = window.innerWidth - 40;
-                    setWidth(Math.max(200, Math.min(maxWidth, val)));
-                  }}
+                  onChange={e => setWidth(Number(e.target.value))}
                   className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                 />
               </div>
@@ -247,12 +232,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
                 <input
                   type="number"
                   value={height}
-                  onChange={e => {
-                    const val = Number(e.target.value);
-                    // Clamp to valid range (200 to viewport height with margin for header)
-                    const maxHeight = window.innerHeight - 80;
-                    setHeight(Math.max(200, Math.min(maxHeight, val)));
-                  }}
+                  onChange={e => setHeight(Number(e.target.value))}
                   className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                 />
               </div>

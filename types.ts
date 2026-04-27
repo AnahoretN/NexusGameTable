@@ -895,3 +895,57 @@ export interface UndoState {
   readonly maxMarkerHistory: 10;
   readonly maxGeneralHistory: 100;
 }
+
+// Audit Log System
+export enum AuditActionType {
+  OBJECT_CREATED = 'OBJECT_CREATED',
+  OBJECT_DELETED = 'OBJECT_DELETED',
+  OBJECT_MOVED = 'OBJECT_MOVED',
+  OBJECT_UPDATED = 'OBJECT_UPDATED',
+  OBJECT_RESIZED = 'OBJECT_RESIZED',
+  OBJECT_ROTATED = 'OBJECT_ROTATED',
+  OBJECT_LOCKED = 'OBJECT_LOCKED',
+  OBJECT_HIDDEN = 'OBJECT_HIDDEN',
+  OBJECT_LAYER_CHANGED = 'OBJECT_LAYER_CHANGED',
+  CARD_DRAWN = 'CARD_DRAWN',
+  CARD_PLAYED = 'CARD_PLAYED',
+  CARD_FLIPPED = 'CARD_FLIPPED',
+  DECK_SHUFFLED = 'DECK_SHUFFLED',
+  STROKE_ADDED = 'STROKE_ADDED',
+  PLAYER_JOINED = 'PLAYER_JOINED',
+  PLAYER_LEFT = 'PLAYER_LEFT',
+  SETTINGS_CHANGED = 'SETTINGS_CHANGED',
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: number;
+  actionType: AuditActionType;
+  tags?: AuditActionType[]; // Multiple tags for complex changes (e.g., move + resize)
+  playerId: string;
+  playerName: string;
+  isGM: boolean;
+  details: {
+    objectId?: string;
+    objectType?: ItemType;
+    objectName?: string;
+    description?: string;
+    fromPosition?: { x: number; y: number };
+    toPosition?: { x: number; y: number };
+    previousValue?: any;
+    newValue?: any;
+    metadata?: Record<string, any>;
+  };
+  // Store the original action for replay (any to avoid circular dependency)
+  action: any;
+  // For undo: store inverse action if applicable
+  inverseAction?: any;
+}
+
+export interface AuditLogState {
+  entries: AuditLogEntry[];
+  maxEntries: number;
+  // Track replay state for restore functionality
+  baseStateSnapshot?: any;  // Initial state when logging started (serialized)
+  currentReplayIndex: number;  // Current position in replay
+}

@@ -36,6 +36,7 @@ import {
   constrainPanelPosition,
   getScreenDimensionsInVU
 } from '../utils/panelConstraints';
+import { PanelResizeHandleMemo } from './PanelResizeHandle';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
@@ -114,13 +115,19 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
   // Track if this panel is currently being resized
   const [isResizing, setIsResizing] = useState(false);
-
-  // Track current panel size during resize (for visual feedback)
-  const [currentSize, setCurrentSize] = useState<{ width: number; height: number } | null>(null);
   const [isHoveringResizeHandle, setIsHoveringResizeHandle] = useState(false);
 
   // Track if panel is being dragged with Shift
   const [isShiftDragging, setIsShiftDragging] = useState(false);
+
+  // Persistent refs for resize state (survives useEffect recreation)
+  const resizeStateRef = useRef({
+    resizing: false,
+    startX: 0,
+    startY: 0,
+    startWidth: 0,
+    startHeight: 0,
+  });
 
   // Helper to check if click should be blocked during Shift+drag
   const shouldBlockClick = useCallback((e: React.MouseEvent) => {
@@ -562,22 +569,11 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   }, [dispatch, uiObject.id]);
 
   // Track resize manually to avoid ResizeObserver issues
+  // NOTE: Using direct DOM manipulation for resize to avoid React state update loops
   useEffect(() => {
     if (!canResize || !containerRef.current) return;
 
     const container = containerRef.current;
-    let resizing = false;
-    let startX = 0;
-    let startY = 0;
-    let startWidth = 0;
-    let startHeight = 0;
-
-    // Calculate screen dimensions in VU and pixels
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const screenDimVU = getScreenDimensionsInVU(viewportWidth, viewportHeight);
-    const screenWidthPx = viewportWidth;
-    const screenHeightPx = viewportHeight;
 
     const handleMouseDown = (e: MouseEvent) => {
       // Check if clicking on the resize handle (bottom-right corner)
@@ -589,20 +585,23 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           e.clientY >= rect.bottom - handleSize &&
           e.clientX <= rect.right + 10 &&
           e.clientY <= rect.bottom + 10) {
-        resizing = true;
+        // Store state in ref (persists across effect recreations)
+        resizeStateRef.current = {
+          resizing: true,
+          startX: e.clientX,
+          startY: e.clientY,
+          startWidth: rect.width,
+          startHeight: rect.height,
+        };
         setIsResizing(true);
-        // Initialize currentSize with current dimensions
-        setCurrentSize({ width: rect.width, height: rect.height });
-        startX = e.clientX;
-        startY = e.clientY;
-        startWidth = rect.width;
-        startHeight = rect.height;
         e.preventDefault();
         e.stopPropagation();
       }
     };
 
     const handleMouseMove = (e: MouseEvent) => {
+      const state = resizeStateRef.current;
+
       // Check if hovering over resize handle
       const rect = container.getBoundingClientRect();
       const handleSize = 20;
@@ -614,24 +613,22 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
       setIsHoveringResizeHandle(isOverHandle);
 
-      if (!resizing) return;
+      if (!state.resizing) return;
 
-      const deltaX = e.clientX - startX;
-      const deltaY = e.clientY - startY;
+      const deltaX = e.clientX - state.startX;
+      const deltaY = e.clientY - state.startY;
       const minSize = 200;
 
-      // Calculate max size based on screen bounds
-      let maxWidthPx: number | undefined;
-      let maxHeightPx: number | undefined;
+      // Calculate max size based on screen bounds (95% to leave some margin)
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      let maxWidthPx = viewportWidth * 0.95;
+      let maxHeightPx = viewportHeight * 0.95;
 
       if (!uiObject.isPinnedToViewport) {
-        // For unpinned panels: max size is screen size in VU, converted to pixels
-        maxWidthPx = screenDimVU.width * pixelsPerVU;
-        maxHeightPx = screenDimVU.height * pixelsPerVU;
-      } else {
-        // For pinned panels: max size is viewport size in pixels
-        maxWidthPx = screenWidthPx;
-        maxHeightPx = screenHeightPx;
+        const screenDimVU = getScreenDimensionsInVU(viewportWidth, viewportHeight);
+        maxWidthPx = screenDimVU.width * pixelsPerVU * 0.95;
+        maxHeightPx = screenDimVU.height * pixelsPerVU * 0.95;
       }
 
       // Check if this is a pool panel and calculate max size
@@ -639,7 +636,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       const SCROLLBAR_SIZE = 20;
 
       if (isPoolPanel) {
-        // Pool panels are limited to 1000vu
         const poolMaxSize = uiObject.isPinnedToViewport
           ? vuToPx(1000) + SCROLLBAR_SIZE
           : 1000 * pixelsPerVU + SCROLLBAR_SIZE;
@@ -647,56 +643,47 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         maxHeightPx = Math.min(maxHeightPx, poolMaxSize);
       }
 
-      const newWidth = Math.max(minSize, startWidth + deltaX);
-      const newHeight = Math.max(minSize, startHeight + deltaY);
+      const newWidth = Math.max(minSize, Math.min(state.startWidth + deltaX, maxWidthPx));
+      const newHeight = Math.max(minSize, Math.min(state.startHeight + deltaY, maxHeightPx));
 
-      // Apply max size constraints
-      const constrainedWidth = Math.min(newWidth, maxWidthPx);
-      const constrainedHeight = Math.min(newHeight, maxHeightPx);
+      // Store current size in ref for mouseUp handler
+      (resizeStateRef.current as any).currentWidth = newWidth;
+      (resizeStateRef.current as any).currentHeight = newHeight;
 
-      // Update currentSize for visual feedback
-      setCurrentSize({ width: constrainedWidth, height: constrainedHeight });
+      // Apply size directly to DOM - this is faster and avoids React re-renders
+      container.style.width = `${newWidth}px`;
+      container.style.height = `${newHeight}px`;
     };
 
     const handleMouseUp = (_e: MouseEvent) => {
-      if (!resizing) return;
+      const state = resizeStateRef.current;
+      if (!state.resizing) return;
 
-      // Use currentSize for accurate final dimensions (what user sees during drag)
-      let newWidth = currentSize ? Math.round(currentSize.width) : Math.round(container.getBoundingClientRect().width);
-      let newHeight = currentSize ? Math.round(currentSize.height) : Math.round(container.getBoundingClientRect().height);
+      const newWidth = (state as any).currentWidth ?? state.startWidth;
+      const newHeight = (state as any).currentHeight ?? state.startHeight;
 
-      // Only update store if size actually changed
-      const widthChanged = Math.abs(newWidth - startWidth) > 5;
-      const heightChanged = Math.abs(newHeight - startHeight) > 5;
+      const widthChanged = Math.abs(newWidth - state.startWidth) > 5;
+      const heightChanged = Math.abs(newHeight - state.startHeight) > 5;
 
       if (widthChanged || heightChanged) {
-        // For pinned panels, save pixel dimensions directly; for unpinned, save in vu
         let finalWidth, finalHeight;
 
         if (uiObject.isPinnedToViewport) {
-          // Pinned panels: save exact pixel dimensions
           finalWidth = newWidth;
           finalHeight = newHeight;
         } else {
-          // Unpinned panels: convert to VU for storage
           finalWidth = Math.round((newWidth / pixelsPerVU) * 1000) / 1000;
           finalHeight = Math.round((newHeight / pixelsPerVU) * 1000) / 1000;
         }
 
-        // For panels (except main menu), save to local settings AND update player panel settings
         if (isPanel && !isMainMenu) {
           updateLocalSettings({ width: finalWidth, height: finalHeight });
 
-          // Prepare update payload with both size and expandedState
           const updates: any = {
             width: finalWidth,
             height: finalHeight,
-            // Pass screen dimensions for constraint calculation
-            screenWidth: screenDimVU.width,
-            screenHeight: screenDimVU.height,
           };
 
-          // Also update expandedState to preserve new size when collapsing/expanding
           if (!effectiveProps.minimized) {
             updates.expandedState = {
               ...(effectiveProps.expandedState || {}),
@@ -705,22 +692,16 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             };
           }
 
-          // Single dispatch to update the panel object
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
               id: uiObject.id,
-              updates
+              updates: updates
             },
-            _localOnly: true // Size changes are local for panels
+            _localOnly: true
           });
 
-          // Also update individual panel settings for this player (stored on host)
-          const playerSettingsPayload: any = {
-            width: finalWidth,
-            height: finalHeight,
-          };
-
+          const playerSettingsPayload: any = { width: finalWidth, height: finalHeight };
           if (!effectiveProps.minimized) {
             playerSettingsPayload.expandedState = {
               ...(effectiveProps.expandedState || {}),
@@ -738,15 +719,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             }
           });
         } else {
-          // For main menu and windows, use global state
-          const updates: any = {
-            width: finalWidth,
-            height: finalHeight,
-            screenWidth: screenDimVU.width,
-            screenHeight: screenDimVU.height,
-          };
-
-          // Also update expandedState to preserve new size when collapsing/expanding
+          const updates: any = { width: finalWidth, height: finalHeight };
           if (!effectiveProps.minimized) {
             updates.expandedState = {
               ...(effectiveProps.expandedState || {}),
@@ -759,39 +732,26 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
             type: 'UPDATE_OBJECT',
             payload: {
               id: uiObject.id,
-              updates
+              updates: updates
             },
-            _localOnly: true // Size changes are local for windows too
+            _localOnly: true
           });
-
-          // Also update individual panel settings for this player (stored on host)
-          const playerSettingsPayload: any = {
-            width: finalWidth,
-            height: finalHeight,
-          };
-
-          if (!effectiveProps.minimized) {
-            playerSettingsPayload.expandedState = {
-              ...(effectiveProps.expandedState || {}),
-              width: finalWidth,
-              height: finalHeight
-            };
-          }
 
           dispatch({
             type: 'UPDATE_PLAYER_PANEL_SETTINGS',
             payload: {
               playerId: activePlayerId,
               panelId: uiObject.id,
-              settings: playerSettingsPayload
+              settings: { width: finalWidth, height: finalHeight }
             }
           });
         }
       }
 
-      // Clear currentSize to return to normal rendering
-      setCurrentSize(null);
-      resizing = false;
+      // Clear state
+      resizeStateRef.current = { resizing: false, startX: 0, startY: 0, startWidth: 0, startHeight: 0 };
+      delete (resizeStateRef.current as any).currentWidth;
+      delete (resizeStateRef.current as any).currentHeight;
       setIsResizing(false);
     };
 
@@ -806,12 +766,14 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       window.removeEventListener('mouseup', handleMouseUp);
       container.removeEventListener('mouseleave', () => setIsHoveringResizeHandle(false));
       // Clean up resize state on unmount
-      if (resizing) {
+      if (resizeStateRef.current.resizing) {
+        resizeStateRef.current = { resizing: false, startX: 0, startY: 0, startWidth: 0, startHeight: 0 };
+        delete (resizeStateRef.current as any).currentWidth;
+        delete (resizeStateRef.current as any).currentHeight;
         setIsResizing(false);
-        setCurrentSize(null);
       }
     };
-  }, [canResize, uiObject.id, isPanel, isMainMenu, pixelsPerVU, vuToPx, effectiveProps, uiObject.isPinnedToViewport, uiObject.type]);
+  }, [canResize, isPanel, isMainMenu, pixelsPerVU, vuToPx, uiObject.isPinnedToViewport, uiObject.type, uiObject.id, activePlayerId, dispatch, updateLocalSettings]);
 
   // Global mouse up handler to clear shift-drag state
   useEffect(() => {
@@ -850,19 +812,17 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
   // Memoize width calculation to prevent unnecessary recalculations
   const containerWidth = useMemo(() => {
-    if (currentSize?.width) return currentSize.width;
     if ((uiObject as any).pinnedPixelWidth) return (uiObject as any).pinnedPixelWidth;
     if (isPinnedMode) {
       if (!isMainMenu) return vuToPx(effectiveProps.width);
     }
     // For unpinned panels, effectiveProps.width is in VU, convert to pixels
     return !isMainMenu ? vuToPx(effectiveProps.width) : effectiveProps.width;
-  }, [currentSize, minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.width, vuToPx]);
+  }, [minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.width, vuToPx]);
 
   // Memoize height calculation to prevent unnecessary recalculations
   const containerHeight = useMemo(() => {
     if (minimized) return 40; // Title bar height when minimized
-    if (currentSize?.height) return currentSize.height;
 
     // Always prefer pinnedPixelHeight if available (most precise)
     if ((uiObject as any).pinnedPixelHeight) return (uiObject as any).pinnedPixelHeight;
@@ -872,34 +832,42 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     }
     // For unpinned panels, effectiveProps.height is in VU, convert to pixels
     return !isMainMenu ? vuToPx(effectiveProps.height) : effectiveProps.height;
-  }, [currentSize, minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.height, vuToPx]);
+  }, [minimized, isPinnedMode, isMainMenu, uiObject, effectiveProps.height, vuToPx]);
 
   // Memoize container style to prevent unnecessary recalculations
-  const containerStyle: React.CSSProperties = useMemo(() => ({
-    position: isPinnedMode ? 'fixed' : 'absolute',
-    // For pinned mode: use pinnedScreenPosition (actual screen coordinates)
-    // For unpinned mode: convert screen coords to world coords: subtract offset, divide by zoom
-    left: isPinnedMode
-      ? (pinnedPosition?.x ?? effectiveProps.x)
-      : (effectiveProps.x - offset.x) / zoom,
-    top: isPinnedMode
-      ? (pinnedPosition?.y ?? effectiveProps.y)
-      : (effectiveProps.y - offset.y) / zoom,
-    // Use memoized dimensions
-    width: containerWidth,
-    height: containerHeight,
-    // In pinned mode, no scale transform; in unpinned mode, reverse the scale
-    transform: isPinnedMode
-      ? `rotate(${uiObject.rotation}deg)`
-      : `rotate(${uiObject.rotation}deg) scale(${1 / zoom})`,
-    transformOrigin: 'top left',
-    zIndex: uiObject.zIndex || 1000,
-    pointerEvents: 'auto',
-    cursor: isShiftDragging ? 'grabbing' : (isHoveringResizeHandle ? 'nwse-resize' : 'auto'),
-    // Disable native CSS resize - use custom resize handler
-    resize: 'none',
-    overflow: 'hidden',
-  }), [
+  const containerStyle: React.CSSProperties = useMemo(() => {
+    const style: React.CSSProperties = {
+      position: isPinnedMode ? 'fixed' : 'absolute',
+      // For pinned mode: use pinnedScreenPosition (actual screen coordinates)
+      // For unpinned mode: convert screen coords to world coords: subtract offset, divide by zoom
+      left: isPinnedMode
+        ? (pinnedPosition?.x ?? effectiveProps.x)
+        : (effectiveProps.x - offset.x) / zoom,
+      top: isPinnedMode
+        ? (pinnedPosition?.y ?? effectiveProps.y)
+        : (effectiveProps.y - offset.y) / zoom,
+      // In pinned mode, no scale transform; in unpinned mode, reverse the scale
+      transform: isPinnedMode
+        ? `rotate(${uiObject.rotation}deg)`
+        : `rotate(${uiObject.rotation}deg) scale(${1 / zoom})`,
+      transformOrigin: 'top left',
+      zIndex: uiObject.zIndex || 1000,
+      pointerEvents: 'auto',
+      cursor: isShiftDragging ? 'grabbing' : (isHoveringResizeHandle ? 'nwse-resize' : 'auto'),
+      // Disable native CSS resize - use custom resize handler
+      resize: 'none',
+      overflow: 'hidden',
+    };
+
+    // Only set width/height in style if NOT currently resizing
+    // During resize, we update DOM directly to avoid React re-render conflicts
+    if (!isResizing) {
+      style.width = containerWidth;
+      style.height = containerHeight;
+    }
+
+    return style;
+  }, [
     isPinnedMode,
     pinnedPosition,
     effectiveProps.x,
@@ -912,6 +880,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     uiObject.rotation,
     uiObject.zIndex,
     isShiftDragging,
+    isResizing,
     isHoveringResizeHandle,
   ]);
 
@@ -952,11 +921,19 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       onContextMenu={(e) => {
         // Prevent default browser context menu
         e.preventDefault();
-        // Don't open context menu for HandPanel
-        if (uiObject.panelType === PanelType.HAND) {
+        // Don't open context menu for panels that show content inside them
+        // Context menu should only open for objects within these panels
+        const noContextMenuPanels = [
+          PanelType.HAND,      // Cards have their own context menu
+          PanelType.POOL,      // Objects inside pool have context menu
+          PanelType.TABLEAU,   // Cards inside tableau have context menu
+          PanelType.TOKENS,    // Token archetypes have settings button
+          PanelType.CHARACTER, // Character blocks have settings button
+          PanelType.TOOLS,     // Tools panel - no context menu needed
+        ];
+        if (uiObject.type === ItemType.PANEL && noContextMenuPanels.includes((uiObject as PanelObject).panelType)) {
           return;
         }
-        // Don't stop propagation - let the parent handler process it
         // Call the parent handler if provided
         if (onContextMenu) {
           onContextMenu(e, uiObject);
@@ -1747,18 +1724,13 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         document.body
       )}
       {/* Resize handle indicator - shown in bottom-right corner */}
-      {canResize && !isActuallyMinimized && (
-        <div
-          className="absolute bottom-0 right-0 cursor-nwse-resize opacity-50 hover:opacity-100 transition-opacity flex items-center justify-center z-[9999]"
-          style={{
-            width: `${Math.min(16 * zoom, 32)}px`, // Max 32px to prevent blocking panel
-            height: `${Math.min(16 * zoom, 32)}px`,
-            background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%)',
-            borderBottomRightRadius: `${Math.min(0.5 * zoom, 1)}rem`,
-            pointerEvents: 'auto'
-          }}
-        />
-      )}
+      <PanelResizeHandleMemo
+        isVisible={canResize && !isActuallyMinimized}
+        isHovering={isHoveringResizeHandle}
+        zoom={zoom}
+        size={16}
+        type="square"
+      />
     </div>
   );
 };
@@ -2236,6 +2208,7 @@ const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProp
 const WindowContent: React.FC<{ window: WindowObject }> = ({ window: windowObj }) => {
   const { state, dispatch } = useGame();
   const language = useLanguage();
+  const hyperscaleLayers = useHyperscaleLayers();
 
   const handleClose = () => {
     dispatch({ type: 'CLOSE_UI_OBJECT', payload: { id: windowObj.id } });

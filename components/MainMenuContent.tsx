@@ -10,7 +10,7 @@ import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM, isGM } from '../utils/playerUtils';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
-import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Palette } from 'lucide-react';
+import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Palette, Clock } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -25,6 +25,7 @@ import { useManualConnection } from '../store/useManualConnection';
 import { createPack, loadPack } from '../utils/packManager';
 import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 import { blobConverter } from '../utils/blobConverter';
+import LogViewer from './LogViewer';
 
 /**
  * Convert all blob URLs in objects to base64 data URLs
@@ -111,6 +112,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [packLoadingSteps, setPackLoadingSteps] = useState<PackLoadingStep[]>([]);
   const [isPackLoading, setIsPackLoading] = useState(false);
   const packFileInputRef = useRef<HTMLInputElement>(null);
+  // Log viewer state
+  const [showLogViewer, setShowLogViewer] = useState(false);
   // Manual connection modal state
   const [showManualConnection, setShowManualConnection] = useState(false);
   const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
@@ -1000,6 +1003,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     {translate('Load Pack', language as Locale)}
                   </button>
                 )}
+                <div className="border-t border-slate-600 my-2" />
+                <button
+                  onClick={() => setShowLogViewer(true)}
+                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-purple-700 hover:bg-purple-600 text-white transition-all"
+                >
+                  <Clock size={16} />
+                  {translate('Session Log', language as Locale)}
+                </button>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1521,6 +1532,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         </div>,
         document.body
       )}
+
+      {/* Session Log Viewer */}
+      {showLogViewer && <LogViewer isOpen={showLogViewer} onClose={() => setShowLogViewer(false)} />}
     </div>
   );
 };

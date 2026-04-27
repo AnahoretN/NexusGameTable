@@ -752,15 +752,48 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const handleClone = useCallback((cardId: string) => {
     const obj = objects[cardId];
     if (obj) {
+      const card = obj as any;
+      const newCardId = `card-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+      // If card belongs to a deck, add to both cardIds and baseCardIds
+      if (card.deckId) {
+        const deck = objects[card.deckId];
+        if (deck && deck.type === 'DECK') {
+          const newCard = {
+            ...card,
+            id: newCardId,
+            name: `${card.name} (copy)`,
+            x: (card.x || 0) + 20,
+            y: (card.y || 0) + 20
+          };
+
+          // Add to both cardIds and baseCardIds so cloned card persists
+          const updatedCardIds = [...deck.cardIds, newCardId];
+          const updatedBaseCardIds = [...(deck.baseCardIds || []), newCardId];
+
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: deck.id,
+              updates: { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds }
+            }
+          });
+
+          addObject(newCard);
+          return;
+        }
+      }
+
+      // Fallback for cards without deck
       const newObj = {
         ...obj,
-        id: `card-${Date.now()}`,
+        id: newCardId,
         x: (obj.x || 0) + 20,
         y: (obj.y || 0) + 20
       };
       addObject(newObj);
     }
-  }, [objects, addObject]);
+  }, [objects, addObject, dispatch]);
 
   const handleMoveToHand = useCallback((cardId: string) => {
     updateCard(cardId, {

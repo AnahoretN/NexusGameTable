@@ -20,6 +20,7 @@ import { useLocalSettings } from '../../hooks/useLocalSettings';
 import { useDragOverStore } from '../../store/dragOverState';
 import { clampScrollToPlayableArea } from '../../utils/viewportConstraints';
 import { executeClickAction as executeObjectClickAction } from '../../utils/objectActionHandlers';
+import { logger } from '../../utils/logger';
 
 // Import refactored Tabletop components
 import {
@@ -41,7 +42,7 @@ import { ClickTooltip } from './ClickTooltip';
 
 // Import types
 import type { TabletopRenderContext } from './types';
-import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, TokenShape, CardOrientation } from '../../types';
+import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, Counter, DiceObject, TokenShape, CardOrientation } from '../../types';
 
 /**
  * Tabletop Component (Refactored)
@@ -175,10 +176,9 @@ export const Tabletop: React.FC = () => {
 
   // Resizing state
   const [resizingId, setResizingId] = useState<string | null>(null);
-  const [, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [, setLiveResizeSize] = useState<{ width: number; height: number } | null>(null);
   const liveResizeSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const resizeFinalSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   // Additional UI state
   const [nexusBoardAddingCell, setNexusBoardAddingCell] = useState<string | null>(null);
@@ -224,7 +224,9 @@ export const Tabletop: React.FC = () => {
     draggingId,
     draggingIdRef,
     setDraggingId,
+    resizingId,
     setResizingId,
+    resizeStart,
     setResizeStart,
     rulerStart,
     setRulerStart,
@@ -247,7 +249,6 @@ export const Tabletop: React.FC = () => {
     updateSetting: updateSetting as (key: string | number | symbol, value: any) => void,
     liveResizeSizeRef,
     setLiveResizeSize,
-    resizeFinalSizeRef,
     isAddingTokenRef,
     longPressTimerRef,
     clickTooltipTimerRef,
@@ -349,19 +350,47 @@ export const Tabletop: React.FC = () => {
         clickOffsetX_PX?: number;
         clickOffsetY_PX?: number;
         fromPoolPanel?: string;
+        sourceZoom?: number;
       }>;
 
-      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX } = customEvent.detail;
+      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, sourceZoom, fromPoolPanel } = customEvent.detail;
+
+      // Debug log for pool panel items
+      if (fromPoolPanel) {
+        console.log('[TabletopRefactored] Pool panel item received:', {
+          cardId,
+          fromPoolPanel,
+          sourceZoom,
+          clickOffsetX_PX,
+          clickOffsetY_PX,
+          clickOffsetX,
+          clickOffsetY
+        });
+      }
+
+      const stack = new Error().stack;
+      console.log('[TabletopRefactored] handleAddToCursorSlot called:', {
+        cardId,
+        source,
+        fromPoolPanel,
+        clientX,
+        clientY,
+        currentSlotLength: cursorSlotRef.current.length,
+        currentSlotIds: cursorSlotRef.current.map(o => o.id)
+      });
+      console.log('[TabletopRefactored] Stack trace:', stack);
 
       const obj = state.objects[cardId];
 
       if (!obj) {
+        logger.warn('[TabletopRefactored] handleAddToCursorSlot: Object not found:', cardId);
         return;
       }
 
       // Check if object is already in cursor slot
       // Use cursorSlotRef.current to get the latest value (not from closure)
       if (cursorSlotRef.current.some(item => item.id === cardId)) {
+        console.log('[TabletopRefactored] Object already in cursor slot, skipping:', cardId);
         return;
       }
 
@@ -398,9 +427,10 @@ export const Tabletop: React.FC = () => {
 
           // For cards with special coordinates (like -999999 from hand), use click offset if provided
           if (sourceX < -90000 || sourceY < -90000) {
-            // Check if we have pixel offsets from HandPanel
+            // Check if we have pixel offsets from HandPanel or pool panel
             if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined && pixelsPerVU) {
-              // Convert pixel offsets to virtual units
+              // clickOffsetX_PX is ALWAYS in screen pixels now (consistently from all sources)
+              // Convert to VU for positioning
               finalClickOffsetX = clickOffsetX_PX / pixelsPerVU;
               finalClickOffsetY = clickOffsetY_PX / pixelsPerVU;
             } else {
@@ -425,7 +455,7 @@ export const Tabletop: React.FC = () => {
       }
 
       // IMPORTANT: Calculate pixel offsets for CursorSlotVisualization
-      // If clickOffsetX_PX/Y_PX are provided (from pool panel), use them directly
+      // If clickOffsetX_PX/Y_PX are provided, use them directly (already in screen pixels)
       // Otherwise calculate from VU offsets (for "play top" and other cases)
       const cardWidth = card.width ?? deck?.cardWidth ?? 63;
       const cardHeight = card.height ?? deck?.cardHeight ?? 88;
@@ -434,7 +464,7 @@ export const Tabletop: React.FC = () => {
       let finalClickOffsetY_PX: number | undefined;
 
       if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
-        // Use provided screen pixel offsets (from pool panel drag)
+        // Use provided screen pixel offsets (already in screen pixels)
         finalClickOffsetX_PX = clickOffsetX_PX;
         finalClickOffsetY_PX = clickOffsetY_PX;
       } else {
@@ -453,44 +483,223 @@ export const Tabletop: React.FC = () => {
         }
       }
 
-      const itemClone = {
-        id: card.id,
-        type: obj.type, // Use the actual object type, not hardcoded CARD
-        name: card.name,
-        content: card.content,
-        frontFaceUrl: card.frontFaceUrl,
-        backFaceUrl: card.backFaceUrl,
-        deckId: card.deckId,
-        width: card.width,
-        height: card.height,
-        faceUp: card.faceUp,
-        isHorizontal: isHorizontal,
-        spriteIndex: card.spriteIndex,
-        spriteColumns: card.spriteColumns,
-        spriteRows: card.spriteRows,
-        spriteUrl: card.spriteUrl,
-        shape: card.shape,
-        x: 0,
-        y: 0,
-        rotation: card.rotation || 0,
-        zIndex: card.zIndex ?? 0,
-        hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
-        location: card.location,
-        locked: card.locked ?? false,
-        isOnTable: card.isOnTable ?? false,
-        source: source || 'hold',
-        originalZIndex: card.zIndex ?? 0,
-        cursorSlotIndex: cursorSlotRef.current.length,
-        timestamp: Date.now(),
-        clickOffsetX: finalClickOffsetX,
-        clickOffsetY: finalClickOffsetY,
-        clickOffsetX_PX: finalClickOffsetX_PX,
-        clickOffsetY_PX: finalClickOffsetY_PX,
-        // IMPORTANT: Store original position for proper drop calculation
-        // Use cardOverride coordinates if available (for cards from hand/pool)
-        originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
-        originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
-      } as any; // Use 'any' to avoid type conflicts with Card interface
+      // Create itemClone based on object type to preserve type-specific fields
+      let itemClone: any;
+
+      if (obj.type === ItemType.DECK) {
+        // For DECK, copy all deck-specific fields
+        const deck = (cardOverride || obj) as Deck;
+        itemClone = {
+          id: deck.id,
+          type: ItemType.DECK,
+          name: deck.name,
+          cardIds: [...deck.cardIds],
+          baseCardIds: [...deck.baseCardIds],
+          width: deck.width,
+          height: deck.height,
+          cardShape: deck.cardShape,
+          cardOrientation: deck.cardOrientation,
+          showTopCard: deck.showTopCard,
+          showDeckBack: deck.showDeckBack,
+          showTopCardBack: deck.showTopCardBack,
+          spriteConfig: deck.spriteConfig ? { ...deck.spriteConfig } : undefined,
+          x: 0,
+          y: 0,
+          rotation: deck.rotation || 0,
+          zIndex: deck.zIndex ?? 0,
+          hyperscaleLayerId: deck.hyperscaleLayerId ?? 'cards',
+          locked: deck.locked,
+          source: source || 'hold',
+          originalZIndex: deck.zIndex ?? 0,
+          cursorSlotIndex: cursorSlotRef.current.length,
+          timestamp: Date.now(),
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          sourceZoom: sourceZoom,
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+        };
+      } else if (obj.type === ItemType.TOKEN) {
+        // For TOKEN, copy token-specific fields
+        const token = (cardOverride || obj) as Token;
+        itemClone = {
+          id: token.id,
+          type: ItemType.TOKEN,
+          name: token.name,
+          width: token.width,
+          height: token.height,
+          shape: token.shape,
+          color: token.color,
+          content: token.content,
+          borderWidth: token.borderWidth,
+          borderColor: (token as any).borderColor,
+          opacity: token.opacity,
+          borderOpacity: (token as any).borderOpacity,
+          x: 0,
+          y: 0,
+          rotation: token.rotation || 0,
+          zIndex: token.zIndex ?? 0,
+          hyperscaleLayerId: token.hyperscaleLayerId ?? 'tokens',
+          source: source || 'hold',
+          originalZIndex: token.zIndex ?? 0,
+          cursorSlotIndex: cursorSlotRef.current.length,
+          timestamp: Date.now(),
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          sourceZoom: sourceZoom,
+          fromPoolPanel: fromPoolPanel, // Track if from pool panel for proper cursor visualization
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+        };
+      } else if (obj.type === ItemType.COUNTER) {
+        // For COUNTER, copy counter-specific fields
+        const counter = (cardOverride || obj) as Counter;
+        itemClone = {
+          id: counter.id,
+          type: ItemType.COUNTER,
+          name: counter.name,
+          width: counter.width,
+          height: counter.height,
+          value: counter.value,
+          baseValue: counter.baseValue,
+          minValue: counter.minValue,
+          maxValue: counter.maxValue,
+          allowNegative: counter.allowNegative,
+          wrapAround: counter.wrapAround,
+          x: 0,
+          y: 0,
+          rotation: counter.rotation || 0,
+          zIndex: counter.zIndex ?? 0,
+          hyperscaleLayerId: counter.hyperscaleLayerId ?? 'tokens',
+          source: source || 'hold',
+          originalZIndex: counter.zIndex ?? 0,
+          cursorSlotIndex: cursorSlotRef.current.length,
+          timestamp: Date.now(),
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          sourceZoom: sourceZoom,
+          fromPoolPanel: fromPoolPanel, // Track if from pool panel for proper cursor visualization
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+        };
+      } else if (obj.type === ItemType.BOARD) {
+        // For BOARD, copy board-specific fields
+        const board = (cardOverride || obj) as Board;
+        itemClone = {
+          id: board.id,
+          type: ItemType.BOARD,
+          name: board.name,
+          content: board.content,
+          width: board.width,
+          height: board.height,
+          x: 0,
+          y: 0,
+          rotation: board.rotation || 0,
+          gridType: board.gridType,
+          gridSize: board.gridSize,
+          gridWidth: board.gridWidth,
+          gridHeight: board.gridHeight,
+          showGrid: board.showGrid,
+          snapToGrid: board.snapToGrid,
+          color: board.color,
+          zIndex: board.zIndex ?? 0,
+          hyperscaleLayerId: board.hyperscaleLayerId ?? 'boards',
+          source: source || 'hold',
+          originalZIndex: board.zIndex ?? 0,
+          cursorSlotIndex: cursorSlotRef.current.length,
+          timestamp: Date.now(),
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          sourceZoom: sourceZoom,
+          fromPoolPanel: fromPoolPanel, // Track if from pool panel for proper cursor visualization
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+        };
+      } else if (obj.type === ItemType.DICE_OBJECT) {
+        // For DICE_OBJECT, copy dice-specific fields
+        const dice = (cardOverride || obj) as DiceObject;
+        itemClone = {
+          id: dice.id,
+          type: ItemType.DICE_OBJECT,
+          name: dice.name,
+          width: dice.width,
+          height: dice.height,
+          sides: dice.sides,
+          currentValue: dice.currentValue,
+          shape: dice.shape,
+          color: dice.color,
+          borderWidth: dice.borderWidth,
+          borderColor: dice.borderColor,
+          opacity: dice.opacity,
+          borderOpacity: dice.borderOpacity,
+          fontColor: dice.fontColor,
+          x: 0,
+          y: 0,
+          rotation: dice.rotation || 0,
+          zIndex: dice.zIndex ?? 0,
+          hyperscaleLayerId: dice.hyperscaleLayerId ?? 'tokens',
+          source: source || 'hold',
+          originalZIndex: dice.zIndex ?? 0,
+          cursorSlotIndex: cursorSlotRef.current.length,
+          timestamp: Date.now(),
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          sourceZoom: sourceZoom,
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+        };
+      } else {
+        // For CARD and other types, use the original logic
+        itemClone = {
+          id: card.id,
+          type: obj.type, // Use the actual object type, not hardcoded CARD
+          name: card.name,
+          content: card.content,
+          frontFaceUrl: card.frontFaceUrl,
+          backFaceUrl: card.backFaceUrl,
+          deckId: card.deckId,
+          width: card.width,
+          height: card.height,
+          faceUp: card.faceUp,
+          isHorizontal: isHorizontal,
+          spriteIndex: card.spriteIndex,
+          spriteColumns: card.spriteColumns,
+          spriteRows: card.spriteRows,
+          spriteUrl: card.spriteUrl,
+          shape: card.shape,
+          x: 0,
+          y: 0,
+          rotation: card.rotation || 0,
+          zIndex: card.zIndex ?? 0,
+          hyperscaleLayerId: card.hyperscaleLayerId ?? 'cards',
+          location: card.location,
+          locked: card.locked ?? false,
+          isOnTable: card.isOnTable ?? false,
+          source: source || 'hold',
+          originalZIndex: card.zIndex ?? 0,
+          cursorSlotIndex: cursorSlotRef.current.length,
+          timestamp: Date.now(),
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          sourceZoom: sourceZoom,
+          // IMPORTANT: Store original position for proper drop calculation
+          // Use cardOverride coordinates if available (for cards from hand/pool)
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+        };
+      }
 
       // Set cursor position FIRST
       const pos = { x: clientX, y: clientY };
@@ -499,6 +708,8 @@ export const Tabletop: React.FC = () => {
 
       // Add to cursor slot
       const newSlot = [...cursorSlotRef.current, itemClone];
+      // IMPORTANT: Update ref IMMEDIATELY to prevent duplicate additions from rapid events
+      cursorSlotRef.current = newSlot;
       setCursorSlot(newSlot);
       cursorSlotLastAddedRef.current = Date.now();
 
@@ -509,23 +720,27 @@ export const Tabletop: React.FC = () => {
       }
 
       // IMPORTANT: Hide object from table while in cursor slot (same as in addToCursorSlot)
+      console.log('[TabletopRefactored] Dispatching UPDATE_OBJECT with inCursorSlot=true:', cardId);
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
           id: cardId,
-          inCursorSlot: true,
-          isOnTable: false,
-          // Move object far away to hide it while in slot
-          x: -999999,
-          y: -999999,
-          // Store click offsets for proper drop positioning
-          clickOffsetX_PX: finalClickOffsetX_PX,
-          clickOffsetY_PX: finalClickOffsetY_PX,
-          clickOffsetX: finalClickOffsetX,
-          clickOffsetY: finalClickOffsetY,
-          // Store original position BEFORE updating to -999999
-          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
-          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
+          updates: {
+            inCursorSlot: true,
+            isOnTable: false,
+            // Move object far away to hide it while in slot
+            x: -999999,
+            y: -999999,
+            // Store click offsets for proper drop positioning
+            clickOffsetX_PX: finalClickOffsetX_PX,
+            clickOffsetY_PX: finalClickOffsetY_PX,
+            clickOffsetX: finalClickOffsetX,
+            clickOffsetY: finalClickOffsetY,
+            sourceZoom: sourceZoom, // Store zoom level of source for accurate coordinate conversion
+            // Store original position BEFORE updating to -999999
+            originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+            originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
+          }
         } as any
       });
     };
@@ -542,7 +757,26 @@ export const Tabletop: React.FC = () => {
 
   // Listen for clear-cursor-slot event (dispatched by pool panel drops)
   useEffect(() => {
-    const handleClearCursorSlot = () => {
+    const handleClearCursorSlot = (e: Event) => {
+      const customEvent = e as CustomEvent<{ reason?: string; objectIds?: string[] }>;
+      const { objectIds } = customEvent.detail || {};
+
+      logger.log('[TabletopRefactored] handleClearCursorSlot called:', {
+        objectIds,
+        currentSlotLength: cursorSlotRef.current.length,
+        currentSlotIds: cursorSlotRef.current.map(o => o.id)
+      });
+
+      // If specific object IDs are provided, only clear those from cursor slot
+      // This is used when dropping objects to pool panels - we want to clear
+      // only the dropped objects, not the entire slot
+      if (objectIds && objectIds.length > 0) {
+        // Filter out the dropped objects from cursor slot
+        logger.log('[TabletopRefactored] Filtering cursor slot, removing:', objectIds);
+        setCursorSlot(prev => prev.filter(item => !objectIds.includes(item.id)));
+        return;
+      }
+
       // IMPORTANT: Also reset inCursorSlot flag for all objects
       // This prevents objects from staying in cursor slot state after clear
       Object.values(state.objects).forEach(obj => {
@@ -557,6 +791,7 @@ export const Tabletop: React.FC = () => {
         }
       });
 
+      cursorSlotRef.current = [];
       setCursorSlot([]);
       setCursorPosition(null);
       cursorPositionRef.current = null;

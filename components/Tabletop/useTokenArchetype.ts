@@ -117,7 +117,7 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
         fontColor: (archetype as any).fontColor,
         // IMPORTANT: Set zIndex to maintain layer relationships
         zIndex: archetype.zIndex ?? 3000,
-        hyperscaleLayerId: archetype.hyperscaleLayerId ?? 'tokens',
+        hyperscaleLayerId: 'tokens',
         // Inherit action settings from archetype
         allowedActions: archetype.allowedActions,
         allowedActionsForGM: archetype.allowedActionsForGM,

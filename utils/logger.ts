@@ -7,11 +7,15 @@ const isDevelopment = import.meta.env.DEV;
 
 export const logger = {
   log: (...args: unknown[]) => {
-    // All logging disabled
+    if (isDevelopment) {
+      console.log('[Nexus]', ...args);
+    }
   },
 
   warn: (...args: unknown[]) => {
-    // Warning logging disabled
+    if (isDevelopment) {
+      console.warn('[Nexus]', ...args);
+    }
   },
 
   error: (...args: unknown[]) => {
@@ -20,6 +24,8 @@ export const logger = {
   },
 
   debug: (...args: unknown[]) => {
-    // Debug logging disabled
+    if (isDevelopment) {
+      console.log('[Nexus DEBUG]', ...args);
+    }
   },
 };

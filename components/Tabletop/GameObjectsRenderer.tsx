@@ -341,7 +341,6 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
             deckSpriteConfig={deck?.spriteConfig}
             deckShowTooltipImage={deck?.showTooltipImage}
             deckTooltipScale={deck?.tooltipScale}
-            onClick={() => isOwner && onMouseDown(new MouseEvent('mousedown') as any, obj.id)}
           />
         </div>
       </Tooltip>

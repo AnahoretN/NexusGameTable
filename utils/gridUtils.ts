@@ -135,26 +135,11 @@ export function calculateGridCellCenter(
   // Calculate grid dimensions using same logic as BoardWithResize for consistency
   const { gridW, gridH } = calculateGridDimensions(board);
 
-  // Debug logging to track grid size values
-  console.log('🔢 [calculateGridCellCenter] Input:', {
-    boardId: board.id,
-    col, row,
-    boardX: board.x,
-    boardY: board.y,
-    gridType: board.gridType,
-    gridWidth: board.gridWidth,
-    gridHeight: board.gridHeight,
-    gridSize: board.gridSize,
-    effectiveGridW: gridW,
-    effectiveGridH: gridH
-  });
-
   // DISABLE CACHE for now to ensure fresh calculations
   // This will help debug the hex grid positioning issue
   // const cacheKey = `${board.id}-${board.x}-${board.y}-${board.gridType}-${board.gridWidth || board.gridSize}-${board.gridHeight || board.gridSize}-${col}-${row}`;
   // const cached = gridCellCenterCache.get(cacheKey);
   // if (cached) {
-  //   console.log('💾 [calculateGridCellCenter] Cache hit:', { cacheKey, cached });
   //   return { x: cached.x, y: cached.y };
   // }
 

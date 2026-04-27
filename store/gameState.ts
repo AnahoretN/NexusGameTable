@@ -1,4 +1,4 @@
-import { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, HyperscaleLayer, DiceGroup } from '../types';
+import { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, HyperscaleLayer, DiceGroup, AuditLogState } from '../types';
 import { GM_COLOR, getSessionId } from './gameConstants';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
 
@@ -46,6 +46,7 @@ export interface GameState {
   diceGroups: DiceGroup[]; // Dice groups for rolling multiple dice together
   lastModifiedBy?: string; // ID of player who last modified the game state
   playerPanelSettings: PlayerPanelSettings; // Individual panel settings for each player
+  auditLog: AuditLogState; // Session audit log
   // Internal fields (not persisted)
   _lastPanelSettingsUpdate?: number; // Timestamp of last panel settings update
   _pendingPanelSettings?: PlayerPanelSettings; // Pending settings waiting for throttle timeout
@@ -88,6 +89,12 @@ export const initialState: GameState = {
   lastModifiedBy: 'gm',
   // Individual panel settings for each player (stored on host)
   playerPanelSettings: {},
+  // Session audit log
+  auditLog: {
+    entries: [],
+    maxEntries: 10000,
+    currentReplayIndex: -1,
+  },
   // Default hyperscale layers
   hyperscaleLayers: [
     {

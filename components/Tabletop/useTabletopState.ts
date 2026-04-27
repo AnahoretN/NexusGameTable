@@ -222,10 +222,6 @@ export const useResizeState = () => {
   resizingIdRef.current = resizingId;
 
   const resizeThrottleRef = useRef<number | null>(null);
-  const resizeFinalSizeRef = useRef<{
-    width: number;
-    height: number;
-  } | null>(null);
 
   return {
     resizingId,
@@ -236,8 +232,7 @@ export const useResizeState = () => {
     setLiveResizeSize,
     liveResizeSizeRef,
     resizingIdRef,
-    resizeThrottleRef,
-    resizeFinalSizeRef
+    resizeThrottleRef
   };
 };
 

@@ -107,6 +107,12 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       if (setDeleteCandidateId) setDeleteCandidateId(object.id);
       return;
 
+    case 'destroy':
+      // Destroy permanently removes card from the deck, including from baseCardIds
+      // This is handled by DELETE_OBJECT which now removes from baseCardIds
+      dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id }});
+      return;
+
     case 'pinToViewport':
       // Toggle pin state: if pinned, unpin; if unpinned, pin
       if ((object as any).pinnedToViewport) {
@@ -237,24 +243,28 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
           const newCard: Card = {
             ...card,
             id: newCardId,
-            name: `${card.name} (copy)`
+            name: `${card.name} (copy)`,
+            deckId: card.deckId, // Explicitly preserve deckId
+            location: card.location, // Preserve location
           };
 
-          // Add new card to deck
+          // Add new card to deck's cardIds AND baseCardIds
+          // baseCardIds defines the max cards in deck - cloned cards should persist
           const updatedCardIds = [...deck.cardIds, newCardId];
+          const updatedBaseCardIds = [...(deck.baseCardIds || []), newCardId];
 
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
               id: deck.id,
-              updates: { cardIds: updatedCardIds }
+              updates: { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds }
             }
           });
 
-          // Add the cloned card to objects
+          // Add the cloned card to objects (payload should be the object itself)
           dispatch({
             type: 'ADD_OBJECT',
-            payload: { object: newCard }
+            payload: newCard
           });
         } else {
           // Fallback to regular object clone
@@ -308,19 +318,11 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       break;
 
     case 'bringToFront':
-      dispatch({ type: 'MOVE_LAYER_UP', payload: { id: object.id } });
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: object.id, updates: { zIndex: 10000 } }
-      });
+      dispatch({ type: 'BRING_TO_FRONT', payload: { id: object.id } });
       break;
 
     case 'sendToBack':
-      dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: object.id } });
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: object.id, updates: { zIndex: 0 } }
-      });
+      dispatch({ type: 'SEND_TO_BACK', payload: { id: object.id } });
       break;
 
     case 'layerUp':

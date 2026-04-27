@@ -195,7 +195,6 @@ export const Tabletop: React.FC = () => {
   }>({ initialX: 0, initialY: 0, targetId: null, addedToSlot: false });
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const resizeFinalSizeRef = useRef<{ width: number; height: number } | null>(null);
   const cursorSlotLastAddedRef = useRef<number>(0);
 
   // Track pinned objects that were unpinned during drag
@@ -242,7 +241,6 @@ export const Tabletop: React.FC = () => {
     updateSetting,
     liveResizeSizeRef,
     setLiveResizeSize,
-    resizeFinalSizeRef,
     isAddingTokenRef,
     longPressTimerRef,
     clickTooltipTimerRef,

@@ -49,8 +49,12 @@ export { UIObjectRendererOptimized, UIObjectRendererOptimizedMemo } from './UIOb
 // 🚀 MainMenuContent
 export { MainMenuContentMemoized } from './MainMenuContent';
 
+// 🔥 NEW: Panel resize components
+export { PanelResizeHandle, PanelResizeHandleMemo } from './PanelResizeHandle';
+
 // Re-export original types
 export type { VirtualizedObjectListProps } from './VirtualizedObjectList';
 export type { VirtualizedHandListProps, SimpleHandListProps } from './VirtualizedHandList';
 export type { VirtualizedTokensPanelProps, SimpleTokensPanelProps } from './VirtualizedTokensPanel';
 export type { LazyImageProps, LazyBackgroundImageProps } from './LazyImage';
+export type { PanelResizeHandleProps } from './PanelResizeHandle';

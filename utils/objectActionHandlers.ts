@@ -155,11 +155,11 @@ export function handleSendToBack(obj: TableObject, dispatch: Dispatch<Action>) {
 }
 
 export function handleLayerUp(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({ type: 'LAYER_UP', payload: { id: obj.id } });
+  dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } });
 }
 
 export function handleLayerDown(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({ type: 'LAYER_DOWN', payload: { id: obj.id } });
+  dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } });
 }
 
 // ============================================
@@ -336,8 +336,45 @@ export function handleDelete(obj: TableObject, context: ActionHandlerContext) {
   }
 }
 
-export function handleClone(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } });
+export function handleClone(obj: TableObject, context: ActionHandlerContext) {
+  // Special handling for cards in decks - clone card within the same deck
+  if (obj.type === ItemType.CARD && (obj as any).deckId) {
+    const card = obj as any;
+    const deck = context.state.objects[card.deckId];
+    if (deck && deck.type === ItemType.DECK) {
+      // Create a copy of the card in the same deck
+      const newCardId = `card-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+      // Create exact copy of the card with new ID
+      const newCard = {
+        ...card,
+        id: newCardId,
+        name: `${card.name} (copy)`
+      };
+
+      // Add new card to deck's cardIds AND baseCardIds
+      // baseCardIds defines the max cards in deck - cloned cards should persist
+      const updatedCardIds = [...deck.cardIds, newCardId];
+      const updatedBaseCardIds = [...(deck.baseCardIds || []), newCardId];
+
+      context.dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: deck.id,
+          updates: { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds }
+        }
+      });
+
+      // Add the cloned card to objects
+      context.dispatch({
+        type: 'ADD_OBJECT',
+        payload: { object: newCard }
+      });
+      return;
+    }
+  }
+  // Default clone behavior for other objects
+  context.dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } });
 }
 
 export function handleLock(obj: TableObject, dispatch: Dispatch<Action>) {
@@ -527,7 +564,7 @@ export function executeClickAction(
       handleDelete(obj, context);
       break;
     case 'clone':
-      handleClone(obj, context.dispatch);
+      handleClone(obj, context);
       break;
     case 'lock':
       handleLock(obj, context.dispatch);

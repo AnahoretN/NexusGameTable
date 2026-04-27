@@ -1,9 +1,8 @@
 import { t as translate, Locale } from '../utils/translations';
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId, useSettingsModalState } from '../store/contexts';
-import { useObjectActions } from '../store/objectStore';
 import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, CardLocation, ItemType, Deck as DeckType, AppLanguage } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card as CardComponent } from './Card';
@@ -200,13 +199,13 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     });
   }, [dispatch]);
 
-  const { deleteObject, addObject } = useObjectActions();
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
   const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
   const gmInitializedRef = useRef(false);
   const modalContainerRef = useRef<HTMLDivElement>(null);
+  const prevCardIdsRef = useRef<string[] | null>(null);
 
   const [cardOrder, setCardOrder] = useState<string[]>(
     pile ? pile.cardIds : deck.cardIds
@@ -242,15 +241,36 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
 
   // Track GM flip states locally for immediate updates (synced with deck.gmSearchFaceUp)
   const [gmFlipStates, setGmFlipStates] = useState<Record<string, boolean>>({});
+  // Track newly added cards (full objects) that should be visible immediately
+  const [newlyAddedCards, setNewlyAddedCards] = useState<Record<string, Card>>({});
+  // Track newly added cards that should be face up immediately (before state updates)
+  const newCardsFaceUpRef = useRef<Set<string>>(new Set());
 
   // Reset initialization flag when deck changes
   useEffect(() => {
     gmInitializedRef.current = false;
+    // Reset prevCardIdsRef to force sync when deck changes
+    prevCardIdsRef.current = null;
+    // Clear new cards tracking
+    newCardsFaceUpRef.current.clear();
+    // Clear newly added cards
+    setNewlyAddedCards({});
   }, [deck.id]);
 
-  // Sync cardOrder with deck.cardIds when viewing main deck
-  // Use a ref to track previous cardIds and only sync on actual changes
-  const prevCardIdsRef = useRef<string[] | null>(null);
+  // Clean up newlyAddedCards when cards appear in objects
+  useEffect(() => {
+    const newCardIds = Object.keys(newlyAddedCards);
+    if (newCardIds.length > 0) {
+      const cardsInObjects = newCardIds.filter(id => objects[id]);
+      if (cardsInObjects.length > 0) {
+        setNewlyAddedCards(prev => {
+          const updated = { ...prev };
+          cardsInObjects.forEach(id => delete updated[id]);
+          return updated;
+        });
+      }
+    }
+  }, [objects, newlyAddedCards]);
 
   // Initialize GM state on first open - set all cards to face up if not set
   useEffect(() => {
@@ -275,6 +295,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   // Determine if a card should be shown face up based on visibility mode
   const getCardFaceUp = useCallback((card: Card): boolean => {
     if (isGM) {
+      // Check if card is in newly added cards (should be face up immediately)
+      if (newCardsFaceUpRef.current.has(card.id)) {
+        return true;
+      }
       return gmFlipStates[card.id] ?? true;
     }
 
@@ -301,12 +325,84 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
     }
   }, [isGM, gmFlipStates, visibility, playerFlipStates, deck.perPlayerSearchFaceUp, currentPlayerId]);
 
+  // Helper function to clone a card within the deck
+  const cloneCardInDeck = useCallback((card: Card) => {
+    const targetDeckId = card.deckId || deck.id;
+    const isCurrentPile = !!pile; // Compute locally to avoid dependency order issues
+
+    // Create a cloned card with a new ID
+    const newCard: Card = {
+      ...card,
+      id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      name: `${card.name} (Copy)`,
+      deckId: targetDeckId,
+      location: CardLocation.DECK,
+      isOnTable: false,
+      content: card.content,
+      faceUp: card.faceUp,
+      spriteIndex: card.spriteIndex,
+      spriteUrl: card.spriteUrl,
+      spriteColumns: card.spriteColumns,
+      spriteRows: card.spriteRows,
+      frontFaceUrl: card.frontFaceUrl,
+      backFaceUrl: card.backFaceUrl,
+      width: card.width,
+      height: card.height,
+      description: card.description,
+      shape: card.shape,
+    };
+
+    // Get current deck state BEFORE dispatch
+    const currentDeck = objects[targetDeckId] as Deck;
+    const currentCardIds = currentDeck?.cardIds || deck.cardIds;
+    const currentBaseCardIds = currentDeck?.baseCardIds || deck.baseCardIds;
+
+    const updatedCardIds = [...currentCardIds, newCard.id];
+    const updatedBaseCardIds = [...currentBaseCardIds, newCard.id];
+
+    // For GM, mark new card as face up IMMEDIATELY
+    if (isGM) {
+      newCardsFaceUpRef.current.add(newCard.id);
+      setGmFlipStates(prev => ({ ...prev, [newCard.id]: true }));
+    }
+
+    // Add to newlyAddedCards for instant display
+    setNewlyAddedCards(prev => ({ ...prev, [newCard.id]: newCard }));
+
+    // Add to global state
+    dispatch({ type: 'ADD_OBJECT', payload: newCard });
+
+    // Update deck
+    const deckUpdates: any = { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds };
+    if (isGM) {
+      deckUpdates.gmSearchFaceUp = {
+        ...(deck.gmSearchFaceUp || {}),
+        [newCard.id]: true
+      };
+    }
+
+    if (isCurrentPile && pile) {
+      const updatedPiles = (currentDeck?.piles || deck.piles)?.map(p =>
+        p.id === pile.id ? { ...p, cardIds: [...pile.cardIds, newCard.id] } : p
+      );
+      deckUpdates.piles = updatedPiles;
+      setCardOrder([...cardOrder, newCard.id]);
+    } else {
+      setCardOrder(updatedCardIds);
+      prevCardIdsRef.current = updatedCardIds;
+    }
+
+    updateDeck(targetDeckId, deckUpdates);
+
+    return newCard;
+  }, [deck, objects, isGM, pile, cardOrder, dispatch, updateDeck, deck.gmSearchFaceUp]);
+
   const isPile = !!pile;
   const title = isPile ? `${pile.name} - ${deck.name}` : deck.name;
 
   const cards = useMemo(() =>
-    cardOrder.map(id => objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
-    [cardOrder, objects, isGM]
+    cardOrder.map(id => newlyAddedCards[id] || objects[id] as Card).filter(Boolean).filter(card => isGM || !card.hidden),
+    [cardOrder, objects, isGM, newlyAddedCards]
   );
 
   const cardActionButtons = deck.cardActionButtons || [];
@@ -315,30 +411,21 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const scaledBaseCardWidth = isHorizontal ? baseCardWidth * 1.254 : baseCardWidth;
 
   // Sync cardOrder with deck.cardIds when viewing main deck
-  // This ensures cards reorder visually after move operations
-  useEffect(() => {
+  // Using useLayoutEffect for synchronous update before paint
+  useLayoutEffect(() => {
     if (!isPile) {
       const currentDeck = objects[deck.id] as Deck;
       if (currentDeck && currentDeck.cardIds) {
+        const currentIds = currentDeck.cardIds;
         const prevIds = prevCardIdsRef.current;
-        // Only sync if deck.cardIds has changed (reorder operation)
-        if (prevIds && JSON.stringify(currentDeck.cardIds) !== JSON.stringify(prevIds)) {
-          setCardOrder([...currentDeck.cardIds]);
+        // Only update if cardIds actually changed (compare with previous value)
+        if (!prevIds || JSON.stringify(currentIds) !== JSON.stringify(prevIds)) {
+          setCardOrder([...currentIds]);
+          prevCardIdsRef.current = [...currentIds];
         }
-        prevCardIdsRef.current = [...currentDeck.cardIds];
       }
     }
   }, [objects, deck.id, isPile]);
-
-  // Initialize prevCardIdsRef when deck changes
-  useEffect(() => {
-    if (!isPile) {
-      const currentDeck = objects[deck.id] as Deck;
-      if (currentDeck && currentDeck.cardIds) {
-        prevCardIdsRef.current = [...currentDeck.cardIds];
-      }
-    }
-  }, [deck.id, isPile, objects]);
 
   const getCardDimensions = useCallback((card: Card) => {
     const actualCardWidth = card.width ?? DEFAULT_DECK_WIDTH;
@@ -466,10 +553,10 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         }
         break;
       case 'clone':
-        dispatch({ type: 'CLONE_OBJECT', payload: { id: card.id }});
+        cloneCardInDeck(card);
         break;
     }
-  }, [handleFlip, handleToHand, dispatch, cardOrder, isPile, pile, objects]);
+  }, [handleFlip, handleToHand, dispatch, cardOrder, isPile, pile, objects, cloneCardInDeck]);
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
@@ -575,38 +662,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         break;
       }
       case 'clone': {
-        // Clone card and add it to the same deck
         const card = object as Card;
         if (card.deckId) {
-          // Create a cloned card with a new ID
-          const newCard = {
-            ...card,
-            id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-            name: `${card.name} (Copy)`,
-          };
-
-          // Add the cloned card to the objects
-          addObject(newCard);
-
-          // Get current deck state
-          const currentDeck = objects[deck.id] as Deck;
-          const currentCardIds = currentDeck?.cardIds || deck.cardIds;
-          const currentBaseCardIds = currentDeck?.baseCardIds || deck.baseCardIds;
-
-          // Add the new card to deck's cardIds and baseCardIds
-          const updatedCardIds = [...currentCardIds, newCard.id];
-          const updatedBaseCardIds = [...currentBaseCardIds, newCard.id];
-
-          if (isPile && pile) {
-            const updatedPiles = (currentDeck?.piles || deck.piles)?.map(p =>
-              p.id === pile.id ? { ...p, cardIds: [...pile.cardIds, newCard.id] } : p
-            );
-            updateDeck(deck.id, { piles: updatedPiles, cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds });
-            setCardOrder([...cardOrder, newCard.id]);
-          } else {
-            updateDeck(deck.id, { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds });
-            setCardOrder(updatedCardIds);
-          }
+          cloneCardInDeck(card);
         } else {
           // If card has no deck, just clone it normally
           dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id }});
@@ -644,8 +702,8 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         const destroyCurrentBaseCardIds = destroyCurrentDeck?.baseCardIds || deck.baseCardIds || [];
         const destroyFilteredBaseCardIds = destroyCurrentBaseCardIds.filter(id => id !== object.id);
 
-        // Also remove the card object from objects to completely forget about it
-        deleteObject(object.id);
+        // Also remove the card object from objects via GameContext dispatch
+        dispatch({ type: 'DELETE_OBJECT', payload: { id: object.id } });
 
         if (isPile && pile) {
           const destroyUpdatedPiles = (destroyCurrentDeck?.piles || deck.piles)?.map(p =>
@@ -679,7 +737,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, updateDeck, deleteObject, addObject, deck.id, activePlayerId, cardOrder, isPile, pile, objects, deck]);
+  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, updateDeck, deck.id, activePlayerId, cardOrder, isPile, pile, objects, deck, cloneCardInDeck]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {

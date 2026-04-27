@@ -169,3 +169,90 @@ export function isPanelValid(
 
   return true;
 }
+
+/**
+ * Simple size constraint for pixel-based panels (pinned to viewport)
+ * Ensures panel stays within viewport bounds
+ *
+ * @param width - Desired width in pixels
+ * @param height - Desired height in pixels
+ * @param minWidth - Minimum width (default: 200)
+ * @param minHeight - Minimum height (default: 150)
+ * @param maxWidth - Maximum width (default: viewport width)
+ * @param maxHeight - Maximum height (default: viewport height)
+ */
+export function constrainPixelSize(
+  width: number,
+  height: number,
+  minWidth: number = 200,
+  minHeight: number = 150,
+  maxWidth: number = window.innerWidth,
+  maxHeight: number = window.innerHeight
+): { width: number; height: number } {
+  return {
+    width: Math.max(minWidth, Math.min(width, maxWidth)),
+    height: Math.max(minHeight, Math.min(height, maxHeight)),
+  };
+}
+
+/**
+ * Simple position constraint for pixel-based panels (pinned to viewport)
+ * Ensures at least 50px of panel remains visible
+ *
+ * @param x - Desired X position in pixels
+ * @param y - Desired Y position in pixels
+ * @param width - Panel width in pixels
+ * @param height - Panel height in pixels
+ * @param viewportWidth - Viewport width (default: window.innerWidth)
+ * @param viewportHeight - Viewport height (default: window.innerHeight)
+ * @param minVisible - Minimum visible pixels (default: 50)
+ */
+export function constrainPixelPosition(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  viewportWidth: number = window.innerWidth,
+  viewportHeight: number = window.innerHeight,
+  minVisible: number = 50
+): { x: number; y: number } {
+  // Allow panel to go off-screen, but keep minVisible pixels visible
+  const minX = minVisible - width;
+  const maxX = viewportWidth - minVisible;
+  const minY = minVisible - height;
+  const maxY = viewportHeight - minVisible;
+
+  return {
+    x: Math.max(minX, Math.min(x, maxX)),
+    y: Math.max(minY, Math.min(y, maxY)),
+  };
+}
+
+/**
+ * Quick constraint for both position and size in one call (pixel-based)
+ * Useful for pinned panels
+ */
+export function constrainPixelBounds(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  minWidth: number = 200,
+  minHeight: number = 150,
+  viewportWidth: number = window.innerWidth,
+  viewportHeight: number = window.innerHeight
+): { x: number; y: number; width: number; height: number } {
+  const constrainedSize = constrainPixelSize(width, height, minWidth, minHeight, viewportWidth, viewportHeight);
+  const constrainedPosition = constrainPixelPosition(
+    x, y,
+    constrainedSize.width,
+    constrainedSize.height,
+    viewportWidth,
+    viewportHeight
+  );
+
+  return {
+    ...constrainedPosition,
+    ...constrainedSize,
+  };
+}

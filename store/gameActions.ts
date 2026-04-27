@@ -114,4 +114,6 @@ export type Action =
   | ActionWithoutPayload<'UNDO_MARKER'>
   | ActionWithoutPayload<'UNDO_GENERAL'>
   // Local storage actions
-  | ActionWithoutPayload<'CLEAR_SAVED_STATE'>;
+  | ActionWithoutPayload<'CLEAR_SAVED_STATE'>
+  // Audit log actions
+  | BaseAction<'ADD_AUDIT_LOG_ENTRY', any>;  // AuditLogEntry (to avoid circular dependency)

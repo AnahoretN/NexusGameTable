@@ -9,6 +9,7 @@ import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from 
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
 import { Action } from './gameActions';
+import { createAuditLogEntry } from './auditLogger';
 import { useAutoSave } from './useAutoSave';
 import { usePeerConnection } from './usePeerConnection';
 import {
@@ -604,7 +605,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         action.payload.updates = filteredUpdates;
       }
 
-      const updatedObj = { ...obj, ...action.payload.updates } as TableObject;
+      // Support both formats: { id, updates: {...} } and { id, ...updates }
+      // For backward compatibility with existing code
+      const updates = action.payload.updates || {};
+      const { id, updates: _updates, ...restOfPayload } = action.payload;
+      const mergedUpdates = Object.keys(updates).length > 0 ? updates : restOfPayload;
+
+      const updatedObj = { ...obj, ...mergedUpdates } as TableObject;
 
       // Clamp zIndex to hyperscale layer bounds
       const layerId = updatedObj.hyperscaleLayerId || obj.hyperscaleLayerId || 'tokens';
@@ -1548,14 +1555,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             if (card.deckId) {
                 const deck = newObjects[card.deckId] as Deck;
                 if (deck && deck.type === ItemType.DECK) {
-                    // Remove card from deck's cardIds
+                    // Remove card from deck's cardIds AND baseCardIds
+                    // baseCardIds defines the max cards in deck - destroy should decrement it
                     const updatedCardIds = (deck.cardIds || []).filter(id => id !== card.id);
+                    const updatedBaseCardIds = (deck.baseCardIds || []).filter(id => id !== card.id);
                     newObjects[card.deckId] = {
                         ...deck,
                         cardIds: updatedCardIds,
-                        // Update initialCardCount if it exists
+                        baseCardIds: updatedBaseCardIds,
+                        // Update initialCardCount if it exists (deprecated, but keep for backwards compatibility)
                         initialCardCount: deck.initialCardCount
-                            ? Math.max(updatedCardIds.length, deck.initialCardCount - 1)
+                            ? Math.max(updatedBaseCardIds.length, deck.initialCardCount - 1)
                             : undefined
                     };
                 }
@@ -5093,6 +5103,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
       return resetState;
     }
+    // Audit log actions
+    case 'ADD_AUDIT_LOG_ENTRY': {
+      const entry = action.payload;
+      const newEntries = [...state.auditLog.entries, entry].slice(-state.auditLog.maxEntries);
+      return {
+        ...state,
+        auditLog: {
+          ...state.auditLog,
+          entries: newEntries,
+          currentReplayIndex: newEntries.length - 1,
+        },
+      };
+    }
     case 'ADD_HYPERSCALE_LAYER': {
       const newLayer: HyperscaleLayer = {
         ...action.payload,
@@ -5700,12 +5723,56 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [state.objects]); // Only depend on state.objects, NOT connectionStatus
 
+  // Audit log deduplication - prevent duplicate entries from React Strict Mode
+  const lastAuditLogRef = useRef<{ action: string; payload: any; timestamp: number } | null>(null);
+
   // Middleware Dispatcher - memoized with useCallback to prevent infinite loops
   const dispatch = useCallback((action: Action) => {
       // Local-only actions are executed locally but never sent over network
       if (action._localOnly) {
           localDispatch(action);
           return;
+      }
+
+      // Audit logging - create log entry before executing action
+      // Only log on host to avoid duplicate entries
+      if (isHost && !action._excludeFromHistory && action.type !== 'ADD_AUDIT_LOG_ENTRY') {
+          // Deduplication: skip if same action for same object was logged within 500ms
+          const now = Date.now();
+          const lastLog = lastAuditLogRef.current;
+          const isDuplicate = lastLog &&
+            lastLog.action === action.type &&
+            ((action.payload?.id && lastLog.payload?.id && action.payload.id === lastLog.payload.id) ||
+             JSON.stringify(lastLog.payload) === JSON.stringify(action.payload)) &&
+            now - lastLog.timestamp < 500;
+
+          if (!isDuplicate) {
+            const currentState = stateRef.current;
+            const currentPlayer = currentState.players.find(p => p.id === currentState.activePlayerId);
+            if (currentPlayer) {
+              const auditEntry = createAuditLogEntry(
+                action,
+                currentState,
+                currentPlayer.id,
+                currentPlayer.name,
+                currentPlayer.isGM
+              );
+              if (auditEntry) {
+                // Update last log ref
+                lastAuditLogRef.current = {
+                  action: action.type,
+                  payload: action.payload,
+                  timestamp: now
+                };
+                // Dispatch audit log entry (marked as excluded from history to avoid infinite loop)
+                (localDispatch as React.Dispatch<Action>)({
+                  type: 'ADD_AUDIT_LOG_ENTRY',
+                  payload: auditEntry,
+                  _excludeFromHistory: true,
+                } as Action);
+              }
+            }
+          }
       }
 
       if (isHost) {

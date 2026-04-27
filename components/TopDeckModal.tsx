@@ -51,6 +51,18 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
 
   const [cardOrder, setCardOrder] = useState<string[]>(deck.cardIds);
 
+  // Sync cardOrder with deck.cardIds when deck changes
+  // This ensures cloned cards appear immediately
+  useEffect(() => {
+    const currentDeck = objects[deck.id] as Deck;
+    if (currentDeck && currentDeck.cardIds) {
+      const currentIds = currentDeck.cardIds;
+      if (JSON.stringify(currentIds) !== JSON.stringify(cardOrder)) {
+        setCardOrder([...currentIds]);
+      }
+    }
+  }, [objects, deck.id, cardOrder]);
+
   // Modal width state (stored in vu)
   const [modalWidth, setModalWidth] = useState(DEFAULT_MODAL_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -189,10 +201,60 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
     // cardOrder will sync via useEffect with deck.cardIds
   }, [dispatch, deck.id]);
 
-  // Clone
+  // Clone - for cards in deck, add to both cardIds and baseCardIds
   const handleClone = useCallback((cardId: string) => {
+    const card = objects[cardId] as Card;
+    if (card?.deckId) {
+      const currentDeck = objects[deck.id] as Deck;
+      if (currentDeck) {
+        const newCardId = `card-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        // Explicitly copy ALL important properties to ensure proper display
+        const newCard: Card = {
+          ...card,
+          id: newCardId,
+          name: `${card.name} (copy)`,
+          // Ensure these properties are copied explicitly
+          content: card.content,
+          faceUp: card.faceUp,
+          location: card.location,
+          // Sprite sheet properties
+          spriteIndex: card.spriteIndex,
+          spriteUrl: card.spriteUrl,
+          spriteColumns: card.spriteColumns,
+          spriteRows: card.spriteRows,
+          // Individual card face URLs
+          frontFaceUrl: card.frontFaceUrl,
+          backFaceUrl: card.backFaceUrl,
+          // Dimensions
+          width: card.width,
+          height: card.height,
+        };
+
+        // Add to both cardIds and baseCardIds so cloned card persists
+        const updatedCardIds = [...currentDeck.cardIds, newCardId];
+        const updatedBaseCardIds = [...(currentDeck.baseCardIds || []), newCardId];
+
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: deck.id,
+            updates: { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds }
+          }
+        });
+
+        dispatch({
+          type: 'ADD_OBJECT',
+          payload: { object: newCard }
+        });
+
+        // Immediately update cardOrder to show the new card
+        setCardOrder(updatedCardIds);
+        return;
+      }
+    }
+    // Fallback for cards without deck
     dispatch({ type: 'CLONE_OBJECT', payload: { id: cardId } });
-  }, [dispatch]);
+  }, [dispatch, objects, deck.id]);
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent, card: Card) => {
