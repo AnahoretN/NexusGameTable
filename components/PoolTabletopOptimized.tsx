@@ -16,7 +16,8 @@ import { executeClickAction as universalExecuteClickAction } from '../utils/obje
 import { SvgTokenShape } from './SvgTokenShape';
 import { Tooltip } from './Tooltip';
 import { logger } from '../utils/logger';
-import { Plus, Minus } from 'lucide-react';
+import { Plus, Minus, RefreshCw, Trash2, Copy, Lock, Unlock, ArrowUp, ArrowDown, EyeOff, Pin, Layers } from 'lucide-react';
+import { executeActionButtonUniversal } from '../utils/actionButtonsHandler';
 import { BoardWithResizeMemo } from './Tabletop/BoardWithResize';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { SearchDeckModal } from './SearchDeckModal';
@@ -28,6 +29,11 @@ import {
   getCursorSlotObjects,
   type PoolZone as PoolZoneType
 } from '../utils/poolPlacement';
+import {
+  calculatePickupOffsetWithFallback,
+  pixelsToVU,
+  type CursorSlotObject
+} from '../utils/dragDropUtils';
 
 interface PoolZone extends PoolZoneType {
   panelId: string;
@@ -38,6 +44,324 @@ interface PoolTabletopProps {
   poolZone: PoolZone;
   zoom?: number;
 }
+
+// ============================================
+// MEMOIZED DICE ACTION BUTTONS COMPONENT
+// ============================================
+interface DiceActionButtonsProps {
+  obj: TableObject;
+  dispatch: (action: any) => void;
+  state: any;
+  activePlayerId: string;
+  isGM: boolean;
+  animateDiceRoll?: (dice: any) => void;
+  setDeleteCandidateId?: (id: string | null) => void;
+  setSearchModalDeck?: (deck: any) => void;
+  setTopDeckModalDeck?: (deck: any) => void;
+  className?: string;
+}
+
+const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, animateDiceRoll, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, className = '' }: DiceActionButtonsProps) => {
+  const actionButtons = obj.actionButtons || [];
+  const dice = obj as DiceObject;
+  const isInGroup = !!dice.diceGroupId;
+
+  const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+    roll: {
+      key: 'roll',
+      action: () => {
+        if (animateDiceRoll) {
+          animateDiceRoll(dice);
+        } else {
+          dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id, rollGroup: false } });
+        }
+      },
+      className: 'bg-purple-600 hover:bg-purple-500',
+      title: 'Roll',
+      icon: <RefreshCw size={14} />
+    },
+    rollGroup: {
+      key: 'rollGroup',
+      action: () => {
+        // Roll all dice in the group
+        if (dice.diceGroupId) {
+          const group = state.diceGroups?.find((g: any) => g.id === dice.diceGroupId);
+          if (group) {
+            group.diceIds.forEach((diceId: string) => {
+              if (animateDiceRoll) {
+                const groupDice = state.objects[diceId];
+                if (groupDice?.type === ItemType.DICE_OBJECT) {
+                  animateDiceRoll(groupDice);
+                }
+              } else {
+                dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: diceId } });
+              }
+            });
+          }
+        }
+      },
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Roll Group',
+      icon: <RefreshCw size={14} />
+    },
+    rotateClockwise: {
+      key: 'rotateClockwise',
+      action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Rotate CW',
+      icon: <RefreshCw size={14} />
+    },
+    rotateCounterClockwise: {
+      key: 'rotateCounterClockwise',
+      action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Rotate CCW',
+      icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+    },
+    swingClockwise: {
+      key: 'swingClockwise',
+      action: () => executeActionButtonUniversal(obj, 'swingClockwise', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-orange-600 hover:bg-orange-500',
+      title: 'Swing CW',
+      icon: <RefreshCw size={14} />
+    },
+    swingCounterClockwise: {
+      key: 'swingCounterClockwise',
+      action: () => executeActionButtonUniversal(obj, 'swingCounterClockwise', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-orange-600 hover:bg-orange-500',
+      title: 'Swing CCW',
+      icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+    },
+    delete: {
+      key: 'delete',
+      action: () => setDeleteCandidateId ? setDeleteCandidateId(obj.id) : dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
+      className: 'bg-red-600 hover:bg-red-500',
+      title: 'Delete',
+      icon: <Trash2 size={14} />
+    },
+    clone: {
+      key: 'clone',
+      action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
+      className: 'bg-cyan-600 hover:bg-cyan-500',
+      title: 'Clone',
+      icon: <Copy size={14} />
+    },
+    lock: {
+      key: 'lock',
+      action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: obj.locked ? 'Unlock' : 'Lock',
+      icon: obj.locked ? <Unlock size={14} /> : <Lock size={14} />
+    },
+    layer: {
+      key: 'layer',
+      action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+      className: 'bg-indigo-600 hover:bg-indigo-500',
+      title: 'Layer Up',
+      icon: <Layers size={14} />
+    },
+    layerUp: {
+      key: 'layerUp',
+      action: () => executeActionButtonUniversal(obj, 'layerUp', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Layer Up',
+      icon: <ArrowUp size={14} />
+    },
+    layerDown: {
+      key: 'layerDown',
+      action: () => executeActionButtonUniversal(obj, 'layerDown', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Layer Down',
+      icon: <ArrowDown size={14} />
+    },
+    pin: {
+      key: 'pin',
+      action: () => executeActionButtonUniversal(obj, 'pin', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-pink-600 hover:bg-pink-500',
+      title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
+      icon: <Pin size={14} />
+    },
+    hide: {
+      key: 'hide',
+      action: () => executeActionButtonUniversal(obj, 'hide', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-slate-600 hover:bg-slate-500',
+      title: 'Hide',
+      icon: <EyeOff size={14} />
+    }
+  };
+
+  let buttons = actionButtons
+    .map(action => buttonConfigs[action])
+    .filter(Boolean);
+
+  // Add rollGroup button if dice is in a group and not already in buttons
+  if (isInGroup && !actionButtons.includes('rollGroup' as any)) {
+    buttons.push(buttonConfigs.rollGroup);
+  }
+
+  // Limit to 4 buttons
+  buttons = buttons.slice(0, 4);
+
+  if (buttons.length === 0) return null;
+
+  return (
+    <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 opacity-0 group-hover:opacity-100 pointer-events-none ${className}`}>
+      {buttons.map(btn => (
+        <button
+          key={btn.key}
+          onClick={(e) => { e.stopPropagation(); btn.action(); }}
+          className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
+          title={btn.title}
+        >
+          {btn.icon}
+        </button>
+      ))}
+    </div>
+  );
+});
+DiceActionButtonsMemo.displayName = 'DiceActionButtonsMemo';
+
+// ============================================
+// MEMOIZED COUNTER ACTION BUTTONS COMPONENT
+// ============================================
+interface CounterActionButtonsProps {
+  obj: TableObject;
+  dispatch: (action: any) => void;
+  state: any;
+  activePlayerId: string;
+  isGM: boolean;
+  setDeleteCandidateId?: (id: string | null) => void;
+  className?: string;
+}
+
+const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, setDeleteCandidateId, className = '' }: CounterActionButtonsProps) => {
+  const actionButtons = obj.actionButtons || [];
+
+  const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+    rotateClockwise: {
+      key: 'rotateClockwise',
+      action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Rotate CW',
+      icon: <RefreshCw size={14} />
+    },
+    rotateCounterClockwise: {
+      key: 'rotateCounterClockwise',
+      action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: 'Rotate CCW',
+      icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+    },
+    swingClockwise: {
+      key: 'swingClockwise',
+      action: () => executeActionButtonUniversal(obj, 'swingClockwise', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-orange-600 hover:bg-orange-500',
+      title: 'Swing CW',
+      icon: <RefreshCw size={14} />
+    },
+    swingCounterClockwise: {
+      key: 'swingCounterClockwise',
+      action: () => executeActionButtonUniversal(obj, 'swingCounterClockwise', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-orange-600 hover:bg-orange-500',
+      title: 'Swing CCW',
+      icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+    },
+    delete: {
+      key: 'delete',
+      action: () => setDeleteCandidateId ? setDeleteCandidateId(obj.id) : dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
+      className: 'bg-red-600 hover:bg-red-500',
+      title: 'Delete',
+      icon: <Trash2 size={14} />
+    },
+    clone: {
+      key: 'clone',
+      action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
+      className: 'bg-cyan-600 hover:bg-cyan-500',
+      title: 'Clone',
+      icon: <Copy size={14} />
+    },
+    lock: {
+      key: 'lock',
+      action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
+      className: 'bg-yellow-600 hover:bg-yellow-500',
+      title: obj.locked ? 'Unlock' : 'Lock',
+      icon: obj.locked ? <Unlock size={14} /> : <Lock size={14} />
+    },
+    layer: {
+      key: 'layer',
+      action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+      className: 'bg-indigo-600 hover:bg-indigo-500',
+      title: 'Layer Up',
+      icon: <Layers size={14} />
+    },
+    layerUp: {
+      key: 'layerUp',
+      action: () => executeActionButtonUniversal(obj, 'layerUp', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Layer Up',
+      icon: <ArrowUp size={14} />
+    },
+    layerDown: {
+      key: 'layerDown',
+      action: () => executeActionButtonUniversal(obj, 'layerDown', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-blue-600 hover:bg-blue-500',
+      title: 'Layer Down',
+      icon: <ArrowDown size={14} />
+    },
+    hide: {
+      key: 'hide',
+      action: () => executeActionButtonUniversal(obj, 'hide', {
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+      }),
+      className: 'bg-slate-600 hover:bg-slate-500',
+      title: 'Hide',
+      icon: <EyeOff size={14} />
+    }
+  };
+
+  const buttons = actionButtons
+    .map(action => buttonConfigs[action])
+    .filter(Boolean)
+    .slice(0, 4);
+
+  if (buttons.length === 0) return null;
+
+  return (
+    <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 opacity-0 group-hover:opacity-100 pointer-events-none ${className}`}>
+      {buttons.map(btn => (
+        <button
+          key={btn.key}
+          onClick={(e) => { e.stopPropagation(); btn.action(); }}
+          className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
+          title={btn.title}
+        >
+          {btn.icon}
+        </button>
+      ))}
+    </div>
+  );
+});
+CounterActionButtonsMemo.displayName = 'CounterActionButtonsMemo';
 
 export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.02 }) => {
   const { state, dispatch } = useGame();
@@ -71,6 +395,16 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   // Track when item was last added to cursor slot to prevent immediate re-add after drop
   const cursorSlotLastAddedRef = useRef<number>(0);
 
+  // Track objects that were just dropped to this pool panel to prevent immediate re-pickup
+  // This solves the issue where dragging from pool panel -> dropping back to same panel
+  // causes the object to be immediately picked up again
+  const justDroppedToPoolRef = useRef<Set<string>>(new Set());
+
+  // Track objects currently being dragged from this pool panel
+  // This prevents them from showing in both the pool panel AND cursor slot
+  const locallyDraggingIdsRef = useRef<Set<string>>(new Set());
+  const [locallyDraggingTrigger, setLocallyDraggingTrigger] = useState(0);
+
   // Dice drag tracking for click vs drag detection
   const diceDragRef = useRef<{
     objectId: string | null;
@@ -87,14 +421,18 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   // Generic drag tracking for all draggable objects (cards, tokens, etc.)
   const genericDragRef = useRef<{
     objectId: string | null;
+    object: TableObject | null;  // Store object to avoid stale state issues
     startX: number;
     startY: number;
     isDragging: boolean;
+    logCounter?: number;  // For throttling debug logs
   }>({
     objectId: null,
+    object: null,
     startX: 0,
     startY: 0,
-    isDragging: false
+    isDragging: false,
+    logCounter: 0
   });
 
   // State to trigger useEffect when drag starts/ends
@@ -384,6 +722,12 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         return false;
       }
 
+      // Also exclude objects that are currently being dragged from this pool panel
+      // This prevents visual duplication while the object is being picked up
+      if (locallyDraggingIdsRef.current.has(obj.id)) {
+        return false;
+      }
+
       // Exclude cards that are in deck (location: DECK) - they are part of the deck
       if (obj.type === ItemType.CARD && (obj as any).location === CardLocation.DECK) {
         return false;
@@ -435,7 +779,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     });
 
     return sorted;
-  }, [state.objects, poolZone, hyperscaleLayers]);
+  }, [state.objects, poolZone, hyperscaleLayers, locallyDraggingTrigger]);
 
   // Watch for dice rollStartTime changes to sync animations across players
   useEffect(() => {
@@ -493,10 +837,10 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     // Check if object is locked - locked objects can't be dragged
     if (obj.locked) return;
 
-    // Check if we just dropped an item (prevent immediate re-add)
-    const timeSinceLastDrop = Date.now() - cursorSlotLastAddedRef.current;
-    if (timeSinceLastDrop < 100) {
-      // Too soon after drop - ignore this click
+    // IMPORTANT: Check if this object was just dropped to this pool panel
+    // This prevents immediate re-pickup when dragging from pool panel -> dropping back to same panel
+    if (justDroppedToPoolRef.current.has(obj.id)) {
+      logger.log('[PoolTabletop] Object was just dropped to pool, ignoring mousedown:', obj.id);
       return;
     }
 
@@ -523,14 +867,34 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             currentZoom
           );
           dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
+
+          // IMPORTANT: Clear from locallyDraggingIdsRef to allow objects to reappear in pool panel
+          cursorSlotObjects.forEach(obj => {
+            locallyDraggingIdsRef.current.delete(obj.id);
+          });
+          setLocallyDraggingTrigger(prev => prev + 1);
+
+          // Track dropped objects to prevent immediate re-pickup
+          cursorSlotObjects.forEach(obj => justDroppedToPoolRef.current.add(obj.id));
+
+          // Clear the just-dropped set after 200ms
+          if (justDroppedTimerRef.current) {
+            clearTimeout(justDroppedTimerRef.current);
+          }
+          justDroppedTimerRef.current = setTimeout(() => {
+            justDroppedToPoolRef.current.clear();
+          }, 200);
+
           cursorSlotLastAddedRef.current = Date.now();
 
-          // Clear cursor slot immediately to prevent it from being processed by main tabletop
-          setTimeout(() => {
+          // Clear only dropped objects from cursor slot (not the entire slot)
+          // Use queueMicrotask to ensure state updates are processed first
+          queueMicrotask(() => {
+            logger.log('[PoolTabletop] Sending clear-cursor-slot with objectIds:', cursorSlotObjects.map(o => o.id));
             window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
-              detail: { reason: 'pool-click-drop' }
+              detail: { objectIds: cursorSlotObjects.map(o => o.id) }
             }));
-          }, 0);
+          });
         }
       }
       // Don't pick up the new object - just drop the old ones
@@ -550,6 +914,12 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     ].includes(obj.type);
 
     if (isDraggableType) {
+      console.log('[PoolTabletop] Draggable type mousedown:', {
+        objId: obj.id,
+        objType: obj.type,
+        objTypeName: ItemType[obj.type]
+      });
+
       // Special handling for dice - track drag distance for click vs drag detection
       if (obj.type === ItemType.DICE_OBJECT) {
         e.preventDefault();
@@ -562,6 +932,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           startY: e.clientY,
           isDragging: false
         };
+        console.log('[PoolTabletop] Set diceDragRef, calling setIsDraggingDice(true)');
         setIsDraggingDice(true);
         return;
       }
@@ -573,6 +944,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Track drag distance (boards use same logic as tokens now)
       genericDragRef.current = {
         objectId: obj.id,
+        object: obj,  // Store object reference to avoid stale state issues
         startX: e.clientX,
         startY: e.clientY,
         isDragging: false
@@ -586,7 +958,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     setDraggingObject(obj);
     setDragStartPos({ x: e.clientX, y: e.clientY });
     cursorSlotEventSentRef.current = false; // Reset event flag
-  }, [poolZone.panelId, clickTimerRef, clickTrackerRef, handleRollDice]);
+  }, [poolZone.panelId, clickTimerRef, clickTrackerRef, handleRollDice, setLocallyDraggingTrigger]);
 
   // Handle context menu
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
@@ -831,47 +1203,101 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     };
   }, []);
 
+  // Timer ref for just-dropped cleanup
+  const justDroppedTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup just-dropped timer on unmount
+  useEffect(() => {
+    return () => {
+      if (justDroppedTimerRef.current) {
+        clearTimeout(justDroppedTimerRef.current);
+      }
+    };
+  }, []);
+
   // Handle mouse move for dragging objects
   const handleObjectMouseMove = useCallback((e: MouseEvent) => {
+    // Throttle logging - only log every 5th call
+    if (!handleObjectMouseMove.logCounter) handleObjectMouseMove.logCounter = 0;
+    handleObjectMouseMove.logCounter++;
+    if (handleObjectMouseMove.logCounter % 5 === 0) {
+      console.log('[PoolTabletop] handleObjectMouseMove called:', {
+        diceObjectId: diceDragRef.current.objectId,
+        genericObjectId: genericDragRef.current.objectId,
+        isDraggingDice: diceDragRef.current.isDragging,
+        isDraggingGeneric: genericDragRef.current.isDragging
+      });
+    }
+
     // Handle dice drag tracking
     if (diceDragRef.current.objectId) {
       const deltaX = e.clientX - diceDragRef.current.startX;
       const deltaY = e.clientY - diceDragRef.current.startY;
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-      // If moved more than 5px, consider it a drag
-      if (distance > 5 && !diceDragRef.current.isDragging) {
+      // Use same threshold as main tabletop: 2 VU (virtual units)
+      const thresholdPixels = 2 * pixelsPerVU * currentZoom;
+      if (distance > thresholdPixels && !diceDragRef.current.isDragging) {
         diceDragRef.current.isDragging = true;
 
-        // Calculate click offset in pool panel VU for proper positioning
+        // Calculate click offset using centralized utility
         const obj = state.objects[diceDragRef.current.objectId];
         let clickOffsetX, clickOffsetY;
-        let offsetXPX = 0, offsetYPX = 0;  // Default to center (top-left corner)
+        let offsetXPX = 0, offsetYPX = 0;
 
         if (obj) {
-          // Use ACTUAL DOM position for precise click offset
-          const objElement = containerRef.current?.querySelector(`[data-object-id="${obj.id}"]`) as HTMLElement;
-          if (objElement) {
-            const objRect = objElement.getBoundingClientRect();
-            // Calculate offset from object's top-left to click point (in screen pixels)
-            offsetXPX = diceDragRef.current.startX - objRect.left;
-            offsetYPX = diceDragRef.current.startY - objRect.top;
-            // Convert to VU (accounting for zoom)
-            clickOffsetX = offsetXPX / currentZoom / pixelsPerVU;
-            clickOffsetY = offsetYPX / currentZoom / pixelsPerVU;
-          } else {
-            // Fallback: use object center
-            const objWidth = obj.width || 60;
-            const objHeight = obj.height || 60;
-            clickOffsetX = objWidth / 2;
-            clickOffsetY = objHeight / 2;
-            // Also calculate pixel offset for center
-            offsetXPX = (objWidth / 2) * currentZoom * pixelsPerVU;
-            offsetYPX = (objHeight / 2) * currentZoom * pixelsPerVU;
-          }
+          const offsetResult = calculatePickupOffsetWithFallback(
+            obj,
+            diceDragRef.current.startX,
+            diceDragRef.current.startY,
+            pixelsPerVU,
+            { containerRef: { current: containerRef.current } }
+          );
+          offsetXPX = offsetResult.offsetX_PX;
+          offsetYPX = offsetResult.offsetY_PX;
+
+          // Convert to VU for drop positioning
+          const vuOffset = pixelsToVU(offsetXPX, offsetYPX, pixelsPerVU);
+          clickOffsetX = vuOffset.offsetX_VU;
+          clickOffsetY = vuOffset.offsetY_VU;
         }
 
         // Add to cursor slot immediately when drag threshold is exceeded
+        // First, mark as locally dragging to prevent visual duplication
+        if (diceDragRef.current.objectId) {
+          locallyDraggingIdsRef.current.add(diceDragRef.current.objectId);
+          setLocallyDraggingTrigger(prev => prev + 1);
+        }
+
+        // IMPORTANT: Check if this object was just dropped to this pool panel
+        // This prevents immediate re-pickup after dropping back to same panel
+        if (diceDragRef.current.objectId && justDroppedToPoolRef.current.has(diceDragRef.current.objectId)) {
+          logger.log('[PoolTabletop] Object was just dropped to pool, ignoring drag attempt:', diceDragRef.current.objectId);
+          diceDragRef.current = {
+            objectId: null,
+            startX: 0,
+            startY: 0,
+            isDragging: false
+          };
+          setIsDraggingDice(false);
+          return;
+        }
+
+        // IMPORTANT: Check if this object was just dropped to this pool panel
+        // This prevents immediate re-pickup after dropping back to same panel
+        // Using object ID tracking instead of global timer - more reliable
+        if (diceDragRef.current.objectId && justDroppedToPoolRef.current.has(diceDragRef.current.objectId)) {
+          logger.log('[PoolTabletop] Object was just dropped to this pool panel, ignoring drag attempt:', diceDragRef.current.objectId);
+          diceDragRef.current = {
+            objectId: null,
+            startX: 0,
+            startY: 0,
+            isDragging: false
+          };
+          setIsDraggingDice(false);
+          return;
+        }
+
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: diceDragRef.current.objectId,
@@ -879,6 +1305,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             clientY: diceDragRef.current.startY,
             source: 'hold',
             fromPoolPanel: poolZone.panelId,
+            sourceZoom: currentZoom,
             clickOffsetX,
             clickOffsetY,
             clickOffsetX_PX: offsetXPX,
@@ -898,39 +1325,75 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       const deltaY = e.clientY - genericDragRef.current.startY;
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-      // If moved more than 5px, consider it a drag
-      if (distance > 5 && !genericDragRef.current.isDragging) {
+      // Use same threshold as main tabletop: 2 VU (virtual units)
+      const thresholdPixels = 2 * pixelsPerVU * currentZoom;
+      // Throttle logging: only log every 5th call or when threshold is exceeded
+      if (!genericDragRef.current.logCounter) genericDragRef.current.logCounter = 0;
+      genericDragRef.current.logCounter++;
+      const shouldLog = genericDragRef.current.logCounter % 5 === 0 || (distance > thresholdPixels && !genericDragRef.current.isDragging);
+
+      if (shouldLog) {
+        console.log('[PoolTabletop] Drag threshold check:', {
+          distance,
+          thresholdPixels,
+          isDraggingRef: genericDragRef.current.isDragging,
+          willAddToSlot: distance > thresholdPixels && !genericDragRef.current.isDragging
+        });
+      }
+      if (distance > thresholdPixels && !genericDragRef.current.isDragging) {
+        console.log('[PoolTabletop] Threshold exceeded, adding to cursor slot:', genericDragRef.current.objectId);
         genericDragRef.current.isDragging = true;
 
-        // Calculate click offset in pool panel VU for proper positioning
-        const obj = state.objects[genericDragRef.current.objectId];
+        // Use stored object from ref instead of state to avoid stale closure issues
+        const obj = genericDragRef.current.object || state.objects[genericDragRef.current.objectId || ''];
         let clickOffsetX, clickOffsetY;
-        let offsetXPX = 0, offsetYPX = 0;  // Default to center (top-left corner)
+        let offsetXPX = 0, offsetYPX = 0;
 
         if (obj) {
-          // Use ACTUAL DOM position for precise click offset
-          const objElement = containerRef.current?.querySelector(`[data-object-id="${obj.id}"]`) as HTMLElement;
-          if (objElement) {
-            const objRect = objElement.getBoundingClientRect();
-            // Calculate offset from object's top-left to click point (in screen pixels)
-            offsetXPX = genericDragRef.current.startX - objRect.left;
-            offsetYPX = genericDragRef.current.startY - objRect.top;
-            // Convert to VU (accounting for zoom)
-            clickOffsetX = offsetXPX / currentZoom / pixelsPerVU;
-            clickOffsetY = offsetYPX / currentZoom / pixelsPerVU;
-          } else {
-            // Fallback: use object center
-            const objWidth = obj.width || 100;
-            const objHeight = obj.height || 100;
-            clickOffsetX = objWidth / 2;
-            clickOffsetY = objHeight / 2;
-            // Also calculate pixel offset for center
-            offsetXPX = (objWidth / 2) * currentZoom * pixelsPerVU;
-            offsetYPX = (objHeight / 2) * currentZoom * pixelsPerVU;
-          }
+          const offsetResult = calculatePickupOffsetWithFallback(
+            obj,
+            genericDragRef.current.startX,
+            genericDragRef.current.startY,
+            pixelsPerVU,
+            { containerRef: { current: containerRef.current }, debug: false }
+          );
+          offsetXPX = offsetResult.offsetX_PX;
+          offsetYPX = offsetResult.offsetY_PX;
+
+          // Convert to VU for drop positioning
+          const vuOffset = pixelsToVU(offsetXPX, offsetYPX, pixelsPerVU);
+          clickOffsetX = vuOffset.offsetX_VU;
+          clickOffsetY = vuOffset.offsetY_VU;
         }
 
         // Add to cursor slot immediately when drag threshold is exceeded
+        // First, mark as locally dragging to prevent visual duplication
+        if (genericDragRef.current.objectId) {
+          locallyDraggingIdsRef.current.add(genericDragRef.current.objectId);
+          setLocallyDraggingTrigger(prev => prev + 1);
+        }
+
+        // IMPORTANT: Check if this object was just dropped to this pool panel
+        // This prevents immediate re-pickup after dropping back to same panel
+        // Using object ID tracking instead of global timer - more reliable
+        if (genericDragRef.current.objectId && justDroppedToPoolRef.current.has(genericDragRef.current.objectId)) {
+          logger.log('[PoolTabletop] Object was just dropped to this pool panel, ignoring drag attempt:', genericDragRef.current.objectId);
+          genericDragRef.current = {
+            objectId: null,
+            object: null,
+            startX: 0,
+            startY: 0,
+            isDragging: false,
+            logCounter: 0
+          };
+          setIsDraggingGeneric(false);
+          return;
+        }
+
+        console.log('[PoolTabletop] Dispatching add-to-cursor-slot event (GENERIC):', {
+          objectId: genericDragRef.current.objectId,
+          fromPoolPanel: poolZone.panelId
+        });
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: genericDragRef.current.objectId,
@@ -938,6 +1401,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             clientY: genericDragRef.current.startY,
             source: 'hold',
             fromPoolPanel: poolZone.panelId,
+            sourceZoom: currentZoom,
             clickOffsetX,
             clickOffsetY,
             clickOffsetX_PX: offsetXPX,
@@ -1009,8 +1473,16 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       };
       setIsDraggingDice(false);
 
+      // Remove from locally dragging set
+      if (objectId) {
+        locallyDraggingIdsRef.current.delete(objectId);
+        setLocallyDraggingTrigger(prev => prev + 1);
+      }
+
+      // Use same threshold as main tabletop: 2 VU (virtual units)
+      const thresholdPixels = 2 * pixelsPerVU * currentZoom;
       // If this was a click (not a drag), handle click detection
-      if (!wasDrag && distance < 5) {
+      if (!wasDrag && distance < thresholdPixels) {
         const obj = state.objects[objectId];
         if (obj?.type === ItemType.DICE_OBJECT) {
           const now = Date.now();
@@ -1059,19 +1531,30 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
       const wasDrag = genericDragRef.current.isDragging;
+      const objectId = genericDragRef.current.objectId;
 
       // Reset drag tracking
       genericDragRef.current = {
         objectId: null,
+        object: null,
         startX: 0,
         startY: 0,
-        isDragging: false
+        isDragging: false,
+        logCounter: 0
       };
       setIsDraggingGeneric(false);
 
+      // Remove from locally dragging set
+      if (objectId) {
+        locallyDraggingIdsRef.current.delete(objectId);
+        setLocallyDraggingTrigger(prev => prev + 1);
+      }
+
+      // Use same threshold as main tabletop: 2 VU (virtual units)
+      const thresholdPixels = 2 * pixelsPerVU * currentZoom;
       // If this was a click (not a drag), don't add to cursor slot
       // Only drags should have already added the object to cursor slot
-      if (!wasDrag && distance < 5) {
+      if (!wasDrag && distance < thresholdPixels) {
         // Single click - do nothing in pool panel
         // Objects are only added via drag or ctrl+click
       }
@@ -1193,9 +1676,17 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       detail: { deckId }
     }));
 
-    // Clear cursor slot after successful drop
+    // Track dropped objects to prevent immediate re-pickup
+    cursorSlotObjects.forEach(obj => justDroppedToPoolRef.current.add(obj.id));
+
+    // Clear the just-dropped set after 200ms
+    setTimeout(() => {
+      justDroppedToPoolRef.current.clear();
+    }, 200);
+
+    // Clear only dropped objects from cursor slot
     window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
-      detail: { reason: 'pool-deck-drop' }
+      detail: { objectIds: cursorSlotObjects.map(o => o.id) }
     }));
 
     // Update timestamp to prevent immediate re-add
@@ -1294,9 +1785,17 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       detail: { deckId }
     }));
 
-    // Clear cursor slot after successful drop
+    // Track dropped objects to prevent immediate re-pickup
+    cursorSlotObjects.forEach(obj => justDroppedToPoolRef.current.add(obj.id));
+
+    // Clear the just-dropped set after 200ms
+    setTimeout(() => {
+      justDroppedToPoolRef.current.clear();
+    }, 200);
+
+    // Clear only dropped objects from cursor slot
     window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
-      detail: { reason: 'pool-pile-drop' }
+      detail: { objectIds: cursorSlotObjects.map(o => o.id) }
     }));
 
     // Update timestamp to prevent immediate re-add
@@ -1305,10 +1804,17 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
   // Add global mouse listeners for object dragging (for both non-draggable items and draggable objects)
   useEffect(() => {
+    console.log('[PoolTabletop] useEffect drag listeners:', {
+      draggingObject: !!draggingObject,
+      isDraggingDice,
+      isDraggingGeneric
+    });
     if (draggingObject || isDraggingDice || isDraggingGeneric) {
+      console.log('[PoolTabletop] Adding drag listeners');
       window.addEventListener('mousemove', handleObjectMouseMove);
       window.addEventListener('mouseup', handleObjectMouseUp);
       return () => {
+        console.log('[PoolTabletop] Removing drag listeners');
         window.removeEventListener('mousemove', handleObjectMouseMove);
         window.removeEventListener('mouseup', handleObjectMouseUp);
       };
@@ -1339,10 +1845,16 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
     // IMPORTANT: Check if cursor is over a deck or pile FIRST
     // If the deck/pile is in THIS pool panel, handle it locally
-    const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
+    // Use elementsFromPoint to check all elements under cursor
+    const elementsAtCursor = document.elementsFromPoint(e.clientX, e.clientY);
 
     // Check for piles FIRST (before deck) - piles are more specific targets
-    const pileElement = elementUnderCursor?.closest('[data-pile-id]');
+    let pileElement: Element | null = null;
+    for (const element of elementsAtCursor) {
+      pileElement = element.closest('[data-pile-id]');
+      if (pileElement) break;
+    }
+
     if (pileElement) {
       const pileId = pileElement.getAttribute('data-pile-id');
       const deckElement = pileElement.closest('[data-object-id]');
@@ -1372,7 +1884,12 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     }
 
     // Check for deck
-    const deckElement = elementUnderCursor?.closest('[data-object-id]');
+    let deckElement: Element | null = null;
+    for (const element of elementsAtCursor) {
+      deckElement = element.closest('[data-object-id]');
+      if (deckElement) break;
+    }
+
     if (deckElement) {
       const objectId = deckElement.getAttribute('data-object-id');
       const obj = objectId ? state.objects[objectId] : undefined;
@@ -1438,16 +1955,22 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       );
 
       // Check if cursor is over the VISIBLE pool panel window first
-      // Get the visible content area (data-pool-content)
-      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
-      if (!visibleContentArea) {
-        logger.warn('[PoolTabletop] Visible content area not found');
-        return;
-      }
+      // Use the same logic as handleGlobalMouseUp for consistency
+      const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
 
-      const visibleRect = visibleContentArea.getBoundingClientRect();
-      const isCursorOverVisibleArea = e.clientX >= visibleRect.left && e.clientX <= visibleRect.right &&
-                                     e.clientY >= visibleRect.top && e.clientY <= visibleRect.bottom;
+      // PRIMARY METHOD: Check if cursor is over this specific pool panel
+      const isOverThisPoolPanel = elementUnderCursor?.closest(`[data-pool-panel="${poolZone.panelId}"]`) != null;
+
+      // SECONDARY METHOD: Also check data-pool-content as fallback
+      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
+      const isOverPoolContent = visibleContentArea && (
+        e.clientX >= visibleContentArea.getBoundingClientRect().left &&
+        e.clientX <= visibleContentArea.getBoundingClientRect().right &&
+        e.clientY >= visibleContentArea.getBoundingClientRect().top &&
+        e.clientY <= visibleContentArea.getBoundingClientRect().bottom
+      );
+
+      const isCursorOverVisibleArea = isOverThisPoolPanel || isOverPoolContent;
 
       if (!isCursorOverVisibleArea) {
         // Cursor is NOT over the visible pool panel window - don't allow drop
@@ -1457,18 +1980,49 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Check if ALL objects will be completely visible in the pool panel window
       // Account for stacking offset - check the last (bottom-right most) object
       const lastObj = cursorSlotObjects[cursorSlotObjects.length - 1];
-      if (lastObj) {
+      if (lastObj && visibleContentArea) {
+        // Get visible rect for bounds checking
+        const visibleRect = visibleContentArea.getBoundingClientRect();
+
         // Calculate stacking offset for the last object
         const objWidth = (lastObj.width || 50) * pixelsPerVU;
         const objHeight = (lastObj.height || 50) * pixelsPerVU;
         const stackingOffset = Math.min(objWidth, objHeight) * 0.05; // 5% stacking offset
         const maxOffset = stackingOffset * (cursorSlotObjects.length - 1);
 
-        // Calculate position of the last object (with maximum offset) in screen coords
-        const objLeft = e.clientX - objWidth / 2 + maxOffset;
-        const objRight = e.clientX + objWidth / 2 + maxOffset;
-        const objTop = e.clientY - objHeight / 2 + maxOffset;
-        const objBottom = e.clientY + objHeight / 2 + maxOffset;
+        // IMPORTANT: Calculate position based on ACTUAL visual position (same as CursorSlotVisualization)
+        // CursorSlotVisualization renders objects at: cursorPosition - clickOffset + stackOffset
+        // We need to match this for accurate bounds checking
+
+        // Get click offset for this object (in screen pixels)
+        const clickOffsetX_PX = (lastObj as any).clickOffsetX_PX;
+        const clickOffsetY_PX = (lastObj as any).clickOffsetY_PX;
+
+        // Calculate visual position of object's top-left corner
+        // This MUST match CursorSlotVisualization logic:
+        // - offsetX = -clickOffsetX_PX (negative because we subtract from cursor)
+        // - Container is at cursor position
+        // - Object is offset by negative clickOffset
+        let objLeft, objTop;
+
+        if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+          // Object is visually at: cursorPosition - clickOffset (from CursorSlotVisualization)
+          // But we need top-left corner for bounds calculation
+          // CursorSlotVisualization positions object so click point is at cursor
+          objLeft = e.clientX - clickOffsetX_PX;
+          objTop = e.clientY - clickOffsetY_PX;
+        } else {
+          // Fallback: center object on cursor (no offset available)
+          objLeft = e.clientX - objWidth / 2;
+          objTop = e.clientY - objHeight / 2;
+        }
+
+        // Add stacking offset to get final position
+        objLeft += maxOffset;
+        objTop += maxOffset;
+
+        const objRight = objLeft + objWidth;
+        const objBottom = objTop + objHeight;
 
         // Check if last object is completely within visible content area
         const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
@@ -1481,9 +2035,18 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         const isCenterVisible = e.clientX >= visibleRect.left && e.clientX <= visibleRect.right &&
                              e.clientY >= visibleRect.top && e.clientY <= visibleRect.bottom;
 
-        if (!isFullyVisible && !(isFromPlayTop && isCenterVisible)) {
+        // Also allow drop if at least 50% of the object is visible
+        const objArea = (objRight - objLeft) * (objBottom - objTop);
+        const visibleLeft = Math.max(objLeft, visibleRect.left);
+        const visibleRight = Math.min(objRight, visibleRect.right);
+        const visibleTop = Math.max(objTop, visibleRect.top);
+        const visibleBottom = Math.min(objBottom, visibleRect.bottom);
+        const visibleArea = Math.max(0, visibleRight - visibleLeft) * Math.max(0, visibleBottom - visibleTop);
+        const isHalfVisible = objArea > 0 && (visibleArea / objArea) >= 0.5;
+
+        if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible) {
           // Object would be partially outside visible area - don't allow drop
-          // Unless it's from PLAY_TOP_CARD and center is visible
+          // Unless it's from PLAY_TOP_CARD and center is visible, or at least 50% visible
           return;
         }
       }
@@ -1491,18 +2054,32 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Drop objects using utility function
       dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
 
+      // IMPORTANT: Clear from locallyDraggingIdsRef to allow objects to reappear in pool panel
+      // This is needed when objects were picked up from THIS panel and are being dropped back
+      cursorSlotObjects.forEach(obj => {
+        locallyDraggingIdsRef.current.delete(obj.id);
+      });
+      setLocallyDraggingTrigger(prev => prev + 1);
+
+      // Track dropped objects to prevent immediate re-pickup
+      cursorSlotObjects.forEach(obj => justDroppedToPoolRef.current.add(obj.id));
+
+      // Clear the just-dropped set after 200ms
+      setTimeout(() => {
+        justDroppedToPoolRef.current.clear();
+      }, 200);
+
       // Update timestamp to prevent immediate re-add
       cursorSlotLastAddedRef.current = Date.now();
 
-      // Clear cursor slot AFTER dispatch has been processed
-      // Use setTimeout to ensure state updates are processed before clearing cursor slot
-      setTimeout(() => {
+      // Clear only dropped objects from cursor slot AFTER dispatch has been processed
+      queueMicrotask(() => {
         window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
-          detail: { reason: 'pool-drop' }
+          detail: { objectIds: cursorSlotObjects.map(o => o.id) }
         }));
-      }, 0);
+      });
     }
-  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, contextMenu, dropToDeck, dropToPile]);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, contextMenu, dropToDeck, dropToPile, setLocallyDraggingTrigger]);
 
   // Global mouseup handler for cursor slot drop (handles all mouseup events)
   // This ensures objects are dropped even if mouseup happens outside PoolTabletop
@@ -1516,6 +2093,17 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Only handle if cursor slot has objects
       if (cursorSlotObjects.length === 0) return;
 
+      // IMPORTANT: Don't drop if objects were just picked up from this pool panel
+      // Check if any cursor slot object was just picked up from this panel
+      const justPickedUpFromThisPanel = cursorSlotObjects.some(obj =>
+        (obj as any).cursorSlotSourcePanel === poolZone.panelId &&
+        justDroppedToPoolRef.current.has(obj.id)
+      );
+      if (justPickedUpFromThisPanel) {
+        logger.log('[PoolTabletop] Objects were just picked up from this panel, ignoring mouseup for drop');
+        return;
+      }
+
       // Don't drop if modifiers are pressed (Ctrl/Meta)
       if (e.ctrlKey || e.metaKey) return;
 
@@ -1523,28 +2111,68 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       const container = containerRef.current;
       if (!container) return;
 
-      // Get the visible content area (data-pool-content) - this is the VISIBLE window
-      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
-      if (!visibleContentArea) {
-        logger.warn('[PoolTabletop] Visible content area not found');
-        return;
-      }
-
-      const visibleRect = visibleContentArea.getBoundingClientRect();
       const x = e.clientX;
       const y = e.clientY;
 
-      // Check if mouseup position is over the visible pool panel area
-      const isCursorOverVisibleArea = x >= visibleRect.left && x <= visibleRect.right &&
-                                     y >= visibleRect.top && y <= visibleRect.bottom;
+      // PRIMARY METHOD: Check if element under cursor or its ancestors is our pool panel
+      // Use elementsFromPoint to get all elements at cursor position, not just the top one
+      // This is more reliable when cursor slot visualization is under the cursor
+      const elementsAtCursor = document.elementsFromPoint(x, y);
+
+      // Find if any element under cursor is inside our pool panel
+      let isOverThisPoolPanel = false;
+      let isOverPoolContent = false;
+
+      for (const element of elementsAtCursor) {
+        if (!isOverThisPoolPanel) {
+          const poolPanelEl = element.closest(`[data-pool-panel="${poolZone.panelId}"]`);
+          if (poolPanelEl) {
+            isOverThisPoolPanel = true;
+          }
+        }
+        if (!isOverPoolContent) {
+          const poolContentEl = element.closest(`[data-pool-content="${poolZone.panelId}"]`);
+          if (poolContentEl) {
+            isOverPoolContent = true;
+          }
+        }
+        if (isOverThisPoolPanel && isOverPoolContent) break;
+      }
+
+      // SECONDARY METHOD: Check bounding rect as fallback
+      const containerRect = container.getBoundingClientRect();
+      const isOverContainerRect = x >= containerRect.left && x <= containerRect.right &&
+                                  y >= containerRect.top && y <= containerRect.bottom;
+
+      const isCursorOverVisibleArea = isOverThisPoolPanel || isOverPoolContent || isOverContainerRect;
+
+      // Log for debugging
+      if (cursorSlotObjects.length > 0) {
+        logger.log('[PoolTabletop] Global mouseup:', {
+          panelId: poolZone.panelId,
+          x, y,
+          isOverThisPoolPanel,
+          isOverPoolContent,
+          isOverContainerRect,
+          isCursorOverVisibleArea,
+          cursorSlotIds: cursorSlotObjects.map(o => o.id)
+        });
+      }
 
       if (isCursorOverVisibleArea) {
+        logger.log('[PoolTabletop] Cursor IS over pool panel, processing drop...');
         // IMPORTANT: Check if cursor is over a deck or pile FIRST
         // If the deck/pile is in THIS pool panel, handle it locally
-        const elementUnderCursor = document.elementFromPoint(x, y);
+        // Use elementsFromPoint to check all elements under cursor
+        const elementsAtCursor = document.elementsFromPoint(x, y);
 
         // Check for piles FIRST (before deck) - piles are more specific targets
-        const pileElement = elementUnderCursor?.closest('[data-pile-id]');
+        let pileElement: Element | null = null;
+        for (const element of elementsAtCursor) {
+          pileElement = element.closest('[data-pile-id]');
+          if (pileElement) break;
+        }
+
         if (pileElement) {
           const pileId = pileElement.getAttribute('data-pile-id');
           const deckElement = pileElement.closest('[data-object-id]');
@@ -1575,7 +2203,12 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         }
 
         // Check for deck
-        const deckElement = elementUnderCursor?.closest('[data-object-id]');
+        let deckElement: Element | null = null;
+        for (const element of elementsAtCursor) {
+          deckElement = element.closest('[data-object-id]');
+          if (deckElement) break;
+        }
+
         if (deckElement) {
           const objectId = deckElement.getAttribute('data-object-id');
           const obj = objectId ? state.objects[objectId] : undefined;
@@ -1635,48 +2268,99 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           const stackingOffset = Math.min(objWidth, objHeight) * 0.05; // 5% stacking offset
           const maxOffset = stackingOffset * (cursorSlotObjects.length - 1);
 
-          // Calculate position of the last object (with maximum offset)
-          const objLeft = x - objWidth / 2 + maxOffset;
-          const objRight = x + objWidth / 2 + maxOffset;
-          const objTop = y - objHeight / 2 + maxOffset;
-          const objBottom = y + objHeight / 2 + maxOffset;
+          // IMPORTANT: Account for click offset when calculating object position
+          // The object is NOT centered on cursor - it's offset by the click position
+          const clickOffsetX_PX = (lastObj as any).clickOffsetX_PX;
+          const clickOffsetY_PX = (lastObj as any).clickOffsetY_PX;
 
-          // Check if last object is completely within visible content area
-          const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
-                              objTop >= visibleRect.top && objBottom <= visibleRect.bottom;
+          let objLeft, objRight, objTop, objBottom;
 
-          // IMPORTANT: Relax visibility check for cards from PLAY_TOP_CARD action
-          // These cards may have position from deck location, but cursor is over pool panel
-          // Allow drop if at least the center of the object is within visible area
-          const isFromPlayTop = (lastObj as any).__pendingPlayTop !== undefined;
-          const isCenterVisible = x >= visibleRect.left && x <= visibleRect.right &&
-                               y >= visibleRect.top && y <= visibleRect.bottom;
+          if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+            // Use click offset to calculate actual object position
+            // Object's top-left is at: cursor - offset
+            objLeft = x - clickOffsetX_PX + maxOffset;
+            objTop = y - clickOffsetY_PX + maxOffset;
+            objRight = objLeft + objWidth;
+            objBottom = objTop + objHeight;
+          } else {
+            // Fallback: assume centered on cursor
+            objLeft = x - objWidth / 2 + maxOffset;
+            objRight = x + objWidth / 2 + maxOffset;
+            objTop = y - objHeight / 2 + maxOffset;
+            objBottom = y + objHeight / 2 + maxOffset;
+          }
 
-          if (!isFullyVisible && !(isFromPlayTop && isCenterVisible)) {
-            // Object would be partially outside visible area - don't allow drop
-            // Unless it's from PLAY_TOP_CARD and center is visible
-            return;
+          // Get visible rect for bounds checking
+          const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
+          const visibleRect = visibleContentArea?.getBoundingClientRect();
+          if (!visibleRect) {
+            // Can't verify bounds, allow drop anyway
+            logger.warn('[PoolTabletop] Visible rect not found, allowing drop');
+          } else {
+            // Check if last object is completely within visible content area
+            const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
+                                objTop >= visibleRect.top && objBottom <= visibleRect.bottom;
+
+            // IMPORTANT: Relax visibility check for cards from PLAY_TOP_CARD action
+            // These cards may have position from deck location, but cursor is over pool panel
+            // Allow drop if at least the center of the object is within visible area
+            const isFromPlayTop = (lastObj as any).__pendingPlayTop !== undefined;
+            const isCenterVisible = x >= visibleRect.left && x <= visibleRect.right &&
+                                 y >= visibleRect.top && y <= visibleRect.bottom;
+
+            // Also allow drop if at least 50% of the object is visible
+            const objArea = (objRight - objLeft) * (objBottom - objTop);
+            const visibleLeft = Math.max(objLeft, visibleRect.left);
+            const visibleRight = Math.min(objRight, visibleRect.right);
+            const visibleTop = Math.max(objTop, visibleRect.top);
+            const visibleBottom = Math.min(objBottom, visibleRect.bottom);
+            const visibleArea = Math.max(0, visibleRight - visibleLeft) * Math.max(0, visibleBottom - visibleTop);
+            const isHalfVisible = objArea > 0 && (visibleArea / objArea) >= 0.5;
+
+            if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible) {
+              // Object would be partially outside visible area - don't allow drop
+              // Unless it's from PLAY_TOP_CARD and center is visible, or at least 50% visible
+              logger.log('[PoolTabletop] Drop rejected - object not fully visible:', {
+                objLeft, objTop, objRight, objBottom,
+                visibleRect: { left: visibleRect.left, top: visibleRect.top, right: visibleRect.right, bottom: visibleRect.bottom }
+              });
+              return;
+            }
           }
         }
 
         // Drop objects using utility function
         dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
 
+        // IMPORTANT: Clear from locallyDraggingIdsRef to allow objects to reappear in pool panel
+        cursorSlotObjects.forEach(obj => {
+          locallyDraggingIdsRef.current.delete(obj.id);
+        });
+        setLocallyDraggingTrigger(prev => prev + 1);
+
+        // Track dropped objects to prevent immediate re-pickup
+        cursorSlotObjects.forEach(obj => justDroppedToPoolRef.current.add(obj.id));
+
+        // Clear the just-dropped set after 200ms
+        setTimeout(() => {
+          justDroppedToPoolRef.current.clear();
+        }, 200);
+
         // Update timestamp to prevent immediate re-add
         cursorSlotLastAddedRef.current = Date.now();
 
-        // Clear cursor slot AFTER dispatch has been processed
-        // Use setTimeout to ensure state updates are processed before clearing cursor slot
-        setTimeout(() => {
+        // Clear only dropped objects from cursor slot AFTER dispatch has been processed
+        queueMicrotask(() => {
           window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
-            detail: { reason: 'pool-drop-global' }
+            detail: { objectIds: cursorSlotObjects.map(o => o.id) }
           }));
-        }, 0);
+        });
 
         // Stop event from propagating to Tabletop handler
         e.stopPropagation();
         e.preventDefault();
       } else {
+        logger.log('[PoolTabletop] Cursor NOT over pool panel, sending to tabletop...');
         // NOT over pool panel - notify Tabletop to handle drop on main tabletop
         // Don't stop propagation - let Tabletop handle it
         window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-tabletop', {
@@ -1687,7 +2371,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
     window.addEventListener('mouseup', handleGlobalMouseUp, { capture: true });
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp, { capture: true } as any);
-  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, dropToDeck, dropToPile]);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, dropToDeck, dropToPile, locallyDraggingTrigger]);
 
   // Listen for object-drag-end event from main tabletop (for both cards and tokens)
   useEffect(() => {
@@ -1807,10 +2491,31 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const cursorSlotObjects = getCursorSlotObjects(state.objects);
+
       if (cursorSlotObjects.length === 0) {
         setIsHighlightActive(false);
         return;
       }
+
+      // IMPORTANT: Dispatch cursor-slot-move event for HandPanel/MainMenu hover detection
+      // This is needed when objects are picked up from pool panel (not just main tabletop)
+      const eventData = {
+        x: e.clientX,
+        y: e.clientY,
+        isOverMainMenu: false,
+        hasCards: cursorSlotObjects.length > 0,
+        items: cursorSlotObjects.map(item => ({ type: item.type }))
+      };
+
+      // Event for HandPanel to detect hover
+      window.dispatchEvent(new CustomEvent('cursor-slot-move', {
+        detail: eventData
+      }));
+
+      // Event for MainMenu to switch to hand tab
+      window.dispatchEvent(new CustomEvent('cursor-position-update', {
+        detail: eventData
+      }));
 
       // Highlight for ANY object type in cursor slot
       // Check if cursor is over the visible pool panel area
@@ -2000,33 +2705,48 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
               const isDragging = draggingObject?.id === obj.id;
 
               return (
-                <Tooltip
+                <div
                   key={obj.id}
-                  text={obj.tooltipText}
-                  showImage={obj.showTooltipImage}
-                  imageSrc={obj.content}
-                  scale={obj.tooltipScale}
+                  className="group relative"
+                  style={{
+                    position: 'absolute',
+                    left: relativeX,
+                    top: relativeY,
+                    width: counterWidth,
+                    height: counterHeight,
+                    transform: `rotate(${obj.rotation || 0}deg)`,
+                    zIndex: obj.zIndex || 1000,
+                  }}
                 >
-                  <div
-                    data-object-id={obj.id}
-                    onMouseDown={(e) => handleObjectMouseDown(e, obj)}
-                    onContextMenu={(e) => handleContextMenu(e, obj)}
-                    className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${isDragging ? 'dragging' : ''}`}
-                    style={{
-                      left: relativeX,
-                      top: relativeY,
-                      width: counterWidth,
-                      height: counterHeight,
-                      transform: `rotate(${obj.rotation || 0}deg)`,
-                      zIndex: obj.zIndex || 1000,
-                      pointerEvents: 'auto',
-                    }}
+                  <Tooltip
+                    text={obj.tooltipText}
+                    showImage={obj.showTooltipImage}
+                    imageSrc={obj.content}
+                    scale={obj.tooltipScale}
                   >
-                    <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 } })}><Minus size={14}/></button>
-                    <span className="text-xl font-bold">{counter.value}</span>
-                    <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 } })}><Plus size={14}/></button>
-                  </div>
-                </Tooltip>
+                    <div
+                      data-object-id={obj.id}
+                      onMouseDown={(e) => handleObjectMouseDown(e, obj)}
+                      onContextMenu={(e) => handleContextMenu(e, obj)}
+                      className={`w-full h-full bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${isDragging ? 'dragging' : ''}`}
+                      style={{ pointerEvents: 'auto' }}
+                    >
+                      <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 } })}><Minus size={14}/></button>
+                      <span className="text-xl font-bold">{counter.value}</span>
+                      <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 } })}><Plus size={14}/></button>
+                    </div>
+                  </Tooltip>
+
+                  {/* Action buttons for counters - using memoized component */}
+                  <CounterActionButtonsMemo
+                    obj={obj}
+                    dispatch={dispatch}
+                    state={state}
+                    activePlayerId={activePlayerId}
+                    isGM={isGM}
+                    setDeleteCandidateId={setDeleteCandidateId}
+                  />
+                </div>
               );
             }
 
@@ -2044,76 +2764,92 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
               const displayValue = rollingDice[obj.id] ?? dice.currentValue ?? 1;
 
               return (
-                <Tooltip
+                <div
                   key={obj.id}
-                  text={obj.tooltipText}
-                  showImage={obj.showTooltipImage}
-                  imageSrc={obj.content}
-                  scale={obj.tooltipScale}
+                  className="group relative"
+                  style={{
+                    position: 'absolute',
+                    left: relativeX,
+                    top: relativeY,
+                    width: diceWidth,
+                    height: diceHeight,
+                    transform: `rotate(${obj.rotation || 0}deg)`,
+                    zIndex: obj.zIndex || 1000,
+                  }}
                 >
-                  <div
-                    data-object-id={obj.id}
-                    onMouseDown={(e) => handleObjectMouseDown(e, obj)}
-                    onContextMenu={(e) => handleContextMenu(e, obj)}
-                    className={`absolute flex items-center justify-center ${isDragging ? 'dragging' : ''}`}
-                    style={{
-                      left: relativeX,
-                      top: relativeY,
-                      width: diceWidth,
-                      height: diceHeight,
-                      transform: `rotate(${obj.rotation || 0}deg)`,
-                      zIndex: obj.zIndex || 1000,
-                      pointerEvents: 'auto',
-                    }}
+                  <Tooltip
+                    text={obj.tooltipText}
+                    showImage={obj.showTooltipImage}
+                    imageSrc={obj.content}
+                    scale={obj.tooltipScale}
                   >
-                    <SvgTokenShape
-                      shape={diceShape}
-                      width={diceWidth}
-                      height={diceHeight}
-                      color={dice.color || '#e74c3c'}
-                      content={String(displayValue)}
-                      rotation={0}
-                      borderWidth={dice.borderWidth ?? 2}
-                      borderColor={dice.borderColor || 'white'}
-                      opacity={dice.opacity ?? 100}
-                      borderOpacity={dice.borderOpacity ?? 100}
-                      showThickness={true}
-                      fontColor={dice.fontColor || 'white'}
-                    />
-                    {/* Dice value - always centered */}
                     <div
-                      className="absolute flex items-center justify-center pointer-events-none"
-                      style={{
-                        top: diceShape === TokenShape.TRIANGLE ? '56%' : '45%',
-                        left: '50%',
-                        transform: 'translate(-50%, -50%)'
-                      }}
+                      data-object-id={obj.id}
+                      onMouseDown={(e) => handleObjectMouseDown(e, obj)}
+                      onContextMenu={(e) => handleContextMenu(e, obj)}
+                      className={`w-full h-full flex items-center justify-center ${isDragging ? 'dragging' : ''}`}
+                      style={{ pointerEvents: 'auto' }}
                     >
-                      <span
-                        className="font-bold text-white drop-shadow-md"
+                      <SvgTokenShape
+                        shape={diceShape}
+                        width={diceWidth}
+                        height={diceHeight}
+                        color={dice.color || '#e74c3c'}
+                        content={String(displayValue)}
+                        rotation={0}
+                        borderWidth={dice.borderWidth ?? 2}
+                        borderColor={dice.borderColor || 'white'}
+                        opacity={dice.opacity ?? 100}
+                        borderOpacity={dice.borderOpacity ?? 100}
+                        showThickness={true}
+                        fontColor={dice.fontColor || 'white'}
+                      />
+                      {/* Dice value - always centered */}
+                      <div
+                        className="absolute flex items-center justify-center pointer-events-none"
                         style={{
-                          fontSize: `${25 * pixelsPerVU}px`
+                          top: diceShape === TokenShape.TRIANGLE ? '56%' : '45%',
+                          left: '50%',
+                          transform: 'translate(-50%, -50%)'
                         }}
-                      >{displayValue}</span>
-                    </div>
-                    {/* Dice sides indicator - midpoint between value center and bottom */}
-                    <div
-                      className="absolute flex items-center justify-center pointer-events-none"
-                      style={{
-                        top: diceShape === TokenShape.TRIANGLE ? '78%' : '72.5%',
-                        left: '50%',
-                        transform: 'translate(-50%, -50%)'
-                      }}
-                    >
-                      <span
-                        className="opacity-75 text-white drop-shadow-md"
+                      >
+                        <span
+                          className="font-bold text-white drop-shadow-md"
+                          style={{
+                            fontSize: `${25 * pixelsPerVU}px`
+                          }}
+                        >{displayValue}</span>
+                      </div>
+                      {/* Dice sides indicator - midpoint between value center and bottom */}
+                      <div
+                        className="absolute flex items-center justify-center pointer-events-none"
                         style={{
-                          fontSize: `${15 * pixelsPerVU}px`
+                          top: diceShape === TokenShape.TRIANGLE ? '78%' : '72.5%',
+                          left: '50%',
+                          transform: 'translate(-50%, -50%)'
                         }}
-                      >d{dice.sides}</span>
+                      >
+                        <span
+                          className="opacity-75 text-white drop-shadow-md"
+                          style={{
+                            fontSize: `${15 * pixelsPerVU}px`
+                          }}
+                        >d{dice.sides}</span>
+                      </div>
                     </div>
-                  </div>
-                </Tooltip>
+                  </Tooltip>
+
+                  {/* Action buttons for dice - using memoized component */}
+                  <DiceActionButtonsMemo
+                    obj={obj}
+                    dispatch={dispatch}
+                    state={state}
+                    activePlayerId={activePlayerId}
+                    isGM={isGM}
+                    animateDiceRoll={animateDiceRoll}
+                    setDeleteCandidateId={setDeleteCandidateId}
+                  />
+                </div>
               );
             }
 
