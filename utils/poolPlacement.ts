@@ -1,6 +1,7 @@
-import { TableObject, ItemType, CardLocation, Board as BoardType } from '../types';
+import { TableObject, ItemType, CardLocation, Board as BoardType, HyperscaleLayer } from '../types';
 import { STACKING_OFFSET_FACTOR, DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
 import { logger } from './logger';
+import { allocateZIndexWithDefrag } from './zIndexAllocator';
 
 /**
  * Pool placement utilities for consistent object positioning in pool panels
@@ -171,7 +172,8 @@ export function dropObjectsToPool(
   dispatch: (action: any) => void,
   poolObjects: Record<string, TableObject>,
   pixelsPerVU: number = 1,
-  zoom: number = 1
+  zoom: number = 1,
+  hyperscaleLayers?: HyperscaleLayer[]
 ): void {
   if (!objects || objects.length === 0) {
     return;
@@ -195,6 +197,48 @@ export function dropObjectsToPool(
 
     // Sort by zIndex in DESCENDING order to preserve layer relationships
     const sortedObjects = sortObjectsByLayerIndex(objects);
+
+    // NEW: Smart z-index allocation for pool panel drops
+    // Group objects by hyperscale layer for z-index allocation
+    const layerGroups: Record<string, TableObject[]> = {};
+    for (const obj of sortedObjects) {
+      if (obj.type === ItemType.CARD && (obj as any).location === CardLocation.DECK) {
+        continue; // Skip cards in deck
+      }
+      const layerId = obj.hyperscaleLayerId ?? 'default';
+      if (!layerGroups[layerId]) {
+        layerGroups[layerId] = [];
+      }
+      layerGroups[layerId].push(obj);
+    }
+
+    // Allocate z-indices for each layer (if hyperscaleLayers provided)
+    const layerAllocations: Record<string, { allocatedZIndex: number; objectsToUpdate?: Record<string, number> }> = {};
+    const layerItemIndices: Record<string, number> = {};
+
+    if (hyperscaleLayers && hyperscaleLayers.length > 0) {
+      for (const [layerId, _layerItems] of Object.entries(layerGroups)) {
+        const allocation = allocateZIndexWithDefrag(
+          poolObjects,
+          layerId === 'default' ? undefined : layerId,
+          hyperscaleLayers
+        );
+        layerAllocations[layerId] = allocation;
+
+        // If defragmentation was needed, apply it first
+        if (allocation.objectsToUpdate) {
+          for (const [objId, newZ] of Object.entries(allocation.objectsToUpdate)) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: objId,
+                updates: { zIndex: newZ }
+              }
+            });
+          }
+        }
+      }
+    }
 
     // Drop items with offset based on layer position
     sortedObjects.forEach((obj, sortedIndex) => {
@@ -317,6 +361,18 @@ export function dropObjectsToPool(
         }
       }
 
+      // Calculate z-index using smart allocation (if hyperscaleLayers provided)
+      let finalZIndex = obj.zIndex ?? 0;
+      if (hyperscaleLayers && hyperscaleLayers.length > 0) {
+        const layerId = obj.hyperscaleLayerId ?? 'default';
+        const allocation = layerAllocations[layerId];
+        if (allocation) {
+          const currentIndex = layerItemIndices[layerId] ?? 0;
+          finalZIndex = allocation.allocatedZIndex + currentIndex;
+          layerItemIndices[layerId] = currentIndex + 1;
+        }
+      }
+
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
@@ -327,6 +383,7 @@ export function dropObjectsToPool(
             inCursorSlot: updatePayload.inCursorSlot,
             gridCellKey: updatePayload.gridCellKey,
             isOnTable: updatePayload.isOnTable,
+            zIndex: finalZIndex,
             ...(updatePayload.location !== undefined && { location: updatePayload.location })
           }
         }

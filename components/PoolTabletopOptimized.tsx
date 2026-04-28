@@ -34,6 +34,7 @@ import {
   pixelsToVU,
   type CursorSlotObject
 } from '../utils/dragDropUtils';
+import { allocateZIndexWithDefrag } from '../utils/zIndexAllocator';
 
 interface PoolZone extends PoolZoneType {
   panelId: string;
@@ -859,7 +860,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             pixelsPerVU,
             currentZoom
           );
-          dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
+          dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom, hyperscaleLayers);
 
           // IMPORTANT: Clear from locallyDraggingIdsRef to allow objects to reappear in pool panel
           cursorSlotObjects.forEach(obj => {
@@ -1574,13 +1575,49 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     // For non-card items (tokens), drop them on the pool tabletop at deck position
     const nonCardsInSlot = cursorSlotObjects.filter(item => item.type !== ItemType.CARD);
     if (nonCardsInSlot.length > 0) {
+      // Sort tokens by their original z-index to preserve visual order
       const sortedTokens = [...nonCardsInSlot].sort((a, b) => {
         const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
         const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
-        return zB - zA; // Descending order - higher Z first
+        return zB - zA; // Descending - higher Z first
       });
 
-      const minOriginalZ = Math.min(...nonCardsInSlot.map(item => (item as any).originalZIndex ?? 0));
+      // Group tokens by hyperscale layer for z-index allocation
+      const layerGroups: Record<string, typeof sortedTokens> = {};
+      for (const item of sortedTokens) {
+        const layerId = item.hyperscaleLayerId ?? 'default';
+        if (!layerGroups[layerId]) {
+          layerGroups[layerId] = [];
+        }
+        layerGroups[layerId].push(item);
+      }
+
+      // Allocate z-indices for each layer
+      const layerAllocations: Record<string, { allocatedZIndex: number; objectsToUpdate?: Record<string, number> }> = {};
+      for (const [layerId, layerItems] of Object.entries(layerGroups)) {
+        const allocation = allocateZIndexWithDefrag(
+          state.objects,
+          layerId === 'default' ? undefined : layerId,
+          hyperscaleLayers
+        );
+        layerAllocations[layerId] = allocation;
+
+        // If defragmentation was needed, apply it first
+        if (allocation.objectsToUpdate) {
+          for (const [objId, newZ] of Object.entries(allocation.objectsToUpdate)) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: objId,
+                updates: { zIndex: newZ }
+              }
+            });
+          }
+        }
+      }
+
+      // Track item index within each layer for sequential z-index allocation
+      const layerItemIndices: Record<string, number> = {};
 
       sortedTokens.forEach((item, sortedIndex) => {
         const baseWidth = item.width ?? 50;
@@ -1591,6 +1628,17 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         const offsetX = offsetFromFront * offsetAmount;
         const offsetY = offsetFromFront * offsetAmount;
 
+        // Get allocated z-index for this item's layer
+        const layerId = item.hyperscaleLayerId ?? 'default';
+        const allocation = layerAllocations[layerId];
+        let finalZIndex = item.zIndex ?? 0;
+
+        if (allocation) {
+          const currentIndex = layerItemIndices[layerId] ?? 0;
+          finalZIndex = allocation.allocatedZIndex + currentIndex;
+          layerItemIndices[layerId] = currentIndex + 1;
+        }
+
         // Use DROP_FROM_CURSOR_SLOT action
         dispatch({
           type: 'DROP_FROM_CURSOR_SLOT',
@@ -1598,7 +1646,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             objectId: item.id,
             x: deck.x + deck.width / 2 - baseWidth / 2 + offsetX,
             y: deck.y + deck.height / 2 - baseHeight / 2 + offsetY,
-            zIndex: Math.min(10000 + ((item as any).originalZIndex ?? item.zIndex ?? 0) - minOriginalZ, 10000),
+            zIndex: finalZIndex,
           }
         });
       });
@@ -1624,7 +1672,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
     // Update timestamp to prevent immediate re-add
     cursorSlotLastAddedRef.current = Date.now();
-  }, [state.objects, dispatch]);
+  }, [state.objects, dispatch, hyperscaleLayers]);
 
   // Drop cards to pile in pool panel
   const dropToPile = useCallback((pileId: string, deckId: string, slotItems?: (Card | TableObject)[]) => {
@@ -1684,13 +1732,49 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         pileY = deck.y;
       }
 
+      // Sort tokens by their original z-index to preserve visual order
       const sortedTokens = [...nonCardsInSlot].sort((a, b) => {
         const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
         const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
-        return zB - zA; // Descending order - higher Z first
+        return zB - zA; // Descending - higher Z first
       });
 
-      const minOriginalZ = Math.min(...nonCardsInSlot.map(item => (item as any).originalZIndex ?? 0));
+      // Group tokens by hyperscale layer for z-index allocation
+      const layerGroups: Record<string, typeof sortedTokens> = {};
+      for (const item of sortedTokens) {
+        const layerId = item.hyperscaleLayerId ?? 'default';
+        if (!layerGroups[layerId]) {
+          layerGroups[layerId] = [];
+        }
+        layerGroups[layerId].push(item);
+      }
+
+      // Allocate z-indices for each layer
+      const layerAllocations: Record<string, { allocatedZIndex: number; objectsToUpdate?: Record<string, number> }> = {};
+      for (const [layerId, _layerItems] of Object.entries(layerGroups)) {
+        const allocation = allocateZIndexWithDefrag(
+          state.objects,
+          layerId === 'default' ? undefined : layerId,
+          hyperscaleLayers
+        );
+        layerAllocations[layerId] = allocation;
+
+        // If defragmentation was needed, apply it first
+        if (allocation.objectsToUpdate) {
+          for (const [objId, newZ] of Object.entries(allocation.objectsToUpdate)) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: objId,
+                updates: { zIndex: newZ }
+              }
+            });
+          }
+        }
+      }
+
+      // Track item index within each layer for sequential z-index allocation
+      const layerItemIndices: Record<string, number> = {};
 
       sortedTokens.forEach((item, sortedIndex) => {
         const baseWidth = item.width ?? 50;
@@ -1701,13 +1785,24 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         const offsetX = offsetFromFront * offsetAmount;
         const offsetY = offsetFromFront * offsetAmount;
 
+        // Get allocated z-index for this item's layer
+        const layerId = item.hyperscaleLayerId ?? 'default';
+        const allocation = layerAllocations[layerId];
+        let finalZIndex = item.zIndex ?? 0;
+
+        if (allocation) {
+          const currentIndex = layerItemIndices[layerId] ?? 0;
+          finalZIndex = allocation.allocatedZIndex + currentIndex;
+          layerItemIndices[layerId] = currentIndex + 1;
+        }
+
         dispatch({
           type: 'DROP_FROM_CURSOR_SLOT',
           payload: {
             objectId: item.id,
             x: pileX + offsetX,
             y: pileY + offsetY,
-            zIndex: Math.min(10000 + ((item as any).originalZIndex ?? item.zIndex ?? 0) - minOriginalZ, 10000),
+            zIndex: finalZIndex,
           }
         });
       });
@@ -1733,7 +1828,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
     // Update timestamp to prevent immediate re-add
     cursorSlotLastAddedRef.current = Date.now();
-  }, [state.objects, dispatch]);
+  }, [state.objects, dispatch, hyperscaleLayers]);
 
   // Add global mouse listeners for object dragging (for both non-draggable items and draggable objects)
   useEffect(() => {

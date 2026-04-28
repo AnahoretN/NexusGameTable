@@ -4039,14 +4039,41 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Determine hyperscale layer for spawned token - always use 'tokens' layer for token copies
       let hyperscaleLayerId = 'tokens';
 
-      // Get max zIndex within the hyperscale layer
-      const layer = state.hyperscaleLayers.find(l => l.id === hyperscaleLayerId);
-      const layerMinZ = layer?.minZIndex ?? 1;
-      const layerMaxZ = layer?.maxZIndex ?? 10000;
-      const layerObjects = Object.values(state.objects).filter(o => o.hyperscaleLayerId === hyperscaleLayerId);
-      const layerZ = layerObjects.map(o => o.zIndex || 0);
-      const maxZInLayer = layerZ.length ? Math.max(...layerZ) : layerMinZ;
-      const newZ = Math.min(maxZInLayer + 1, layerMaxZ);
+      // NEW: Use smart z-index allocation with defragmentation support
+      // This ensures spawned tokens always get a valid z-index above existing objects
+      const { allocateZIndexInHyperslice, defragmentHyperslice } = require('../utils/zIndexAllocator');
+      const allocation = allocateZIndexInHyperslice(
+        state.objects,
+        hyperscaleLayerId,
+        state.hyperscaleLayers
+      );
+
+      let newZ: number;
+      let objectsToUpdate: Record<string, TableObject> = {};
+
+      if (allocation.needsDefragmentation) {
+        // Defragment the layer to free up space
+        const newZIndices = defragmentHyperslice(
+          state.objects,
+          hyperscaleLayerId,
+          state.hyperscaleLayers
+        );
+
+        // Apply defragmentation to all objects in the layer
+        for (const [objId, newZIndex] of Object.entries(newZIndices)) {
+          const obj = state.objects[objId];
+          if (obj) {
+            objectsToUpdate[objId] = { ...obj, zIndex: newZIndex };
+          }
+        }
+
+        // After defragmentation, allocate at the next available position
+        const layer = state.hyperscaleLayers.find(l => l.id === hyperscaleLayerId);
+        const layerMinZ = layer?.minZIndex ?? 1;
+        newZ = layerMinZ + Object.keys(newZIndices).length;
+      } else {
+        newZ = allocation.allocatedZIndex;
+      }
 
       // Generate new token based on archetype settings
       const tokenId = generateUUID();
@@ -4094,13 +4121,21 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
       const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
+      // Build the updated objects map with defragmented objects
+      const updatedObjects: Record<string, TableObject> = {
+        ...state.objects,
+        [archetype.id]: updatedArchetype,
+        [tokenId]: newToken,
+      };
+
+      // Apply defragmentation changes if any
+      for (const [objId, updatedObj] of Object.entries(objectsToUpdate)) {
+        updatedObjects[objId] = updatedObj;
+      }
+
       return {
         ...state,
-        objects: {
-          ...state.objects,
-          [archetype.id]: updatedArchetype,
-          [tokenId]: newToken,
-        },
+        objects: updatedObjects,
         undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }
