@@ -83,6 +83,7 @@ export const VirtualizedHandList: React.FC<VirtualizedHandListProps> = ({
         overflowY: vertical ? 'auto' : 'hidden',
         position: 'relative',
       }}
+      data-scrollable="true"
     >
       <div
         style={{
@@ -175,6 +176,7 @@ export const SimpleHandList: React.FC<SimpleHandListProps> = ({
         overflowY: vertical ? 'auto' : 'hidden',
         padding: '10px',
       }}
+      data-scrollable="true"
     >
       {cards.map((card, index) => renderCard(card, index))}
     </div>

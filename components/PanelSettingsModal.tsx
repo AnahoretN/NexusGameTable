@@ -177,7 +177,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
         {/* Content */}
         <div
           className="flex-1 overflow-y-auto custom-scrollbar p-4"
-          onWheel={(e) => e.stopPropagation()}
+          data-scrollable="true"
         >
           <div className="space-y-4">
             {/* Name */}

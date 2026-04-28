@@ -257,10 +257,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
 
       <div
         className="flex-1 overflow-y-auto custom-scrollbar p-3"
-        onWheel={(e) => {
-          // Prevent scroll from propagating to the game tabletop
-          e.stopPropagation();
-        }}
+        data-scrollable="true"
       >
         {archetypesExpanded && (
           <VirtualizedTokensContent

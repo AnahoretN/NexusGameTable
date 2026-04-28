@@ -727,10 +727,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
       <div
         className="flex-1 overflow-y-auto custom-scrollbar relative select-none"
-        onWheel={(e) => {
-          // Prevent scroll from propagating to the game tabletop
-          e.stopPropagation();
-        }}
+        data-scrollable="true"
       >
         {activeTab === 'create' && (
           <div className="p-2">
@@ -773,10 +770,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             {/* Upper section - Drawing tools and tokens */}
             <div
               className="flex-[3] overflow-y-auto px-3 py-2 space-y-3 min-h-0"
-              onWheel={(e) => {
-                // Prevent scroll from propagating to the game tabletop
-                e.stopPropagation();
-              }}
+              data-scrollable="true"
             >
               {/* Drawing Tools Section */}
               <div>

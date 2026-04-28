@@ -972,7 +972,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
         {/* Content */}
         <div
           className="flex-1 overflow-y-auto custom-scrollbar p-4"
-          onWheel={(e) => e.stopPropagation()}
+          data-scrollable="true"
         >
           {activeTab === 'general' && (
             <div className="space-y-4">
@@ -3146,7 +3146,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                   <div
                     className="bg-slate-900 rounded p-2 border border-slate-700 overflow-auto"
                     style={{ maxHeight: '200px' }}
-                    onWheel={(e) => e.stopPropagation()}
+                    data-scrollable="true"
                   >
                     <img
                       src={spriteConfig.spriteUrl}

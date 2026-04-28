@@ -822,7 +822,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         {/* Cards Grid */}
         <div
           className="flex-1 overflow-y-scroll p-2 custom-scrollbar"
-          onWheel={(e) => e.stopPropagation()}
+          data-scrollable="true"
         >
           <style>{`.custom-scrollbar::-webkit-scrollbar { width: 12px; } .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 6px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }`}</style>
           {cards.length === 0 ? (

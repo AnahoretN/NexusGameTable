@@ -129,10 +129,7 @@ export const VirtualizedObjectList: React.FC<VirtualizedObjectListProps> = ({
         overflow: 'auto',
         position: 'relative',
       }}
-      onWheel={(e) => {
-        // Prevent scroll from propagating to the game tabletop
-        e.stopPropagation();
-      }}
+      data-scrollable="true"
     >
       <div
         style={{

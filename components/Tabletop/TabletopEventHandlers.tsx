@@ -14,6 +14,9 @@ import {
   applyClickOffset,
   calculateStackOffset
 } from '../../utils/dragDropUtils';
+import {
+  allocateZIndexWithDefrag
+} from '../../utils/zIndexAllocator';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -494,7 +497,8 @@ const dropCursorSlot = (
     dispatch,
     scrollContainerRef,
     viewTransform,
-    p2v
+    p2v,
+    hyperscaleLayers
   } = props;
 
   if (cursorSlot.length === 0) {
@@ -594,7 +598,21 @@ const dropCursorSlot = (
   // Determine zIndex behavior based on source
   const itemSource = itemsToDrop.length > 0 ? (itemsToDrop[0] as any).source : null;
   const source = itemSource || cursorSlotSource;
-  const useOriginalZIndex = source === 'hold' || source === 'archetype';
+
+  // Check if items came from hand/deck (should get new z-indices) or from table (keep original)
+  // Items from HAND or DECK always get new z-indices on drop
+  // Items from TABLE keep original z-indices only when using 'hold' source
+  const firstItem = itemsToDrop[0];
+  const firstItemLocation = firstItem?.type === ItemType.CARD ? (firstItem as CardType).location : null;
+  const isFromHandOrDeck = firstItem && (
+    firstItemLocation === CardLocation.HAND ||
+    firstItemLocation === CardLocation.DECK ||
+    firstItemLocation === CardLocation.PILE ||
+    firstItemLocation === CardLocation.CURSOR_SLOT
+  );
+
+  // useOriginalZIndex: true only for 'hold' source AND items from table (not from hand/deck/pile)
+  const useOriginalZIndex = !isFromHandOrDeck && (source === 'hold' || source === 'archetype');
 
   // Calculate drop position
   const rect = scrollContainerRef.current?.getBoundingClientRect();
@@ -606,25 +624,62 @@ const dropCursorSlot = (
   const baseX = p2v(clientX - rect.left + (viewTransform?.scroll?.x || 0));
   const baseY = p2v(clientY - rect.top + (viewTransform?.scroll?.y || 0));
 
-  // Sort items by DESCENDING Z to match CursorSlotVisualization
-  // This ensures items drop in the same visual order they appear in cursor slot
-  // For archetype tokens with same Z, use cursorSlotIndex to preserve order
+  // Sort items by DESCENDING cursorSlotIndex to match CursorSlotVisualization
+  // sortedIndex=0 (last added, highest cursorSlotIndex) is front/top
+  // sortedIndex=max (first added, lowest cursorSlotIndex) is back/bottom
   const sortedItems = [...itemsToDrop].sort((a, b) => {
     const sortKeyA = (a as any).cursorSlotIndex ?? (a as any).originalZIndex ?? a.zIndex ?? 0;
     const sortKeyB = (b as any).cursorSlotIndex ?? (b as any).originalZIndex ?? b.zIndex ?? 0;
-    return sortKeyB - sortKeyA; // Descending - higher index/Z first (front of stack)
+    return sortKeyB - sortKeyA; // Descending - higher index (last added) first
   });
 
-  // Find minimum zIndex for each hyperscale layer on the table
-  // This allows dropped items to be placed below existing items while preserving their relative order
-  const layerMinZIndex: Record<string, number> = {};
-  for (const obj of Object.values(state.objects) as any[]) {
-    const objData = obj as any;
-    if (objData.isOnTable && !objData.inCursorSlot) {
-      const layerId = obj.hyperscaleLayerId ?? 'default';
-      const currentMin = layerMinZIndex[layerId] ?? Infinity;
-      if ((obj.zIndex ?? 0) < currentMin) {
-        layerMinZIndex[layerId] = obj.zIndex ?? 0;
+  // NEW: Smart z-index allocation with defragmentation support
+  // Group items by hyperscale layer to allocate z-indices per layer
+  const layerGroups: Record<string, typeof sortedItems> = {};
+  for (const item of sortedItems) {
+    const layerId = item.hyperscaleLayerId ?? 'default';
+    if (!layerGroups[layerId]) {
+      layerGroups[layerId] = [];
+    }
+    layerGroups[layerId].push(item);
+  }
+
+  // Allocate z-indices for each layer
+  const layerAllocations: Record<string, { allocatedZIndex: number; objectsToUpdate?: Record<string, number> }> = {};
+
+  // Track item index within each layer for reverse z-index allocation
+  const layerItemIndices: Record<string, number> = {};
+
+  for (const [layerId, _layerItems] of Object.entries(layerGroups)) {
+    if (useOriginalZIndex) {
+      // For 'hold' and 'archetype' sources, use original z-indices
+      // No allocation needed - items keep their original z-indices
+      layerAllocations[layerId] = { allocatedZIndex: 0 };
+    } else {
+      // Allocate new z-indices above all existing objects in the layer
+      // With automatic defragmentation if needed
+      const allocation = allocateZIndexWithDefrag(
+        state.objects,
+        layerId === 'default' ? undefined : layerId,
+        hyperscaleLayers
+      );
+
+      // Store allocation info for this layer
+      layerAllocations[layerId] = {
+        allocatedZIndex: allocation.allocatedZIndex
+      };
+
+      // If defragmentation was needed, apply it first
+      if (allocation.objectsToUpdate) {
+        for (const [objId, newZ] of Object.entries(allocation.objectsToUpdate)) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: objId,
+              updates: { zIndex: newZ }
+            }
+          });
+        }
       }
     }
   }
@@ -694,12 +749,21 @@ const dropCursorSlot = (
 
     let finalZIndex = item.zIndex;
     if (!useOriginalZIndex) {
-      // Use minimum zIndex of the hyperscale layer, preserving relative order from cursor slot
-      // sortedIndex=0 (front) gets highest Z, sortedIndex=max (back) gets lowest Z
+      // Use the allocated z-index for this layer
+      // sortedIndex=0 is last added (front/top), should get highest Z
+      // sortedIndex=max is first added (back/bottom), should get lowest Z
       const layerId = item.hyperscaleLayerId ?? 'default';
-      const minZ = layerMinZIndex[layerId] ?? 0;
-      // Offset by sortedIndex to preserve visual order: front items stay above back items
-      finalZIndex = minZ - sortedIndex;
+      const allocation = layerAllocations[layerId];
+      if (allocation) {
+        // Count items in this layer to calculate reverse index
+        const itemsInThisLayer = layerGroups[layerId]?.length ?? 1;
+        // Reverse index: sortedIndex=0 -> itemsInThisLayer-1, sortedIndex=max -> 0
+        const currentIndex = layerItemIndices[layerId] ?? 0;
+        const reverseIndex = itemsInThisLayer - 1 - currentIndex;
+        finalZIndex = allocation.allocatedZIndex + reverseIndex;
+        // Increment item index for this layer
+        layerItemIndices[layerId] = currentIndex + 1;
+      }
     }
 
     if (shouldSnapToGrid) {
@@ -1679,6 +1743,16 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Wheel handler (native event for passive: false support)
   const handleWheel = useCallback((e: WheelEvent) => {
+    // Check if the event target is inside a scrollable panel
+    // If so, don't handle the wheel event here (let the panel handle it)
+    const target = e.target as HTMLElement;
+    const scrollableParent = target.closest('[data-scrollable], .overflow-y-auto, .overflow-auto, [data-hand-panel], [data-tokens-panel], [data-tools-panel]');
+
+    if (scrollableParent) {
+      // Let the scrollable panel handle the wheel event
+      return;
+    }
+
     // Handle zoom with Ctrl/Cmd + scroll
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();

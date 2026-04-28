@@ -104,10 +104,7 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
 
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar"
-        onWheel={(e) => {
-          // Prevent scroll from propagating to the game tabletop
-          e.stopPropagation();
-        }}
+        data-scrollable="true"
       >
         {/* Drawing Tools Section */}
         <div className="border-b border-slate-700">
@@ -283,10 +280,7 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
     >
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar"
-        onWheel={(e) => {
-          // Prevent scroll from propagating to the game tabletop
-          e.stopPropagation();
-        }}
+        data-scrollable="true"
       >
         {/* Drawing Tools Section */}
         <div className="p-3">

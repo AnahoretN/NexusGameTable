@@ -301,7 +301,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ isOpen, onClose }) => {
       <div
         ref={containerRef}
         className="bg-slate-900 border border-slate-600 rounded-lg shadow-2xl w-[90vw] h-[80vh] flex flex-col"
-        onWheel={(e) => e.stopPropagation()}
+        data-scrollable="true"
         onContextMenu={(e) => e.preventDefault()}
       >
         {/* Header */}

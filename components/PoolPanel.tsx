@@ -392,10 +392,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
         >
           <div
             className="absolute inset-0 overflow-auto"
-            onWheel={(e) => {
-              // Prevent scroll from propagating to the game tabletop
-              e.stopPropagation();
-            }}
+            data-scrollable="true"
           >
             <PoolTabletop
               poolZone={{
