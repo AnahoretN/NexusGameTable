@@ -7,6 +7,7 @@
 import { TableObject, ItemType, Deck as DeckType, Card as CardType, CardOrientation } from '../types';
 import { Dispatch } from 'react';
 import { Action } from '../store/GameContext';
+import { executeContextMenuAction } from './contextMenuActions';
 
 // ============================================
 // ACTION HANDLER CONFIGURATION
@@ -18,6 +19,12 @@ export interface ActionHandlerContext {
     objects: Record<string, TableObject>;
     activePlayerId?: string;
     diceGroups?: any[];
+    viewTransform?: {
+      zoom?: number;
+      scroll?: { x?: number; y?: number };
+      pixelsPerVU?: number;
+      offset?: { x: number; y: number };
+    };
   };
   poolZone?: {
     panelId?: string;
@@ -32,6 +39,8 @@ export interface ActionHandlerContext {
     onOpenSearchDeck?: (deck: DeckType) => void;
     onOpenTopDeckModal?: (deck: DeckType) => void;
   };
+  isGM?: boolean;
+  isShiftPressed?: boolean;
 }
 
 export interface ClickActionEvent {
@@ -387,14 +396,36 @@ export function handleLock(obj: TableObject, dispatch: Dispatch<Action>) {
 export function handleShow(obj: TableObject, dispatch: Dispatch<Action>) {
   dispatch({
     type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, updates: { isPinnedToViewport: false } }
+    payload: { id: obj.id, updates: { isOnTable: true } }
   });
 }
 
 export function handleHide(obj: TableObject, dispatch: Dispatch<Action>) {
   dispatch({
     type: 'UPDATE_OBJECT',
+    payload: { id: obj.id, updates: { isOnTable: false } }
+  });
+}
+
+export function handlePinToViewport(obj: TableObject, dispatch: Dispatch<Action>) {
+  dispatch({
+    type: 'UPDATE_OBJECT',
     payload: { id: obj.id, updates: { isPinnedToViewport: true } }
+  });
+}
+
+export function handleUnpinFromViewport(obj: TableObject, dispatch: Dispatch<Action>) {
+  dispatch({
+    type: 'UPDATE_OBJECT',
+    payload: { id: obj.id, updates: { isPinnedToViewport: false } }
+  });
+}
+
+export function handlePin(obj: TableObject, dispatch: Dispatch<Action>) {
+  const isPinned = (obj as any).isPinnedToViewport;
+  dispatch({
+    type: 'UPDATE_OBJECT',
+    payload: { id: obj.id, updates: { isPinnedToViewport: !isPinned } }
   });
 }
 
@@ -402,18 +433,67 @@ export function handleHide(obj: TableObject, dispatch: Dispatch<Action>) {
 // SWING ACTIONS
 // ============================================
 
-export function handleSwingClockwise(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({
-    type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, updates: { rotation: (obj.rotation || 0) + 15 } }
-  });
+/**
+ * Helper function to get rotationStep for an object, considering archetype for tokens
+ */
+const getRotationStepForObject = (obj: TableObject, allObjects: Record<string, TableObject>): number => {
+  // For tokens with archetypeId, get rotationStep from archetype
+  if (obj.type === ItemType.TOKEN && (obj as any).archetypeId) {
+    const archetype = allObjects[(obj as any).archetypeId];
+    if (archetype && archetype.type === ItemType.TOKEN_TYPE && archetype.rotationStep) {
+      return archetype.rotationStep;
+    }
+  }
+  // Default to object's rotationStep or 45
+  return (obj as any).rotationStep || 45;
+};
+
+/**
+ * Swing Clockwise: Toggle between rotationStep and 0
+ * First press: rotate by rotationStep
+ * Second press: reset to 0
+ */
+export function handleSwingClockwise(obj: TableObject, dispatch: Dispatch<Action>, allObjects?: Record<string, TableObject>) {
+  const rotationStep = getRotationStepForObject(obj, allObjects || {});
+  const currentRotation = obj.rotation || 0;
+
+  // If already at the swing rotation, reset to 0
+  if (currentRotation === rotationStep) {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: obj.id, updates: { rotation: 0 } }
+    });
+  } else {
+    // Otherwise, rotate to rotationStep
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: obj.id, updates: { rotation: rotationStep } }
+    });
+  }
 }
 
-export function handleSwingCounterClockwise(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({
-    type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, updates: { rotation: (obj.rotation || 0) - 15 } }
-  });
+/**
+ * Swing Counter-Clockwise: Toggle between -rotationStep and 0
+ * First press: rotate by -rotationStep
+ * Second press: reset to 0
+ */
+export function handleSwingCounterClockwise(obj: TableObject, dispatch: Dispatch<Action>, allObjects?: Record<string, TableObject>) {
+  const rotationStep = getRotationStepForObject(obj, allObjects || {});
+  const currentRotation = obj.rotation || 0;
+
+  // If already at the negative swing rotation, reset to 0
+  if (currentRotation === -rotationStep) {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: obj.id, updates: { rotation: 0 } }
+    });
+  } else {
+    // Otherwise, rotate to -rotationStep
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: obj.id, updates: { rotation: -rotationStep } }
+    });
+  }
 }
 
 // ============================================
@@ -569,6 +649,31 @@ export function executeClickAction(
     case 'lock':
       handleLock(obj, context.dispatch);
       break;
+    case 'pin':
+    case 'pinToViewport':
+    case 'unpinFromViewport': {
+      // Delegate to executeContextMenuAction for proper coordinate calculation
+      const actionToExecute = action === 'pin'
+        ? ((obj as any).isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport')
+        : action;
+
+      // Build minimal params for context menu action
+      const params = {
+        object: obj,
+        dispatch: context.dispatch,
+        state: {
+          ...context.state,
+          viewTransform: (context.state as any).viewTransform || { zoom: 1, scroll: { x: 0, y: 0 }, pixelsPerVU: 1.08 },
+          zoom: (context.state as any).viewTransform?.zoom || 1
+        },
+        activePlayerId: context.state.activePlayerId,
+        isGM: (context as any).isGM,
+        isShiftPressed: (context as any).isShiftPressed,
+        isPoolPanel: context.poolZone?.panelId !== undefined
+      };
+      executeContextMenuAction(actionToExecute, params);
+      break;
+    }
     case 'show':
       handleShow(obj, context.dispatch);
       break;
@@ -578,10 +683,10 @@ export function executeClickAction(
 
     // Swing actions
     case 'swingClockwise':
-      handleSwingClockwise(obj, context.dispatch);
+      handleSwingClockwise(obj, context.dispatch, context.state.objects);
       break;
     case 'swingCounterClockwise':
-      handleSwingCounterClockwise(obj, context.dispatch);
+      handleSwingCounterClockwise(obj, context.dispatch, context.state.objects);
       break;
 
     // Dice actions

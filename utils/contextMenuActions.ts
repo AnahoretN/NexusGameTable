@@ -1,5 +1,5 @@
 import { TableObject, CardLocation, Deck as DeckType, Card, CardPile, TokenShape, ItemType, DiceObject, Counter, NexusCellObject } from '../types';
-import { handlePlayTopCard } from './objectActionHandlers';
+import { handlePlayTopCard, handleShow, handleHide, handleSwingClockwise, handleSwingCounterClockwise } from './objectActionHandlers';
 
 /**
  * Common context menu action handlers
@@ -302,19 +302,13 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       break;
 
     case 'swingClockwise':
-      // Swing clockwise (90° rotation)
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: object.id, updates: { rotation: (object.rotation || 0) + 90 } }
-      });
+      // Swing clockwise: toggle between rotationStep and 0
+      handleSwingClockwise(object, dispatch, state.objects);
       break;
 
     case 'swingCounterClockwise':
-      // Swing counter-clockwise (90° rotation)
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: object.id, updates: { rotation: (object.rotation || 0) - 90 } }
-      });
+      // Swing counter-clockwise: toggle between -rotationStep and 0
+      handleSwingCounterClockwise(object, dispatch, state.objects);
       break;
 
     case 'bringToFront':
@@ -334,18 +328,11 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       break;
 
     case 'show':
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: object.id, updates: { isOnTable: true } }
-      });
+      handleShow(object, dispatch);
       break;
 
     case 'hide':
-      // Toggle visibility: if hidden, show; if visible, hide
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: object.id, updates: { isOnTable: !(object as any).isOnTable } }
-      });
+      handleHide(object, dispatch);
       break;
 
     // Deck-specific actions

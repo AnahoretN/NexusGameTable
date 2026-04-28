@@ -19,6 +19,7 @@ import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, useHypersc
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { useDragOverStore } from '../store/dragOverState';
 import { clampScrollToPlayableArea } from '../utils/viewportConstraints';
+import { executeContextMenuAction } from '../utils/contextMenuActions';
 import { ClickTooltip } from './Tabletop/ClickTooltip';
 
 // Import refactored Tabletop components
@@ -356,6 +357,22 @@ export const Tabletop: React.FC = () => {
       case 'lock':
         dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } });
         break;
+      case 'pin': {
+        // Delegate to executeContextMenuAction for proper coordinate calculation
+        const actionToExecute = (obj as any).isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport';
+        executeContextMenuAction(actionToExecute, {
+          object: obj,
+          dispatch,
+          state: {
+            objects: state.objects,
+            activePlayerId,
+            viewTransform
+          },
+          isGM,
+          isShiftPressed
+        });
+        break;
+      }
       case 'delete':
         setDeleteCandidateId(obj.id);
         break;

@@ -271,7 +271,6 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
         className="h-full w-full bg-slate-800 overflow-hidden flex flex-col"
       >
         <div className="flex-1 flex items-center justify-center">
-          <span className="text-gray-400 text-xs">Tools</span>
         </div>
       </div>
     );
@@ -282,11 +281,6 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
       data-tools-panel
       className="h-full w-full bg-slate-800 overflow-hidden flex flex-col"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700 flex-shrink-0">
-        <h3 className="text-sm font-bold text-white">{translate('Tools', language as Locale)}</h3>
-      </div>
-
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar"
         onWheel={(e) => {

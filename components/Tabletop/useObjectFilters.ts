@@ -28,6 +28,11 @@ export const useObjectFilters = (
   const tableObjects = useMemo(() => {
     const PLAYABLE_AREA_SIZE = 5000;
     return (Object.values(state.objects || {}) as TableObject[]).filter((obj) => {
+      // Exclude objects with isOnTable: false (hidden objects)
+      if ((obj as any).isOnTable === false) {
+        return false;
+      }
+
       // Exclude panels, windows, decks (they are rendered separately)
       if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) {
         return false;
@@ -163,13 +168,13 @@ export const useObjectFilters = (
   // Separate pinned and unpinned decks
   const pinnedDecks = useMemo(() => {
     return (Object.values(state.objects) as TableObject[])
-      .filter((obj) => obj.type === ItemType.DECK && (obj as any).isPinnedToViewport)
+      .filter((obj) => obj.type === ItemType.DECK && (obj as any).isPinnedToViewport && (obj as any).isOnTable !== false)
       .map((obj) => obj as DeckType);
   }, [state.objects]);
 
   const unpinnedDecks = useMemo(() => {
     return (Object.values(state.objects) as TableObject[])
-      .filter((obj) => obj.type === ItemType.DECK && !(obj as any).isPinnedToViewport)
+      .filter((obj) => obj.type === ItemType.DECK && !(obj as any).isPinnedToViewport && (obj as any).isOnTable !== false)
       .map((obj) => obj as DeckType);
   }, [state.objects]);
 

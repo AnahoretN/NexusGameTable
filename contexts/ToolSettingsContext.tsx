@@ -123,6 +123,11 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
       const zoomFactor = newSettings.level / 100; // Convert 50-200 to 0.5-2.0
       isInternalZoomChangeRef.current = true; // Mark as internal change
       setZoom(zoomFactor); // Update the real game camera
+
+      // Also update localSettings.zoom (used by tabletop for rendering)
+      window.dispatchEvent(new CustomEvent('tool-settings-zoom-changed', {
+        detail: { zoom: newSettings.level }
+      }));
     }
 
     setSettings(prev => {

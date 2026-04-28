@@ -12,6 +12,7 @@ interface UIObjectsRendererProps {
   unpinnedDecks: DeckType[];
   context: TabletopRenderContext;
   state: any;
+  hyperscaleLayers: Array<{ id: string; minZIndex?: number; maxZIndex?: number }>;
   draggingId: string | null;
   activePlayerId: string;
   isGM: boolean;
@@ -34,6 +35,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   unpinnedDecks,
   context,
   state,
+  hyperscaleLayers,
   draggingId,
   activePlayerId,
   isGM,
@@ -49,6 +51,13 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   setDeleteCandidateId
 }) => {
   const { v2p } = context;
+
+  // Helper to calculate z-index for a deck based on its hyperscale layer
+  const getDeckZIndex = (deck: DeckType): number => {
+    const deckLayer = hyperscaleLayers.find(l => l.id === (deck.hyperscaleLayerId || 'cards'));
+    const layerMinZ = deckLayer?.minZIndex ?? 1001;
+    return layerMinZ + (deck.zIndex ?? 0);
+  };
 
   const renderPinnedDeck = (deck: DeckType) => {
     const deckObj = deck as DeckType;
@@ -99,8 +108,8 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     const canDrag = !deckObj.locked;
     const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
-    // Calculate global z-index for decks (cards layer: 1001-3000)
-    const globalZIndex = 2000 + (deckObj.zIndex ?? 0);
+    // Calculate z-index based on the deck's hyperscale layer
+    const globalZIndex = getDeckZIndex(deckObj);
 
     return (
       <div
@@ -197,6 +206,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     prevProps.unpinnedDecks === nextProps.unpinnedDecks &&
     prevProps.context === nextProps.context &&
     prevProps.state === nextProps.state &&
+    prevProps.hyperscaleLayers === nextProps.hyperscaleLayers &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.currentTool === nextProps.currentTool &&
@@ -240,6 +250,7 @@ export const UIObjectsRendererMemo = memo(UIObjectsRenderer, (prevProps, nextPro
     prevProps.unpinnedDecks === nextProps.unpinnedDecks &&
     prevProps.context === nextProps.context &&
     prevProps.state === nextProps.state &&
+    prevProps.hyperscaleLayers === nextProps.hyperscaleLayers &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.currentTool === nextProps.currentTool &&

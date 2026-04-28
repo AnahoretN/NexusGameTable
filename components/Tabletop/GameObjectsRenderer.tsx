@@ -5,7 +5,7 @@ import { BoardWithResizeMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users } from 'lucide-react';
+import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo } from 'lucide-react';
 import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 
@@ -265,7 +265,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                   action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
                   className: 'bg-indigo-600 hover:bg-indigo-500',
                   title: 'Layer Up',
-                  icon: <Layers size={14} />
+                  icon: <ArrowUp size={14} />
                 },
               };
 
@@ -316,7 +316,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
           data-object-id={obj.id}
           onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
           onContextMenu={(e) => onContextMenu(e, obj)}
-          className={`absolute ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
+          className={`absolute group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           style={createPositionedStyle(
             v2p(obj.x),
             v2p(obj.y),
@@ -342,6 +342,162 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
             deckShowTooltipImage={deck?.showTooltipImage}
             deckTooltipScale={deck?.tooltipScale}
           />
+
+          {/* Action buttons for cards */}
+          <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : currentTool === 'zoom' ? 'opacity-100 pointer-events-auto' : currentTool === 'none' ? 'opacity-0 group-hover:opacity-100 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
+            {(() => {
+              const actionButtons = deck?.cardActionButtons || [];
+              const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
+                flip: {
+                  key: 'flip',
+                  action: () => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } }),
+                  className: 'bg-purple-600 hover:bg-purple-500',
+                  title: card.faceUp ? 'Face Down' : 'Face Up',
+                  icon: card.faceUp ? <EyeOff size={14} /> : <Eye size={14} />
+                },
+                swingClockwise: {
+                  key: 'swingClockwise',
+                  action: () => {
+                    const rotationStep = (card as any).rotationStep || 45;
+                    const newRotation = (card.rotation || 0) === 0 ? rotationStep : 0;
+                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: newRotation } } });
+                  },
+                  className: 'bg-orange-600 hover:bg-orange-500',
+                  title: 'Swing CW',
+                  icon: <RefreshCw size={14} />
+                },
+                swingCounterClockwise: {
+                  key: 'swingCounterClockwise',
+                  action: () => {
+                    const rotationStep = (card as any).rotationStep || 45;
+                    const newRotation = (card.rotation || 0) === 0 ? -rotationStep : 0;
+                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: newRotation } } });
+                  },
+                  className: 'bg-orange-600 hover:bg-orange-500',
+                  title: 'Swing CCW',
+                  icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                },
+                rotateClockwise: {
+                  key: 'rotateClockwise',
+                  action: () => {
+                    const rotationStep = (card as any).rotationStep || 45;
+                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: (card.rotation || 0) + rotationStep } } });
+                  },
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: 'Rotate CW',
+                  icon: <RefreshCw size={14} />
+                },
+                rotateCounterClockwise: {
+                  key: 'rotateCounterClockwise',
+                  action: () => {
+                    const rotationStep = (card as any).rotationStep || 45;
+                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: (card.rotation || 0) - rotationStep } } });
+                  },
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: 'Rotate CCW',
+                  icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                },
+                moveToHand: {
+                  key: 'moveToHand',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { location: 'HAND' as CardLocation } } }),
+                  className: 'bg-blue-600 hover:bg-blue-500',
+                  title: 'To Hand',
+                  icon: <Hand size={14} />
+                },
+                moveToTopDeck: {
+                  key: 'moveToTopDeck',
+                  action: () => dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId: obj.id, deckId: deck?.id } }),
+                  className: 'bg-orange-600 hover:bg-orange-500',
+                  title: 'To Top Deck',
+                  icon: <ArrowUp size={14} />
+                },
+                moveToBottomDeck: {
+                  key: 'moveToBottomDeck',
+                  action: () => dispatch({ type: 'MILL_CARD_TO_BOTTOM', payload: { deckId: deck?.id, cardId: obj.id } }),
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: 'To Bottom Deck',
+                  icon: <Undo size={14} style={{ transform: 'rotate(180deg)' }} />
+                },
+                moveToDiscard: {
+                  key: 'moveToDiscard',
+                  action: () => {
+                    const millPile = deck?.piles?.find((p: any) => p.isMillPile);
+                    if (millPile) {
+                      dispatch({ type: 'ADD_CARD_TO_PILE', payload: { cardId: obj.id, deckId: deck?.id, pileId: millPile.id } });
+                    }
+                  },
+                  className: 'bg-red-600 hover:bg-red-500',
+                  title: 'Mill',
+                  icon: <Trash2 size={14} />
+                },
+                clone: {
+                  key: 'clone',
+                  action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
+                  className: 'bg-cyan-600 hover:bg-cyan-500',
+                  title: 'Clone',
+                  icon: <Copy size={14} />
+                },
+                delete: {
+                  key: 'delete',
+                  action: () => dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
+                  className: 'bg-red-600 hover:bg-red-500',
+                  title: 'Delete',
+                  icon: <Trash2 size={14} />
+                },
+                lock: {
+                  key: 'lock',
+                  action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: card.locked ? 'Unlock' : 'Lock',
+                  icon: card.locked ? <Unlock size={14} /> : <Lock size={14} />
+                },
+                layerUp: {
+                  key: 'layerUp',
+                  action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+                  className: 'bg-blue-600 hover:bg-blue-500',
+                  title: 'Layer Up',
+                  icon: <ArrowUp size={14} />
+                },
+                layerDown: {
+                  key: 'layerDown',
+                  action: () => dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } }),
+                  className: 'bg-blue-600 hover:bg-blue-500',
+                  title: 'Layer Down',
+                  icon: <ArrowDown size={14} />
+                },
+                bringToFront: {
+                  key: 'bringToFront',
+                  action: () => dispatch({ type: 'BRING_TO_FRONT', payload: { id: obj.id } }),
+                  className: 'bg-indigo-600 hover:bg-indigo-500',
+                  title: 'To Top',
+                  icon: <ChevronsUp size={14} />
+                },
+                sendToBack: {
+                  key: 'sendToBack',
+                  action: () => dispatch({ type: 'SEND_TO_BACK', payload: { id: obj.id } }),
+                  className: 'bg-indigo-600 hover:bg-indigo-500',
+                  title: 'To Bottom',
+                  icon: <ChevronsDown size={14} />
+                },
+              };
+
+              const buttons = actionButtons
+                .map(action => buttonConfigs[action])
+                .filter(Boolean)
+                .slice(0, 4);
+
+              return buttons.map(btn => (
+                <button
+                  key={btn.key}
+                  onClick={(e) => { e.stopPropagation(); btn.action(); }}
+                  className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
+                  title={btn.title}
+                >
+                  {btn.icon}
+                </button>
+              ));
+            })()}
+          </div>
         </div>
       </Tooltip>
     );
@@ -608,7 +764,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                   action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
                   className: 'bg-indigo-600 hover:bg-indigo-500',
                   title: 'Layer Up',
-                  icon: <Layers size={14} />
+                  icon: <ArrowUp size={14} />
                 },
               };
 

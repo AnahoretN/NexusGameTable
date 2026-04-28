@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { Layers, Lock, Unlock, Shuffle, Hand, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react';
+import { Layers, Lock, Unlock, Shuffle, Hand, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown, Eye, EyeOff, Pin, ChevronsUp, ChevronsDown } from 'lucide-react';
 import { useGame } from '../store/GameContext';
 import { useObjectById } from '../store/objectStore';
 import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation, ContextAction } from '../types';
@@ -968,11 +968,55 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
                 title: 'To Bottom',
                 icon: <ArrowDown size={14} />
               },
+              hide: {
+                key: 'hide',
+                action: () => executeClickAction?.(deck, 'hide'),
+                className: 'bg-slate-600 hover:bg-slate-500',
+                title: 'Hide/Show',
+                icon: <EyeOff size={14} />
+              },
+              pinToViewport: {
+                key: 'pinToViewport',
+                action: () => executeClickAction?.(deck, 'pin'),
+                className: 'bg-pink-600 hover:bg-pink-500',
+                title: deck.isPinnedToViewport ? 'Unpin' : 'Pin',
+                icon: <Pin size={14} />
+              },
+              layerUp: {
+                key: 'layerUp',
+                action: () => executeClickAction?.(deck, 'layerUp'),
+                className: 'bg-blue-600 hover:bg-blue-500',
+                title: 'Layer Up',
+                icon: <ArrowUp size={14} />
+              },
+              layerDown: {
+                key: 'layerDown',
+                action: () => executeClickAction?.(deck, 'layerDown'),
+                className: 'bg-blue-600 hover:bg-blue-500',
+                title: 'Layer Down',
+                icon: <ArrowDown size={14} />
+              },
+              bringToFront: {
+                key: 'bringToFront',
+                action: () => executeClickAction?.(deck, 'bringToFront'),
+                className: 'bg-indigo-600 hover:bg-indigo-500',
+                title: 'To Top',
+                icon: <ChevronsUp size={14} />
+              },
+              sendToBack: {
+                key: 'sendToBack',
+                action: () => executeClickAction?.(deck, 'sendToBack'),
+                className: 'bg-indigo-600 hover:bg-indigo-500',
+                title: 'To Bottom',
+                icon: <ChevronsDown size={14} />
+              },
             };
 
+            // For action buttons, if an action is in actionButtons, it should be shown
+            // regardless of allowedActions (GM explicitly enabled it as a button)
             const buttons = actionButtons
               .map(action => buttonConfigs[action])
-              .filter(btnConfig => btnConfig && can(btnConfig.key as ContextAction))
+              .filter(btnConfig => btnConfig != null)
               .slice(0, 4);
 
             return buttons.map(btn => (

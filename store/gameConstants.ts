@@ -185,8 +185,8 @@ export function createStandardDeck(): { deck: Deck; cards: Card[] } {
     cardOrientation: CardOrientation.VERTICAL,
     cardWidth: defaultDims.width,
     cardHeight: defaultDims.height,
-    cardAllowedActions: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
-    cardAllowedActionsForGM: ['flip', 'rotate', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise', 'layer', 'layerUp', 'layerDown', 'delete', 'clone', 'lock', 'pin', 'moveTo', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'],
+    cardAllowedActions: ['moveTo', 'flip', 'layer', 'rotate', 'lock'],
+    cardAllowedActionsForGM: undefined, // undefined = all actions allowed for GM
     cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
     cardSingleClickAction: undefined,
     cardDoubleClickAction: undefined,

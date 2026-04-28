@@ -1621,8 +1621,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setResizeStart
   ]);
 
-  // Wheel handler
-  const handleWheel = useCallback((e: React.WheelEvent) => {
+  // Wheel handler (native event for passive: false support)
+  const handleWheel = useCallback((e: WheelEvent) => {
     // Handle zoom with Ctrl/Cmd + scroll
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();

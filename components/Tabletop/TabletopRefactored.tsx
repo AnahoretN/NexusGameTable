@@ -19,7 +19,6 @@ import { useActivePlayerId, useIsGM, useViewTransform, useHyperscaleLayers, useL
 import { useLocalSettings } from '../../hooks/useLocalSettings';
 import { useDragOverStore } from '../../store/dragOverState';
 import { executeClickAction as executeObjectClickAction } from '../../utils/objectActionHandlers';
-import { logger } from '../../utils/logger';
 
 // Import refactored Tabletop components
 import {
@@ -250,7 +249,7 @@ export const Tabletop: React.FC = () => {
     isGM,
     hyperscaleLayers,
     localSettings,
-    updateSetting: updateSetting as (key: string | number | symbol, value: any) => void,
+    updateSetting: updateSetting as (key: string | number | symbol, value: unknown) => void,
     liveResizeSizeRef,
     setLiveResizeSize,
     isAddingTokenRef,
@@ -332,13 +331,36 @@ export const Tabletop: React.FC = () => {
   useEffect(() => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
       if (handleMouseUp) {
-        handleMouseUp(e as any);
+        handleMouseUp(e as unknown as MouseEvent);
       }
     };
 
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [handleMouseUp]);
+
+  // Attach wheel handler with passive: false to allow preventDefault
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !handleWheel) return;
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [handleWheel, scrollContainerRef]);
+
+  // Sync zoom from ToolSettingsContext to LocalSettings
+  useEffect(() => {
+    const handleZoomChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ zoom: number }>;
+      const zoomLevel = customEvent.detail.zoom;
+      if (typeof zoomLevel === 'number') {
+        updateSetting('zoom', zoomLevel);
+      }
+    };
+
+    window.addEventListener('tool-settings-zoom-changed', handleZoomChange);
+    return () => window.removeEventListener('tool-settings-zoom-changed', handleZoomChange);
+  }, [updateSetting]);
 
   // Handle add-to-cursor-slot events from HandPanel and other sources
   useEffect(() => {
@@ -378,7 +400,7 @@ export const Tabletop: React.FC = () => {
       // Since we can't directly call it here, we'll dispatch an action or use a different approach
       // For now, let's use the approach of setting the slot directly
       const card = (cardOverride || obj) as Card;
-      const deck = card.deckId ? state.objects[card.deckId] as any : undefined;
+      const deck = card.deckId ? state.objects[card.deckId] as Deck | undefined : undefined;
       const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
 
       // Calculate click offset if not provided
@@ -511,9 +533,9 @@ export const Tabletop: React.FC = () => {
           color: token.color,
           content: token.content,
           borderWidth: token.borderWidth,
-          borderColor: (token as any).borderColor,
+          borderColor: token.borderColor,
           opacity: token.opacity,
-          borderOpacity: (token as any).borderOpacity,
+          borderOpacity: token.borderOpacity,
           x: 0,
           y: 0,
           rotation: token.rotation || 0,
@@ -683,6 +705,13 @@ export const Tabletop: React.FC = () => {
       cursorPositionRef.current = pos;
       setCursorPosition(pos);
 
+      // IMPORTANT: Set cursorSlotSource so handleMouseUp knows to drop on mouseup
+      // Only set source if slot was empty before adding (like in addToCursorSlot)
+      const wasSlotEmpty = cursorSlotRef.current.length === 0;
+      if (wasSlotEmpty) {
+        setCursorSlotSource((source || 'hold') as 'hold' | 'shift' | 'archetype' | null);
+      }
+
       // Add to cursor slot
       const newSlot = [...cursorSlotRef.current, itemClone];
       // IMPORTANT: Update ref IMMEDIATELY to prevent duplicate additions from rapid events
@@ -690,34 +719,26 @@ export const Tabletop: React.FC = () => {
       setCursorSlot(newSlot);
       cursorSlotLastAddedRef.current = Date.now();
 
-      // IMPORTANT: Set cursorSlotSource so handleMouseUp knows to drop on mouseup
-      // Only set source if slot was empty before (like in addToCursorSlot)
-      if (cursorSlotRef.current.length === 0) {
-        setCursorSlotSource((source || 'hold') as 'hold' | 'shift' | 'archetype' | null);
-      }
-
       // IMPORTANT: Hide object from table while in cursor slot (same as in addToCursorSlot)
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
           id: cardId,
-          updates: {
-            inCursorSlot: true,
-            isOnTable: false,
-            // Move object far away to hide it while in slot
-            x: -999999,
-            y: -999999,
-            // Store click offsets for proper drop positioning
-            clickOffsetX_PX: finalClickOffsetX_PX,
-            clickOffsetY_PX: finalClickOffsetY_PX,
-            clickOffsetX: finalClickOffsetX,
-            clickOffsetY: finalClickOffsetY,
-            sourceZoom: sourceZoom, // Store zoom level of source for accurate coordinate conversion
-            // Store original position BEFORE updating to -999999
-            originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
-            originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
-          }
-        } as any
+          inCursorSlot: true,
+          isOnTable: false,
+          // Move object far away to hide it while in slot
+          x: -999999,
+          y: -999999,
+          // Store click offsets for proper drop positioning
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          sourceZoom: sourceZoom, // Store zoom level of source for accurate coordinate conversion
+          // Store original position BEFORE updating to -999999
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
+        } as Partial<TableObject> & { id: string } & Record<string, unknown>
       });
     };
 
@@ -749,7 +770,7 @@ export const Tabletop: React.FC = () => {
       // IMPORTANT: Also reset inCursorSlot flag for all objects
       // This prevents objects from staying in cursor slot state after clear
       Object.values(state.objects).forEach(obj => {
-        if ((obj as any).inCursorSlot) {
+        if ('inCursorSlot' in obj && obj.inCursorSlot) {
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -792,7 +813,6 @@ export const Tabletop: React.FC = () => {
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
-      onWheel={handleWheel}
       onContextMenu={(e) => e.preventDefault()}
       onDragOver={(e) => {
         e.preventDefault();
@@ -989,6 +1009,7 @@ export const Tabletop: React.FC = () => {
         unpinnedDecks={unpinnedDecks}
         context={renderContext}
         state={state}
+        hyperscaleLayers={hyperscaleLayers}
         draggingId={draggingId}
         activePlayerId={activePlayerId}
         isGM={isGM}
@@ -1002,13 +1023,16 @@ export const Tabletop: React.FC = () => {
             state: {
               objects: state.objects,
               activePlayerId,
-              diceGroups: state.diceGroups
+              diceGroups: state.diceGroups,
+              viewTransform
             },
             additionalHandlers: {
               onDeleteCandidate: setDeleteCandidateId,
               onOpenSearchDeck: setSearchModalDeck,
               onOpenTopDeckModal: setTopDeckModalDeck
-            }
+            },
+            isGM,
+            isShiftPressed
           };
           executeObjectClickAction(obj, action, actionContext, event);
         }}
