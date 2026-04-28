@@ -24,7 +24,7 @@ export const MOVE_TO_ACTIONS: { id: ContextAction | 'mill'; label: string }[] = 
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'rotate', 'hide', 'pin'];
+export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'rotate'];
 
 // Check if an action can be shown as an action button
 export function isActionButtonAllowed(action: ContextAction): boolean {
@@ -40,8 +40,21 @@ export function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'layerUp':
     case 'layerDown':
       return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+    case 'bringToFront':
+    case 'sendToBack':
+      return [ItemType.DECK, ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
     case 'rotate':
       return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+    case 'rotateClockwise':
+    case 'rotateCounterClockwise':
+      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+    case 'swingClockwise':
+    case 'swingCounterClockwise':
+      return [ItemType.CARD, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+    case 'hide':
+      return [ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT];
+    case 'pin':
+      return [ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT];
     case 'millToBottom':
       return [ItemType.CARD];
     case 'moveToHand':

@@ -31,6 +31,7 @@ interface MenuItem {
   separator?: boolean;
   submenuItems?: MenuItem[];
   isSeparator?: boolean;
+  group?: string; // Group identifier for menu sections
 }
 
 // Memoized submenu item component
@@ -527,39 +528,37 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       // Hide for token-copies (tokens with archetypeId)
       visible: isGM && !(object.type === ItemType.TOKEN && (object as any).archetypeId),
     },
-    // Separator after Configure (only visible if Configure is visible)
-    {
-      label: '-',
-      action: 'separator-configure',
-      visible: isGM && !(object.type === ItemType.TOKEN && (object as any).archetypeId),
-      isSeparator: true
-    },
+    // OBJECT-SPECIFIC ACTIONS GROUP
     {
       label: translate('Roll', language as Locale),
       action: 'roll',
       icon: <RefreshCw size={14} />,
       visible: object.type === ItemType.DICE_OBJECT,
+      group: 'objectActions',
     },
     {
       label: translate('Roll Group', language as Locale),
       action: 'rollGroup',
       icon: <Users size={14} />,
       visible: object.type === ItemType.DICE_OBJECT && !!(object as any).diceGroupId,
+      group: 'objectActions',
     },
     {
       label: translate('Reset to Base Value', language as Locale),
       action: 'resetToBase',
       icon: <RotateCcw size={14} />,
       visible: object.type === ItemType.COUNTER,
+      group: 'objectActions',
     },
     // "Move to..." section for cards
-    ...moveToSection,
+    ...moveToSection.map(item => ({ ...item, group: 'objectActions' as const })),
     // Flip for cards
     {
       label: translate('Flip', language as Locale),
       action: 'flip',
       icon: <RotateCw size={14} />,
       visible: object.type === ItemType.CARD && can('flip'),
+      group: 'objectActions',
     },
     // Deck-specific actions
     {
@@ -567,6 +566,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       action: 'topDeck',
       icon: <ArrowUp size={14} />,
       visible: object.type === ItemType.DECK && can('topDeck'),
+      group: 'objectActions',
       hasSubmenu: true,
       submenuItems: [
         {
@@ -617,13 +617,15 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       label: translate('Search', language as Locale),
       action: 'searchDeck',
       icon: <Search size={14} />,
-      visible: object.type === ItemType.DECK && can('searchDeck')
+      visible: object.type === ItemType.DECK && can('searchDeck'),
+      group: 'objectActions',
     },
     {
       label: translate('Shuffle', language as Locale),
       action: 'shuffleDeck',
       icon: <Shuffle size={14} />,
-      visible: object.type === ItemType.DECK && can('shuffleDeck')
+      visible: object.type === ItemType.DECK && can('shuffleDeck'),
+      group: 'objectActions',
     },
     {
       label: translate('Piles', language as Locale),
@@ -634,6 +636,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                (object as Deck).piles.length > 0 &&
                can('piles'),
       hasSubmenu: true,
+      group: 'objectActions',
       submenuItems: (object as Deck).piles?.map((pile) => ({
         label: `${pile.name} (${pile.cardIds.length})`,
         action: `pile-${pile.id}`,
@@ -669,6 +672,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         icon: <CornerDownRight size={14} />,
         visible: true,
         hasSubmenu: true,
+        group: 'objectActions',
         submenuItems: returnSubmenuItems
       }];
     })() : []),
@@ -680,6 +684,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         (object.type === ItemType.NEXUS_BOARD && nexusBoardEditingId !== object.id) ||
         (object.type === ItemType.NEXUS_CELL && nexusBoardEditingId !== (object as NexusCellObject).nexusBoardId)
       ),
+      group: 'objectActions',
     },
     {
       label: translate('Close Editing', language as Locale),
@@ -689,30 +694,22 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         (object.type === ItemType.NEXUS_BOARD && nexusBoardEditingId === object.id) ||
         (object.type === ItemType.NEXUS_CELL && nexusBoardEditingId === (object as NexusCellObject).nexusBoardId)
       ),
+      group: 'objectActions',
     },
     {
       label: translate('Delete Board', language as Locale),
       action: 'deleteNexusBoard',
       icon: <Trash2 size={14} />,
       visible: !hideCardActions && can('deleteNexusBoard') && object.type === ItemType.NEXUS_CELL,
+      group: 'objectActions',
     },
-    // Separator before Change Layer group (only visible if any of Change Layer, Rotation, Hide, Lock, Pin are visible)
-    {
-      label: '-',
-      action: 'separator-layer-group',
-      visible: (!hideCardActions && (can('layerUp') || can('layerDown'))) ||
-               (!hideCardActions && can('moveTo')) ||
-               (!isSearchWindow && !hideCardActions && can('rotate')) ||
-               (can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId)) ||
-               (!hideCardActions && can('lock')) ||
-               (!hideCardActions && can('pin')),
-      isSeparator: true
-    },
+    // POSITION GROUP: Change Layer, Rotation
     {
       label: translate('Change Layer', language as Locale),
       action: 'layer',
       icon: <Layers size={14} />,
       visible: !hideCardActions && can('layer'),
+      group: 'position',
       hasSubmenu: true,
       submenuItems: (() => {
         const canLayer = can('layer');
@@ -798,6 +795,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       icon: <RotateCw size={14} />,
       // Hide rotation in search window and for cards in hand panel (only available in game space)
       visible: !isSearchWindow && !hideCardActions && can('rotate'),
+      group: 'position',
       hasSubmenu: true,
       submenuItems: [
         {
@@ -838,26 +836,21 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         }
       ]
     },
-    // Separator before Hide/Show/Lock/Pin section (only visible if any of Hide, Lock, Pin are visible)
-    {
-      label: '-',
-      action: 'separator-before-hide-lock-pin',
-      visible: (can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId)) || (!hideCardActions && can('lock')) || (!hideCardActions && can('pin')),
-      isSeparator: true
-    },
-    // Remove the old "To Hand" item since it's now in "Move to.."
+    // VISIBILITY STATE GROUP: Show/Hide, Lock/Unlock, Pin/Unpin
     {
       label: (object as any).isOnTable === false ? translate('Show', language as Locale) : translate('Hide', language as Locale),
       action: (object as any).isOnTable === false ? 'show' : 'hide',
       icon: (object as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />,
-      // Hide for token-copies (tokens with archetypeId)
-      visible: can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId)
+      // Hide for token-copies (tokens with archetypeId) and in search window
+      visible: !isSearchWindow && can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId),
+      group: 'visibilityState',
     },
     {
       label: object.locked ? translate('Unlock', language as Locale) : translate('Lock', language as Locale),
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
-      visible: !hideCardActions && can('lock')
+      visible: !hideCardActions && can('lock'),
+      group: 'visibilityState',
     },
     {
       label: object.isPinnedToViewport ? translate('Unpin', language as Locale) : translate('Pin', language as Locale),
@@ -865,13 +858,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       icon: <Pin size={14} />,
       // Pinning available for cards, tokens, decks, dice, counters (not boards, and not in pool panel)
       visible: !hideCardActions && can('pin') && object.type !== ItemType.BOARD && contextMenuType !== 'pool',
-    },
-    // Separator after Hide/Lock/Pin section (only visible if any of Hide, Lock, Pin are visible)
-    {
-      label: '-',
-      action: 'separator-after-hide-lock-pin',
-      visible: (can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId)) || (!hideCardActions && can('lock')) || (!hideCardActions && can('pin') && object.type !== ItemType.BOARD && contextMenuType !== 'pool'),
-      isSeparator: true
+      group: 'visibilityState',
     },
     // Hide Card / Unhide Card
     {
@@ -901,12 +888,14 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       visible: isSearchWindow && isGM && object.type === ItemType.CARD,
       isSeparator: true
     },
+    // DESTRUCTIVE ACTIONS GROUP: Clone, Destroy, Delete (separator only above)
     // Clone - creates copy of card in same deck (available in search window)
     {
       label: translate('Clone', language as Locale),
       action: 'clone',
       icon: <Copy size={14} />,
       visible: (isSearchWindow && isGM && object.type === ItemType.CARD) || (!hideCardActions && can('clone')),
+      group: 'destructive',
     },
     // Destroy - permanently removes card from deck (GM only in search window for cards) - AT THE BOTTOM
     {
@@ -914,21 +903,101 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       action: 'destroy',
       icon: <Trash2 size={14} />,
       visible: isSearchWindow && isGM && object.type === ItemType.CARD,
+      group: 'destructive',
     },
     // Delete - removes card from deck (NOT available in search window, only on tabletop)
     {
       label: translate('Delete', language as Locale),
       action: 'delete',
       icon: <Trash2 size={14} />,
-      visible: !isSearchWindow && !hideCardActions && can('delete')
+      visible: !isSearchWindow && !hideCardActions && can('delete'),
+      group: 'destructive',
     },
-  ], [object, isGM, hideCardActions, isSearchWindow, language, nexusBoardEditingId, contextMenuType, hyperscaleLayers, moveToSection, can]);
+  ], [object, isGM, hideCardActions, isSearchWindow, language, nexusBoardEditingId, contextMenuType, hyperscaleLayers, moveToSection, can, object.isPinnedToViewport]);
 
-  // Filter visible items
-  const visibleItems = useMemo(() => menuItems.filter(item => item.visible), [menuItems]);
-  const configureItem = useMemo(() => visibleItems.find(i => i.action === 'configure'), [visibleItems]);
-  const otherItems = useMemo(() => visibleItems.filter(i => i.action !== 'configure'), [visibleItems]);
-  const finalItems = useMemo(() => configureItem ? [configureItem, ...otherItems] : otherItems, [configureItem, otherItems]);
+  /**
+   * Group menu items and add automatic separators for groups
+   * Groups with at least one visible item get separators:
+   * - Most groups: separators above and below
+   * - Destructive group (clone/delete): separator above only
+   */
+  const groupedMenuItems = useMemo(() => {
+    // First, filter to only visible items
+    const visibleItems = menuItems.filter(item => item.visible);
+
+    // Groups that only have separator above (not below)
+    const BOTTOM_SEPARATOR_LESS_GROUPS = new Set(['destructive']);
+
+    // Helper to check if an item belongs to a specific group
+    const isInGroup = (item: MenuItem, group: string): boolean => {
+      return item.group === group;
+    };
+
+    // Helper to check if a group has any visible items
+    const groupHasVisibleItems = (group: string): boolean => {
+      return visibleItems.some(item => isInGroup(item, group));
+    };
+
+    // Build the final menu with group separators
+    const result: (MenuItem & { isGroupSeparator?: boolean; isGroupEnd?: boolean })[] = [];
+
+    for (const item of visibleItems) {
+      // Add group separator before first item of a group
+      if (item.group && groupHasVisibleItems(item.group)) {
+        // Find the last non-separator item to check group
+        const lastNonSeparator = [...result].reverse().find(i => !i.isGroupSeparator);
+        const isFirstInGroup = result.length === 0 || !lastNonSeparator || lastNonSeparator.group !== item.group;
+
+        if (isFirstInGroup) {
+          result.push({
+            ...item,
+            isGroupSeparator: true,
+            action: `separator-before-${item.group}`,
+          });
+        }
+      }
+
+      // Add the actual item
+      result.push(item);
+
+      // Add group separator after last item of a group (except for bottom-separator-less groups)
+      if (item.group && groupHasVisibleItems(item.group) && !BOTTOM_SEPARATOR_LESS_GROUPS.has(item.group)) {
+        const isLastInGroup = !visibleItems
+          .slice(visibleItems.indexOf(item) + 1)
+          .some(nextItem => isInGroup(nextItem, item.group));
+
+        if (isLastInGroup) {
+          result.push({
+            ...item,
+            isGroupEnd: true,
+            isGroupSeparator: true,
+            action: `separator-after-${item.group}`,
+          });
+        }
+      }
+    }
+
+    // Post-process: if two separators are adjacent and the first one is visible,
+    // ensure the second one is also visible (don't hide separators between groups)
+    // This prevents cases where a separator would appear with no content above/below it
+    const finalResult: typeof result = [];
+    for (let i = 0; i < result.length; i++) {
+      const item = result[i];
+      const prevItem = finalResult[finalResult.length - 1];
+
+      // If current item is a separator and previous is also a separator, skip the current one
+      // (we keep the first separator which marks the start of a group)
+      if (item.isGroupSeparator && prevItem?.isGroupSeparator) {
+        continue;
+      }
+
+      finalResult.push(item);
+    }
+
+    return finalResult;
+  }, [menuItems]);
+
+  const finalItems = groupedMenuItems;
 
 
   const menuStyle: React.CSSProperties = {
@@ -968,8 +1037,8 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         </div>
 
         {finalItems.map((item, idx) => {
-            // Handle standalone separator items
-            if (item.isSeparator) {
+            // Handle standalone separator items and group separators
+            if (item.isSeparator || item.isGroupSeparator) {
               return <div key={item.action || idx} className="h-px bg-slate-700 my-1 mx-2" />;
             }
 

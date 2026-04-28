@@ -2192,12 +2192,12 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                       if (isCard && ['flip', 'layer', 'pin', 'pinToViewport'].includes(action.id)) {
                         return false;
                       }
-                      // Tokens and Token Types should NOT have Pin/Unpin action
-                      if ((isToken || isArchetype) && ['pin', 'pinToViewport'].includes(action.id)) {
-                        return false;
-                      }
                       // Exclude rotation and swing actions - they're controlled by 'rotate' section
                       if (['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                        return false;
+                      }
+                      // Exclude layer sub-actions - they're controlled by 'layer' section
+                      if (['layerUp', 'layerDown', 'bringToFront', 'sendToBack'].includes(action.id)) {
                         return false;
                       }
                       // For decks, exclude individual deck actions that are controlled by section headers

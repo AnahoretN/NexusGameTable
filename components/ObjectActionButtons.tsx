@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown, EyeOff, Hand, Shuffle, Undo, Search, ArrowUp, ArrowDown, CornerDownRight, Pin } from 'lucide-react';
+import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown, EyeOff, Eye, Hand, Shuffle, Undo, Search, ArrowUp, ArrowDown, CornerDownRight, Pin } from 'lucide-react';
 import { ContextAction } from '../types';
 
 interface ObjectActionButtonsProps {
@@ -68,6 +68,48 @@ const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj:
     className: 'bg-pink-600 hover:bg-pink-500',
     title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
     icon: <Pin size={14} />
+  },
+  hide: {
+    key: 'hide',
+    action: () => executeClickAction ? executeClickAction(obj, 'hide') : dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: !(obj as any).isOnTable } }),
+    className: 'bg-gray-600 hover:bg-gray-500',
+    title: (obj as any).isOnTable === false ? 'Show' : 'Hide',
+    icon: (obj as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />
+  },
+  show: {
+    key: 'show',
+    action: () => executeClickAction ? executeClickAction(obj, 'show') : dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: true } }),
+    className: 'bg-gray-600 hover:bg-gray-500',
+    title: 'Show',
+    icon: <Eye size={14} />
+  },
+  bringToFront: {
+    key: 'bringToFront',
+    action: () => executeClickAction ? executeClickAction(obj, 'bringToFront') : dispatch({ type: 'MOVE_TO_FRONT', payload: { id: obj.id } }),
+    className: 'bg-indigo-600 hover:bg-indigo-500',
+    title: 'To Top',
+    icon: <ChevronsUpDown size={14} />
+  },
+  sendToBack: {
+    key: 'sendToBack',
+    action: () => executeClickAction ? executeClickAction(obj, 'sendToBack') : dispatch({ type: 'MOVE_TO_BACK', payload: { id: obj.id } }),
+    className: 'bg-indigo-600 hover:bg-indigo-500',
+    title: 'To Bottom',
+    icon: <ChevronsUpDown size={14} />
+  },
+  swingClockwise: {
+    key: 'swingClockwise',
+    action: () => executeClickAction ? executeClickAction(obj, 'swingClockwise') : dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id } }),
+    className: 'bg-green-600 hover:bg-green-500',
+    title: 'Swing CW',
+    icon: <RefreshCw size={14} />
+  },
+  swingCounterClockwise: {
+    key: 'swingCounterClockwise',
+    action: () => executeClickAction ? executeClickAction(obj, 'swingCounterClockwise') : dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id } }),
+    className: 'bg-green-600 hover:bg-green-500',
+    title: 'Swing CCW',
+    icon: <RotateCw size={14} style={{ transform: 'scaleY(-1)' }} />
   },
   layer: {
     key: 'layer',
