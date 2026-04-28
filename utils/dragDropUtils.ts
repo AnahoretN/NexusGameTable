@@ -60,26 +60,12 @@ export function calculatePickupOffset(
     : document.querySelector(`[data-object-id="${objectId}"]`);
 
   if (!element) {
-    if (debug) {
-      console.log('[dragDropUtils] Element not found:', { objectId, containerExists: !!containerRef?.current });
-    }
     return null;
   }
 
   const rect = element.getBoundingClientRect();
   const offsetX_PX = startX - rect.left;
   const offsetY_PX = startY - rect.top;
-
-  if (debug) {
-    console.log('[dragDropUtils] Pickup offset calculated:', {
-      objectId,
-      startX,
-      startY,
-      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-      offsetX_PX,
-      offsetY_PX
-    });
-  }
 
   return { offsetX_PX, offsetY_PX, elementRect: rect };
 }
@@ -117,17 +103,6 @@ export function calculatePickupOffsetWithFallback(
   // Calculate center in screen pixels
   const offsetX_PX = (objWidth / 2) * pixelsPerVU;
   const offsetY_PX = (objHeight / 2) * pixelsPerVU;
-
-  if (options?.debug) {
-    console.log('[dragDropUtils] Fallback to center:', {
-      objectId: object.id,
-      objWidth,
-      objHeight,
-      pixelsPerVU,
-      offsetX_PX,
-      offsetY_PX
-    });
-  }
 
   return { offsetX_PX, offsetY_PX };
 }
@@ -296,7 +271,6 @@ export function analyzeDropTarget(
   // Check for deck/pile first
   const deckInfo = findDeckAtCursor(x, y);
   if (deckInfo) {
-    console.log('[dragDropUtils] analyzeDropTarget: Found deck/pile', deckInfo);
     return {
       type: deckInfo.pileId ? 'pile' : 'deck',
       deckId: deckInfo.deckId,
@@ -307,7 +281,6 @@ export function analyzeDropTarget(
   // Check for pool panel
   const poolPanelId = findPoolPanelAtCursor(x, y);
   if (poolPanelId) {
-    console.log('[dragDropUtils] analyzeDropTarget: Found pool panel', { poolPanelId, currentPoolPanelId });
     return {
       type: 'pool',
       panelId: poolPanelId
@@ -317,13 +290,11 @@ export function analyzeDropTarget(
   // Check for hand panel
   for (const element of document.elementsFromPoint(x, y)) {
     if (element.closest('[data-hand-panel]')) {
-      console.log('[dragDropUtils] analyzeDropTarget: Found hand panel');
       return { type: 'hand' };
     }
   }
 
   // Default to tabletop
-  console.log('[dragDropUtils] analyzeDropTarget: Default to tabletop', { x, y });
   return { type: 'tabletop' };
 }
 

@@ -250,7 +250,6 @@ export const LogViewer: React.FC<LogViewerProps> = ({ isOpen, onClose }) => {
   const handleRedo = useCallback(() => {
     // Redo would require implementing forward redo in the undo system
     // For now, this is a placeholder
-    console.log('Redo not yet implemented');
   }, [language]);
 
   // Restore to point - undo all actions after this point

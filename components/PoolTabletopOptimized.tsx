@@ -615,7 +615,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       if (deck) {
         const pile = deck.piles?.find(p => p.id === pileId);
         if (pile) {
-          logger.log('[PoolTabletop] Opening pile search modal:', { pileId, pileName: pile.name });
           setSearchModalDeck(deck);
           setSearchModalPile(pile);
         }
@@ -625,19 +624,14 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     const handleOpenSearchDeckModal = (e: Event) => {
       const customEvent = e as CustomEvent<{ deckId: string; pileId?: string }>;
       const { deckId, pileId } = customEvent.detail;
-      logger.log('[PoolTabletop] handleOpenSearchDeckModal called:', { deckId, pileId });
 
       const deck = state.objects[deckId] as DeckType;
       if (deck) {
-        logger.log('[PoolTabletop] Deck found:', deck.name);
         setSearchModalDeck(deck);
         if (pileId) {
           const pile = deck.piles?.find(p => p.id === pileId);
-          logger.log('[PoolTabletop] Pile found:', pile?.name);
           setSearchModalPile(pile);
         }
-      } else {
-        logger.warn('[PoolTabletop] Deck not found:', deckId);
       }
     };
 
@@ -840,7 +834,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     // IMPORTANT: Check if this object was just dropped to this pool panel
     // This prevents immediate re-pickup when dragging from pool panel -> dropping back to same panel
     if (justDroppedToPoolRef.current.has(obj.id)) {
-      logger.log('[PoolTabletop] Object was just dropped to pool, ignoring mousedown:', obj.id);
       return;
     }
 
@@ -890,7 +883,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           // Clear only dropped objects from cursor slot (not the entire slot)
           // Use queueMicrotask to ensure state updates are processed first
           queueMicrotask(() => {
-            logger.log('[PoolTabletop] Sending clear-cursor-slot with objectIds:', cursorSlotObjects.map(o => o.id));
             window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
               detail: { objectIds: cursorSlotObjects.map(o => o.id) }
             }));
@@ -914,12 +906,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     ].includes(obj.type);
 
     if (isDraggableType) {
-      console.log('[PoolTabletop] Draggable type mousedown:', {
-        objId: obj.id,
-        objType: obj.type,
-        objTypeName: ItemType[obj.type]
-      });
-
       // Special handling for dice - track drag distance for click vs drag detection
       if (obj.type === ItemType.DICE_OBJECT) {
         e.preventDefault();
@@ -932,7 +918,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           startY: e.clientY,
           isDragging: false
         };
-        console.log('[PoolTabletop] Set diceDragRef, calling setIsDraggingDice(true)');
         setIsDraggingDice(true);
         return;
       }
@@ -976,23 +961,13 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
   // Execute context menu action using shared utility
   const executeMenuAction = (action: string, shiftKey?: boolean) => {
-    logger.log('[PoolTabletop] ===== executeMenuAction CALLED =====');
-    logger.log('[PoolTabletop] Action:', action);
-    logger.log('[PoolTabletop] Shift key:', shiftKey);
-    logger.log('[PoolTabletop] Has context menu:', !!contextMenu);
 
     if (!contextMenu) {
-      logger.warn('[PoolTabletop] ERROR: No context menu exists!');
       return;
     }
 
     // Always get fresh object from state to ensure we have latest data
     const targetObject = state.objects[contextMenu.object.id] || contextMenu.object;
-    logger.log('[PoolTabletop] Target object:', {
-      id: targetObject.id,
-      type: targetObject.type,
-      name: targetObject.name
-    });
 
     // Try to handle action with shared contextMenuAction utility
     let wasHandled = false;
@@ -1035,26 +1010,20 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           isPoolPanel: true
         });
         wasHandled = true;
-        logger.log('[PoolTabletop] executeContextMenuAction completed');
 
         // Close menu after executing special action (except for modals)
         if (setContextMenu && action !== 'configure' && action !== 'delete') {
-          logger.log('[PoolTabletop] Closing context menu');
           setContextMenu(null);
         } else {
-          logger.log('[PoolTabletop] Not closing menu for action:', action);
         }
       } catch (error) {
-        logger.error('[PoolTabletop] ERROR in executeContextMenuAction:', error);
       }
     }
 
     // Handle basic actions that weren't handled by executeContextMenuAction
     if (!wasHandled) {
-      logger.log('[PoolTabletop] Handling basic action in switch...');
       switch (action) {
         case 'roll':
-          logger.log('[PoolTabletop] Rolling dice');
           // Roll dice - handled by double-click, but also available from context menu
           if (targetObject.type === ItemType.DICE_OBJECT) {
             animateDiceRoll(targetObject as DiceObject);
@@ -1062,7 +1031,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           break;
 
         default:
-          logger.log('[PoolTabletop] Default case for action:', action);
           // Handle dynamic actions that can't be in switch cases
           if (action.startsWith('moveToHyperscaleLayer:')) {
             const layerId = action.split(':')[1];
@@ -1075,11 +1043,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       }
 
       // Close menu after executing action
-      logger.log('[PoolTabletop] Closing context menu after basic action');
       if (setContextMenu) setContextMenu(null);
     }
 
-    logger.log('[PoolTabletop] ===== executeMenuAction FINISHED =====');
   };
 
   // Handle pile context menu
@@ -1096,10 +1062,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
   // Execute pile context menu action
   const executePileMenuAction = useCallback((action: string) => {
-    logger.log('[PoolTabletop] executePileMenuAction called:', action);
     if (!pileContextMenu) return;
     const { pile, deck } = pileContextMenu;
-    logger.log('[PoolTabletop] Pile context menu:', { pileName: pile.name, deckName: deck.name });
 
     switch(action) {
       case 'lock':
@@ -1117,7 +1081,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         setPileContextMenu(null);
         break;
       case 'searchDeck':
-        logger.log('[PoolTabletop] Dispatching open-search-deck-modal event:', { deckId: deck.id, pileId: pile.id });
         // Open search deck modal - dispatch event to main app
         window.dispatchEvent(new CustomEvent('open-search-deck-modal', {
           detail: { deckId: deck.id, pileId: pile.id }
@@ -1217,18 +1180,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
   // Handle mouse move for dragging objects
   const handleObjectMouseMove = useCallback((e: MouseEvent) => {
-    // Throttle logging - only log every 5th call
-    if (!handleObjectMouseMove.logCounter) handleObjectMouseMove.logCounter = 0;
-    handleObjectMouseMove.logCounter++;
-    if (handleObjectMouseMove.logCounter % 5 === 0) {
-      console.log('[PoolTabletop] handleObjectMouseMove called:', {
-        diceObjectId: diceDragRef.current.objectId,
-        genericObjectId: genericDragRef.current.objectId,
-        isDraggingDice: diceDragRef.current.isDragging,
-        isDraggingGeneric: genericDragRef.current.isDragging
-      });
-    }
-
     // Handle dice drag tracking
     if (diceDragRef.current.objectId) {
       const deltaX = e.clientX - diceDragRef.current.startX;
@@ -1272,7 +1223,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // IMPORTANT: Check if this object was just dropped to this pool panel
         // This prevents immediate re-pickup after dropping back to same panel
         if (diceDragRef.current.objectId && justDroppedToPoolRef.current.has(diceDragRef.current.objectId)) {
-          logger.log('[PoolTabletop] Object was just dropped to pool, ignoring drag attempt:', diceDragRef.current.objectId);
           diceDragRef.current = {
             objectId: null,
             startX: 0,
@@ -1287,7 +1237,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // This prevents immediate re-pickup after dropping back to same panel
         // Using object ID tracking instead of global timer - more reliable
         if (diceDragRef.current.objectId && justDroppedToPoolRef.current.has(diceDragRef.current.objectId)) {
-          logger.log('[PoolTabletop] Object was just dropped to this pool panel, ignoring drag attempt:', diceDragRef.current.objectId);
           diceDragRef.current = {
             objectId: null,
             startX: 0,
@@ -1330,18 +1279,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Throttle logging: only log every 5th call or when threshold is exceeded
       if (!genericDragRef.current.logCounter) genericDragRef.current.logCounter = 0;
       genericDragRef.current.logCounter++;
-      const shouldLog = genericDragRef.current.logCounter % 5 === 0 || (distance > thresholdPixels && !genericDragRef.current.isDragging);
-
-      if (shouldLog) {
-        console.log('[PoolTabletop] Drag threshold check:', {
-          distance,
-          thresholdPixels,
-          isDraggingRef: genericDragRef.current.isDragging,
-          willAddToSlot: distance > thresholdPixels && !genericDragRef.current.isDragging
-        });
-      }
       if (distance > thresholdPixels && !genericDragRef.current.isDragging) {
-        console.log('[PoolTabletop] Threshold exceeded, adding to cursor slot:', genericDragRef.current.objectId);
         genericDragRef.current.isDragging = true;
 
         // Use stored object from ref instead of state to avoid stale closure issues
@@ -1377,7 +1315,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // This prevents immediate re-pickup after dropping back to same panel
         // Using object ID tracking instead of global timer - more reliable
         if (genericDragRef.current.objectId && justDroppedToPoolRef.current.has(genericDragRef.current.objectId)) {
-          logger.log('[PoolTabletop] Object was just dropped to this pool panel, ignoring drag attempt:', genericDragRef.current.objectId);
           genericDragRef.current = {
             objectId: null,
             object: null,
@@ -1390,10 +1327,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           return;
         }
 
-        console.log('[PoolTabletop] Dispatching add-to-cursor-slot event (GENERIC):', {
-          objectId: genericDragRef.current.objectId,
-          fromPoolPanel: poolZone.panelId
-        });
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: genericDragRef.current.objectId,
@@ -1804,17 +1737,10 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
   // Add global mouse listeners for object dragging (for both non-draggable items and draggable objects)
   useEffect(() => {
-    console.log('[PoolTabletop] useEffect drag listeners:', {
-      draggingObject: !!draggingObject,
-      isDraggingDice,
-      isDraggingGeneric
-    });
     if (draggingObject || isDraggingDice || isDraggingGeneric) {
-      console.log('[PoolTabletop] Adding drag listeners');
       window.addEventListener('mousemove', handleObjectMouseMove);
       window.addEventListener('mouseup', handleObjectMouseUp);
       return () => {
-        console.log('[PoolTabletop] Removing drag listeners');
         window.removeEventListener('mousemove', handleObjectMouseMove);
         window.removeEventListener('mouseup', handleObjectMouseUp);
       };
@@ -1831,7 +1757,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     const poolContextMenuElement = target.closest('[data-context-menu="pool"]');
     const submenuElement = target.closest('[data-submenu="true"]');
     if (tableContextMenuElement || poolContextMenuElement || submenuElement) {
-      logger.log('[PoolTabletop] Mouseup inside context menu, ignoring drop handler');
       return;
     }
 
@@ -1871,13 +1796,11 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                            e.clientY >= pileRect.top && e.clientY <= pileRect.bottom;
 
           if (isOverPile) {
-            logger.log('[PoolTabletop] Dropping to pile in pool panel:', { pileId, deckId });
             dropToPile(pileId, deckId);
             return;
           }
         }
         // Pile is in main tabletop - let main handler process it
-        logger.log('[PoolTabletop] Cursor over pile in main tabletop, letting main handler process it');
         return;
       }
       // If not a valid pile, ignore and continue
@@ -1904,17 +1827,14 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                             e.clientY >= deckRect.top && e.clientY <= deckRect.bottom;
 
           if (isOverDeck) {
-            logger.log('[PoolTabletop] Dropping to deck in pool panel:', objectId);
             dropToDeck(objectId);
             return;
           }
         }
         // Deck is in main tabletop - let main handler process it
-        logger.log('[PoolTabletop] Cursor over deck in main tabletop, letting main handler process it:', objectId);
         return;
       }
       // If not a deck, ignore this element and continue to check for pool drop
-      logger.log('[PoolTabletop] Cursor over non-deck object, ignoring for deck drop check');
     }
 
     const cursorSlotObjects = getCursorSlotObjects(state.objects);
@@ -2100,7 +2020,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         justDroppedToPoolRef.current.has(obj.id)
       );
       if (justPickedUpFromThisPanel) {
-        logger.log('[PoolTabletop] Objects were just picked up from this panel, ignoring mouseup for drop');
         return;
       }
 
@@ -2146,21 +2065,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
       const isCursorOverVisibleArea = isOverThisPoolPanel || isOverPoolContent || isOverContainerRect;
 
-      // Log for debugging
-      if (cursorSlotObjects.length > 0) {
-        logger.log('[PoolTabletop] Global mouseup:', {
-          panelId: poolZone.panelId,
-          x, y,
-          isOverThisPoolPanel,
-          isOverPoolContent,
-          isOverContainerRect,
-          isCursorOverVisibleArea,
-          cursorSlotIds: cursorSlotObjects.map(o => o.id)
-        });
-      }
-
       if (isCursorOverVisibleArea) {
-        logger.log('[PoolTabletop] Cursor IS over pool panel, processing drop...');
         // IMPORTANT: Check if cursor is over a deck or pile FIRST
         // If the deck/pile is in THIS pool panel, handle it locally
         // Use elementsFromPoint to check all elements under cursor
@@ -2189,7 +2094,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                                y >= pileRect.top && y <= pileRect.bottom;
 
               if (isOverPile) {
-                logger.log('[PoolTabletop] Global mouseup - dropping to pile in pool panel:', { pileId, deckId });
                 dropToPile(pileId, deckId);
                 e.stopPropagation();
                 e.preventDefault();
@@ -2223,7 +2127,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                                 y >= deckRect.top && y <= deckRect.bottom;
 
               if (isOverDeck) {
-                logger.log('[PoolTabletop] Global mouseup - dropping to deck in pool panel:', objectId);
                 dropToDeck(objectId);
                 e.stopPropagation();
                 e.preventDefault();
@@ -2295,7 +2198,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           const visibleRect = visibleContentArea?.getBoundingClientRect();
           if (!visibleRect) {
             // Can't verify bounds, allow drop anyway
-            logger.warn('[PoolTabletop] Visible rect not found, allowing drop');
           } else {
             // Check if last object is completely within visible content area
             const isFullyVisible = objLeft >= visibleRect.left && objRight <= visibleRect.right &&
@@ -2320,10 +2222,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible) {
               // Object would be partially outside visible area - don't allow drop
               // Unless it's from PLAY_TOP_CARD and center is visible, or at least 50% visible
-              logger.log('[PoolTabletop] Drop rejected - object not fully visible:', {
-                objLeft, objTop, objRight, objBottom,
-                visibleRect: { left: visibleRect.left, top: visibleRect.top, right: visibleRect.right, bottom: visibleRect.bottom }
-              });
               return;
             }
           }
@@ -2360,7 +2258,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         e.stopPropagation();
         e.preventDefault();
       } else {
-        logger.log('[PoolTabletop] Cursor NOT over pool panel, sending to tabletop...');
         // NOT over pool panel - notify Tabletop to handle drop on main tabletop
         // Don't stop propagation - let Tabletop handle it
         window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-tabletop', {
@@ -2394,7 +2291,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Get the visible content area (data-pool-content) - this is the VISIBLE window
       const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
       if (!visibleContentArea) {
-        logger.warn('[PoolTabletop] Visible content area not found');
         return;
       }
 

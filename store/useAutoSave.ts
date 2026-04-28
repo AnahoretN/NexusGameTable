@@ -84,7 +84,6 @@ export function useAutoSave(
         return; // Skip if saved recently
       }
 
-      logger.log('[AutoSave] Emergency backup save (60s timer)...');
       await saveGameState(state);
       lastSaveTimeRef.current = Date.now();
       lastEmergencySaveHashRef.current = stateHash;
@@ -133,8 +132,6 @@ export function useAutoSave(
       const minInterval = 10000; // 10 seconds
 
       if (timeSinceLastSave < minInterval) {
-        const remainingTime = Math.round((minInterval - timeSinceLastSave) / 1000);
-        logger.log(`[AutoSave] Timer expired for ${modifierPlayerId}, but skipping: ${remainingTime}s until next save allowed`);
         delete playerTimersRef.current[modifierPlayerId];
         return;
       }
@@ -150,12 +147,10 @@ export function useAutoSave(
       );
 
       if (isStillDragging || isStillInCursorSlot) {
-        logger.log('[AutoSave] Cancelled: dragging or cursor slot active');
         delete playerTimersRef.current[modifierPlayerId];
         return;
       }
 
-      logger.log(`[AutoSave] Saving game state (triggered by player ${modifierPlayerId})...`);
       await saveGameState(state);
       lastSaveTimeRef.current = Date.now();
       delete playerTimersRef.current[modifierPlayerId];

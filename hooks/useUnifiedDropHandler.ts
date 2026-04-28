@@ -100,7 +100,6 @@ export function useUnifiedDropHandler(options: UseUnifiedDropHandlerOptions) {
 
     // Prevent concurrent processing
     if (isProcessingRef.current) {
-      if (debug) console.log('[UnifiedDropHandler] Already processing, skipping');
       return;
     }
 
@@ -110,56 +109,34 @@ export function useUnifiedDropHandler(options: UseUnifiedDropHandlerOptions) {
     // Check pickup cooldown
     const timeSincePickup = Date.now() - lastPickupTimeRef.current;
     if (timeSincePickup < pickupCooldown) {
-      if (debug) console.log('[UnifiedDropHandler] Pickup cooldown active, skipping:', timeSincePickup);
       return;
     }
 
     // Don't drop if modifiers are pressed (unless specifically handled)
     if (e.ctrlKey || e.metaKey) {
-      if (debug) console.log('[UnifiedDropHandler] Modifier key pressed, skipping');
       return;
     }
 
     // Analyze drop target
     const target = analyzeDropTarget(e.clientX, e.clientY);
 
-    if (debug) {
-      console.log('[UnifiedDropHandler] Processing drop:', {
-        x: e.clientX,
-        y: e.clientY,
-        target,
-        cursorSlotIds: cursorSlotObjects.map(o => o.id)
-      });
-    }
-
     // Find a handler that can process this drop
     isProcessingRef.current = true;
 
     for (const registration of dropHandlerRegistry) {
       if (registration.canHandle(target)) {
-        if (debug) {
-          console.log('[UnifiedDropHandler] Delegating to handler:', registration.id);
-        }
-
         try {
           const handled = await registration.handler(e, target, cursorSlotObjects);
 
           if (handled) {
-            if (debug) {
-              console.log('[UnifiedDropHandler] Drop handled by:', registration.id);
-            }
             e.stopPropagation();
             e.preventDefault();
             return;
           }
         } catch (error) {
-          console.error('[UnifiedDropHandler] Handler error:', registration.id, error);
+          // Error handled silently
         }
       }
-    }
-
-    if (debug) {
-      console.log('[UnifiedDropHandler] No handler processed the drop');
     }
   }, [getCursorSlotObjects, pickupCooldown, debug]);
 

@@ -208,19 +208,11 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
     }));
   }
 
-  logger.log(`[ImageCache] Extracted ${Object.keys(cache).length} images (${Object.keys(cache).length - Object.keys(existingCache).length} new) from ${Object.keys(processedObjects).length} objects`);
 
   // Debug: check DECK objects specifically
   const decks = Object.values(processedObjects).filter((obj: any) => obj.type === 'DECK');
   if (decks.length > 0) {
-    logger.log(`[ImageCache] Processed ${decks.length} decks:`, decks.map((deck: any) => ({
-      id: deck.id,
-      name: deck.name,
-      hasSpriteConfig: !!deck.spriteConfig,
-      hasSpriteUrl: !!deck.spriteConfig?.spriteUrl,
-      spriteUrlType: deck.spriteConfig?.spriteUrl?.substring(0, 20),
-      hasCardBackUrl: !!deck.spriteConfig?.cardBackUrl
-    })));
+    // Debug info removed
   }
 
   // Filter out viewTransform, playerPanelSettings, and internal fields from sync
@@ -328,9 +320,7 @@ export async function saveImageCacheToIDB(cache: ImageCache): Promise<void> {
     });
 
     await Promise.all(promises);
-    logger.log(`[ImageCache] Saved ${Object.keys(cache).length} images to IndexedDB`);
   } catch (error) {
-    logger.error('[ImageCache] Failed to save to IndexedDB:', error);
   }
 }
 
@@ -353,14 +343,12 @@ export async function saveSingleImageToIDB(imageId: string, dataUrl: string): Pr
       const request = store.put(entry);
 
       request.onsuccess = () => {
-        logger.log(`[ImageCache] Saved image ${imageId} to IndexedDB`);
         resolve();
       };
 
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    logger.error('[ImageCache] Failed to save single image:', error);
   }
 }
 
@@ -384,14 +372,12 @@ export async function loadImageCacheFromIDB(): Promise<ImageCache> {
           cache[entry.id] = entry.data;
         });
 
-        logger.log(`[ImageCache] Loaded ${Object.keys(cache).length} images from IndexedDB`);
         resolve(cache);
       };
 
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    logger.error('[ImageCache] Failed to load from IndexedDB:', error);
     return {};
   }
 }
@@ -416,7 +402,6 @@ export async function getImageFromIDB(imageId: string): Promise<string | null> {
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    logger.error('[ImageCache] Failed to get image from IndexedDB:', error);
     return null;
   }
 }
@@ -434,14 +419,12 @@ export async function clearImageCacheIDB(): Promise<void> {
       const request = store.clear();
 
       request.onsuccess = () => {
-        logger.log('[ImageCache] Cleared all images from IndexedDB');
         resolve();
       };
 
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    logger.error('[ImageCache] Failed to clear IndexedDB:', error);
   }
 }
 
@@ -468,7 +451,6 @@ export async function cleanOldImagesFromIDB(daysOld: number = 30): Promise<numbe
           deletedCount++;
           cursor.continue();
         } else {
-          logger.log(`[ImageCache] Cleaned ${deletedCount} old images from IndexedDB`);
           resolve(deletedCount);
         }
       };
@@ -476,7 +458,6 @@ export async function cleanOldImagesFromIDB(daysOld: number = 30): Promise<numbe
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    logger.error('[ImageCache] Failed to clean old images:', error);
     return 0;
   }
 }
@@ -502,7 +483,6 @@ export async function getIDBCacheInfo(): Promise<{ count: number; totalSize: num
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    logger.error('[ImageCache] Failed to get cache info:', error);
     return { count: 0, totalSize: 0 };
   }
 }
@@ -603,7 +583,6 @@ export function removeFromManagedCache(imageId: string): boolean {
 export function clearManagedCache(): void {
   managedCache = {};
   currentCacheSize = 0;
-  logger.log('[ImageCache] Managed cache cleared');
 }
 
 /**
@@ -624,10 +603,8 @@ function evictLRUEntries(bytesToFree: number): void {
     delete managedCache[imageId];
     freedBytes += entry.size;
 
-    logger.log(`[ImageCache] Evicted LRU image ${imageId} (${(entry.size / 1024).toFixed(2)}KB)`);
   }
 
-  logger.log(`[ImageCache] Freed ${(freedBytes / 1024 / 1024).toFixed(2)}MB from cache`);
 }
 
 /**
@@ -650,7 +627,6 @@ export function cleanOldManagedCacheEntries(maxAgeMs: number = MAX_CACHE_AGE_MS)
   }
 
   if (entriesToRemove.length > 0) {
-    logger.log(`[ImageCache] Cleaned ${entriesToRemove.length} old entries (${(totalSizeFreed / 1024 / 1024).toFixed(2)}MB)`);
   }
 
   return entriesToRemove.length;
@@ -704,11 +680,9 @@ export function startManagedCacheCleanup(intervalMs: number = 5 * 60 * 1000): ()
     const stats = getManagedCacheStats();
 
     // Log current stats
-    logger.log(`[ImageCache] Cleanup check: ${stats.count} entries, ${stats.totalSizeMB}MB`);
 
     // Clean old entries if cache is getting full
     if (currentCacheSize > MAX_CACHE_SIZE_BYTES * 0.8) {
-      logger.log('[ImageCache] Cache is 80% full, running cleanup...');
       cleanOldManagedCacheEntries(MAX_CACHE_AGE_MS / 2); // Clean entries older than 15 days
     }
   }, intervalMs);
@@ -735,5 +709,4 @@ export function initManagedCacheFromImageCache(cache: ImageCache): void {
   for (const [imageId, data] of Object.entries(cache)) {
     addToManagedCache(imageId, data);
   }
-  logger.log(`[ImageCache] Initialized managed cache with ${Object.keys(cache).length} images`);
 }

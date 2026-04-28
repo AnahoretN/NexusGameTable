@@ -21,16 +21,13 @@ let cacheLoadPromise: Promise<ImageCache> | null = null;
  */
 async function getOrLoadIDBCache(): Promise<ImageCache> {
   if (cachedIDBCache) {
-    logger.log(`[SAVE] Using cached IDB cache (${Object.keys(cachedIDBCache).length} images)`);
     return cachedIDBCache;
   }
 
   if (cacheLoadPromise) {
-    logger.log('[SAVE] Waiting for IDB cache load...');
     return cacheLoadPromise;
   }
 
-  logger.log('[SAVE] Loading IDB cache...');
   cacheLoadPromise = loadImageCacheFromIDB();
   const cache = await cacheLoadPromise;
   cachedIDBCache = cache;
@@ -93,32 +90,10 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         .catch(error => {
           logger.error('[SAVE] Failed to save images to IndexedDB:', error);
         });
-      logger.log(`[SAVE] Saved ${Object.keys(newImages).length} new images to IndexedDB (skipped ${Object.keys(existingIDBCache).length} existing)`);
     }
 
     // Then: Convert EXTRACTED objects (with img_ref://) to path metadata for localStorage
     const convertedObjects = convertImagesToPathMetadata(extractedState.objects || {});
-
-    // Debug: Check if any blob URLs remain after conversion
-    let blobCount = 0;
-    let dataUrlCount = 0;
-    Object.values(convertedObjects).forEach(obj => {
-      const checkForBlobs = (item: any) => {
-        if (typeof item === 'string') {
-          if (item.startsWith('blob:')) blobCount++;
-          if (item.startsWith('data:image/')) dataUrlCount++;
-        } else if (typeof item === 'object' && item !== null) {
-          Object.values(item).forEach(checkForBlobs);
-        }
-      };
-      checkForBlobs(obj);
-    });
-
-    if (blobCount > 0 || dataUrlCount > 0) {
-      logger.error(`[SAVE] ERROR: ${blobCount} blob URLs and ${dataUrlCount} data URLs remain after conversion!`);
-    } else {
-      logger.log('[SAVE] All images successfully converted to metadata');
-    }
 
     // Create stored data structure
     const storedData: StoredGameState = {
@@ -168,11 +143,6 @@ export const saveGameState = async (state: GameState): Promise<void> => {
 
       // Debug: log size of each component
       const size = new Blob([json]).size;
-      const objectsSize = new Blob([JSON.stringify(storedData.state.objects)]).size;
-      const drawingsSize = storedData.state.drawings ? new Blob([JSON.stringify(storedData.state.drawings)]).size : 0;
-      const playersSize = storedData.state.players ? new Blob([JSON.stringify(storedData.state.players)]).size : 0;
-
-      logger.log(`[SAVE] Total size: ${Math.round(size / 1024)}KB (objects: ${Math.round(objectsSize / 1024)}KB, drawings: ${Math.round(drawingsSize / 1024)}KB, players: ${Math.round(playersSize / 1024)}KB)`);
 
       localStorage.setItem(STORAGE_KEY, json);
       logger.log(`[SAVE] Game saved successfully (${Math.round(size / 1024)}KB)`);

@@ -5822,7 +5822,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
           } else if (hasManualConnection) {
               // Using manual P2P connection (DataChannelAdapter has PeerJS-compatible interface)
-              console.log('[Manual P2P] Sending action to host:', action.type);
               if (action.type === 'UPDATE_PLAYER_PANEL_SETTINGS') {
                   manualConnectionRef.current.send({ type: 'ACTION', payload: action });
                   localDispatch(action);  // Optimistic update
@@ -5920,7 +5919,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Also broadcast to manual P2P connection guest
       if (isHost && manualConnectionRef.current && manualConnectionRef.current.open === true) {
-        console.log('[Manual P2P] Broadcasting state change to manual connection guest');
         const { state: stateWithRefs, imageCache } = extractImagesFromState(stateForBroadcast);
         try {
           manualConnectionRef.current.send({ type: 'SYNC_STATE', payload: stateWithRefs });
@@ -5928,7 +5926,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             manualConnectionRef.current.send({ type: 'IMAGE_CACHE', payload: imageCache });
           }
         } catch (e) {
-          console.error('[Manual P2P] Error broadcasting state:', e);
+          // Error broadcasting state silently
         }
       }
 
@@ -5958,14 +5956,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Only set up handlers once per connection (tracked by peer ID)
       if (manualConnectionSetupRef.current === conn.peer) {
-          console.log('[Manual P2P] Handlers already set up for:', conn.peer, 'skipping');
           return;
       }
 
-      console.log('[Manual P2P] Setting up connection handlers for:', conn.peer, 'open:', conn.open);
-
       const handleData = (data: any) => {
-          console.log('[Manual P2P] Received data:', data.type);
           if (data.type === 'SYNC_STATE') {
               // Restore images from local cache before dispatching
               const restoredState = restoreImagesFromCache(data.payload, {});
@@ -6022,7 +6016,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // If connection is already open when we set up handlers, trigger handleOpen manually
       // This handles the case where the data channel opened before GameContext registered handlers
       if (conn.open) {
-          console.log('[Manual P2P] Connection already open, triggering handleOpen manually');
           setTimeout(() => handleOpen(), 0);
       }
 

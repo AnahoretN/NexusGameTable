@@ -372,14 +372,6 @@ export function getCursorSlotObjects(objects: Record<string, TableObject>): Tabl
     ].includes(obj.type);
   });
 
-  // Log only when cursor slot has objects (for debugging drop issues)
-  if (result.length > 0) {
-    logger.log('[getCursorSlotObjects] RESULT:', {
-      count: result.length,
-      ids: result.map(o => o.id)
-    });
-  }
-
   return result;
 }
 

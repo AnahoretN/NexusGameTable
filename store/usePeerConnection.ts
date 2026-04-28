@@ -136,15 +136,12 @@ async function tryPeerJSServer(
       ...serverConfig,
     };
 
-    console.log(`[Connect] Trying PeerJS server: ${serverConfig.host}`);
-
     const peer = new Peer(peerConfig);
     let resolved = false;
 
     const timeoutId = setTimeout(() => {
       if (!resolved) {
         resolved = true;
-        console.warn(`[Connect] Timeout connecting to ${serverConfig.host}`);
         try {
           peer.destroy();
         } catch (e) {
@@ -167,7 +164,6 @@ async function tryPeerJSServer(
       if (!resolved) {
         resolved = true;
         clearTimeout(timeoutId);
-        console.warn(`[Connect] ❌ Error from ${serverConfig.host}:`, err?.type || err);
         try {
           peer.destroy();
         } catch (e) {
@@ -188,8 +184,6 @@ async function tryTrysteroTorrent(
 ): Promise<TrysteroRoom | null> {
   return new Promise((resolve) => {
     try {
-      console.log(`[Connect] Trying Trystero with torrent trackers...`);
-
       const config = {
         appId: 'nexus-game-table',
         trackers: TORRENT_TRACKERS,
@@ -200,17 +194,15 @@ async function tryTrysteroTorrent(
       // Trystero не имеет явного события подключения, но мы можем
       // проверить что room создан успешно
       setTimeout(() => {
-        console.log(`[Connect] ✅ Trystero room created: ${roomId}`);
+        console.log(`[Connect] ✅ Trystero connected: ${roomId}`);
         resolve(room);
       }, 1000);
 
       const timeoutId = setTimeout(() => {
-        console.warn(`[Connect] ❌ Trystero timeout`);
         resolve(null);
       }, timeout);
 
     } catch (error) {
-      console.error(`[Connect] ❌ Trystero error:`, error);
       resolve(null);
     }
   });

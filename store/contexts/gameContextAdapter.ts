@@ -146,22 +146,7 @@ export function checkLegacyUsage(componentName: string, usedFields: string[]) {
     );
 
     if (legacyFields.length > 0) {
-      console.warn(
-        `[Migration Warning] ${componentName} is using legacy GameContext fields:`,
-        legacyFields
-      );
-      console.info(
-        `[Migration Hint] Consider migrating to:`,
-        legacyFields.map(field => {
-          if (['players', 'activePlayerId', 'playerPermissions'].includes(field)) {
-            return `usePlayers() for ${field}`;
-          } else if (field === 'viewTransform') {
-            return `useViewTransform() for ${field}`;
-          } else {
-            return `useUI() for ${field}`;
-          }
-        }).join(', ')
-      );
+      // Migration warnings suppressed
     }
   }
 }

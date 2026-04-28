@@ -172,30 +172,6 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
 
     const backgroundStyles = getBackgroundStyles();
 
-    logger.log('[ObjectRenderer] Rendering CARD:', {
-      cardId: obj.id,
-      cardName: card.name,
-      faceUp: card.faceUp,
-      isGM: isGM
-    });
-
-    logger.log('[ObjectRenderer] CARD action buttons:', {
-      cardId: obj.id,
-      cardName: card.name,
-      deckId: card.deckId,
-      actionButtons: actionButtons,
-      actionButtonsCount: actionButtons?.length || 0
-    });
-
-    // Log each button being rendered
-    if (actionButtons && actionButtons.length > 0) {
-      logger.log('[ObjectRenderer] Rendering buttons:', actionButtons);
-      actionButtons.forEach(action => {
-        const hasConfig = !!getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects);
-        logger.log(`[ObjectRenderer] Button ${action}:`, hasConfig ? 'WILL RENDER' : 'MISSING CONFIG');
-      });
-    }
-
     return (
       <div className="group relative">
         <div
@@ -269,7 +245,6 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
               {actionButtons.map((action) => {
                 const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects);
                 if (!buttonConfig) {
-                  logger.log('[ObjectRenderer] No button config for action:', action);
                   return null;
                 }
                 return (
@@ -635,7 +610,6 @@ function getActionButtonConfig(
 
   const config = configs[action];
   if (!config) {
-    logger.log('[ObjectRenderer] No config for action:', action, 'available actions:', Object.keys(configs));
     return null;
   }
   return config;

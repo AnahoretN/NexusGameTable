@@ -355,42 +355,15 @@ export const Tabletop: React.FC = () => {
 
       const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, sourceZoom, fromPoolPanel } = customEvent.detail;
 
-      // Debug log for pool panel items
-      if (fromPoolPanel) {
-        console.log('[TabletopRefactored] Pool panel item received:', {
-          cardId,
-          fromPoolPanel,
-          sourceZoom,
-          clickOffsetX_PX,
-          clickOffsetY_PX,
-          clickOffsetX,
-          clickOffsetY
-        });
-      }
-
-      const stack = new Error().stack;
-      console.log('[TabletopRefactored] handleAddToCursorSlot called:', {
-        cardId,
-        source,
-        fromPoolPanel,
-        clientX,
-        clientY,
-        currentSlotLength: cursorSlotRef.current.length,
-        currentSlotIds: cursorSlotRef.current.map(o => o.id)
-      });
-      console.log('[TabletopRefactored] Stack trace:', stack);
-
       const obj = state.objects[cardId];
 
       if (!obj) {
-        logger.warn('[TabletopRefactored] handleAddToCursorSlot: Object not found:', cardId);
         return;
       }
 
       // Check if object is already in cursor slot
       // Use cursorSlotRef.current to get the latest value (not from closure)
       if (cursorSlotRef.current.some(item => item.id === cardId)) {
-        console.log('[TabletopRefactored] Object already in cursor slot, skipping:', cardId);
         return;
       }
 
@@ -720,7 +693,6 @@ export const Tabletop: React.FC = () => {
       }
 
       // IMPORTANT: Hide object from table while in cursor slot (same as in addToCursorSlot)
-      console.log('[TabletopRefactored] Dispatching UPDATE_OBJECT with inCursorSlot=true:', cardId);
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
@@ -761,18 +733,11 @@ export const Tabletop: React.FC = () => {
       const customEvent = e as CustomEvent<{ reason?: string; objectIds?: string[] }>;
       const { objectIds } = customEvent.detail || {};
 
-      logger.log('[TabletopRefactored] handleClearCursorSlot called:', {
-        objectIds,
-        currentSlotLength: cursorSlotRef.current.length,
-        currentSlotIds: cursorSlotRef.current.map(o => o.id)
-      });
-
       // If specific object IDs are provided, only clear those from cursor slot
       // This is used when dropping objects to pool panels - we want to clear
       // only the dropped objects, not the entire slot
       if (objectIds && objectIds.length > 0) {
         // Filter out the dropped objects from cursor slot
-        logger.log('[TabletopRefactored] Filtering cursor slot, removing:', objectIds);
         setCursorSlot(prev => prev.filter(item => !objectIds.includes(item.id)));
         return;
       }
