@@ -26,6 +26,11 @@ interface EraserSettings {
   thickness: number;
 }
 
+// Ruler settings
+interface RulerSettings {
+  step: number; // Step size in VU (0 = disabled, 1-500 = step size)
+}
+
 // Zoom settings
 interface ZoomSettings {
   level: number;
@@ -36,6 +41,7 @@ interface ToolSettings {
   selectedTool: DrawingTool;
   marker: MarkerSettings;
   eraser: EraserSettings;
+  ruler: RulerSettings;
   zoom: ZoomSettings;
 }
 
@@ -50,6 +56,10 @@ const DEFAULT_ERASER_SETTINGS: EraserSettings = {
   thickness: 20
 };
 
+const DEFAULT_RULER_SETTINGS: RulerSettings = {
+  step: 0 // Disabled by default
+};
+
 const DEFAULT_ZOOM_SETTINGS: ZoomSettings = {
   level: 100
 };
@@ -58,6 +68,7 @@ const DEFAULT_TOOL_SETTINGS: ToolSettings = {
   selectedTool: 'none',
   marker: DEFAULT_MARKER_SETTINGS,
   eraser: DEFAULT_ERASER_SETTINGS,
+  ruler: DEFAULT_RULER_SETTINGS,
   zoom: DEFAULT_ZOOM_SETTINGS
 };
 
@@ -66,6 +77,7 @@ interface ToolSettingsContextType {
   setSelectedTool: (tool: DrawingTool) => void;
   updateMarkerSettings: (settings: Partial<MarkerSettings>) => void;
   updateEraserSettings: (settings: Partial<EraserSettings>) => void;
+  updateRulerSettings: (settings: Partial<RulerSettings>) => void;
   updateZoomSettings: (settings: Partial<ZoomSettings>) => void;
 }
 
@@ -82,6 +94,7 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
   // Use refs to track previous values for effect comparison
   const prevMarkerSettingsRef = useRef<MarkerSettings>(settings.marker);
   const prevEraserSettingsRef = useRef<EraserSettings>(settings.eraser);
+  const prevRulerSettingsRef = useRef<RulerSettings>(settings.ruler);
   const prevZoomSettingsRef = useRef<ZoomSettings>(settings.zoom);
   const isInternalZoomChangeRef = useRef(false); // Track if zoom change is internal
 
@@ -113,6 +126,16 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
       return {
         ...prev,
         eraser: updatedEraser
+      };
+    });
+  };
+
+  const updateRulerSettings = (newSettings: Partial<RulerSettings>) => {
+    setSettings(prev => {
+      const updatedRuler = { ...prev.ruler, ...newSettings };
+      return {
+        ...prev,
+        ruler: updatedRuler
       };
     });
   };
@@ -160,6 +183,17 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
       prevEraserSettingsRef.current = settings.eraser;
     }
   }, [settings.eraser]);
+
+  // Notify external components when ruler settings change
+  useEffect(() => {
+    const prevRuler = prevRulerSettingsRef.current;
+    if (settings.ruler !== prevRuler) {
+      window.dispatchEvent(new CustomEvent('ruler-settings-changed', {
+        detail: settings.ruler
+      }));
+      prevRulerSettingsRef.current = settings.ruler;
+    }
+  }, [settings.ruler]);
 
   // Notify external components when zoom settings change
   useEffect(() => {
@@ -223,7 +257,7 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
   }, []);
 
   return (
-    <ToolSettingsContext.Provider value={{ settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings }}>
+    <ToolSettingsContext.Provider value={{ settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings }}>
       {children}
     </ToolSettingsContext.Provider>
   );
@@ -251,4 +285,9 @@ export function useMarkerSettings(): MarkerSettings {
 export function useEraserSettings(): EraserSettings {
   const { settings } = useToolSettings();
   return settings.eraser;
+}
+
+export function useRulerSettings(): RulerSettings {
+  const { settings } = useToolSettings();
+  return settings.ruler;
 }

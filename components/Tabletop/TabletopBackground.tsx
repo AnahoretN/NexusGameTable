@@ -39,6 +39,7 @@ interface TabletopBackgroundProps {
   currentTool: string;
   v2p: (vu: number) => number;
   cursorSlotLength: number;
+  rulerStep: number; // Step size in VU (0 = disabled)
 }
 
 /**
@@ -74,7 +75,8 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
   isRulerRightClick,
   currentTool,
   v2p,
-  cursorSlotLength
+  cursorSlotLength,
+  rulerStep
 }) => {
   return (
     <>
@@ -191,16 +193,21 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
                 const midX = (rulerStart.x + rulerCurrent.x) / 2;
                 const midY = (rulerStart.y + rulerCurrent.y) / 2;
 
+                // Calculate step count if step is enabled
+                const stepText = rulerStep > 0
+                  ? ` (${(lineLength / rulerStep).toFixed(1)}st)`
+                  : '';
+
                 return (
                   <text
                     x={v2p(midX)}
                     y={v2p(midY) - 5}
                     fill="white"
-                    fontSize={v2p(3)}
+                    fontSize={v2p(15)}
                     textAnchor="middle"
                     style={{ pointerEvents: 'none' }}
                   >
-                    {lineLength.toFixed(1)} VU
+                    {lineLength.toFixed(1)}{stepText}
                   </text>
                 );
               })()}
@@ -220,7 +227,8 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
     prevProps.isRulerRightClick === nextProps.isRulerRightClick &&
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.v2p === nextProps.v2p &&
-    prevProps.cursorSlotLength === nextProps.cursorSlotLength
+    prevProps.cursorSlotLength === nextProps.cursorSlotLength &&
+    prevProps.rulerStep === nextProps.rulerStep
   );
 });
 
@@ -236,7 +244,8 @@ export const TabletopBackgroundMemo = memo(TabletopBackground, (prevProps, nextP
     prevProps.isRulerRightClick === nextProps.isRulerRightClick &&
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.v2p === nextProps.v2p &&
-    prevProps.cursorSlotLength === nextProps.cursorSlotLength
+    prevProps.cursorSlotLength === nextProps.cursorSlotLength &&
+    prevProps.rulerStep === nextProps.rulerStep
   );
 });
 

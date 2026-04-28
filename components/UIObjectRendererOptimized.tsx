@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
 import { X, Minus, Plus, Eye, EyeOff, Lock, Unlock, Settings, Trash2, Clock, Keyboard, Palette, Network, Server, PlusCircle, XCircle } from 'lucide-react';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
-import { useActivePlayerId, useIsGM, usePlayerList, usePixelsPerVU, usePlayerPermissions, useLanguage, useHyperscaleLayers } from '../store/contexts';
+import { useActivePlayerId, useIsGM, usePlayerList, usePixelsPerVU, usePlayerPermissions, useLanguage, useHyperscaleLayers, useLanguageActions } from '../store/contexts';
 import { getConnectionSettings, updateConnectionSettings, removeCustomSignalingServer, clearCustomSignalingServers, CustomSignalingServer } from '../utils/localSettings';
 
 // 🔥 OPTIMIZED: Zustand version of UIObjectRenderer
@@ -105,6 +105,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   const playerPermissions = usePlayerPermissions();
   const language = useLanguage();
   const hyperscaleLayers = useHyperscaleLayers();
+  const { setLanguage } = useLanguageActions();
 
   const { isDragging: isDraggingOverPoolState, targetPoolPanelId } = useDragOverStore();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1252,9 +1253,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                   value={language || 'en'}
                   onChange={async (e) => {
                     const newLang = e.target.value as AppLanguage;
-                    localStorage.setItem('app-language', newLang);
                     await preloadTranslations(newLang as Locale);
-                    dispatch({ type: 'UPDATE_LANGUAGE', payload: newLang });
+                    setLanguage(newLang);
                   }}
                   className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white text-sm"
                 >

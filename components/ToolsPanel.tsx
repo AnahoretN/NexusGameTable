@@ -18,6 +18,8 @@ function getToolTranslation(language: AppLanguage, key: string): string {
     toolRulerDesc: 'Measure distances',
     toolZoom: 'Zoom',
     toolZoomDesc: 'Zoom in/out',
+    rulerStep: 'Step',
+    rulerStepDesc: 'Ruler step size in VU (0 = disabled)',
   };
   return translate(toolTranslations[key] || key, language as Locale);
 }
@@ -57,7 +59,7 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Use shared tool settings context
-  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings } = useToolSettings();
+  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
 
   // Handle tool selection
   const handleToolSelect = useCallback((tool: DrawingTool) => {
@@ -195,6 +197,29 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
               </div>
             )}
 
+            {/* Ruler Settings (shown when ruler is selected) */}
+            {settings.selectedTool === 'ruler' && (
+              <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-1">{translate('Step', language as Locale)}: {settings.ruler.step} VU</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="500"
+                    step="1"
+                    value={settings.ruler.step}
+                    onChange={(e) => updateRulerSettings({ step: Number(e.target.value) })}
+                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                  />
+                  <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                    <span>0</span>
+                    <span>250</span>
+                    <span>500</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Zoom Settings (shown when zoom is selected) */}
             {settings.selectedTool === 'zoom' && (
               <div className="space-y-2 p-3 bg-slate-900 rounded-lg">
@@ -254,7 +279,7 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
   isCollapsed = false,
   language = 'en'
 }) => {
-  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings } = useToolSettings();
+  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
 
   // Handle tool selection
   const handleToolSelect = useCallback((tool: DrawingTool) => {
@@ -365,6 +390,29 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
                   <span>15px</span>
                   <span>50px</span>
                   <span>100px</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Ruler Settings (shown when ruler is selected) */}
+          {settings.selectedTool === 'ruler' && (
+            <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-1">{translate('Step', language as Locale)}: {settings.ruler.step} VU</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="500"
+                  step="1"
+                  value={settings.ruler.step}
+                  onChange={(e) => updateRulerSettings({ step: Number(e.target.value) })}
+                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                />
+                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                  <span>0</span>
+                  <span>250</span>
+                  <span>500</span>
                 </div>
               </div>
             </div>

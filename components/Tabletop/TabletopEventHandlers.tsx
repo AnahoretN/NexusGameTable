@@ -28,7 +28,6 @@ interface TabletopEventHandlersProps {
   setCursorSlotSource: React.Dispatch<React.SetStateAction<'hold' | 'shift' | 'archetype' | null>>;
   cursorSlotSource: 'hold' | 'shift' | 'archetype' | null;
   currentTool: string;
-  setCurrentTool: React.Dispatch<React.SetStateAction<string>>;
   isShiftPressed: boolean;
   setIsShiftPressed: React.Dispatch<React.SetStateAction<boolean>>;
   isCtrlPressed: boolean;
@@ -1096,6 +1095,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Context menu handler
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
+    // Prevent context menu when using ruler tool
+    if (currentTool === 'ruler') {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     // Block context menu if settings modal is open
     if (isSettingsModalOpen) return;
     e.preventDefault();
@@ -1106,7 +1112,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       object: obj,
       shiftKey: isShiftPressed
     });
-  }, [isSettingsModalOpen, isShiftPressed, setContextMenu]);
+  }, [currentTool, isSettingsModalOpen, isShiftPressed, setContextMenu]);
 
   // Pile context menu handler
   const handlePileContextMenu = useCallback((e: React.MouseEvent, pile: any, deck: any) => {
@@ -1122,17 +1128,43 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Mouse down handler WITH LOGGING
   const handleMouseDown = useCallback((e: React.MouseEvent, objId?: string) => {
+    // Helper function to start ruler measurement
+    const startRulerMeasurement = () => {
+      const rect = scrollContainerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const startX = e.clientX - rect.left;
+        const startY = e.clientY - rect.top;
+        setRulerStart({ x: p2v(startX), y: p2v(startY) });
+        setRulerCurrent(null);
+      }
+    };
+
     // Handle clicking on empty space (clear context menus, rulers, etc.)
     if (!objId) {
-      // Clear ruler if active
+      // Ruler tool: start measuring on left mouse down (hold and drag behavior)
       if (currentTool === 'ruler' && e.button === 0) {
-        if (!rulerStart) {
-          const rect = (e.target as HTMLElement).getBoundingClientRect();
-          const startX = e.clientX - rect.left;
-          const startY = e.clientY - rect.top;
-          setRulerStart({ x: p2v(startX), y: p2v(startY) });
-        }
+        startRulerMeasurement();
       }
+      // Ruler tool: enable radius circle on right mouse down (while holding left)
+      if (currentTool === 'ruler' && e.button === 2 && rulerStart) {
+        setIsRulerRightClick(true);
+      }
+      return;
+    }
+
+    // Ruler tool: when clicking on objects, also start measurement
+    if (currentTool === 'ruler') {
+      if (e.button === 0) {
+        // Left click on object - start ruler from click position
+        startRulerMeasurement();
+        return;
+      }
+      if (e.button === 2 && rulerStart) {
+        // Right click while ruler is active - enable radius circle
+        setIsRulerRightClick(true);
+        return;
+      }
+      // For ruler tool, don't process object interactions
       return;
     }
 
@@ -1160,12 +1192,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       if (isShiftPressed && isOwner) {
         setDeleteCandidateId(objId);
       }
-      return;
-    }
-
-    // Handle right-click for ruler radius
-    if (currentTool === 'ruler' && e.button === 2) {
-      setIsRulerRightClick(true);
       return;
     }
 
@@ -1284,6 +1310,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setDraggingId,
     setDeleteCandidateId,
     p2v,
+    scrollContainerRef,
     dragThresholdRef,
     dragOffsetRef,
     cursorSlot,
@@ -1401,7 +1428,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       }
     }
 
-    // Handle ruler tool
+    // Handle ruler tool: update current position while dragging
     if (currentTool === 'ruler' && rulerStart && (e.target as HTMLElement)?.closest('[data-tabletop="true"]')) {
       const rect = scrollContainerRef.current?.getBoundingClientRect();
       if (rect) {
@@ -1571,9 +1598,20 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Mouse up handler WITH LOGGING
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
-    // Handle ruler tool right-click release
-    if (currentTool === 'ruler' && isRulerRightClick) {
-      setIsRulerRightClick(false);
+    // Handle ruler tool: clear ruler on left mouse up, clear radius on right mouse up
+    if (currentTool === 'ruler') {
+      const button = e?.button;
+      // Left button released: clear entire ruler
+      if (button === 0 && rulerStart) {
+        setRulerStart(null);
+        setRulerCurrent(null);
+        setIsRulerRightClick(false);
+      }
+      // Right button released: clear only radius circle
+      if (button === 2 && isRulerRightClick) {
+        setIsRulerRightClick(false);
+      }
+      return;
     }
 
     // Handle dragging completion
@@ -1721,6 +1759,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     }
   }, [
     currentTool,
+    rulerStart,
+    setRulerStart,
+    setRulerCurrent,
     isRulerRightClick,
     setIsRulerRightClick,
     draggingId,
@@ -1874,8 +1915,14 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // Logic to add cell would go here
   }, [setNexusBoardAddingCell]);
 
-  // Global click handler
+  // Global click handler (also handles contextmenu event)
   const handleGlobalClick = useCallback((e: MouseEvent) => {
+    // Prevent context menu when using ruler tool
+    if (currentTool === 'ruler' && e.type === 'contextmenu') {
+      e.preventDefault();
+      return;
+    }
+
     // Clear context menu on outside click
     const target = e.target as HTMLElement;
     if (!target.closest('.context-menu') && !target.closest('[data-prevent-close="true"]')) {

@@ -98,7 +98,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   // Use centralized tool settings context
-  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateZoomSettings } = useToolSettings();
+  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
   const currentDrawingTool = useDrawingTool();
 
   const [isShiftPressed, setIsShiftPressed] = useState(false);
@@ -859,6 +859,32 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       <span>15px</span>
                       <span>50px</span>
                       <span>100px</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Ruler Settings (shown when ruler tool is selected) */}
+              {settings.selectedTool === 'ruler' && (
+                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
+                  {/* Step slider */}
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-1">
+                      {translate('Step', language as Locale)}: {settings.ruler.step} VU
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="500"
+                      step="1"
+                      value={settings.ruler.step}
+                      onChange={(e) => updateRulerSettings({ step: Number(e.target.value) })}
+                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                    />
+                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                      <span>0</span>
+                      <span>250</span>
+                      <span>500</span>
                     </div>
                   </div>
                 </div>

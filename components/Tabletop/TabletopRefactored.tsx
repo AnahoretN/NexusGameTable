@@ -19,6 +19,7 @@ import { useActivePlayerId, useIsGM, useViewTransform, useHyperscaleLayers, useL
 import { useLocalSettings } from '../../hooks/useLocalSettings';
 import { useDragOverStore } from '../../store/dragOverState';
 import { executeClickAction as executeObjectClickAction } from '../../utils/objectActionHandlers';
+import { useToolSettings } from '../../contexts/ToolSettingsContext';
 
 // Import refactored Tabletop components
 import {
@@ -134,8 +135,10 @@ export const Tabletop: React.FC = () => {
   } = useObjectFilters(state, hyperscaleLayers);
 
   // === State Management ===
-  // Tool state
-  const [currentTool, setCurrentTool] = useState<string>('none');
+  // Tool state - use ToolSettingsContext instead of local state
+  const { settings: toolSettings } = useToolSettings();
+  const currentTool = toolSettings.selectedTool;
+  const rulerStep = toolSettings.ruler.step;
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
 
@@ -219,7 +222,6 @@ export const Tabletop: React.FC = () => {
     setCursorSlotSource,
     cursorSlotSource,
     currentTool,
-    setCurrentTool,
     isShiftPressed,
     setIsShiftPressed,
     isCtrlPressed,
@@ -968,6 +970,7 @@ export const Tabletop: React.FC = () => {
         currentTool={currentTool}
         v2p={v2p}
         cursorSlotLength={cursorSlot.length}
+        rulerStep={rulerStep}
       />
 
       {/* Remote Objects Layer */}

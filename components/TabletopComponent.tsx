@@ -21,6 +21,7 @@ import { useDragOverStore } from '../store/dragOverState';
 import { clampScrollToPlayableArea } from '../utils/viewportConstraints';
 import { executeContextMenuAction } from '../utils/contextMenuActions';
 import { ClickTooltip } from './Tabletop/ClickTooltip';
+import { useToolSettings } from '../contexts/ToolSettingsContext';
 
 // Import refactored Tabletop components
 import {
@@ -131,8 +132,10 @@ export const Tabletop: React.FC = () => {
   };
 
   // === State Management ===
-  // Tool state
-  const [currentTool, setCurrentTool] = useState<string>('none');
+  // Tool state - use ToolSettingsContext instead of local state
+  const { settings: toolSettings } = useToolSettings();
+  const currentTool = toolSettings.selectedTool;
+  const rulerStep = toolSettings.ruler.step;
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
 
@@ -217,7 +220,6 @@ export const Tabletop: React.FC = () => {
     cursorSlotSource,
     setCursorSlotSource,
     currentTool,
-    setCurrentTool,
     isShiftPressed,
     setIsShiftPressed,
     isCtrlPressed,
@@ -614,6 +616,7 @@ export const Tabletop: React.FC = () => {
         currentTool={currentTool}
         v2p={v2p}
         cursorSlotLength={cursorSlot.length}
+        rulerStep={rulerStep}
       />
 
       {/* Remote Objects Layer */}
