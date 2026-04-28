@@ -46,7 +46,7 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
     { id: 'flip', label: translate('Flip', language as Locale) },
     { id: 'hide', label: translate('Hide/Show', language as Locale) },
     { id: 'lock', label: translate('Lock/Unlock', language as Locale) },
-    { id: 'pinToViewport', label: translate('Pin/Unpin', language as Locale) },
+    { id: 'pin', label: translate('Pin/Unpin', language as Locale) },
     { id: 'layerUp', label: translate('Layer Up', language as Locale) },
     { id: 'layerDown', label: translate('Layer Down', language as Locale) },
     { id: 'bringToFront', label: translate('To Top', language as Locale) },
@@ -61,15 +61,52 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
 }
 
 // Deck-specific actions (ONLY for decks, NOT for tokens, cards, etc.)
+// Ordered to match the deck context menu structure
 function getDeckActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
   return [
-    { id: 'shuffleDeck', label: translate('Shuffle', language as Locale) },
-    { id: 'searchDeck', label: translate('Search', language as Locale) },
+    // Top Deck section
+    { id: 'topDeck', label: translate('Top Deck (section)', language as Locale) },
+    // Individual actions within Top Deck submenu (controlled by parent section)
     { id: 'draw', label: translate('Draw Card', language as Locale) },
     { id: 'playTopCard', label: translate('Play Top', language as Locale) },
     { id: 'millTopCard', label: translate('Mill', language as Locale) },
     { id: 'toBottom', label: translate('Top to Bottom', language as Locale) },
     { id: 'showTop', label: translate('Show Top', language as Locale) },
+    { id: 'hideTop', label: translate('Hide Top', language as Locale) },
+    // Main deck actions
+    { id: 'searchDeck', label: translate('Search', language as Locale) },
+    { id: 'shuffleDeck', label: translate('Shuffle', language as Locale) },
+    // Piles section
+    { id: 'piles', label: translate('Piles (section)', language as Locale) },
+    // Return section
+    { id: 'returnAll', label: translate('Return... (section)', language as Locale) },
+    { id: 'returnAllAndShuffle', label: translate('Return All and Shuffle', language as Locale) },
+    { id: 'returnAllExceptHands', label: translate('Return All Except Hands', language as Locale) },
+  ];
+}
+
+// Full context menu actions for decks in the correct order
+function getDeckContextMenuActions(language: AppLanguage = 'en'): { id: ContextAction; label: string }[] {
+  return [
+    // Top Deck section
+    { id: 'topDeck', label: translate('Top Deck (section)', language as Locale) },
+    // Search and Shuffle
+    { id: 'searchDeck', label: translate('Search', language as Locale) },
+    { id: 'shuffleDeck', label: translate('Shuffle', language as Locale) },
+    // Piles section
+    { id: 'piles', label: translate('Piles (section)', language as Locale) },
+    // Return section
+    { id: 'returnAll', label: translate('Return... (section)', language as Locale) },
+    // Change Layer section
+    { id: 'layer', label: translate('Change Layer (section)', language as Locale) },
+    // Rotation section
+    { id: 'rotate', label: translate('Rotation (section)', language as Locale) },
+    // Object management actions
+    { id: 'hide', label: translate('Show/Hide', language as Locale) },
+    { id: 'lock', label: translate('Lock/Unlock', language as Locale) },
+    { id: 'pin', label: translate('Pin/Unpin', language as Locale) },
+    { id: 'clone', label: translate('Clone Object', language as Locale) },
+    { id: 'delete', label: translate('Delete Object', language as Locale) },
   ];
 }
 
@@ -131,6 +168,7 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'lock':
       return [ItemType.DECK, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
     // Pin/Unpin for tokens, cards, and decks
+    case 'pin':
     case 'pinToViewport':
       return [ItemType.TOKEN, ItemType.CARD, ItemType.DECK];
     // Clone and delete actions for tokens, cards, counters, dice objects, and boards
@@ -165,6 +203,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   // Action settings for different object types are INDEPENDENT from each other
   const AVAILABLE_ACTIONS = getAvailableActions(language);
   const DECK_ACTIONS = getDeckActions(language);
+  const DECK_CONTEXT_MENU_ACTIONS = getDeckContextMenuActions(language);
   const MOVE_TO_ACTIONS = getMoveToActions(language);
   // Exclude section headers from click actions (note: showTop is NOT a section, it's a concrete action)
   // Note: rotateClockwise, rotateCounterClockwise, swingClockwise, swingCounterClockwise are NOT in SECTION_ACTIONS
@@ -189,7 +228,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
         // Exclude section headers
         if (action.id === 'moveTo') return false;
         // Exclude pin action from card double click actions
-        if (action.id === 'pinToViewport') return false;
+        if (action.id === 'pin' || action.id === 'pinToViewport') return false;
         return true;
       })
   ];
@@ -2144,7 +2183,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                 </h4>
 
                 <div className="grid grid-cols-2 gap-1">
-                  {[...AVAILABLE_ACTIONS, ...(isDeck ? DECK_ACTIONS : [])]
+                  {(isDeck ? DECK_CONTEXT_MENU_ACTIONS : [...AVAILABLE_ACTIONS, ...(isDeck ? DECK_ACTIONS : [])])
                     .filter(action => {
                       // Drawings have no context menu actions
                       if (isDrawing) return false;
@@ -2153,8 +2192,16 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                       if (isCard && ['flip', 'layer', 'pin', 'pinToViewport'].includes(action.id)) {
                         return false;
                       }
+                      // Tokens and Token Types should NOT have Pin/Unpin action
+                      if ((isToken || isArchetype) && ['pin', 'pinToViewport'].includes(action.id)) {
+                        return false;
+                      }
                       // Exclude rotation and swing actions - they're controlled by 'rotate' section
                       if (['rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'].includes(action.id)) {
+                        return false;
+                      }
+                      // For decks, exclude individual deck actions that are controlled by section headers
+                      if (isDeck && ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'hideTop', 'returnAllAndShuffle', 'returnAllExceptHands'].includes(action.id)) {
                         return false;
                       }
                       // Card-specific actions - only for cards (not tokens, decks, boards, or battlefield cells)
@@ -2173,7 +2220,8 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                           // Keep empty array as empty array (none allowed)
                           update('allowedActions', newActions);
                         } else if (current === undefined) {
-                          update('allowedActions', [...AVAILABLE_ACTIONS, ...(isDeck ? DECK_ACTIONS : [])].filter((a: typeof action) => a.id !== action.id).map((a: typeof action) => a.id));
+                          const allActions = isDeck ? DECK_CONTEXT_MENU_ACTIONS : [...AVAILABLE_ACTIONS, ...(isDeck ? DECK_ACTIONS : [])];
+                          update('allowedActions', allActions.filter((a: typeof action) => a.id !== action.id).map((a: typeof action) => a.id));
                         }
                       } else {
                         // Add to player's allowed actions
@@ -2191,7 +2239,8 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                           // Keep empty array as empty array (none allowed)
                           update('allowedActionsForGM', newActions);
                         } else if (current === undefined) {
-                          update('allowedActionsForGM', [...AVAILABLE_ACTIONS, ...(isDeck ? DECK_ACTIONS : [])].filter((a: typeof action) => a.id !== action.id).map((a: typeof action) => a.id));
+                          const allActions = isDeck ? DECK_CONTEXT_MENU_ACTIONS : [...AVAILABLE_ACTIONS, ...(isDeck ? DECK_ACTIONS : [])];
+                          update('allowedActionsForGM', allActions.filter((a: typeof action) => a.id !== action.id).map((a: typeof action) => a.id));
                         }
                       } else {
                         // Add to GM's allowed actions
@@ -2846,17 +2895,18 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                 </h4>
 
                 <div className="grid grid-cols-2 gap-1">
-                  {[...AVAILABLE_ACTIONS, ...MOVE_TO_ACTIONS]
+                  {[...MOVE_TO_ACTIONS, ...AVAILABLE_ACTIONS]
                     .filter(action => {
-                      // Only show card-specific actions in card settings:
-                      // - moveTo (section)
-                      // - flip
-                      // - layer (section)
-                      // - rotate (section)
-                      // - lock
-                      // - clone
-                      // - delete
-                      const cardActions = ['moveTo', 'flip', 'layer', 'rotate', 'lock', 'clone', 'delete'];
+                      // Card context menu actions in specific order:
+                      // 1. Move to... (section)
+                      // 2. Flip
+                      // 3. Change Layer (section)
+                      // 4. Rotation (section)
+                      // 5. Lock/Unlock
+                      // 6. Pin/Unpin
+                      // 7. Clone
+                      // 8. Delete
+                      const cardActions = ['moveTo', 'flip', 'layer', 'rotate', 'lock', 'pin', 'clone', 'delete'];
                       return cardActions.includes(action.id);
                     })
                     .map((action) => {
@@ -2866,7 +2916,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                     const togglePlayer = () => {
                       const current = cardSettings.allowedActions;
                       // Only card-specific actions
-                      const cardActions = ['moveTo', 'flip', 'layer', 'rotate', 'lock', 'clone', 'delete'] as ContextAction[];
+                      const cardActions = ['moveTo', 'flip', 'layer', 'rotate', 'lock', 'pin', 'clone', 'delete'] as ContextAction[];
 
                       if (isPlayerAllowed) {
                         // Remove from player's allowed actions
@@ -2886,7 +2936,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                     const toggleGM = () => {
                       const current = cardSettings.allowedActionsForGM;
                       // Only card-specific actions
-                      const cardActions = ['moveTo', 'flip', 'layer', 'rotate', 'lock', 'clone', 'delete'] as ContextAction[];
+                      const cardActions = ['moveTo', 'flip', 'layer', 'rotate', 'lock', 'pin', 'clone', 'delete'] as ContextAction[];
 
                       if (isGMAllowed) {
                         // Remove from GM's allowed actions
@@ -2954,7 +3004,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                       // Exclude section headers only
                       if (action.id === 'moveTo' || action.id === 'layer' || action.id === 'rotate') return false;
                       // Exclude pin action from card action buttons
-                      if (action.id === 'pinToViewport') return false;
+                      if (action.id === 'pin' || action.id === 'pinToViewport') return false;
                       return true;
                     })
                     .map((action) => {

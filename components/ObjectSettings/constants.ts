@@ -9,6 +9,9 @@ export const AVAILABLE_ACTIONS: { id: ContextAction; label: string }[] = [
   { id: 'layerUp', label: 'Layer Up' },
   { id: 'layerDown', label: 'Layer Down' },
   { id: 'rotate', label: 'Rotation (section)' },
+  { id: 'flip', label: 'Flip' },
+  { id: 'hide', label: 'Show/Hide' },
+  { id: 'pin', label: 'Pin/Unpin' },
 ];
 
 // "Move to" actions are only for Action Buttons for Cards, NOT for Context Menu Actions
@@ -21,7 +24,7 @@ export const MOVE_TO_ACTIONS: { id: ContextAction | 'mill'; label: string }[] = 
 ];
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
-export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'rotate'];
+export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'rotate', 'hide', 'pin'];
 
 // Check if an action can be shown as an action button
 export function isActionButtonAllowed(action: ContextAction): boolean {

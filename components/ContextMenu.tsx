@@ -181,6 +181,8 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     'returnSubmenu': 'returnAll',
     'returnAllAndShuffle': 'returnAll',
     'returnAllExceptHands': 'returnAll',
+    'pinToViewport': 'pin',
+    'unpinFromViewport': 'pin',
   };
 
   // Helper to check if an action is allowed for the current user
@@ -198,31 +200,49 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       allowedActionsForGM = object.allowedActionsForGM;
     }
 
-    // Check if this is a submenu action - if so, check parent section permission
-    const parentAction = SUBMENU_TO_PARENT[action];
+    // Special handling for 'pin' action - also check for 'pinToViewport' for backwards compatibility
+    const actionToCheck = action === 'pin' && allowedActions?.includes('pinToViewport') ? 'pinToViewport' as ContextAction : action;
+    const parentAction = SUBMENU_TO_PARENT[actionToCheck];
+    const isCard = object.type === ItemType.CARD;
 
     let result = false;
     if (isGM) {
       // GM: more permissive - check if parent section is allowed or action is explicitly allowed
-      // undefined/null/empty array = all allowed, specific array = only those allowed
+      // undefined/null = all allowed (default), empty array = none allowed, specific array = only those allowed
       if (allowedActionsForGM != null && allowedActionsForGM.length > 0) {
         // If GM-specific permissions are defined and not empty, check them
-        // Check BOTH the specific action AND the parent section
-        result = allowedActionsForGM.includes(action) ||
-               allowedActionsForGM.includes(parentAction);
+        // For cards: submenu items require parent section to be explicitly allowed
+        // For other objects: action OR parent section can be allowed (backwards compatibility)
+        if (isCard && parentAction) {
+          result = allowedActionsForGM.includes(parentAction);
+        } else {
+          result = allowedActionsForGM.includes(actionToCheck) ||
+                 allowedActionsForGM.includes(parentAction);
+        }
+      } else if (allowedActionsForGM !== undefined && allowedActionsForGM.length === 0) {
+        // Empty array means NO actions allowed
+        result = false;
       } else {
-        // If no GM-specific permissions defined, GM has ALL actions allowed
-        // This is the key fix: don't fall back to player's allowedActions for GM!
+        // undefined or null = all actions allowed (default behavior)
         result = true;
       }
     } else {
       // Player: check allowedActions with parent section fallback
-      // undefined/null/empty array = all allowed, specific array = only those allowed
+      // undefined/null = all allowed (default), empty array = none allowed, specific array = only those allowed
       if (allowedActions != null && allowedActions.length > 0) {
-        // Check BOTH the specific action AND the parent section
-        result = allowedActions.includes(action) ||
-               allowedActions.includes(parentAction);
+        // For cards: submenu items require parent section to be explicitly allowed
+        // For other objects: action OR parent section can be allowed (backwards compatibility)
+        if (isCard && parentAction) {
+          result = allowedActions.includes(parentAction);
+        } else {
+          result = allowedActions.includes(actionToCheck) ||
+                 allowedActions.includes(parentAction);
+        }
+      } else if (allowedActions !== undefined && allowedActions.length === 0) {
+        // Empty array means NO actions allowed
+        result = false;
       } else {
+        // undefined or null = all actions allowed (default behavior)
         result = true;
       }
     }
@@ -441,33 +461,35 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     const deck = card.deckId ? allObjects[card.deckId] as DeckType : null;
     const piles = deck?.piles || [];
 
+    const canMoveTo = can('moveTo');
+
     const submenuItems: MenuItem[] = [
       {
         label: translate('Hand', language as Locale),
         action: 'moveToHand',
         icon: <Hand size={14} />,
-        visible: (!hideCardActions || isSearchWindow) && can('moveToHand')
+        visible: (!hideCardActions || isSearchWindow) && canMoveTo && can('moveToHand')
       },
       {
         label: translate('Top Deck', language as Locale),
         action: 'moveToTopDeck',
         icon: <ArrowUp size={14} />,
-        visible: !!deck && can('moveToTopDeck')
+        visible: !!deck && canMoveTo && can('moveToTopDeck')
       },
       {
         label: translate('Bottom Deck', language as Locale),
         action: 'moveToBottomDeck',
         icon: <ArrowDown size={14} />,
-        visible: !!deck && can('moveToBottomDeck')
+        visible: !!deck && canMoveTo && can('moveToBottomDeck')
       },
       // Move to Mill - only visible if there's a mill pile AND action is allowed
-      ...(piles.some(p => p.isMillPile) && can('moveToDiscard') ? [{
+      ...(piles.some(p => p.isMillPile) && canMoveTo && can('moveToDiscard') ? [{
         label: translate('Mill', language as Locale),
         action: 'moveToDiscard' as const,
         icon: <Trash2 size={14} />,
         visible: true
       }] : []),
-      ...(piles.length > 0 ? [{
+      ...(piles.length > 0 && canMoveTo ? [{
         label: '-',
         action: 'separator-move-to-piles',
         visible: true,
@@ -477,15 +499,15 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         label: pile.name,
         action: `moveToPile-${pile.id}`,
         icon: <Layers size={14} />,
-        visible: true,
+        visible: canMoveTo,
         pileId: pile.id
       }))
     ];
 
-    // Section is only visible if at least one submenu item is visible
+    // Section is only visible if moveTo action is allowed AND at least one submenu item is visible
     const hasVisibleItems = submenuItems.some(item => item.visible);
 
-    return hasVisibleItems ? [
+    return canMoveTo && hasVisibleItems ? [
       {
         label: translate('Move to...', language as Locale),
         action: 'moveTo',
@@ -679,6 +701,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       label: '-',
       action: 'separator-layer-group',
       visible: (!hideCardActions && (can('layerUp') || can('layerDown'))) ||
+               (!hideCardActions && can('moveTo')) ||
                (!isSearchWindow && !hideCardActions && can('rotate')) ||
                (can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId)) ||
                (!hideCardActions && can('lock')) ||
@@ -689,9 +712,11 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       label: translate('Change Layer', language as Locale),
       action: 'layer',
       icon: <Layers size={14} />,
-      visible: !hideCardActions && (can('layerUp') || can('layerDown')),
+      visible: !hideCardActions && can('layer'),
       hasSubmenu: true,
       submenuItems: (() => {
+        const canLayer = can('layer');
+
         // Get hyperscale layers, sorted by reverse order (higher maxZIndex = higher in list)
         const sortedLayers = [...hyperscaleLayers]
           .sort((a, b) => b.maxZIndex - a.maxZIndex);
@@ -721,7 +746,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                   {isSelected && <Check size={12} style={{ color: layer.color }} />}
                 </div>
               ),
-              visible: true
+              visible: canLayer
             };
           });
 
@@ -731,36 +756,36 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
             label: translate('Layer Up', language as Locale),
             action: 'layerUp',
             icon: <ArrowUp size={14} />,
-            visible: can('layerUp')
+            visible: canLayer && can('layerUp')
           },
           {
             label: translate('Layer Down', language as Locale),
             action: 'layerDown',
             icon: <ArrowDown size={14} />,
-            visible: can('layerDown')
+            visible: canLayer && can('layerDown')
           },
           {
             label: '-',
             action: 'separator-layer-controls',
-            visible: true,
+            visible: canLayer && (can('bringToFront') || can('sendToBack')),
             isSeparator: true
           },
           {
             label: translate('To Top', language as Locale),
             action: 'bringToFront',
             icon: <ChevronsUp size={14} />,
-            visible: can('bringToFront')
+            visible: canLayer && can('bringToFront')
           },
           {
             label: translate('To Bottom', language as Locale),
             action: 'sendToBack',
             icon: <ChevronsDown size={14} />,
-            visible: can('sendToBack')
+            visible: canLayer && can('sendToBack')
           },
           {
             label: '-',
             action: 'separator-hyperscale-layers',
-            visible: layerItems.length > 0,
+            visible: canLayer && layerItems.length > 0,
             isSeparator: true
           },
           ...layerItems
@@ -779,37 +804,37 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
           label: translate('Clockwise', language as Locale),
           action: 'rotateClockwise',
           icon: <RefreshCw size={14} />,
-          visible: can('rotateClockwise')
+          visible: can('rotate') && can('rotateClockwise')
         },
         {
           label: translate('Counter-Clockwise', language as Locale),
           action: 'rotateCounterClockwise',
           icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />,
-          visible: can('rotateCounterClockwise')
+          visible: can('rotate') && can('rotateCounterClockwise')
         },
         {
           label: translate('Reset', language as Locale),
           action: 'resetRotation',
           icon: <Undo size={14} />,
-          visible: can('rotateClockwise') // Using rotateClockwise as proxy for rotate permission
+          visible: can('rotate') && can('resetRotation')
         },
         {
           label: '-',
           action: 'separator-rotation-swing',
-          visible: can('swingClockwise') || can('swingCounterClockwise'),
+          visible: can('rotate') && (can('swingClockwise') || can('swingCounterClockwise')),
           isSeparator: true
         },
         {
           label: translate('Swing CW', language as Locale),
           action: 'swingClockwise',
           icon: <RefreshCw size={14} />,
-          visible: can('swingClockwise')
+          visible: can('rotate') && can('swingClockwise')
         },
         {
           label: translate('Swing CCW', language as Locale),
           action: 'swingCounterClockwise',
           icon: <RefreshCw size={14} style={{ transform: 'scaleY(-1)' }} />,
-          visible: can('swingCounterClockwise')
+          visible: can('rotate') && can('swingCounterClockwise')
         }
       ]
     },
@@ -838,15 +863,14 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       label: object.isPinnedToViewport ? translate('Unpin', language as Locale) : translate('Pin', language as Locale),
       action: object.isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
       icon: <Pin size={14} />,
-      // TODO: Temporarily hide pinning in pool panel - re-enable later when properly implemented
-      // NOTE: Pinning disabled for cards and tokens - only available for decks, dice, counters
-      visible: !hideCardActions && can('pin') && object.type !== ItemType.BOARD && object.type !== ItemType.CARD && object.type !== ItemType.TOKEN && contextMenuType !== 'pool',
+      // Pinning available for cards, tokens, decks, dice, counters (not boards, and not in pool panel)
+      visible: !hideCardActions && can('pin') && object.type !== ItemType.BOARD && contextMenuType !== 'pool',
     },
     // Separator after Hide/Lock/Pin section (only visible if any of Hide, Lock, Pin are visible)
     {
       label: '-',
       action: 'separator-after-hide-lock-pin',
-      visible: (can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId)) || (!hideCardActions && can('lock')) || (!hideCardActions && can('pin') && object.type !== ItemType.BOARD && object.type !== ItemType.CARD && object.type !== ItemType.TOKEN && contextMenuType !== 'pool'),
+      visible: (can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId)) || (!hideCardActions && can('lock')) || (!hideCardActions && can('pin') && object.type !== ItemType.BOARD && contextMenuType !== 'pool'),
       isSeparator: true
     },
     // Hide Card / Unhide Card

@@ -98,12 +98,9 @@ export class MemoryManager {
       const memoryFreed = beforeMemory - afterMemory;
       this.memoryFreed += memoryFreed;
 
-      logger.log('[MemoryManager] Cleanup complete',
-        `freed: ${(memoryFreed / 1024 / 1024).toFixed(2)}MB`,
-        `time: ${timeElapsed.toFixed(0)}ms`);
+      // Cleanup logging disabled
     } else {
-      logger.log('[MemoryManager] Cleanup complete',
-        `time: ${timeElapsed.toFixed(0)}ms`);
+      // Cleanup logging disabled
     }
 
     this.cleanupCount++;
@@ -115,10 +112,7 @@ export class MemoryManager {
    */
   forceGC(): void {
     if ((window as any).gc) {
-      logger.log('[MemoryManager] Forcing garbage collection');
       (window as any).gc();
-    } else {
-      logger.warn('[MemoryManager] Garbage collection not available');
     }
   }
 
@@ -196,9 +190,6 @@ export class MemoryManager {
     // Note: WeakMap doesn't provide iteration, but we can clean up metadata
     // The actual data will be garbage collected automatically when objects are no longer referenced
     let cleanedEntries = 0;
-
-    // Since we can't iterate WeakMap, we just log the cleanup
-    logger.log('[MemoryManager] Temporal data cleanup relies on WeakMap garbage collection');
   }
 
   /**
@@ -210,8 +201,6 @@ export class MemoryManager {
     // 1. Finding drawings older than MAX_DRAWING_AGE
     // 2. Removing them from state
     // 3. Clearing associated caches
-
-    logger.log('[MemoryManager] Drawing cleanup not yet implemented');
   }
 
   /**
@@ -220,8 +209,6 @@ export class MemoryManager {
   private cleanupUndoHistory(): void {
     // This is a placeholder - actual implementation would work with GameContext
     // The undo history cleanup should be implemented in the reducer itself
-
-    logger.log('[MemoryManager] Undo history cleanup should be implemented in reducer');
   }
 
   /**
@@ -232,9 +219,8 @@ export class MemoryManager {
     if (typeof (window as any).cleanupImageCache === 'function') {
       try {
         (window as any).cleanupImageCache(MEMORY_MANAGER_CONFIG.CACHE_ENTRY_MAX_AGE / 1000 / 60); // Convert to minutes
-        logger.log('[MemoryManager] Image cache cleanup completed');
       } catch (e) {
-        logger.warn('[MemoryManager] Image cache cleanup failed:', e);
+        // Silently fail
       }
     }
   }
@@ -245,8 +231,6 @@ export class MemoryManager {
   private cleanupOldDiceRolls(): void {
     // This is a placeholder - actual implementation would work with GameContext
     // The dice roll cleanup should be implemented in the reducer itself
-
-    logger.log('[MemoryManager] Dice roll cleanup should be implemented in reducer');
   }
 
   /**

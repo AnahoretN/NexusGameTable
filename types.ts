@@ -85,7 +85,7 @@ export interface CardPile {
   showTopCard?: boolean; // Whether to show the top card face on the pile itself
 }
 
-export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'millToBottom' | 'hideTop' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAllAndShuffle' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport' | 'hide' | 'topDeck' | 'returnAll' | 'shuffleDeck' | 'searchDeck' | 'piles' | 'draw' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'showTop';
+export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'millToBottom' | 'hideTop' | 'showTop' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAll' | 'returnAllAndShuffle' | 'returnAllExceptHands' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport' | 'pin' | 'hide' | 'topDeck' | 'shuffleDeck' | 'searchDeck' | 'piles' | 'draw' | 'playTopCard' | 'millTopCard' | 'toBottom';
 export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
 // Alternative card back settings (per-card)
