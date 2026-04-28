@@ -362,9 +362,22 @@ const addToCursorSlot = (
     const clickX_VU = p2v(mousePosition.x - rect.left + scrollX);
     const clickY_VU = p2v(mousePosition.y - rect.top + scrollY);
 
-    // Offset is the difference between click position and object position (both in VU)
-    const clickOffsetX_VU = clickX_VU - obj.x;
-    const clickOffsetY_VU = clickY_VU - obj.y;
+    // For pinned objects, obj.x/y don't represent the actual world position
+    // Use the pixel offset converted to VU instead
+    const isPinned = (obj as any).isPinnedToViewport;
+    let clickOffsetX_VU: number;
+    let clickOffsetY_VU: number;
+
+    if (isPinned) {
+      // For pinned objects, convert the pixel offset to VU
+      // This is the only reliable way since pinned objects use screen coordinates
+      clickOffsetX_VU = finalOffsetX_PX / pixelsPerVU;
+      clickOffsetY_VU = finalOffsetY_PX / pixelsPerVU;
+    } else {
+      // Offset is the difference between click position and object position (both in VU)
+      clickOffsetX_VU = clickX_VU - obj.x;
+      clickOffsetY_VU = clickY_VU - obj.y;
+    }
 
     // Store offset in SCREEN PIXELS for CursorSlotVisualization (for visual rendering)
     (itemClone as any).clickOffsetX_PX = finalOffsetX_PX;
@@ -378,8 +391,21 @@ const addToCursorSlot = (
     (itemClone as any).sourceZoom = viewTransform?.zoom || 1;
 
     // Store original object position for drop calculation
-    (itemClone as any).originalX = obj.x;
-    (itemClone as any).originalY = obj.y;
+    // For pinned objects, calculate the world position from screen position
+    if (isPinned) {
+      const pinnedScreenPos = (obj as any).pinnedScreenPosition || { x: 0, y: 0 };
+      // Convert pinned screen position to world coordinates
+      // Pinned rendering: left = pinnedPosition.x (no zoom, offset, scroll)
+      // Unpinned rendering: left = worldX * pixelsPerVU + offset.x - scroll.x
+      // So: worldX = (pinnedPosition.x - offset.x + scroll.x) / pixelsPerVU
+      const offsetX = viewTransform?.offset?.x || 0;
+      const offsetY = viewTransform?.offset?.y || 0;
+      (itemClone as any).originalX = (pinnedScreenPos.x - offsetX + scrollX) / pixelsPerVU;
+      (itemClone as any).originalY = (pinnedScreenPos.y - offsetY + scrollY) / pixelsPerVU;
+    } else {
+      (itemClone as any).originalX = obj.x;
+      (itemClone as any).originalY = obj.y;
+    }
   }
 
   // Update cursor position FIRST (before state update to ensure ref is set during render)
@@ -405,13 +431,24 @@ const addToCursorSlot = (
     const pinnedPos = (obj as any).pinnedScreenPosition || { x: obj.x, y: obj.y };
     unpinnedDuringDragRef.current.set(id, pinnedPos);
 
-    // Unpin the object
+    // Calculate world coordinates from pinned screen position for unpinning
+    // This ensures the object stays at the same visual position after unpinning
+    const scrollX = viewTransform?.scroll?.x || 0;
+    const scrollY = viewTransform?.scroll?.y || 0;
+    const offsetX = viewTransform?.offset?.x || 0;
+    const offsetY = viewTransform?.offset?.y || 0;
+
+    // Convert pinned screen position to world coordinates
+    const worldX = (pinnedPos.x - offsetX + scrollX) / pixelsPerVU;
+    const worldY = (pinnedPos.y - offsetY + scrollY) / pixelsPerVU;
+
+    // Unpin the object with correct world coordinates
     dispatch({
       type: 'UNPIN_FROM_VIEWPORT',
       payload: {
         id: id,
-        worldX: obj.x,
-        worldY: obj.y
+        worldX,
+        worldY
       }
     });
   }
@@ -884,13 +921,32 @@ const dropCursorSlot = (
 
       const scrollX = viewTransform?.scroll?.x || 0;
       const scrollY = viewTransform?.scroll?.y || 0;
+      const zoom = viewTransform?.zoom || 1;
+
+      let screenX: number;
+      let screenY: number;
+
+      // UI objects (panels/windows) use pixel coordinates directly
+      // Game objects use world coordinates (VU) that need conversion
+      if (item.type === ItemType.PANEL || item.type === ItemType.WINDOW) {
+        // For UI objects: obj.x/y are already in screen pixels
+        screenX = finalX / zoom - scrollX;
+        screenY = finalY / zoom - scrollY;
+      } else {
+        // For game objects: obj.x/y are in world coordinates (VU)
+        // Convert to pinned screen coordinates using the same formula as pinning
+        const offsetX = viewTransform?.offset?.x || 0;
+        const offsetY = viewTransform?.offset?.y || 0;
+        screenX = finalX * props.pixelsPerVU + (offsetX - scrollX) / zoom;
+        screenY = finalY * props.pixelsPerVU + (offsetY - scrollY) / zoom;
+      }
 
       dispatch({
         type: 'PIN_TO_VIEWPORT',
         payload: {
           id: item.id,
-          screenX: finalX - scrollX,
-          screenY: finalY - scrollY
+          screenX,
+          screenY
         }
       });
 
