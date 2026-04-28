@@ -5,7 +5,7 @@ import { BoardWithResizeMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo } from 'lucide-react';
+import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw } from 'lucide-react';
 import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 
@@ -258,7 +258,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                   action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
                   className: 'bg-yellow-600 hover:bg-yellow-500',
                   title: obj.locked ? 'Unlock' : 'Lock',
-                  icon: obj.locked ? <Lock size={14} /> : <Lock size={14} />
+                  icon: obj.locked ? <Unlock size={14} /> : <Lock size={14} />
                 },
                 layer: {
                   key: 'layer',
@@ -266,6 +266,89 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                   className: 'bg-indigo-600 hover:bg-indigo-500',
                   title: 'Layer Up',
                   icon: <ArrowUp size={14} />
+                },
+                layerUp: {
+                  key: 'layerUp',
+                  action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+                  className: 'bg-blue-600 hover:bg-blue-500',
+                  title: 'Layer Up',
+                  icon: <ChevronsUp size={14} />
+                },
+                layerDown: {
+                  key: 'layerDown',
+                  action: () => dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } }),
+                  className: 'bg-blue-600 hover:bg-blue-500',
+                  title: 'Layer Down',
+                  icon: <ChevronsDown size={14} />
+                },
+                bringToFront: {
+                  key: 'bringToFront',
+                  action: () => dispatch({ type: 'BRING_TO_FRONT', payload: { id: obj.id } }),
+                  className: 'bg-indigo-600 hover:bg-indigo-500',
+                  title: 'To Top',
+                  icon: <ChevronsUp size={14} />
+                },
+                sendToBack: {
+                  key: 'sendToBack',
+                  action: () => dispatch({ type: 'SEND_TO_BACK', payload: { id: obj.id } }),
+                  className: 'bg-indigo-600 hover:bg-indigo-500',
+                  title: 'To Bottom',
+                  icon: <ChevronsDown size={14} />
+                },
+                rotateClockwise: {
+                  key: 'rotateClockwise',
+                  action: () => {
+                    const rotationStep = (obj as any).rotationStep || 45;
+                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: ((obj as any).rotation || 0) + rotationStep } } });
+                  },
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: 'Rotate CW',
+                  icon: <RotateCw size={14} />
+                },
+                rotateCounterClockwise: {
+                  key: 'rotateCounterClockwise',
+                  action: () => {
+                    const rotationStep = (obj as any).rotationStep || 45;
+                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: ((obj as any).rotation || 0) - rotationStep } } });
+                  },
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: 'Rotate CCW',
+                  icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                },
+                swingClockwise: {
+                  key: 'swingClockwise',
+                  action: () => dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id } }),
+                  className: 'bg-orange-600 hover:bg-orange-500',
+                  title: 'Swing CW',
+                  icon: <RefreshCw size={14} />
+                },
+                swingCounterClockwise: {
+                  key: 'swingCounterClockwise',
+                  action: () => dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id } }),
+                  className: 'bg-orange-600 hover:bg-orange-500',
+                  title: 'Swing CCW',
+                  icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                },
+                hide: {
+                  key: 'hide',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: !(obj as any).isOnTable } }),
+                  className: 'bg-gray-600 hover:bg-gray-500',
+                  title: (obj as any).isOnTable === false ? 'Show' : 'Hide',
+                  icon: (obj as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />
+                },
+                show: {
+                  key: 'show',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: true } }),
+                  className: 'bg-gray-600 hover:bg-gray-500',
+                  title: 'Show',
+                  icon: <Eye size={14} />
+                },
+                pin: {
+                  key: 'pin',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isPinnedToViewport: !(obj as any).isPinnedToViewport } }),
+                  className: 'bg-pink-600 hover:bg-pink-500',
+                  title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
+                  icon: <Pin size={14} />
                 },
               };
 
@@ -385,7 +468,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                   },
                   className: 'bg-yellow-600 hover:bg-yellow-500',
                   title: 'Rotate CW',
-                  icon: <RefreshCw size={14} />
+                  icon: <RotateCw size={14} />
                 },
                 rotateCounterClockwise: {
                   key: 'rotateCounterClockwise',
@@ -395,7 +478,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                   },
                   className: 'bg-yellow-600 hover:bg-yellow-500',
                   title: 'Rotate CCW',
-                  icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                  icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />
                 },
                 moveToHand: {
                   key: 'moveToHand',
@@ -478,6 +561,27 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                   className: 'bg-indigo-600 hover:bg-indigo-500',
                   title: 'To Bottom',
                   icon: <ChevronsDown size={14} />
+                },
+                hide: {
+                  key: 'hide',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: !(obj as any).isOnTable } }),
+                  className: 'bg-gray-600 hover:bg-gray-500',
+                  title: (obj as any).isOnTable === false ? 'Show' : 'Hide',
+                  icon: (obj as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />
+                },
+                show: {
+                  key: 'show',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: true } }),
+                  className: 'bg-gray-600 hover:bg-gray-500',
+                  title: 'Show',
+                  icon: <Eye size={14} />
+                },
+                pin: {
+                  key: 'pin',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isPinnedToViewport: !(obj as any).isPinnedToViewport } }),
+                  className: 'bg-pink-600 hover:bg-pink-500',
+                  title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
+                  icon: <Pin size={14} />
                 },
               };
 
@@ -765,6 +869,89 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                   className: 'bg-indigo-600 hover:bg-indigo-500',
                   title: 'Layer Up',
                   icon: <ArrowUp size={14} />
+                },
+                layerUp: {
+                  key: 'layerUp',
+                  action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
+                  className: 'bg-blue-600 hover:bg-blue-500',
+                  title: 'Layer Up',
+                  icon: <ChevronsUp size={14} />
+                },
+                layerDown: {
+                  key: 'layerDown',
+                  action: () => dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } }),
+                  className: 'bg-blue-600 hover:bg-blue-500',
+                  title: 'Layer Down',
+                  icon: <ChevronsDown size={14} />
+                },
+                bringToFront: {
+                  key: 'bringToFront',
+                  action: () => dispatch({ type: 'BRING_TO_FRONT', payload: { id: obj.id } }),
+                  className: 'bg-indigo-600 hover:bg-indigo-500',
+                  title: 'To Top',
+                  icon: <ChevronsUp size={14} />
+                },
+                sendToBack: {
+                  key: 'sendToBack',
+                  action: () => dispatch({ type: 'SEND_TO_BACK', payload: { id: obj.id } }),
+                  className: 'bg-indigo-600 hover:bg-indigo-500',
+                  title: 'To Bottom',
+                  icon: <ChevronsDown size={14} />
+                },
+                rotateClockwise: {
+                  key: 'rotateClockwise',
+                  action: () => {
+                    const rotationStep = (obj as any).rotationStep || 45;
+                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: ((obj as any).rotation || 0) + rotationStep } } });
+                  },
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: 'Rotate CW',
+                  icon: <RotateCw size={14} />
+                },
+                rotateCounterClockwise: {
+                  key: 'rotateCounterClockwise',
+                  action: () => {
+                    const rotationStep = (obj as any).rotationStep || 45;
+                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: ((obj as any).rotation || 0) - rotationStep } } });
+                  },
+                  className: 'bg-yellow-600 hover:bg-yellow-500',
+                  title: 'Rotate CCW',
+                  icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                },
+                swingClockwise: {
+                  key: 'swingClockwise',
+                  action: () => dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id } }),
+                  className: 'bg-orange-600 hover:bg-orange-500',
+                  title: 'Swing CW',
+                  icon: <RefreshCw size={14} />
+                },
+                swingCounterClockwise: {
+                  key: 'swingCounterClockwise',
+                  action: () => dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id } }),
+                  className: 'bg-orange-600 hover:bg-orange-500',
+                  title: 'Swing CCW',
+                  icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
+                },
+                hide: {
+                  key: 'hide',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: !(obj as any).isOnTable } }),
+                  className: 'bg-gray-600 hover:bg-gray-500',
+                  title: (obj as any).isOnTable === false ? 'Show' : 'Hide',
+                  icon: (obj as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />
+                },
+                show: {
+                  key: 'show',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: true } }),
+                  className: 'bg-gray-600 hover:bg-gray-500',
+                  title: 'Show',
+                  icon: <Eye size={14} />
+                },
+                pin: {
+                  key: 'pin',
+                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isPinnedToViewport: !(obj as any).isPinnedToViewport } }),
+                  className: 'bg-pink-600 hover:bg-pink-500',
+                  title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
+                  icon: <Pin size={14} />
                 },
               };
 

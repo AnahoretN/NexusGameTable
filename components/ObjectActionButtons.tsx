@@ -30,16 +30,16 @@ const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj:
   rotateClockwise: {
     key: 'rotateClockwise',
     action: () => executeClickAction ? executeClickAction(obj, 'rotateClockwise') : dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
-    className: 'bg-green-600 hover:bg-green-500',
+    className: 'bg-yellow-600 hover:bg-yellow-500',
     title: 'Rotate CW',
-    icon: <RefreshCw size={14} />
+    icon: <RotateCw size={14} />
   },
   rotateCounterClockwise: {
     key: 'rotateCounterClockwise',
     action: () => executeClickAction ? executeClickAction(obj, 'rotateCounterClockwise') : dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
-    className: 'bg-green-600 hover:bg-green-500',
+    className: 'bg-yellow-600 hover:bg-yellow-500',
     title: 'Rotate CCW',
-    icon: <RotateCw size={14} />
+    icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />
   },
   delete: {
     key: 'delete',
@@ -100,16 +100,16 @@ const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj:
   swingClockwise: {
     key: 'swingClockwise',
     action: () => executeClickAction ? executeClickAction(obj, 'swingClockwise') : dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id } }),
-    className: 'bg-green-600 hover:bg-green-500',
+    className: 'bg-orange-600 hover:bg-orange-500',
     title: 'Swing CW',
     icon: <RefreshCw size={14} />
   },
   swingCounterClockwise: {
     key: 'swingCounterClockwise',
     action: () => executeClickAction ? executeClickAction(obj, 'swingCounterClockwise') : dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id } }),
-    className: 'bg-green-600 hover:bg-green-500',
+    className: 'bg-orange-600 hover:bg-orange-500',
     title: 'Swing CCW',
-    icon: <RotateCw size={14} style={{ transform: 'scaleY(-1)' }} />
+    icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
   },
   layer: {
     key: 'layer',
