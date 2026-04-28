@@ -122,7 +122,12 @@ export const Tabletop: React.FC = () => {
     unpinnedDecks,
   } = useObjectFilters(state, hyperscaleLayers);
 
-  const worldBounds = useWorldBounds();
+  const worldBoundsVU = useWorldBounds();
+  // Convert VU to pixels for rendering
+  const worldBounds = {
+    width: worldBoundsVU.width * pixelsPerVU,
+    height: worldBoundsVU.height * pixelsPerVU
+  };
 
   // === State Management ===
   // Tool state
@@ -547,14 +552,25 @@ export const Tabletop: React.FC = () => {
         let scrollLeft = target.scrollLeft;
         let scrollTop = target.scrollTop;
 
-        // Constrain scroll to playable area
-        const constrained = clampScrollToPlayableArea(
-          scrollLeft,
-          scrollTop,
-          target.clientWidth,
-          target.clientHeight,
-          pixelsPerVU
-        );
+        // Use the actual scrollable width/height (scrollWidth/scrollHeight includes all content)
+        // The max scroll should be: scrollWidth - clientWidth
+        const maxScrollX = Math.max(0, target.scrollWidth - target.clientWidth);
+        const maxScrollY = Math.max(0, target.scrollHeight - target.clientHeight);
+
+        // But we also need to constrain to playable area (5000×5000 VU)
+        const playableAreaPx = 5000 * pixelsPerVU;
+        const constrainedMaxScrollX = Math.max(0, playableAreaPx - target.clientWidth);
+        const constrainedMaxScrollY = Math.max(0, playableAreaPx - target.clientHeight);
+
+        // Use the smaller of the two constraints
+        const finalMaxScrollX = Math.min(maxScrollX, constrainedMaxScrollX);
+        const finalMaxScrollY = Math.min(maxScrollY, constrainedMaxScrollY);
+
+        // Constrain scroll values
+        const constrained = {
+          x: Math.max(0, Math.min(scrollLeft, finalMaxScrollX)),
+          y: Math.max(0, Math.min(scrollTop, finalMaxScrollY))
+        };
 
         // Apply constraints if needed
         if (constrained.x !== scrollLeft || constrained.y !== scrollTop) {

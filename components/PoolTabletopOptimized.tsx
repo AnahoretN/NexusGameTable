@@ -1964,9 +1964,13 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         const visibleArea = Math.max(0, visibleRight - visibleLeft) * Math.max(0, visibleBottom - visibleTop);
         const isHalfVisible = objArea > 0 && (visibleArea / objArea) >= 0.5;
 
-        if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible) {
+        // IMPORTANT: Allow boards to be dropped even if not fully visible
+        // Boards are large and users should be able to position them partially outside
+        const isBoard = lastObj?.type === ItemType.BOARD || lastObj?.type === ItemType.NEXUS_BOARD;
+
+        if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible && !isBoard) {
           // Object would be partially outside visible area - don't allow drop
-          // Unless it's from PLAY_TOP_CARD and center is visible, or at least 50% visible
+          // Unless it's from PLAY_TOP_CARD and center is visible, at least 50% visible, or it's a board
           return;
         }
       }
@@ -2219,9 +2223,13 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             const visibleArea = Math.max(0, visibleRight - visibleLeft) * Math.max(0, visibleBottom - visibleTop);
             const isHalfVisible = objArea > 0 && (visibleArea / objArea) >= 0.5;
 
-            if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible) {
+            // IMPORTANT: Allow boards to be dropped even if not fully visible
+            // Boards are large and users should be able to position them partially outside
+            const isBoard = lastObj?.type === ItemType.BOARD || lastObj?.type === ItemType.NEXUS_BOARD;
+
+            if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible && !isBoard) {
               // Object would be partially outside visible area - don't allow drop
-              // Unless it's from PLAY_TOP_CARD and center is visible, or at least 50% visible
+              // Unless it's from PLAY_TOP_CARD and center is visible, at least 50% visible, or it's a board
               return;
             }
           }
@@ -2433,17 +2441,15 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     };
   }, [poolZone.panelId, state.objects]);
 
-  // Apply highlight to the visible pool content area
+  // Apply highlight to the entire pool panel (not just inner content)
   useEffect(() => {
-    const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
-    if (!visibleContentArea) return;
+    const poolPanelContainer = document.querySelector(`[data-ui-object="${poolZone.panelId}"]`) as HTMLElement;
+    if (!poolPanelContainer) return;
 
     if (isHighlightActive) {
-      visibleContentArea.style.boxShadow = 'inset 0 0 0 3px #a855f7';
-      visibleContentArea.style.borderRadius = '8px';
+      poolPanelContainer.style.boxShadow = '0 0 0 3px #a855f7';
     } else {
-      visibleContentArea.style.boxShadow = '';
-      visibleContentArea.style.borderRadius = '';
+      poolPanelContainer.style.boxShadow = '';
     }
   }, [isHighlightActive, poolZone.panelId]);
 

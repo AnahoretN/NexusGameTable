@@ -1,19 +1,19 @@
 /**
- * PoolPanel v2.0 - Migrated to new context architecture
+ * PoolPanel v2.1 - Fixed to use GameContext instead of objectStore
  *
- * @version 2.0.0
- * @since 2026-04-17
+ * @version 2.1.0
+ * @since 2026-04-28
  *
- * ИЗМЕНЕНИЯ с v1.0:
- * ✅ Полностью убрана зависимость от useGame()
- * ✅ Использует ObjectStore для игровых объектов
+ * ИЗМЕНЕНИЯ с v2.0:
+ * ✅ Возвращена зависимость от useGame() для объектов (objectStore не синхронизируется)
+ * ✅ Использует GameContext для игровых объектов
  * ✅ Использует PlayerContext v2.0 для player данных
  * ✅ Оптимизированные hooks для предотвращения ререндеров
- * ✅ Сохранена вся функциональность оригинала
+ * ✅ Исправлена работа кнопки "+" для добавления вкладок
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useObjectsData, useObjectActions } from '../store/objectStore';
+import { useGame } from '../store/GameContext';
 import {
   usePlayerList,
   useActivePlayerId,
@@ -35,26 +35,23 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
   panel,
   language = 'en'
 }) => {
-  // ✅ ИСПОЛЬЗУЕМ НОВЫЕ КОНТЕКСТЫ
-
-  // Игровые объекты из ObjectStore
-  const objects = useObjectsData();
-  const { updateObject, deleteObject } = useObjectActions();
+  // ✅ ИСПОЛЬЗУЕМ GameContext для объектов (objectStore не синхронизируется)
+  const { state, dispatch } = useGame();
 
   // Player данные из PlayerContext v2.0
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
 
-  // Get pool data from panel - use latest from objects to ensure reactivity
-  const panelObject = objects[panel.id] as PanelObject | undefined;
+  // Get pool data from panel - use latest from state.objects to ensure reactivity
+  const panelObject = state.objects[panel.id] as PanelObject | undefined;
   const poolData = panelObject?.poolData || panel.poolData;
 
   // Initialize pool data if not exists
   useEffect(() => {
     if (!poolData) {
       // Get existing pool territories to find available space
-      const existingPools = Object.values(objects)
+      const existingPools = Object.values(state.objects)
         .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData)
         .flatMap(obj => {
           const poolPanel = obj as PanelObject;
@@ -93,8 +90,13 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
         activeTabId: 'tab-default'
       };
 
-      updateObject(panel.id, {
-        poolData: defaultPoolData
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        _localOnly: true,
+        payload: {
+          id: panel.id,
+          poolData: defaultPoolData
+        }
       });
     } else {
       // Migrate old data where offsetX/offsetY were at panel level
@@ -115,16 +117,21 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
             return tab;
           });
 
-          updateObject(panel.id, {
-            poolData: {
-              ...poolData,
-              tabs: migratedTabs
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            _localOnly: true,
+            payload: {
+              id: panel.id,
+              poolData: {
+                ...poolData,
+                tabs: migratedTabs
+              }
             }
           });
         }
       }
     }
-  }, [poolData, panel.id, updateObject, objects]);
+  }, [poolData, panel.id, dispatch, state.objects]);
 
   // Get current player info
   const currentPlayer = players.find(p => p.id === activePlayerId);
@@ -166,15 +173,20 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
       return tab;
     });
 
-    updateObject(panel.id, {
-      poolData: {
-        ...poolData,
-        tabs: updatedTabs
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      _localOnly: true,
+      payload: {
+        id: panel.id,
+        poolData: {
+          ...poolData,
+          tabs: updatedTabs
+        }
       }
     });
 
     setSettingsModal(null);
-  }, [poolData, settingsModal?.tabId, panel.id, updateObject]);
+  }, [poolData, settingsModal?.tabId, panel.id, dispatch]);
 
   // Check permissions for active tab
   const canViewTab = useMemo(() => {
@@ -212,20 +224,25 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
   const handleSelectTab = useCallback((tabId: string) => {
     if (!poolData) return;
 
-    updateObject(panel.id, {
-      poolData: {
-        ...poolData,
-        activeTabId: tabId
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      _localOnly: true,
+      payload: {
+        id: panel.id,
+        poolData: {
+          ...poolData,
+          activeTabId: tabId
+        }
       }
     });
-  }, [poolData, panel.id, updateObject]);
+  }, [poolData, panel.id, dispatch]);
 
   // Handler: Add new tab (GM only)
   const handleAddTab = useCallback(() => {
     if (!poolData || !isGM) return;
 
     // Get existing pool territories to find available space
-    const existingPools = Object.values(objects)
+    const existingPools = Object.values(state.objects)
       .filter(obj => obj.type === ItemType.PANEL && (obj as PanelObject).poolData)
       .flatMap(obj => {
         const poolPanel = obj as PanelObject;
@@ -259,14 +276,21 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
       territoryId: `territory-${panel.id}-tab-${Date.now()}`
     };
 
-    updateObject(panel.id, {
-      poolData: {
-        ...poolData,
-        tabs: [...poolData.tabs, newTab],
-        activeTabId: newTab.id
+    const newPoolData = {
+      ...poolData,
+      tabs: [...poolData.tabs, newTab],
+      activeTabId: newTab.id
+    };
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      _localOnly: true,
+      payload: {
+        id: panel.id,
+        poolData: newPoolData
       }
     });
-  }, [poolData, isGM, panel.id, updateObject, objects]);
+  }, [isGM, panel.id, dispatch, state.objects, poolData]);
 
   // Handler: Remove tab (GM only)
   const handleRemoveTab = useCallback((tabId: string) => {
@@ -279,14 +303,19 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
       ? newTabs[0].id
       : poolData.activeTabId;
 
-    updateObject(panel.id, {
-      poolData: {
-        ...poolData,
-        tabs: newTabs,
-        activeTabId: newActiveId
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      _localOnly: true,
+      payload: {
+        id: panel.id,
+        poolData: {
+          ...poolData,
+          tabs: newTabs,
+          activeTabId: newActiveId
+        }
       }
     });
-  }, [poolData, isGM, panel.id, updateObject]);
+  }, [poolData, isGM, panel.id, dispatch]);
 
   if (!poolData) {
     return (

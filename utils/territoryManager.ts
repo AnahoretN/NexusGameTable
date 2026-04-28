@@ -1,4 +1,4 @@
-import { PLAYABLE_AREA_SIZE, POOL_PANEL_SIZE } from '../constants';
+import { PLAYABLE_AREA_SIZE, POOL_PANEL_SIZE, WORLD_SIZE_VU } from '../constants';
 
 /**
  * Territory management system for pool panels
@@ -145,11 +145,6 @@ export function validatePoolTerritory(
 
   return { valid: true };
 }
-
-/**
- * World size constant
- */
-export const WORLD_SIZE_VU = 10000;
 
 /**
  * Get playable area bounds

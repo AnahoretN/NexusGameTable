@@ -26,6 +26,7 @@ export const useObjectFilters = (
 ) => {
   // All table objects (convert from object record to array)
   const tableObjects = useMemo(() => {
+    const PLAYABLE_AREA_SIZE = 5000;
     return (Object.values(state.objects || {}) as TableObject[]).filter((obj) => {
       // Exclude panels, windows, decks (they are rendered separately)
       if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) {
@@ -47,6 +48,12 @@ export const useObjectFilters = (
         return false;
       }
 
+      // Exclude objects outside playable area (pool panel objects with negative or large coordinates)
+      // This prevents scrollbars from extending to include pool panel territories
+      if (obj.x < -100 || obj.y < -100 || obj.x > PLAYABLE_AREA_SIZE + 100 || obj.y > PLAYABLE_AREA_SIZE + 100) {
+        return false;
+      }
+
       return true;
     });
   }, [state.objects]);
@@ -59,8 +66,14 @@ export const useObjectFilters = (
 
   // Remote cursor slot objects (objects in other players' cursor slots)
   const remoteCursorSlotObjects = useMemo(() => {
+    const PLAYABLE_AREA_SIZE = 5000;
     return (Object.values(state.objects || {}) as TableObject[])
       .filter((obj) => {
+        // Exclude objects outside playable area (pool panel objects)
+        if (obj.x < -100 || obj.y < -100 || obj.x > PLAYABLE_AREA_SIZE + 100 || obj.y > PLAYABLE_AREA_SIZE + 100) {
+          return false;
+        }
+
         if (obj.type === ItemType.CARD) {
           const card = obj as CardType;
           return (
@@ -100,8 +113,14 @@ export const useObjectFilters = (
 
   // Remote dragging objects (objects being dragged by other players)
   const remoteDraggingObjects = useMemo(() => {
+    const PLAYABLE_AREA_SIZE = 5000;
     return (Object.values(state.objects || {}) as TableObject[])
       .filter((obj) => {
+        // Exclude objects outside playable area (pool panel objects)
+        if (obj.x < -100 || obj.y < -100 || obj.x > PLAYABLE_AREA_SIZE + 100 || obj.y > PLAYABLE_AREA_SIZE + 100) {
+          return false;
+        }
+
         if (obj.type === ItemType.CARD) {
           const card = obj as CardType;
           return card.isDragging && card.dragOwnerId && card.dragOwnerId !== 'local-player';
@@ -169,10 +188,11 @@ export const useObjectFilters = (
 
 /**
  * Calculate world bounds based on playable area
+ * NOTE: Returns dimensions in VU (virtual units), caller must convert to pixels
  */
 export const useWorldBounds = () => {
   return useMemo(() => {
-    // From PLAYABLE_AREA_SIZE constant (5000×5000 top-left)
+    // Return VU dimensions (will be converted to pixels by caller)
     const PLAYABLE_AREA_SIZE = 5000;
     return {
       width: PLAYABLE_AREA_SIZE,
