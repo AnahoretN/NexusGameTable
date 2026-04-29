@@ -56,7 +56,9 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
             name: 'Tableau 1',
             visibleToPlayerIds: [],
             manageableByPlayerIds: [],
-            editableByPlayerIds: []
+            editableByPlayerIds: [],
+            offsetX: 0,
+            offsetY: 0
           }
         ],
         activeTabId: 'tab-default',
@@ -134,7 +136,9 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
       name: `Tableau ${tableauData.tabs.length + 1}`,
       visibleToPlayerIds: [],
       manageableByPlayerIds: [],
-      editableByPlayerIds: []
+      editableByPlayerIds: [],
+      offsetX: 0,
+      offsetY: 0
     };
 
     updateObject(panel.id, {

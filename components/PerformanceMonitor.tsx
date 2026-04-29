@@ -34,7 +34,7 @@ interface PerformanceMonitorProps {
 }
 
 export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
-  enabled = process.env.NODE_ENV === 'development',
+  enabled = import.meta.env?.DEV ?? false,
   updateInterval = 5000, // 5 seconds
   showUI = false,
   onReportGenerated
@@ -184,6 +184,7 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
         stopMonitoring();
       };
     }
+    return undefined;
   }, [enabled]);
 
   // Don't render anything if UI is disabled

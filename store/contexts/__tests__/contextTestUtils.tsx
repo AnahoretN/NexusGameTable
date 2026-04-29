@@ -352,6 +352,6 @@ export function runContextTests() {
 }
 
 // Auto-run tests in development
-if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
   (window as any).runContextTests = runContextTests;
 }

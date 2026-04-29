@@ -173,7 +173,8 @@ export function dropObjectsToPool(
   poolObjects: Record<string, TableObject>,
   pixelsPerVU: number = 1,
   zoom: number = 1,
-  hyperscaleLayers?: HyperscaleLayer[]
+  hyperscaleLayers?: HyperscaleLayer[],
+  isFromHandOrDeck?: boolean  // NEW: Track if objects came from hand/deck for proper z-index handling
 ): void {
   if (!objects || objects.length === 0) {
     return;
@@ -185,6 +186,22 @@ export function dropObjectsToPool(
 
   if (typeof dispatch !== 'function') {
     return;
+  }
+
+  // Determine if objects came from hand/deck if not explicitly provided
+  // Check the first object's location to determine source
+  let shouldAllocateNewZ = isFromHandOrDeck;
+  if (shouldAllocateNewZ === undefined) {
+    const firstItem = objects[0];
+    const firstItemLocation = firstItem?.type === ItemType.CARD ? (firstItem as any).location : null;
+    // Note: CURSOR_SLOT is not a CardLocation - check inCursorSlot property instead
+    const inCursorSlot = (firstItem as CursorSlotObject)?.inCursorSlot;
+    shouldAllocateNewZ = firstItem && (
+      firstItemLocation === CardLocation.HAND ||
+      firstItemLocation === CardLocation.DECK ||
+      firstItemLocation === CardLocation.PILE ||
+      inCursorSlot === true
+    );
   }
 
   try {
@@ -212,12 +229,24 @@ export function dropObjectsToPool(
       layerGroups[layerId].push(obj);
     }
 
-    // Allocate z-indices for each layer (if hyperscaleLayers provided)
+    // Allocate z-indices for each layer
+    // IMPORTANT: Always allocate new z-indices for objects from hand/deck
+    // For objects from table, only allocate if hyperscaleLayers are provided
     const layerAllocations: Record<string, { allocatedZIndex: number; objectsToUpdate?: Record<string, number> }> = {};
     const layerItemIndices: Record<string, number> = {};
 
-    if (hyperscaleLayers && hyperscaleLayers.length > 0) {
+    // Determine if we should allocate z-indices
+    const shouldAllocateZIndices = shouldAllocateNewZ || (hyperscaleLayers && hyperscaleLayers.length > 0);
+
+    if (shouldAllocateZIndices) {
       for (const [layerId, _layerItems] of Object.entries(layerGroups)) {
+
+        // IMPORTANT: Only allocate z-indices if hyperscaleLayers is available
+        // If hyperscaleLayers is undefined, skip z-index allocation and use object's current z-index
+        if (!hyperscaleLayers || hyperscaleLayers.length === 0) {
+          continue;
+        }
+
         const allocation = allocateZIndexWithDefrag(
           poolObjects,
           layerId === 'default' ? undefined : layerId,
@@ -248,7 +277,8 @@ export function dropObjectsToPool(
 
       // IMPORTANT: Skip objects that are in a deck (location === 'DECK')
       // Cards in deck should not be dropped to pool panel - this prevents duplication
-      if (obj.type === ItemType.CARD && (obj as any).location === CardLocation.DECK) {
+      // BUT: Allow cards in CURSOR_SLOT (they're being dragged, not actually in deck)
+      if (obj.type === ItemType.CARD && (obj as any).location === CardLocation.DECK && !(obj as any).inCursorSlot) {
         return;
       }
 
@@ -361,9 +391,11 @@ export function dropObjectsToPool(
         }
       }
 
-      // Calculate z-index using smart allocation (if hyperscaleLayers provided)
+      // Calculate z-index using smart allocation
+      // IMPORTANT: Always allocate new z-indices for objects from hand/deck
+      // For objects from table, only allocate if hyperscaleLayers were provided
       let finalZIndex = obj.zIndex ?? 0;
-      if (hyperscaleLayers && hyperscaleLayers.length > 0) {
+      if (shouldAllocateZIndices) {
         const layerId = obj.hyperscaleLayerId ?? 'default';
         const allocation = layerAllocations[layerId];
         if (allocation) {

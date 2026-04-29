@@ -342,12 +342,22 @@ export const Tabletop: React.FC = () => {
   }, [handleMouseUp]);
 
   // Attach wheel handler with passive: false to allow preventDefault
+  // Note: Browser zoom blocking (Ctrl+scroll) is handled globally in App.tsx
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || !handleWheel) return;
 
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
+    // Wrapper for container handler
+    const containerWheelHandler = (e: Event) => {
+      handleWheel(e as WheelEvent);
+    };
+
+    // Add to container with passive: false
+    (container as any).addEventListener('wheel', containerWheelHandler, { passive: false });
+
+    return () => {
+      (container as any).removeEventListener('wheel', containerWheelHandler, { passive: false });
+    };
   }, [handleWheel, scrollContainerRef]);
 
   // Sync zoom from ToolSettingsContext to LocalSettings
@@ -379,9 +389,10 @@ export const Tabletop: React.FC = () => {
         clickOffsetY_PX?: number;
         fromPoolPanel?: string;
         sourceZoom?: number;
+        isFromHand?: boolean; // Flag for cards from hand panel
       }>;
 
-      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, sourceZoom, fromPoolPanel } = customEvent.detail;
+      const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, sourceZoom, fromPoolPanel, isFromHand } = customEvent.detail;
 
       const obj = state.objects[cardId];
 
@@ -423,11 +434,14 @@ export const Tabletop: React.FC = () => {
 
           // Use cardOverride coordinates if available (for cards from hand/pool)
           // Otherwise use object coordinates
+          // IMPORTANT: For cards from hand (isFromHand=true), cardOverride.x/y are deliberately
+          // undefined to prevent using pool/table coordinates which are in a different coordinate system
           const sourceX = cardOverride?.x !== undefined ? cardOverride.x : obj.x;
           const sourceY = cardOverride?.y !== undefined ? cardOverride.y : obj.y;
 
-          // For cards with special coordinates (like -999999 from hand), use click offset if provided
-          if (sourceX < -90000 || sourceY < -90000) {
+          // For cards from hand panel or with special coordinates (like -999999), use click offset if provided
+          // This prevents coordinate system mismatch between hand panel and global tabletop coordinates
+          if (isFromHand || sourceX < -90000 || sourceY < -90000) {
             // Check if we have pixel offsets from HandPanel or pool panel
             if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined && pixelsPerVU) {
               // clickOffsetX_PX is ALWAYS in screen pixels now (consistently from all sources)
@@ -696,9 +710,11 @@ export const Tabletop: React.FC = () => {
           clickOffsetY_PX: finalClickOffsetY_PX,
           sourceZoom: sourceZoom,
           // IMPORTANT: Store original position for proper drop calculation
-          // Use cardOverride coordinates if available (for cards from hand/pool)
-          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
-          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+          // For cards from HAND, don't use hidden position (-999999) as original
+          // Use cardOverride coordinates if available AND valid (> -90000)
+          // Otherwise use object coordinates
+          originalX: (cardOverride?.x !== undefined && cardOverride.x > -90000) ? cardOverride.x : (obj.x > -90000 ? obj.x : undefined),
+          originalY: (cardOverride?.y !== undefined && cardOverride.y > -90000) ? cardOverride.y : (obj.y > -90000 ? obj.y : undefined),
         };
       }
 
@@ -766,6 +782,37 @@ export const Tabletop: React.FC = () => {
       if (objectIds && objectIds.length > 0) {
         // Filter out the dropped objects from cursor slot
         setCursorSlot(prev => prev.filter(item => !objectIds.includes(item.id)));
+
+        // IMPORTANT: Also reset inCursorSlot flag for these specific objects
+        // But ONLY if they're not already on table (i.e., dropObjectsToPool wasn't called yet)
+        // This prevents race conditions where we override the proper state set by dropObjectsToPool
+        objectIds.forEach(objId => {
+          const obj = state.objects[objId];
+          if (obj) {
+            const inCursorSlot = (obj as any).inCursorSlot;
+            const isOnTable = (obj as any).isOnTable;
+
+            // Only clear inCursorSlot if the object is not already properly placed on table
+            // If isOnTable is true and location is TABLE, dropObjectsToPool already handled it
+            if (inCursorSlot && !isOnTable) {
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: objId,
+                  inCursorSlot: false
+                }
+              });
+            } else if (inCursorSlot && isOnTable) {
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: objId,
+                  inCursorSlot: false
+                }
+              });
+            }
+          }
+        });
         return;
       }
 
@@ -812,6 +859,8 @@ export const Tabletop: React.FC = () => {
         WebkitUserSelect: 'none',
         MozUserSelect: 'none',
         msUserSelect: 'none',
+        touchAction: 'none',
+        overscrollBehavior: 'none',
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -1045,6 +1094,8 @@ export const Tabletop: React.FC = () => {
         setSearchModalDeck={setSearchModalDeck}
         setTopDeckModalDeck={setTopDeckModalDeck}
         setDeleteCandidateId={setDeleteCandidateId}
+        offset={viewTransform?.scroll ? { x: viewTransform.scroll.x, y: viewTransform.scroll.y } : { x: 0, y: 0 }}
+        zoom={viewTransform?.zoom ?? 1}
       />
 
       {/* Cursor Slot Visualization */}

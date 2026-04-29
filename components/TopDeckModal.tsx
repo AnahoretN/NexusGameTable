@@ -169,7 +169,16 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
     const newCardOrder = cardOrder.filter(id => id !== cardId);
     updateObjectViaContext(deck.id, { cardIds: newCardOrder });
     setCardOrder(newCardOrder);
-  }, [updateObjectViaContext, activePlayerId, cardOrder, deck.id]);
+
+    // IMPORTANT: Add card to player's handCardOrder so it appears in hand panel
+    dispatch({
+      type: 'UPDATE_HAND_CARD_ORDER',
+      payload: {
+        playerId: activePlayerId,
+        cardOrder: [cardId, ...(gameState.players.find((p: any) => p.id === activePlayerId)?.handCardOrder || [])]
+      }
+    });
+  }, [updateObjectViaContext, activePlayerId, cardOrder, deck.id, dispatch, gameState.players]);
 
   // Mill to Bottom - send card to bottom of deck
   const handleMillToBottom = useCallback((cardId: string) => {

@@ -169,13 +169,29 @@ export function addCardToTopOfDeckReducer(state: any, action: any): any {
 export function millCardToBottomReducer(state: any, action: any): any {
   if (action.type !== 'MILL_CARD_TO_BOTTOM') return state;
 
-  const { deckId, count = 1 } = action.payload;
+  const { deckId, cardId } = action.payload;
   const deck = state.objects[deckId];
   if (!deck || deck.type !== ItemType.DECK) return state;
 
-  const currentCardIds = [...(deck as any).cardIds];
-  const toMove = currentCardIds.splice(0, Math.min(count, currentCardIds.length));
-  const newCardIds = [...currentCardIds, ...toMove];
+  // Remove card from any pile if it's there
+  let updatedPiles = (deck as any).piles;
+  if ((deck as any).piles) {
+    updatedPiles = (deck as any).piles.map((pile: any) => ({
+      ...pile,
+      cardIds: pile.cardIds.filter((id: string) => id !== cardId)
+    }));
+  }
+
+  // Build cardIds array - include the card even if it's not currently in deck
+  let workingCardIds = [...(deck as any).cardIds];
+  if (!workingCardIds.includes(cardId)) {
+    // Card is not in deck, add it first
+    workingCardIds.push(cardId);
+  }
+
+  // Remove card from current position and add to bottom
+  const newCardIds = workingCardIds.filter((id: string) => id !== cardId);
+  newCardIds.push(cardId);
 
   return {
     ...state,
@@ -183,7 +199,8 @@ export function millCardToBottomReducer(state: any, action: any): any {
       ...state.objects,
       [deckId]: {
         ...deck,
-        cardIds: newCardIds
+        cardIds: newCardIds,
+        piles: updatedPiles
       }
     }
   };

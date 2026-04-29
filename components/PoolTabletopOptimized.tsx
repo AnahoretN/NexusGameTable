@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId, useHyperscaleLayers, useLanguage, useSettingsModalState } from '../store/contexts';
-import { TableObject, ItemType, Deck as DeckType, CardPile, Counter, DiceObject, TokenShape, Board as BoardType, CardLocation, Card } from '../types';
+import { TableObject, ItemType, Deck as DeckType, CardPile, Counter, DiceObject, TokenShape, Board as BoardType, CardLocation, Card, ContextAction } from '../types';
 import { ObjectRenderer } from './ObjectRenderer';
 import { DeckComponent } from './DeckComponent';
 
@@ -60,10 +60,11 @@ interface DiceActionButtonsProps {
   setSearchModalDeck?: (deck: any) => void;
   setTopDeckModalDeck?: (deck: any) => void;
   className?: string;
+  players?: any[];
 }
 
-const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, animateDiceRoll, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, className = '' }: DiceActionButtonsProps) => {
-  const actionButtons = obj.actionButtons || [];
+const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, animateDiceRoll, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, players, className = '' }: DiceActionButtonsProps) => {
+  const actionButtons = 'actionButtons' in obj ? (obj.actionButtons || []) : [];
   const dice = obj as DiceObject;
   const isInGroup = !!dice.diceGroupId;
 
@@ -122,7 +123,7 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
     swingClockwise: {
       key: 'swingClockwise',
       action: () => executeActionButtonUniversal(obj, 'swingClockwise', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-orange-600 hover:bg-orange-500',
       title: 'Swing CW',
@@ -131,7 +132,7 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
     swingCounterClockwise: {
       key: 'swingCounterClockwise',
       action: () => executeActionButtonUniversal(obj, 'swingCounterClockwise', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-orange-600 hover:bg-orange-500',
       title: 'Swing CCW',
@@ -168,7 +169,7 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
     layerUp: {
       key: 'layerUp',
       action: () => executeActionButtonUniversal(obj, 'layerUp', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-blue-600 hover:bg-blue-500',
       title: 'Layer Up',
@@ -177,7 +178,7 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
     layerDown: {
       key: 'layerDown',
       action: () => executeActionButtonUniversal(obj, 'layerDown', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-blue-600 hover:bg-blue-500',
       title: 'Layer Down',
@@ -186,7 +187,7 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
     pin: {
       key: 'pin',
       action: () => executeActionButtonUniversal(obj, 'pin', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-pink-600 hover:bg-pink-500',
       title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
@@ -195,7 +196,7 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
     hide: {
       key: 'hide',
       action: () => executeActionButtonUniversal(obj, 'hide', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-slate-600 hover:bg-slate-500',
       title: 'Hide',
@@ -204,7 +205,7 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
   };
 
   let buttons = actionButtons
-    .map(action => buttonConfigs[action])
+    .map((action: ContextAction) => buttonConfigs[action])
     .filter(Boolean);
 
   // Add rollGroup button if dice is in a group and not already in buttons
@@ -219,7 +220,7 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
 
   return (
     <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 opacity-0 group-hover:opacity-100 pointer-events-none ${className}`}>
-      {buttons.map(btn => (
+      {buttons.map((btn: { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }) => (
         <button
           key={btn.key}
           onClick={(e) => { e.stopPropagation(); btn.action(); }}
@@ -245,10 +246,11 @@ interface CounterActionButtonsProps {
   isGM: boolean;
   setDeleteCandidateId?: (id: string | null) => void;
   className?: string;
+  players?: any[];
 }
 
-const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, setDeleteCandidateId, className = '' }: CounterActionButtonsProps) => {
-  const actionButtons = obj.actionButtons || [];
+const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, setDeleteCandidateId, players, className = '' }: CounterActionButtonsProps) => {
+  const actionButtons = 'actionButtons' in obj ? (obj.actionButtons || []) : [];
 
   const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
     rotateClockwise: {
@@ -268,7 +270,7 @@ const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlaye
     swingClockwise: {
       key: 'swingClockwise',
       action: () => executeActionButtonUniversal(obj, 'swingClockwise', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-orange-600 hover:bg-orange-500',
       title: 'Swing CW',
@@ -277,7 +279,7 @@ const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlaye
     swingCounterClockwise: {
       key: 'swingCounterClockwise',
       action: () => executeActionButtonUniversal(obj, 'swingCounterClockwise', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-orange-600 hover:bg-orange-500',
       title: 'Swing CCW',
@@ -314,7 +316,7 @@ const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlaye
     layerUp: {
       key: 'layerUp',
       action: () => executeActionButtonUniversal(obj, 'layerUp', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-blue-600 hover:bg-blue-500',
       title: 'Layer Up',
@@ -323,7 +325,7 @@ const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlaye
     layerDown: {
       key: 'layerDown',
       action: () => executeActionButtonUniversal(obj, 'layerDown', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-blue-600 hover:bg-blue-500',
       title: 'Layer Down',
@@ -332,7 +334,7 @@ const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlaye
     hide: {
       key: 'hide',
       action: () => executeActionButtonUniversal(obj, 'hide', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId }, isGM
+        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
       }),
       className: 'bg-slate-600 hover:bg-slate-500',
       title: 'Hide',
@@ -341,7 +343,7 @@ const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlaye
   };
 
   const buttons = actionButtons
-    .map(action => buttonConfigs[action])
+    .map((action: ContextAction) => buttonConfigs[action])
     .filter(Boolean)
     .slice(0, 4);
 
@@ -349,7 +351,7 @@ const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlaye
 
   return (
     <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 opacity-0 group-hover:opacity-100 pointer-events-none ${className}`}>
-      {buttons.map(btn => (
+      {buttons.map((btn: { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }) => (
         <button
           key={btn.key}
           onClick={(e) => { e.stopPropagation(); btn.action(); }}
@@ -541,7 +543,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // Use universal handler which now handles dice groups correctly
         universalExecuteClickAction(obj, action, {
           dispatch,
-          state: { objects, activePlayerId, diceGroups: state.diceGroups },
+          state: { objects: state.objects, activePlayerId, diceGroups: state.diceGroups },
           additionalHandlers: { onAnimateDice: animateDiceRoll }
         });
         return;
@@ -698,6 +700,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     const poolMinY = poolZone.offsetY;
     const poolMaxY = poolZone.offsetY + poolZone.height;
 
+    // Log filtering for debugging
+    const filterLog: any[] = [];
+
     const filtered = allObjects.filter(obj => {
       // Exclude UI objects (panels and windows) - they have their own rendering
       if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
@@ -706,6 +711,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
       // Exclude hidden objects (isOnTable: false)
       if ((obj as any).isOnTable === false) {
+        filterLog.push({ id: obj.id, reason: 'isOnTable=false', isOnTable: (obj as any).isOnTable });
         return false;
       }
 
@@ -725,6 +731,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
       // Exclude cards that are in deck (location: DECK) - they are part of the deck
       if (obj.type === ItemType.CARD && (obj as any).location === CardLocation.DECK) {
+        filterLog.push({ id: obj.id, reason: 'location=DECK', location: (obj as any).location });
         return false;
       }
 
@@ -738,6 +745,15 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER) {
         const isInPool = objX < poolMaxX && objX + objWidth > poolMinX &&
                          objY < poolMaxY && objY + objHeight > poolMinY;
+        if (!isInPool && (obj as any).inCursorSlot === false) {
+          filterLog.push({
+            id: obj.id,
+            reason: 'outside-pool-bounds',
+            type: obj.type,
+            objX, objY, objWidth, objHeight,
+            poolMinX, poolMaxX, poolMinY, poolMaxY
+          });
+        }
         return isInPool;
       }
 
@@ -746,6 +762,15 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       const centerY = objY + objHeight / 2;
       const isInPool = centerX >= poolMinX && centerX <= poolMaxX &&
                        centerY >= poolMinY && centerY <= poolMaxY;
+      if (!isInPool && (obj as any).inCursorSlot === false) {
+        filterLog.push({
+          id: obj.id,
+          reason: 'center-outside-pool',
+          type: obj.type,
+          centerX, centerY,
+          poolMinX, poolMaxX, poolMinY, poolMaxY
+        });
+      }
       return isInPool;
     });
 
@@ -862,6 +887,25 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           );
           dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom, hyperscaleLayers);
 
+          // IMPORTANT: Remove dropped cards from all players' handCardOrder
+          // When cards are dropped from hand to pool panel, they should be removed from hand
+          const droppedCardIds = cursorSlotObjects.filter(obj => obj.type === ItemType.CARD).map(obj => obj.id);
+          if (droppedCardIds.length > 0) {
+            players.forEach(player => {
+              const currentHandOrder = player.handCardOrder || [];
+              const updatedHandOrder = currentHandOrder.filter(id => !droppedCardIds.includes(id));
+              if (updatedHandOrder.length !== currentHandOrder.length) {
+                dispatch({
+                  type: 'UPDATE_PLAYER',
+                  payload: {
+                    id: player.id,
+                    updates: { handCardOrder: updatedHandOrder }
+                  }
+                });
+              }
+            });
+          }
+
           // IMPORTANT: Clear from locallyDraggingIdsRef to allow objects to reappear in pool panel
           cursorSlotObjects.forEach(obj => {
             locallyDraggingIdsRef.current.delete(obj.id);
@@ -944,7 +988,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     setDraggingObject(obj);
     setDragStartPos({ x: e.clientX, y: e.clientY });
     cursorSlotEventSentRef.current = false; // Reset event flag
-  }, [poolZone.panelId, clickTimerRef, clickTrackerRef, handleRollDice, setLocallyDraggingTrigger]);
+  }, [poolZone.panelId, clickTimerRef, clickTrackerRef, handleRollDice, setLocallyDraggingTrigger, players, pixelsPerVU, currentZoom, poolZone, dispatch, state.objects, hyperscaleLayers]);
 
   // Handle context menu
   const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
@@ -1168,7 +1212,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   }, []);
 
   // Timer ref for just-dropped cleanup
-  const justDroppedTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const justDroppedTimerRef = useRef<number | null>(null);
 
   // Cleanup just-dropped timer on unmount
   useEffect(() => {
@@ -1657,6 +1701,11 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       detail: { deckId }
     }));
 
+    // Send cursor-slot-dropped event to reset hover state in DeckComponent
+    window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+      detail: { cardIds: cursorSlotObjects.map(o => o.id) }
+    }));
+
     // Track dropped objects to prevent immediate re-pickup
     cursorSlotObjects.forEach(obj => justDroppedToPoolRef.current.add(obj.id));
 
@@ -1690,7 +1739,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       cardsInSlot.forEach((item) => {
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: item.id, updates: { inCursorSlot: false, fromPoolPanel: undefined }, _localOnly: true }
+          payload: { id: item.id, updates: { inCursorSlot: false, fromPoolPanel: undefined } },
+          _localOnly: true
         });
       });
 
@@ -1813,6 +1863,11 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       detail: { deckId }
     }));
 
+    // Send cursor-slot-dropped event to reset hover state in DeckComponent
+    window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+      detail: { cardIds: cursorSlotObjects.map(o => o.id) }
+    }));
+
     // Track dropped objects to prevent immediate re-pickup
     cursorSlotObjects.forEach(obj => justDroppedToPoolRef.current.add(obj.id));
 
@@ -1921,7 +1976,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           const isOverDeck = e.clientX >= deckRect.left && e.clientX <= deckRect.right &&
                             e.clientY >= deckRect.top && e.clientY <= deckRect.bottom;
 
-          if (isOverDeck) {
+          if (isOverDeck && objectId) {
             dropToDeck(objectId);
             return;
           }
@@ -1972,6 +2027,27 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Check if cursor is over the VISIBLE pool panel window first
       // Use the same logic as handleGlobalMouseUp for consistency
       const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
+
+      // IMPORTANT: Check if cursor is over hand panel FIRST
+      // If dragging to hand panel, let hand panel handle it - don't drop to pool
+      // Use bounding rect check because cursor slot visualization might be on top
+      let isOverHandPanel = false;
+      const handPanels = document.querySelectorAll('[data-hand-panel="true"]');
+      for (const handPanel of handPanels) {
+        const rect = handPanel.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right &&
+            e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          isOverHandPanel = true;
+          break;
+        }
+      }
+
+      logger.log('[PoolTabletop] Hand panel check', { isOverHandPanel, x: e.clientX, y: e.clientY });
+      if (isOverHandPanel) {
+        // Let hand panel handle the drop via its cursor-slot-drop-to-hand event
+        logger.log('[PoolTabletop] Skipping drop - cursor over hand panel');
+        return;
+      }
 
       // PRIMARY METHOD: Check if cursor is over this specific pool panel
       const isOverThisPoolPanel = elementUnderCursor?.closest(`[data-pool-panel="${poolZone.panelId}"]`) != null;
@@ -2071,7 +2147,26 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       }
 
       // Drop objects using utility function
-      dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
+      dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom, hyperscaleLayers);
+
+      // IMPORTANT: Remove dropped cards from all players' handCardOrder
+      // When cards are dropped from hand to pool panel, they should be removed from hand
+      const droppedCardIds = cursorSlotObjects.filter(obj => obj.type === ItemType.CARD).map(obj => obj.id);
+      if (droppedCardIds.length > 0) {
+        players.forEach(player => {
+          const currentHandOrder = player.handCardOrder || [];
+          const updatedHandOrder = currentHandOrder.filter(id => !droppedCardIds.includes(id));
+          if (updatedHandOrder.length !== currentHandOrder.length) {
+            dispatch({
+              type: 'UPDATE_PLAYER',
+              payload: {
+                id: player.id,
+                updates: { handCardOrder: updatedHandOrder }
+              }
+            });
+          }
+        });
+      }
 
       // IMPORTANT: Clear from locallyDraggingIdsRef to allow objects to reappear in pool panel
       // This is needed when objects were picked up from THIS panel and are being dropped back
@@ -2098,7 +2193,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         }));
       });
     }
-  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, contextMenu, dropToDeck, dropToPile, setLocallyDraggingTrigger]);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, contextMenu, dropToDeck, dropToPile, setLocallyDraggingTrigger, hyperscaleLayers, players]);
 
   // Global mouseup handler for cursor slot drop (handles all mouseup events)
   // This ensures objects are dropped even if mouseup happens outside PoolTabletop
@@ -2136,6 +2231,26 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Use elementsFromPoint to get all elements at cursor position, not just the top one
       // This is more reliable when cursor slot visualization is under the cursor
       const elementsAtCursor = document.elementsFromPoint(x, y);
+
+      // IMPORTANT: Check if cursor is over hand panel FIRST
+      // If dragging to hand panel, let hand panel handle it - don't drop to pool
+      // Use bounding rect check because cursor slot visualization might be on top
+      let isOverHandPanel = false;
+      const handPanels = document.querySelectorAll('[data-hand-panel="true"]');
+      for (const handPanel of handPanels) {
+        const rect = handPanel.getBoundingClientRect();
+        if (x >= rect.left && x <= rect.right &&
+            y >= rect.top && y <= rect.bottom) {
+          isOverHandPanel = true;
+          break;
+        }
+      }
+
+      // If cursor is over hand panel, don't handle drop in pool panel
+      if (isOverHandPanel) {
+        // Let hand panel handle the drop via its cursor-slot-drop-to-hand event
+        return;
+      }
 
       // Find if any element under cursor is inside our pool panel
       let isOverThisPoolPanel = false;
@@ -2226,7 +2341,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                                 y >= deckRect.top && y <= deckRect.bottom;
 
               if (isOverDeck) {
-                dropToDeck(objectId);
+                if (objectId) {
+                  dropToDeck(objectId);
+                }
                 e.stopPropagation();
                 e.preventDefault();
                 return;
@@ -2331,7 +2448,26 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         }
 
         // Drop objects using utility function
-        dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom);
+        dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom, hyperscaleLayers);
+
+        // IMPORTANT: Remove dropped cards from all players' handCardOrder
+        // When cards are dropped from hand to pool panel, they should be removed from hand
+        const droppedCardIds = cursorSlotObjects.filter(obj => obj.type === ItemType.CARD).map(obj => obj.id);
+        if (droppedCardIds.length > 0) {
+          players.forEach(player => {
+            const currentHandOrder = player.handCardOrder || [];
+            const updatedHandOrder = currentHandOrder.filter(id => !droppedCardIds.includes(id));
+            if (updatedHandOrder.length !== currentHandOrder.length) {
+              dispatch({
+                type: 'UPDATE_PLAYER',
+                payload: {
+                  id: player.id,
+                  updates: { handCardOrder: updatedHandOrder }
+                }
+              });
+            }
+          });
+        }
 
         // IMPORTANT: Clear from locallyDraggingIdsRef to allow objects to reappear in pool panel
         cursorSlotObjects.forEach(obj => {
@@ -2371,7 +2507,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
     window.addEventListener('mouseup', handleGlobalMouseUp, { capture: true });
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp, { capture: true } as any);
-  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, dropToDeck, dropToPile, locallyDraggingTrigger]);
+  }, [poolZone, currentZoom, pixelsPerVU, dispatch, state.objects, dropToDeck, dropToPile, locallyDraggingTrigger, hyperscaleLayers, players]);
 
   // Listen for object-drag-end event from main tabletop (for both cards and tokens)
   useEffect(() => {
@@ -2742,6 +2878,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                     activePlayerId={activePlayerId}
                     isGM={isGM}
                     setDeleteCandidateId={setDeleteCandidateId}
+                    players={players}
                   />
                 </div>
               );
@@ -2845,6 +2982,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                     isGM={isGM}
                     animateDiceRoll={animateDiceRoll}
                     setDeleteCandidateId={setDeleteCandidateId}
+                    players={players}
                   />
                 </div>
               );
@@ -2871,6 +3009,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                 setTopDeckModalDeck={setTopDeckModalDeck}
                 animateDiceRoll={animateDiceRoll}
                 activePlayerId={activePlayerId}
+                players={state.players}
                 style={{
                   left: relativeX,
                   top: relativeY

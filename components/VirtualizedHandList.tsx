@@ -13,7 +13,7 @@ import React, { useRef, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Card as CardType } from '../types';
 
-interface VirtualizedHandListProps {
+export interface VirtualizedHandListProps {
   cards: CardType[];
   pixelsPerVU: number;
   className?: string;
@@ -141,7 +141,7 @@ export function useVirtualizedHandList(cardCount: number) {
 /**
  * Non-virtualized version for small hands (better performance for < 15 cards)
  */
-interface SimpleHandListProps {
+export interface SimpleHandListProps {
   cards: CardType[];
   pixelsPerVU: number;
   className?: string;

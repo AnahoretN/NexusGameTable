@@ -18,21 +18,21 @@ import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
 import { PlayerNameModal } from './PlayerNameModal';
 import { generateUUID } from '../utils/uuid';
-import { useToolSettings, useDrawingTool } from '../contexts/ToolSettingsContext';
+import { useToolSettings, useDrawingTool, DrawingTool } from '../contexts/ToolSettingsContext';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
 import { useManualConnection } from '../store/useManualConnection';
 import { createPack, loadPack } from '../utils/packManager';
 import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
-import { blobConverter } from '../utils/blobConverter';
+import { convertBlobsInObjects } from '../utils/blobConverter';
 import LogViewer from './LogViewer';
 
 /**
  * Convert all blob URLs in objects to base64 data URLs
  * 🚀 OPTIMIZED: Uses blobConverter for non-blocking async conversion
  */
-const convertBlobsInObjects = async (objects: Record<string, TableObject>): Promise<Record<string, TableObject>> => {
-  return blobConverter.convertBlobsInObjects(objects);
+const convertBlobsInObjectsHelper = async (objects: Record<string, TableObject>): Promise<Record<string, TableObject>> => {
+  return convertBlobsInObjects(objects);
 };
 
 // Get icon component for object type
@@ -434,7 +434,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
   const handleSaveGame = async () => {
     // Convert blob URLs to base64 before saving
-    const convertedObjects = await convertBlobsInObjects(state.objects);
+    const convertedObjects = await convertBlobsInObjectsHelper(state.objects);
     // Create a clean state object without language to preserve user's language preference
     const { language, ...stateWithoutLanguage } = state;
     const stateToSave = { ...stateWithoutLanguage, objects: convertedObjects };
@@ -739,7 +739,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 dispatch={dispatch}
                 deleteCandidateId={deleteCandidateId}
                 setDeleteCandidateId={setDeleteCandidateId}
-                isGM={currentUserIsGM}
+                currentUserIsGM={currentUserIsGM}
                 canCreateObjects={currentUserIsGM || playerPermissions.createObjects}
                 canConfigureObjects={currentUserIsGM || playerPermissions.configureObjects}
                 canDeleteObjects={currentUserIsGM || playerPermissions.deleteObjects}
@@ -747,6 +747,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 language={language}
                 isShiftPressed={isShiftPressed}
                 viewTransform={viewTransform}
+                hyperscaleLayers={hyperscaleLayers}
+                selectedLayersFromContext={selectedLayersFromContext}
               />
             ))}
           </div>
@@ -1592,6 +1594,8 @@ interface CategorySectionProps {
   language: AppLanguage;
   isShiftPressed: boolean;
   viewTransform: any;
+  hyperscaleLayers: import('../types').HyperscaleLayer[];
+  selectedLayersFromContext: import('../types').HyperscaleLayer[];
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({
@@ -1608,6 +1612,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   language,
   isShiftPressed,
   viewTransform,
+  hyperscaleLayers,
+  selectedLayersFromContext,
 }) => {
   // Load expanded state from localStorage, default to false (collapsed)
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -2229,9 +2235,6 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     </div>
   );
 };
-
-// Drawing tool types
-type DrawingTool = 'none' | 'marker' | 'eraser' | 'compass' | 'ruler' | 'zoom';
 
 // Drawing tool button component
 interface DrawingToolButtonProps {

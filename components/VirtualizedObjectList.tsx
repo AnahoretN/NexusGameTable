@@ -14,7 +14,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { TableObject, ItemType } from '../types';
 import { ObjectRendererMemo } from './ObjectRenderer';
 
-interface VirtualizedObjectListProps {
+export interface VirtualizedObjectListProps {
   objects: Record<string, TableObject>;
   pixelsPerVU: number;
   className?: string;
@@ -25,6 +25,7 @@ interface VirtualizedObjectListProps {
   setTopDeckModalDeck?: (deck: any) => void;
   animateDiceRoll?: (dice: any) => void;
   activePlayerId?: string;
+  players?: any[];
   // Drag state
   draggingId?: string | null;
   // Visibility filter
@@ -43,6 +44,7 @@ export const VirtualizedObjectList: React.FC<VirtualizedObjectListProps> = ({
   setTopDeckModalDeck,
   animateDiceRoll,
   activePlayerId,
+  players,
   draggingId = null,
   showOnlyOnTable = true,
   layerId,
@@ -170,6 +172,7 @@ export const VirtualizedObjectList: React.FC<VirtualizedObjectListProps> = ({
                 setTopDeckModalDeck={setTopDeckModalDeck}
                 animateDiceRoll={animateDiceRoll}
                 activePlayerId={activePlayerId}
+                players={players}
               />
             </div>
           );

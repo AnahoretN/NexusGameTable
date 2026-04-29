@@ -33,6 +33,8 @@ export function executeActionButtonUniversal(
   action: string,
   context: ActionButtonsHandlerContext
 ) {
+  console.log('[executeActionButtonUniversal] action:', action, 'obj.id:', obj.id, 'activePlayerId:', context.activePlayerId);
+
   const {
     dispatch,
     setDeleteCandidateId,
@@ -65,6 +67,8 @@ export function executeActionButtonUniversal(
     setNexusBoardAddingCell,
     animateDiceRoll,
   };
+
+  console.log('[executeActionButtonUniversal] params.activePlayerId:', params.activePlayerId, 'params.state.activePlayerId:', params.state.activePlayerId);
 
   // Delegate to the shared context menu action handler
   executeContextMenuAction(action, params);

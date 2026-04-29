@@ -597,7 +597,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
           label: translate('Mill', language as Locale),
           action: 'millTopCard',
           icon: <Undo size={14} />,
-          visible: (object as Deck).piles && (object as Deck).piles.length > 0
+          visible: ((object as Deck).piles?.length ?? 0) > 0
         },
         {
           label: translate('To Bottom', language as Locale),
@@ -632,8 +632,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       action: 'piles',
       icon: <Layers size={14} />,
       visible: object.type === ItemType.DECK &&
-               (object as Deck).piles &&
-               (object as Deck).piles.length > 0 &&
+               ((object as Deck).piles?.length ?? 0) > 0 &&
                can('piles'),
       hasSubmenu: true,
       group: 'objectActions',
@@ -964,7 +963,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       if (item.group && groupHasVisibleItems(item.group) && !BOTTOM_SEPARATOR_LESS_GROUPS.has(item.group)) {
         const isLastInGroup = !visibleItems
           .slice(visibleItems.indexOf(item) + 1)
-          .some(nextItem => isInGroup(nextItem, item.group));
+          .some(nextItem => item.group ? isInGroup(nextItem, item.group) : false);
 
         if (isLastInGroup) {
           result.push({

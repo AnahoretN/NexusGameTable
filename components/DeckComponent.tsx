@@ -94,7 +94,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
 
   // 🔥 OPTIMIZED: Memoize dragging object type check to avoid repeated lookups
   const isDraggingCardFromTable = useMemo(() => {
-    return draggingId && draggingObject?.type === ItemType.CARD;
+    return draggingId !== null && draggingId !== undefined && draggingObject !== null && draggingObject.type === ItemType.CARD;
   }, [draggingId, draggingObject]);
 
   // Local state for cursor hover detection - same approach as HandPanel

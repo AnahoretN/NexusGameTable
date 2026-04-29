@@ -18,7 +18,7 @@ type ActionWithoutPayload<T extends string> = {
 
 export type Action =
   | BaseAction<'ADD_OBJECT', TableObject>
-  | BaseAction<'UPDATE_OBJECT', Partial<TableObject> & { id: string }>
+  | BaseAction<'UPDATE_OBJECT', (Partial<TableObject> & { id: string }) | { id: string; updates: Partial<TableObject> }>
   | BaseAction<'MOVE_OBJECT', { id: string; x: number; y: number }>
   | BaseAction<'MOVE_OBJECT_COMMIT', { id: string; x: number; y: number; previousX: number; previousY: number }> // Sent on drag end
   | BaseAction<'DELETE_OBJECT', { id: string }>

@@ -502,12 +502,84 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     case 'moveToHand':
       // Move card to hand - use DRAW_CARD in reverse or set proper card location
       const cardToHand = object as any;
+      console.log('[contextMenuActions moveToHand] START');
+      console.log('  activePlayerId:', activePlayerId);
+      console.log('  object.id:', object.id);
+      console.log('  object.location:', cardToHand.location);
+      console.log('  object.ownerId:', cardToHand.ownerId);
+      console.log('  object.inCursorSlot:', cardToHand.inCursorSlot);
+      console.log('  object.isOnTable:', cardToHand.isOnTable);
+      console.log('  cardToHand.deckId:', cardToHand.deckId);
+
       if (cardToHand.deckId) {
-        // Remove from current location and add to player's hand
+        const deck = state.objects[cardToHand.deckId];
+        console.log('[contextMenuActions moveToHand] deck:', deck?.id, 'deck.cardIds:', deck?.cardIds);
+        if (deck) {
+          // Remove from deck's cardIds
+          if (deck.cardIds) {
+            const updatedCardIds = deck.cardIds.filter((id: string) => id !== object.id);
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: cardToHand.deckId, updates: { cardIds: updatedCardIds } }
+            });
+            console.log('[contextMenuActions moveToHand] removed from deck.cardIds, updatedCardIds:', updatedCardIds);
+          }
+          // Remove from piles if card is in a pile
+          if (deck.piles && deck.piles.length > 0) {
+            const updatedPiles = deck.piles.map(pile => ({
+              ...pile,
+              cardIds: pile.cardIds.filter((id: string) => id !== object.id)
+            }));
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: { id: cardToHand.deckId, updates: { piles: updatedPiles } }
+            });
+            console.log('[contextMenuActions moveToHand] removed from piles');
+          }
+        }
+        // Set card location to hand with proper owner
+        // IMPORTANT: Set x,y to far away coordinates to hide card from table/pool panel
+        // This prevents coordinate system mismatch when card is picked up from hand later
+        const updatePayload = {
+          id: object.id,
+          updates: {
+            location: CardLocation.HAND,
+            faceUp: true,
+            ownerId: activePlayerId,
+            isOnTable: false,
+            inCursorSlot: false,  // IMPORTANT: Clear inCursorSlot so card appears in hand
+            x: -999999,  // Hide card from table/pool panel visual area
+            y: -999999
+          }
+        };
+        console.log('[contextMenuActions moveToHand] BEFORE dispatch, payload:', JSON.stringify(updatePayload, null, 2));
+        console.log('[contextMenuActions moveToHand] CardLocation.HAND:', CardLocation.HAND);
         dispatch({
           type: 'UPDATE_OBJECT',
-          payload: { id: object.id, updates: { location: CardLocation.HAND } }
+          payload: updatePayload
         });
+
+        // IMPORTANT: Also add card to player's handCardOrder so it appears in hand panel
+        // Note: state.players might not be available in all contexts (e.g., from executeActionButtonUniversal)
+        if (state.players && Array.isArray(state.players)) {
+          const player = state.players.find((p: any) => p.id === activePlayerId);
+          if (player) {
+            const currentHandOrder = player.handCardOrder || [];
+            // Check if card is not already in hand order (avoid duplicates)
+            if (!currentHandOrder.includes(object.id)) {
+              const newHandOrder = [object.id, ...currentHandOrder];
+              dispatch({
+                type: 'UPDATE_HAND_CARD_ORDER',
+                payload: { playerId: activePlayerId, cardOrder: newHandOrder }
+              });
+              console.log('[contextMenuActions moveToHand] Added to handCardOrder:', newHandOrder);
+            }
+          }
+        } else {
+          console.log('[contextMenuActions moveToHand] state.players not available, skipping handCardOrder update');
+        }
+      } else {
+        console.log('[contextMenuActions moveToHand] NO deckId!');
       }
       break;
 

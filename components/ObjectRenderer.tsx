@@ -24,26 +24,30 @@ interface ObjectRendererProps {
   setTopDeckModalDeck?: (deck: any) => void;
   animateDiceRoll?: (dice: any) => void;
   activePlayerId?: string;
+  players?: any[];
 }
 
-export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
-  obj,
-  pixelsPerVU,
-  isDragging = false,
-  onMouseDown,
-  onContextMenu,
-  style = {},
-  className = '',
-  isGM = false,
-  showTokenName = false,
-  dispatch,
-  allObjects = {},
-  setDeleteCandidateId,
-  setSearchModalDeck,
-  setTopDeckModalDeck,
-  animateDiceRoll,
-  activePlayerId
-}) => {
+export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
+  const {
+    obj,
+    pixelsPerVU,
+    isDragging = false,
+    onMouseDown,
+    onContextMenu,
+    style = {},
+    className = '',
+    isGM = false,
+    showTokenName = false,
+    dispatch,
+    allObjects = {},
+    setDeleteCandidateId,
+    setSearchModalDeck,
+    setTopDeckModalDeck,
+    animateDiceRoll,
+    activePlayerId
+  } = props;
+
+  const players = props.players || [];
   const rotation = obj.rotation || 0;
   // When dragging, use very high z-index to appear above everything
   // Otherwise use original object's z-index to maintain layer position
@@ -243,7 +247,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
           {actionButtons && actionButtons.length > 0 && dispatch && (
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 z-20 pointer-events-none">
               {actionButtons.map((action) => {
-                const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects);
+                const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects, players);
                 if (!buttonConfig) {
                   return null;
                 }
@@ -315,7 +319,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
           {obj.actionButtons && obj.actionButtons.length > 0 && dispatch && (
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 z-20 pointer-events-none">
               {obj.actionButtons.map((action) => {
-                const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects);
+                const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects, players);
                 return buttonConfig ? (
                   <button
                     key={action}
@@ -387,7 +391,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = ({
           {obj.actionButtons && obj.actionButtons.length > 0 && dispatch && (
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 z-20 pointer-events-none">
               {obj.actionButtons.map((action) => {
-                const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects);
+                const buttonConfig = getActionButtonConfig(action, obj, dispatch, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, animateDiceRoll, activePlayerId, allObjects, players);
                 return buttonConfig ? (
                   <button
                     key={action}
@@ -426,7 +430,8 @@ function getActionButtonConfig(
   setTopDeckModalDeck?: (deck: any) => void,
   animateDiceRoll?: (dice: any) => void,
   activePlayerId?: string,
-  allObjects?: Record<string, TableObject>
+  allObjects?: Record<string, TableObject>,
+  players?: any[]
 ) {
   // Determine flip icon based on card state
   const flipIcon = obj.type === ItemType.CARD && (obj as Card).faceUp
@@ -439,16 +444,20 @@ function getActionButtonConfig(
     : <Lock size={14} />;
 
   // Universal action handler
-  const handleAction = (actionName: string) => () => {
-    executeActionButtonUniversal(obj, actionName, {
-      dispatch,
-      setDeleteCandidateId,
-      setSearchModalDeck,
-      setTopDeckModalDeck,
-      animateDiceRoll,
-      activePlayerId,
-      objects: allObjects
-    });
+  const handleAction = (actionName: string) => {
+    return () => {
+      console.log('[ObjectRenderer handleAction] actionName:', actionName, 'obj.id:', obj.id, 'obj.location:', (obj as any).location);
+      executeActionButtonUniversal(obj, actionName, {
+        dispatch,
+        setDeleteCandidateId,
+        setSearchModalDeck,
+        setTopDeckModalDeck,
+        animateDiceRoll,
+        activePlayerId,
+        objects: allObjects,
+        state: { objects: allObjects, activePlayerId, players }
+      });
+    };
   };
 
   const configs: Record<string, { className: string; title: string; icon: React.ReactNode; action: () => void }> = {
@@ -632,8 +641,8 @@ export const ObjectRendererMemo = memo(ObjectRenderer, (prevProps, nextProps) =>
   if (prevObj.height !== nextObj.height) return false;
 
   // Visual properties
-  if (prevObj.content !== nextObj.content) return false;
-  if (prevObj.isOnTable !== nextObj.isOnTable) return false;
+  if ('content' in prevObj && 'content' in nextObj && prevObj.content !== nextObj.content) return false;
+  if ('isOnTable' in prevObj && 'isOnTable' in nextObj && prevObj.isOnTable !== nextObj.isOnTable) return false;
   if (prevObj.locked !== nextObj.locked) return false;
 
   // Card-specific properties

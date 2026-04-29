@@ -308,4 +308,12 @@ body {
   color: var(--text-primary);
   margin: 0;
   overflow: hidden;
+  /* Prevent browser zoom on touch devices */
+  touch-action: none;
+  /* Prevent zoom gestures */
+  -ms-touch-action: none;
+  /* Prevent browser overscroll behaviors */
+  overscroll-behavior: none;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
 }

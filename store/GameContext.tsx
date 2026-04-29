@@ -560,7 +560,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     }
     case 'UPDATE_OBJECT': {
       const obj = state.objects[action.payload.id];
-      if (!obj) return state;
+      if (!obj) {
+        logger.warn('[UPDATE_OBJECT] Object not found', { id: action.payload.id });
+        return state;
+      }
 
       // For panels and windows, filter out local-only properties from network sync
       // These properties should remain local to each player and not be synced
@@ -3387,16 +3390,32 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const { cardId, deckId } = action.payload;
       const deck = state.objects[deckId] as Deck;
       if (!deck || deck.type !== ItemType.DECK) return state;
-      if (!deck.cardIds.includes(cardId)) return state;
 
       // Capture state for undo before making changes
       const previousCardIds = [...deck.cardIds];
 
+      // Remove card from any pile if it's there
+      let updatedPiles = deck.piles;
+      if (deck.piles) {
+        updatedPiles = deck.piles.map(pile => ({
+          ...pile,
+          cardIds: pile.cardIds.filter(id => id !== cardId)
+        }));
+      }
+
+      // Build cardIds array - include the card even if it's not currently in deck
+      // (card might be on table, in hand, etc.)
+      let workingCardIds = [...deck.cardIds];
+      if (!workingCardIds.includes(cardId)) {
+        // Card is not in deck, add it first
+        workingCardIds.push(cardId);
+      }
+
       // Find the position of the first hidden card from the end
       // Insert before hidden cards so they stay at the very bottom
-      let insertIndex = deck.cardIds.length;
-      for (let i = deck.cardIds.length - 1; i >= 0; i--) {
-        const currentCardId = deck.cardIds[i];
+      let insertIndex = workingCardIds.length;
+      for (let i = workingCardIds.length - 1; i >= 0; i--) {
+        const currentCardId = workingCardIds[i];
         const cardObj = state.objects[currentCardId] as Card;
         if (cardObj && cardObj.hidden) {
           insertIndex = i;
@@ -3406,12 +3425,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // Remove card from current position and insert at calculated position
-      const filteredIds = deck.cardIds.filter(id => id !== cardId);
+      const filteredIds = workingCardIds.filter(id => id !== cardId);
       const newCardIds = [
         ...filteredIds.slice(0, insertIndex),
         cardId,
         ...filteredIds.slice(insertIndex)
       ];
+
+      // Update the card itself - set location to DECK and clear table state
+      const card = state.objects[cardId] as Card;
+      const updatedCard = card ? {
+        ...card,
+        location: CardLocation.DECK,
+        isOnTable: false,
+        ownerId: undefined,
+        x: undefined,
+        y: undefined,
+      } : null;
 
       // Add to general history (max 25)
       const historyEntry: GeneralHistoryEntry = {
@@ -3422,12 +3452,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
       const newGeneralHistory = [...state.undo.generalHistory, historyEntry].slice(-100);
 
+      const newObjects = {
+        ...state.objects,
+        [deckId]: { ...deck, cardIds: newCardIds, piles: updatedPiles }
+      };
+      if (updatedCard) {
+        newObjects[cardId] = updatedCard;
+      }
+
       return {
         ...state,
-        objects: {
-          ...state.objects,
-          [deckId]: { ...deck, cardIds: newCardIds }
-        },
+        objects: newObjects,
         undo: { ...state.undo, generalHistory: newGeneralHistory },
       };
     }

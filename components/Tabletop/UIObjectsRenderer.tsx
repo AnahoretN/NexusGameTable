@@ -26,6 +26,8 @@ interface UIObjectsRendererProps {
   setSearchModalDeck: (deck: DeckType) => void;
   setTopDeckModalDeck: (deck: DeckType) => void;
   setDeleteCandidateId: (id: string | null) => void;
+  offset?: { x: number; y: number };
+  zoom?: number;
 }
 
 export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
@@ -48,7 +50,9 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   dispatch,
   setSearchModalDeck,
   setTopDeckModalDeck,
-  setDeleteCandidateId
+  setDeleteCandidateId,
+  offset = { x: 0, y: 0 },
+  zoom = 1,
 }) => {
   const { v2p } = context;
 
@@ -156,6 +160,9 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
             isDragging={draggingId === uiObj.id}
             onMouseDown={onMouseDown}
             onContextMenu={onContextMenu}
+            offset={offset}
+            zoom={zoom}
+            isPinnedMode={false}
           />
         ))}
       </div>
@@ -169,6 +176,9 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
             isDragging={draggingId === uiObj.id}
             onMouseDown={onMouseDown}
             onContextMenu={onContextMenu}
+            offset={{ x: 0, y: 0 }}
+            zoom={1}
+            isPinnedMode={true}
           />
         ))}
       </div>
@@ -218,7 +228,10 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     prevProps.dispatch === nextProps.dispatch &&
     prevProps.setSearchModalDeck === nextProps.setSearchModalDeck &&
     prevProps.setTopDeckModalDeck === nextProps.setTopDeckModalDeck &&
-    prevProps.setDeleteCandidateId === nextProps.setDeleteCandidateId
+    prevProps.setDeleteCandidateId === nextProps.setDeleteCandidateId &&
+    prevProps.offset?.x === nextProps.offset?.x &&
+    prevProps.offset?.y === nextProps.offset?.y &&
+    prevProps.zoom === nextProps.zoom
   );
 });
 
@@ -262,7 +275,10 @@ export const UIObjectsRendererMemo = memo(UIObjectsRenderer, (prevProps, nextPro
     prevProps.dispatch === nextProps.dispatch &&
     prevProps.setSearchModalDeck === nextProps.setSearchModalDeck &&
     prevProps.setTopDeckModalDeck === nextProps.setTopDeckModalDeck &&
-    prevProps.setDeleteCandidateId === nextProps.setDeleteCandidateId
+    prevProps.setDeleteCandidateId === nextProps.setDeleteCandidateId &&
+    prevProps.offset?.x === nextProps.offset?.x &&
+    prevProps.offset?.y === nextProps.offset?.y &&
+    prevProps.zoom === nextProps.zoom
   );
 });
 

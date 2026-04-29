@@ -9,9 +9,9 @@
  * - Reduces memory usage
  */
 
-import React, { useState, useRef, useEffect, memo } from 'react';
+import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
 
-interface LazyImageProps {
+export interface LazyImageProps {
   src: string;
   alt: string;
   className?: string;
@@ -137,7 +137,7 @@ export function useImagePreloader() {
 /**
  * Background image version of LazyImage
  */
-interface LazyBackgroundImageProps {
+export interface LazyBackgroundImageProps {
   src: string;
   className?: string;
   style?: React.CSSProperties;

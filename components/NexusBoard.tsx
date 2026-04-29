@@ -53,8 +53,8 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
   const cellHeight = mainCellHeight ?? board.cellHeight ?? 150;
 
   // Convert to pixels for green button rendering
-  const cellWidthPx = vuToPixels(cellWidth);
-  const cellHeightPx = vuToPixels(cellHeight);
+  const cellWidthPx = vuToPixels(cellWidth, pixelsPerVU);
+  const cellHeightPx = vuToPixels(cellHeight, pixelsPerVU);
 
   // Calculate positions for all cells using hex grid spacing
   const cellPositions = useMemo(() => {
@@ -171,8 +171,8 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
             if (!show) return null;
 
             // Convert VU offsets to pixels for positioning
-            const offsetXPx = vuToPixels(offsetX);
-            const offsetYPx = vuToPixels(offsetY);
+            const offsetXPx = vuToPixels(offsetX, pixelsPerVU);
+            const offsetYPx = vuToPixels(offsetY, pixelsPerVU);
 
             return (
               <div

@@ -29,6 +29,7 @@ export function useCursorSlotHover(
   const { requireCards = true, requireDraggingCard = false, onDrop } = options;
   const [isCursorOver, setIsCursorOver] = useState(false);
   const onDropRef = useRef(onDrop);
+  const justDroppedRef = useRef(false);
 
   // Keep callback ref in sync
   useEffect(() => {
@@ -37,6 +38,11 @@ export function useCursorSlotHover(
 
   useEffect(() => {
     const handleCursorSlotMove = (e: Event) => {
+      // If we just dropped, ignore move events for a short time to prevent race conditions
+      if (justDroppedRef.current) {
+        return;
+      }
+
       const customEvent = e as CustomEvent<CursorSlotMoveEvent>;
       const { x, y, hasCards, isDraggingCard, items } = customEvent.detail;
 
@@ -75,6 +81,12 @@ export function useCursorSlotHover(
     const handleCursorSlotDropped = () => {
       setIsCursorOver(false);
       onDropRef.current?.();
+
+      // Set flag to ignore move events for a short time
+      justDroppedRef.current = true;
+      setTimeout(() => {
+        justDroppedRef.current = false;
+      }, 100);
     };
 
     window.addEventListener('cursor-slot-move', handleCursorSlotMove);

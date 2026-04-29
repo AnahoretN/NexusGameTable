@@ -397,14 +397,43 @@ export const Tabletop: React.FC = () => {
       if (e.key === 'Control' || e.key === 'Meta') setIsCtrlPressed(false);
     };
 
+    // Block browser keyboard zoom shortcuts (Ctrl +, Ctrl -, Ctrl 0)
+    const handleKeyDownZoom = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '0' || e.key === '=')) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Handle internal zoom instead
+        const currentZoom = localSettings.zoom ?? 100;
+        let newZoom = currentZoom;
+
+        if (e.key === '+' || e.key === '=') {
+          newZoom = Math.min(400, currentZoom + 10);
+        } else if (e.key === '-') {
+          newZoom = Math.max(25, currentZoom - 10);
+        } else if (e.key === '0') {
+          newZoom = 100;
+        }
+
+        if (newZoom !== currentZoom) {
+          updateSetting('zoom', newZoom);
+          if (setZoom) {
+            setZoom(newZoom / 100);
+          }
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('keydown', handleKeyDownZoom);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', handleKeyDownZoom);
     };
-  }, [setIsShiftPressed, setIsCtrlPressed]);
+  }, [setIsShiftPressed, setIsCtrlPressed, localSettings.zoom, updateSetting, setZoom]);
 
   useEffect(() => {
     const handleGlobalMouseUp = (e: MouseEvent) => {
@@ -416,6 +445,44 @@ export const Tabletop: React.FC = () => {
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [handleMouseUp]);
+
+  // Attach wheel handler with passive: false to allow preventDefault
+  // This prevents browser zoom on Ctrl+scroll and uses internal zoom instead
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !handleWheel) return;
+
+    // Add to container with passive: false
+    container.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Also add to window with capture phase to prevent browser zoom
+    const wheelHandler = (e: Event) => {
+      const wheelEvent = e as WheelEvent;
+
+      // Only handle Ctrl/Cmd+scroll for zoom prevention
+      if (wheelEvent.ctrlKey || wheelEvent.metaKey) {
+        // Check if target is inside a scrollable panel
+        const target = wheelEvent.target as HTMLElement;
+        const scrollableParent = target.closest('[data-scrollable], .overflow-y-auto, .overflow-auto, [data-hand-panel], [data-tokens-panel], [data-tools-panel]');
+
+        if (!scrollableParent) {
+          // Not in a scrollable panel, prevent browser zoom
+          e.preventDefault();
+          e.stopPropagation();
+          // Forward to the original handler
+          handleWheel(wheelEvent);
+        }
+      }
+    };
+
+    // Use capture phase to intercept before browser handles zoom
+    window.addEventListener('wheel', wheelHandler, { capture: true, passive: false } as any);
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('wheel', wheelHandler, { capture: true, passive: false } as any);
+    };
+  }, [handleWheel, scrollContainerRef]);
 
   return (
     <div
@@ -435,6 +502,7 @@ export const Tabletop: React.FC = () => {
         WebkitUserSelect: 'none',
         MozUserSelect: 'none',
         msUserSelect: 'none',
+        touchAction: 'none',
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -669,6 +737,8 @@ export const Tabletop: React.FC = () => {
         setSearchModalDeck={setSearchModalDeck}
         setTopDeckModalDeck={setTopDeckModalDeck}
         setDeleteCandidateId={setDeleteCandidateId}
+        offset={viewTransform?.scroll ? { x: viewTransform.scroll.x, y: viewTransform.scroll.y } : { x: 0, y: 0 }}
+        zoom={viewTransform?.zoom ?? 1}
       />
 
       {/* Cursor Slot Visualization */}

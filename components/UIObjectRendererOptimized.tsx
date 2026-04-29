@@ -858,14 +858,10 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       // Disable native CSS resize - use custom resize handler
       resize: 'none',
       overflow: 'hidden',
+      // Always set width/height - DOM updates during resize will override these
+      width: containerWidth,
+      height: containerHeight,
     };
-
-    // Only set width/height in style if NOT currently resizing
-    // During resize, we update DOM directly to avoid React re-render conflicts
-    if (!isResizing) {
-      style.width = containerWidth;
-      style.height = containerHeight;
-    }
 
     return style;
   }, [
@@ -916,7 +912,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       data-main-menu={isMainMenu ? "true" : undefined}
       data-shift-dragging={isShiftDragging ? "true" : undefined}
       style={containerStyle}
-      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col w-full ${
+      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col ${
         isShiftDragging || isDragOverPool ? 'ring-2 ring-purple-500 ring-opacity-50' : ''
       }`}
       onContextMenu={(e) => {

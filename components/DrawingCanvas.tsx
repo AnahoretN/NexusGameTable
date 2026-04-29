@@ -738,7 +738,7 @@ setEraserThickness(newThickness);
         });
 
         // Create updated drawing variable (declare outside the if block for wider scope)
-        let updatedDrawing = null;
+        let updatedDrawing: Drawing | null = null;
 
         // Update the drawing if strokes were modified
         if (strokesModified) {
@@ -768,7 +768,11 @@ setEraserThickness(newThickness);
 
             setLocalDrawingsCache(prev => {
               const newCache = new Map(prev);
-              newCache.set(drawing.id, updatedDrawing);
+              if (updatedDrawing) {
+                newCache.set(drawing.id, updatedDrawing);
+              } else {
+                newCache.delete(drawing.id);
+              }
               // Use the updated cache immediately for redraw
               setTimeout(() => {
                 const ctx = canvasRef.current?.getContext('2d');
@@ -923,7 +927,7 @@ setEraserThickness(newThickness);
           });
         } else if (!originalDrawing || JSON.stringify(originalDrawing.strokes) !== JSON.stringify(updatedDrawing.strokes)) {
           // Drawing was partially erased - send UPDATE
-          const action = {
+          dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
               id: updatedDrawing.id,
@@ -931,9 +935,7 @@ setEraserThickness(newThickness);
                 strokes: updatedDrawing.strokes
               }
             }
-          };
-
-          dispatch(action);
+          } as const);
         }
       });
 

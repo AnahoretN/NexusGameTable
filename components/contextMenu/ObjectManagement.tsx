@@ -16,6 +16,7 @@ export interface ObjectManagementProps {
 }
 
 export const ObjectManagement: React.FC<ObjectManagementProps> = ({
+  object,
   canPerformAction,
   onAction
 }) => {

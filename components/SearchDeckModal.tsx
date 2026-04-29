@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffe
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId, useSettingsModalState } from '../store/contexts';
-import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, CardLocation, ItemType, Deck as DeckType, AppLanguage } from '../types';
+import { Deck, Card, CardPile, ContextAction, TableObject, SearchWindowVisibility, CardOrientation, CardLocation, Deck as DeckType, AppLanguage } from '../types';
 import { X, Search, Eye, EyeOff, Hand, RefreshCw, Copy, GripVertical, RotateCw, Move3D, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
@@ -23,7 +23,7 @@ const LazyCard = React.memo(({
   cardWidth,
   cardHeight,
   displayFaceUp,
-  cardActionButtons,
+  cardActionButtons: _cardActionButtons,
   buttons,
   commonDeckProps,
   onContextMenu,
@@ -202,7 +202,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
-  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
+  const [, openSettingsModal, closeSettingsModal] = useSettingsModalState();
   const gmInitializedRef = useRef(false);
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const prevCardIdsRef = useRef<string[] | null>(null);
@@ -488,7 +488,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       location: CardLocation.HAND as any,
       ownerId: activePlayerId,
       isOnTable: false,
-      faceUp: true
+      faceUp: true,
+      x: -999999,  // Hide card from table/pool panel visual area
+      y: -999999
     });
 
     const newCardOrder = cardOrder.filter(id => id !== cardId);
@@ -501,7 +503,16 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
       updateDeck(deck.id, { cardIds: newCardOrder });
     }
     setCardOrder(newCardOrder);
-  }, [updateDeck, activePlayerId, cardOrder, isPile, pile, deck]);
+
+    // IMPORTANT: Add card to player's handCardOrder so it appears in hand panel
+    dispatch({
+      type: 'UPDATE_HAND_CARD_ORDER',
+      payload: {
+        playerId: activePlayerId,
+        cardOrder: [cardId, ...(gameState.players.find((p: any) => p.id === activePlayerId)?.handCardOrder || [])]
+      }
+    });
+  }, [updateDeck, activePlayerId, cardOrder, isPile, pile, deck, dispatch, gameState.players]);
 
   const handleActionButtonClick = useCallback((card: Card, action: ContextAction) => {
     switch (action) {
@@ -601,7 +612,9 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           location: CardLocation.HAND as any,
           ownerId: activePlayerId,
           isOnTable: false,
-          faceUp: true
+          faceUp: true,
+          x: -999999,  // Hide card from table/pool panel visual area
+          y: -999999
         });
         const moveToHandCardOrder = cardOrder.filter(id => id !== object.id);
         if (isPile && pile) {
@@ -613,6 +626,19 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
           updateDeck(deck.id, { cardIds: moveToHandCardOrder });
         }
         setCardOrder(moveToHandCardOrder);
+
+        // IMPORTANT: Add card to player's handCardOrder
+        const player = gameState.players.find((p: any) => p.id === activePlayerId);
+        const currentHandOrder = player?.handCardOrder || [];
+        if (!currentHandOrder.includes(object.id)) {
+          dispatch({
+            type: 'UPDATE_HAND_CARD_ORDER',
+            payload: {
+              playerId: activePlayerId,
+              cardOrder: [object.id, ...currentHandOrder]
+            }
+          });
+        }
         break;
       case 'moveToTopDeck': {
         const card = object as Card;
@@ -737,7 +763,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         break;
     }
     setContextMenu(null);
-  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, updateDeck, deck.id, activePlayerId, cardOrder, isPile, pile, objects, deck, cloneCardInDeck]);
+  }, [contextMenu, isGM, gmFlipStates, visibility, dispatch, updateDeck, deck.id, activePlayerId, cardOrder, isPile, pile, objects, deck, cloneCardInDeck, gameState.players]);
 
   // Modal resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -783,7 +809,7 @@ export const SearchDeckModal: React.FC<SearchDeckModalProps> = ({ deck, pile, on
         ref={modalContainerRef}
         data-modal="search-deck"
         className="bg-slate-900 border border-slate-700 flex flex-col relative overflow-hidden"
-        style={{ width: `${vuToPixels(modalWidth)}px`, height: `${vuToPixels(DEFAULT_MODAL_HEIGHT)}px` }}
+        style={{ width: `${vuToPixels(modalWidth, pixelsPerVU)}px`, height: `${vuToPixels(DEFAULT_MODAL_HEIGHT, pixelsPerVU)}px` }}
       >
         {/* Header - minimal style */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">

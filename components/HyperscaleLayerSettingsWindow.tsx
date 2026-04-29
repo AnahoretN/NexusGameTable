@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { HyperscaleLayer, AppLanguage } from '../types';
 import { useGame } from '../store/GameContext';
 import { useHyperscaleLayers } from '../store/contexts';
-import { useObjects } from '../store/objectStore';
+import { useObjectsData } from '../store/objectStore';
 import { X, Check, Palette, Trash2 } from 'lucide-react';
 
 interface HyperscaleLayerSettingsWindowProps {
@@ -24,7 +24,7 @@ export const HyperscaleLayerSettingsWindow: React.FC<HyperscaleLayerSettingsWind
 }) => {
   const { dispatch } = useGame();
   const hyperscaleLayers = useHyperscaleLayers();
-  const objects = useObjects();
+  const objects = useObjectsData();
 
   // Check if there are objects on this layer
   const hasObjects = Object.values(objects).some(

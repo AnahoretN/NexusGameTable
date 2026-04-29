@@ -522,6 +522,14 @@ const dropCursorSlot = (
     return;
   }
 
+  // IMPORTANT: Check if cursor is over pool panel FIRST
+  // If dropping to pool panel, don't process hand panel drop
+  const poolPanel = elementAtCursor?.closest('[data-pool-panel]');
+  if (poolPanel) {
+    // Let pool panel handle the drop
+    return;
+  }
+
   // Check if cursor is over hand panel - drop cards to hand instead of table
   const handPanel = elementAtCursor?.closest('[data-hand-panel="true"]');
   if (handPanel) {
@@ -573,6 +581,11 @@ const dropCursorSlot = (
         // Send cursor-left-deck event to remove highlight
         window.dispatchEvent(new CustomEvent('cursor-left-deck', {
           detail: { deckId }
+        }));
+
+        // Send cursor-slot-dropped event to reset hover state in DeckComponent
+        window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+          detail: { cardIds: cards.map(c => c.id) }
         }));
       }
 
@@ -691,40 +704,35 @@ const dropCursorSlot = (
     const objWidth = item.width ?? 50;
     const objHeight = item.height ?? 50;
 
-    // Check if we have stored original position and click offset info
-    if ((item as any).originalX !== undefined && (item as any).originalY !== undefined) {
-      // Use the stored click offsets to calculate the final position
-      // clickOffsetX/Y are in VU (virtual units) - this is the source of truth
-      const clickOffsetX = (item as any).clickOffsetX;
-      const clickOffsetY = (item as any).clickOffsetY;
-      const clickOffsetX_PX = (item as any).clickOffsetX_PX;
-      const clickOffsetY_PX = (item as any).clickOffsetY_PX;
+    // Get click offsets (try VU first, then PX)
+    const clickOffsetX = (item as any).clickOffsetX;
+    const clickOffsetY = (item as any).clickOffsetY;
+    const clickOffsetX_PX = (item as any).clickOffsetX_PX;
+    const clickOffsetY_PX = (item as any).clickOffsetY_PX;
 
-      if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
-        // Calculate final position: dropPos - clickOffset
-        // This places the object so the clicked point ends up at the drop position
-        finalX = baseX - clickOffsetX;
-        finalY = baseY - clickOffsetY;
-      } else if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
-        // Use PX offsets when VU offsets are not available
-        // clickOffsetX_PX is ALWAYS in screen pixels now (consistently from all sources)
-        // Use the centralized utility to apply the offset
-        const offsetResult = applyClickOffset(
-          baseX,
-          baseY,
-          clickOffsetX_PX,
-          clickOffsetY_PX,
-          props.pixelsPerVU
-        );
-        finalX = offsetResult.x;
-        finalY = offsetResult.y;
-      } else {
-        // Fallback: center on drop position (for archetype tokens without clickOffset)
-        finalX = baseX - objWidth / 2;
-        finalY = baseY - objHeight / 2;
-      }
+    // Check if we have click offset info (from any source)
+    // IMPORTANT: Use clickOffset if available, regardless of originalX/originalY
+    // This is needed for cards from HAND where originalX/originalY are undefined
+    if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
+      // Calculate final position: dropPos - clickOffset
+      // This places the object so the clicked point ends up at the drop position
+      finalX = baseX - clickOffsetX;
+      finalY = baseY - clickOffsetY;
+    } else if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+      // Use PX offsets when VU offsets are not available
+      // clickOffsetX_PX is ALWAYS in screen pixels now (consistently from all sources)
+      // Use the centralized utility to apply the offset
+      const offsetResult = applyClickOffset(
+        baseX,
+        baseY,
+        clickOffsetX_PX,
+        clickOffsetY_PX,
+        props.pixelsPerVU
+      );
+      finalX = offsetResult.x;
+      finalY = offsetResult.y;
     } else {
-      // Fallback: center on drop position
+      // Fallback: center on drop position (for archetype tokens without clickOffset)
       finalX = baseX - objWidth / 2;
       finalY = baseY - objHeight / 2;
     }
@@ -1017,6 +1025,25 @@ const dropCursorSlot = (
       unpinnedDuringDragRef.current.delete(item.id);
     }
   });
+
+  // IMPORTANT: Remove dropped cards from all players' handCardOrder
+  // When cards are dropped from hand to tabletop, they should be removed from hand
+  const droppedCardIds = itemsToDrop.filter(item => item.type === ItemType.CARD).map(item => item.id);
+  if (droppedCardIds.length > 0 && state.players) {
+    state.players.forEach((player: any) => {
+      const currentHandOrder = player.handCardOrder || [];
+      const updatedHandOrder = currentHandOrder.filter((id: string) => !droppedCardIds.includes(id));
+      if (updatedHandOrder.length !== currentHandOrder.length) {
+        dispatch({
+          type: 'UPDATE_PLAYER',
+          payload: {
+            id: player.id,
+            updates: { handCardOrder: updatedHandOrder }
+          }
+        });
+      }
+    });
+  }
 
   // Clear cursor slot
   setCursorSlot([]);

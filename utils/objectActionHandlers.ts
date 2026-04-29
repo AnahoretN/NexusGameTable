@@ -287,54 +287,6 @@ export function handleMillToBottom(obj: TableObject, context: ActionHandlerConte
   }
 }
 
-export function handleMoveToHand(obj: TableObject, context: ActionHandlerContext) {
-  if (obj.type === ItemType.CARD && context.state.activePlayerId) {
-    context.dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: obj.id,
-        updates: { location: 'CURSOR_SLOT' as any },
-        ownerId: context.state.activePlayerId,
-        isOnTable: false
-      }
-    });
-  }
-}
-
-export function handleMoveToTopDeck(obj: TableObject, context: ActionHandlerContext) {
-  if (obj.type === ItemType.CARD && (obj as CardType).deckId) {
-    context.dispatch({
-      type: 'RETURN_CARD_TO_DECK_TOP',
-      payload: { cardId: obj.id, deckId: (obj as CardType).deckId }
-    });
-  }
-}
-
-export function handleMoveToBottomDeck(obj: TableObject, context: ActionHandlerContext) {
-  if (obj.type === ItemType.CARD && (obj as CardType).deckId) {
-    context.dispatch({
-      type: 'RETURN_CARD_TO_DECK_BOTTOM',
-      payload: { cardId: obj.id, deckId: (obj as CardType).deckId }
-    });
-  }
-}
-
-export function handleMoveToDiscard(obj: TableObject, context: ActionHandlerContext) {
-  if (obj.type === ItemType.CARD && (obj as CardType).deckId) {
-    const card = obj as CardType;
-    const deck = context.state.objects[card.deckId] as DeckType | undefined;
-    if (deck?.piles) {
-      const millPile = deck.piles.find(p => p.isMillPile);
-      if (millPile) {
-        context.dispatch({
-          type: 'ADD_CARD_TO_PILE',
-          payload: { deckId: deck.id, pileId: millPile.id, cardId: obj.id }
-        });
-      }
-    }
-  }
-}
-
 // ============================================
 // OBJECT MANAGEMENT ACTIONS
 // ============================================
@@ -613,17 +565,29 @@ export function executeClickAction(
       handleMillToBottom(obj, context);
       break;
     case 'moveToHand':
-      handleMoveToHand(obj, context);
-      break;
     case 'moveToTopDeck':
-      handleMoveToTopDeck(obj, context);
-      break;
     case 'moveToBottomDeck':
-      handleMoveToBottomDeck(obj, context);
+    case 'moveToDiscard': {
+      // Delegate to executeContextMenuAction to share logic with context menu
+      const playerId = context.state.activePlayerId;
+      console.log('[executeClickAction] action:', action, 'playerId:', playerId, 'obj.id:', obj.id);
+      const params = {
+        object: obj,
+        dispatch: context.dispatch,
+        state: {
+          ...context.state,
+          viewTransform: (context.state as any).viewTransform || { zoom: 1, scroll: { x: 0, y: 0 }, pixelsPerVU: 1.08 },
+          zoom: (context.state as any).viewTransform?.zoom || 1
+        },
+        activePlayerId: playerId,
+        isGM: (context as any).isGM,
+        isShiftPressed: (context as any).isShiftPressed,
+        isPoolPanel: context.poolZone?.panelId !== undefined
+      };
+      console.log('[executeClickAction] params.activePlayerId:', params.activePlayerId);
+      executeContextMenuAction(action, params);
       break;
-    case 'moveToDiscard':
-      handleMoveToDiscard(obj, context);
-      break;
+    }
 
     // Layer actions
     case 'bringToFront':

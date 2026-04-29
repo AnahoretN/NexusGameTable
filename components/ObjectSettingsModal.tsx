@@ -534,6 +534,8 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
         }
         // For TRIANGLE, use equilateral triangle ratio
         else if (newShape === CardShape.TRIANGLE) {
+          const baseDims = CARD_SHAPE_DIMS[newShape];
+          const currentWidth = baseDims.width;
           const newHeight = Math.round(currentWidth * Math.sqrt(3) / 2);
           updated.cardWidth = currentWidth;
           updated.cardHeight = newHeight;

@@ -482,7 +482,19 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
                 },
                 moveToHand: {
                   key: 'moveToHand',
-                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { location: 'HAND' as CardLocation } } }),
+                  action: () => dispatch({
+                    type: 'UPDATE_OBJECT',
+                    payload: {
+                      id: obj.id,
+                      updates: {
+                        location: 'HAND' as CardLocation,
+                        faceUp: true,
+                        ownerId: activePlayerId,
+                        isOnTable: false,
+                        inCursorSlot: false
+                      }
+                    }
+                  }),
                   className: 'bg-blue-600 hover:bg-blue-500',
                   title: 'To Hand',
                   icon: <Hand size={14} />

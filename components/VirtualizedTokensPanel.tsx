@@ -15,7 +15,7 @@ import { SvgTokenShape } from './SvgTokenShape';
 import { Settings } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 
-interface VirtualizedTokensPanelProps {
+export interface VirtualizedTokensPanelProps {
   archetypes: TokenType[];
   width: number;
   language: AppLanguage;
@@ -205,7 +205,7 @@ export const VirtualizedTokensPanel: React.FC<VirtualizedTokensPanelProps> = ({
 /**
  * Non-virtualized version for small token sets (better performance for < 15 archetypes)
  */
-interface SimpleTokensPanelProps {
+export interface SimpleTokensPanelProps {
   archetypes: TokenType[];
   width: number;
   language: AppLanguage;
