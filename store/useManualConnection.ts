@@ -42,6 +42,7 @@ class DataChannelAdapter {
   public peer: string;
   public open: boolean = false;
   private static activeAdapters = new Set<DataChannelAdapter>();
+  private _openEventEmitted: boolean = false; // Track if open event was already emitted
 
   constructor(dataChannel: RTCDataChannel, peerId: string) {
     this.dc = dataChannel;
@@ -70,8 +71,11 @@ class DataChannelAdapter {
                   'maxPacketLifeTime:', this.dc.maxPacketLifeTime,
                   'maxRetransmits:', this.dc.maxRetransmits);
       this.open = true;
-      // Emit asynchronously to allow handlers to be set up
-      setTimeout(() => this.emit('open'), 0);
+      // Only emit if not already emitted (prevents duplicate when channel was already open)
+      if (!this._openEventEmitted) {
+        this._openEventEmitted = true;
+        setTimeout(() => this.emit('open'), 0);
+      }
     };
 
     this.dc.onmessage = (event) => {
@@ -103,12 +107,15 @@ class DataChannelAdapter {
       this.emit('error', error);
     };
 
-    // Check if already open
+    // Check if already open - emit open event only once
     if (dataChannel.readyState === 'open') {
       console.log('[DataChannelAdapter] Data channel was already open!');
       this.open = true;
-      // Emit in next tick to allow handlers to be registered
-      setTimeout(() => this.emit('open'), 0);
+      if (!this._openEventEmitted) {
+        this._openEventEmitted = true;
+        // Emit in next tick to allow handlers to be registered
+        setTimeout(() => this.emit('open'), 0);
+      }
     }
   }
 
@@ -121,8 +128,13 @@ class DataChannelAdapter {
       } else {
         this.dc.send(data);
       }
+    } else {
+      console.warn('[DataChannelAdapter] Cannot send - channel not open. peer:', this.peer, 'open:', this.open, 'readyState:', this.dc.readyState);
     }
   }
+
+  // Check if HELO was already sent for this connection
+  _heloSent: boolean = false;
 
   // Event handler methods
   on(event: string, handler: (...args: any[]) => void): void {
@@ -439,25 +451,25 @@ export function useManualConnection() {
         setupConnection(adapter);
         console.log('[Manual P2P] Guest: DataChannelAdapter created', 'open:', adapter.open);
 
+        // Create player object ONCE (outside the open handler to prevent duplicates)
+        const dispatch = localDispatchRef.current;
+        const playerName = guestNameRef.current || 'Guest Player';
+        const playerId = guestIdRef.current;
+
+        const myPlayer: Player = {
+          id: playerId,
+          name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
+          color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+          isGM: false
+        };
+
+        console.log('[Manual P2P] Guest: Created player object:', myPlayer);
+
         // When data channel opens, register the guest player with the host
         adapter.on('open', () => {
           console.log('[Manual P2P] Guest: Data channel open, registering with host...');
 
-          const dispatch = localDispatchRef.current;
-          const playerName = guestNameRef.current || 'Guest Player';
-          const playerId = guestIdRef.current;
-
-          // Create player object
-          const myPlayer: Player = {
-            id: playerId,
-            name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
-            color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-            isGM: false
-          };
-
-          console.log('[Manual P2P] Guest: Created player object:', myPlayer);
-
-          // Add ourselves locally
+          // Add ourselves locally (only once)
           if (dispatch) {
             dispatch({ type: 'ADD_PLAYER', payload: myPlayer });
             dispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
@@ -468,9 +480,14 @@ export function useManualConnection() {
 
           // Small delay to ensure host is ready to receive HELO
           setTimeout(() => {
-            // Send HELO to host
-            console.log('[Manual P2P] Guest: Sending HELO to host...');
-            adapter.send({ type: 'HELO', payload: myPlayer });
+            // Send HELO to host (only once per connection)
+            if (!adapter._heloSent) {
+              adapter._heloSent = true;
+              console.log('[Manual P2P] Guest: Sending HELO to host...');
+              adapter.send({ type: 'HELO', payload: myPlayer });
+            } else {
+              console.log('[Manual P2P] Guest: HELO already sent, skipping duplicate');
+            }
           }, 200);
         });
       };
