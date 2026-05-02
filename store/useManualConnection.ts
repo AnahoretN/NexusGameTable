@@ -179,6 +179,17 @@ class DataChannelAdapter {
  * Hook for manual P2P connection without signalling server
  * Returns a PeerJS-compatible connection that integrates with existing sync system
  */
+// Check WebRTC support and permissions
+export function checkWebRTCSupport(): { supported: boolean; reason?: string } {
+  if (!window.RTCPeerConnection) {
+    return { supported: false, reason: 'WebRTC (RTCPeerConnection) not supported in this browser' };
+  }
+  if (!window.RTCDataChannel) {
+    return { supported: false, reason: 'RTCDataChannel not supported' };
+  }
+  return { supported: true };
+}
+
 export function useManualConnection() {
   const [state, setState] = useState<ManualConnectionState>({
     step: 'idle',
@@ -240,13 +251,22 @@ export function useManualConnection() {
   const createOffer = useCallback(async (playerName: string) => {
     try {
       console.log('[Manual P2P] Creating offer...');
+
+      // Check WebRTC support first
+      const supportCheck = checkWebRTCSupport();
+      if (!supportCheck.supported) {
+        setState(prev => ({ ...prev, step: 'failed', error: supportCheck.reason || 'WebRTC not supported' }));
+        return;
+      }
+
       setState(prev => ({ ...prev, step: 'creating', error: null }));
 
       // Generate a host ID
       const hostId = 'manual-host-' + Math.random().toString(36).substr(2, 9);
       hostPlayerIdRef.current = hostId;
 
-      // Create RTCPeerConnection with STUN servers from multiple providers for better connectivity
+      // Create RTCPeerConnection with STUN + TURN servers for better connectivity
+      // Using free TURN servers from open relay project
       const rtcConfig: RTCConfiguration = {
         iceServers: [
           // Google STUN servers (primary)
@@ -256,11 +276,25 @@ export function useManualConnection() {
           // Cloudflare STUN (backup)
           { urls: 'stun:stun.cloudflare.com:3478' },
           // Twilio STUN (backup)
-          { urls: 'stun:global.stun.twilio.com:3478' }
-        ]
+          { urls: 'stun:global.stun.twilio.com:3478' },
+          // Free TURN servers (relay for when direct connection fails)
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
+        ],
+        iceCandidatePoolSize: 10 // Pre-gather candidates for faster connection
       };
 
       console.log('[Manual P2P] Creating RTCPeerConnection with ICE config:', rtcConfig);
+      console.log('[Manual P2P] ICE servers count:', rtcConfig.iceServers?.length || 0);
+      console.log('[Manual P2P] Has TURN servers:', rtcConfig.iceServers?.some(s => s.urls?.includes('turn')) || false);
 
       const pc = new RTCPeerConnection(rtcConfig);
 
@@ -286,12 +320,12 @@ export function useManualConnection() {
         let resolved = false;
         const timeout = setTimeout(() => {
           if (!resolved) {
-            console.warn('[Manual P2P] ICE gathering timeout (5s) - using candidates gathered so far');
+            console.warn('[Manual P2P] ICE gathering timeout (10s) - using candidates gathered so far');
             console.warn('[Manual P2P] This may indicate network issues - check firewall/VPN');
             resolved = true;
             resolve();
           }
-        }, 5000); // Extended to 5s for slower networks
+        }, 10000); // Extended to 10s for slower networks with TURN
 
         if (pc.iceGatheringState === 'complete') {
           clearTimeout(timeout);
@@ -317,7 +351,7 @@ export function useManualConnection() {
       // Host offer keeps 'setup:actpass' (accepts either active or passive from answerer)
       await pc.setLocalDescription(offer);
 
-      console.log('[Manual P2P] Offer created, waiting for ICE gathering (max 5s)...');
+      console.log('[Manual P2P] Offer created, waiting for ICE gathering (max 10s)...');
 
       // Wait for ICE gathering to complete
       await iceGatheringComplete;
@@ -378,7 +412,14 @@ export function useManualConnection() {
           console.log('[Manual P2P] Host: ICE gathering complete (no more candidates). Total:', candidatesGathered);
           if (candidatesGathered === 0) {
             console.warn('[Manual P2P] ⚠️ No ICE candidates gathered during offer creation!');
-            console.warn('[Manual P2P] This is normal for localhost - the warning will only show if connection fails');
+            console.warn('[Manual P2P] Possible causes:');
+            console.warn('[Manual P2P]  - Network firewall blocking STUN/TURN');
+            console.warn('[Manual P2P]  - VPN or proxy interfering with WebRTC');
+            console.warn('[Manual P2P]  - Browser privacy extensions blocking WebRTC');
+            console.warn('[Manual P2P]  - Corporate network with strict NAT');
+            console.warn('[Manual P2P] TURN servers should help establish connection');
+          } else {
+            console.log('[Manual P2P] ✓ ICE candidates gathered successfully:', candidatesGathered);
           }
         }
       };
@@ -399,6 +440,14 @@ export function useManualConnection() {
   const connectToHost = useCallback(async (offerCode: string, guestName: string = 'Guest Player', localDispatch?: React.Dispatch<Action>) => {
     try {
       console.log('[Manual P2P] Connecting to host...');
+
+      // Check WebRTC support first
+      const supportCheck = checkWebRTCSupport();
+      if (!supportCheck.supported) {
+        setState(prev => ({ ...prev, step: 'failed', error: supportCheck.reason || 'WebRTC not supported' }));
+        return;
+      }
+
       setState(prev => ({ ...prev, step: 'connecting', error: null }));
 
       // Store dispatch and guest name for later use when channel opens
@@ -412,7 +461,8 @@ export function useManualConnection() {
       const guestId = 'manual-guest-' + Math.random().toString(36).substr(2, 9);
       guestIdRef.current = guestId;
 
-      // Create RTCPeerConnection with STUN servers from multiple providers for better connectivity
+      // Create RTCPeerConnection with STUN + TURN servers for better connectivity
+      // Using free TURN servers from open relay project
       const rtcConfig: RTCConfiguration = {
         iceServers: [
           // Google STUN servers (primary)
@@ -422,11 +472,25 @@ export function useManualConnection() {
           // Cloudflare STUN (backup)
           { urls: 'stun:stun.cloudflare.com:3478' },
           // Twilio STUN (backup)
-          { urls: 'stun:global.stun.twilio.com:3478' }
-        ]
+          { urls: 'stun:global.stun.twilio.com:3478' },
+          // Free TURN servers (relay for when direct connection fails)
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
+        ],
+        iceCandidatePoolSize: 10 // Pre-gather candidates for faster connection
       };
 
       console.log('[Manual P2P] Guest: Creating RTCPeerConnection with ICE config:', rtcConfig);
+      console.log('[Manual P2P] Guest: ICE servers count:', rtcConfig.iceServers?.length || 0);
+      console.log('[Manual P2P] Guest: Has TURN servers:', rtcConfig.iceServers?.some(s => s.urls?.includes('turn')) || false);
 
       const pc = new RTCPeerConnection(rtcConfig);
 
@@ -508,12 +572,12 @@ export function useManualConnection() {
         let resolved = false;
         const timeout = setTimeout(() => {
           if (!resolved) {
-            console.warn('[Manual P2P] Guest: ICE gathering timeout (5s) - using candidates gathered so far');
+            console.warn('[Manual P2P] Guest: ICE gathering timeout (10s) - using candidates gathered so far');
             console.warn('[Manual P2P] This may indicate network issues - check firewall/VPN');
             resolved = true;
             resolve();
           }
-        }, 5000); // Extended to 5s for slower networks
+        }, 10000); // Extended to 10s for slower networks with TURN
 
         if (pc.iceGatheringState === 'complete') {
           clearTimeout(timeout);
@@ -555,7 +619,7 @@ export function useManualConnection() {
         sdp: sdp
       }));
 
-      console.log('[Manual P2P] Answer created, waiting for ICE gathering (max 5s)...');
+      console.log('[Manual P2P] Answer created, waiting for ICE gathering (max 10s)...');
 
       // Wait for ICE gathering to complete
       await iceGatheringComplete;
@@ -623,7 +687,14 @@ export function useManualConnection() {
           console.log('[Manual P2P] Guest: ICE gathering complete (no more candidates). Total:', candidatesGathered);
           if (candidatesGathered === 0) {
             console.warn('[Manual P2P] ⚠️ No ICE candidates gathered during answer creation!');
-            console.warn('[Manual P2P] This is normal for localhost - the warning will only show if connection fails');
+            console.warn('[Manual P2P] Possible causes:');
+            console.warn('[Manual P2P]  - Network firewall blocking STUN/TURN');
+            console.warn('[Manual P2P]  - VPN or proxy interfering with WebRTC');
+            console.warn('[Manual P2P]  - Browser privacy extensions blocking WebRTC');
+            console.warn('[Manual P2P]  - Corporate network with strict NAT');
+            console.warn('[Manual P2P] TURN servers should help establish connection');
+          } else {
+            console.log('[Manual P2P] ✓ ICE candidates gathered successfully:', candidatesGathered);
           }
         }
       };
