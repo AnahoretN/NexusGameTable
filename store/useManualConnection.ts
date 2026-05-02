@@ -162,8 +162,9 @@ class DataChannelAdapter {
   }
 
   close(): void {
-    console.log('[DataChannelAdapter] close() called!', 'peer:', this.peer, 'Stack:');
-    console.log(new Error().stack?.split('\n').slice(1, 6).join('\n'));
+    console.log('[DataChannelAdapter] close() called!', 'peer:', this.peer, 'readyState:', this.dc.readyState, 'Stack:');
+    const stack = new Error().stack?.split('\n').slice(1, 10).join('\n');
+    console.log(stack);
     DataChannelAdapter.activeAdapters.delete(this);
     this.dc.close();
   }
@@ -670,6 +671,8 @@ export function useManualConnection() {
   }, []);
 
   const reset = useCallback(() => {
+    console.log('[Manual P2P] reset() called! Current step:', state.step, 'Stack:');
+    console.log(new Error().stack?.split('\n').slice(1, 6).join('\n'));
     if (connectionRef.current) {
       connectionRef.current.close();
     }

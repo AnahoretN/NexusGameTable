@@ -6035,6 +6035,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const handleData = (data: any) => {
+          console.log('[Manual P2P] GameContext handleData received:', data.type, 'conn.peer:', conn.peer, 'conn.open:', conn.open);
           if (data.type === 'SYNC_STATE') {
               // Restore images from local cache before dispatching
               const restoredState = restoreImagesFromCache(data.payload, {});
@@ -6047,14 +6048,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               console.log('[Manual P2P] Received HELO from player:', newPlayer.name);
               localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
 
-              // Send current state to new player
+              // Send current state to new player (with safety checks)
               setTimeout(() => {
-                  if (conn && conn.open) {
-                      const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
-                      conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
-                      if (Object.keys(imageCache).length > 0) {
-                          conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+                  console.log('[Manual P2P] Sending SYNC_STATE to guest, conn:', conn?.peer, 'conn.open:', conn?.open, 'conn.dataChannel.readyState:', conn?.dataChannel?.readyState);
+                  if (conn && conn.open && conn.dataChannel && conn.dataChannel.readyState === 'open') {
+                      try {
+                          const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
+                          console.log('[Manual P2P] Sending SYNC_STATE, state size:', JSON.stringify(stateWithRefs).length);
+                          conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+                          if (Object.keys(imageCache).length > 0) {
+                              console.log('[Manual P2P] Sending IMAGE_CACHE, cache size:', JSON.stringify(imageCache).length);
+                              conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+                          }
+                          console.log('[Manual P2P] Successfully sent state to guest');
+                      } catch (e) {
+                          console.error('[Manual P2P] Error sending SYNC_STATE:', e);
                       }
+                  } else {
+                      console.warn('[Manual P2P] Cannot send SYNC_STATE - conn is closed or null. conn:', conn, 'open:', conn?.open, 'readyState:', conn?.dataChannel?.readyState);
                   }
               }, 100);
           } else if (data.type === 'UPDATE_PLAYER_NAME') {
