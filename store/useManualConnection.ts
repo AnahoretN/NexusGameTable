@@ -2,6 +2,17 @@ import { useState, useCallback, useRef } from 'react';
 import { Action } from './gameActions';
 import { Player } from '../types';
 
+// Unicode-safe base64 encoding/decoding
+function unicodeBase64Encode(str: string): string {
+  // First encode the string as UTF-8, then base64 encode
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
+}
+
+function unicodeBase64Decode(str: string): string {
+  // First base64 decode, then decode UTF-8
+  return decodeURIComponent(atob(str).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+}
+
 export type ManualConnectionStep = 'idle' | 'creating' | 'waiting_for_answer' | 'connecting' | 'connected' | 'failed';
 
 export interface ManualConnectionState {
@@ -202,27 +213,28 @@ export function useManualConnection() {
       const hostId = 'manual-host-' + Math.random().toString(36).substr(2, 9);
       hostPlayerIdRef.current = hostId;
 
-      // Create RTCPeerConnection with STUN servers and force host candidate gathering
+      // Create RTCPeerConnection with STUN servers from multiple providers for better connectivity
       const rtcConfig: RTCConfiguration = {
         iceServers: [
+          // Google STUN servers (primary)
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
+          // Cloudflare STUN (backup)
+          { urls: 'stun:stun.cloudflare.com:3478' },
+          // Twilio STUN (backup)
+          { urls: 'stun:global.stun.twilio.com:3478' }
         ]
       };
 
-      // Try to force host candidate gathering for localhost testing (Chrome only)
-      // @ts-ignore - RTCConfiguration is extended in Chrome
-      if ((rtcConfig as any).iceTransportPolicy !== undefined) {
-        (rtcConfig as any).iceTransportPolicy = 'all';
-        console.log('[Manual P2P] Setting iceTransportPolicy to "all" to enable host candidates');
-      }
+      console.log('[Manual P2P] Creating RTCPeerConnection with ICE config:', rtcConfig);
 
       const pc = new RTCPeerConnection(rtcConfig);
 
       peerConnectionRef.current = pc;
+
+      // Log ICE gathering start for debugging
+      console.log('[Manual P2P] Initial ICE gathering state:', pc.iceGatheringState);
 
       // Create data channel (host initiates) BEFORE creating offer
       const dc = pc.createDataChannel('nexus-game', {
@@ -236,16 +248,17 @@ export function useManualConnection() {
       setupConnection(adapter);
       console.log('[Manual P2P] Host: DataChannelAdapter created for guest:', guestId);
 
-      // Wait for ICE gathering to complete before generating code (with timeout)
+      // Wait for ICE gathering to complete before generating code (with extended timeout)
       const iceGatheringComplete = new Promise<void>((resolve) => {
         let resolved = false;
         const timeout = setTimeout(() => {
           if (!resolved) {
-            console.log('[Manual P2P] ICE gathering timeout (1s) - using candidates gathered so far');
+            console.warn('[Manual P2P] ICE gathering timeout (5s) - using candidates gathered so far');
+            console.warn('[Manual P2P] This may indicate network issues - check firewall/VPN');
             resolved = true;
             resolve();
           }
-        }, 1000); // 1 second timeout - STUN should be fast
+        }, 5000); // Extended to 5s for slower networks
 
         if (pc.iceGatheringState === 'complete') {
           clearTimeout(timeout);
@@ -271,7 +284,7 @@ export function useManualConnection() {
       // Host offer keeps 'setup:actpass' (accepts either active or passive from answerer)
       await pc.setLocalDescription(offer);
 
-      console.log('[Manual P2P] Offer created, waiting for ICE gathering (max 3s)...');
+      console.log('[Manual P2P] Offer created, waiting for ICE gathering (max 5s)...');
 
       // Wait for ICE gathering to complete
       await iceGatheringComplete;
@@ -293,7 +306,7 @@ export function useManualConnection() {
         playerName
       };
 
-      const code = btoa(JSON.stringify(message));
+      const code = unicodeBase64Encode(JSON.stringify(message));
       setState(prev => ({ ...prev, step: 'waiting_for_answer', localOffer: code, generatedCode: code }));
 
       pc.onconnectionstatechange = () => {
@@ -360,22 +373,32 @@ export function useManualConnection() {
       guestNameRef.current = guestName;
 
       // Decode offer
-      const offerMessage: SDPMessage = JSON.parse(atob(offerCode));
+      const offerMessage: SDPMessage = JSON.parse(unicodeBase64Decode(offerCode));
 
       // Generate guest ID
       const guestId = 'manual-guest-' + Math.random().toString(36).substr(2, 9);
       guestIdRef.current = guestId;
 
-      // Create RTCPeerConnection with STUN servers (TURN removed)
-      const pc = new RTCPeerConnection({
+      // Create RTCPeerConnection with STUN servers from multiple providers for better connectivity
+      const rtcConfig: RTCConfiguration = {
         iceServers: [
+          // Google STUN servers (primary)
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
+          // Cloudflare STUN (backup)
+          { urls: 'stun:stun.cloudflare.com:3478' },
+          // Twilio STUN (backup)
+          { urls: 'stun:global.stun.twilio.com:3478' }
         ]
-      });
+      };
+
+      console.log('[Manual P2P] Guest: Creating RTCPeerConnection with ICE config:', rtcConfig);
+
+      const pc = new RTCPeerConnection(rtcConfig);
+
+      // Log ICE gathering start for debugging
+      console.log('[Manual P2P] Guest: Initial ICE gathering state:', pc.iceGatheringState);
 
       peerConnectionRef.current = pc;
 
@@ -442,16 +465,17 @@ export function useManualConnection() {
         sdp: offerMessage.sdp
       }));
 
-      // Wait for ICE gathering to complete before generating code (with timeout)
+      // Wait for ICE gathering to complete before generating code (with extended timeout)
       const iceGatheringComplete = new Promise<void>((resolve) => {
         let resolved = false;
         const timeout = setTimeout(() => {
           if (!resolved) {
-            console.log('[Manual P2P] Guest: ICE gathering timeout (1s) - using candidates gathered so far');
+            console.warn('[Manual P2P] Guest: ICE gathering timeout (5s) - using candidates gathered so far');
+            console.warn('[Manual P2P] This may indicate network issues - check firewall/VPN');
             resolved = true;
             resolve();
           }
-        }, 1000); // 1 second timeout - STUN should be fast
+        }, 5000); // Extended to 5s for slower networks
 
         if (pc.iceGatheringState === 'complete') {
           clearTimeout(timeout);
@@ -493,7 +517,7 @@ export function useManualConnection() {
         sdp: sdp
       }));
 
-      console.log('[Manual P2P] Answer created, waiting for ICE gathering (max 3s)...');
+      console.log('[Manual P2P] Answer created, waiting for ICE gathering (max 5s)...');
 
       // Wait for ICE gathering to complete
       await iceGatheringComplete;
@@ -523,7 +547,7 @@ export function useManualConnection() {
         sdp: finalSdp || ''
       };
 
-      const code = btoa(JSON.stringify(message));
+      const code = unicodeBase64Encode(JSON.stringify(message));
       // Don't set step to 'connected' yet - wait for ICE connection to actually establish
       // Instead, set generatedCode so the UI can show the answer code
       setState(prev => ({ ...prev, generatedCode: code }));
@@ -583,7 +607,7 @@ export function useManualConnection() {
   const handleGuestAnswer = useCallback(async (answerCode: string) => {
     try {
       console.log('[Manual P2P] Host: Processing guest answer...');
-      const answerMessage: SDPMessage = JSON.parse(atob(answerCode));
+      const answerMessage: SDPMessage = JSON.parse(unicodeBase64Decode(answerCode));
       const pc = peerConnectionRef.current;
 
       if (!pc) {
