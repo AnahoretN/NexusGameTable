@@ -41,23 +41,14 @@ class DataChannelAdapter {
   private _handlers: { [event: string]: ((...args: any[]) => void)[] } = {};
   public peer: string;
   public open: boolean = false;
-  private static activeAdapters = new Set<DataChannelAdapter>();
+  private static adapterMap = new WeakMap<RTCDataChannel, DataChannelAdapter>();
 
-  constructor(dataChannel: RTCDataChannel, peerId: string) {
+  // Private constructor - use create() factory method instead
+  private constructor(dataChannel: RTCDataChannel, peerId: string) {
     this.dc = dataChannel;
     this.peer = peerId;
 
-    // Check for duplicate adapters for the same data channel
-    for (const adapter of DataChannelAdapter.activeAdapters) {
-      if (adapter.dc === dataChannel) {
-        console.error('[DataChannelAdapter] WARNING: Creating duplicate adapter for same data channel!', {
-          existingPeer: adapter.peer,
-          newPeer: peerId,
-          readyState: dataChannel.readyState
-        });
-      }
-    }
-    DataChannelAdapter.activeAdapters.add(this);
+    console.log('[DataChannelAdapter] Creating adapter, readyState:', dataChannel.readyState, 'peer:', peerId);
 
     console.log('[DataChannelAdapter] Creating adapter, readyState:', dataChannel.readyState, 'peer:', peerId);
 
@@ -91,7 +82,7 @@ class DataChannelAdapter {
                   'code:', event?.code,
                   'reason:', event?.reason);
       this.open = false;
-      DataChannelAdapter.activeAdapters.delete(this);
+      DataChannelAdapter.adapterMap.delete(this.dc);
       this.emit('close');
     };
 
@@ -147,8 +138,30 @@ class DataChannelAdapter {
   close(): void {
     console.log('[DataChannelAdapter] close() called!', 'peer:', this.peer, 'Stack:');
     console.log(new Error().stack?.split('\n').slice(1, 6).join('\n'));
-    DataChannelAdapter.activeAdapters.delete(this);
+    DataChannelAdapter.adapterMap.delete(this.dc);
     this.dc.close();
+  }
+
+  /**
+   * Factory method to create or get existing adapter for a data channel
+   * Prevents duplicate adapters for the same data channel
+   */
+  static create(dataChannel: RTCDataChannel, peerId: string): DataChannelAdapter {
+    // Check if adapter already exists for this data channel
+    const existing = DataChannelAdapter.adapterMap.get(dataChannel);
+    if (existing) {
+      console.warn('[DataChannelAdapter] Reusing existing adapter for data channel', {
+        existingPeer: existing.peer,
+        requestedPeer: peerId,
+        readyState: dataChannel.readyState
+      });
+      return existing;
+    }
+
+    // Create new adapter and store it
+    const adapter = DataChannelAdapter.create(dataChannel, peerId);
+    DataChannelAdapter.adapterMap.set(dataChannel, adapter);
+    return adapter;
   }
 
   // Allow direct access to underlying data channel if needed
@@ -244,7 +257,7 @@ export function useManualConnection() {
 
       // Create adapter immediately - it will handle data channel opening
       const guestId = 'manual-guest-' + Math.random().toString(36).substr(2, 9);
-      const adapter = new DataChannelAdapter(dc, guestId);
+      const adapter = DataChannelAdapter.create(dc, guestId);
       setupConnection(adapter);
       console.log('[Manual P2P] Host: DataChannelAdapter created for guest:', guestId);
 
@@ -415,7 +428,7 @@ export function useManualConnection() {
         dc.onerror = (err) => console.error('[Manual P2P] Guest: Native data channel.onerror:', err);
 
         // Create adapter with host's ID (we'll use the offer message to identify)
-        const adapter = new DataChannelAdapter(dc, hostPlayerIdRef.current || 'manual-host');
+        const adapter = DataChannelAdapter.create(dc, hostPlayerIdRef.current || 'manual-host');
         setupConnection(adapter);
         console.log('[Manual P2P] Guest: DataChannelAdapter created', 'open:', adapter.open);
 
