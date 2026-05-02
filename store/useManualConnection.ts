@@ -2,6 +2,46 @@ import { useState, useCallback, useRef } from 'react';
 import { Action } from './gameActions';
 import { Player } from '../types';
 
+// Alternative TURN servers (multiple providers for redundancy)
+const TURN_SERVERS = [
+  // OpenRelay (free, no auth)
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  // Twilio free TURN (if available)
+  {
+    urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+    username: 'nexusgametable',
+    credential: 'nexusgametable123'
+  },
+  {
+    urls: 'turn:global.turn.twilio.com:3478?transport=tcp',
+    username: 'nexusgametable',
+    credential: 'nexusgametable123'
+  },
+  // RTCNetwork (community TURN)
+  {
+    urls: 'turn:numb.viagenie.ca:3478',
+    username: 'nexusgametable@gmail.com',
+    credential: 'nexusgametable123'
+  }
+];
+
+const STUN_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:global.stun.twilio.com:3478' }
+];
+
 // Unicode-safe base64 encoding/decoding
 function unicodeBase64Encode(str: string): string {
   // First encode the string as UTF-8, then base64 encode
@@ -190,6 +230,96 @@ export function checkWebRTCSupport(): { supported: boolean; reason?: string } {
   return { supported: true };
 }
 
+// Test WebRTC connectivity by trying to gather ICE candidates
+export async function testWebRTCConnectivity(): Promise<{
+  success: boolean;
+  candidates: number;
+  error?: string;
+  details: { host: number; srflx: number; relay: number };
+}> {
+  return new Promise((resolve) => {
+    try {
+      const pc = new RTCPeerConnection({
+        iceServers: [...STUN_SERVERS, ...TURN_SERVERS]
+      });
+
+      let candidates = 0;
+      let hostCount = 0;
+      let srflxCount = 0;
+      let relayCount = 0;
+
+      const timeout = setTimeout(() => {
+        pc.close();
+        if (candidates === 0) {
+          resolve({
+            success: false,
+            candidates: 0,
+            error: 'No ICE candidates gathered - WebRTC may be blocked',
+            details: { host: hostCount, srflx: srflxCount, relay: relayCount }
+          });
+        } else {
+          resolve({
+            success: true,
+            candidates,
+            details: { host: hostCount, srflx: srflxCount, relay: relayCount }
+          });
+        }
+      }, 5000);
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          candidates++;
+          const cand = event.candidate.candidate;
+          if (cand.includes('typ host')) hostCount++;
+          if (cand.includes('typ srflx')) srflxCount++;
+          if (cand.includes('typ relay')) relayCount++;
+        } else {
+          clearTimeout(timeout);
+          pc.close();
+          if (candidates === 0) {
+            resolve({
+              success: false,
+              candidates: 0,
+              error: 'ICE gathering completed but no candidates found',
+              details: { host: hostCount, srflx: srflxCount, relay: relayCount }
+            });
+          } else {
+            resolve({
+              success: true,
+              candidates,
+              details: { host: hostCount, srflx: srflxCount, relay: relayCount }
+            });
+          }
+        }
+      };
+
+      // Create a data channel to trigger ICE gathering
+      pc.createDataChannel('test');
+
+      // Create offer to start ICE gathering
+      pc.createOffer().then(offer => {
+        pc.setLocalDescription(offer);
+      }).catch(err => {
+        clearTimeout(timeout);
+        pc.close();
+        resolve({
+          success: false,
+          candidates: 0,
+          error: String(err),
+          details: { host: 0, srflx: 0, relay: 0 }
+        });
+      });
+    } catch (error) {
+      resolve({
+        success: false,
+        candidates: 0,
+        error: String(error),
+        details: { host: 0, srflx: 0, relay: 0 }
+      });
+    }
+  });
+}
+
 export function useManualConnection() {
   const [state, setState] = useState<ManualConnectionState>({
     step: 'idle',
@@ -266,30 +396,10 @@ export function useManualConnection() {
       hostPlayerIdRef.current = hostId;
 
       // Create RTCPeerConnection with STUN + TURN servers for better connectivity
-      // Using free TURN servers from open relay project
       const rtcConfig: RTCConfiguration = {
-        iceServers: [
-          // Google STUN servers (primary)
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          // Cloudflare STUN (backup)
-          { urls: 'stun:stun.cloudflare.com:3478' },
-          // Twilio STUN (backup)
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          // Free TURN servers (relay for when direct connection fails)
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ],
-        iceCandidatePoolSize: 10 // Pre-gather candidates for faster connection
+        iceServers: [...STUN_SERVERS, ...TURN_SERVERS],
+        iceCandidatePoolSize: 10,
+        iceTransportPolicy: 'all'
       };
 
       console.log('[Manual P2P] Creating RTCPeerConnection with ICE config:', rtcConfig);
@@ -399,6 +509,10 @@ export function useManualConnection() {
 
       // Log ICE candidates for debugging
       let candidatesGathered = 0;
+      let hostCandidateCount = 0;
+      let srflxCandidateCount = 0;
+      let relayCandidateCount = 0;
+
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           candidatesGathered++;
@@ -407,19 +521,26 @@ export function useManualConnection() {
                        candidate.includes('typ host') ? 'host (local)' :
                        candidate.includes('typ relay') ? 'relay (TURN)' :
                        candidate.includes('typ prflx') ? 'prflx (peer)' : 'unknown';
+
+          if (type.includes('host')) hostCandidateCount++;
+          if (type.includes('srflx')) srflxCandidateCount++;
+          if (type.includes('relay')) relayCandidateCount++;
+
           console.log('[Manual P2P] Host ICE candidate:', type, candidate.substring(0, 100));
         } else {
-          console.log('[Manual P2P] Host: ICE gathering complete (no more candidates). Total:', candidatesGathered);
+          console.log('[Manual P2P] Host: ICE gathering complete (no more candidates).');
+          console.log('[Manual P2P] Host: Total candidates:', candidatesGathered);
+          console.log('[Manual P2P] Host: Breakdown - host:', hostCandidateCount, 'srflx:', srflxCandidateCount, 'relay:', relayCandidateCount);
+
           if (candidatesGathered === 0) {
-            console.warn('[Manual P2P] ⚠️ No ICE candidates gathered during offer creation!');
-            console.warn('[Manual P2P] Possible causes:');
-            console.warn('[Manual P2P]  - Network firewall blocking STUN/TURN');
-            console.warn('[Manual P2P]  - VPN or proxy interfering with WebRTC');
-            console.warn('[Manual P2P]  - Browser privacy extensions blocking WebRTC');
-            console.warn('[Manual P2P]  - Corporate network with strict NAT');
-            console.warn('[Manual P2P] TURN servers should help establish connection');
+            console.error('[Manual P2P] ❌ No ICE candidates gathered!');
+            console.error('[Manual P2P] This means WebRTC is completely blocked!');
+            console.error('[Manual P2P] Check browser://webrtc-internals for details');
+          } else if (relayCandidateCount === 0 && srflxCandidateCount === 0) {
+            console.warn('[Manual P2P] ⚠️ Only local candidates - TURN servers not responding!');
+            console.warn('[Manual P2P] Connection may fail if peers are on different networks');
           } else {
-            console.log('[Manual P2P] ✓ ICE candidates gathered successfully:', candidatesGathered);
+            console.log('[Manual P2P] ✓ ICE candidates gathered successfully');
           }
         }
       };
@@ -462,30 +583,10 @@ export function useManualConnection() {
       guestIdRef.current = guestId;
 
       // Create RTCPeerConnection with STUN + TURN servers for better connectivity
-      // Using free TURN servers from open relay project
       const rtcConfig: RTCConfiguration = {
-        iceServers: [
-          // Google STUN servers (primary)
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          // Cloudflare STUN (backup)
-          { urls: 'stun:stun.cloudflare.com:3478' },
-          // Twilio STUN (backup)
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          // Free TURN servers (relay for when direct connection fails)
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ],
-        iceCandidatePoolSize: 10 // Pre-gather candidates for faster connection
+        iceServers: [...STUN_SERVERS, ...TURN_SERVERS],
+        iceCandidatePoolSize: 10,
+        iceTransportPolicy: 'all'
       };
 
       console.log('[Manual P2P] Guest: Creating RTCPeerConnection with ICE config:', rtcConfig);
@@ -674,6 +775,10 @@ export function useManualConnection() {
 
       // Log ICE candidates for debugging
       let candidatesGathered = 0;
+      let hostCandidateCount = 0;
+      let srflxCandidateCount = 0;
+      let relayCandidateCount = 0;
+
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           candidatesGathered++;
@@ -682,19 +787,26 @@ export function useManualConnection() {
                        candidate.includes('typ host') ? 'host (local)' :
                        candidate.includes('typ relay') ? 'relay (TURN)' :
                        candidate.includes('typ prflx') ? 'prflx (peer)' : 'unknown';
+
+          if (type.includes('host')) hostCandidateCount++;
+          if (type.includes('srflx')) srflxCandidateCount++;
+          if (type.includes('relay')) relayCandidateCount++;
+
           console.log('[Manual P2P] Guest ICE candidate:', type, candidate.substring(0, 100));
         } else {
-          console.log('[Manual P2P] Guest: ICE gathering complete (no more candidates). Total:', candidatesGathered);
+          console.log('[Manual P2P] Guest: ICE gathering complete (no more candidates).');
+          console.log('[Manual P2P] Guest: Total candidates:', candidatesGathered);
+          console.log('[Manual P2P] Guest: Breakdown - host:', hostCandidateCount, 'srflx:', srflxCandidateCount, 'relay:', relayCandidateCount);
+
           if (candidatesGathered === 0) {
-            console.warn('[Manual P2P] ⚠️ No ICE candidates gathered during answer creation!');
-            console.warn('[Manual P2P] Possible causes:');
-            console.warn('[Manual P2P]  - Network firewall blocking STUN/TURN');
-            console.warn('[Manual P2P]  - VPN or proxy interfering with WebRTC');
-            console.warn('[Manual P2P]  - Browser privacy extensions blocking WebRTC');
-            console.warn('[Manual P2P]  - Corporate network with strict NAT');
-            console.warn('[Manual P2P] TURN servers should help establish connection');
+            console.error('[Manual P2P] ❌ No ICE candidates gathered!');
+            console.error('[Manual P2P] This means WebRTC is completely blocked!');
+            console.error('[Manual P2P] Check browser://webrtc-internals for details');
+          } else if (relayCandidateCount === 0 && srflxCandidateCount === 0) {
+            console.warn('[Manual P2P] ⚠️ Only local candidates - TURN servers not responding!');
+            console.warn('[Manual P2P] Connection may fail if peers are on different networks');
           } else {
-            console.log('[Manual P2P] ✓ ICE candidates gathered successfully:', candidatesGathered);
+            console.log('[Manual P2P] ✓ ICE candidates gathered successfully');
           }
         }
       };

@@ -21,7 +21,7 @@ import { generateUUID } from '../utils/uuid';
 import { useToolSettings, useDrawingTool, DrawingTool } from '../contexts/ToolSettingsContext';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
-import { useManualConnection } from '../store/useManualConnection';
+import { useManualConnection, testWebRTCConnectivity } from '../store/useManualConnection';
 import { createPack, loadPack } from '../utils/packManager';
 import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 import { convertBlobsInObjects } from '../utils/blobConverter';
@@ -118,6 +118,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [showManualConnection, setShowManualConnection] = useState(false);
   const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
   const [guestNameInput, setGuestNameInput] = useState('');
+  const [webrtcTestResult, setWebrtcTestResult] = useState<string | null>(null);
+  const [testingWebRTC, setTestingWebRTC] = useState(false);
   const manualConnection = useManualConnection();
 
   // Read offer code from URL on mount (for invite links)
@@ -1201,6 +1203,41 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 <X size={24} />
               </button>
             </div>
+
+            {/* WebRTC Diagnostic Button */}
+            <button
+              onClick={async () => {
+                setTestingWebRTC(true);
+                setWebrtcTestResult('Testing WebRTC connectivity...');
+                const result = await testWebRTCConnectivity();
+                setTestingWebRTC(false);
+                if (result.success) {
+                  setWebrtcTestResult(`✓ WebRTC works! Found ${result.candidates} candidates (host: ${result.details.host}, srflx: ${result.details.srflx}, relay: ${result.details.relay})`);
+                } else {
+                  setWebrtcTestResult(`❌ WebRTC problem: ${result.error || 'Unknown error'}\nCandidates: ${result.candidates} (host: ${result.details.host}, srflx: ${result.details.srflx}, relay: ${result.details.relay})\n\nTroubleshooting:\n- Check browser settings for WebRTC\n- Disable VPN/Proxy\n- Disable browser extensions (uBlock, Privacy Badger)\n- Try a different browser (Chrome/Firefox)\n- Check if firewall allows WebRTC`);
+                }
+              }}
+              disabled={testingWebRTC}
+              className="w-full py-2 px-4 bg-yellow-700 hover:bg-yellow-600 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors text-sm mb-4"
+            >
+              {testingWebRTC ? 'Testing...' : '🔍 Test WebRTC Connectivity'}
+            </button>
+
+            {webrtcTestResult && (
+              <div className={`mb-4 p-3 text-sm whitespace-pre-wrap rounded ${
+                webrtcTestResult.startsWith('✓') ? 'bg-green-900/50 border border-green-700 text-green-200' :
+                webrtcTestResult.startsWith('❌') ? 'bg-red-900/50 border border-red-700 text-red-200' :
+                'bg-blue-900/50 border border-blue-700 text-blue-200'
+              }`}>
+                {webrtcTestResult}
+                <button
+                  onClick={() => setWebrtcTestResult(null)}
+                  className="float-right text-gray-400 hover:text-white"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
             {/* Tab selector */}
             <div className="flex gap-2 mb-4">
