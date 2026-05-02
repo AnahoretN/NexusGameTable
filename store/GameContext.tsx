@@ -6024,9 +6024,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const conn = manualConnectionRef.current;
       if (!conn) return;
 
-      // Only set up handlers once per connection (tracked by peer ID)
-      if (manualConnectionSetupRef.current === conn.peer) {
-          return;
+      // Generate a unique ID for this effect instance to track if we've already set up
+      const effectId = `${conn.peer}-${Date.now()}`;
+
+      // Only set up handlers if this is a new connection or effect is re-running
+      // We use a composite key to detect both connection changes and dependency changes
+      if (manualConnectionSetupRef.current && manualConnectionSetupRef.current.startsWith(conn.peer)) {
+          // Same connection, but dependencies changed - remove old handlers first
+          console.log('[Manual P2P] Re-setting up handlers for connection due to dependency change:', conn.peer);
       }
 
       const handleData = (data: any) => {
@@ -6080,8 +6085,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       conn.on('close', handleClose);
       conn.on('error', handleError);
 
-      // Mark this connection as set up
-      manualConnectionSetupRef.current = conn.peer;
+      // Mark this connection as set up with this effect instance
+      manualConnectionSetupRef.current = effectId;
 
       // If connection is already open when we set up handlers, trigger handleOpen manually
       // This handles the case where the data channel opened before GameContext registered handlers
@@ -6089,15 +6094,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setTimeout(() => handleOpen(), 0);
       }
 
-      // IMPORTANT: Clean up handlers only when connection actually changes or closes
+      // IMPORTANT: Clean up handlers when effect re-runs or unmounts
       return () => {
           console.log('[Manual P2P] Cleaning up connection handlers for:', conn.peer);
           conn.off('data', handleData);
           conn.off('open', handleOpen);
           conn.off('close', handleClose);
           conn.off('error', handleError);
-          // Don't reset the setup ref here - it will be reset when connection actually closes
-          // This prevents the effect from re-running unnecessarily
+          // Reset the setup ref so next effect run can set up handlers
+          if (manualConnectionSetupRef.current === effectId) {
+              manualConnectionSetupRef.current = null;
+          }
       };
   }, [localDispatch, isHost]);
 

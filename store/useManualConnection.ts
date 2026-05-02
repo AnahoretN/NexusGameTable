@@ -129,7 +129,12 @@ class DataChannelAdapter {
     if (!this._handlers[event]) {
       this._handlers[event] = [];
     }
-    this._handlers[event].push(handler);
+    // Prevent duplicate handlers
+    if (!this._handlers[event].includes(handler)) {
+      this._handlers[event].push(handler);
+    } else {
+      console.warn('[DataChannelAdapter] Attempted to add duplicate handler for event:', event, 'peer:', this.peer);
+    }
   }
 
   off(event: string, handler: (...args: any[]) => void): void {
@@ -180,7 +185,22 @@ export function useManualConnection() {
   const localDispatchRef = useRef<React.Dispatch<Action> | null>(null);
 
   // Helper function to set up a connection and listen for its open event
+  // CRITICAL: This should only be called ONCE per connection to avoid duplicate handlers
   const setupConnection = useCallback((adapter: DataChannelAdapter) => {
+    // Check if we're already tracking this exact adapter
+    if (connectionRef.current === adapter) {
+      console.log('[Manual P2P] setupConnection: Adapter already set up, skipping');
+      return;
+    }
+
+    // Clean up old adapter if exists
+    if (connectionRef.current && connectionRef.current !== adapter) {
+      console.log('[Manual P2P] setupConnection: Cleaning up old adapter');
+      // Remove our handlers from old adapter by removing all listeners
+      // (we can't selectively remove only our handlers since on() uses anonymous functions)
+      connectionRef.current._handlers = {};
+    }
+
     connectionRef.current = adapter;
 
     // Listen for the data channel to actually open

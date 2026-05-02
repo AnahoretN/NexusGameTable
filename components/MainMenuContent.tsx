@@ -136,15 +136,17 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   }, []);
 
   // Set manual connection ref for GameContext to use
+  // CRITICAL: Only update when the actual connection object changes, not on every step change
   useEffect(() => {
     if ((window as any).__setManualConnection) {
       const conn = manualConnection.connectionRef.current;
       // Only update if there's actually a connection (don't clear existing connection)
       if (conn) {
+        console.log('[MainMenuContent] Setting manual connection for GameContext:', conn.peer);
         (window as any).__setManualConnection(conn);
       }
     }
-  }, [manualConnection.state.step]);
+  }, [manualConnection.connectionRef.current]); // Track actual connection object, not step
 
   // Hand card scale state with localStorage persistence
   const { setHandCardScale } = useHandCardScale();
