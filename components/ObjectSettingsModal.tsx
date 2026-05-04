@@ -2282,6 +2282,61 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
               </div>
               )}
 
+              {/* Explosive Dice (for dice objects only) */}
+              {isDice && (
+                <div className="pt-1 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                      <Target size={14} /> {translate('Explosive Dice', language as Locale)}
+                    </h4>
+                    <button
+                      onClick={() => update('isExplosive', !((data as DiceObject).isExplosive))}
+                      className={`w-10 h-5 rounded-full transition-colors ${
+                        (data as DiceObject).isExplosive ? 'bg-green-600' : 'bg-slate-700'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                        (data as DiceObject).isExplosive ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500">{translate('If maximum value is rolled, roll again and add the results', language as Locale)}</p>
+
+                  {/* Explosive Dice Colors */}
+                  {(data as DiceObject).isExplosive && (
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Color', language as Locale)}</label>
+                        <input
+                          type="color"
+                          value={(data as DiceObject).explosiveColor || '#ffff00'}
+                          onChange={e => update('explosiveColor', e.target.value)}
+                          className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Text Color', language as Locale)}</label>
+                        <input
+                          type="color"
+                          value={(data as DiceObject).explosiveTextColor || '#ff0000'}
+                          onChange={e => update('explosiveTextColor', e.target.value)}
+                          className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Glow', language as Locale)}</label>
+                        <input
+                          type="color"
+                          value={(data as DiceObject).explosiveGlow || '#ff0000'}
+                          onChange={e => update('explosiveGlow', e.target.value)}
+                          className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Alternative Card Back (for cards only) */}
               {isCard && (
                 <div className="pt-2 space-y-3">

@@ -2141,7 +2141,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             const diceToRoll = state.objects[diceId] as DiceObject;
             if (!diceToRoll || diceToRoll.type !== ItemType.DICE_OBJECT) return;
 
-            const finalValue = Math.floor(Math.random() * diceToRoll.sides) + 1;
+            // Roll the dice
+            const firstRoll = Math.floor(Math.random() * diceToRoll.sides) + 1;
+            let finalValue = firstRoll;
+            let explosiveRoll: number | undefined = undefined;
+
+            // Handle explosive dice: if max value is rolled, prepare for second roll
+            const isExplosiveTrigger = diceToRoll.isExplosive && firstRoll === diceToRoll.sides;
+
+            if (isExplosiveTrigger) {
+                // Generate second roll value
+                explosiveRoll = Math.floor(Math.random() * diceToRoll.sides) + 1;
+                finalValue = diceToRoll.sides + explosiveRoll;
+            }
+
             newRolls.push({
                 id: generateUUID(),
                 value: finalValue,
@@ -2152,7 +2165,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             // Start animation for each dice
             const animationDuration = 500;
             const updateCount = 5;
-            const updateInterval = animationDuration / (updateCount + 1);
+            const updateInterval = animationDuration / updateCount; // 500 / 5 = 100ms per update, total 500ms
             let updateIndex = 0;
             let previousValue = diceToRoll.currentValue;
 
@@ -2177,19 +2190,45 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     updateIndex++;
                     setTimeout(animateRoll, updateInterval);
                 } else {
+                    // First roll animation complete
                     if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
-                        (window as any).__diceRollDispatch({
-                            type: 'UPDATE_OBJECT',
-                            payload: {
-                                id: diceId,
-                                updates: {
-                                    currentValue: finalValue,
-                                    rolling: false,
-                                    rollTargetValue: undefined,
-                                    rollStartTime: undefined
+                        if (isExplosiveTrigger && explosiveRoll !== undefined) {
+                            // For explosive dice: show max value first, then trigger second roll
+                            (window as any).__diceRollDispatch({
+                                type: 'UPDATE_OBJECT',
+                                payload: {
+                                    id: diceId,
+                                    updates: {
+                                        currentValue: diceToRoll.sides,
+                                        rolling: false,
+                                        rollTargetValue: undefined,
+                                        rollStartTime: undefined
+                                    }
                                 }
+                            });
+
+                            // Trigger explosive second roll immediately (first roll lasted full 500ms)
+                            if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                                (window as any).__diceRollDispatch({
+                                    type: 'EXPLOSIVE_DICE_SECOND_ROLL',
+                                    payload: { id: diceId, explosiveRoll }
+                                });
                             }
-                        });
+                        } else {
+                            // Normal dice: show final value
+                            (window as any).__diceRollDispatch({
+                                type: 'UPDATE_OBJECT',
+                                payload: {
+                                    id: diceId,
+                                    updates: {
+                                        currentValue: finalValue,
+                                        rolling: false,
+                                        rollTargetValue: undefined,
+                                        rollStartTime: undefined
+                                    }
+                                }
+                            });
+                        }
                     }
                 }
             };
@@ -2199,8 +2238,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 ...diceToRoll,
                 currentValue: 1,
                 rolling: true,
-                rollTargetValue: finalValue,
-                rollStartTime: Date.now()
+                rollTargetValue: firstRoll,
+                rollStartTime: Date.now(),
+                explosiveRollValue: undefined // Clear any previous explosive roll
             };
         });
 
@@ -2212,6 +2252,53 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             },
             diceRolls: [...newRolls, ...state.diceRolls].slice(0, 50)
         };
+    }
+    case 'EXPLOSIVE_DICE_SECOND_ROLL': {
+        const dice = state.objects[action.payload.id] as DiceObject;
+        if (!dice || dice.type !== ItemType.DICE_OBJECT) return state;
+
+        const { explosiveRoll } = action.payload;
+
+        // Animate the second roll - 500ms to match first roll duration
+        const animationDuration = 500;
+        const updateCount = 5;
+        const updateInterval = animationDuration / updateCount; // 500 / 5 = 100ms per update
+        let updateIndex = 0;
+        let previousValue = 0;
+
+        const animateSecondRoll = () => {
+            if (updateIndex < updateCount) {
+                let intermediateValue: number;
+                if (dice.sides === 2) {
+                    intermediateValue = previousValue === 1 ? 2 : 1;
+                } else {
+                    do {
+                        intermediateValue = Math.floor(Math.random() * dice.sides) + 1;
+                    } while (intermediateValue === previousValue);
+                }
+                previousValue = intermediateValue;
+
+                if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                    (window as any).__diceRollDispatch({
+                        type: 'UPDATE_OBJECT',
+                        payload: { id: action.payload.id, updates: { explosiveRollValue: intermediateValue } }
+                    });
+                }
+                updateIndex++;
+                setTimeout(animateSecondRoll, updateInterval);
+            } else {
+                // Show final explosive roll value
+                if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                    (window as any).__diceRollDispatch({
+                        type: 'UPDATE_OBJECT',
+                        payload: { id: action.payload.id, updates: { explosiveRollValue: explosiveRoll } }
+                    });
+                }
+            }
+        };
+        setTimeout(animateSecondRoll, 0);
+
+        return state;
     }
     case 'UPDATE_COUNTER': {
         const counter = state.objects[action.payload.id] as Counter;

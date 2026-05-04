@@ -30,6 +30,7 @@ export type Action =
   | BaseAction<'FLIP_CARD', { cardId: string }>
   | BaseAction<'ROLL_DICE_LOG', { value: number; playerName: string }>
   | BaseAction<'ROLL_PHYSICAL_DICE', { id: string; rollGroup?: boolean }>
+  | BaseAction<'EXPLOSIVE_DICE_SECOND_ROLL', { id: string; explosiveRoll: number }>
   | BaseAction<'UPDATE_COUNTER', { id: string; delta: number }>
   | BaseAction<'SWITCH_ROLE', { playerId: string }>
   | BaseAction<'TOGGLE_LOCK', { id: string }>

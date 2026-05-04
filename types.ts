@@ -425,6 +425,11 @@ export interface DiceObject extends GameItem {
   diceGroupId?: string; // ID of the dice group this dice belongs to (optional)
   fromPoolPanel?: string; // ID of pool panel this dice was picked up from (if any)
   valueOverrides?: Record<number, DiceValueOverride>; // Custom display for dice values (1-indexed)
+  isExplosive?: boolean; // If true, rolling max value triggers another roll and adds the results
+  explosiveColor?: string; // Color for explosive dice effect (default: yellow)
+  explosiveTextColor?: string; // Text color for explosive dice effect (default: red)
+  explosiveGlow?: string; // Glow color for explosive dice effect (default: red)
+  explosiveRollValue?: number; // Second roll value for explosive dice (added to max sides for display)
 }
 
 // Custom display override for a dice value
