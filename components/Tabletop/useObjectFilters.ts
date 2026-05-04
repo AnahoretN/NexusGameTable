@@ -53,6 +53,12 @@ export const useObjectFilters = (
         return false;
       }
 
+      // Effect Templates can extend far beyond playable area when stretched
+      // Skip coordinate filtering for them to allow proper rendering
+      if (obj.type === ItemType.EFFECT_TEMPLATE) {
+        return true;
+      }
+
       // Exclude objects outside playable area (pool panel objects with negative or large coordinates)
       // This prevents scrollbars from extending to include pool panel territories
       if (obj.x < -100 || obj.y < -100 || obj.x > PLAYABLE_AREA_SIZE + 100 || obj.y > PLAYABLE_AREA_SIZE + 100) {
