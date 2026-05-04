@@ -674,7 +674,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     {
       id: 'effects', label: t({ en: 'Effect Templates', ru: 'Эффекты', be: 'Эфекты', uk: 'Ефекти', sr: 'Ефекти' }), icon: <Target size={16}/>,
       items: [
-        { name: t({ en: 'Effect Template', ru: 'Эффект', be: 'Ефект', uk: 'Ефект', sr: 'Ефект' }), type: 'EFFECT_TEMPLATE' },
+        { name: t({ en: 'Fire Cone Effect', ru: 'Огненный конус', be: 'Агністы конус', uk: 'Вогняний конус', sr: 'Ватрени конус' }), type: 'FIRE_CONE_EFFECT' },
+        { name: t({ en: 'Fire Explosion Effect', ru: 'Огненный взрыв', be: 'Агністы выбух', uk: 'Вогняний вибух', sr: 'Ватрена експлозија' }), type: 'FIRE_EXPLOSION_EFFECT' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.EFFECT_TEMPLATE
     },
@@ -2100,23 +2101,48 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         });
         break;
       }
-      case 'EFFECT_TEMPLATE': {
+      case 'FIRE_CONE_EFFECT': {
         const effectTemplate: import('../types').EffectTemplate = {
           id: generateUUID(),
           type: ItemType.EFFECT_TEMPLATE,
-          name: item.name || 'Effect Template',
+          name: item.name || 'Fire Cone Effect',
           x: worldX - pixelsToVu(100, pixelsPerVU), // Center on cursor
-          y: worldY - pixelsToVu(100, pixelsPerVU),
+          y: worldY - pixelsToVu(175, pixelsPerVU), // Center vertically (height/2 = 350/2 = 175)
           rotation: 0, // Will point upward due to calculation offset
           width: 200,
-          height: 200,
-          content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777815088/free-png.ru-46_elw6il.png',
+          height: 350,
+          content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777883916/FireConeEffect_npwe4x.png',
           isOnTable: true,
           locked: false,
           pivot: { x: 50, y: 100 }, // Default pivot at bottom center
           actionButtons: ['lock', 'delete'],
           hyperscaleLayerId: 'boards', // Place on boards hyperscale layer (with game boards)
           zIndex: 15, // Above tokens for visibility
+          opacity: 85, // 85% opacity by default
+        };
+        dispatch({ type: 'ADD_OBJECT', payload: effectTemplate });
+        break;
+      }
+      case 'FIRE_EXPLOSION_EFFECT': {
+        const effectTemplate: import('../types').EffectTemplate = {
+          id: generateUUID(),
+          type: ItemType.EFFECT_TEMPLATE,
+          name: item.name || 'Fire Explosion Effect',
+          x: worldX - pixelsToVu(150, pixelsPerVU), // Center on cursor (width/2 = 300/2 = 150)
+          y: worldY - pixelsToVu(150, pixelsPerVU), // Center on cursor (height/2 = 300/2 = 150)
+          rotation: 0,
+          width: 300,
+          height: 300,
+          content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777884706/FireExplosionEffect_bejprf.png',
+          isOnTable: true,
+          locked: false,
+          pivot: { x: 50, y: 50 }, // Default pivot at center
+          rotationMarkerDistance: 150, // Distance from pivot to rotation marker (radius of explosion)
+          proportionalScaling: true, // Scale width proportionally when resizing height
+          actionButtons: ['lock', 'delete'],
+          hyperscaleLayerId: 'boards', // Place on boards hyperscale layer (with game boards)
+          zIndex: 15, // Above tokens for visibility
+          opacity: 85, // 85% opacity by default
         };
         dispatch({ type: 'ADD_OBJECT', payload: effectTemplate });
         break;
@@ -2175,6 +2201,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                   : 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
                 let objColor = 'color' in obj ? obj.color : '#6366f1';
+                // For effect templates, use red color
+                if (obj.type === ItemType.EFFECT_TEMPLATE) {
+                  objColor = '#ef4444';
+                }
                 // For drawings, use their color property or first stroke color
                 if (obj.type === ItemType.DRAWING) {
                   const drawing = obj as Drawing;
