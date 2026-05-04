@@ -5,7 +5,7 @@
  * with custom pivot point support and rotation marker for visual control.
  */
 
-import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
+import React, { useRef, useEffect, useState, useCallback, memo, useMemo } from 'react';
 import { EffectTemplate } from '../types';
 import { generateHitboxFromImage } from '../utils/imageAnalysis';
 import { useLanguage } from '../store/contexts';
@@ -206,6 +206,12 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   // Get current language for step text formatting
   const language = useLanguage();
 
+  // Memoize language check for Russian-like languages (ru, sr, uk)
+  const isRussianLanguage = useMemo(() =>
+    language === 'ru' || language === 'sr' || language === 'uk',
+    [language]
+  );
+
   // Save the element rect at drag start for consistent coordinate calculations
   const dragStartRectRef = useRef<DOMRect | null>(null);
 
@@ -392,24 +398,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       setIsDraggingPivot(false);
     };
 
-    // Handle pointer cancel - when cursor is captured by another element or system
-    const handlePointerCancel = () => {
-      rotationMarkerWorldPosRef.current = null;
-      pivotDragStateRef.current = null;
-      dragStartRectRef.current = null;
-      setIsDraggingPivot(false);
-    };
-
-    // Handle window blur - when window loses focus
-    const handleBlur = () => {
-      rotationMarkerWorldPosRef.current = null;
-      pivotDragStateRef.current = null;
-      dragStartRectRef.current = null;
-      setIsDraggingPivot(false);
-    };
-
-    // Handle mouse leaving the document
-    const handleMouseLeave = () => {
+    const cleanup = () => {
       rotationMarkerWorldPosRef.current = null;
       pivotDragStateRef.current = null;
       dragStartRectRef.current = null;
@@ -419,16 +408,16 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     // Use window for mousemove to catch events even when cursor leaves the viewport
     window.addEventListener('mousemove', handleMouseMove, { passive: false, capture: true });
     window.addEventListener('mouseup', handleMouseUp, { capture: true });
-    window.addEventListener('pointercancel', handlePointerCancel);
-    window.addEventListener('blur', handleBlur);
-    document.addEventListener('mouseleave', handleMouseLeave);
+    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('blur', cleanup);
+    document.addEventListener('mouseleave', cleanup);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove, { capture: true as any });
       window.removeEventListener('mouseup', handleMouseUp, { capture: true as any });
-      window.removeEventListener('pointercancel', handlePointerCancel);
-      window.removeEventListener('blur', handleBlur);
-      document.removeEventListener('mouseleave', handleMouseLeave);
+      window.removeEventListener('pointercancel', cleanup);
+      window.removeEventListener('blur', cleanup);
+      document.removeEventListener('mouseleave', cleanup);
     };
   }, [isDraggingPivot, obj.id, obj.x, obj.y, obj.rotation, obj.height, obj.width, dispatch, pixelsPerVU]);
 
@@ -589,22 +578,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       setIsDraggingRotation(false);
     };
 
-    // Handle pointer cancel - when cursor is captured by another element or system
-    const handlePointerCancel = () => {
-      rotationDragStateRef.current = null;
-      dragStartRectRef.current = null;
-      setIsDraggingRotation(false);
-    };
-
-    // Handle window blur - when window loses focus
-    const handleBlur = () => {
-      rotationDragStateRef.current = null;
-      dragStartRectRef.current = null;
-      setIsDraggingRotation(false);
-    };
-
-    // Handle mouse leaving the document - stop dragging to prevent getting stuck
-    const handleMouseLeave = () => {
+    const cleanup = () => {
       rotationDragStateRef.current = null;
       dragStartRectRef.current = null;
       setIsDraggingRotation(false);
@@ -613,16 +587,16 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     // Use window for mousemove to catch events even when cursor leaves the viewport
     window.addEventListener('mousemove', handleMouseMove, { passive: false });
     window.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('pointercancel', handlePointerCancel);
-    window.addEventListener('blur', handleBlur);
-    document.addEventListener('mouseleave', handleMouseLeave);
+    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('blur', cleanup);
+    document.addEventListener('mouseleave', cleanup);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('pointercancel', handlePointerCancel);
-      window.removeEventListener('blur', handleBlur);
-      document.removeEventListener('mouseleave', handleMouseLeave);
+      window.removeEventListener('pointercancel', cleanup);
+      window.removeEventListener('blur', cleanup);
+      document.removeEventListener('mouseleave', cleanup);
     };
   }, [isDraggingRotation, obj.id, obj.pivot, obj.proportionalScaling, dispatch, pixelsPerVU]);
 
@@ -768,22 +742,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       setIsDraggingWidth(false);
     };
 
-    // Handle pointer cancel - when cursor is captured by another element or system
-    const handlePointerCancel = () => {
-      widthDragStateRef.current = null;
-      dragStartRectRef.current = null;
-      setIsDraggingWidth(false);
-    };
-
-    // Handle window blur - when window loses focus
-    const handleBlur = () => {
-      widthDragStateRef.current = null;
-      dragStartRectRef.current = null;
-      setIsDraggingWidth(false);
-    };
-
-    // Handle mouse leaving the document - stop dragging to prevent getting stuck
-    const handleMouseLeave = () => {
+    const cleanup = () => {
       widthDragStateRef.current = null;
       dragStartRectRef.current = null;
       setIsDraggingWidth(false);
@@ -792,16 +751,16 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     // Use window for mousemove to catch events even when cursor leaves the viewport
     window.addEventListener('mousemove', handleMouseMove, { passive: false });
     window.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('pointercancel', handlePointerCancel);
-    window.addEventListener('blur', handleBlur);
-    document.addEventListener('mouseleave', handleMouseLeave);
+    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('blur', cleanup);
+    document.addEventListener('mouseleave', cleanup);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('pointercancel', handlePointerCancel);
-      window.removeEventListener('blur', handleBlur);
-      document.removeEventListener('mouseleave', handleMouseLeave);
+      window.removeEventListener('pointercancel', cleanup);
+      window.removeEventListener('blur', cleanup);
+      document.removeEventListener('mouseleave', cleanup);
     };
   }, [isDraggingWidth, obj.id, obj.pivot, obj.height, obj.rotation, dispatch, pixelsPerVU]);
 
@@ -937,7 +896,6 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const lengthValue = obj.rotationMarkerDistance ?? obj.height ?? 100;
   const stepCount = rulerStep > 0 ? (lengthValue / rulerStep).toFixed(1) : null;
   // Format step text in parentheses with space: ru = " (5ш)", en = " (5.0st)"
-  const isRussianLanguage = language === 'ru' || language === 'sr' || language === 'uk';
   const stepText = stepCount !== null
     ? (isRussianLanguage ? ` (${stepCount}ш)` : ` (${stepCount}st)`)
     : '';

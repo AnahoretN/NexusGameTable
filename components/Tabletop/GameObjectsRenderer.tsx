@@ -62,69 +62,88 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
   const animationTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
   const animatingDiceRef = useRef<Set<string>>(new Set());
 
-  // Track explosive dice animation - only updates prevRoll and detects new dice
+  // Cleanup effect for explosive dice animations
   useEffect(() => {
-    const diceObjects = visibleTableObjects.filter(obj => obj.type === ItemType.DICE_OBJECT) as DiceObject[];
-    const newScales: Record<string, number> = { ...explosiveScales };
-    const newPhases: Record<string, 'phase1' | 'phase2' | 'done'> = { ...explosivePhases };
-    const diceToAnimate: string[] = [];
+    return () => {
+      // Clear all pending timeouts on unmount
+      Object.values(animationTimeoutsRef.current).forEach(clearTimeout);
+      animationTimeoutsRef.current = {};
+    };
+  }, []);
 
+  // Extract dice objects and their explosive roll values (memoized)
+  const diceExplosiveStates = React.useMemo(() => {
+    const diceObjects = visibleTableObjects.filter(obj => obj.type === ItemType.DICE_OBJECT) as DiceObject[];
+    const states: Record<string, { isExplosive: boolean; rollValue?: number }> = {};
     diceObjects.forEach(dice => {
-      const prevRoll = prevDiceRollRef.current[dice.id];
-      const currentRoll = dice.explosiveRollValue;
+      states[dice.id] = {
+        isExplosive: dice.isExplosive || false,
+        rollValue: dice.explosiveRollValue
+      };
+    });
+    return states;
+  }, [visibleTableObjects]);
+
+  // Detect new explosive rolls and trigger animations
+  useEffect(() => {
+    const newAnimations: Array<{ diceId: string }> = [];
+
+    // Check each dice for new explosive roll
+    Object.entries(diceExplosiveStates).forEach(([diceId, { isExplosive, rollValue }]) => {
+      const prevRoll = prevDiceRollRef.current[diceId];
 
       // Detect when explosive roll just appeared (undefined -> number)
-      if (dice.isExplosive && currentRoll !== undefined && prevRoll === undefined && !animatingDiceRef.current.has(dice.id)) {
-        animatingDiceRef.current.add(dice.id);
-        diceToAnimate.push(dice.id);
+      if (isExplosive && rollValue !== undefined && prevRoll === undefined && !animatingDiceRef.current.has(diceId)) {
+        animatingDiceRef.current.add(diceId);
+        newAnimations.push({ diceId });
 
-        // Phase 1: Start at scale 1
-        newScales[dice.id] = 1;
-        newPhases[dice.id] = 'phase1';
-      } else if (!dice.isExplosive || currentRoll === undefined) {
-        // Reset when not explosive or no explosive roll - but don't clear timeout if animating
-        if (!animatingDiceRef.current.has(dice.id)) {
-          delete newScales[dice.id];
-          delete newPhases[dice.id];
+        // Set initial state
+        setExplosiveScales(prev => ({ ...prev, [diceId]: 1 }));
+        setExplosivePhases(prev => ({ ...prev, [diceId]: 'phase1' }));
+      } else if (!isExplosive || rollValue === undefined) {
+        // Reset when not explosive or no explosive roll
+        if (!animatingDiceRef.current.has(diceId)) {
+          setExplosiveScales(prev => {
+            const { [diceId]: _, ...rest } = prev;
+            return rest;
+          });
+          setExplosivePhases(prev => {
+            const { [diceId]: _, ...rest } = prev;
+            return rest;
+          });
         }
-      } else if (explosiveScales[dice.id] !== undefined) {
-        // Keep current scale and phase if already animating/animated
-        newScales[dice.id] = explosiveScales[dice.id];
-        newPhases[dice.id] = explosivePhases[dice.id] ?? 'done';
       }
 
-      prevDiceRollRef.current[dice.id] = currentRoll;
+      prevDiceRollRef.current[diceId] = rollValue;
     });
 
-    setExplosiveScales(newScales);
-    setExplosivePhases(newPhases);
-
-    // Start animations for new dice (after state update)
-    diceToAnimate.forEach(diceId => {
+    // Run animations for new dice
+    newAnimations.forEach(({ diceId }) => {
       // Phase 1: Animate from 1 to 1.3 over 0.3s
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setExplosiveScales(prev => ({ ...prev, [diceId]: 1.3 }));
-          setExplosivePhases(prev => ({ ...prev, [diceId]: 'phase1' }));
-        });
-      });
+      const phase1Timeout = setTimeout(() => {
+        setExplosiveScales(prev => ({ ...prev, [diceId]: 1.3 }));
+        setExplosivePhases(prev => ({ ...prev, [diceId]: 'phase1' }));
+      }, 16); // Small delay to ensure initial state is rendered
 
       // Phase 2: After 0.3s, animate to 1.1 over 0.2s
-      const timeoutId = setTimeout(() => {
+      const phase2Timeout = setTimeout(() => {
         setExplosiveScales(prev => ({ ...prev, [diceId]: 1.1 }));
         setExplosivePhases(prev => ({ ...prev, [diceId]: 'phase2' }));
 
-        // Mark animation complete after another 0.2s and remove from animating set
-        setTimeout(() => {
+        // Mark animation complete after another 0.2s
+        const completeTimeout = setTimeout(() => {
           setExplosivePhases(prev => ({ ...prev, [diceId]: 'done' }));
           animatingDiceRef.current.delete(diceId);
           delete animationTimeoutsRef.current[diceId];
         }, 200);
+
+        animationTimeoutsRef.current[`${diceId}-complete`] = completeTimeout;
       }, 300);
 
-      animationTimeoutsRef.current[diceId] = timeoutId;
+      animationTimeoutsRef.current[diceId] = phase1Timeout;
+      animationTimeoutsRef.current[`${diceId}-phase2`] = phase2Timeout;
     });
-  }, [visibleTableObjects]);
+  }, [diceExplosiveStates]);
 
   const renderBoard = (obj: TableObject, globalZIndex: number) => {
     const board = obj as BoardType;

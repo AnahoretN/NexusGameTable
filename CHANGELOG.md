@@ -15,6 +15,15 @@ All notable changes to Nexus Game Table will be documented in this file.
 - **Flexible scaling**: Support for stretching and resizing effect templates
 - **Visual feedback**: Better rendering during drag and placement operations
 
+#### 🎲 Explosive Dice
+**New dice mechanic for RPG systems with exploding dice**
+
+- **Automatic reroll**: When maximum value is rolled, dice automatically rerolls and adds results
+- **Visual animation**: Smooth scaling animation (1.0 → 1.3 → 1.1) when explosive roll occurs
+- **Customizable colors**: Configure dice color, text color, and glow effect for explosive rolls
+- **Toggle per dice**: Enable/disable explosive dice individually in Object Settings
+- **Localization support**: Translated labels for be, ru, sr, uk languages
+
 **Use cases:**
 - Area of effect markers (spell circles, cones, lines)
 - Temporary visual effects during gameplay
@@ -35,6 +44,8 @@ All notable changes to Nexus Game Table will be documented in this file.
 
 - **Refactored EffectTemplateRenderer**: Cleaner slot configuration system
 - **Improved component structure**: Better separation of concerns in tabletop components
+- **Optimized Explosive Dice animation**: Added cleanup on unmount, memoized dice states, removed double requestAnimationFrame
+- **Reduced drag handler duplication**: Unified cleanup logic in EffectTemplateRenderer
 - **Updated build assets**: Rebuilt with latest dependencies
 
 ---
