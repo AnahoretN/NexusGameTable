@@ -1538,6 +1538,24 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                       className="w-full"
                     />
 
+                    {/* Opacity Slider */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1 flex items-center justify-between">
+                        <span>{t({ en: 'Opacity', ru: 'Прозрачность' })}</span>
+                        <span className="text-white">{(data as EffectTemplate).opacity ?? 100}%</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={(data as EffectTemplate).opacity ?? 100}
+                        onChange={e => update('opacity', Number(e.target.value))}
+                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                        style={{ appearance: 'auto' }}
+                      />
+                    </div>
+
                     {/* Pivot Point X and Y - in one row */}
                     <div className="grid grid-cols-2 gap-2">
                       <div>

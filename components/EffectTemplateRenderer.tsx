@@ -8,6 +8,7 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { EffectTemplate } from '../types';
 import { generateHitboxFromImage } from '../utils/imageAnalysis';
+import { useLanguage } from '../store/contexts';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -128,6 +129,44 @@ function preloadEffectImage(src: string): Promise<void> {
 // Export preload function for external use
 export { preloadEffectImage };
 
+/**
+ * Calculate the 4 corner points of a rotated rectangle
+ * Returns polygon points in CSS format (e.g., "x1,y1 x2,y2 ...")
+ */
+function calculateRotatedRectPolygon(
+  width: number,
+  height: number,
+  rotation: number,
+  pivotX: number, // in pixels
+  pivotY: number  // in pixels
+): string {
+  // Rectangle corners relative to pivot (unrotated)
+  // Top-left, Top-right, Bottom-right, Bottom-left
+  const corners = [
+    { x: -pivotX, y: -pivotY },           // Top-left (relative to pivot)
+    { x: width - pivotX, y: -pivotY },    // Top-right
+    { x: width - pivotX, y: height - pivotY }, // Bottom-right
+    { x: -pivotX, y: height - pivotY }    // Bottom-left
+  ];
+
+  // Convert rotation to radians
+  const angleRad = (rotation * Math.PI) / 180;
+
+  // Rotate each corner around pivot (0,0 in relative coordinates)
+  const rotatedCorners = corners.map(corner => {
+    const rx = corner.x * Math.cos(angleRad) - corner.y * Math.sin(angleRad);
+    const ry = corner.x * Math.sin(angleRad) + corner.y * Math.cos(angleRad);
+    // Convert back to absolute coordinates (relative to container top-left)
+    return {
+      x: rx + pivotX,
+      y: ry + pivotY
+    };
+  });
+
+  // Format as CSS polygon points
+  return rotatedCorners.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+}
+
 interface EffectTemplateRendererProps {
   obj: EffectTemplate;
   pixelsPerVU: number;
@@ -138,6 +177,7 @@ interface EffectTemplateRendererProps {
   className?: string;
   isGM?: boolean;
   dispatch?: (action: any) => void;
+  rulerStep?: number;
 }
 
 export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
@@ -149,7 +189,8 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   style = {},
   className = '',
   isGM = false,
-  dispatch
+  dispatch,
+  rulerStep = 0
 }) => {
   const [isDraggingPivot, setIsDraggingPivot] = useState(false);
   const [isDraggingRotation, setIsDraggingRotation] = useState(false);
@@ -161,6 +202,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const pivotDragStateRef = useRef<{ rotation: number; width: number; height: number; markerDistance: number; initialObj?: { x: number; y: number } } | null>(null);
   const rotationDragStateRef = useRef<{ initialHeight: number; initialWidth: number; initialDistance: number; pivotWorldX: number; pivotWorldY: number } | null>(null);
   const widthDragStateRef = useRef<{ initialWidth: number; initialDistance: number; pivotWorldX: number; pivotWorldY: number } | null>(null);
+
+  // Get current language for step text formatting
+  const language = useLanguage();
 
   // Save the element rect at drag start for consistent coordinate calculations
   const dragStartRectRef = useRef<DOMRect | null>(null);
@@ -791,7 +835,8 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     zIndex: isDragging ? 999999 : (obj.zIndex || 1000),
     cursor: isDragging ? 'grabbing' : 'grab',
     opacity: obj.opacity !== undefined ? obj.opacity / 100 : 1,
-    pointerEvents: 'auto',
+    // Disable pointer events on container - clicks go through SVG polygon instead
+    pointerEvents: 'none',
     // Use visible overflow so pivot marker is fully visible
     overflow: 'visible',
     ...style
@@ -885,49 +930,25 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const widthMarkerX = pivotPixelX + widthMarkerDistance * Math.cos(widthAngleRad);
   const widthMarkerY = pivotPixelY + widthMarkerDistance * Math.sin(widthAngleRad);
 
-  // Generate ruler ticks for rotation marker
-  const rulerTicks = shouldShowRotationControls
-    ? generateRulerTicks(
-        (pivot.x / 100) * objWidth,
-        (pivot.y / 100) * objHeight,
-        markerPixelX,
-        markerPixelY,
-        pixelsPerVU
-      )
-    : [];
-
-  // Generate ruler ticks for width marker (horizontal line at y=75%)
-  const widthRulerTicks = shouldShowWidthMarker
-    ? generateRulerTicks(
-        pivotPixelX,
-        widthMarkerY,
-        widthMarkerX,
-        widthMarkerY,
-        pixelsPerVU
-      )
-    : [];
-
   // Calculate length in VU for display (height = length of the template)
   // Calculate length in VU for display (use rotationMarkerDistance if available)
   const lengthVU = (obj.rotationMarkerDistance ?? obj.height ?? 100).toFixed(1);
+  // Calculate step count if ruler step is enabled
+  const lengthValue = obj.rotationMarkerDistance ?? obj.height ?? 100;
+  const stepCount = rulerStep > 0 ? (lengthValue / rulerStep).toFixed(1) : null;
+  // Format step text in parentheses with space: ru = " (5ш)", en = " (5.0st)"
+  const isRussianLanguage = language === 'ru' || language === 'sr' || language === 'uk';
+  const stepText = stepCount !== null
+    ? (isRussianLanguage ? ` (${stepCount}ш)` : ` (${stepCount}st)`)
+    : '';
   // Width ruler shows distance from pivot to width marker (half of total width)
-  const widthVU = ((obj.width ?? 100) / 2).toFixed(1);
-
-  // Handle mouse down on container, but ignore clicks on pivot marker and rotation marker
-  const handleContainerMouseDown = useCallback((e: React.MouseEvent) => {
-    // Check if clicking on pivot marker or its hit area
-    const target = e.target as HTMLElement;
-    if (target.closest('[data-pivot-marker]') || target.closest('[data-rotation-marker]') || target.closest('[data-width-marker]')) {
-      // Let the marker handle it
-      return;
-    }
-    // Also ignore clicks on the SVG ruler
-    if (target.closest('svg')) {
-      return;
-    }
-    // Otherwise, let parent handle it
-    onMouseDown?.(e);
-  }, [onMouseDown]);
+  const widthValue = (obj.width ?? 100) / 2;
+  const widthVU = widthValue.toFixed(1);
+  // Calculate step count for width ruler
+  const widthStepCount = rulerStep > 0 ? (widthValue / rulerStep).toFixed(1) : null;
+  const widthStepText = widthStepCount !== null
+    ? (isRussianLanguage ? ` (${widthStepCount}ш)` : ` (${widthStepCount}st)`)
+    : '';
 
   return (
     <div
@@ -936,11 +957,10 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       data-object-id={obj.id}
       data-object-type={obj.type}
       style={containerStyle}
-      onMouseDown={handleContainerMouseDown}
       onContextMenu={onContextMenu}
     >
       {/* Rotated image wrapper */}
-      <div style={imageWrapperStyle}>
+      <div data-rotated-object="true" style={imageWrapperStyle}>
         {/* Effect image - use img tag directly with cached source */}
         <img
           src={obj.content}
@@ -961,6 +981,43 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
           draggable={false}
         />
       </div>
+
+      {/* SVG hit area for rotated template - ensures clicks only register on the actual image area */}
+      <svg
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          zIndex: 1,
+          overflow: 'visible',
+        }}
+      >
+        <polygon
+          points={calculateRotatedRectPolygon(
+            objWidth,
+            objHeight,
+            rotation,
+            (pivot.x / 100) * objWidth,
+            (pivot.y / 100) * objHeight
+          )}
+          fill="transparent"
+          style={{ pointerEvents: 'fill', cursor: isDragging ? 'grabbing' : 'grab' }}
+          onMouseDown={(e) => {
+            // Ignore clicks on markers (they have higher z-index and will catch first)
+            if ((e.target as HTMLElement).closest('[data-pivot-marker]') ||
+                (e.target as HTMLElement).closest('[data-rotation-marker]') ||
+                (e.target as HTMLElement).closest('[data-width-marker]')) {
+              return;
+            }
+            // Forward to parent handler
+            onMouseDown?.(e);
+          }}
+          onContextMenu={onContextMenu}
+        />
+      </svg>
 
       {/* Pivot marker (non-rotating, always on top) */}
       {shouldShowPivotMarker && (
@@ -1015,7 +1072,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
                 pointerEvents: 'none',
               }}
             >
-              {lengthVU} VU
+              {lengthVU}{stepText}
             </text>
           </svg>
 
@@ -1080,8 +1137,8 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
               y1={pivotPixelY}
               x2={widthMarkerX}
               y2={widthMarkerY}
-              stroke="rgba(59, 130, 246, 0.8)"
-              strokeWidth="1"
+              stroke="rgba(255, 255, 255, 0.8)"
+              strokeWidth="2"
               strokeDasharray="4,4"
             />
 
@@ -1090,7 +1147,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
               x={(widthMarkerX + pivotPixelX) / 2}
               y={(widthMarkerY + pivotPixelY) / 2 - 10}
               textAnchor="middle"
-              fill="rgba(59, 130, 246, 1)"
+              fill="rgba(255, 255, 255, 1)"
               fontSize="12"
               fontWeight="bold"
               style={{
@@ -1098,7 +1155,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
                 pointerEvents: 'none',
               }}
             >
-              {widthVU} VU
+              {widthVU}{widthStepText}
             </text>
           </svg>
 
@@ -1192,7 +1249,8 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     (prevProps.obj as any).inCursorSlot === (nextProps.obj as any).inCursorSlot &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
     prevProps.isDragging === nextProps.isDragging &&
-    prevProps.isGM === nextProps.isGM
+    prevProps.isGM === nextProps.isGM &&
+    prevProps.rulerStep === nextProps.rulerStep
   );
 });
 

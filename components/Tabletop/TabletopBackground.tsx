@@ -40,6 +40,7 @@ interface TabletopBackgroundProps {
   v2p: (vu: number) => number;
   cursorSlotLength: number;
   rulerStep: number; // Step size in VU (0 = disabled)
+  language: string; // Language for step text formatting
 }
 
 /**
@@ -76,7 +77,8 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
   currentTool,
   v2p,
   cursorSlotLength,
-  rulerStep
+  rulerStep,
+  language
 }) => {
   return (
     <>
@@ -200,8 +202,11 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
                 const midY = (rulerStart.y + rulerCurrent.y) / 2;
 
                 // Calculate step count if step is enabled
-                const stepText = rulerStep > 0
-                  ? ` (${(lineLength / rulerStep).toFixed(1)}st)`
+                // Format: ru = " (5ш)", en = " (5.0st)"
+                const stepCount = rulerStep > 0 ? (lineLength / rulerStep).toFixed(1) : null;
+                const isRussianLanguage = language === 'ru' || language === 'sr' || language === 'uk';
+                const stepText = stepCount !== null
+                  ? (isRussianLanguage ? ` (${stepCount}ш)` : ` (${stepCount}st)`)
                   : '';
 
                 return (
@@ -234,7 +239,8 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.v2p === nextProps.v2p &&
     prevProps.cursorSlotLength === nextProps.cursorSlotLength &&
-    prevProps.rulerStep === nextProps.rulerStep
+    prevProps.rulerStep === nextProps.rulerStep &&
+    prevProps.language === nextProps.language
   );
 });
 

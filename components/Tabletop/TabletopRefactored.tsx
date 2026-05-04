@@ -307,6 +307,7 @@ export const Tabletop: React.FC = () => {
     getLayerZoomScale,
     getLayerInverseScale,
     createPositionedStyle,
+    rulerStep,
   };
 
   // === Global Event Handlers ===

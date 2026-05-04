@@ -1021,6 +1021,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
         className={draggingClass}
         isGM={isGM}
         dispatch={dispatch}
+        rulerStep={context.rulerStep}
       />
     );
   };

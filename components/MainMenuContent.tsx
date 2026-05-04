@@ -2115,7 +2115,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           locked: false,
           pivot: { x: 50, y: 100 }, // Default pivot at bottom center
           actionButtons: ['lock', 'delete'],
-          hyperscaleLayerId: 'tokens', // Place on tokens layer
+          hyperscaleLayerId: 'boards', // Place on boards hyperscale layer (with game boards)
           zIndex: 15, // Above tokens for visibility
         };
         dispatch({ type: 'ADD_OBJECT', payload: effectTemplate });
