@@ -2,6 +2,43 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.2.1] - 2026-05-04
+
+### ✨ New Features
+
+#### 🎨 Effect Template Objects
+**New object type for visual effects and templates**
+
+- **Cursor slot support**: Effect Templates can be attached to cursor for easy placement
+- **Image preloading**: Automatic image loading to prevent flickering during placement
+- **Centralized slot configuration**: Improved slot management system
+- **Flexible scaling**: Support for stretching and resizing effect templates
+- **Visual feedback**: Better rendering during drag and placement operations
+
+**Use cases:**
+- Area of effect markers (spell circles, cones, lines)
+- Temporary visual effects during gameplay
+- Environmental effects templates
+- Custom shape overlays
+
+---
+
+### 🐛 Bug Fixes
+
+- **Ruler coordinates**: Fixed ruler displaying at incorrect coordinates on the tabletop
+- **Effect Template disappearing**: Fixed template disappearing when stretched/resized
+- **Component type safety**: Improved TypeScript types across tabletop components
+
+---
+
+### 🔧 Technical Improvements
+
+- **Refactored EffectTemplateRenderer**: Cleaner slot configuration system
+- **Improved component structure**: Better separation of concerns in tabletop components
+- **Updated build assets**: Rebuilt with latest dependencies
+
+---
+
 ## [0.2.0] - 2026-04-29 (Major Refactoring & Optimization Release)
 
 ### 🏗️ Large File Refactoring
