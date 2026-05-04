@@ -105,6 +105,10 @@ export type Action =
   // Connection lock actions
   | ActionWithoutPayload<'TOGGLE_CONNECTIONS_LOCKED'>
   | BaseAction<'MOVE_OBJECT_TO_HYPERSCALE_LAYER', { objectId: string; layerId: string }>
+  // Effect Template actions
+  | BaseAction<'SET_PIVOT_POINT', { objectId: string; pivot: { x: number; y: number } }>
+  | ActionWithoutPayload<'TOGGLE_PIVOT_EDITING'>
+  | BaseAction<'SET_HITBOX_POLYGON', { objectId: string; hitboxPolygon: Array<{ x: number; y: number }> }>
   // Player panel settings actions
   | BaseAction<'UPDATE_PLAYER_PANEL_SETTINGS', { playerId: string; panelId: string; settings: any }>
   | BaseAction<'APPLY_PLAYER_PANEL_SETTINGS', { settings: Record<string, any> }> // Apply individual settings to panels

@@ -51,6 +51,7 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
   const intervalRef = useRef<number | null>(null);
   const frameCountRef = useRef<number>(0);
   const lastFrameTimeRef = useRef<number>(performance.now());
+  const rafIdRef = useRef<number | null>(null);
 
   /**
    * Start performance monitoring
@@ -75,6 +76,11 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
    * Stop performance monitoring
    */
   const stopMonitoring = () => {
+    // Stop RAF loop
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
 
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -135,9 +141,9 @@ export const PerformanceMonitorComponent: React.FC<PerformanceMonitorProps> = ({
   const startFPSMonitoring = () => {
     const measureFPS = () => {
       frameCountRef.current++;
-      requestAnimationFrame(measureFPS);
+      rafIdRef.current = requestAnimationFrame(measureFPS);
     };
-    requestAnimationFrame(measureFPS);
+    rafIdRef.current = requestAnimationFrame(measureFPS);
   };
 
   /**

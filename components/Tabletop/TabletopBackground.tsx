@@ -134,7 +134,13 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
       {currentTool === 'ruler' && rulerStart && (
         <svg
           className="absolute pointer-events-none"
-          style={{ top: 0, left: 0, width: '100%', height: '100%', zIndex: 8000 }}
+          style={{
+            top: 0,
+            left: 0,
+            width: worldBounds.width,
+            height: worldBounds.height,
+            zIndex: 8000
+          }}
         >
           {/* Start point circle */}
           <circle

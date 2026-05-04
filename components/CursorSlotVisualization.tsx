@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ItemType, Card as CardType, Token as TokenType, CardOrientation, Deck as DeckType, Randomizer, Counter, DiceObject, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing } from '../types';
+import { ItemType, Card as CardType, Token as TokenType, CardOrientation, Deck as DeckType, Randomizer, Counter, DiceObject, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate } from '../types';
 import { renderCursorSlotItem } from './CursorSlotItems';
 
 interface CursorSlotVisualizationProps {
-  cursorSlot: (CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing)[];
+  cursorSlot: (CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing | EffectTemplate)[];
   cursorPosition: { x: number; y: number } | null;
   cursorPositionRef: React.MutableRefObject<{ x: number; y: number } | null>;
   zoom: number;
@@ -17,7 +17,7 @@ interface CursorSlotVisualizationProps {
 }
 
 interface HeldItem {
-  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing;
+  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing | EffectTemplate;
   x: number;
   y: number;
   width: number;
@@ -31,7 +31,7 @@ interface HeldItem {
  * Helper function to calculate item dimensions
  */
 const calculateItemDimensions = (
-  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing,
+  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing | EffectTemplate,
   getCardSettings: (card: CardType) => {
     cardWidth?: number;
     cardHeight?: number;
@@ -49,6 +49,7 @@ const calculateItemDimensions = (
   const isNexusBoard = item.type === ItemType.NEXUS_BOARD;
   const isNexusCell = item.type === ItemType.NEXUS_CELL;
   const isDrawing = item.type === ItemType.DRAWING;
+  const isEffectTemplate = item.type === ItemType.EFFECT_TEMPLATE;
 
   let baseWidth = item.width ?? 50;
   let baseHeight = item.height ?? 50;
@@ -76,6 +77,14 @@ const calculateItemDimensions = (
     // Drawings have their own dimensions
     baseWidth = item.width ?? 200;
     baseHeight = item.height ?? 200;
+  } else if (isEffectTemplate) {
+    // Effect templates use their actual dimensions with fallback
+    // Use larger defaults to prevent rendering issues
+    baseWidth = item.width ?? 100;
+    baseHeight = item.height ?? 100;
+    // Ensure minimum size to prevent black square flicker
+    baseWidth = Math.max(baseWidth, 50);
+    baseHeight = Math.max(baseHeight, 50);
   }
 
   return {
@@ -183,7 +192,7 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
   }, [cursorSlot, pixelsPerVU, getCardSettings]);
 
   // Check if items from heldItems are now visible on table (not in cursor slot anymore)
-  // If so, remove them from heldItems immediately to prevent flicker
+  // If so, remove them from heldItems with a small delay to prevent flicker
   // Only trigger when cursorSlot changes (items were dropped)
   useEffect(() => {
     if (heldItems.length === 0) return;
@@ -194,8 +203,18 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
     const stillHeld = heldItems.filter(heldItem => cursorSlotIds.has(heldItem.id));
 
     if (stillHeld.length !== heldItems.length) {
-      setHeldItems(stillHeld);
+      // Add a small delay before removing held items to allow the dropped
+      // object on the table to render properly, preventing flicker
+      cleanupTimeoutRef.current = setTimeout(() => {
+        setHeldItems(stillHeld);
+      }, 50); // 50ms delay - enough for one frame but not noticeable to user
     }
+
+    return () => {
+      if (cleanupTimeoutRef.current) {
+        clearTimeout(cleanupTimeoutRef.current);
+      }
+    };
   }, [cursorSlot]); // Only depend on cursorSlot changes
 
   const hasItems = cursorSlot.length > 0 || heldItems.length > 0;
@@ -234,7 +253,11 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
           {/* Render active cursor slot items */}
           {sortedSlot.map((item, sortedIndex) => {
             const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU);
-            const { width, height } = dimensions;
+            // Ensure minimum dimensions to prevent rendering issues
+            // Use larger minimum for Effect Templates to prevent flicker
+            const minWidth = item.type === ItemType.EFFECT_TEMPLATE ? 50 : 1;
+            const width = Math.max(dimensions.width, minWidth);
+            const height = Math.max(dimensions.height, minWidth);
             const isCard = item.type === ItemType.CARD;
 
             // Container is already positioned at cursor position, so offsetX/Y are offsets from (0,0) of container

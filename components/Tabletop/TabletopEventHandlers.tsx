@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation } from '../../types';
+import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation, EffectTemplate } from '../../types';
 import { clampScrollToPlayableArea } from '../../utils/viewportConstraints';
 import { useIsSettingsModalOpen } from '../../store/contexts';
 import {
@@ -297,6 +297,25 @@ const addToCursorSlot = (
       zIndex: board.zIndex ?? 0,
       hyperscaleLayerId: board.hyperscaleLayerId ?? 'boards',
     } as BoardType;
+  } else if (item.type === ItemType.EFFECT_TEMPLATE) {
+    const effect = item as EffectTemplate;
+    itemClone = {
+      id: effect.id,
+      type: ItemType.EFFECT_TEMPLATE,
+      name: effect.name,
+      content: effect.content,
+      width: effect.width ?? 100,  // Default to 100 if undefined
+      height: effect.height ?? 100,  // Default to 100 if undefined
+      pivot: effect.pivot,
+      rotation: effect.rotation || 0,
+      rotationMarkerDistance: effect.rotationMarkerDistance,
+      opacity: effect.opacity,
+      locked: effect.locked,
+      x: 0,  // ❌ Сбрасываем координаты в слоте курсора
+      y: 0,
+      zIndex: effect.zIndex ?? 0,
+      hyperscaleLayerId: effect.hyperscaleLayerId ?? 'tokens',
+    } as EffectTemplate;
   } else {
     itemClone = { ...item, x: 0, y: 0 }; // ❌ Сбрасываем координаты в слоте курсора
   }
@@ -970,6 +989,16 @@ const dropCursorSlot = (
     // Change location from HAND to TABLE for cards
     const currentCard = isCard ? state.objects[item.id] as CardType : null;
 
+    // For Effect Templates, preserve all template-specific properties
+    const isEffectTemplate = item.type === ItemType.EFFECT_TEMPLATE;
+    const effectTemplateUpdates = isEffectTemplate ? {
+      width: (item as EffectTemplate).width,
+      height: (item as EffectTemplate).height,
+      pivot: (item as EffectTemplate).pivot,
+      rotation: (item as EffectTemplate).rotation,
+      rotationMarkerDistance: (item as EffectTemplate).rotationMarkerDistance,
+    } : {};
+
     dispatch({
       type: 'UPDATE_OBJECT',
       payload: {
@@ -980,6 +1009,7 @@ const dropCursorSlot = (
           x: finalX,
           y: finalY,
           zIndex: finalZIndex,
+          ...effectTemplateUpdates,
           ...(isCard && currentCard?.location === CardLocation.HAND && {
             location: CardLocation.TABLE
           })
@@ -1159,9 +1189,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     const startRulerMeasurement = () => {
       const rect = scrollContainerRef.current?.getBoundingClientRect();
       if (rect) {
-        const startX = e.clientX - rect.left;
-        const startY = e.clientY - rect.top;
-        setRulerStart({ x: p2v(startX), y: p2v(startY) });
+        const scrollX = viewTransform?.scroll?.x || 0;
+        const scrollY = viewTransform?.scroll?.y || 0;
+        const startX = e.clientX - rect.left + scrollX;
+        const startY = e.clientY - rect.top + scrollY;
+        const startVX = p2v(startX);
+        const startVY = p2v(startY);
+        setRulerStart({ x: startVX, y: startVY });
         setRulerCurrent(null);
       }
     };
@@ -1459,9 +1493,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     if (currentTool === 'ruler' && rulerStart && (e.target as HTMLElement)?.closest('[data-tabletop="true"]')) {
       const rect = scrollContainerRef.current?.getBoundingClientRect();
       if (rect) {
-        const currentX = e.clientX - rect.left;
-        const currentY = e.clientY - rect.top;
-        setRulerCurrent({ x: p2v(currentX), y: p2v(currentY) });
+        const scrollX = viewTransform?.scroll?.x || 0;
+        const scrollY = viewTransform?.scroll?.y || 0;
+        const currentX = e.clientX - rect.left + scrollX;
+        const currentY = e.clientY - rect.top + scrollY;
+        const currentVX = p2v(currentX);
+        const currentVY = p2v(currentY);
+        setRulerCurrent({ x: currentVX, y: currentVY });
       }
     }
 

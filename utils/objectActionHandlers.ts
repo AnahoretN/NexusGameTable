@@ -658,8 +658,26 @@ export function executeClickAction(
       handleRoll(obj, context);
       break;
 
+    // Effect Template actions
+    case 'togglePivotEditing':
+      handleTogglePivotEditing(obj, context.dispatch);
+      break;
+
     default:
       // Unknown action - ignore
+  }
+}
+
+// ============================================
+// EFFECT TEMPLATE ACTIONS
+// ============================================
+
+export function handleTogglePivotEditing(obj: TableObject, dispatch: Dispatch<Action>) {
+  if (obj.type === ItemType.EFFECT_TEMPLATE) {
+    dispatch({
+      type: 'TOGGLE_PIVOT_EDITING',
+      payload: obj.id
+    });
   }
 }
 

@@ -1,9 +1,9 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup } from '../types';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate } from '../types';
 
-import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { DiceValuesSettings } from './DiceValuesSettings';
 import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from '../utils/gridUtils';
@@ -189,6 +189,66 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
 
+  // Translation helper for inline translation objects
+  const t = (key: { en: string; ru?: string; be?: string; uk?: string; sr?: string }): string => {
+    return key[language] || key.en;
+  };
+
+  // Helper function to update pivot while keeping rotation marker at the same world position
+  // This mimics the behavior of dragging the pivot marker in EffectTemplateRenderer
+  const updatePivotWithMarkerDistance = (newPivot: { x: number; y: number }) => {
+    if ((object as EffectTemplate).type !== ItemType.EFFECT_TEMPLATE) {
+      update('pivot', newPivot);
+      return;
+    }
+
+    const effectData = object as EffectTemplate;
+    const currentPivot = effectData.pivot || { x: 50, y: 50 };
+    const rotation = effectData.rotation ?? 0;
+    const width = effectData.width ?? 100;
+    const height = effectData.height ?? 100;
+    const currentMarkerDistance = effectData.rotationMarkerDistance ?? height;
+
+    // Calculate current rotation marker world position (before pivot change)
+    const angleRad = ((rotation - 90) * Math.PI) / 180;
+    const currentPivotPixelX = (currentPivot.x / 100) * width;
+    const currentPivotPixelY = (currentPivot.y / 100) * height;
+    const currentMarkerPixelX = currentPivotPixelX + currentMarkerDistance * Math.cos(angleRad);
+    const currentMarkerPixelY = currentPivotPixelY + currentMarkerDistance * Math.sin(angleRad);
+
+    // Convert to world coordinates (obj position + pixel offset)
+    const markerWorldX = effectData.x + currentMarkerPixelX;
+    const markerWorldY = effectData.y + currentMarkerPixelY;
+
+    // Calculate new pivot position in world coordinates
+    const newPivotPixelX = (newPivot.x / 100) * width;
+    const newPivotPixelY = (newPivot.y / 100) * height;
+    const newPivotWorldX = effectData.x + newPivotPixelX;
+    const newPivotWorldY = effectData.y + newPivotPixelY;
+
+    // Vector from NEW pivot to rotation marker (in world coordinates)
+    const toMarkerX = markerWorldX - newPivotWorldX;
+    const toMarkerY = markerWorldY - newPivotWorldY;
+
+    // Direction from pivot towards rotation marker (same angle as used in EffectTemplateRenderer)
+    const dirAngleRad = ((rotation - 90) * Math.PI) / 180;
+    const dirX = Math.cos(dirAngleRad);
+    const dirY = Math.sin(dirAngleRad);
+
+    // Project vector onto direction to get the new distance
+    // This gives us the distance from new pivot to rotation marker along the rotation direction
+    const newMarkerDistance = toMarkerX * dirX + toMarkerY * dirY;
+
+    // Clamp to reasonable range
+    const clampedDistance = Math.max(5, Math.min(500, newMarkerDistance));
+
+    // Update both pivot and rotationMarkerDistance
+    updateMultiple({
+      pivot: newPivot,
+      rotationMarkerDistance: clampedDistance
+    });
+  };
+
   // Proportional resize states - initialize from object data, default to true
   const getInitialLinkState = (value?: boolean) => value !== undefined ? value : true;
   const [linkObjectSize, setLinkObjectSize] = useState(getInitialLinkState((object as any).linkObjectSize));
@@ -196,6 +256,9 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   const [linkCardSize, setLinkCardSize] = useState(getInitialLinkState((object as any).linkCardSize));
   const [objectRatio, setObjectRatio] = useState(1);
   const [cardRatio, setCardRatio] = useState(1);
+
+  // Round to hundredths for display
+  const roundToHundredths = (val: number | undefined) => val === undefined ? undefined : Math.round(val * 100) / 100;
 
   // Translation helper
 
@@ -820,6 +883,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   const isDrawing = data.type === ItemType.DRAWING;
   const isPanel = data.type === ItemType.PANEL;
   const isBattlefieldCell = data.type === ItemType.BATTLEFIELD_CELL;
+  const isEffectTemplate = data.type === ItemType.EFFECT_TEMPLATE;
 
   // Pile management functions
   const addPile = () => {
@@ -885,7 +949,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
           >
             <Settings size={16} /> {translate('General', language as Locale)}
           </button>
-          {!isCard && !isDice && !isCounter && !isBattlefieldCell && !isPanel && (
+          {!isCard && !isDice && !isCounter && !isBattlefieldCell && !isPanel && !isEffectTemplate && (
             <button
               onClick={() => setActiveTab('actions')}
               className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
@@ -1036,7 +1100,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                     <input
                       type="number"
                       step="0.01"
-                      value={isArchetype ? (data as any).defaultSize?.width || data.width : data.width}
+                      value={isEffectTemplate ? roundToHundredths(data.width) : (isArchetype ? (data as any).defaultSize?.width || data.width : data.width)}
                       onChange={e => {
                         const value = parseFloat(e.target.value);
                         const roundHeight = shouldRound(value);
@@ -1099,7 +1163,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                       type="number"
                       step="0.01"
                       disabled={isNexusCell}
-                      value={isArchetype ? (data as any).defaultSize?.height || data.height : data.height}
+                      value={isEffectTemplate ? roundToHundredths(data.height) : (isArchetype ? (data as any).defaultSize?.height || data.height : data.height)}
                       onChange={e => {
                         const value = parseFloat(e.target.value);
                         const roundWidth = shouldRound(value);
@@ -1458,6 +1522,125 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                   label={translate('Image URL', language as Locale)}
                   className="w-full"
                 />
+              )}
+
+              {/* Effect Template - Image URL and Pivot settings */}
+              {isEffectTemplate && (
+                <>
+                  <div className="mt-4 space-y-3">
+                    <label className="block text-xs font-bold text-purple-400 mb-2">{t({ en: 'Effect Template Settings', ru: 'Настройки эффекта' })}</label>
+
+                    {/* Image URL */}
+                    <FilePickerInput
+                      value={data.content || ''}
+                      onChange={value => update('content', value)}
+                      label={t({ en: 'Effect Image URL (PNG with transparency)', ru: 'URL изображения эффекта (PNG с прозрачностью)' })}
+                      className="w-full"
+                    />
+
+                    {/* Pivot Point X and Y - in one row */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">
+                          {t({ en: 'Pivot X (%)', ru: 'Точка вращения X (%)' })}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={roundToHundredths((data as EffectTemplate).pivot?.x ?? 50)}
+                          onChange={e => updatePivotWithMarkerDistance({ ...((data as EffectTemplate).pivot || { x: 50, y: 50 }), x: Math.max(0, Math.min(100, Number(e.target.value))) })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1">
+                          {t({ en: 'Pivot Y (%)', ru: 'Точка вращения Y (%)' })}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={roundToHundredths((data as EffectTemplate).pivot?.y ?? 50)}
+                          onChange={e => updatePivotWithMarkerDistance({ ...((data as EffectTemplate).pivot || { x: 50, y: 50 }), y: Math.max(0, Math.min(100, Number(e.target.value))) })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Pivot presets */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">{t({ en: 'Quick Presets', ru: 'Быстрые пресеты' })}</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => updatePivotWithMarkerDistance({ x: 50, y: 50 })}
+                          className="bg-slate-700 hover:bg-slate-600 text-gray-300 text-xs py-1 px-2 rounded"
+                        >
+                          {t({ en: 'Center', ru: 'Центр' })}
+                        </button>
+                        <button
+                          onClick={() => updatePivotWithMarkerDistance({ x: 50, y: 100 })}
+                          className="bg-slate-700 hover:bg-slate-600 text-gray-300 text-xs py-1 px-2 rounded"
+                        >
+                          {t({ en: 'Bottom', ru: 'Низ' })}
+                        </button>
+                        <button
+                          onClick={() => updatePivotWithMarkerDistance({ x: 50, y: 0 })}
+                          className="bg-slate-700 hover:bg-slate-600 text-gray-300 text-xs py-1 px-2 rounded"
+                        >
+                          {t({ en: 'Top', ru: 'Верх' })}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Effect Template Options */}
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      {/* Show Width Marker Toggle */}
+                      <div className={`flex items-center justify-between bg-slate-900 rounded px-3 py-2 ${!(data as EffectTemplate).proportionalScaling ? '' : 'opacity-50'}`}>
+                        <label className="text-xs text-gray-400 flex items-center gap-1">
+                          <Maximize2 size={12} />
+                          {t({ en: 'Show Width Marker', ru: 'Показывать маркер ширины' })}
+                        </label>
+                        <button
+                          onClick={() => {
+                            if (!(data as EffectTemplate).proportionalScaling) {
+                              update('showWidthMarker', !((data as EffectTemplate).showWidthMarker ?? true));
+                            }
+                          }}
+                          disabled={!!(data as EffectTemplate).proportionalScaling}
+                          className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).showWidthMarker ?? true ? 'bg-green-600' : 'bg-slate-700'} disabled:cursor-not-allowed disabled:opacity-50`}
+                        >
+                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).showWidthMarker ?? true ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </button>
+                      </div>
+
+                      {/* Proportional Scaling Toggle */}
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                        <label className="text-xs text-gray-400 flex items-center gap-1">
+                          <Minimize size={12} />
+                          {t({ en: 'Proportional Scaling', ru: 'Пропорциональное изменение' })}
+                        </label>
+                        <button
+                          onClick={() => {
+                            const newValue = !((data as EffectTemplate).proportionalScaling ?? false);
+                            // When enabling proportional scaling, disable showWidthMarker
+                            if (newValue) {
+                              updateMultiple({ proportionalScaling: newValue, showWidthMarker: false });
+                            } else {
+                              // When disabling proportional scaling, enable showWidthMarker
+                              updateMultiple({ proportionalScaling: newValue, showWidthMarker: true });
+                            }
+                          }}
+                          className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).proportionalScaling ?? false ? 'bg-green-600' : 'bg-slate-700'}`}
+                        >
+                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).proportionalScaling ?? false ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
 
               {/* Max Copies (for token types only) */}

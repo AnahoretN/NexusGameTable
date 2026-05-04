@@ -9,8 +9,8 @@ import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerP
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM, isGM } from '../utils/playerUtils';
-import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
-import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Palette, Clock } from 'lucide-react';
+import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection, EffectTemplate } from '../types';
+import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Palette, Clock, Target } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -60,6 +60,8 @@ const getTypeIcon = (obj: TableObject): React.ReactElement => {
       return <Box size={10} />;
     case ItemType.DRAWING:
       return <Brush size={10} />;
+    case ItemType.EFFECT_TEMPLATE:
+      return <Target size={10} />;
     default:
       return <Component size={10} />;
   }
@@ -668,6 +670,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         { name: translate('Token Type', language as Locale), type: 'TOKEN_TYPE' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.TOKEN || obj.type === ItemType.TOKEN_TYPE
+    },
+    {
+      id: 'effects', label: t({ en: 'Effect Templates', ru: 'Эффекты', be: 'Эфекты', uk: 'Ефекти', sr: 'Ефекти' }), icon: <Target size={16}/>,
+      items: [
+        { name: t({ en: 'Effect Template', ru: 'Эффект', be: 'Ефект', uk: 'Ефект', sr: 'Ефект' }), type: 'EFFECT_TEMPLATE' },
+      ],
+      matcher: (obj: TableObject) => obj.type === ItemType.EFFECT_TEMPLATE
     },
     {
       id: 'randomizers', label: translate('Randomizers & Dice', language as Locale), icon: <Dices size={16}/>,
@@ -2089,6 +2098,27 @@ const CategorySection: React.FC<CategorySectionProps> = ({
             title: item.name,
           }
         });
+        break;
+      }
+      case 'EFFECT_TEMPLATE': {
+        const effectTemplate: import('../types').EffectTemplate = {
+          id: generateUUID(),
+          type: ItemType.EFFECT_TEMPLATE,
+          name: item.name || 'Effect Template',
+          x: worldX - pixelsToVu(100, pixelsPerVU), // Center on cursor
+          y: worldY - pixelsToVu(100, pixelsPerVU),
+          rotation: 0, // Will point upward due to calculation offset
+          width: 200,
+          height: 200,
+          content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777815088/free-png.ru-46_elw6il.png',
+          isOnTable: true,
+          locked: false,
+          pivot: { x: 50, y: 100 }, // Default pivot at bottom center
+          actionButtons: ['lock', 'delete'],
+          hyperscaleLayerId: 'tokens', // Place on tokens layer
+          zIndex: 15, // Above tokens for visibility
+        };
+        dispatch({ type: 'ADD_OBJECT', payload: effectTemplate });
         break;
       }
     }

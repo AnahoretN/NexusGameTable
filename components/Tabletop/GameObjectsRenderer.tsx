@@ -3,10 +3,11 @@ import { Card } from '../Card';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
+import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, ItemType, GridType } from '../../types';
+import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 
 interface GameObjectsRendererProps {
@@ -996,6 +997,34 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
     );
   };
 
+  const renderEffectTemplate = (obj: TableObject, globalZIndex: number) => {
+    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    const canDrag = !obj.locked;
+    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    const objLayer = obj.hyperscaleLayerId || 'tokens';
+
+    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
+    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+    return (
+      <EffectTemplateRendererMemo
+        key={obj.id}
+        obj={obj}
+        pixelsPerVU={pixelsPerVU}
+        isDragging={draggingId === obj.id}
+        onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
+        onContextMenu={(e) => onContextMenu(e, obj)}
+        style={{
+          pointerEvents: isPermeable ? 'none' : 'auto',
+        }}
+        className={draggingClass}
+        isGM={isGM}
+        dispatch={dispatch}
+      />
+    );
+  };
+
   const renderGameObject = (obj: TableObject) => {
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
     const canDrag = !obj.locked;
@@ -1028,6 +1057,10 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
 
     if (obj.type === ItemType.DICE_OBJECT) {
       return renderDice(obj, globalZIndex);
+    }
+
+    if (obj.type === ItemType.EFFECT_TEMPLATE) {
+      return renderEffectTemplate(obj, globalZIndex);
     }
 
     return null;
