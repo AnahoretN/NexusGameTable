@@ -244,7 +244,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
             isOwner={isOwner}
             isDragging={isDragging}
             onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
-            onContextMenu={(e) => e.preventDefault()}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
             onAddCell={(direction) => onAddNexusCell?.(obj.id, direction)}
             showAddUI={showAddUI}
             mainCellWidth={mainCell?.width}

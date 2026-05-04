@@ -921,6 +921,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         // Don't open context menu for panels that show content inside them
         // Context menu should only open for objects within these panels
         const noContextMenuPanels = [
+          PanelType.MAIN_MENU, // Main menu panel - no context menu needed
           PanelType.HAND,      // Cards have their own context menu
           PanelType.POOL,      // Objects inside pool have context menu
           PanelType.TABLEAU,   // Cards inside tableau have context menu

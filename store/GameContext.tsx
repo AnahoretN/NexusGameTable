@@ -1437,16 +1437,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Adding stroke to existing drawing
         const existingDrawing = state.objects[drawingId] as Drawing;
         if (existingDrawing) {
+          // IMPORTANT: stroke.points are in world coordinates, need to convert to local coordinates
+          // relative to the existing drawing's position (existingDrawing.x, existingDrawing.y)
+          const relativeStroke: Stroke = {
+            ...stroke,
+            points: stroke.points.map(p => ({ x: p.x - existingDrawing.x, y: p.y - existingDrawing.y }))
+          };
+
           const updatedDrawing: Drawing = {
             ...existingDrawing,
-            strokes: [...existingDrawing.strokes, stroke],
-            // Update bounds to include new stroke
-            bounds: {
-              x: Math.min(existingDrawing.bounds.x, bounds.x),
-              y: Math.min(existingDrawing.bounds.y, bounds.y),
-              width: Math.max(existingDrawing.bounds.x + existingDrawing.bounds.width, bounds.x + bounds.width) - Math.min(existingDrawing.bounds.x, bounds.x),
-              height: Math.max(existingDrawing.bounds.y + existingDrawing.bounds.height, bounds.y + bounds.height) - Math.min(existingDrawing.bounds.y, bounds.y),
-            }
+            strokes: [...existingDrawing.strokes, relativeStroke],
           };
           return {
             ...state,
@@ -1458,6 +1458,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       } else {
         // Creating new drawing object
+        // IMPORTANT: stroke.points are in world coordinates, need to convert to local coordinates
+        // relative to the drawing's position (bounds.x, bounds.y)
+        const relativeStroke: Stroke = {
+          ...stroke,
+          points: stroke.points.map(p => ({ x: p.x - bounds.x, y: p.y - bounds.y }))
+        };
+
         const newDrawing: Drawing = {
           id: generateUUID(),
           type: ItemType.DRAWING,
@@ -1471,7 +1478,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           content: '',
           isOnTable: true,
           locked: false,
-          strokes: [stroke],
+          strokes: [relativeStroke],
           bounds: { x: 0, y: 0, width: bounds.width, height: bounds.height },
           opacity: opacity ?? 100,
         };
@@ -4358,10 +4365,25 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Store target before merge for undo
       const targetBeforeMerge = { ...targetDrawing as Drawing };
 
+      // IMPORTANT: sourceDrawing.strokes are in sourceDrawing's local coordinates
+      // Need to convert them to targetDrawing's local coordinates
+      // Calculate offset from source world position to target world position
+      const offsetX = sourceDrawing.x - targetDrawing.x;
+      const offsetY = sourceDrawing.y - targetDrawing.y;
+
+      const convertedSourceStrokes = sourceDrawing.strokes.map(stroke => ({
+        ...stroke,
+        id: `${stroke.id}-merged`, // New ID to avoid conflicts
+        points: stroke.points.map(p => ({
+          x: p.x + offsetX, // Convert from source local to target local
+          y: p.y + offsetY
+        }))
+      }));
+
       // Merge strokes from source into target
       const mergedDrawing: Drawing = {
         ...targetDrawing,
-        strokes: [...targetDrawing.strokes, ...sourceDrawing.strokes],
+        strokes: [...targetDrawing.strokes, ...convertedSourceStrokes],
       };
 
       // Remove source drawing

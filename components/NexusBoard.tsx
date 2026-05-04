@@ -118,7 +118,7 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
   return (
     <div
       onMouseDown={onMouseDown}
-      onContextMenu={onContextMenu}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
       className="absolute"
       style={{
         left: 0,
