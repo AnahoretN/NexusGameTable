@@ -23,6 +23,8 @@ export interface LazyImageProps {
   rootMargin?: string;
   // Threshold for intersection observer (0-1)
   threshold?: number;
+  // CORS attribute for external images
+  crossOrigin?: 'anonymous' | 'use-credentials' | '';
 }
 
 // Default placeholder SVG
@@ -38,6 +40,7 @@ export const LazyImage = memo<LazyImageProps>(({
   onError,
   rootMargin = '50px', // Start loading 50px before appearing
   threshold = 0.01, // Trigger when 1% visible
+  crossOrigin,
 }) => {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -65,6 +68,9 @@ export const LazyImage = memo<LazyImageProps>(({
 
             // Preload image to detect when fully loaded
             const img = new Image();
+            if (crossOrigin) {
+              img.crossOrigin = crossOrigin;
+            }
             img.onload = () => {
               setIsLoaded(true);
               onLoad?.();
@@ -107,6 +113,7 @@ export const LazyImage = memo<LazyImageProps>(({
         ...style,
       }}
       loading="lazy" // Native lazy loading as fallback
+      crossOrigin={crossOrigin}
       onError={() => setIsError(true)}
     />
   );
@@ -145,6 +152,7 @@ export interface LazyBackgroundImageProps {
   placeholder?: string;
   rootMargin?: string;
   threshold?: number;
+  crossOrigin?: 'anonymous' | 'use-credentials' | '';
 }
 
 export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
@@ -155,6 +163,7 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
   placeholder = '#1e293b',
   rootMargin = '50px',
   threshold = 0.01,
+  crossOrigin,
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -187,14 +196,17 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
     if (!isVisible || isLoaded) return;
 
     const img = new Image();
+    if (crossOrigin) {
+      img.crossOrigin = crossOrigin;
+    }
     img.onload = () => setIsLoaded(true);
     img.src = src;
-  }, [src, isVisible, isLoaded]);
+  }, [src, isVisible, isLoaded, crossOrigin]);
 
   const backgroundStyle = React.useMemo(() => ({
     backgroundImage: isLoaded ? `url(${src})` : 'none',
-    backgroundColor: isLoaded ? 'transparent' : placeholder,
-    backgroundSize: 'cover',
+    backgroundColor: isLoaded ? 'transparent' : (placeholder === 'transparent' ? 'transparent' : placeholder),
+    backgroundSize: style?.backgroundSize || 'cover',
     backgroundPosition: 'center',
     ...style,
   }), [isLoaded, src, placeholder, style]);

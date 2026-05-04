@@ -9,8 +9,8 @@ import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerP
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM, isGM } from '../utils/playerUtils';
-import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
-import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Palette, Clock } from 'lucide-react';
+import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection, EffectTemplate } from '../types';
+import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Palette, Clock, Target } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -21,7 +21,7 @@ import { generateUUID } from '../utils/uuid';
 import { useToolSettings, useDrawingTool, DrawingTool } from '../contexts/ToolSettingsContext';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
-import { useManualConnection } from '../store/useManualConnection';
+import { useManualConnection, testWebRTCConnectivity } from '../store/useManualConnection';
 import { createPack, loadPack } from '../utils/packManager';
 import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 import { convertBlobsInObjects } from '../utils/blobConverter';
@@ -60,6 +60,8 @@ const getTypeIcon = (obj: TableObject): React.ReactElement => {
       return <Box size={10} />;
     case ItemType.DRAWING:
       return <Brush size={10} />;
+    case ItemType.EFFECT_TEMPLATE:
+      return <Target size={10} />;
     default:
       return <Component size={10} />;
   }
@@ -118,6 +120,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [showManualConnection, setShowManualConnection] = useState(false);
   const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
   const [guestNameInput, setGuestNameInput] = useState('');
+  const [webrtcTestResult, setWebrtcTestResult] = useState<string | null>(null);
+  const [testingWebRTC, setTestingWebRTC] = useState(false);
   const manualConnection = useManualConnection();
 
   // Read offer code from URL on mount (for invite links)
@@ -136,15 +140,20 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   }, []);
 
   // Set manual connection ref for GameContext to use
+  // CRITICAL: Update when connection becomes available, but don't spam on every step change
   useEffect(() => {
     if ((window as any).__setManualConnection) {
       const conn = manualConnection.connectionRef.current;
-      // Only update if there's actually a connection (don't clear existing connection)
-      if (conn) {
+      const currentSetup = (window as any).__manualConnectionPeer;
+
+      // Only update if we have a connection and it's different from the current one
+      if (conn && conn.peer !== currentSetup) {
+        console.log('[MainMenuContent] Setting manual connection for GameContext:', conn.peer, 'previous:', currentSetup);
         (window as any).__setManualConnection(conn);
+        (window as any).__manualConnectionPeer = conn.peer;
       }
     }
-  }, [manualConnection.state.step]);
+  }, [manualConnection.state.step, manualConnection.state.channelOpen]); // Track when connection becomes available
 
   // Hand card scale state with localStorage persistence
   const { setHandCardScale } = useHandCardScale();
@@ -661,6 +670,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         { name: translate('Token Type', language as Locale), type: 'TOKEN_TYPE' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.TOKEN || obj.type === ItemType.TOKEN_TYPE
+    },
+    {
+      id: 'effects', label: t({ en: 'Effect Templates', ru: 'Эффекты', be: 'Эфекты', uk: 'Ефекти', sr: 'Ефекти' }), icon: <Target size={16}/>,
+      items: [
+        { name: t({ en: 'Fire Cone Effect', ru: 'Огненный конус', be: 'Агністы конус', uk: 'Вогняний конус', sr: 'Ватрени конус' }), type: 'FIRE_CONE_EFFECT' },
+        { name: t({ en: 'Fire Explosion Effect', ru: 'Огненный взрыв', be: 'Агністы выбух', uk: 'Вогняний вибух', sr: 'Ватрена експлозија' }), type: 'FIRE_EXPLOSION_EFFECT' },
+      ],
+      matcher: (obj: TableObject) => obj.type === ItemType.EFFECT_TEMPLATE
     },
     {
       id: 'randomizers', label: translate('Randomizers & Dice', language as Locale), icon: <Dices size={16}/>,
@@ -1196,6 +1213,41 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 <X size={24} />
               </button>
             </div>
+
+            {/* WebRTC Diagnostic Button */}
+            <button
+              onClick={async () => {
+                setTestingWebRTC(true);
+                setWebrtcTestResult('Testing WebRTC connectivity...');
+                const result = await testWebRTCConnectivity();
+                setTestingWebRTC(false);
+                if (result.success) {
+                  setWebrtcTestResult(`✓ WebRTC works! Found ${result.candidates} candidates (host: ${result.details.host}, srflx: ${result.details.srflx}, relay: ${result.details.relay})`);
+                } else {
+                  setWebrtcTestResult(`❌ WebRTC problem: ${result.error || 'Unknown error'}\nCandidates: ${result.candidates} (host: ${result.details.host}, srflx: ${result.details.srflx}, relay: ${result.details.relay})\n\nTroubleshooting:\n- Check browser settings for WebRTC\n- Disable VPN/Proxy\n- Disable browser extensions (uBlock, Privacy Badger)\n- Try a different browser (Chrome/Firefox)\n- Check if firewall allows WebRTC`);
+                }
+              }}
+              disabled={testingWebRTC}
+              className="w-full py-2 px-4 bg-yellow-700 hover:bg-yellow-600 disabled:bg-slate-600 disabled:text-gray-400 text-white rounded font-medium transition-colors text-sm mb-4"
+            >
+              {testingWebRTC ? 'Testing...' : '🔍 Test WebRTC Connectivity'}
+            </button>
+
+            {webrtcTestResult && (
+              <div className={`mb-4 p-3 text-sm whitespace-pre-wrap rounded ${
+                webrtcTestResult.startsWith('✓') ? 'bg-green-900/50 border border-green-700 text-green-200' :
+                webrtcTestResult.startsWith('❌') ? 'bg-red-900/50 border border-red-700 text-red-200' :
+                'bg-blue-900/50 border border-blue-700 text-blue-200'
+              }`}>
+                {webrtcTestResult}
+                <button
+                  onClick={() => setWebrtcTestResult(null)}
+                  className="float-right text-gray-400 hover:text-white"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
             {/* Tab selector */}
             <div className="flex gap-2 mb-4">
@@ -2049,6 +2101,52 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         });
         break;
       }
+      case 'FIRE_CONE_EFFECT': {
+        const effectTemplate: import('../types').EffectTemplate = {
+          id: generateUUID(),
+          type: ItemType.EFFECT_TEMPLATE,
+          name: item.name || 'Fire Cone Effect',
+          x: worldX - pixelsToVu(100, pixelsPerVU), // Center on cursor
+          y: worldY - pixelsToVu(175, pixelsPerVU), // Center vertically (height/2 = 350/2 = 175)
+          rotation: 0, // Will point upward due to calculation offset
+          width: 200,
+          height: 350,
+          content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777883916/FireConeEffect_npwe4x.png',
+          isOnTable: true,
+          locked: false,
+          pivot: { x: 50, y: 100 }, // Default pivot at bottom center
+          actionButtons: ['lock', 'delete'],
+          hyperscaleLayerId: 'boards', // Place on boards hyperscale layer (with game boards)
+          zIndex: 15, // Above tokens for visibility
+          opacity: 85, // 85% opacity by default
+        };
+        dispatch({ type: 'ADD_OBJECT', payload: effectTemplate });
+        break;
+      }
+      case 'FIRE_EXPLOSION_EFFECT': {
+        const effectTemplate: import('../types').EffectTemplate = {
+          id: generateUUID(),
+          type: ItemType.EFFECT_TEMPLATE,
+          name: item.name || 'Fire Explosion Effect',
+          x: worldX - pixelsToVu(150, pixelsPerVU), // Center on cursor (width/2 = 300/2 = 150)
+          y: worldY - pixelsToVu(150, pixelsPerVU), // Center on cursor (height/2 = 300/2 = 150)
+          rotation: 0,
+          width: 300,
+          height: 300,
+          content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777884706/FireExplosionEffect_bejprf.png',
+          isOnTable: true,
+          locked: false,
+          pivot: { x: 50, y: 50 }, // Default pivot at center
+          rotationMarkerDistance: 150, // Distance from pivot to rotation marker (radius of explosion)
+          proportionalScaling: true, // Scale width proportionally when resizing height
+          actionButtons: ['lock', 'delete'],
+          hyperscaleLayerId: 'boards', // Place on boards hyperscale layer (with game boards)
+          zIndex: 15, // Above tokens for visibility
+          opacity: 85, // 85% opacity by default
+        };
+        dispatch({ type: 'ADD_OBJECT', payload: effectTemplate });
+        break;
+      }
     }
   };
 
@@ -2103,6 +2201,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                   : 'visible' in obj ? obj.visible !== false : (obj as any).isOnTable !== false;
                 // Get color - panels don't have color property
                 let objColor = 'color' in obj ? obj.color : '#6366f1';
+                // For effect templates, use red color
+                if (obj.type === ItemType.EFFECT_TEMPLATE) {
+                  objColor = '#ef4444';
+                }
                 // For drawings, use their color property or first stroke color
                 if (obj.type === ItemType.DRAWING) {
                   const drawing = obj as Drawing;

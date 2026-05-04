@@ -1,5 +1,5 @@
-import React from 'react';
-import { ItemType, Card as CardType, Token as TokenType, CardOrientation, CardShape, Deck as DeckType, Randomizer, Counter, DiceObject, TokenShape, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing } from '../types';
+import React, { useEffect, useState, useRef } from 'react';
+import { ItemType, Card as CardType, Token as TokenType, CardOrientation, CardShape, Deck as DeckType, Randomizer, Counter, DiceObject, TokenShape, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate } from '../types';
 import { Card } from './Card';
 import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
@@ -8,8 +8,43 @@ import { DECK_OFFSET } from '../constants';
 import { logger } from '../utils/logger';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 
+// Global image cache for Effect Templates to prevent reloading
+const effectImageCache = new Map<string, HTMLImageElement>();
+const preloadPromises = new Map<string, Promise<void>>();
+
+/**
+ * Preload an Effect Template image and cache it
+ */
+function preloadEffectImage(src: string): Promise<void> {
+  if (effectImageCache.has(src)) {
+    return Promise.resolve();
+  }
+
+  if (preloadPromises.has(src)) {
+    return preloadPromises.get(src)!;
+  }
+
+  const promise = new Promise<void>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      effectImageCache.set(src, img);
+      resolve();
+    };
+    img.onerror = () => {
+      // Still cache on error to prevent repeated failed requests
+      effectImageCache.set(src, img);
+      resolve(); // Don't reject - allow render to continue
+    };
+    img.src = src;
+  });
+
+  preloadPromises.set(src, promise);
+  return promise;
+}
+
 interface CursorSlotItemProps {
-  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing;
+  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing | EffectTemplate;
   width: number;
   height: number;
   offsetX: number;
@@ -488,6 +523,123 @@ const CursorSlotDrawing: React.FC<CursorSlotItemProps & { item: Drawing }> = ({ 
 };
 
 /**
+ * Renders an effect template in the cursor slot
+ * Shows the template with proper rotation and pivot, just like on the tabletop
+ */
+const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTemplate }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
+  const pivot = item.pivot || { x: 50, y: 50 };
+  const rotation = item.rotation || 0;
+  const [isImageReady, setIsImageReady] = useState(false);
+
+  // Ensure width/height are never zero to prevent black square flicker
+  const safeWidth = Math.max(width, 1);
+  const safeHeight = Math.max(height, 1);
+
+  // Preload image when component mounts
+  useEffect(() => {
+    if (item.content) {
+      // Check if already cached
+      if (effectImageCache.has(item.content)) {
+        setIsImageReady(true);
+        return;
+      }
+
+      // Preload and show when ready
+      preloadEffectImage(item.content).then(() => {
+        setIsImageReady(true);
+      });
+    }
+  }, [item.content]);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${safeWidth}px`,
+        height: `${safeHeight}px`,
+        minWidth: `${safeWidth}px`,
+        minHeight: `${safeHeight}px`,
+        zIndex,
+        pointerEvents: 'none',
+        willChange: 'transform',
+        backfaceVisibility: 'hidden' as 'hidden',
+        // Use visible overflow to allow rotated content to extend beyond container
+        overflow: 'visible',
+      }}
+    >
+      {/* Rotated image wrapper - matches EffectTemplateRenderer exactly */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: '100%',
+          height: '100%',
+          minWidth: `${safeWidth}px`,
+          minHeight: `${safeHeight}px`,
+          transform: `rotate(${rotation}deg)`,
+          transformOrigin: `${pivot.x}% ${pivot.y}%`,
+          backfaceVisibility: 'hidden' as 'hidden',
+          overflow: 'visible', // Allow image to extend beyond wrapper when rotated
+          pointerEvents: 'none',
+        }}
+      >
+        {/* Effect image - use img tag directly with fill to match tabletop */}
+        <img
+          src={item.content}
+          alt=""
+          crossOrigin="anonymous"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '100%',
+            height: '100%',
+            minWidth: `${safeWidth}px`,
+            minHeight: `${safeHeight}px`,
+            objectFit: 'fill', // Match EffectTemplateRenderer behavior
+            opacity: isImageReady
+              ? (item.opacity !== undefined ? item.opacity / 100 : 1)
+              : 0,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            display: 'block',
+            backgroundColor: 'transparent',
+            transition: 'opacity 0.05s ease-out',
+          }}
+          draggable={false}
+          onLoad={() => setIsImageReady(true)}
+          onError={(e) => {
+            // Fallback on CORS error - hide the image but keep layout
+            (e.target as HTMLImageElement).style.opacity = '0';
+            setIsImageReady(true); // Still mark as ready to prevent infinite loading
+          }}
+        />
+
+        {/* Small pivot indicator for visual reference */}
+        <div
+          style={{
+            position: 'absolute',
+            left: `${pivot.x}%`,
+            top: `${pivot.y}%`,
+            width: '8px',
+            height: '8px',
+            transform: 'translate(-50%, -50%)',
+            borderRadius: '50%',
+            backgroundColor: 'rgba(147, 51, 234, 0.6)',
+            border: '1px solid white',
+            pointerEvents: 'none',
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+/**
  * Main renderer for cursor slot items
  * Dispatches to the appropriate component based on item type
  */
@@ -527,6 +679,9 @@ export const renderCursorSlotItem = (props: CursorSlotItemProps, key: string) =>
 
     case ItemType.DRAWING:
       return <CursorSlotDrawing key={key} {...props} item={item as Drawing} />;
+
+    case ItemType.EFFECT_TEMPLATE:
+      return <CursorSlotEffectTemplate key={key} {...props} item={item as EffectTemplate} />;
 
     default:
       logger.warn('[renderCursorSlotItem] Unknown item type:', (item as any).type);

@@ -2141,7 +2141,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             const diceToRoll = state.objects[diceId] as DiceObject;
             if (!diceToRoll || diceToRoll.type !== ItemType.DICE_OBJECT) return;
 
-            const finalValue = Math.floor(Math.random() * diceToRoll.sides) + 1;
+            // Roll the dice
+            const firstRoll = Math.floor(Math.random() * diceToRoll.sides) + 1;
+            let finalValue = firstRoll;
+            let explosiveRoll: number | undefined = undefined;
+
+            // Handle explosive dice: if max value is rolled, prepare for second roll
+            const isExplosiveTrigger = diceToRoll.isExplosive && firstRoll === diceToRoll.sides;
+
+            if (isExplosiveTrigger) {
+                // Generate second roll value
+                explosiveRoll = Math.floor(Math.random() * diceToRoll.sides) + 1;
+                finalValue = diceToRoll.sides + explosiveRoll;
+            }
+
             newRolls.push({
                 id: generateUUID(),
                 value: finalValue,
@@ -2152,7 +2165,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             // Start animation for each dice
             const animationDuration = 500;
             const updateCount = 5;
-            const updateInterval = animationDuration / (updateCount + 1);
+            const updateInterval = animationDuration / updateCount; // 500 / 5 = 100ms per update, total 500ms
             let updateIndex = 0;
             let previousValue = diceToRoll.currentValue;
 
@@ -2177,19 +2190,45 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     updateIndex++;
                     setTimeout(animateRoll, updateInterval);
                 } else {
+                    // First roll animation complete
                     if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
-                        (window as any).__diceRollDispatch({
-                            type: 'UPDATE_OBJECT',
-                            payload: {
-                                id: diceId,
-                                updates: {
-                                    currentValue: finalValue,
-                                    rolling: false,
-                                    rollTargetValue: undefined,
-                                    rollStartTime: undefined
+                        if (isExplosiveTrigger && explosiveRoll !== undefined) {
+                            // For explosive dice: show max value first, then trigger second roll
+                            (window as any).__diceRollDispatch({
+                                type: 'UPDATE_OBJECT',
+                                payload: {
+                                    id: diceId,
+                                    updates: {
+                                        currentValue: diceToRoll.sides,
+                                        rolling: false,
+                                        rollTargetValue: undefined,
+                                        rollStartTime: undefined
+                                    }
                                 }
+                            });
+
+                            // Trigger explosive second roll immediately (first roll lasted full 500ms)
+                            if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                                (window as any).__diceRollDispatch({
+                                    type: 'EXPLOSIVE_DICE_SECOND_ROLL',
+                                    payload: { id: diceId, explosiveRoll }
+                                });
                             }
-                        });
+                        } else {
+                            // Normal dice: show final value
+                            (window as any).__diceRollDispatch({
+                                type: 'UPDATE_OBJECT',
+                                payload: {
+                                    id: diceId,
+                                    updates: {
+                                        currentValue: finalValue,
+                                        rolling: false,
+                                        rollTargetValue: undefined,
+                                        rollStartTime: undefined
+                                    }
+                                }
+                            });
+                        }
                     }
                 }
             };
@@ -2199,8 +2238,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 ...diceToRoll,
                 currentValue: 1,
                 rolling: true,
-                rollTargetValue: finalValue,
-                rollStartTime: Date.now()
+                rollTargetValue: firstRoll,
+                rollStartTime: Date.now(),
+                explosiveRollValue: undefined // Clear any previous explosive roll
             };
         });
 
@@ -2212,6 +2252,53 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             },
             diceRolls: [...newRolls, ...state.diceRolls].slice(0, 50)
         };
+    }
+    case 'EXPLOSIVE_DICE_SECOND_ROLL': {
+        const dice = state.objects[action.payload.id] as DiceObject;
+        if (!dice || dice.type !== ItemType.DICE_OBJECT) return state;
+
+        const { explosiveRoll } = action.payload;
+
+        // Animate the second roll - 500ms to match first roll duration
+        const animationDuration = 500;
+        const updateCount = 5;
+        const updateInterval = animationDuration / updateCount; // 500 / 5 = 100ms per update
+        let updateIndex = 0;
+        let previousValue = 0;
+
+        const animateSecondRoll = () => {
+            if (updateIndex < updateCount) {
+                let intermediateValue: number;
+                if (dice.sides === 2) {
+                    intermediateValue = previousValue === 1 ? 2 : 1;
+                } else {
+                    do {
+                        intermediateValue = Math.floor(Math.random() * dice.sides) + 1;
+                    } while (intermediateValue === previousValue);
+                }
+                previousValue = intermediateValue;
+
+                if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                    (window as any).__diceRollDispatch({
+                        type: 'UPDATE_OBJECT',
+                        payload: { id: action.payload.id, updates: { explosiveRollValue: intermediateValue } }
+                    });
+                }
+                updateIndex++;
+                setTimeout(animateSecondRoll, updateInterval);
+            } else {
+                // Show final explosive roll value
+                if (typeof window !== 'undefined' && (window as any).__diceRollDispatch) {
+                    (window as any).__diceRollDispatch({
+                        type: 'UPDATE_OBJECT',
+                        payload: { id: action.payload.id, updates: { explosiveRollValue: explosiveRoll } }
+                    });
+                }
+            }
+        };
+        setTimeout(animateSecondRoll, 0);
+
+        return state;
     }
     case 'UPDATE_COUNTER': {
         const counter = state.objects[action.payload.id] as Counter;
@@ -5334,6 +5421,56 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         diceGroups: newGroups
       };
     }
+    case 'SET_PIVOT_POINT': {
+      const { objectId, pivot } = action.payload;
+      if (!state.objects[objectId]) {
+        console.warn('[SET_PIVOT_POINT] Object not found:', objectId);
+        return state;
+      }
+
+      console.log('[SET_PIVOT_POINT] Updating pivot for', objectId, 'to', pivot);
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [objectId]: {
+            ...state.objects[objectId],
+            pivot
+          }
+        }
+      };
+    }
+    case 'TOGGLE_PIVOT_EDITING': {
+      const objectId = action.payload;
+      if (!state.objects[objectId]) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [objectId]: {
+            ...state.objects[objectId],
+            isEditingPivot: !(state.objects[objectId] as any).isEditingPivot
+          }
+        }
+      };
+    }
+    case 'SET_HITBOX_POLYGON': {
+      const { objectId, hitboxPolygon } = action.payload;
+      if (!state.objects[objectId]) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [objectId]: {
+            ...state.objects[objectId],
+            hitboxPolygon
+          }
+        }
+      };
+    }
     default:
       return state;
   }
@@ -6024,12 +6161,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const conn = manualConnectionRef.current;
       if (!conn) return;
 
-      // Only set up handlers once per connection (tracked by peer ID)
-      if (manualConnectionSetupRef.current === conn.peer) {
-          return;
+      // Generate a unique ID for this effect instance to track if we've already set up
+      const effectId = `${conn.peer}-${Date.now()}`;
+
+      // Only set up handlers if this is a new connection or effect is re-running
+      // We use a composite key to detect both connection changes and dependency changes
+      if (manualConnectionSetupRef.current && manualConnectionSetupRef.current.startsWith(conn.peer)) {
+          // Same connection, but dependencies changed - remove old handlers first
+          console.log('[Manual P2P] Re-setting up handlers for connection due to dependency change:', conn.peer);
       }
 
       const handleData = (data: any) => {
+          console.log('[Manual P2P] GameContext handleData received:', data.type, 'conn.peer:', conn.peer, 'conn.open:', conn.open);
           if (data.type === 'SYNC_STATE') {
               // Restore images from local cache before dispatching
               const restoredState = restoreImagesFromCache(data.payload, {});
@@ -6042,14 +6185,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               console.log('[Manual P2P] Received HELO from player:', newPlayer.name);
               localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
 
-              // Send current state to new player
+              // Send current state to new player (with safety checks)
               setTimeout(() => {
-                  if (conn && conn.open) {
-                      const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
-                      conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
-                      if (Object.keys(imageCache).length > 0) {
-                          conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+                  console.log('[Manual P2P] Sending SYNC_STATE to guest, conn:', conn?.peer, 'conn.open:', conn?.open, 'conn.dataChannel.readyState:', conn?.dataChannel?.readyState);
+                  if (conn && conn.open && conn.dataChannel && conn.dataChannel.readyState === 'open') {
+                      try {
+                          const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
+                          console.log('[Manual P2P] Sending SYNC_STATE, state size:', JSON.stringify(stateWithRefs).length);
+                          conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
+                          if (Object.keys(imageCache).length > 0) {
+                              console.log('[Manual P2P] Sending IMAGE_CACHE, cache size:', JSON.stringify(imageCache).length);
+                              conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+                          }
+                          console.log('[Manual P2P] Successfully sent state to guest');
+                      } catch (e) {
+                          console.error('[Manual P2P] Error sending SYNC_STATE:', e);
                       }
+                  } else {
+                      console.warn('[Manual P2P] Cannot send SYNC_STATE - conn is closed or null. conn:', conn, 'open:', conn?.open, 'readyState:', conn?.dataChannel?.readyState);
                   }
               }, 100);
           } else if (data.type === 'UPDATE_PLAYER_NAME') {
@@ -6080,8 +6233,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       conn.on('close', handleClose);
       conn.on('error', handleError);
 
-      // Mark this connection as set up
-      manualConnectionSetupRef.current = conn.peer;
+      // Mark this connection as set up with this effect instance
+      manualConnectionSetupRef.current = effectId;
 
       // If connection is already open when we set up handlers, trigger handleOpen manually
       // This handles the case where the data channel opened before GameContext registered handlers
@@ -6089,15 +6242,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setTimeout(() => handleOpen(), 0);
       }
 
-      // IMPORTANT: Clean up handlers only when connection actually changes or closes
+      // IMPORTANT: Clean up handlers when effect re-runs or unmounts
       return () => {
           console.log('[Manual P2P] Cleaning up connection handlers for:', conn.peer);
           conn.off('data', handleData);
           conn.off('open', handleOpen);
           conn.off('close', handleClose);
           conn.off('error', handleError);
-          // Don't reset the setup ref here - it will be reset when connection actually closes
-          // This prevents the effect from re-running unnecessarily
+          // Reset the setup ref so next effect run can set up handlers
+          if (manualConnectionSetupRef.current === effectId) {
+              manualConnectionSetupRef.current = null;
+          }
       };
   }, [localDispatch, isHost]);
 

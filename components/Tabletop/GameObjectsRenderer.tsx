@@ -1,12 +1,13 @@
-import React, { memo } from 'react';
+import React, { memo, useState, useEffect, useRef } from 'react';
 import { Card } from '../Card';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
+import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, ItemType, GridType } from '../../types';
+import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 
 interface GameObjectsRendererProps {
@@ -53,6 +54,96 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
   dispatch
 }) => {
   const { v2p, createPositionedStyle, getLayerZoomScale, getLayerInverseScale, pixelsPerVU } = context;
+
+  // State for explosive dice animation (scale value and phase for each dice)
+  const [explosiveScales, setExplosiveScales] = useState<Record<string, number>>({});
+  const [explosivePhases, setExplosivePhases] = useState<Record<string, 'phase1' | 'phase2' | 'done'>>({});
+  const prevDiceRollRef = useRef<Record<string, number | undefined>>({});
+  const animationTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const animatingDiceRef = useRef<Set<string>>(new Set());
+
+  // Cleanup effect for explosive dice animations
+  useEffect(() => {
+    return () => {
+      // Clear all pending timeouts on unmount
+      Object.values(animationTimeoutsRef.current).forEach(clearTimeout);
+      animationTimeoutsRef.current = {};
+    };
+  }, []);
+
+  // Extract dice objects and their explosive roll values (memoized)
+  const diceExplosiveStates = React.useMemo(() => {
+    const diceObjects = visibleTableObjects.filter(obj => obj.type === ItemType.DICE_OBJECT) as DiceObject[];
+    const states: Record<string, { isExplosive: boolean; rollValue?: number }> = {};
+    diceObjects.forEach(dice => {
+      states[dice.id] = {
+        isExplosive: dice.isExplosive || false,
+        rollValue: dice.explosiveRollValue
+      };
+    });
+    return states;
+  }, [visibleTableObjects]);
+
+  // Detect new explosive rolls and trigger animations
+  useEffect(() => {
+    const newAnimations: Array<{ diceId: string }> = [];
+
+    // Check each dice for new explosive roll
+    Object.entries(diceExplosiveStates).forEach(([diceId, { isExplosive, rollValue }]) => {
+      const prevRoll = prevDiceRollRef.current[diceId];
+
+      // Detect when explosive roll just appeared (undefined -> number)
+      if (isExplosive && rollValue !== undefined && prevRoll === undefined && !animatingDiceRef.current.has(diceId)) {
+        animatingDiceRef.current.add(diceId);
+        newAnimations.push({ diceId });
+
+        // Set initial state
+        setExplosiveScales(prev => ({ ...prev, [diceId]: 1 }));
+        setExplosivePhases(prev => ({ ...prev, [diceId]: 'phase1' }));
+      } else if (!isExplosive || rollValue === undefined) {
+        // Reset when not explosive or no explosive roll
+        if (!animatingDiceRef.current.has(diceId)) {
+          setExplosiveScales(prev => {
+            const { [diceId]: _, ...rest } = prev;
+            return rest;
+          });
+          setExplosivePhases(prev => {
+            const { [diceId]: _, ...rest } = prev;
+            return rest;
+          });
+        }
+      }
+
+      prevDiceRollRef.current[diceId] = rollValue;
+    });
+
+    // Run animations for new dice
+    newAnimations.forEach(({ diceId }) => {
+      // Phase 1: Animate from 1 to 1.3 over 0.3s
+      const phase1Timeout = setTimeout(() => {
+        setExplosiveScales(prev => ({ ...prev, [diceId]: 1.3 }));
+        setExplosivePhases(prev => ({ ...prev, [diceId]: 'phase1' }));
+      }, 16); // Small delay to ensure initial state is rendered
+
+      // Phase 2: After 0.3s, animate to 1.1 over 0.2s
+      const phase2Timeout = setTimeout(() => {
+        setExplosiveScales(prev => ({ ...prev, [diceId]: 1.1 }));
+        setExplosivePhases(prev => ({ ...prev, [diceId]: 'phase2' }));
+
+        // Mark animation complete after another 0.2s
+        const completeTimeout = setTimeout(() => {
+          setExplosivePhases(prev => ({ ...prev, [diceId]: 'done' }));
+          animatingDiceRef.current.delete(diceId);
+          delete animationTimeoutsRef.current[diceId];
+        }, 200);
+
+        animationTimeoutsRef.current[`${diceId}-complete`] = completeTimeout;
+      }, 300);
+
+      animationTimeoutsRef.current[diceId] = phase1Timeout;
+      animationTimeoutsRef.current[`${diceId}-phase2`] = phase2Timeout;
+    });
+  }, [diceExplosiveStates]);
 
   const renderBoard = (obj: TableObject, globalZIndex: number) => {
     const board = obj as BoardType;
@@ -153,7 +244,7 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
             isOwner={isOwner}
             isDragging={isDragging}
             onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
-            onContextMenu={(e) => onContextMenu(e, obj)}
+            onContextMenu={(e) => e.preventDefault()}
             onAddCell={(direction) => onAddNexusCell?.(obj.id, direction)}
             showAddUI={showAddUI}
             mainCellWidth={mainCell?.width}
@@ -697,9 +788,38 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
     const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
+    // Detect explosive dice trigger (when explosive roll value exists)
+    const isExplosiveTriggered = dice.isExplosive && dice.explosiveRollValue !== undefined;
+    const currentScale = explosiveScales[dice.id] ?? (isExplosiveTriggered ? 1.1 : 1);
+    const animationPhase = explosivePhases[dice.id] ?? 'done';
+
+    // Calculate transition duration based on animation phase
+    // Phase 1: 1 → 1.3 over 0.3s, Phase 2: 1.3 → 1.1 over 0.2s
+    const getTransitionDuration = () => {
+      if (animationPhase === 'phase1') return '0.3s ease-out';
+      if (animationPhase === 'phase2') return '0.2s ease-out';
+      return undefined;
+    };
+
+    // Calculate position (no adjustment needed since we use transform)
+    const diceX = v2p(obj.x);
+    const diceY = v2p(obj.y);
+    const diceWidth = v2p(obj.width);
+    const diceHeight = v2p(obj.height);
+
     const valueFontSize = v2p(25); // 25 vu for dice value
     const sidesFontSize = v2p(15); // 15 vu for dice sides (d6, d20, etc.)
-    const fontColor = (obj as any).fontColor || 'white';
+
+    // Use explosive colors when triggered, otherwise use defaults
+    const diceColor = isExplosiveTriggered
+      ? (dice.explosiveColor || '#ffff00')
+      : (obj.color || '#6366f1');
+    const fontColor = isExplosiveTriggered
+      ? (dice.explosiveTextColor || '#ff0000')
+      : ((obj as any).fontColor || 'white');
+    const glowColor = isExplosiveTriggered
+      ? (dice.explosiveGlow || '#ff0000')
+      : undefined;
 
     return (
       <Tooltip
@@ -716,23 +836,26 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
           onContextMenu={(e) => onContextMenu(e, obj)}
           className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           style={createPositionedStyle(
-            v2p(obj.x),
-            v2p(obj.y),
-            v2p(obj.width),
-            v2p(obj.height),
+            diceX,
+            diceY,
+            diceWidth,
+            diceHeight,
             globalZIndex,
             objLayer,
             {
-              transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+              transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''} scale(${currentScale})`,
               pointerEvents: isPermeable ? 'none' : 'auto',
+              filter: glowColor ? `drop-shadow(0 0 8px ${glowColor}) drop-shadow(0 0 4px ${glowColor})` : undefined,
+              transition: getTransitionDuration(),
+              transformOrigin: 'center center',
             }
           )}
         >
           <SvgTokenShape
             shape={dice.shape}
-            width={v2p(obj.width)}
-            height={v2p(obj.height)}
-            color={obj.color || '#6366f1'}
+            width={diceWidth}
+            height={diceHeight}
+            color={diceColor}
             content={undefined}
             rotation={0}
             borderWidth={obj.borderWidth ?? 2}
@@ -752,7 +875,26 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
             }}>
               {(() => {
                 const currentValue = dice.currentValue ?? 1;
+                const explosiveRoll = dice.explosiveRollValue;
                 const valueOverride = dice.valueOverrides?.[currentValue];
+
+                // For explosive dice with explosive roll, show the sum (max sides + explosive roll)
+                if (explosiveRoll !== undefined) {
+                  const sum = (dice.sides ?? 6) + explosiveRoll;
+                  return (
+                    <span
+                      className="fallback-number"
+                      style={{
+                        fontSize: `${valueFontSize}px`,
+                        fontWeight: 'bold',
+                        color: fontColor,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {sum}
+                    </span>
+                  );
+                }
 
                 // Show override if available
                 if (valueOverride) {
@@ -996,6 +1138,35 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
     );
   };
 
+  const renderEffectTemplate = (obj: TableObject, globalZIndex: number) => {
+    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    const canDrag = !obj.locked;
+    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    const objLayer = obj.hyperscaleLayerId || 'tokens';
+
+    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
+    const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+    return (
+      <EffectTemplateRendererMemo
+        key={obj.id}
+        obj={obj}
+        pixelsPerVU={pixelsPerVU}
+        isDragging={draggingId === obj.id}
+        onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
+        onContextMenu={(e) => onContextMenu(e, obj)}
+        style={{
+          pointerEvents: isPermeable ? 'none' : 'auto',
+        }}
+        className={draggingClass}
+        isGM={isGM}
+        dispatch={dispatch}
+        rulerStep={context.rulerStep}
+      />
+    );
+  };
+
   const renderGameObject = (obj: TableObject) => {
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
     const canDrag = !obj.locked;
@@ -1028,6 +1199,10 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
 
     if (obj.type === ItemType.DICE_OBJECT) {
       return renderDice(obj, globalZIndex);
+    }
+
+    if (obj.type === ItemType.EFFECT_TEMPLATE) {
+      return renderEffectTemplate(obj, globalZIndex);
     }
 
     return null;

@@ -30,6 +30,8 @@ export interface TabletopRenderContext {
     layerId: string,
     additionalStyle?: React.CSSProperties
   ) => React.CSSProperties;
+  /** Ruler step size in VU (0 = disabled) */
+  rulerStep: number;
 }
 
 /**

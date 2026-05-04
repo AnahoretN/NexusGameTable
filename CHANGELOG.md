@@ -2,6 +2,54 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.2.1] - 2026-05-04
+
+### ✨ New Features
+
+#### 🎨 Effect Template Objects
+**New object type for visual effects and templates**
+
+- **Cursor slot support**: Effect Templates can be attached to cursor for easy placement
+- **Image preloading**: Automatic image loading to prevent flickering during placement
+- **Centralized slot configuration**: Improved slot management system
+- **Flexible scaling**: Support for stretching and resizing effect templates
+- **Visual feedback**: Better rendering during drag and placement operations
+
+#### 🎲 Explosive Dice
+**New dice mechanic for RPG systems with exploding dice**
+
+- **Automatic reroll**: When maximum value is rolled, dice automatically rerolls and adds results
+- **Visual animation**: Smooth scaling animation (1.0 → 1.3 → 1.1) when explosive roll occurs
+- **Customizable colors**: Configure dice color, text color, and glow effect for explosive rolls
+- **Toggle per dice**: Enable/disable explosive dice individually in Object Settings
+- **Localization support**: Translated labels for be, ru, sr, uk languages
+
+**Use cases:**
+- Area of effect markers (spell circles, cones, lines)
+- Temporary visual effects during gameplay
+- Environmental effects templates
+- Custom shape overlays
+
+---
+
+### 🐛 Bug Fixes
+
+- **Ruler coordinates**: Fixed ruler displaying at incorrect coordinates on the tabletop
+- **Effect Template disappearing**: Fixed template disappearing when stretched/resized
+- **Component type safety**: Improved TypeScript types across tabletop components
+
+---
+
+### 🔧 Technical Improvements
+
+- **Refactored EffectTemplateRenderer**: Cleaner slot configuration system
+- **Improved component structure**: Better separation of concerns in tabletop components
+- **Optimized Explosive Dice animation**: Added cleanup on unmount, memoized dice states, removed double requestAnimationFrame
+- **Reduced drag handler duplication**: Unified cleanup logic in EffectTemplateRenderer
+- **Updated build assets**: Rebuilt with latest dependencies
+
+---
+
 ## [0.2.0] - 2026-04-29 (Major Refactoring & Optimization Release)
 
 ### 🏗️ Large File Refactoring

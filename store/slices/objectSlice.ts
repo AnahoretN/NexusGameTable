@@ -159,6 +159,59 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
       return state;
     }
 
+    case 'SET_PIVOT_POINT': {
+      const { objectId, pivot } = action.payload;
+      if (!state.objects[objectId]) {
+        console.warn('[SET_PIVOT_POINT] Object not found:', objectId);
+        return state;
+      }
+
+      console.log('[SET_PIVOT_POINT] Updating pivot for', objectId, 'to', pivot);
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [objectId]: {
+            ...state.objects[objectId],
+            pivot
+          }
+        }
+      };
+    }
+
+    case 'TOGGLE_PIVOT_EDITING': {
+      const objectId = action.payload;
+      if (!state.objects[objectId]) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [objectId]: {
+            ...state.objects[objectId],
+            isEditingPivot: !state.objects[objectId].isEditingPivot
+          }
+        }
+      };
+    }
+
+    case 'SET_HITBOX_POLYGON': {
+      const { objectId, hitboxPolygon } = action.payload;
+      if (!state.objects[objectId]) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [objectId]: {
+            ...state.objects[objectId],
+            hitboxPolygon
+          }
+        }
+      };
+    }
+
     default:
       return state;
   }

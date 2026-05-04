@@ -6,6 +6,7 @@ import { getCardSettings } from '../utils/cardUtils';
 import { executeActionButtonUniversal } from '../utils/actionButtonsHandler';
 import { logger } from '../utils/logger';
 import { LazyBackgroundImage } from './LazyImage';
+import { EffectTemplateRendererMemo } from './EffectTemplateRenderer';
 
 interface ObjectRendererProps {
   obj: TableObject;
@@ -412,6 +413,10 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
         </div>
       </div>
     );
+  }
+
+  if (obj.type === ItemType.EFFECT_TEMPLATE) {
+    return <EffectTemplateRendererMemo {...props} obj={obj} />;
   }
 
   return null;

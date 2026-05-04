@@ -15,6 +15,7 @@ export enum ItemType {
   WINDOW = 'WINDOW',      // Modal windows
   DRAWING = 'DRAWING',    // Drawings created with marker tool
   PAGE = 'PAGE',          // Pages
+  EFFECT_TEMPLATE = 'EFFECT_TEMPLATE', // Effect templates for area-of-effect visualization (explosions, cones, lines)
 }
 
 // Visual subtypes for tokens to handle Chips, Figurines, Badges
@@ -424,6 +425,11 @@ export interface DiceObject extends GameItem {
   diceGroupId?: string; // ID of the dice group this dice belongs to (optional)
   fromPoolPanel?: string; // ID of pool panel this dice was picked up from (if any)
   valueOverrides?: Record<number, DiceValueOverride>; // Custom display for dice values (1-indexed)
+  isExplosive?: boolean; // If true, rolling max value triggers another roll and adds the results
+  explosiveColor?: string; // Color for explosive dice effect (default: yellow)
+  explosiveTextColor?: string; // Text color for explosive dice effect (default: red)
+  explosiveGlow?: string; // Glow color for explosive dice effect (default: red)
+  explosiveRollValue?: number; // Second roll value for explosive dice (added to max sides for display)
 }
 
 // Custom display override for a dice value
@@ -494,7 +500,32 @@ export interface Drawing extends GameItem {
   opacity?: number;
 }
 
-export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell | NexusBoard | NexusCellObject;
+// Effect Template - area-of-effect visualization templates for wargames
+// Used for explosions, cones, lines, and other spell/ability effects
+export interface EffectTemplate extends GameItem {
+  type: ItemType.EFFECT_TEMPLATE;
+  // Pivot point in percentage of image dimensions (0-100)
+  // Determines the center of rotation for the effect template
+  pivot: { x: number; y: number };
+  // Distance from pivot to rotation marker (in VU)
+  // Independent from height - allows pivot to move without changing template size
+  // If not specified, defaults to height (backward compatibility)
+  rotationMarkerDistance?: number;
+  // Hitbox polygon data for accurate click detection on non-transparent areas
+  // Generated from image alpha channel on load
+  hitboxPolygon?: Array<{ x: number; y: number }>;
+  // Whether pivot editing mode is active
+  isEditingPivot?: boolean;
+  // Base height of the original image in VU (used for proportional scaling)
+  // Allows height to exceed baseImageHeight when scaling via Rotation Marker
+  baseImageHeight?: number;
+  // Show width marker and ruler (default: true)
+  showWidthMarker?: boolean;
+  // When scaling height via rotation marker, also scale width proportionally (default: false)
+  proportionalScaling?: boolean;
+}
+
+export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell | NexusBoard | NexusCellObject | EffectTemplate;
 
 // Language settings
 export type AppLanguage = 'en' | 'ru' | 'be' | 'uk' | 'sr';
