@@ -520,6 +520,36 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     ] : [];
   }, [object, allObjects, hideCardActions, isSearchWindow, language, can]);
 
+  // "Move to..." section for tokens - simplified version with just "Move to Hand"
+  const moveToSectionForTokens: MenuItem[] = useMemo(() => {
+    if (object.type !== ItemType.TOKEN) return [];
+
+    const canMoveTo = can('moveTo');
+
+    const submenuItems: MenuItem[] = [
+      {
+        label: translate('Hand', language as Locale),
+        action: 'moveToHand',
+        icon: <Hand size={14} />,
+        visible: canMoveTo && can('moveToHand')
+      }
+    ];
+
+    // Section is only visible if moveTo action is allowed AND at least one submenu item is visible
+    const hasVisibleItems = submenuItems.some(item => item.visible);
+
+    return canMoveTo && hasVisibleItems ? [
+      {
+        label: translate('Move to...', language as Locale),
+        action: 'moveTo',
+        icon: <CornerDownRight size={14} />,
+        visible: true,
+        hasSubmenu: true,
+        submenuItems
+      }
+    ] : [];
+  }, [object, language, can]);
+
   const menuItems: MenuItem[] = useMemo(() => [
     {
       label: translate('Properties', language as Locale),
@@ -552,6 +582,8 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     },
     // "Move to..." section for cards
     ...moveToSection.map(item => ({ ...item, group: 'objectActions' as const })),
+    // "Move to..." section for tokens
+    ...moveToSectionForTokens.map(item => ({ ...item, group: 'objectActions' as const })),
     // Flip for cards
     {
       label: translate('Flip', language as Locale),

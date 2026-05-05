@@ -531,6 +531,10 @@ const dropCursorSlot = (
       window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
         detail: { items }
       }));
+      // IMPORTANT: Also dispatch cursor-slot-dropped to hide purple outline
+      window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+        detail: { cardIds: items.map(i => i.id) }
+      }));
     }
 
     // If there are non-card items, keep them in slot and drop them normally

@@ -208,6 +208,10 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
           window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
             detail: { items }
           }));
+          // IMPORTANT: Also dispatch cursor-slot-dropped to hide purple outline
+          window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+            detail: { cardIds: items.map(i => i.id) }
+          }));
         }
         setCursorSlot([]);
         setCursorPosition(null);

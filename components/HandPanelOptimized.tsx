@@ -25,7 +25,7 @@ import {
   useIsSettingsModalOpen
 } from '../store/contexts';
 import { useGame } from '../store/GameContext';
-import { Card, Token, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player } from '../types';
+import { Card, Token, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player, TokenShape } from '../types';
 import { Card as CardComponent } from './Card';
 import { ObjectRenderer } from './ObjectRenderer';
 import { ContextMenu } from './ContextMenu';
@@ -388,6 +388,154 @@ const HandCardItem = memo<HandCardItemProps>(({
 
 HandCardItem.displayName = 'HandCardItem';
 
+// Token stack interface for grouping identical tokens
+interface TokenStack {
+  tokens: Token[];
+  count: number;
+  representativeToken: Token;
+}
+
+// Helper function to create a unique key for token grouping
+// Tokens are considered identical if they have the same visual properties
+const getTokenGroupKey = (token: Token): string => {
+  return JSON.stringify({
+    content: token.content,
+    name: token.name,
+    shape: token.shape,
+    width: token.width,
+    height: token.height,
+    color: token.color,
+    borderColor: token.borderColor,
+    borderWidth: token.borderWidth,
+    opacity: token.opacity,
+    borderOpacity: token.borderOpacity,
+    showNameOnToken: token.showNameOnToken,
+    fontColor: token.fontColor,
+  });
+};
+
+// Helper function to group tokens by their visual properties
+const groupTokens = (tokens: Token[]): TokenStack[] => {
+  const groups = new Map<string, Token[]>();
+
+  tokens.forEach(token => {
+    const key = getTokenGroupKey(token);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(token);
+  });
+
+  return Array.from(groups.values()).map(tokensInGroup => ({
+    tokens: tokensInGroup,
+    count: tokensInGroup.length,
+    representativeToken: tokensInGroup[0]
+  }));
+};
+
+// Token Stack Component - displays stacked tokens with count badge
+interface TokenStackItemProps {
+  stack: TokenStack;
+  stackIndex: number;
+  groupOffset: number;
+  isDragging: boolean;
+  isDragOver: boolean;
+  isGM: boolean;
+  activePlayerId: string;
+  onMouseDown: (e: React.MouseEvent, tokenIds: string[], index: number, element: HTMLDivElement) => void;
+  onContextMenu: (e: React.MouseEvent, token: Token) => void;
+}
+
+const TokenStackItem: React.FC<TokenStackItemProps> = memo(({
+  stack,
+  stackIndex,
+  groupOffset,
+  isDragging,
+  isDragOver,
+  isGM,
+  activePlayerId,
+  onMouseDown,
+  onContextMenu
+}) => {
+  const actualIndex = groupOffset + stackIndex;
+  const tokenIds = stack.tokens.map(t => t.id);
+
+  return (
+    <div
+      data-card-index={actualIndex}
+      data-token-stack="true"
+      data-token-ids={JSON.stringify(tokenIds)}
+      className="relative flex-shrink-0 group"
+      style={{
+        width: 88,
+        height: 88,
+        zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
+        transform: isDragOver ? 'scale(1.05)' : undefined,
+      }}
+      onMouseDown={(e) => onMouseDown(e, tokenIds, actualIndex, e.currentTarget as HTMLDivElement)}
+      onContextMenu={(e) => onContextMenu(e, stack.representativeToken)}
+    >
+      {/* Render stacked tokens with slight offset for visual effect */}
+      {stack.count > 1 && (
+        <>
+          {/* Bottom tokens - create stack effect */}
+          {Array.from({ length: Math.min(stack.count - 1, 3) }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute pointer-events-none"
+              style={{
+                top: -i * 2,
+                left: -i * 2,
+                width: 88,
+                height: 88,
+                opacity: 0.7,
+              }}
+            >
+              <ObjectRenderer
+                obj={stack.representativeToken}
+                pixelsPerVU={1}
+                isGM={isGM}
+                activePlayerId={activePlayerId}
+                onMouseDown={() => {}}
+                onContextMenu={() => {}}
+              />
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Top token */}
+      <div className="relative">
+        <ObjectRenderer
+          obj={stack.representativeToken}
+          pixelsPerVU={1}
+          isGM={isGM}
+          activePlayerId={activePlayerId}
+          onMouseDown={(e) => e.preventDefault()}
+          onContextMenu={(e) => onContextMenu(e, stack.representativeToken)}
+        />
+      </div>
+
+      {/* Count badge */}
+      {stack.count > 1 && (
+        <div className="absolute -top-2 -right-2 bg-purple-600 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center border-2 border-slate-800 shadow-lg pointer-events-none">
+          {stack.count}
+        </div>
+      )}
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.stack.count === nextProps.stack.count &&
+    prevProps.stack.representativeToken.id === nextProps.stack.representativeToken.id &&
+    prevProps.isDragging === nextProps.isDragging &&
+    prevProps.isDragOver === nextProps.isDragOver &&
+    prevProps.stackIndex === nextProps.stackIndex
+  );
+});
+
+TokenStackItem.displayName = 'TokenStackItem';
+
 interface HandPanelProps {
   width?: number;
   isDragTarget?: boolean;
@@ -470,7 +618,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Drag state for adding cards to cursor slot (distance-based, like tabletop)
-  const longPressCardRef = useRef<{ cardId: string; startX: number; startY: number; clickOffsetX_PX?: number; clickOffsetY_PX?: number } | null>(null);
+  const longPressCardRef = useRef<{ cardId: string; startTime: number; startX: number; startY: number; clickOffsetX_PX?: number; clickOffsetY_PX?: number } | null>(null);
   const cardPickedUpRef = useRef(false);
 
   // Local state to track cards being picked up
@@ -481,6 +629,47 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   // Local state for cursor slot hover
   const [isCursorOverHand, setIsCursorOverHand] = useState(false);
+
+  // Helper function to get tokens currently in cursor slot
+  const getTokensInCursorSlot = useCallback((): Token[] => {
+    return Object.values(objects).filter(obj =>
+      obj.type === ItemType.TOKEN &&
+      (obj as any).inCursorSlot === true
+    ) as Token[];
+  }, [objects]);
+
+  // Helper function to check if cursor slot contains only tokens of the same type
+  const isCursorSlotSameTokenType = useCallback((token: Token): boolean => {
+    const tokensInSlot = getTokensInCursorSlot();
+    if (tokensInSlot.length === 0) return true;
+    const tokenKey = getTokenGroupKey(token);
+    return tokensInSlot.every(t => getTokenGroupKey(t) === tokenKey);
+  }, [getTokensInCursorSlot]);
+
+  // Helper function to check if cursor slot contains any cards
+  const cursorSlotHasCards = useCallback((): boolean => {
+    return Object.values(objects).some(obj =>
+      obj.type === ItemType.CARD &&
+      (obj as any).inCursorSlot === true
+    );
+  }, [objects]);
+
+  // Helper function to drop all items from cursor slot to hand
+  const dropCursorSlotToHand = useCallback(() => {
+    const itemsInCursorSlot = Object.values(objects).filter(obj =>
+      (obj.type === ItemType.CARD || obj.type === ItemType.TOKEN) &&
+      (obj as any).inCursorSlot === true
+    );
+    if (itemsInCursorSlot.length === 0) return;
+
+    setIsCursorOverHand(false);
+    window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
+      detail: { items: itemsInCursorSlot }
+    }));
+    window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+      detail: { cardIds: itemsInCursorSlot.map(i => i.id) }
+    }));
+  }, [objects, setIsCursorOverHand]);
 
   // Use shared hook for cursor slot hover detection
   const { isCursorOver: isCursorOverFromHook } = useCursorSlotHover(containerRef, {
@@ -517,8 +706,12 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const customEvent = e as CustomEvent<{ items: any[] }>;
       const { items } = customEvent.detail;
 
-      // Filter to only allow CARDS in hand panel (tokens should not be added)
-      const itemsToAdd = items.filter(item => item.type === ItemType.CARD);
+      // IMPORTANT: Clear purple outline IMMEDIATELY to prevent it from getting stuck
+      // Do this before any other processing to ensure fast UI response
+      setIsCursorOverHand(false);
+
+      // Allow both CARDS and TOKENS in hand panel
+      const itemsToAdd = items.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN);
 
       if (itemsToAdd.length > 0) {
         const player = players.find(p => p.id === selectedPlayerId);
@@ -544,21 +737,30 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         });
 
         itemsToAdd.forEach(item => {
-          // IMPORTANT: When user explicitly drops cards to hand panel, ALWAYS move to HAND
+          // IMPORTANT: When user explicitly drops cards/tokens to hand panel, ALWAYS move to HAND
           // Don't check currentLocation because PoolTabletop might have already changed it
           // The user's intent (clicking on hand panel) should take precedence
+
+          // For cards, set location to HAND
+          // For tokens, just set isOnTable to false
+          const updates: any = {
+            ownerId: selectedPlayerId,
+            inCursorSlot: false,
+            isOnTable: false, // Cards/tokens in hand are not on table
+            x: -999999, // Hide from table view
+            y: -999999
+          };
+
+          // Only cards have location property
+          if (item.type === ItemType.CARD) {
+            updates.location = CardLocation.HAND;
+          }
+
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
               id: item.id,
-              updates: {
-                location: CardLocation.HAND,
-                ownerId: selectedPlayerId,
-                inCursorSlot: false,
-                isOnTable: false, // Cards in hand are not on table
-                x: -999999, // Hide from table view
-                y: -999999
-              }
+              updates
             }
           });
         });
@@ -584,7 +786,6 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         }, 500);
       }
 
-      setIsCursorOverHand(false);
       // Also dispatch cursor-slot-dropped to notify useCursorSlotHover hook
       // This ensures the purple outline is cleared in all components
       window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
@@ -662,12 +863,20 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // Get both cards and tokens in hand
   // Note: pickingUpCardIds filter is only for TABLE items, not HAND items
   // HAND items should always be shown regardless of pickingUpCardIds
-  const handItems = allHandObjects.filter((item): item is Card | Token =>
-    (item.type === ItemType.CARD || item.type === ItemType.TOKEN) &&
-    item.ownerId === selectedPlayerId &&
-    !item.inCursorSlot &&
-    item.location === CardLocation.HAND  // IMPORTANT: Only show items actually in HAND location
-  );
+  const handItems = allHandObjects.filter((item): item is Card | Token => {
+    if (item.inCursorSlot) return false;
+    if (item.ownerId !== selectedPlayerId) return false;
+
+    // For cards, check location
+    if (item.type === ItemType.CARD) {
+      return (item as Card).location === CardLocation.HAND;
+    }
+    // For tokens, check if not on table (in hand)
+    if (item.type === ItemType.TOKEN) {
+      return !item.isOnTable;
+    }
+    return false;
+  });
 
   const cardOrderMap = new Map(handCardOrder.map((id, index) => [id, index]));
   const cards = handItems.sort((a, b) => {
@@ -705,6 +914,24 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     if (a.shape === 'Token') return 1; // Tokens at the end
     if (b.shape === 'Token') return -1;
     return a.shape.localeCompare(b.shape);
+  });
+
+  // Group tokens into stacks for each group
+  const groupsWithTokenStacks = cardsByShape.map(group => {
+    if (group.shape === 'Token') {
+      const tokens = group.cards.filter((item): item is Token => item.type === ItemType.TOKEN);
+      const tokenStacks = groupTokens(tokens);
+      return {
+        ...group,
+        cards: tokens, // Keep original cards for compatibility
+        tokenStacks,
+        hasTokenStacks: true
+      };
+    }
+    return {
+      ...group,
+      hasTokenStacks: false
+    };
   });
 
   // Compute card dimensions
@@ -1165,8 +1392,64 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       clickOffsetY_PX = e.clientY - rect.top;
     }
 
+    // Handle Shift+click: immediately add to cursor slot without drag
+    if (e.shiftKey) {
+      const card = objects[cardId] as Card | Token;
+      if (card && !card.inCursorSlot && !pickingUpCardIds.has(cardId)) {
+        if (!recentlyDroppedToHandRef.current.has(cardId)) {
+          // Check if we need to drop existing cursor slot items first
+          let shouldDropFirst = false;
+
+          if (card.type === ItemType.TOKEN) {
+            const token = card as Token;
+            if (cursorSlotHasCards() || !isCursorSlotSameTokenType(token)) {
+              shouldDropFirst = true;
+            }
+          } else {
+            const tokensInSlot = getTokensInCursorSlot();
+            const cardsInSlot = Object.values(objects).filter(obj =>
+              obj.type === ItemType.CARD && (obj as any).inCursorSlot === true
+            );
+            if (tokensInSlot.length > 0 || cardsInSlot.length > 0) {
+              shouldDropFirst = true;
+            }
+          }
+
+          if (shouldDropFirst) {
+            dropCursorSlotToHand();
+          }
+
+          recentlyDroppedToHandRef.current.delete(cardId);
+          setPickingUpCardIds(prev => new Set([...prev, cardId]));
+
+          const cardOverride: any = { ...card };
+          if (card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND) {
+            delete cardOverride.x;
+            delete cardOverride.y;
+          }
+
+          window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+            detail: {
+              cardId,
+              clientX: e.clientX,
+              clientY: e.clientY,
+              source: 'shift', // Use 'shift' for Shift+click behavior
+              cardOverride,
+              clickOffsetX_PX,
+              clickOffsetY_PX,
+              isFromHand: true
+            }
+          }));
+
+          // Don't set up drag refs for Shift+click
+          return;
+        }
+      }
+    }
+
     longPressCardRef.current = {
       cardId,
+      startTime: Date.now(),
       startX: e.clientX,
       startY: e.clientY,
       clickOffsetX_PX,
@@ -1177,7 +1460,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     setDragIndex(index);
     cardPickedUpRef.current = false;
-  }, [isViewingOpponentHand, objects, pickingUpCardIds]);
+  }, [isViewingOpponentHand, objects, pickingUpCardIds, cursorSlotHasCards, isCursorSlotSameTokenType, getTokensInCursorSlot, dropCursorSlotToHand]);
 
   // Handle mouse move
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -1280,6 +1563,58 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   // Handle mouse up
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    // Check if this was a quick click on a card/token (not a drag)
+    if (longPressCardRef.current && !cardPickedUpRef.current) {
+      const dragDuration = Date.now() - longPressCardRef.current.startTime;
+      const dragDistance = Math.sqrt(
+        Math.pow(e.clientX - longPressCardRef.current.startX, 2) +
+        Math.pow(e.clientY - longPressCardRef.current.startY, 2)
+      );
+
+      // If it was a quick click with minimal movement, add to cursor slot (like TokensPanel)
+      if (dragDuration < 200 && dragDistance < 10) {
+        const cardId = longPressCardRef.current.cardId;
+        const card = objects[cardId] as Card | Token;
+
+        if (card && !card.inCursorSlot && !pickingUpCardIds.has(cardId)) {
+          // Check recentlyDroppedToHandRef
+          if (!recentlyDroppedToHandRef.current.has(cardId)) {
+            // Clear from recentlyDroppedToHandRef when picking up from hand
+            recentlyDroppedToHandRef.current.delete(cardId);
+
+            setPickingUpCardIds(prev => new Set([...prev, cardId]));
+            cardPickedUpRef.current = true;
+
+            // Pass card data directly to ensure handler has access to it
+            const cardOverride: any = { ...card };
+            if (card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND) {
+              delete cardOverride.x;
+              delete cardOverride.y;
+            }
+
+            window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+              detail: {
+                cardId,
+                clientX: e.clientX,
+                clientY: e.clientY,
+                source: 'hold',
+                cardOverride,
+                clickOffsetX_PX: longPressCardRef.current.clickOffsetX_PX,
+                clickOffsetY_PX: longPressCardRef.current.clickOffsetY_PX,
+                isFromHand: true
+              }
+            }));
+
+            // Clear refs and return early (don't process drag reordering)
+            longPressCardRef.current = null;
+            setDragIndex(null);
+            dragStartPosRef.current = null;
+            return;
+          }
+        }
+      }
+    }
+
     longPressCardRef.current = null;
     cardPickedUpRef.current = false;
 
@@ -1310,7 +1645,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     setDragIndex(null);
     setDragOverIndex(null);
     dragStartPosRef.current = null;
-  }, [dragIndex, dragOverIndex, cards, selectedPlayerId, players, updatePlayerData]);
+  }, [dragIndex, dragOverIndex, cards, selectedPlayerId, players, updatePlayerData, objects, pickingUpCardIds]);
 
   // Set up global mouse listeners during drag
   useEffect(() => {
@@ -1367,14 +1702,23 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     return undefined;
   }, [contextMenu, scaleMenu]);
 
-  // Helper function to count cards for a player
+  // Helper function to count items (cards + tokens) for a player
   const countCardsForPlayer = useCallback((playerId: string) => {
-    return allCards.filter(card =>
-      card.location === CardLocation.HAND &&
-      card.ownerId === playerId &&
-      !pickingUpCardIds.has(card.id)
-    ).length;
-  }, [allCards, pickingUpCardIds]);
+    return allHandObjects.filter(item => {
+      if (item.inCursorSlot || pickingUpCardIds.has(item.id)) return false;
+      if (item.ownerId !== playerId) return false;
+
+      // For cards, check location
+      if (item.type === ItemType.CARD) {
+        return (item as Card).location === CardLocation.HAND;
+      }
+      // For tokens, check if not on table (in hand)
+      if (item.type === ItemType.TOKEN) {
+        return !item.isOnTable;
+      }
+      return false;
+    }).length;
+  }, [allHandObjects, pickingUpCardIds]);
 
   return (
     <div
@@ -1476,10 +1820,18 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
             </div>
           ) : (
             <>
-              {cardsByShape.map((group, groupIndex) => {
-                const groupOffset = groupIndex === 0 ? 0 : cardsByShape.slice(0, groupIndex).reduce((sum, g) => sum + g.cards.length, 0);
-                const groupCards = group.cards.filter((item): item is Card => item.type === ItemType.CARD);
+              {groupsWithTokenStacks.map((group, groupIndex) => {
+                const groupOffset = groupIndex === 0 ? 0 : groupsWithTokenStacks.slice(0, groupIndex).reduce((sum, g) => {
+                  // For token stacks, count as 1 per stack
+                  if (g.hasTokenStacks) {
+                    return sum + (g as any).tokenStacks?.length || 0;
+                  }
+                  return sum + g.cards.length;
+                }, 0);
+                const groupCards = group.cards.filter((item): item is Card => item.type === ItemType.CARD) as Card[];
                 const { shouldVirtualize } = useVirtualizedHandList(groupCards.length);
+                const tokenStacks = (group as any).tokenStacks as TokenStack[] || [];
+                const hasTokenStacks = (group as any).hasTokenStacks || false;
 
                 return (
                   <div key={group.shape} className="mb-3">
@@ -1556,76 +1908,67 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                       />
                     ) : (
                       <div className="flex flex-wrap gap-[2px] w-full">
-                        {group.cards.map((item, index) => {
-                          // Check if this is a token or card
-                          const isToken = item.type === ItemType.TOKEN;
+                        {/* Render token stacks if this is a token group */}
+                        {hasTokenStacks && tokenStacks.map((stack, stackIndex) => {
+                          const actualIndex = groupOffset + stackIndex;
 
-                          if (isToken) {
-                            // Render token using ObjectRenderer
-                            const token = item as Token;
-                            const actualIndex = groupOffset + index;
+                          return (
+                            <TokenStackItem
+                              key={stack.representativeToken.id}
+                              stack={stack}
+                              stackIndex={stackIndex}
+                              groupOffset={groupOffset}
+                              isDragging={dragIndex === actualIndex}
+                              isDragOver={dragOverIndex === actualIndex}
+                              isGM={isGM}
+                              activePlayerId={selectedPlayerId}
+                              onMouseDown={(e, tokenIds, index, element) => {
+                                // For token stacks, we handle the first token ID
+                                handleCardMouseDown(e, tokenIds[0], index, element);
+                              }}
+                              onContextMenu={(e) => handleCardContextMenu(e, stack.representativeToken as any)}
+                            />
+                          );
+                        })}
 
-                            return (
-                              <div
-                                key={token.id}
-                                data-card-index={actualIndex}
-                                className="relative flex-shrink-0 group"
-                                style={{
-                                  width: 88,
-                                  height: 88,
-                                  zIndex: dragIndex === actualIndex ? 100 : dragOverIndex === actualIndex ? 50 : 'auto',
-                                  transform: dragOverIndex === actualIndex ? 'scale(1.05)' : undefined,
-                                }}
-                                onMouseDown={(e) => handleCardMouseDown(e, token.id, actualIndex, e.currentTarget as HTMLDivElement)}
-                                onContextMenu={(e) => handleCardContextMenu(e, token as any)}
-                              >
-                                <ObjectRenderer
-                                  obj={token}
-                                  pixelsPerVU={1}
-                                  isGM={isGM}
-                                  activePlayerId={selectedPlayerId}
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onContextMenu={(e) => handleCardContextMenu(e, token as any)}
-                                />
-                              </div>
-                            );
-                          }
-
-                          // Render card
-                          const card = item as Card;
-                          const cardSettings = computeCardSettings(card);
+                        {/* Render cards */}
+                        {group.cards.filter((item): item is Card => item.type === ItemType.CARD).map((card, cardIndex) => {
+                          // Explicitly type the card as Card to avoid type errors
+                          const typedCard = card as Card;
+                          const cardSettings = computeCardSettings(typedCard);
                           const cardActionButtons = cardSettings.cardActionButtons;
-                          const { width: cardWidth, height: cardHeight } = computeCardDimensions(card);
-                          const deck = card.deckId ? (objects[card.deckId] as DeckType | undefined) : undefined;
+                          const { width: cardWidth, height: cardHeight } = computeCardDimensions(typedCard);
+                          const deck = typedCard.deckId ? (objects[typedCard.deckId] as DeckType | undefined) : undefined;
 
                           const buttons = getCardButtonConfigsWithActions(
                             cardActionButtons,
                             {
-                              onFlip: () => handleFlip(card.id),
-                              onRotateClockwise: () => handleRotateClockwise(card.id),
-                              onRotateCounterClockwise: () => handleRotateCounterClockwise(card.id),
-                              onSwingingClockwise: () => handleSwingingClockwise(card.id),
-                              onSwingingCounterClockwise: () => handleSwingingCounterClockwise(card.id),
-                              onLayerUp: () => handleLayerUp(card.id),
-                              onLayerDown: () => handleLayerDown(card.id),
-                              onClone: () => handleClone(card.id),
-                              onMoveToHand: () => handleMoveToHand(card.id),
-                              onMoveToTopDeck: () => handleMoveToTopDeck(card.id),
-                              onMoveToBottomDeck: () => handleMoveToBottomDeck(card.id),
-                              onMoveToDiscard: () => handleMoveToDiscard(card.id)
+                              onFlip: () => handleFlip(typedCard.id),
+                              onRotateClockwise: () => handleRotateClockwise(typedCard.id),
+                              onRotateCounterClockwise: () => handleRotateCounterClockwise(typedCard.id),
+                              onSwingingClockwise: () => handleSwingingClockwise(typedCard.id),
+                              onSwingingCounterClockwise: () => handleSwingingCounterClockwise(typedCard.id),
+                              onLayerUp: () => handleLayerUp(typedCard.id),
+                              onLayerDown: () => handleLayerDown(typedCard.id),
+                              onClone: () => handleClone(typedCard.id),
+                              onMoveToHand: () => handleMoveToHand(typedCard.id),
+                              onMoveToTopDeck: () => handleMoveToTopDeck(typedCard.id),
+                              onMoveToBottomDeck: () => handleMoveToBottomDeck(typedCard.id),
+                              onMoveToDiscard: () => handleMoveToDiscard(typedCard.id)
                             },
-                            card.faceUp ?? true,
-                            card.locked ?? false,
+                            typedCard.faceUp ?? true,
+                            typedCard.locked ?? false,
                             language
                           );
 
-                          const actualIndex = groupOffset + index;
-                          const displayedCard = isViewingOpponentHand ? { ...card, faceUp: false } : card;
+                          // Calculate actual index considering token stacks
+                          const actualIndex = groupOffset + (hasTokenStacks ? tokenStacks.length : 0) + cardIndex;
+                          const displayedCard = isViewingOpponentHand ? { ...typedCard, faceUp: false } : typedCard;
 
                           return (
                             <HandCardItem
-                              key={card.id}
-                              card={card}
+                              key={typedCard.id}
+                              card={typedCard}
                               displayedCard={displayedCard}
                               actualIndex={actualIndex}
                               cardWidth={cardWidth}

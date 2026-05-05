@@ -48,11 +48,12 @@ export function useCursorSlotHover(
 
       // Check if we should show hover based on options
       if (requireCards || requireDraggingCard) {
-        // Determine if there are cards in the cursor slot
+        // Determine if there are cards or tokens in the cursor slot
         // Check isDraggingCard first (from MainMenu event), fallback to items check
+        // Now supports both CARDS and TOKENS
         const draggingCard = isDraggingCard !== undefined
           ? isDraggingCard
-          : items ? items.some(item => item.type === ItemType.CARD) : hasCards;
+          : items ? items.some(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN) : hasCards;
 
         // If we require dragging cards and there are none, hide hover
         if (requireDraggingCard && !draggingCard) {
@@ -82,11 +83,12 @@ export function useCursorSlotHover(
       setIsCursorOver(false);
       onDropRef.current?.();
 
-      // Set flag to ignore move events for a short time
+      // Set flag to ignore move events for a longer time to prevent race conditions
+      // This prevents the purple outline from reappearing after drop
       justDroppedRef.current = true;
       setTimeout(() => {
         justDroppedRef.current = false;
-      }, 100);
+      }, 300); // Increased from 100ms to 300ms
     };
 
     window.addEventListener('cursor-slot-move', handleCursorSlotMove);

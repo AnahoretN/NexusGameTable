@@ -97,6 +97,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   const [dragOverHand, setDragOverHand] = useState(false);
   const [, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
+
+  // Track cursor position when tokens first appear in cursor slot (for tools tab switching threshold)
+  const cursorSlotStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const hadCardsInSlotRef = useRef(false);
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   // Use centralized tool settings context
@@ -332,14 +336,26 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       const { x, y, hasCards, items } = customEvent.detail;
 
       if (!hasCards) {
+        // Clear start position when cursor slot is empty
+        cursorSlotStartPosRef.current = null;
+        hadCardsInSlotRef.current = false;
         setDragOverHand(false);
         return;
       }
 
-      // Check if first item in cursor slot is a CARD (not token or other object)
-      // Only switch to hand tab if dragging a card
+      // Check if cards just appeared in slot (transition from empty to having cards)
+      if (!hadCardsInSlotRef.current) {
+        hadCardsInSlotRef.current = true;
+        // If current tab is 'tools', remember start position for threshold calculation
+        if (activeTab === 'tools') {
+          cursorSlotStartPosRef.current = { x, y };
+        }
+      }
+
+      // Check if first item in cursor slot is a CARD or TOKEN
+      // Switch to hand tab if dragging a card or token
       const firstItemType = items?.[0]?.type;
-      const isDraggingCard = firstItemType === 'CARD';
+      const isDraggingCard = firstItemType === 'CARD' || firstItemType === 'TOKEN';
 
       // Find main menu panel element in DOM to get actual screen position
       const mainMenuElement = document.querySelector('[data-main-menu="true"]') as HTMLElement;
@@ -363,7 +379,18 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
       // Only switch to hand tab if cursor is over main menu AND dragging a card
       if (isOverMainMenu && isDraggingCard) {
-        if (activeTab !== 'hand') {
+        // Calculate distance from start position if tracking (for tools tab)
+        let shouldSwitch = true;
+        if (cursorSlotStartPosRef.current && activeTab === 'tools') {
+          const dx = x - cursorSlotStartPosRef.current.x;
+          const dy = y - cursorSlotStartPosRef.current.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          // Threshold: 30px (about 2x the standard UI interaction distance)
+          const SWITCH_THRESHOLD = 30;
+          shouldSwitch = distance >= SWITCH_THRESHOLD;
+        }
+
+        if (shouldSwitch && activeTab !== 'hand') {
           setPreviousTab(activeTab);
           setActiveTab('hand');
         }
@@ -382,14 +409,27 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
     const handleCursorSlotDrop = () => {
       setDragOverHand(false);
+      // Reset refs when items are dropped
+      cursorSlotStartPosRef.current = null;
+      hadCardsInSlotRef.current = false;
+    };
+
+    // Also handle general cursor-slot-dropped event (for drops to table, etc.)
+    const handleCursorSlotDropped = () => {
+      setDragOverHand(false);
+      // Reset refs when items are dropped anywhere
+      cursorSlotStartPosRef.current = null;
+      hadCardsInSlotRef.current = false;
     };
 
     window.addEventListener('cursor-position-update', handleCursorPositionUpdate);
     window.addEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
+    window.addEventListener('cursor-slot-dropped', handleCursorSlotDropped);
 
     return () => {
       window.removeEventListener('cursor-position-update', handleCursorPositionUpdate);
       window.removeEventListener('cursor-slot-drop-to-hand', handleCursorSlotDrop);
+      window.removeEventListener('cursor-slot-dropped', handleCursorSlotDropped);
     };
   }, [activeTab, mainMenuPanel, dispatch]);
 

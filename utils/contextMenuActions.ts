@@ -500,17 +500,54 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
 
     // Card movement actions
     case 'moveToHand':
-      // Move card to hand - use DRAW_CARD in reverse or set proper card location
+      // Move card or token to hand
       const cardToHand = object as any;
       console.log('[contextMenuActions moveToHand] START');
       console.log('  activePlayerId:', activePlayerId);
       console.log('  object.id:', object.id);
+      console.log('  object.type:', object.type);
       console.log('  object.location:', cardToHand.location);
       console.log('  object.ownerId:', cardToHand.ownerId);
       console.log('  object.inCursorSlot:', cardToHand.inCursorSlot);
       console.log('  object.isOnTable:', cardToHand.isOnTable);
       console.log('  cardToHand.deckId:', cardToHand.deckId);
 
+      // Handle tokens (tokens don't have deckId)
+      if (object.type === ItemType.TOKEN) {
+        // For tokens, just set isOnTable to false and add to hand
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: object.id,
+            updates: {
+              ownerId: activePlayerId,
+              isOnTable: false,
+              inCursorSlot: false,
+              x: -999999,
+              y: -999999
+            }
+          }
+        });
+
+        // Add token to player's handCardOrder
+        if (state.players && Array.isArray(state.players)) {
+          const player = state.players.find((p: any) => p.id === activePlayerId);
+          if (player) {
+            const currentHandOrder = player.handCardOrder || [];
+            if (!currentHandOrder.includes(object.id)) {
+              const newHandOrder = [object.id, ...currentHandOrder];
+              dispatch({
+                type: 'UPDATE_HAND_CARD_ORDER',
+                payload: { playerId: activePlayerId, cardOrder: newHandOrder }
+              });
+              console.log('[contextMenuActions moveToHand] Token added to handCardOrder:', newHandOrder);
+            }
+          }
+        }
+        break;
+      }
+
+      // Handle cards
       if (cardToHand.deckId) {
         const deck = state.objects[cardToHand.deckId];
         console.log('[contextMenuActions moveToHand] deck:', deck?.id, 'deck.cardIds:', deck?.cardIds);
