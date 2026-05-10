@@ -501,5 +501,21 @@
   "Player Left": "Igrač otišao",
   "Settings Changed": "Podešavanja promenjena",
   "Restore session to this point?": "Vratiti sesiju na ovu tačku?",
-  "All changes after this point will be lost.": "Sve promene posle ove tačke će biti izgubljene."
+  "All changes after this point will be lost.": "Sve promene posle ove tačke će biti izgubljene.",
+  "Counter Display": "Prikaz brojača",
+  "Above Token": "Iznad žetona",
+  "Below Token": "Ispod žetona",
+  "Around Token": "Oko žetona",
+  "Show for Players": "Prikaži igračima",
+  "Add Counter": "Dodaj brojač",
+  "No counters configured. Click \"Add Counter\" to create one.": "Nema podešenih brojača. Kliknite \"Dodaj brojač\" da biste kreirali.",
+  "Counter name": "Naziv brojača",
+  "Counter Color": "Boja brojača",
+  "Icon": "Ikona",
+  "Emoji icon (optional)": "Emoji ikona (opciono)",
+  "Delete Counter": "Obriši brojač",
+  "Max": "Maks",
+  "Min": "Min",
+  "Show Value": "Prikaži vrednost",
+  "Show Bar": "Prikaži traku"
 }

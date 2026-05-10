@@ -7,7 +7,7 @@ import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType } from '../../types';
+import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenCounter, TokenCounterPosition, TokenCounterDisplay } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 import { getTokenWithAppliedState } from '../../utils/contextMenuActions';
 
@@ -32,6 +32,226 @@ interface GameObjectsRendererProps {
   onAddNexusCell?: (objId: string, direction: string) => void;
   dispatch: React.Dispatch<any>;
 }
+
+// Token counters display component
+interface TokenCountersDisplayProps {
+  counters: TokenCounter[];
+  counterDisplay: TokenCounterDisplay | undefined;
+  tokenWidth: number;
+  tokenHeight: number;
+  pixelsPerVU: number;
+  isGM: boolean;
+  tokenId: string;
+  dispatch: React.Dispatch<any>;
+}
+
+const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
+  counters,
+  counterDisplay,
+  tokenWidth,
+  tokenHeight,
+  pixelsPerVU,
+  isGM,
+  tokenId,
+  dispatch
+}) => {
+  // Don't show if not GM and showForPlayers is false
+  if (!isGM && counterDisplay?.showForPlayers === false) {
+    return null;
+  }
+
+  // Don't show if no counters
+  if (!counters || counters.length === 0) {
+    return null;
+  }
+
+  const position = counterDisplay?.position || 'below';
+  const [hoveredCounterId, setHoveredCounterId] = useState<string | null>(null);
+
+  // Handle counter value change
+  const handleCounterChange = (counter: TokenCounter, newValue: number) => {
+    const clampedValue = Math.max(
+      counter.minValue ?? 0,
+      Math.min(counter.maxValue, newValue)
+    );
+
+    // Update the counter value
+    const updatedCounters = counters.map(c =>
+      c.id === counter.id ? { ...c, value: clampedValue } : c
+    );
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: tokenId,
+        updates: { counters: updatedCounters }
+      }
+    });
+  };
+
+  // Calculate styles based on position
+  const getContainerStyle = (): React.CSSProperties => {
+    // Calculate total height needed for all counters
+    const baseBarHeight = 7 * pixelsPerVU;
+    const gap = pixelsPerVU;
+    const totalHeight = counters.length * (baseBarHeight + gap);
+
+    const baseStyle: React.CSSProperties = {
+      position: 'absolute',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      pointerEvents: 'auto',
+      zIndex: 10,
+      height: `${totalHeight}px`,
+    };
+
+    if (position === 'above') {
+      return { ...baseStyle, bottom: '100%', marginBottom: '4px' };
+    } else if (position === 'below') {
+      return { ...baseStyle, top: '100%', marginTop: '4px' };
+    } else { // perimeter
+      return { ...baseStyle, top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%' };
+    }
+  };
+
+  const getCounterStyle = (counter: TokenCounter, index: number, isHovered: boolean): React.CSSProperties => {
+    // Use absolute positioning to prevent layout shift when any bar grows
+    // Always use base bar height for positioning to prevent shifting
+    const baseBarHeight = 7 * pixelsPerVU;
+    const gap = pixelsPerVU;
+    const barWidth = isHovered ? tokenWidth * 1.5 : tokenWidth;
+
+    return {
+      position: 'absolute' as const,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      top: `${index * (baseBarHeight + gap)}px`,
+      width: `${barWidth}px`,
+      zIndex: isHovered ? 20 : 1,
+    };
+  };
+
+  const getBarStyle = (counter: TokenCounter, isHovered: boolean): React.CSSProperties => {
+    const height = isHovered ? 7 * 1.5 : 7;
+    return {
+      width: '100%',
+      height: `${height * pixelsPerVU}px`,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      borderRadius: '3px',
+      overflow: 'visible',
+      position: 'relative' as const,
+      transition: 'all 0.2s ease',
+      cursor: 'pointer',
+      zIndex: isHovered ? 20 : 1,
+    };
+  };
+
+  const getBarFillStyle = (counter: TokenCounter): React.CSSProperties => {
+    const percentage = Math.max(0, Math.min(100, (counter.value / counter.maxValue) * 100));
+    return {
+      width: `${percentage}%`,
+      height: '100%',
+      backgroundColor: counter.color || '#ef4444',
+      borderRadius: '3px',
+      transition: 'width 0.3s ease',
+    };
+  };
+
+  const getLabelStyle = (): React.CSSProperties => {
+    return {
+      fontSize: '9px',
+      fontWeight: 'bold',
+      color: 'white',
+      textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+      whiteSpace: 'nowrap' as const,
+      position: 'absolute' as const,
+      right: '100%',
+      top: '50%',
+      marginTop: '-4.5px', // Half of font size (9px) for vertical centering
+      marginRight: `${4}px`,
+      animation: 'fadeInLeft 0.2s ease forwards',
+    };
+  };
+
+  const getValueStyle = (): React.CSSProperties => {
+    return {
+      fontSize: '9px',
+      fontWeight: 'bold',
+      color: 'white',
+      textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+      whiteSpace: 'nowrap' as const,
+      position: 'absolute' as const,
+      left: '100%',
+      top: '50%',
+      marginTop: '-4.5px', // Half of font size (9px) for vertical centering
+      marginLeft: `${4}px`,
+      animation: 'fadeInRight 0.2s ease forwards',
+    };
+  };
+
+  return (
+    <div style={getContainerStyle()}>
+      <style>{`
+        @keyframes fadeInLeft {
+          from { opacity: 0; transform: translateX(5px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes fadeInRight {
+          from { opacity: 0; transform: translateX(-5px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+      `}</style>
+      {counters.map((counter, index) => {
+        const isHovered = hoveredCounterId === counter.id;
+        return (
+          <div
+            key={counter.id}
+            style={getCounterStyle(counter, index, isHovered)}
+            onMouseEnter={() => setHoveredCounterId(counter.id)}
+            onMouseLeave={() => setHoveredCounterId(null)}
+          >
+            <div
+              style={getBarStyle(counter, isHovered)}
+              title={`${counter.name}: ${counter.value}/${counter.maxValue}`}
+            >
+              <div style={getBarFillStyle(counter)} />
+              {isHovered && (
+                <input
+                  type="range"
+                  min={counter.minValue ?? 0}
+                  max={counter.maxValue}
+                  value={counter.value}
+                  onChange={(e) => handleCounterChange(counter, parseInt(e.target.value))}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    opacity: 0,
+                    cursor: 'ew-resize',
+                  }}
+                />
+              )}
+              {isHovered && (
+                <span style={getLabelStyle()}>
+                  {counter.icon && <span style={{ marginRight: '2px' }}>{counter.icon}</span>}
+                  {counter.name}
+                </span>
+              )}
+              {isHovered && (
+                <span style={getValueStyle()}>
+                  {counter.value}/{counter.maxValue}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 export const GameObjectsRenderer = memo(({
   visibleTableObjects,
@@ -309,6 +529,18 @@ export const GameObjectsRenderer = memo(({
             showThickness={true}
             tokenName={(token as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
             fontColor={(token as any).fontColor || 'white'}
+          />
+
+          {/* Token Counters Display */}
+          <TokenCountersDisplay
+            counters={(obj as any).counters || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.counters) || []}
+            counterDisplay={(obj as any).counterDisplay || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.counterDisplay)}
+            tokenWidth={v2p(token.width)}
+            tokenHeight={v2p(token.height)}
+            pixelsPerVU={pixelsPerVU}
+            isGM={isGM}
+            tokenId={obj.id}
+            dispatch={dispatch}
           />
 
           {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}

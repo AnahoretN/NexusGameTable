@@ -1,9 +1,9 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate, TokenState } from '../types';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate, TokenState, TokenCounter, TokenCounterPosition } from '../types';
 
-import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, RotateCcw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize, Upload, Loader2, Sparkles } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, RotateCcw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize, Upload, Loader2, Sparkles, Hash } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { DiceValuesSettings } from './DiceValuesSettings';
 import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from '../utils/gridUtils';
@@ -192,7 +192,7 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   }
 }
 
-type Tab = 'general' | 'values' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups' | 'states';
+type Tab = 'general' | 'values' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups' | 'states' | 'counters';
 
 const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch, zIndex }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
@@ -346,6 +346,23 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
     (tokenArchetype.type === ItemType.TOKEN_TYPE || tokenArchetype.type === ItemType.TOKEN)
       ? (tokenArchetype.states ? tokenArchetype.states.map(s => ({ ...s })) : [])
       : []
+  );
+
+  // Initialize counters for tokens and token types
+  const [counters, setCounters] = useState<TokenCounter[]>(
+    (tokenArchetype.type === ItemType.TOKEN_TYPE || tokenArchetype.type === ItemType.TOKEN)
+      ? (tokenArchetype.counters ? tokenArchetype.counters.map(c => ({ ...c })) : [])
+      : []
+  );
+
+  // Counter display settings
+  const [counterPosition, setCounterPosition] = useState<TokenCounterPosition>(
+    tokenArchetype.counterDisplay?.position || 'below'
+  );
+  const [counterShowForPlayers, setCounterShowForPlayers] = useState<boolean>(
+    tokenArchetype.counterDisplay?.showForPlayers !== undefined
+      ? tokenArchetype.counterDisplay.showForPlayers
+      : true
   );
 
   // Groups state
@@ -1288,6 +1305,56 @@ setGridDebugInfo(null);
     setData(prev => ({ ...prev, states: updated } as TableObject));
   };
 
+  // Counter management functions for tokens and token types
+  const addCounter = () => {
+    const newCounter: TokenCounter = {
+      id: `counter-${Date.now()}`,
+      name: `Counter ${counters.length + 1}`,
+      value: 10,
+      maxValue: 10,
+      minValue: 0,
+      color: '#ef4444',
+      icon: undefined,
+      showValue: true,
+      showBar: true
+    };
+
+    const updatedCounters = [...counters, newCounter];
+    setCounters(updatedCounters);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, counters: updatedCounters } as TableObject));
+  };
+
+  const updateCounter = (index: number, field: keyof TokenCounter, value: any) => {
+    const updated = [...counters];
+    updated[index] = { ...updated[index], [field]: value };
+    setCounters(updated);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, counters: updated } as TableObject));
+  };
+
+  const removeCounter = (index: number) => {
+    const updated = counters.filter((_, i) => i !== index);
+    setCounters(updated);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, counters: updated } as TableObject));
+  };
+
+  // Update counter display settings
+  const updateCounterDisplay = (field: 'position' | 'showForPlayers', value: any) => {
+    if (field === 'position') {
+      setCounterPosition(value as TokenCounterPosition);
+    } else if (field === 'showForPlayers') {
+      setCounterShowForPlayers(value as boolean);
+    }
+    // Update data
+    const counterDisplay = {
+      position: field === 'position' ? value : counterPosition,
+      showForPlayers: field === 'showForPlayers' ? value : counterShowForPlayers
+    };
+    setData(prev => ({ ...prev, counterDisplay } as TableObject));
+  };
+
   const modalContent = (
     <div className={`fixed inset-0 ${zIndex || 'z-[100005]'} flex items-center justify-center bg-black/40`}>
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
@@ -1330,6 +1397,18 @@ setGridDebugInfo(null);
               }`}
             >
               <Sparkles size={16} /> {translate('States', language as Locale)}
+            </button>
+          )}
+          {(isToken || isArchetype) && (
+            <button
+              onClick={() => setActiveTab('counters')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'counters'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Hash size={16} /> {translate('Counters', language as Locale)}
             </button>
           )}
           {isDeck && (
@@ -3593,6 +3672,184 @@ setGridDebugInfo(null);
                     </div>
                   ))}
                 </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'counters' && (
+            <div className="space-y-4">
+              {/* Counter Display Settings */}
+              <div className="border border-slate-600 rounded-lg p-3 bg-slate-800/50">
+                <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Counter Display', language as Locale)}</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Position */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Position', language as Locale)}</label>
+                    <select
+                      value={counterPosition}
+                      onChange={(e) => updateCounterDisplay('position', e.target.value as TokenCounterPosition)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                    >
+                      <option value="above">{translate('Above Token', language as Locale)}</option>
+                      <option value="below">{translate('Below Token', language as Locale)}</option>
+                      <option value="perimeter">{translate('Around Token', language as Locale)}</option>
+                    </select>
+                  </div>
+                  {/* Show for Players */}
+                  <div className="flex items-center gap-2 pt-5">
+                    <input
+                      type="checkbox"
+                      id="counterShowForPlayers"
+                      checked={counterShowForPlayers}
+                      onChange={(e) => updateCounterDisplay('showForPlayers', e.target.checked)}
+                      className="accent-purple-500"
+                    />
+                    <label htmlFor="counterShowForPlayers" className="text-sm text-gray-300">
+                      {translate('Show for Players', language as Locale)}
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Counters List */}
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-gray-300">{translate('Counters', language as Locale)}</h4>
+                <button
+                  onClick={addCounter}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-medium rounded transition-colors"
+                >
+                  <Plus size={14} /> {translate('Add Counter', language as Locale)}
+                </button>
+              </div>
+
+              {counters.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  {translate('No counters configured. Click "Add Counter" to create one.', language as Locale)}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {counters.map((counter, index) => (
+                    <div key={counter.id} className="border border-slate-600 rounded-lg p-3 bg-slate-800/50">
+                      {/* Counter header with name, color, and delete button */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <input
+                          type="text"
+                          value={counter.name}
+                          onChange={(e) => updateCounter(index, 'name', e.target.value)}
+                          className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm font-medium"
+                          placeholder={translate('Counter name', language as Locale)}
+                        />
+                        {/* Color Picker */}
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="color"
+                            value={counter.color || '#ef4444'}
+                            onChange={(e) => updateCounter(index, 'color', e.target.value)}
+                            className="w-8 h-8 rounded cursor-pointer border-0"
+                            title={translate('Counter Color', language as Locale)}
+                          />
+                        </div>
+                        {/* Icon Input */}
+                        <input
+                          type="text"
+                          value={counter.icon || ''}
+                          onChange={(e) => updateCounter(index, 'icon', e.target.value)}
+                          className="w-12 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm text-center"
+                          placeholder={translate('Icon', language as Locale)}
+                          title={translate('Emoji icon (optional)', language as Locale)}
+                        />
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => removeCounter(index)}
+                          className="w-8 h-8 rounded bg-red-600 hover:bg-red-500 text-white flex items-center justify-center transition-colors"
+                          title={translate('Delete Counter', language as Locale)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      {/* Counter Values */}
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        {/* Current Value */}
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Value', language as Locale)}</label>
+                          <input
+                            type="number"
+                            value={counter.value}
+                            onChange={(e) => updateCounter(index, 'value', parseInt(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+                        {/* Max Value */}
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Max', language as Locale)}</label>
+                          <input
+                            type="number"
+                            value={counter.maxValue}
+                            onChange={(e) => updateCounter(index, 'maxValue', parseInt(e.target.value) || 10)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+                        {/* Min Value */}
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Min', language as Locale)}</label>
+                          <input
+                            type="number"
+                            value={counter.minValue ?? 0}
+                            onChange={(e) => updateCounter(index, 'minValue', parseInt(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Display Options */}
+                      <div className="flex items-center gap-4">
+                        {/* Show Value */}
+                        <label className="flex items-center gap-2 text-sm text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={counter.showValue !== false}
+                            onChange={(e) => updateCounter(index, 'showValue', e.target.checked)}
+                            className="accent-purple-500"
+                          />
+                          {translate('Show Value', language as Locale)}
+                        </label>
+                        {/* Show Bar */}
+                        <label className="flex items-center gap-2 text-sm text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={counter.showBar !== false}
+                            onChange={(e) => updateCounter(index, 'showBar', e.target.checked)}
+                            className="accent-purple-500"
+                          />
+                          {translate('Show Bar', language as Locale)}
+                        </label>
+                      </div>
+
+                      {/* Preview */}
+                      <div className="mt-3 pt-3 border-t border-slate-600">
+                        <div className="flex items-center gap-2">
+                          {counter.icon && <span className="text-lg">{counter.icon}</span>}
+                          <span className="text-sm font-medium" style={{ color: counter.color || '#ef4444' }}>{counter.name}</span>
+                          {counter.showValue !== false && (
+                            <span className="text-sm text-gray-300">: {counter.value}/{counter.maxValue}</span>
+                          )}
+                          {counter.showBar !== false && (
+                            <div className="flex-1 h-3 bg-slate-700 rounded-full overflow-hidden">
+                              <div
+                                className="h-full transition-all"
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, (counter.value / counter.maxValue) * 100))}%`,
+                                  backgroundColor: counter.color || '#ef4444'
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

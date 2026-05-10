@@ -2,6 +2,38 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.2.3] - 2026-05-10
+
+### ✨ New Features
+
+#### 📊 Token Counters
+**Visual counter bars for tokens**
+
+- **Hover display**: Counter bars appear below tokens when hovered
+- **Value visualization**: Color-coded bars showing current/max values
+- **Interactive adjustment**: Drag to change counter values directly
+- **Multiple counters**: Support for multiple counters per token (HP, mana, etc.)
+- **Labels on hover**: Counter name and value displayed when hovering over the bar
+- **Fixed positioning**: All bars remain centered relative to token, no layout shifts
+- **Z-index layering**: Hovered counter bar appears above other bars
+- **GM-only visibility**: Option to hide counters from players
+
+**Use cases:**
+- Health/HP tracking for RPG tokens
+- Mana/energy resource tracking
+- Status condition indicators
+- Any numeric token attribute
+
+---
+
+### 🔧 Technical Improvements
+
+- **Improved counter bar positioning**: Absolute positioning prevents layout shifts
+- **Better vertical centering**: Counter labels centered relative to bar height
+- **Hover layer management**: Active counter bar has higher z-index
+
+---
+
 ## [0.2.2] - 2026-05-10
 
 ### ✨ New Features

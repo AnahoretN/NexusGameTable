@@ -526,5 +526,21 @@
   "Create Cells": "Создать ячейки",
   "Cancel": "Отмена",
   "Successfully created %s cells!": "Успешно создано ячеек: %s!",
-  "Failed to analyze image. Please try a clearer image.": "Не удалось проанализировать изображение. Попробуйте более четкое изображение."
+  "Failed to analyze image. Please try a clearer image.": "Не удалось проанализировать изображение. Попробуйте более четкое изображение.",
+  "Counter Display": "Отображение счётчиков",
+  "Above Token": "Над токеном",
+  "Below Token": "Под токеном",
+  "Around Token": "Вокруг токена",
+  "Show for Players": "Показывать игрокам",
+  "Add Counter": "Добавить счётчик",
+  "No counters configured. Click \"Add Counter\" to create one.": "Нет настроенных счётчиков. Нажмите \"Добавить счётчик\", чтобы создать.",
+  "Counter name": "Название счётчика",
+  "Counter Color": "Цвет счётчика",
+  "Icon": "Иконка",
+  "Emoji icon (optional)": "Эмодзи иконка (необязательно)",
+  "Delete Counter": "Удалить счётчик",
+  "Max": "Макс",
+  "Min": "Мин",
+  "Show Value": "Показывать значение",
+  "Show Bar": "Показывать полосу"
 }

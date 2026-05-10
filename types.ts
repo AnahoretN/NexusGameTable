@@ -110,6 +110,28 @@ export interface TokenState {
   tooltipText?: string;
 }
 
+// Token Counter - numeric counter attached to a token (e.g., HP, MP, stamina)
+export interface TokenCounter {
+  id: string;
+  name: string; // Counter name (e.g., "HP", "Mana", "Stamina")
+  value: number; // Current value
+  maxValue: number; // Maximum value
+  minValue?: number; // Minimum value (default 0)
+  color?: string; // Counter display color (default: #ef4444 red)
+  icon?: string; // Optional emoji or icon for the counter
+  showValue?: boolean; // Whether to show numeric value (default true)
+  showBar?: boolean; // Whether to show progress bar (default true)
+}
+
+// Counter layout position for tokens
+export type TokenCounterPosition = 'above' | 'below' | 'perimeter';
+
+// Counter display settings for token/token type
+export interface TokenCounterDisplay {
+  position: TokenCounterPosition; // Where to show counters relative to token
+  showForPlayers?: boolean; // Whether players can see counters (default true - GM always sees)
+}
+
 export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'millToBottom' | 'hideTop' | 'showTop' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAll' | 'returnAllAndShuffle' | 'returnAllExceptHands' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport' | 'pin' | 'hide' | 'topDeck' | 'shuffleDeck' | 'searchDeck' | 'piles' | 'draw' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'states' | 'switchState' | 'toggleState1' | 'nextState' | 'previousState';
 export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
@@ -339,6 +361,9 @@ export interface Token extends GameItem {
   // State system - current active state (for individual tokens)
   currentStateId?: string; // ID of the currently active state (from archetype states)
   states?: TokenState[]; // Alternative states for this token (if not using archetype)
+  // Counter system - individual token counters (override archetype counters)
+  counters?: TokenCounter[]; // Counters for this token (HP, MP, etc.)
+  counterDisplay?: TokenCounterDisplay; // How to display counters
 }
 
 // Token Type - a template for creating tokens
@@ -357,6 +382,9 @@ export interface TokenType extends GameItem {
   showName?: boolean; // Show the token name on the token itself
   // State system - alternative states for tokens
   states?: TokenState[]; // List of alternative states available for tokens of this type
+  // Counter system - default counters for spawned tokens
+  counters?: TokenCounter[]; // Default counters for tokens of this type
+  counterDisplay?: TokenCounterDisplay; // How to display counters
 }
 
 // Magnet point tracking - which objects are snapped to which magnet points

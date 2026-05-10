@@ -511,5 +511,21 @@
   "Player Left": "Гулец выйшаў",
   "Settings Changed": "Налады зменены",
   "Restore session to this point?": "Аднавіць сесію да гэтага моманту?",
-  "All changes after this point will be lost.": "Усе змены пасля гэтага моманту будуць страчаны."
+  "All changes after this point will be lost.": "Усе змены пасля гэтага моманту будуць страчаны.",
+  "Counter Display": "Адлюстраванне лічыльнікаў",
+  "Above Token": "Над жэтонам",
+  "Below Token": "Пад жэтонам",
+  "Around Token": "Вакол жэтона",
+  "Show for Players": "Паказваць гульцам",
+  "Add Counter": "Дадаць лічыльнік",
+  "No counters configured. Click \"Add Counter\" to create one.": "Няма наладжаных лічыльнікаў. Націсніце \"Дадаць лічыльнік\", каб стварыць.",
+  "Counter name": "Назва лічыльніка",
+  "Counter Color": "Колер лічыльніка",
+  "Icon": "Іконка",
+  "Emoji icon (optional)": "Эмодзі іконка (неабавязкова)",
+  "Delete Counter": "Выдаліць лічыльнік",
+  "Max": "Макс",
+  "Min": "Мін",
+  "Show Value": "Паказваць значэнне",
+  "Show Bar": "Паказваць паласу"
 }

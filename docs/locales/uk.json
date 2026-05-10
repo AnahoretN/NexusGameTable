@@ -528,5 +528,21 @@
   "Create Cells": "Створити комірки",
   "Cancel": "Скасувати",
   "Successfully created %s cells!": "Успішно створено комірок: %s!",
-  "Failed to analyze image. Please try a clearer image.": "Не вдалося проаналізувати зображення. Спробуйте більш чітке зображення."
+  "Failed to analyze image. Please try a clearer image.": "Не вдалося проаналізувати зображення. Спробуйте більш чітке зображення.",
+  "Counter Display": "Відображення лічильників",
+  "Above Token": "Над жетоном",
+  "Below Token": "Під жетоном",
+  "Around Token": "Навколо жетона",
+  "Show for Players": "Показувати гравцям",
+  "Add Counter": "Додати лічильник",
+  "No counters configured. Click \"Add Counter\" to create one.": "Немає налаштованих лічильників. Натисніть \"Додати лічильник\", щоб створити.",
+  "Counter name": "Назва лічильника",
+  "Counter Color": "Колір лічильника",
+  "Icon": "Іконка",
+  "Emoji icon (optional)": "Емодзі іконка (необов'язково)",
+  "Delete Counter": "Видалити лічильник",
+  "Max": "Макс",
+  "Min": "Мін",
+  "Show Value": "Показувати значення",
+  "Show Bar": "Показувати смугу"
 }
