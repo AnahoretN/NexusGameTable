@@ -1,5 +1,5 @@
 import { t as translate, Locale } from '../utils/translations';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate, TokenState } from '../types';
 
@@ -203,6 +203,11 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   const [gridGenPreview, setGridGenPreview] = useState<string | null>(null);
   const [detectedCells, setDetectedCells] = useState<DetectedCell[]>([]);
   const [gridDebugInfo, setGridDebugInfo] = useState<{ hLines: number; vLines: number } | null>(null);
+
+  // Custom grid unlock state (triple 'i' press within 2 seconds to unlock)
+  const [customGridUnlocked, setCustomGridUnlocked] = useState(false);
+  const [iPressCount, setIPressCount] = useState(0);
+  const iPressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Translation helper for inline translation objects
   const t = (key: { en: string; ru?: string; be?: string; uk?: string; sr?: string }): string => {
@@ -466,6 +471,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   // Reset data when object changes
   useEffect(() => {
     setData({ ...object });
+    setCustomGridUnlocked(false);  // Reset custom grid unlock state when switching objects
     // Initialize piles for decks
     if (object.type === ItemType.DECK) {
       const deckObj = object as Deck;
@@ -544,6 +550,49 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
       setCardRatio(cardH / cardW);
     }
   }, [object]);
+
+  // Handle triple 'i' press within 2 seconds to unlock Custom grid type
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === 'i' || e.key === 'I' || e.key === 'й' || e.key === 'Й') {
+        setIPressCount(prev => {
+          const newCount = prev + 1;
+
+          // Clear existing timeout
+          if (iPressTimeoutRef.current) {
+            clearTimeout(iPressTimeoutRef.current);
+          }
+
+          // Set new timeout to reset count after 2 seconds
+          const timeout = setTimeout(() => {
+            setIPressCount(0);
+          }, 2000);
+          iPressTimeoutRef.current = timeout;
+
+          // Unlock on third press
+          if (newCount === 3) {
+            setCustomGridUnlocked(true);
+            setIPressCount(0);
+            if (iPressTimeoutRef.current) {
+              clearTimeout(iPressTimeoutRef.current);
+              iPressTimeoutRef.current = null;
+            }
+          }
+
+          return newCount;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+      if (iPressTimeoutRef.current) {
+        clearTimeout(iPressTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const update = (field: string, value: any) => {
     setData(prev => ({ ...prev, [field]: value } as TableObject));
@@ -2288,6 +2337,7 @@ setGridDebugInfo(null);
                         <option
                           key={v}
                           value={v}
+                          disabled={v === GridType.CUSTOM && !customGridUnlocked}
                         >
                           {translateGridType(v, language)}
                         </option>
