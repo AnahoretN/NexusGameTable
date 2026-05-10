@@ -2,6 +2,34 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.2.2] - 2026-05-10
+
+### ✨ New Features
+
+#### 🔄 Token State Actions
+**New action buttons for switching token states**
+
+- **State 1/Default**: Toggle between first state and default appearance
+- **Next State**: Cycle forward through states (wraps to default after last)
+- **Previous State**: Cycle backward through states (wraps from default to last)
+- Available in Action Buttons settings for tokens (not in Context Menu)
+- Supports states from archetype or directly on token
+- Localization support for all languages (be, ru, sr, uk)
+
+**Use cases:**
+- Quick health/status toggles for RPG tokens
+- Cycling through conditional states (wounded, poisoned, etc.)
+- Switching between token appearances during gameplay
+
+---
+
+### 🔧 Technical Improvements
+
+- **Removed cache stats logging**: Cleaned up console output from image cache system
+- **Improved Token interface**: Added `states` property for direct state support on tokens
+
+---
+
 ## [0.2.1] - 2026-05-04
 
 ### ✨ New Features
