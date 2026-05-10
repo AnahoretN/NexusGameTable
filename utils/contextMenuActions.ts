@@ -1,4 +1,4 @@
-import { TableObject, CardLocation, Deck as DeckType, Card, CardPile, TokenShape, ItemType, DiceObject, Counter, NexusCellObject } from '../types';
+import { TableObject, CardLocation, Deck as DeckType, Card, CardPile, TokenShape, ItemType, DiceObject, Counter, NexusCellObject, TokenState, TokenType } from '../types';
 import { handlePlayTopCard, handleShow, handleHide, handleSwingClockwise, handleSwingCounterClockwise } from './objectActionHandlers';
 
 /**
@@ -42,6 +42,76 @@ const getRotationStep = (object: TableObject, allObjects: Record<string, TableOb
   }
   // Default to object's rotationStep or 45
   return (object as any).rotationStep || 45;
+};
+
+/**
+ * Get token with applied state for rendering
+ * This function returns a token object with state properties applied,
+ * but doesn't modify the original token or its base settings
+ */
+export const getTokenWithAppliedState = (
+  token: TokenType,
+  allObjects: Record<string, TableObject>
+): TokenType => {
+  // If no currentStateId, return token as-is
+  const currentStateId = (token as any).currentStateId;
+
+  if (!currentStateId) {
+    return token;
+  }
+
+  // Determine where to get states and fallback values from
+  let archetype: TokenType | null = null;
+  let states: TokenState[] = [];
+
+  if (token.type === ItemType.TOKEN_TYPE) {
+    // Token archetype - use itself as archetype
+    archetype = token;
+    states = token.states || [];
+  } else if ((token as any).archetypeId && allObjects[(token as any).archetypeId]) {
+    // Token copy - get archetype and its states
+    archetype = allObjects[(token as any).archetypeId] as TokenType;
+    states = archetype.states || [];
+  } else {
+    // Token without archetype - check if it has its own states
+    states = token.states || [];
+
+    if (states.length === 0) {
+      return token;
+    }
+
+    // Use token itself as fallback for values
+    archetype = token;
+  }
+
+  // Find the current state
+  const currentState = states.find(s => s.id === currentStateId);
+
+  if (!currentState) {
+    return token;
+  }
+
+  // Create a new object with state properties applied
+  // Priority: state value > archetype value > token value
+  const result: TokenType = { ...token };
+
+  // For each property, use: state value if defined, otherwise archetype value
+  result.content = currentState.content ?? archetype.content;
+  result.color = currentState.color ?? archetype.color;
+  result.borderColor = currentState.borderColor ?? archetype.borderColor;
+  result.borderWidth = currentState.borderWidth ?? archetype.borderWidth;
+  result.opacity = currentState.opacity ?? archetype.opacity;
+  (result as any).borderOpacity = currentState.borderOpacity ?? (archetype as any).borderOpacity;
+  result.shape = currentState.shape ?? archetype.shape;
+  result.width = currentState.width ?? archetype.width;
+  result.height = currentState.height ?? archetype.height;
+  result.rotation = currentState.rotation ?? token.rotation; // rotation stays from token
+  (result as any).rotationStep = currentState.rotationStep ?? (archetype as any).rotationStep;
+  (result as any).fontColor = currentState.fontColor ?? (archetype as any).fontColor;
+  (result as any).showNameOnToken = currentState.showNameOnToken ?? (archetype as any).showNameOnToken;
+  (result as any).tooltipText = currentState.tooltipText ?? (archetype as any).tooltipText;
+
+  return result;
 };
 
 /**
@@ -764,6 +834,50 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     if (action === 'deleteNexusBoard' && object.type === ItemType.NEXUS_CELL) {
       // Menu closing is handled by the component
       dispatch({ type: 'DELETE_OBJECT', payload: { id: (object as NexusCellObject).nexusBoardId }});
+      return;
+    }
+
+    // Handle state switching for tokens
+    if (action.startsWith('switchState-')) {
+      const stateId = action.replace('switchState-', '');
+
+      if (object.type === ItemType.TOKEN || object.type === ItemType.TOKEN_TYPE) {
+        const token = object as TokenType;
+
+        // Get states from archetype if this is a token copy
+        let states: TokenState[] = token.states || [];
+        if (token.archetypeId && state.objects[token.archetypeId]) {
+          const archetype = state.objects[token.archetypeId] as TokenType;
+          states = archetype.states || [];
+        }
+
+        if (stateId === 'default') {
+          // Clear current state - token will use its base values from General tab
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: object.id,
+              updates: { currentStateId: undefined }
+            }
+          });
+        } else {
+          // Apply state by setting only currentStateId
+          // State properties will be applied during rendering, not stored in token
+          const selectedState = states.find(s => s.id === stateId);
+          if (selectedState) {
+            console.log('[switchState] Setting currentStateId:', stateId, 'for object:', object.id, 'state:', selectedState);
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: object.id,
+                updates: { currentStateId: stateId }
+              }
+            });
+          } else {
+            console.log('[switchState] State not found:', stateId, 'available states:', states.map(s => s.id));
+          }
+        }
+      }
       return;
     }
 

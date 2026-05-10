@@ -9,6 +9,7 @@ import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw } from 'lucide-react';
 import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
+import { getTokenWithAppliedState } from '../../utils/contextMenuActions';
 
 interface GameObjectsRendererProps {
   visibleTableObjects: TableObject[];
@@ -32,7 +33,7 @@ interface GameObjectsRendererProps {
   dispatch: React.Dispatch<any>;
 }
 
-export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
+export const GameObjectsRenderer = memo(({
   visibleTableObjects,
   context,
   state,
@@ -257,7 +258,8 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
   };
 
   const renderToken = (obj: TableObject, globalZIndex: number) => {
-    const token = obj as TokenType;
+    const token = getTokenWithAppliedState(obj as TokenType, state.objects);
+
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
     const canDrag = !obj.locked;
     const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
@@ -283,8 +285,8 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
           style={createPositionedStyle(
             v2p(obj.x),
             v2p(obj.y),
-            v2p(obj.width),
-            v2p(obj.height),
+            v2p(token.width),
+            v2p(token.height),
             globalZIndex,
             objLayer,
             {
@@ -295,18 +297,18 @@ export const GameObjectsRenderer = memo<GameObjectsRendererProps>(({
         >
           <SvgTokenShape
             shape={token.shape}
-            width={v2p(obj.width)}
-            height={v2p(obj.height)}
-            color={obj.color || '#e74c3c'}
-            content={obj.content}
+            width={v2p(token.width)}
+            height={v2p(token.height)}
+            color={token.color || '#e74c3c'}
+            content={token.content}
             rotation={0}
-            borderWidth={obj.borderWidth ?? 2}
-            borderColor={(obj as any).borderColor || 'white'}
-            opacity={obj.opacity ?? 100}
-            borderOpacity={obj.borderOpacity ?? 100}
+            borderWidth={token.borderWidth ?? 2}
+            borderColor={(token as any).borderColor || 'white'}
+            opacity={token.opacity ?? 100}
+            borderOpacity={(token as any).borderOpacity ?? 100}
             showThickness={true}
-            tokenName={(obj as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
-            fontColor={(obj as any).fontColor || 'white'}
+            tokenName={(token as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
+            fontColor={(token as any).fontColor || 'white'}
           />
 
           {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}

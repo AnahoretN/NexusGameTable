@@ -56,7 +56,8 @@ export enum GridType {
   NONE = 'NONE',
   SQUARE = 'SQUARE',
   HEX = 'HEX',
-  HEX_HORIZONTAL = 'HEX_HORIZONTAL'
+  HEX_HORIZONTAL = 'HEX_HORIZONTAL',
+  CUSTOM = 'CUSTOM' // Irregular grid from image analysis
 }
 
 export enum CardLocation {
@@ -86,7 +87,30 @@ export interface CardPile {
   showTopCard?: boolean; // Whether to show the top card face on the pile itself
 }
 
-export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'millToBottom' | 'hideTop' | 'showTop' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAll' | 'returnAllAndShuffle' | 'returnAllExceptHands' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport' | 'pin' | 'hide' | 'topDeck' | 'shuffleDeck' | 'searchDeck' | 'piles' | 'draw' | 'playTopCard' | 'millTopCard' | 'toBottom';
+// Token State - alternative appearance/configuration for tokens
+export interface TokenState {
+  id: string;
+  name: string; // State name (e.g., "Wounded", "Poisoned", "Berserk")
+  // Visual properties (can override token defaults)
+  content?: string; // Image URL or Text
+  color?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  opacity?: number;
+  borderOpacity?: number;
+  shape?: TokenShape;
+  width?: number;
+  height?: number;
+  rotation?: number;
+  rotationStep?: number;
+  // Display settings
+  showNameOnToken?: boolean;
+  fontColor?: string;
+  // Optional: custom tooltip text for this state
+  tooltipText?: string;
+}
+
+export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'millToBottom' | 'hideTop' | 'showTop' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAll' | 'returnAllAndShuffle' | 'returnAllExceptHands' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport' | 'pin' | 'hide' | 'topDeck' | 'shuffleDeck' | 'searchDeck' | 'piles' | 'draw' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'states' | 'switchState';
 export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
 // Alternative card back settings (per-card)
@@ -312,6 +336,8 @@ export interface Token extends GameItem {
   // Grid cell magnetism optimization - store direct reference to snapped cell
   gridCellKey?: string; // Format: "boardId:col,row" for quick lookup
   fromPoolPanel?: string; // ID of pool panel this token was picked up from (if any)
+  // State system - current active state (for individual tokens)
+  currentStateId?: string; // ID of the currently active state (from archetype states)
 }
 
 // Token Type - a template for creating tokens
@@ -328,6 +354,8 @@ export interface TokenType extends GameItem {
   maxCopies?: number; // Maximum number of copies allowed (0 = unlimited)
   // Display settings
   showName?: boolean; // Show the token name on the token itself
+  // State system - alternative states for tokens
+  states?: TokenState[]; // List of alternative states available for tokens of this type
 }
 
 // Magnet point tracking - which objects are snapped to which magnet points
@@ -458,6 +486,24 @@ export interface Counter extends GameItem {
   fromPoolPanel?: string; // ID of pool panel this counter was picked up from (if any)
 }
 
+// Point type for polygons and other 2D coordinates
+export interface Point {
+  x: number;
+  y: number;
+}
+
+// Custom grid cell for irregular grids (from image analysis)
+export interface CustomGridCell {
+  id: string;           // Unique cell ID
+  x: number;            // X position relative to board (0-1 range for normalized, or pixels)
+  y: number;            // Y position relative to board
+  width: number;        // Cell width
+  height: number;       // Cell height
+  shape: 'square' | 'circle' | 'polygon'; // Cell shape
+  polygon?: Point[];    // Polygon points for irregular shapes (if shape === 'polygon')
+  magnetPoints?: MagnetPoint[]; // Objects snapped to this cell
+}
+
 export interface Board extends GameItem {
   type: ItemType.BOARD;
   shape: TokenShape;
@@ -471,6 +517,10 @@ export interface Board extends GameItem {
   snapRotationToGrid?: boolean; // Apply board rotation to snapped objects
   linkGridSize?: boolean; // Remember proportions button state for grid settings
   fromPoolPanel?: string; // ID of pool panel this board was picked up from (if any)
+
+  // Custom grid for irregular layouts (from image analysis)
+  customGridCells?: CustomGridCell[]; // Array of custom cells when gridType === CUSTOM
+  customGridImage?: string; // Original image URL used for grid generation (for reference)
 
   // Grid cell magnetism system - stores magnet points for each grid cell
   gridCellMagnetPoints?: Record<string, GridCellMagnetPoints>; // Key: "col,row" string

@@ -174,11 +174,79 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         }
     }, [gridHeight, boardToken.gridHeight, isHexGrid, isHexHorizontalGrid, gridSize, actualGridWidth]);
 
+    const isCustomGrid = boardToken.gridType === GridType.CUSTOM;
+
     // Grid overlay - use proper grid components for better rendering
     // Hide grid overlay during resize for performance
     const gridContent = shouldShowGrid && !isResizing && (
         <>
-            {(isHexGrid || isHexHorizontalGrid) ? (
+            {isCustomGrid ? (
+                // Custom grid from image analysis
+                <svg
+                    width={actualWidth * zoom}
+                    height={actualHeight * zoom}
+                    style={{ position: 'absolute', top: 0, left: 0 }}
+                >
+                    {(boardToken as any).customGridCells?.map((cell: any) => {
+                        const x = cell.x * actualWidth * zoom;
+                        const y = cell.y * actualHeight * zoom;
+                        const w = cell.width * actualWidth * zoom;
+                        const h = cell.height * actualHeight * zoom;
+
+                        // Draw cell based on shape
+                        if (cell.shape === 'circle') {
+                            return (
+                                <circle
+                                    key={cell.id}
+                                    cx={x + w / 2}
+                                    cy={y + h / 2}
+                                    r={Math.min(w, h) / 2}
+                                    fill="none"
+                                    stroke="rgba(255,255,255,0.5)"
+                                    strokeWidth={1.5}
+                                />
+                            );
+                        } else if (cell.shape === 'hex') {
+                            // Draw hexagon
+                            const cx = x + w / 2;
+                            const cy = y + h / 2;
+                            const r = Math.min(w, h) / 2;
+                            // Hexagon vertices (pointy-top)
+                            const hexPoints = [];
+                            for (let i = 0; i < 6; i++) {
+                                const angle = (Math.PI / 3) * i - Math.PI / 6;
+                                const px = cx + r * Math.cos(angle);
+                                const py = cy + r * Math.sin(angle);
+                                hexPoints.push(`${px},${py}`);
+                            }
+
+                            return (
+                                <polygon
+                                    key={cell.id}
+                                    points={hexPoints.join(' ')}
+                                    fill="none"
+                                    stroke="rgba(255,255,255,0.5)"
+                                    strokeWidth={1.5}
+                                />
+                            );
+                        } else {
+                            // Default: draw rectangle/square
+                            return (
+                                <rect
+                                    key={cell.id}
+                                    x={x}
+                                    y={y}
+                                    width={w}
+                                    height={h}
+                                    fill="none"
+                                    stroke="rgba(255,255,255,0.5)"
+                                    strokeWidth={1.5}
+                                />
+                            );
+                        }
+                    })}
+                </svg>
+            ) : (isHexGrid || isHexHorizontalGrid) ? (
                 <HexGridMemo
                     width={actualWidth * zoom}
                     height={actualHeight * zoom}

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer, NexusCellObject } from '../types';
-import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, RotateCcw, Pin, ImageDown, CornerDownRight, Check, Plus, Users } from 'lucide-react';
+import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer, NexusCellObject, TokenState, TokenType } from '../types';
+import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, RotateCcw, Pin, ImageDown, CornerDownRight, Check, Plus, Users, Sparkles } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 import { useGame } from '../store/GameContext';
 import { useHyperscaleLayers } from '../store/contexts';
@@ -114,6 +114,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
   const [topDeckSubmenuOpen, setTopDeckSubmenuOpen] = useState(false);
   const [moveSubmenuOpen, setMoveSubmenuOpen] = useState(false);
   const [returnSubmenuOpen, setReturnSubmenuOpen] = useState(false);
+  const [statesSubmenuOpen, setStatesSubmenuOpen] = useState(false);
   const submenuRef = React.useRef<HTMLDivElement>(null);
 
   // Store computed positions for main menu and submenus
@@ -131,6 +132,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
   const topDeckSubmenuRef = React.useRef<HTMLDivElement>(null);
   const moveSubmenuRef = React.useRef<HTMLDivElement>(null);
   const returnSubmenuRef = React.useRef<HTMLDivElement>(null);
+  const statesSubmenuRef = React.useRef<HTMLDivElement>(null);
 
   // Helper to get card settings from deck (cards always inherit from deck)
   const getCardSettings = useCallback((card: Card) => {
@@ -299,6 +301,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         setTopDeckSubmenuOpen(false);
         setMoveSubmenuOpen(false);
         setReturnSubmenuOpen(false);
+        setStatesSubmenuOpen(false);
         setSubmenuPositions({});
       }
     };
@@ -334,7 +337,8 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       topDeck: topDeckSubmenuRef,
       piles: pilesSubmenuRef,
       moveTo: moveSubmenuRef,
-      returnAll: returnSubmenuRef
+      returnAll: returnSubmenuRef,
+      states: statesSubmenuRef
     };
 
     const openSubmenus: string[] = [];
@@ -344,6 +348,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     if (pilesSubmenuOpen) openSubmenus.push('piles');
     if (moveSubmenuOpen) openSubmenus.push('moveTo');
     if (returnSubmenuOpen) openSubmenus.push('returnAll');
+    if (statesSubmenuOpen) openSubmenus.push('states');
 
     const updateDimensions = () => {
       const dimensions: Record<string, { width: number; height: number }> = {};
@@ -413,6 +418,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     if (pilesSubmenuOpen) openSubmenus.push('piles');
     if (moveSubmenuOpen) openSubmenus.push('moveTo');
     if (returnSubmenuOpen) openSubmenus.push('returnAll');
+    if (statesSubmenuOpen) openSubmenus.push('states');
 
     // Clear positions when all submenus are closed
     if (openSubmenus.length === 0) {
@@ -451,7 +457,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     });
 
     setSubmenuPositions(positions);
-  }, [layerSubmenuOpen, rotateSubmenuOpen, topDeckSubmenuOpen, pilesSubmenuOpen, moveSubmenuOpen, returnSubmenuOpen, submenuDimensions]);
+  }, [layerSubmenuOpen, rotateSubmenuOpen, topDeckSubmenuOpen, pilesSubmenuOpen, moveSubmenuOpen, returnSubmenuOpen, statesSubmenuOpen, submenuDimensions]);
 
   // "Move to.." section for cards - defined here to be inserted early
   const moveToSection: MenuItem[] = useMemo(() => {
@@ -707,6 +713,47 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         submenuItems: returnSubmenuItems
       }];
     })() : []),
+    // States section for tokens
+    ...((object.type === ItemType.TOKEN || object.type === ItemType.TOKEN_TYPE) && (() => {
+      const token = object as TokenType;
+      const states = token.states || [];
+      if (states.length === 0) return [];
+
+      const currentStateId = (token as any).currentStateId;
+      const currentState = states.find(s => s.id === currentStateId);
+
+      const stateSubmenuItems: MenuItem[] = [
+        // Add "Default" option to clear current state
+        {
+          label: translate('Default', language as Locale),
+          action: 'switchState-default',
+          icon: <RotateCcw size={14} />,
+          visible: true
+        },
+        {
+          label: '-',
+          action: 'separator-states-default',
+          visible: true,
+          isSeparator: true
+        },
+        ...states.map((state) => ({
+          label: state.name,
+          action: `switchState-${state.id}`,
+          icon: state.id === currentStateId ? <Check size={14} /> : <Sparkles size={14} />,
+          visible: true
+        }))
+      ];
+
+      return [{
+        label: translate('States', language as Locale),
+        action: 'states',
+        icon: <Sparkles size={14} />,
+        visible: true,
+        hasSubmenu: true,
+        group: 'objectActions',
+        submenuItems: stateSubmenuItems
+      }];
+    })() || []),
     {
       label: translate('Edit Board', language as Locale),
       action: 'editNexusBoard',
@@ -1079,7 +1126,8 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
               const isTopDeckSubmenu = item.action === 'topDeck';
               const isMoveSubmenu = item.action === 'moveTo';
               const isReturnSubmenu = item.action === 'returnSubmenu';
-              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : isTopDeckSubmenu ? topDeckSubmenuOpen : isMoveSubmenu ? moveSubmenuOpen : isReturnSubmenu ? returnSubmenuOpen : layerSubmenuOpen;
+              const isStatesSubmenu = item.action === 'states';
+              const isSubmenuOpen = isRotateSubmenu ? rotateSubmenuOpen : isPilesSubmenu ? pilesSubmenuOpen : isTopDeckSubmenu ? topDeckSubmenuOpen : isMoveSubmenu ? moveSubmenuOpen : isReturnSubmenu ? returnSubmenuOpen : isStatesSubmenu ? statesSubmenuOpen : layerSubmenuOpen;
 
               const toggleSubmenu = () => {
                 if (isRotateSubmenu) {
@@ -1089,6 +1137,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                   setTopDeckSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
                   setReturnSubmenuOpen(false);
+                  setStatesSubmenuOpen(false);
                 } else if (isPilesSubmenu) {
                   setPilesSubmenuOpen(!pilesSubmenuOpen);
                   setLayerSubmenuOpen(false);
@@ -1096,6 +1145,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                   setTopDeckSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
                   setReturnSubmenuOpen(false);
+                  setStatesSubmenuOpen(false);
                 } else if (isTopDeckSubmenu) {
                   setTopDeckSubmenuOpen(!topDeckSubmenuOpen);
                   setLayerSubmenuOpen(false);
@@ -1103,6 +1153,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                   setPilesSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
                   setReturnSubmenuOpen(false);
+                  setStatesSubmenuOpen(false);
                 } else if (isMoveSubmenu) {
                   setMoveSubmenuOpen(!moveSubmenuOpen);
                   setLayerSubmenuOpen(false);
@@ -1110,6 +1161,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                   setPilesSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
                   setReturnSubmenuOpen(false);
+                  setStatesSubmenuOpen(false);
                 } else if (isReturnSubmenu) {
                   setReturnSubmenuOpen(!returnSubmenuOpen);
                   setLayerSubmenuOpen(false);
@@ -1117,6 +1169,15 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                   setPilesSubmenuOpen(false);
                   setTopDeckSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
+                  setStatesSubmenuOpen(false);
+                } else if (isStatesSubmenu) {
+                  setStatesSubmenuOpen(!statesSubmenuOpen);
+                  setLayerSubmenuOpen(false);
+                  setRotateSubmenuOpen(false);
+                  setPilesSubmenuOpen(false);
+                  setTopDeckSubmenuOpen(false);
+                  setMoveSubmenuOpen(false);
+                  setReturnSubmenuOpen(false);
                 } else {
                   setLayerSubmenuOpen(!layerSubmenuOpen);
                   setRotateSubmenuOpen(false);
@@ -1124,10 +1185,11 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                   setTopDeckSubmenuOpen(false);
                   setMoveSubmenuOpen(false);
                   setReturnSubmenuOpen(false);
+                  setStatesSubmenuOpen(false);
                 }
               };
 
-              const submenuKey = isRotateSubmenu ? 'rotate' : isPilesSubmenu ? 'piles' : isTopDeckSubmenu ? 'topDeck' : isMoveSubmenu ? 'moveTo' : isReturnSubmenu ? 'returnAll' : 'layer';
+              const submenuKey = isRotateSubmenu ? 'rotate' : isPilesSubmenu ? 'piles' : isTopDeckSubmenu ? 'topDeck' : isMoveSubmenu ? 'moveTo' : isReturnSubmenu ? 'returnAll' : isStatesSubmenu ? 'states' : 'layer';
               const submenuPos = submenuPositions[submenuKey];
 
               // Get the correct ref for this submenu
@@ -1137,6 +1199,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
                 if (isTopDeckSubmenu) return topDeckSubmenuRef;
                 if (isMoveSubmenu) return moveSubmenuRef;
                 if (isReturnSubmenu) return returnSubmenuRef;
+                if (isStatesSubmenu) return statesSubmenuRef;
                 return layerSubmenuRef;
               };
 

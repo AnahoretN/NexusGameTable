@@ -1,13 +1,15 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate } from '../types';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate, TokenState } from '../types';
 
-import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, RotateCcw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize, Upload, Loader2, Sparkles } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { DiceValuesSettings } from './DiceValuesSettings';
 import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from '../utils/gridUtils';
 import { CARD_SHAPE_DIMS } from '../constants';
+import { loadImageFromFile, analyzeImageForGridSmart, createDebugPreview, DetectedCell, GridAnalysisOptions } from '../utils/imageGridAnalyzer';
+import { generateUUID } from '../utils/uuid';
 
 // Hex grid constants
 const HEX_RATIO = 1.15;
@@ -32,7 +34,8 @@ function translateGridType(gridType: GridType, language: AppLanguage = 'en'): st
     [GridType.NONE]: 'None',
     [GridType.SQUARE]: 'Square',
     [GridType.HEX]: 'Hex',
-    [GridType.HEX_HORIZONTAL]: 'Hex (Horizontal)'
+    [GridType.HEX_HORIZONTAL]: 'Hex (Horizontal)',
+    [GridType.CUSTOM]: 'Custom (from Image)'
   };
   return translate(lookupKey[gridType], language as Locale);
 }
@@ -44,6 +47,7 @@ function getAvailableActions(language: AppLanguage = 'en'): { id: ContextAction;
     { id: 'clone', label: translate('Clone Object', language as Locale) },
     { id: 'delete', label: translate('Delete Object', language as Locale) },
     { id: 'flip', label: translate('Flip', language as Locale) },
+    { id: 'states', label: translate('States (section)', language as Locale) },
     { id: 'hide', label: translate('Hide/Show', language as Locale) },
     { id: 'lock', label: translate('Lock/Unlock', language as Locale) },
     { id: 'pin', label: translate('Pin/Unpin', language as Locale) },
@@ -123,7 +127,7 @@ function getMoveToActions(language: AppLanguage = 'en'): { id: ContextAction; la
 
 // Actions that should NOT appear as quick action buttons (only in context menu)
 // Submenu actions are excluded since they depend on their parent section (layer/rotate)
-const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['layer', 'rotate', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard'];
+const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['layer', 'rotate', 'moveToHand', 'moveToTopDeck', 'moveToBottomDeck', 'moveToDiscard', 'states'];
 
 // Check if an action can be shown as an action button
 function isActionButtonAllowed(action: ContextAction): boolean {
@@ -183,11 +187,17 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
   }
 }
 
-type Tab = 'general' | 'values' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups';
+type Tab = 'general' | 'values' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups' | 'states';
 
 const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch, zIndex }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
+
+  // Grid generation from image state
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [gridGenPreview, setGridGenPreview] = useState<string | null>(null);
+  const [detectedCells, setDetectedCells] = useState<DetectedCell[]>([]);
+  const [gridDebugInfo, setGridDebugInfo] = useState<{ hLines: number; vLines: number } | null>(null);
 
   // Translation helper for inline translation objects
   const t = (key: { en: string; ru?: string; be?: string; uk?: string; sr?: string }): string => {
@@ -271,7 +281,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   // Exclude section headers from click actions (note: showTop is NOT a section, it's a concrete action)
   // Note: rotateClockwise, rotateCounterClockwise, swingClockwise, swingCounterClockwise are NOT in SECTION_ACTIONS
   // because they should be available in Double Click Action and Action Buttons, just NOT in Context Menu Actions
-  const SECTION_ACTIONS: ContextAction[] = ['layer', 'rotate', 'topDeck', 'piles', 'moveTo', 'returnAll'];
+  const SECTION_ACTIONS: ContextAction[] = ['layer', 'rotate', 'topDeck', 'piles', 'moveTo', 'returnAll', 'states'];
   const CLICK_ACTIONS = [
     { id: 'none' as const, label: translate('None', language as Locale) },
     ...AVAILABLE_ACTIONS.filter(a => !SECTION_ACTIONS.includes(a.id)).map(a => ({ id: a.id, label: a.label }))
@@ -311,6 +321,14 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
         size: 1
       }
     ]) : []
+  );
+
+  // Initialize states for token types (archetypes)
+  const tokenArchetype = data as TokenType;
+  const [states, setStates] = useState<TokenState[]>(
+    (tokenArchetype.type === ItemType.TOKEN_TYPE || tokenArchetype.type === ItemType.TOKEN)
+      ? (tokenArchetype.states ? tokenArchetype.states.map(s => ({ ...s })) : [])
+      : []
   );
 
   // Groups state
@@ -483,6 +501,13 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
         setTextCardsFontSize('14');
         setTextCardsUseSpriteSheet(false);
       }
+    }
+
+    // Initialize states for token types (archetypes) and tokens
+    if (object.type === ItemType.TOKEN_TYPE || object.type === ItemType.TOKEN) {
+      const tokenObj = object as TokenType;
+      // Deep copy states to avoid mutating the original object
+      setStates(tokenObj.states ? tokenObj.states.map(s => ({ ...s })) : []);
     }
 
     // Initialize ratios for proportional resize
@@ -703,6 +728,11 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
       (toSave as Deck).spriteConfig = spriteConfig || undefined;
     }
 
+    // Add states for token types (archetypes) and tokens
+    if (toSave.type === ItemType.TOKEN_TYPE || toSave.type === ItemType.TOKEN) {
+      (toSave as TokenType).states = states;
+    }
+
     // If saving a token type (archetype), dispatch event to update all token-copies
     if (isArchetype) {
       const archetypeId = data.id;
@@ -871,6 +901,140 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
     onClose();
   };
 
+  // Handle grid generation from image
+  const handleGenerateGridFromImage = async (file: File) => {
+    if (!isBoard) return;
+
+    setIsAnalyzingImage(true);
+    setGridGenPreview(null);
+    setDetectedCells([]);
+    setGridDebugInfo(null);
+
+    try {
+      // Load and analyze image
+      const imageData = await loadImageFromFile(file);
+
+      // Configure analysis options - finds individual enclosed cells
+      const options: GridAnalysisOptions = {
+        edgeThreshold: 30,         // Edge detection threshold (lower = more sensitive)
+        minCellSize: 150,          // Minimum cell area (lowered to detect smaller cells)
+        maxCellSize: 300000,       // Maximum cell area
+        simplifyTolerance: 0.02,   // Polygon simplification
+        minAspectRatio: 0.15,      // Min aspect ratio (allows narrower cells)
+        maxAspectRatio: 6.0        // Max aspect ratio (allows wider cells)
+      };
+
+      // Use smart analysis that tries multiple thresholds
+      const result = analyzeImageForGridSmart(imageData, options);
+
+      // Create debug preview canvas showing detected cells
+      const previewCanvas = document.createElement('canvas');
+      previewCanvas.width = result.imageWidth;
+      previewCanvas.height = result.imageHeight;
+
+      // Create debug preview (empty arrays for lines since we don't use line detection anymore)
+      createDebugPreview(previewCanvas, imageData, [], [], result.cells);
+
+      setGridGenPreview(previewCanvas.toDataURL());
+
+      setDetectedCells(result.cells);
+      if (result.debugInfo) {
+        setGridDebugInfo({
+          hLines: result.debugInfo.regionsFound,
+          vLines: result.debugInfo.cellsAfterFilter
+        });
+      }
+    } catch (error) {
+      console.error('Failed to analyze image:', error);
+      alert(t({ en: 'Failed to analyze image. Please try a clearer image.', ru: 'Не удалось проанализировать изображение. Попробуйте более четкое изображение.' }));
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
+
+  // Confirm and create cells from detected grid
+  const handleConfirmGridGeneration = () => {
+    if (!isBoard || detectedCells.length === 0) return;
+
+    const board = data as Board;
+    const boardWidth = board.width || 500;
+    const boardHeight = board.height || 500;
+
+    // Calculate scale factor to fit detected cells within board dimensions
+    // with some padding (5% on each side)
+    const padding = 0.05;
+    const usableWidth = boardWidth * (1 - padding);
+    const usableHeight = boardHeight * (1 - padding);
+
+    // Get the bounding box of all detected cells
+    const minX = Math.min(...detectedCells.map(c => c.x));
+    const minY = Math.min(...detectedCells.map(c => c.y));
+    const maxX = Math.max(...detectedCells.map(c => c.x + c.width));
+    const maxY = Math.max(...detectedCells.map(c => c.y + c.height));
+    const cellsWidth = maxX - minX;
+    const cellsHeight = maxY - minY;
+
+    // Avoid division by zero
+    if (cellsWidth === 0 || cellsHeight === 0) {
+      alert(t({ en: 'Failed to detect valid cells.', ru: 'Не удалось обнаружить корректные ячейки.' }));
+      return;
+    }
+
+    // Calculate scale to fit cells within board
+    const scaleX = usableWidth / cellsWidth;
+    const scaleY = usableHeight / cellsHeight;
+    const scale = Math.min(scaleX, scaleY, 3); // Cap at 3x max scale
+
+    // Calculate offset to center cells on board
+    const offsetX = (boardWidth - cellsWidth * scale) / 2 - minX * scale;
+    const offsetY = (boardHeight - cellsHeight * scale) / 2 - minY * scale;
+
+    // Convert detected cells to custom grid cells (normalized coordinates 0-1)
+    const customGridCells = detectedCells.map((cell, index) => {
+      // Calculate position in board coordinates
+      const cellX = offsetX + (cell.x * scale);
+      const cellY = offsetY + (cell.y * scale);
+      const cellWidth = Math.max(10, cell.width * scale); // Minimum 10vu
+      const cellHeight = Math.max(10, cell.height * scale);
+
+      // Normalize to 0-1 range for storage (relative to board size)
+      const normalizedX = cellX / boardWidth;
+      const normalizedY = cellY / boardHeight;
+      const normalizedWidth = cellWidth / boardWidth;
+      const normalizedHeight = cellHeight / boardHeight;
+
+      return {
+        id: `cell-${index}-${Date.now()}`,
+        x: normalizedX,
+        y: normalizedY,
+        width: normalizedWidth,
+        height: normalizedHeight,
+        shape: cell.shape,
+        polygon: cell.polygon
+      };
+    });
+
+    // Update board with custom grid
+    updateMultiple({
+      gridType: GridType.CUSTOM,
+      customGridCells: customGridCells,
+      showGrid: true
+    });
+
+    // Close preview and show success message
+    setGridGenPreview(null);
+    setDetectedCells([]);
+setGridDebugInfo(null);
+
+    alert(t({
+      en: `Successfully created ${customGridCells.length} grid cells!`,
+      ru: `Успешно создано ${customGridCells.length} ячеек сетки!`,
+      uk: `Успішно створено ${customGridCells.length} комірок сітки!`,
+      be: `Паспяхова створана ${customGridCells.length} ячэек сеткі!`,
+      sr: `Успешно креирано ${customGridCells.length} ћелија мреже!`
+    }));
+  };
+
   const isToken = data.type === ItemType.TOKEN;
   const isArchetype = data.type === ItemType.TOKEN_TYPE;
   const isBoard = data.type === ItemType.BOARD;
@@ -929,6 +1093,140 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
     setData(prev => ({ ...prev, piles: updated } as TableObject));
   };
 
+  // State management functions for token archetypes
+  const addState = () => {
+    const token = data as TokenType;
+
+    // Create new state with default values inherited from the token archetype
+    // This way users only need to override the properties they want to change
+    const newState: TokenState = {
+      id: `state-${Date.now()}`,
+      name: `State ${states.length + 1}`,
+      // Inherit visual properties from token as starting point
+      content: token.content,
+      color: token.color,
+      borderColor: token.borderColor,
+      borderWidth: token.borderWidth,
+      opacity: token.opacity,
+      borderOpacity: (token as any).borderOpacity,
+      shape: token.shape,
+      width: token.width,
+      height: token.height,
+      rotationStep: (token as any).rotationStep,
+      showNameOnToken: (token as any).showNameOnToken,
+      fontColor: (token as any).fontColor,
+      tooltipText: (token as any).tooltipText,
+    };
+
+    // Remove undefined values to keep state clean (optional properties will use token defaults)
+    const cleanedState: TokenState = {
+      id: newState.id,
+      name: newState.name,
+    };
+
+    // Only add properties that have defined values
+    if (newState.content !== undefined) cleanedState.content = newState.content;
+    if (newState.color !== undefined) cleanedState.color = newState.color;
+    if (newState.borderColor !== undefined) cleanedState.borderColor = newState.borderColor;
+    if (newState.borderWidth !== undefined) cleanedState.borderWidth = newState.borderWidth;
+    if (newState.opacity !== undefined) cleanedState.opacity = newState.opacity;
+    if (newState.borderOpacity !== undefined) cleanedState.borderOpacity = newState.borderOpacity;
+    if (newState.shape !== undefined) cleanedState.shape = newState.shape;
+    if (newState.width !== undefined) cleanedState.width = newState.width;
+    if (newState.height !== undefined) cleanedState.height = newState.height;
+    if (newState.rotationStep !== undefined) cleanedState.rotationStep = newState.rotationStep;
+    if (newState.showNameOnToken !== undefined) cleanedState.showNameOnToken = newState.showNameOnToken;
+    if (newState.fontColor !== undefined) cleanedState.fontColor = newState.fontColor;
+    if (newState.tooltipText !== undefined) cleanedState.tooltipText = newState.tooltipText;
+
+    const updatedStates = [...states, cleanedState];
+    setStates(updatedStates);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, states: updatedStates } as TableObject));
+  };
+
+  const updateState = (index: number, field: keyof TokenState, value: any) => {
+    const updated = [...states];
+    updated[index] = { ...updated[index], [field]: value };
+    setStates(updated);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, states: updated } as TableObject));
+  };
+
+  // Reset a state field to the token's default value
+  const resetStateField = (index: number, field: keyof TokenState) => {
+    const token = data as TokenType;
+    const updated = [...states];
+
+    // Get the default value from the token for this field
+    let defaultValue: any;
+    switch (field) {
+      case 'content': defaultValue = token.content; break;
+      case 'color': defaultValue = token.color; break;
+      case 'borderColor': defaultValue = token.borderColor; break;
+      case 'borderWidth': defaultValue = token.borderWidth; break;
+      case 'opacity': defaultValue = token.opacity; break;
+      case 'borderOpacity': defaultValue = (token as any).borderOpacity; break;
+      case 'shape': defaultValue = token.shape; break;
+      case 'width': defaultValue = token.width; break;
+      case 'height': defaultValue = token.height; break;
+      case 'rotationStep': defaultValue = (token as any).rotationStep; break;
+      case 'showNameOnToken': defaultValue = (token as any).showNameOnToken; break;
+      case 'fontColor': defaultValue = (token as any).fontColor; break;
+      case 'tooltipText': defaultValue = (token as any).tooltipText; break;
+      default: return; // Unknown field, do nothing
+    }
+
+    // If the token's value is undefined, remove the field from state
+    // Otherwise, set it to the token's value
+    if (defaultValue === undefined) {
+      const { [field]: _, ...rest } = updated[index];
+      updated[index] = rest as TokenState;
+    } else {
+      updated[index] = { ...updated[index], [field]: defaultValue };
+    }
+
+    setStates(updated);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, states: updated } as TableObject));
+  };
+
+  // Check if a state field differs from token's default (for button styling)
+  const isStateFieldDifferent = (index: number, field: keyof TokenState): boolean => {
+    const state = states[index];
+    const token = data as TokenType;
+
+    // Get the default value from token for this field
+    let defaultValue: any;
+    switch (field) {
+      case 'content': defaultValue = token.content; break;
+      case 'color': defaultValue = token.color; break;
+      case 'borderColor': defaultValue = token.borderColor; break;
+      case 'borderWidth': defaultValue = token.borderWidth; break;
+      case 'opacity': defaultValue = (token as any).opacity; break;
+      case 'borderOpacity': defaultValue = (token as any).borderOpacity; break;
+      case 'shape': defaultValue = token.shape; break;
+      case 'width': defaultValue = token.width; break;
+      case 'height': defaultValue = token.height; break;
+      case 'rotationStep': defaultValue = (token as any).rotationStep; break;
+      case 'showNameOnToken': defaultValue = (token as any).showNameOnToken; break;
+      case 'fontColor': defaultValue = (token as any).fontColor; break;
+      case 'tooltipText': defaultValue = (token as any).tooltipText; break;
+      default: return false;
+    }
+
+    // Field is different if it's defined in state and not equal to token's value
+    const stateValue = state[field];
+    return stateValue !== undefined && stateValue !== defaultValue;
+  };
+
+  const removeState = (index: number) => {
+    const updated = states.filter((_, i) => i !== index);
+    setStates(updated);
+    // Also update data to keep in sync
+    setData(prev => ({ ...prev, states: updated } as TableObject));
+  };
+
   const modalContent = (
     <div className={`fixed inset-0 ${zIndex || 'z-[100005]'} flex items-center justify-center bg-black/40`}>
       <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col">
@@ -959,6 +1257,18 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
               }`}
             >
               <Shield size={16} /> {translate('Actions', language as Locale)}
+            </button>
+          )}
+          {(isToken || isArchetype) && (
+            <button
+              onClick={() => setActiveTab('states')}
+              className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                activeTab === 'states'
+                  ? 'bg-slate-700 text-white border-b-2 border-purple-500'
+                  : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Sparkles size={16} /> {translate('States', language as Locale)}
             </button>
           )}
           {isDeck && (
@@ -1145,7 +1455,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                         updateMultiple({ linkObjectSize: newState });
                       }}
                       disabled={isNexusCell}
-                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                      className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors ${
                         isNexusCell
                           ? 'bg-purple-600 border-purple-500 cursor-not-allowed'
                           : linkObjectSize
@@ -1947,10 +2257,17 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                             gridHeight: height
                           });
                           setLinkGridSize(true);  // Force link for flat-top hex grids
+                        } else if (newGridType === GridType.CUSTOM) {
+                          // Custom grid - clear any custom grid cells when switching to CUSTOM
+                          // User will need to generate new ones
+                          updateMultiple({
+                            customGridCells: [],
+                            customGridImage: undefined
+                          });
                         } else {
                           // Not a hex grid (SQUARE or NONE) - unlink proportions (allow independent width/height)
                           setLinkGridSize(false);
-                          updateMultiple({ linkGridSize: false });
+                          updateMultiple({ linkGridSize: false, customGridCells: undefined });
                         }
                       }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
@@ -2023,7 +2340,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                           updateMultiple({ linkGridSize: newState });
                         }}
                         disabled={(data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL}
-                        className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                        className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors ${
                           (data as Board).gridType === GridType.HEX || (data as Board).gridType === GridType.HEX_HORIZONTAL
                             ? 'bg-purple-600 border-purple-500 cursor-not-allowed'
                             : linkGridSize
@@ -2185,6 +2502,99 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Custom Grid Generation from Image - only show for CUSTOM grid type */}
+              {isBoard && (data as Board).gridType === GridType.CUSTOM && (
+                <div className="pt-4 space-y-3">
+                    <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+                      <Sparkles size={14} /> {t({ en: 'Generate Grid from Image', ru: 'Генерация сетки из изображения', uk: 'Генерація сітки зі зображення', be: 'Генерацыя сеткі з выявы', sr: 'Generisanje mreže iz slike' })}
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      {t({ en: 'Upload a schematic image to automatically detect and create grid cells.', ru: 'Загрузите схематическое изображение для автоматического обнаружения и создания ячеек сетки.', uk: 'Завантажте схематичне зображення для автоматичного виявлення та створення комірок сітки.', be: 'Загрузіце схематычна выяўленне для аўтаматычнага выяўлення і стварэння ячэек сеткі.', sr: 'Поставите схематску слику за аутоматско детектовање и стварање ћелија мреже.' })}
+                    </p>
+
+                    {/* Image upload button */}
+                    <div className="flex gap-2">
+                      <label className="flex-1 cursor-pointer bg-blue-600 hover:bg-blue-500 text-white rounded p-2 text-sm flex items-center justify-center gap-2 transition-colors">
+                        <Upload size={14} />
+                        {isAnalyzingImage ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            {t({ en: 'Analyzing...', ru: 'Анализ...', uk: 'Аналіз...', be: 'Аналіз...', sr: 'Анализирам...' })}
+                          </>
+                        ) : (
+                          t({ en: 'Upload Image', ru: 'Загрузить изображение', uk: 'Завантажити зображення', be: 'Загрузіць выяву', sr: 'Постави слику' })
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleGenerateGridFromImage(file);
+                            }
+                          }}
+                          disabled={isAnalyzingImage}
+                        />
+                      </label>
+                    </div>
+
+                    {/* Preview and confirm */}
+                    {gridGenPreview && (
+                      <div className="space-y-2">
+                        <div className="bg-slate-900 rounded p-2">
+                          <img
+                            src={gridGenPreview}
+                            alt="Grid preview"
+                            className="w-full h-auto max-h-48 object-contain"
+                          />
+                        </div>
+                        <div className="text-xs text-gray-400 text-center space-y-1">
+                          <div>
+                            {t({
+                              en: `Detected ${detectedCells.length} cells`,
+                              ru: `Обнаружено ${detectedCells.length} ячеек`,
+                              uk: `Виявлено ${detectedCells.length} комірок`,
+                              be: `Выяўлена ${detectedCells.length} ячэек`,
+                              sr: `Откривено ${detectedCells.length} ћелија`
+                            })}
+                          </div>
+                          {gridDebugInfo && (
+                            <div className="text-gray-500">
+                              {t({
+                                en: `Found ${gridDebugInfo.hLines} regions, ${gridDebugInfo.vLines} cells after filter`,
+                                ru: `Найдено ${gridDebugInfo.hLines} областей, ${gridDebugInfo.vLines} ячеек после фильтра`,
+                                uk: `Знайдено ${gridDebugInfo.hLines} областей, ${gridDebugInfo.vLines} комірок після фільтра`,
+                                be: `Знойдзена ${gridDebugInfo.hLines} абласцей, ${gridDebugInfo.vLines} ячэек пасля фільтра`,
+                                sr: `Пронађено ${gridDebugInfo.hLines} регија, ${gridDebugInfo.vLines} ћелија након филтерирања`
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleConfirmGridGeneration}
+                            className="flex-1 bg-green-600 hover:bg-green-500 text-white rounded p-2 text-sm flex items-center justify-center gap-2 transition-colors"
+                          >
+                            <Check size={14} />
+                            {t({ en: 'Create Cells', ru: 'Создать ячейки', uk: 'Створити комірки', be: 'Стварыць ячэйкі', sr: 'Креирај ћелије' })}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setGridGenPreview(null);
+                              setDetectedCells([]);
+setGridDebugInfo(null);
+                            }}
+                            className="flex-1 bg-slate-700 hover:bg-slate-600 text-white rounded p-2 text-sm flex items-center justify-center gap-2 transition-colors"
+                          >
+                            {t({ en: 'Cancel', ru: 'Отмена', uk: 'Скасувати', be: 'Адмена', sr: 'Откажи' })}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                 </div>
               )}
 
@@ -2448,6 +2858,14 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                       // Cards should ONLY use "Context Menu Actions for Cards" from deck settings
                       // Skip all card-specific actions in the general Context Menu Actions section
                       if (isCard && ['flip', 'layer', 'pin', 'pinToViewport'].includes(action.id)) {
+                        return false;
+                      }
+                      // Tokens should not have flip action - they use States instead
+                      if ((isToken || isArchetype) && action.id === 'flip') {
+                        return false;
+                      }
+                      // Only tokens should have states action
+                      if (!isToken && !isArchetype && action.id === 'states') {
                         return false;
                       }
                       // Exclude rotation and swing actions - they're controlled by 'rotate' section
@@ -2786,6 +3204,337 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
             </div>
           )}
 
+          {activeTab === 'states' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={addState}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-medium rounded transition-colors"
+                >
+                  <Plus size={14} /> {translate('Add State', language as Locale)}
+                </button>
+              </div>
+
+              {states.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  {translate('No states configured. Click "Add State" to create one.', language as Locale)}
+                </div>
+              ) : (
+                <>
+                  {states.map((state, index) => (
+                    <div key={state.id} className="space-y-2 border border-slate-600 rounded-lg p-3 bg-slate-800/50">
+                      {/* State header with name, Font Color, Show name toggle, and delete button */}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={state.name}
+                          onChange={(e) => updateState(index, 'name', e.target.value)}
+                          className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm font-medium"
+                          placeholder={translate('State name', language as Locale)}
+                        />
+                        {/* Font Color */}
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="color"
+                            value={state.fontColor || '#ffffff'}
+                            onChange={(e) => updateState(index, 'fontColor', e.target.value)}
+                            className="w-8 h-7 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                            title={translate('Font Color', language as Locale)}
+                          />
+                          <button
+                            onClick={() => resetStateField(index, 'fontColor')}
+                            className={`w-[26px] h-[26px] rounded border flex items-center justify-center transition-colors shrink-0 ${
+                              isStateFieldDifferent(index, 'fontColor')
+                                ? 'bg-purple-600 border-purple-500'
+                                : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                            }`}
+                            title={translate('Use Token Default', language as Locale)}
+                          >
+                            <RotateCcw size={12} />
+                          </button>
+                        </div>
+                        {/* Show Name on Token toggle */}
+                        <button
+                          onClick={() => updateState(index, 'showNameOnToken', !state.showNameOnToken)}
+                          className={`w-9 h-5 rounded-full transition-colors ${
+                            state.showNameOnToken ? 'bg-green-600' : 'bg-slate-700'
+                          }`}
+                          title={translate('Show name on token', language as Locale)}
+                        >
+                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                            state.showNameOnToken ? 'translate-x-5' : 'translate-x-0.5'
+                          }`} />
+                        </button>
+                        <button
+                          onClick={() => removeState(index)}
+                          className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors"
+                          title={translate('Remove state', language as Locale)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      {/* State properties */}
+                      <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-end">
+                        {/* Width + Height + Rotation Step - side by side */}
+                        <div className="col-span-4 grid grid-cols-3 gap-1">
+                          {/* Width */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Width', language as Locale)}</label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={state.width ?? data.width ?? 0}
+                                onChange={(e) => updateState(index, 'width', Number(e.target.value))}
+                                className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm"
+                                min="0"
+                              />
+                              <button
+                                onClick={() => resetStateField(index, 'width')}
+                                className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+                                  isStateFieldDifferent(index, 'width')
+                                    ? 'bg-purple-600 border-purple-500'
+                                    : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                                }`}
+                                title={translate('Use Token Default', language as Locale)}
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Height */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Height', language as Locale)}</label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={state.height ?? data.height ?? 0}
+                                onChange={(e) => updateState(index, 'height', Number(e.target.value))}
+                                className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm"
+                                min="0"
+                              />
+                              <button
+                                onClick={() => resetStateField(index, 'height')}
+                                className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+                                  isStateFieldDifferent(index, 'height')
+                                    ? 'bg-purple-600 border-purple-500'
+                                    : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                                }`}
+                                title={translate('Use Token Default', language as Locale)}
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Rotation Step */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Rotation Step', language as Locale)} (°)</label>
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={state.rotationStep ?? (data as any).rotationStep ?? 45}
+                                onChange={(e) => updateState(index, 'rotationStep', Number(e.target.value))}
+                                className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-1.5 py-1.5 text-white text-sm"
+                              >
+                                <option value={15}>15°</option>
+                                <option value={30}>30°</option>
+                                <option value={45}>45°</option>
+                                <option value={60}>60°</option>
+                                <option value={90}>90°</option>
+                              </select>
+                              <button
+                                onClick={() => resetStateField(index, 'rotationStep')}
+                                className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+                                  isStateFieldDifferent(index, 'rotationStep')
+                                    ? 'bg-purple-600 border-purple-500'
+                                    : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                                }`}
+                                title={translate('Use Token Default', language as Locale)}
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Color + Border + Shape - side by side, equal width */}
+                        <div className="col-span-4 grid grid-cols-3 gap-1">
+                          {/* Color */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Color', language as Locale)}</label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="color"
+                                value={state.color || '#ffffff'}
+                                onChange={(e) => updateState(index, 'color', e.target.value)}
+                                className="flex-1 min-w-0 h-9 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                              />
+                              <button
+                                onClick={() => resetStateField(index, 'color')}
+                                className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+                                  isStateFieldDifferent(index, 'color')
+                                    ? 'bg-purple-600 border-purple-500'
+                                    : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                                }`}
+                                title={translate('Use Token Default', language as Locale)}
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Border Color */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border', language as Locale)}</label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="color"
+                                value={state.borderColor || '#ffffff'}
+                                onChange={(e) => updateState(index, 'borderColor', e.target.value)}
+                                className="flex-1 min-w-0 h-9 bg-slate-900 border border-slate-700 rounded cursor-pointer"
+                              />
+                              <button
+                                onClick={() => resetStateField(index, 'borderColor')}
+                                className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+                                  isStateFieldDifferent(index, 'borderColor')
+                                    ? 'bg-purple-600 border-purple-500'
+                                    : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                                }`}
+                                title={translate('Use Token Default', language as Locale)}
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Shape */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Shape', language as Locale)}</label>
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={state.shape || ''}
+                                onChange={(e) => updateState(index, 'shape', e.target.value as TokenShape || undefined)}
+                                className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-1.5 py-1.5 text-white text-sm"
+                              >
+                                <option value="">{translate('Default', language as Locale)}</option>
+                                {Object.keys(TokenShape).map(key => (
+                                  <option key={key} value={key}>{key}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => resetStateField(index, 'shape')}
+                                className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
+                                  isStateFieldDifferent(index, 'shape')
+                                    ? 'bg-purple-600 border-purple-500'
+                                    : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                                }`}
+                                title={translate('Use Token Default', language as Locale)}
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Opacity + Border Opacity + Border Width - sliders */}
+                        <div className="col-span-4 grid grid-cols-3 gap-x-2 gap-y-0.5">
+                          {/* Opacity */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Opacity', language as Locale)}</label>
+                            <div className="flex items-center">
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={state.opacity ?? (data as any).opacity ?? 100}
+                                onChange={(e) => updateState(index, 'opacity', parseInt(e.target.value))}
+                                className="flex-1 accent-purple-500"
+                              />
+                              <span className="text-xs text-gray-400 w-6 text-right">{state.opacity ?? (data as any).opacity ?? 100}</span>
+                            </div>
+                            <button
+                              onClick={() => resetStateField(index, 'opacity')}
+                              className="text-xs text-purple-400 hover:text-purple-300 mt-0.5"
+                            >
+                              {translate('Default', language as Locale)}
+                            </button>
+                          </div>
+
+                          {/* Border Opacity */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border Opacity', language as Locale)}</label>
+                            <div className="flex items-center">
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={state.borderOpacity ?? (data as any).borderOpacity ?? 100}
+                                onChange={(e) => updateState(index, 'borderOpacity', parseInt(e.target.value))}
+                                className="flex-1 accent-purple-500"
+                              />
+                              <span className="text-xs text-gray-400 w-6 text-right">{state.borderOpacity ?? (data as any).borderOpacity ?? 100}</span>
+                            </div>
+                            <button
+                              onClick={() => resetStateField(index, 'borderOpacity')}
+                              className="text-xs text-purple-400 hover:text-purple-300 mt-0.5"
+                            >
+                              {translate('Default', language as Locale)}
+                            </button>
+                          </div>
+
+                          {/* Border Width */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Border Width', language as Locale)}</label>
+                            <div className="flex items-center">
+                              <input
+                                type="range"
+                                min="0"
+                                max="20"
+                                value={state.borderWidth ?? (data as any).borderWidth ?? 2}
+                                onChange={(e) => updateState(index, 'borderWidth', parseInt(e.target.value))}
+                                className="flex-1 accent-purple-500"
+                              />
+                              <span className="text-xs text-gray-400 w-6 text-right">{state.borderWidth ?? (data as any).borderWidth ?? 2}</span>
+                            </div>
+                            <button
+                              onClick={() => resetStateField(index, 'borderWidth')}
+                              className="text-xs text-purple-400 hover:text-purple-300 mt-0.5"
+                            >
+                              {translate('Default', language as Locale)}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Content (Image URL) */}
+                        <div className="col-span-4">
+                          <FilePickerInput
+                            value={state.content || ''}
+                            onChange={value => updateState(index, 'content', value)}
+                            label={translate('Image URL', language as Locale)}
+                            className="w-full"
+                          />
+                        </div>
+
+                        {/* Tooltip Text */}
+                        <div className="col-span-4">
+                          <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Tooltip Text', language as Locale)}</label>
+                          <input
+                            type="text"
+                            value={state.tooltipText || ''}
+                            onChange={(e) => updateState(index, 'tooltipText', e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                            placeholder={translate('Use Token Default', language as Locale)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
           {activeTab === 'cards' && (
             <div className="space-y-4">
               {/* Basic Settings - Card dimensions and name position */}
@@ -2932,7 +3681,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
                         // Save to object
                         updateCardSettingsMultiple({ linkCardSize: newState });
                       }}
-                      className={`w-9 h-9 rounded border-2 flex items-center justify-center transition-colors ${
+                      className={`w-[30px] h-[30px] rounded border-2 flex items-center justify-center transition-colors ${
                         linkCardSize
                           ? 'bg-blue-600 border-blue-500 hover:bg-blue-500'
                           : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
@@ -3699,7 +4448,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
 
         {/* Footer */}
         <div className="flex justify-end gap-2 p-4">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded">{translate('Cancel', language as Locale)}</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded">{t({ en: 'Cancel', ru: 'Отмена', uk: 'Скасувати', be: 'Адмена', sr: 'Откажи' })}</button>
           <button
             onClick={handleSave}
             className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded flex items-center gap-2"
@@ -3715,8 +4464,10 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
 };
 
 // Memoize ObjectSettingsModal to prevent unnecessary re-renders 🔥
+// Use shallow comparison for object to detect when it actually changes
 export const ObjectSettingsModal = React.memo<ObjectSettingsModalProps>(ObjectSettingsModalComponent, (prevProps, nextProps) => {
-  return prevProps.object.id === nextProps.object.id &&
+  // Compare all relevant props
+  return prevProps.object === nextProps.object &&
          prevProps.language === nextProps.language &&
          prevProps.diceGroups === nextProps.diceGroups &&
          prevProps.allObjects === nextProps.allObjects;
