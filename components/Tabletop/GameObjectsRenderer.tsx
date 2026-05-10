@@ -6,7 +6,7 @@ import { NexusBoardMemo } from '../NexusBoard';
 import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw } from 'lucide-react';
+import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
 import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 import { getTokenWithAppliedState } from '../../utils/contextMenuActions';
@@ -442,6 +442,102 @@ export const GameObjectsRenderer = memo(({
                   className: 'bg-pink-600 hover:bg-pink-500',
                   title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
                   icon: <Pin size={14} />
+                },
+                // Token State actions
+                toggleState1: {
+                  key: 'toggleState1',
+                  action: () => {
+                    const token = obj as any;
+                    const currentStateId = token.currentStateId;
+                    let states: any[] = [];
+
+                    // Try to get states from token itself first, then from archetype
+                    if (token.states && token.states.length > 0) {
+                      states = token.states;
+                    } else if (token.archetypeId) {
+                      const archetype = state.objects[token.archetypeId];
+                      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+                        states = archetype.states || [];
+                      }
+                    }
+
+                    if (states.length > 0) {
+                      const firstStateId = states[0].id;
+                      const newCurrentStateId = currentStateId === firstStateId ? undefined : firstStateId;
+                      dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: newCurrentStateId } } });
+                    }
+                  },
+                  className: 'bg-violet-600 hover:bg-violet-500',
+                  title: 'State 1/Default',
+                  icon: <Rewind size={14} />
+                },
+                nextState: {
+                  key: 'nextState',
+                  action: () => {
+                    const token = obj as any;
+                    const currentStateId = token.currentStateId;
+                    let states: any[] = [];
+
+                    // Try to get states from token itself first, then from archetype
+                    if (token.states && token.states.length > 0) {
+                      states = token.states;
+                    } else if (token.archetypeId) {
+                      const archetype = state.objects[token.archetypeId];
+                      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+                        states = archetype.states || [];
+                      }
+                    }
+
+                    if (states.length > 0) {
+                      const currentIndex = currentStateId ? states.findIndex(s => s.id === currentStateId) : -1;
+                      const nextIndex = currentIndex + 1;
+                      const newCurrentStateId = nextIndex >= states.length ? undefined : states[nextIndex].id;
+                      dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: newCurrentStateId } } });
+                    }
+                  },
+                  className: 'bg-violet-600 hover:bg-violet-500',
+                  title: 'Next State',
+                  icon: <SkipForward size={14} />
+                },
+                previousState: {
+                  key: 'previousState',
+                  action: () => {
+                    const token = obj as any;
+                    const currentStateId = token.currentStateId;
+                    let states: any[] = [];
+
+                    // Try to get states from token itself first, then from archetype
+                    if (token.states && token.states.length > 0) {
+                      states = token.states;
+                    } else if (token.archetypeId) {
+                      const archetype = state.objects[token.archetypeId];
+                      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+                        states = archetype.states || [];
+                      }
+                    }
+
+                    if (states.length > 0) {
+                      const currentIndex = currentStateId ? states.findIndex(s => s.id === currentStateId) : -1;
+                      // Previous State logic (opposite of Next State):
+                      // -1 (default) → last state
+                      // 0 (state 1) → -1 (default)
+                      // 1 (state 2) → 0 (state 1)
+                      // etc.
+                      if (currentIndex === -1) {
+                        // From default, go to last state
+                        dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: states[states.length - 1].id } } });
+                      } else if (currentIndex === 0) {
+                        // From first state, go to default
+                        dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: undefined } } });
+                      } else {
+                        // From other states, go to previous state
+                        dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: states[currentIndex - 1].id } } });
+                      }
+                    }
+                  },
+                  className: 'bg-violet-600 hover:bg-violet-500',
+                  title: 'Previous State',
+                  icon: <SkipBack size={14} />
                 },
               };
 

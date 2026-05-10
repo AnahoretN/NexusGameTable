@@ -152,7 +152,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
       // Only update if we have a connection and it's different from the current one
       if (conn && conn.peer !== currentSetup) {
-        console.log('[MainMenuContent] Setting manual connection for GameContext:', conn.peer, 'previous:', currentSetup);
         (window as any).__setManualConnection(conn);
         (window as any).__manualConnectionPeer = conn.peer;
       }

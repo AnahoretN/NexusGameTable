@@ -658,6 +658,17 @@ export function executeClickAction(
       handleRoll(obj, context);
       break;
 
+    // Token State actions
+    case 'toggleState1':
+      handleToggleState1(obj, context.dispatch, context.state.objects);
+      break;
+    case 'nextState':
+      handleNextState(obj, context.dispatch, context.state.objects);
+      break;
+    case 'previousState':
+      handlePreviousState(obj, context.dispatch, context.state.objects);
+      break;
+
     // Effect Template actions
     case 'togglePivotEditing':
       handleTogglePivotEditing(obj, context.dispatch);
@@ -678,6 +689,142 @@ export function handleTogglePivotEditing(obj: TableObject, dispatch: Dispatch<Ac
       type: 'TOGGLE_PIVOT_EDITING',
       payload: obj.id
     });
+  }
+}
+
+// ============================================
+// TOKEN STATE ACTIONS
+// ============================================
+
+/**
+ * Toggle between State 1 (first state) and Default (no state)
+ * - If currently on State 1, revert to default
+ * - If on any other state or default, switch to State 1
+ */
+export function handleToggleState1(obj: TableObject, dispatch: Dispatch<Action>, allObjects: Record<string, TableObject>) {
+  if (obj.type === ItemType.TOKEN) {
+    const token = obj as any;
+    const currentStateId = token.currentStateId;
+
+    // Get states from archetype
+    let states: any[] = [];
+    if (token.archetypeId) {
+      const archetype = allObjects[token.archetypeId];
+      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+        states = (archetype as any).states || [];
+      }
+    }
+
+    if (states.length === 0) return;
+
+    const firstStateId = states[0].id;
+
+    // Toggle: if on State 1, go to default; otherwise go to State 1
+    if (currentStateId === firstStateId) {
+      // Revert to default state
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: obj.id, updates: { currentStateId: undefined } }
+      });
+    } else {
+      // Set to State 1
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: obj.id, updates: { currentStateId: firstStateId } }
+      });
+    }
+  }
+}
+
+/**
+ * Switch to next state in the list (cyclic)
+ * - If on default, go to State 1
+ * - If on last state, go to default
+ */
+export function handleNextState(obj: TableObject, dispatch: Dispatch<Action>, allObjects: Record<string, TableObject>) {
+  if (obj.type === ItemType.TOKEN) {
+    const token = obj as any;
+    const currentStateId = token.currentStateId;
+
+    // Get states from archetype
+    let states: any[] = [];
+    if (token.archetypeId) {
+      const archetype = allObjects[token.archetypeId];
+      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+        states = (archetype as any).states || [];
+      }
+    }
+
+    if (states.length === 0) return;
+
+    const currentIndex = currentStateId ? states.findIndex((s: any) => s.id === currentStateId) : -1;
+    const nextIndex = currentIndex + 1;
+
+    if (nextIndex >= states.length) {
+      // Past last state - revert to default
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: obj.id, updates: { currentStateId: undefined } }
+      });
+    } else {
+      // Go to next state
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: obj.id, updates: { currentStateId: states[nextIndex].id } }
+      });
+    }
+  }
+}
+
+/**
+ * Switch to previous state in the list (cyclic)
+ * - If on default, go to last state
+ * - If on State 1, go to default
+ * - If on State 2+, go to previous state
+ */
+export function handlePreviousState(obj: TableObject, dispatch: Dispatch<Action>, allObjects: Record<string, TableObject>) {
+  if (obj.type === ItemType.TOKEN) {
+    const token = obj as any;
+    const currentStateId = token.currentStateId;
+
+    // Get states from archetype or token itself
+    let states: any[] = [];
+    if (token.states && token.states.length > 0) {
+      states = token.states;
+    } else if (token.archetypeId) {
+      const archetype = allObjects[token.archetypeId];
+      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+        states = archetype.states || [];
+      }
+    }
+
+    if (states.length === 0) return;
+
+    const currentIndex = currentStateId ? states.findIndex((s: any) => s.id === currentStateId) : -1;
+    // Previous State logic (opposite of Next State):
+    // -1 (default) → last state
+    // 0 (state 1) → -1 (default)
+    // 1 (state 2) → 0 (state 1)
+    // etc.
+    if (currentIndex === -1) {
+      // From default, go to last state
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: obj.id, updates: { currentStateId: states[states.length - 1].id } }
+      });
+    } else if (currentIndex === 0) {
+      // From first state, go to default
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: obj.id, updates: { currentStateId: undefined } }
+      });
+    } else {
+      // From other states, go to previous state
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: { id: obj.id, updates: { currentStateId: states[currentIndex - 1].id } }
+      });
+    }
   }
 }
 

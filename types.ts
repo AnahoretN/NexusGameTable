@@ -110,7 +110,7 @@ export interface TokenState {
   tooltipText?: string;
 }
 
-export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'millToBottom' | 'hideTop' | 'showTop' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAll' | 'returnAllAndShuffle' | 'returnAllExceptHands' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport' | 'pin' | 'hide' | 'topDeck' | 'shuffleDeck' | 'searchDeck' | 'piles' | 'draw' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'states' | 'switchState';
+export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'millToBottom' | 'hideTop' | 'showTop' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAll' | 'returnAllAndShuffle' | 'returnAllExceptHands' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport' | 'pin' | 'hide' | 'topDeck' | 'shuffleDeck' | 'searchDeck' | 'piles' | 'draw' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'states' | 'switchState' | 'toggleState1' | 'nextState' | 'previousState';
 export type ClickAction = ContextAction | 'none' | 'showTooltipImage';
 
 // Alternative card back settings (per-card)
@@ -338,6 +338,7 @@ export interface Token extends GameItem {
   fromPoolPanel?: string; // ID of pool panel this token was picked up from (if any)
   // State system - current active state (for individual tokens)
   currentStateId?: string; // ID of the currently active state (from archetype states)
+  states?: TokenState[]; // Alternative states for this token (if not using archetype)
 }
 
 // Token Type - a template for creating tokens

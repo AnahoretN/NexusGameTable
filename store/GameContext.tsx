@@ -5813,28 +5813,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Initialize managed cache with existing images
         if (Object.keys(existingCache).length > 0) {
           initManagedCacheFromImageCache(existingCache);
-
-          const stats = getManagedCacheStats();
-          logger.log(`[GameContext] Initialized managed cache: ${stats.count} images, ${stats.totalSizeMB}MB`);
         }
 
         // Start automatic cleanup (every 5 minutes)
         stopCleanup = startManagedCacheCleanup();
 
-        // Log cache stats periodically for monitoring
-        const statsInterval = setInterval(() => {
-          const stats = getManagedCacheStats();
-          if (stats.count > 0) {
-            logger.log(`[GameContext] Cache stats: ${stats.count} images, ${stats.totalSizeMB}MB`);
-          }
-        }, 60000); // Every minute
-
         return () => {
           if (stopCleanup) stopCleanup();
-          clearInterval(statsInterval);
         };
       } catch (error) {
-        logger.error('[GameContext] Failed to initialize managed cache:', error);
+        // Failed to initialize managed cache
       }
     };
 
@@ -6194,8 +6182,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const handleData = (data: any) => {
-          console.log('[Manual P2P] GameContext handleData received:', data.type, 'conn.peer:', conn.peer, 'conn.open:', conn.open);
-          if (data.type === 'SYNC_STATE') {
+                    if (data.type === 'SYNC_STATE') {
               // Restore images from local cache before dispatching
               const restoredState = restoreImagesFromCache(data.payload, {});
               localDispatch({ type: 'SYNC_STATE', payload: restoredState });

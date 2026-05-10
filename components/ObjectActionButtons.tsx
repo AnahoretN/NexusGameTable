@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown, EyeOff, Eye, Hand, Shuffle, Undo, Search, ArrowUp, ArrowDown, CornerDownRight, Pin } from 'lucide-react';
+import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown, EyeOff, Eye, Hand, Shuffle, Undo, Search, ArrowUp, ArrowDown, CornerDownRight, Pin, SkipForward, SkipBack, Rewind } from 'lucide-react';
 import { ContextAction } from '../types';
 
 interface ObjectActionButtonsProps {
@@ -231,6 +231,28 @@ const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj:
     className: 'bg-red-600 hover:bg-red-500',
     title: 'Mill',
     icon: <CornerDownRight size={14} />
+  },
+  // Token State actions
+  toggleState1: {
+    key: 'toggleState1',
+    action: () => executeClickAction ? executeClickAction(obj, 'toggleState1') : null,
+    className: 'bg-violet-600 hover:bg-violet-500',
+    title: 'State 1/Default',
+    icon: <Rewind size={14} />
+  },
+  nextState: {
+    key: 'nextState',
+    action: () => executeClickAction ? executeClickAction(obj, 'nextState') : null,
+    className: 'bg-violet-600 hover:bg-violet-500',
+    title: 'Next State',
+    icon: <SkipForward size={14} />
+  },
+  previousState: {
+    key: 'previousState',
+    action: () => executeClickAction ? executeClickAction(obj, 'previousState') : null,
+    className: 'bg-violet-600 hover:bg-violet-500',
+    title: 'Previous State',
+    icon: <SkipBack size={14} />
   },
 });
 

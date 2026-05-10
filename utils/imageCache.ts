@@ -677,10 +677,6 @@ export function getManagedCacheStats(): {
  */
 export function startManagedCacheCleanup(intervalMs: number = 5 * 60 * 1000): () => void {
   const interval = setInterval(() => {
-    const stats = getManagedCacheStats();
-
-    // Log current stats
-
     // Clean old entries if cache is getting full
     if (currentCacheSize > MAX_CACHE_SIZE_BYTES * 0.8) {
       cleanOldManagedCacheEntries(MAX_CACHE_AGE_MS / 2); // Clean entries older than 15 days

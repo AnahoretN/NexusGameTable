@@ -23,6 +23,13 @@ export const MOVE_TO_ACTIONS: { id: ContextAction | 'mill'; label: string }[] = 
   { id: 'mill' as any, label: 'Mill' },
 ];
 
+// Token State actions - ONLY for Action Buttons, NOT in Context Menu
+export const TOKEN_STATE_ACTIONS: { id: ContextAction; label: string }[] = [
+  { id: 'toggleState1', label: 'State 1/Default' },
+  { id: 'nextState', label: 'Next State' },
+  { id: 'previousState', label: 'Previous State' },
+];
+
 // Actions that should NOT appear as quick action buttons (only in context menu)
 export const EXCLUDED_FROM_BUTTONS: ContextAction[] = ['clone', 'delete', 'layer', 'lock', 'rotate'];
 
@@ -63,15 +70,20 @@ export function getButtonApplicableTypes(action: ContextAction): ItemType[] {
       return [ItemType.CARD];
     case 'moveToBottomDeck':
       return [ItemType.CARD];
+    case 'toggleState1':
+    case 'nextState':
+    case 'previousState':
+      return [ItemType.TOKEN, ItemType.TOKEN_TYPE];
     default:
       return [];
   }
 }
 
-// Available click actions (all actions from AVAILABLE_ACTIONS + none)
+// Available click actions (all actions from AVAILABLE_ACTIONS + TOKEN_STATE_ACTIONS + none)
 export const CLICK_ACTIONS = [
   { id: 'none' as const, label: 'None' },
-  ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label }))
+  ...AVAILABLE_ACTIONS.map(a => ({ id: a.id, label: a.label })),
+  ...TOKEN_STATE_ACTIONS
 ];
 
 // Card-specific click actions (includes showTooltipImage which is not a ContextAction)

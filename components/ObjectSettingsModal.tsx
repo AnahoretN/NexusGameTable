@@ -182,6 +182,11 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     // Hide/Show action for all object types (except cards in card settings)
     case 'hide':
       return [ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.DECK];
+    // Token State actions - only for tokens and token types
+    case 'toggleState1':
+    case 'nextState':
+    case 'previousState':
+      return [ItemType.TOKEN, ItemType.TOKEN_TYPE];
     default:
       return [];
   }
@@ -282,9 +287,16 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   // Note: rotateClockwise, rotateCounterClockwise, swingClockwise, swingCounterClockwise are NOT in SECTION_ACTIONS
   // because they should be available in Double Click Action and Action Buttons, just NOT in Context Menu Actions
   const SECTION_ACTIONS: ContextAction[] = ['layer', 'rotate', 'topDeck', 'piles', 'moveTo', 'returnAll', 'states'];
+  // Token State actions (ONLY for Action Buttons, NOT in Context Menu)
+  const TOKEN_STATE_ACTIONS = [
+    { id: 'toggleState1' as const, label: translate('State 1/Default', language as Locale) },
+    { id: 'nextState' as const, label: translate('Next State', language as Locale) },
+    { id: 'previousState' as const, label: translate('Previous State', language as Locale) },
+  ];
   const CLICK_ACTIONS = [
     { id: 'none' as const, label: translate('None', language as Locale) },
-    ...AVAILABLE_ACTIONS.filter(a => !SECTION_ACTIONS.includes(a.id)).map(a => ({ id: a.id, label: a.label }))
+    ...AVAILABLE_ACTIONS.filter(a => !SECTION_ACTIONS.includes(a.id)).map(a => ({ id: a.id, label: a.label })),
+    ...TOKEN_STATE_ACTIONS
   ];
   const CARD_CLICK_ACTIONS: { id: ClickAction; label: string }[] = [
     { id: 'none' as const, label: translate('None', language as Locale) },
@@ -2968,7 +2980,7 @@ setGridDebugInfo(null);
                 </h4>
 
                 <div className="grid grid-cols-2 gap-2">
-                  {[...AVAILABLE_ACTIONS, ...(isDeck ? DECK_ACTIONS : [])].map((action) => {
+                  {[...AVAILABLE_ACTIONS, ...TOKEN_STATE_ACTIONS, ...(isDeck ? DECK_ACTIONS : [])].map((action) => {
                     const applicableTypes = getButtonApplicableTypes(action.id);
                     const isApplicable = applicableTypes.includes(data.type);
                     if (!isApplicable || isDrawing) return null;
