@@ -3692,7 +3692,9 @@ setGridDebugInfo(null);
                     >
                       <option value="above">{translate('Above Token', language as Locale)}</option>
                       <option value="below">{translate('Below Token', language as Locale)}</option>
-                      <option value="perimeter">{translate('Around Token', language as Locale)}</option>
+                      <option value="center">{translate('Center of Token', language as Locale)}</option>
+                      <option value="left">{translate('Left of Token', language as Locale)}</option>
+                      <option value="right">{translate('Right of Token', language as Locale)}</option>
                     </select>
                   </div>
                   {/* Show for Players */}

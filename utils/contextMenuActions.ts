@@ -865,7 +865,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
           // State properties will be applied during rendering, not stored in token
           const selectedState = states.find(s => s.id === stateId);
           if (selectedState) {
-            console.log('[switchState] Setting currentStateId:', stateId, 'for object:', object.id, 'state:', selectedState);
             dispatch({
               type: 'UPDATE_OBJECT',
               payload: {
@@ -873,8 +872,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
                 updates: { currentStateId: stateId }
               }
             });
-          } else {
-            console.log('[switchState] State not found:', stateId, 'available states:', states.map(s => s.id));
           }
         }
       }

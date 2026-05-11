@@ -124,7 +124,7 @@ export interface TokenCounter {
 }
 
 // Counter layout position for tokens
-export type TokenCounterPosition = 'above' | 'below' | 'perimeter';
+export type TokenCounterPosition = 'above' | 'below' | 'center' | 'left' | 'right';
 
 // Counter display settings for token/token type
 export interface TokenCounterDisplay {

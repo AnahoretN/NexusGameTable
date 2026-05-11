@@ -67,12 +67,23 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
 
   const position = counterDisplay?.position || 'below';
   const [hoveredCounterId, setHoveredCounterId] = useState<string | null>(null);
+  const [draggingCounterId, setDraggingCounterId] = useState<string | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Handle counter value change
-  const handleCounterChange = (counter: TokenCounter, delta: number) => {
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  // Handle counter value change (can be delta for buttons or absolute value for slider)
+  const handleCounterChange = (counter: TokenCounter, valueOrDelta: number) => {
     const clampedValue = Math.max(
       counter.minValue ?? 0,
-      Math.min(counter.maxValue, counter.value + delta)
+      Math.min(counter.maxValue, valueOrDelta)
     );
 
     // Update the counter value
@@ -89,190 +100,465 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
     });
   };
 
+  // Start continuous change on button hold
+  const startContinuousChange = (counter: TokenCounter, delta: number) => {
+    let currentValue = counter.value;
+
+    // Apply first change immediately
+    currentValue += delta;
+    handleCounterChange(counter, currentValue);
+
+    // Then apply changes every 250ms
+    intervalRef.current = setInterval(() => {
+      currentValue += delta;
+      // Use the original counter reference but with updated value
+      const updatedCounter = { ...counter, value: currentValue };
+      handleCounterChange(updatedCounter, currentValue);
+    }, 250);
+  };
+
+  // Stop continuous change
+  const stopContinuousChange = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  // Check if position is vertical (left/right)
+  const isVerticalPosition = position === 'left' || position === 'right';
+
   // Calculate styles based on position
   const getContainerStyle = (): React.CSSProperties => {
-    // Calculate total height needed for all counters (bar + label + buttons)
-    const labelHeight = 12 * pixelsPerVU;
     const baseBarHeight = 7 * pixelsPerVU;
-    const buttonSize = 14 * pixelsPerVU;
     const gap = pixelsPerVU;
-    const totalHeight = counters.length * (labelHeight + baseBarHeight + gap + buttonSize);
 
-    const baseStyle: React.CSSProperties = {
-      position: 'absolute',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      pointerEvents: 'auto',
-      zIndex: 10,
-      height: `${totalHeight}px`,
-    };
+    if (isVerticalPosition) {
+      // Vertical layout (left/right) - calculate total width
+      const totalWidth = counters.length * (baseBarHeight + gap);
 
-    if (position === 'above') {
-      return { ...baseStyle, bottom: '100%', marginBottom: '4px' };
-    } else if (position === 'below') {
-      return { ...baseStyle, top: '100%', marginTop: '4px' };
-    } else { // perimeter
-      return { ...baseStyle, top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%' };
+      const baseStyle: React.CSSProperties = {
+        position: 'absolute',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        pointerEvents: 'auto',
+        zIndex: 10,
+        width: `${totalWidth}px`,
+        flexDirection: 'row' as const,
+      };
+
+      if (position === 'left') {
+        return { ...baseStyle, right: '100%', marginRight: '4px' };
+      } else { // right
+        return { ...baseStyle, left: '100%', marginLeft: '4px' };
+      }
+    } else {
+      // Horizontal layout (above/below/center) - calculate total height
+      const totalHeight = counters.length * (baseBarHeight + gap);
+
+      const baseStyle: React.CSSProperties = {
+        position: 'absolute',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        pointerEvents: 'auto',
+        zIndex: 10,
+        height: `${totalHeight}px`,
+      };
+
+      if (position === 'above') {
+        return { ...baseStyle, bottom: '100%', marginBottom: '4px' };
+      } else if (position === 'below') {
+        return { ...baseStyle, top: '100%', marginTop: '4px' };
+      } else { // center
+        return { ...baseStyle, top: '50%', transform: 'translate(-50%, -50%)' };
+      }
     }
   };
 
   const getCounterStyle = (counter: TokenCounter, index: number, isHovered: boolean): React.CSSProperties => {
-    // Use absolute positioning to prevent layout shift when any bar grows
-    const labelHeight = 12 * pixelsPerVU;
     const baseBarHeight = 7 * pixelsPerVU;
-    const buttonSize = 14 * pixelsPerVU;
+    const maxHeight = 7 * 2 * pixelsPerVU;
     const gap = pixelsPerVU;
-    const barWidth = isHovered ? tokenWidth * 1.5 : tokenWidth;
-    const itemHeight = labelHeight + baseBarHeight + gap + buttonSize;
 
-    return {
-      position: 'absolute' as const,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      top: `${index * itemHeight}px`,
-      width: `${barWidth + buttonSize * 2}px`,
-      zIndex: isHovered ? 20 : 1,
-    };
+    if (isVerticalPosition) {
+      // Vertical counter (left/right position)
+      const barHeight = isHovered ? tokenHeight * 1.5 : tokenHeight;
+
+      return {
+        position: 'absolute' as const,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        left: `${index * (baseBarHeight + gap)}px`,
+        width: `${maxHeight}px`,
+        height: `${barHeight}px`,
+        zIndex: isHovered ? 20 : 1,
+        transition: 'height 0.2s ease',
+      };
+    } else {
+      // Horizontal counter (above/below/center position)
+      const barWidth = isHovered ? tokenWidth * 1.5 : tokenWidth;
+
+      return {
+        position: 'absolute' as const,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        top: `${index * (baseBarHeight + gap)}px`,
+        width: `${barWidth}px`,
+        height: `${maxHeight}px`,
+        zIndex: isHovered ? 20 : 1,
+        transition: 'width 0.2s ease',
+      };
+    }
   };
 
   const getBarStyle = (counter: TokenCounter, isHovered: boolean): React.CSSProperties => {
-    // Increase by ~1/3 when hovered (7 -> ~9.33)
-    const height = isHovered ? 7 * (4/3) : 7;
-    return {
-      width: '100%',
-      height: `${height * pixelsPerVU}px`,
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      borderRadius: '3px',
-      overflow: 'visible',
-      position: 'relative' as const,
-      transition: 'all 0.2s ease',
-      cursor: 'pointer',
-      zIndex: isHovered ? 20 : 1,
-    };
+    const barSize = isHovered ? 7 * 2 : 7;
+
+    if (isVerticalPosition) {
+      // Vertical bar - width is fixed, height is 100%
+      return {
+        width: `${barSize * pixelsPerVU}px`,
+        height: '100%',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderRadius: '3px',
+        overflow: 'visible',
+        position: 'absolute' as const,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        transition: 'all 0.2s ease',
+        cursor: 'pointer',
+        zIndex: isHovered ? 20 : 1,
+      };
+    } else {
+      // Horizontal bar - width is 100%, height is fixed
+      return {
+        width: '100%',
+        height: `${barSize * pixelsPerVU}px`,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderRadius: '3px',
+        overflow: 'visible',
+        position: 'absolute' as const,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        transition: 'all 0.2s ease',
+        cursor: 'pointer',
+        zIndex: isHovered ? 20 : 1,
+      };
+    }
   };
 
   const getBarFillStyle = (counter: TokenCounter): React.CSSProperties => {
     const percentage = Math.max(0, Math.min(100, (counter.value / counter.maxValue) * 100));
+
+    if (isVerticalPosition) {
+      // Vertical bar - fill from bottom
+      return {
+        width: '100%',
+        height: `${percentage}%`,
+        backgroundColor: counter.color || '#ef4444',
+        borderRadius: '3px',
+        position: 'absolute' as const,
+        bottom: '0',
+        left: '0',
+        transition: 'height 0.3s ease',
+      };
+    } else {
+      // Horizontal bar - fill from left
+      return {
+        width: `${percentage}%`,
+        height: '100%',
+        backgroundColor: counter.color || '#ef4444',
+        borderRadius: '3px',
+        transition: 'width 0.3s ease',
+      };
+    }
+  };
+
+  const getLabelStyle = (): React.CSSProperties => {
+    const fontSize = 15 * pixelsPerVU;
+
+    if (isVerticalPosition) {
+      // Vertical - label above the + button
+      const buttonSize = 24 * pixelsPerVU;
+      const offset = buttonSize / 2 + 0.5 * pixelsPerVU;
+      return {
+        fontSize: `${fontSize}px`,
+        fontWeight: 'bold',
+        color: 'white',
+        textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+        whiteSpace: 'nowrap' as const,
+        position: 'absolute' as const,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        top: `-${offset + buttonSize + 6 * pixelsPerVU}px`,
+        animation: 'fadeInDown 0.2s ease forwards',
+      };
+    } else {
+      // Horizontal - label above the bar
+      return {
+        fontSize: `${fontSize}px`,
+        fontWeight: 'bold',
+        color: 'white',
+        textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+        whiteSpace: 'nowrap' as const,
+        position: 'absolute' as const,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        bottom: '100%',
+        marginBottom: `${2 * pixelsPerVU}px`,
+        animation: 'fadeInDown 0.2s ease forwards',
+      };
+    }
+  };
+
+  const getValueStyle = (): React.CSSProperties => {
+    const fontSize = 10 * pixelsPerVU;
     return {
-      width: `${percentage}%`,
-      height: '100%',
-      backgroundColor: counter.color || '#ef4444',
-      borderRadius: '3px',
-      transition: 'width 0.3s ease',
+      fontSize: `${fontSize}px`,
+      fontWeight: 'bold',
+      color: 'white',
+      textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+      whiteSpace: 'nowrap' as const,
+      position: 'absolute' as const,
+      left: '50%',
+      top: '50%',
+      transform: 'translate(-50%, -50%)',
+      pointerEvents: 'none',
+      zIndex: 1,
     };
   };
 
-  const buttonSize = 14 * pixelsPerVU;
+  const getButtonStyle = (isTop: boolean): React.CSSProperties => {
+    const buttonSize = 24 * pixelsPerVU;
+    const offset = buttonSize / 2 + 0.5 * pixelsPerVU;
+
+    if (isVerticalPosition) {
+      // Vertical layout - buttons at top and bottom
+      return {
+        position: 'absolute' as const,
+        left: '50%',
+        transform: isTop ? 'translate(-50%, -50%)' : 'translate(-50%, 50%)',
+        width: `${buttonSize}px`,
+        height: `${buttonSize}px`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '50%',
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        border: '1px solid rgba(255,255,255,0.3)',
+        color: 'white',
+        fontSize: `${20 * pixelsPerVU}px`,
+        fontWeight: 'bold',
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        [isTop ? 'top' as const : 'bottom' as const]: `-${offset}px`,
+        animation: isTop ? 'fadeInTopBtn 0.2s ease forwards' : 'fadeInBottomBtn 0.2s ease forwards',
+      };
+    } else {
+      // Horizontal layout - buttons at left and right
+      return {
+        position: 'absolute' as const,
+        top: '50%',
+        transform: isTop ? 'translate(-50%, -50%)' : 'translate(50%, -50%)',
+        width: `${buttonSize}px`,
+        height: `${buttonSize}px`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '50%',
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        border: '1px solid rgba(255,255,255,0.3)',
+        color: 'white',
+        fontSize: `${20 * pixelsPerVU}px`,
+        fontWeight: 'bold',
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        [isTop ? 'left' as const : 'right' as const]: `-${offset}px`,
+        animation: isTop ? 'fadeInLeftBtn 0.2s ease forwards' : 'fadeInRightBtn 0.2s ease forwards',
+      };
+    }
+  };
+
+  const getButtonTextStyle = (): React.CSSProperties => {
+    return {
+      position: 'relative',
+      top: `-${3 * pixelsPerVU}px`,
+    };
+  };
 
   return (
     <div style={getContainerStyle()}>
+      <style>{`
+        @keyframes fadeInLeftBtn {
+          from { opacity: 0; transform: translate(-50%, -50%) translateX(-5px); }
+          to { opacity: 1; transform: translate(-50%, -50%) translateX(0); }
+        }
+        @keyframes fadeInRightBtn {
+          from { opacity: 0; transform: translate(50%, -50%) translateX(5px); }
+          to { opacity: 1; transform: translate(50%, -50%) translateX(0); }
+        }
+        @keyframes fadeInTopBtn {
+          from { opacity: 0; transform: translate(-50%, -50%) translateY(-5px); }
+          to { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
+        }
+        @keyframes fadeInBottomBtn {
+          from { opacity: 0; transform: translate(-50%, 50%) translateY(5px); }
+          to { opacity: 1; transform: translate(-50%, 50%) translateY(0); }
+        }
+        @keyframes fadeInDown {
+          from { opacity: 0; transform: translateX(-50%) translateY(-3px); }
+          to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        @keyframes fadeInLeft {
+          from { opacity: 0; transform: translateY(-50%) translateX(-5px); }
+          to { opacity: 1; transform: translateY(-50%) translateX(0); }
+        }
+        @keyframes fadeInCenter {
+          from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+          to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+      `}</style>
       {counters.map((counter, index) => {
-        const isHovered = hoveredCounterId === counter.id;
-        const fontSize = 10 * pixelsPerVU;
-
+        const isHovered = hoveredCounterId === counter.id || draggingCounterId === counter.id;
         return (
           <div
             key={counter.id}
             style={getCounterStyle(counter, index, isHovered)}
-            onMouseEnter={() => setHoveredCounterId(counter.id)}
-            onMouseLeave={() => setHoveredCounterId(null)}
+            onMouseEnter={() => {
+              if (!draggingCounterId) {
+                setHoveredCounterId(counter.id);
+              }
+            }}
+            onMouseLeave={() => {
+              if (draggingCounterId !== counter.id) {
+                setHoveredCounterId(null);
+              }
+            }}
           >
-            {/* Label above the bar */}
-            <div style={{
-              position: 'absolute',
-              bottom: '100%',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              marginBottom: `${2 * pixelsPerVU}px`,
-              fontSize: `${fontSize}px`,
-              fontWeight: 'bold',
-              color: 'white',
-              textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-              whiteSpace: 'nowrap',
-              display: 'flex',
-              alignItems: 'center',
-              gap: `${2 * pixelsPerVU}px`,
-            }}>
-              {counter.icon && <span>{counter.icon}</span>}
-              {counter.name}
-            </div>
-
-            {/* Minus button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); handleCounterChange(counter, -1); }}
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: `${buttonSize}px`,
-                height: `${buttonSize}px`,
-                borderRadius: '50%',
-                backgroundColor: 'rgba(239, 68, 68, 0.9)',
-                border: '1px solid rgba(255,255,255,0.3)',
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                padding: 0,
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 1)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.9)'; }}
-            >
-              <Minus size={buttonSize * 0.6} />
-            </button>
-
-            {/* Bar with value in center */}
+            {isHovered && (
+              <span style={getLabelStyle()}>
+                {counter.icon && <span style={{ marginRight: '2px' }}>{counter.icon}</span>}
+                {counter.name}
+              </span>
+            )}
             <div
               style={getBarStyle(counter, isHovered)}
               title={`${counter.name}: ${counter.value}/${counter.maxValue}`}
             >
               <div style={getBarFillStyle(counter)} />
-              {/* Value in center */}
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                fontSize: `${fontSize}px`,
-                fontWeight: 'bold',
-                color: 'white',
-                textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-                whiteSpace: 'nowrap',
-                pointerEvents: 'none',
-              }}>
-                {counter.value}/{counter.maxValue}
-              </div>
+              {isHovered && !isVerticalPosition && (
+                <input
+                  type="range"
+                  min={counter.minValue ?? 0}
+                  max={counter.maxValue}
+                  value={counter.value}
+                  onChange={(e) => handleCounterChange(counter, parseInt(e.target.value))}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    opacity: 0,
+                    cursor: 'pointer',
+                    zIndex: 10,
+                  }}
+                />
+              )}
+              {isHovered && isVerticalPosition && (
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    setDraggingCounterId(counter.id);
+                    const bar = e.currentTarget;
+                    const rect = bar.getBoundingClientRect();
+                    const updateFromMouse = (mouseEvent: MouseEvent) => {
+                      const relativeY = rect.bottom - mouseEvent.clientY;
+                      const percentage = Math.max(0, Math.min(1, relativeY / rect.height));
+                      const newValue = Math.round((counter.minValue ?? 0) + percentage * (counter.maxValue - (counter.minValue ?? 0)));
+                      handleCounterChange(counter, newValue);
+                    };
+                    updateFromMouse(e.nativeEvent);
+                    const onMove = (moveEvent: MouseEvent) => updateFromMouse(moveEvent);
+                    const onUp = () => {
+                      setDraggingCounterId(null);
+                      setHoveredCounterId(null);
+                      window.removeEventListener('mousemove', onMove);
+                      window.removeEventListener('mouseup', onUp);
+                    };
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    cursor: 'pointer',
+                    zIndex: 10,
+                  }}
+                />
+              )}
+              {isHovered && (
+                <span style={{...getValueStyle(), animation: 'fadeInCenter 0.2s ease forwards'}}>
+                  {counter.value}/{counter.maxValue}
+                </span>
+              )}
+              {isHovered && (
+                <button
+                  style={getButtonStyle(true)}
+                  onMouseDown={(e) => { e.stopPropagation(); startContinuousChange(counter, isVerticalPosition ? 1 : -1); }}
+                  onMouseUp={(e) => { e.stopPropagation(); stopContinuousChange(); }}
+                  onMouseLeave={(e) => {
+                    stopContinuousChange();
+                    e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.8)';
+                    if (isVerticalPosition) {
+                      e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
+                    } else {
+                      e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
+                    }
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(50,50,50,0.9)';
+                    if (isVerticalPosition) {
+                      e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)';
+                    } else {
+                      e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)';
+                    }
+                  }}
+                >
+                  <span style={getButtonTextStyle()}>{isVerticalPosition ? '+' : '-'}</span>
+                </button>
+              )}
+              {isHovered && (
+                <button
+                  style={getButtonStyle(false)}
+                  onMouseDown={(e) => { e.stopPropagation(); startContinuousChange(counter, isVerticalPosition ? -1 : 1); }}
+                  onMouseUp={(e) => { e.stopPropagation(); stopContinuousChange(); }}
+                  onMouseLeave={(e) => {
+                    stopContinuousChange();
+                    e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.8)';
+                    if (isVerticalPosition) {
+                      e.currentTarget.style.transform = 'translate(-50%, 50%) scale(1)';
+                    } else {
+                      e.currentTarget.style.transform = 'translate(50%, -50%) scale(1)';
+                    }
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(50,50,50,0.9)';
+                    if (isVerticalPosition) {
+                      e.currentTarget.style.transform = 'translate(-50%, 50%) scale(1.1)';
+                    } else {
+                      e.currentTarget.style.transform = 'translate(50%, -50%) scale(1.1)';
+                    }
+                  }}
+                >
+                  <span style={getButtonTextStyle()}>{isVerticalPosition ? '-' : '+'}</span>
+                </button>
+              )}
             </div>
-
-            {/* Plus button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); handleCounterChange(counter, 1); }}
-              style={{
-                position: 'absolute',
-                right: 0,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: `${buttonSize}px`,
-                height: `${buttonSize}px`,
-                borderRadius: '50%',
-                backgroundColor: 'rgba(34, 197, 94, 0.9)',
-                border: '1px solid rgba(255,255,255,0.3)',
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                padding: 0,
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 1)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.9)'; }}
-            >
-              <Plus size={buttonSize * 0.6} />
-            </button>
           </div>
         );
       })}
