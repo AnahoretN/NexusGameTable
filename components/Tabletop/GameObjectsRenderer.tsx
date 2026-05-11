@@ -230,7 +230,7 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
                     width: '100%',
                     height: '100%',
                     opacity: 0,
-                    cursor: 'ew-resize',
+                    cursor: 'text',
                   }}
                 />
               )}
