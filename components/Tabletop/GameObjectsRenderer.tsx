@@ -69,10 +69,10 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
   const [hoveredCounterId, setHoveredCounterId] = useState<string | null>(null);
 
   // Handle counter value change
-  const handleCounterChange = (counter: TokenCounter, newValue: number) => {
+  const handleCounterChange = (counter: TokenCounter, delta: number) => {
     const clampedValue = Math.max(
       counter.minValue ?? 0,
-      Math.min(counter.maxValue, newValue)
+      Math.min(counter.maxValue, counter.value + delta)
     );
 
     // Update the counter value
@@ -91,10 +91,12 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
 
   // Calculate styles based on position
   const getContainerStyle = (): React.CSSProperties => {
-    // Calculate total height needed for all counters
+    // Calculate total height needed for all counters (bar + label + buttons)
+    const labelHeight = 12 * pixelsPerVU;
     const baseBarHeight = 7 * pixelsPerVU;
+    const buttonSize = 14 * pixelsPerVU;
     const gap = pixelsPerVU;
-    const totalHeight = counters.length * (baseBarHeight + gap);
+    const totalHeight = counters.length * (labelHeight + baseBarHeight + gap + buttonSize);
 
     const baseStyle: React.CSSProperties = {
       position: 'absolute',
@@ -116,23 +118,26 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
 
   const getCounterStyle = (counter: TokenCounter, index: number, isHovered: boolean): React.CSSProperties => {
     // Use absolute positioning to prevent layout shift when any bar grows
-    // Always use base bar height for positioning to prevent shifting
+    const labelHeight = 12 * pixelsPerVU;
     const baseBarHeight = 7 * pixelsPerVU;
+    const buttonSize = 14 * pixelsPerVU;
     const gap = pixelsPerVU;
     const barWidth = isHovered ? tokenWidth * 1.5 : tokenWidth;
+    const itemHeight = labelHeight + baseBarHeight + gap + buttonSize;
 
     return {
       position: 'absolute' as const,
       left: '50%',
       transform: 'translateX(-50%)',
-      top: `${index * (baseBarHeight + gap)}px`,
-      width: `${barWidth}px`,
+      top: `${index * itemHeight}px`,
+      width: `${barWidth + buttonSize * 2}px`,
       zIndex: isHovered ? 20 : 1,
     };
   };
 
   const getBarStyle = (counter: TokenCounter, isHovered: boolean): React.CSSProperties => {
-    const height = isHovered ? 7 * 1.5 : 7;
+    // Increase by ~1/3 when hovered (7 -> ~9.33)
+    const height = isHovered ? 7 * (4/3) : 7;
     return {
       width: '100%',
       height: `${height * pixelsPerVU}px`,
@@ -157,54 +162,14 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
     };
   };
 
-  const getLabelStyle = (): React.CSSProperties => {
-    const fontSize = 10 * pixelsPerVU;
-    return {
-      fontSize: `${fontSize}px`,
-      fontWeight: 'bold',
-      color: 'white',
-      textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-      whiteSpace: 'nowrap' as const,
-      position: 'absolute' as const,
-      right: '100%',
-      top: '50%',
-      marginTop: `-${fontSize / 2}px`, // Half of font size for vertical centering
-      marginRight: `${4}px`,
-      animation: 'fadeInLeft 0.2s ease forwards',
-    };
-  };
-
-  const getValueStyle = (): React.CSSProperties => {
-    const fontSize = 10 * pixelsPerVU;
-    return {
-      fontSize: `${fontSize}px`,
-      fontWeight: 'bold',
-      color: 'white',
-      textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-      whiteSpace: 'nowrap' as const,
-      position: 'absolute' as const,
-      left: '100%',
-      top: '50%',
-      marginTop: `-${fontSize / 2}px`, // Half of font size for vertical centering
-      marginLeft: `${4}px`,
-      animation: 'fadeInRight 0.2s ease forwards',
-    };
-  };
+  const buttonSize = 14 * pixelsPerVU;
 
   return (
     <div style={getContainerStyle()}>
-      <style>{`
-        @keyframes fadeInLeft {
-          from { opacity: 0; transform: translateX(5px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes fadeInRight {
-          from { opacity: 0; transform: translateX(-5px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-      `}</style>
       {counters.map((counter, index) => {
         const isHovered = hoveredCounterId === counter.id;
+        const fontSize = 10 * pixelsPerVU;
+
         return (
           <div
             key={counter.id}
@@ -212,42 +177,102 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
             onMouseEnter={() => setHoveredCounterId(counter.id)}
             onMouseLeave={() => setHoveredCounterId(null)}
           >
+            {/* Label above the bar */}
+            <div style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              marginBottom: `${2 * pixelsPerVU}px`,
+              fontSize: `${fontSize}px`,
+              fontWeight: 'bold',
+              color: 'white',
+              textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: `${2 * pixelsPerVU}px`,
+            }}>
+              {counter.icon && <span>{counter.icon}</span>}
+              {counter.name}
+            </div>
+
+            {/* Minus button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCounterChange(counter, -1); }}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: `${buttonSize}px`,
+                height: `${buttonSize}px`,
+                borderRadius: '50%',
+                backgroundColor: 'rgba(239, 68, 68, 0.9)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                padding: 0,
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.9)'; }}
+            >
+              <Minus size={buttonSize * 0.6} />
+            </button>
+
+            {/* Bar with value in center */}
             <div
               style={getBarStyle(counter, isHovered)}
               title={`${counter.name}: ${counter.value}/${counter.maxValue}`}
             >
               <div style={getBarFillStyle(counter)} />
-              {isHovered && (
-                <input
-                  type="range"
-                  min={counter.minValue ?? 0}
-                  max={counter.maxValue}
-                  value={counter.value}
-                  onChange={(e) => handleCounterChange(counter, parseInt(e.target.value))}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    opacity: 0,
-                    cursor: 'text',
-                  }}
-                />
-              )}
-              {isHovered && (
-                <span style={getLabelStyle()}>
-                  {counter.icon && <span style={{ marginRight: '2px' }}>{counter.icon}</span>}
-                  {counter.name}
-                </span>
-              )}
-              {isHovered && (
-                <span style={getValueStyle()}>
-                  {counter.value}/{counter.maxValue}
-                </span>
-              )}
+              {/* Value in center */}
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                fontSize: `${fontSize}px`,
+                fontWeight: 'bold',
+                color: 'white',
+                textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+              }}>
+                {counter.value}/{counter.maxValue}
+              </div>
             </div>
+
+            {/* Plus button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCounterChange(counter, 1); }}
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: `${buttonSize}px`,
+                height: `${buttonSize}px`,
+                borderRadius: '50%',
+                backgroundColor: 'rgba(34, 197, 94, 0.9)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                padding: 0,
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.9)'; }}
+            >
+              <Plus size={buttonSize * 0.6} />
+            </button>
           </div>
         );
       })}
