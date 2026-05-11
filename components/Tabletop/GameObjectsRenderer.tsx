@@ -158,8 +158,9 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
   };
 
   const getLabelStyle = (): React.CSSProperties => {
+    const fontSize = 10 * pixelsPerVU;
     return {
-      fontSize: '9px',
+      fontSize: `${fontSize}px`,
       fontWeight: 'bold',
       color: 'white',
       textShadow: '0 1px 3px rgba(0,0,0,0.9)',
@@ -167,15 +168,16 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
       position: 'absolute' as const,
       right: '100%',
       top: '50%',
-      marginTop: '-4.5px', // Half of font size (9px) for vertical centering
+      marginTop: `-${fontSize / 2}px`, // Half of font size for vertical centering
       marginRight: `${4}px`,
       animation: 'fadeInLeft 0.2s ease forwards',
     };
   };
 
   const getValueStyle = (): React.CSSProperties => {
+    const fontSize = 10 * pixelsPerVU;
     return {
-      fontSize: '9px',
+      fontSize: `${fontSize}px`,
       fontWeight: 'bold',
       color: 'white',
       textShadow: '0 1px 3px rgba(0,0,0,0.9)',
@@ -183,7 +185,7 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
       position: 'absolute' as const,
       left: '100%',
       top: '50%',
-      marginTop: '-4.5px', // Half of font size (9px) for vertical centering
+      marginTop: `-${fontSize / 2}px`, // Half of font size for vertical centering
       marginLeft: `${4}px`,
       animation: 'fadeInRight 0.2s ease forwards',
     };
