@@ -38,6 +38,11 @@ export const useObjectFilters = (
         return false;
       }
 
+      // Exclude pinned game objects (tokens, effects, etc.) - they are rendered separately in PinnedGameObjectsRenderer
+      if ((obj as any).isPinnedToViewport) {
+        return false;
+      }
+
       // Exclude cards that are in deck (location: DECK), in hand (location: HAND), or in pile (location: PILE)
       if (obj.type === ItemType.CARD) {
         const card = obj as CardType;
@@ -184,6 +189,22 @@ export const useObjectFilters = (
       .map((obj) => obj as DeckType);
   }, [state.objects]);
 
+  // Pinned game objects (tokens, cards, effects, etc. - but NOT decks, panels, or windows)
+  // These are rendered in viewport coordinates, not world coordinates
+  const pinnedGameObjects = useMemo(() => {
+    return (Object.values(state.objects) as TableObject[])
+      .filter((obj) => {
+        // Must be pinned to viewport
+        if (!(obj as any).isPinnedToViewport) return false;
+        // Must be on table
+        if ((obj as any).isOnTable === false) return false;
+        // Exclude UI objects and decks (they have their own pinned lists)
+        if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) return false;
+        return true;
+      })
+      .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  }, [state.objects]);
+
   return {
     tableObjects,
     visibleTableObjects,
@@ -193,7 +214,8 @@ export const useObjectFilters = (
     pinnedUIObjects,
     unpinnedUIObjects,
     pinnedDecks,
-    unpinnedDecks
+    unpinnedDecks,
+    pinnedGameObjects
   };
 };
 

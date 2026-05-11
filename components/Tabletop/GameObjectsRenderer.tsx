@@ -983,7 +983,25 @@ export const GameObjectsRenderer = memo(({
                 },
                 pin: {
                   key: 'pin',
-                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isPinnedToViewport: !(obj as any).isPinnedToViewport } }),
+                  action: () => {
+                    const isPinned = (obj as any).isPinnedToViewport;
+                    if (isPinned) {
+                      // Unpin: calculate world position from pinned screen position
+                      const pinnedPos = (obj as any).pinnedScreenPosition;
+                      if (pinnedPos) {
+                        const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
+                        const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom);
+                        const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (pixelsPerVU * zoom);
+                        dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
+                      }
+                    } else {
+                      // Pin: calculate screen position from world position
+                      const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
+                      const screenX = obj.x * pixelsPerVU + (offset.x - scroll.x) / zoom;
+                      const screenY = obj.y * pixelsPerVU + (offset.y - scroll.y) / zoom;
+                      dispatch({ type: 'PIN_TO_VIEWPORT', payload: { id: obj.id, screenX, screenY } });
+                    }
+                  },
                   className: 'bg-pink-600 hover:bg-pink-500',
                   title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
                   icon: <Pin size={14} />
@@ -1324,7 +1342,25 @@ export const GameObjectsRenderer = memo(({
                 },
                 pin: {
                   key: 'pin',
-                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isPinnedToViewport: !(obj as any).isPinnedToViewport } }),
+                  action: () => {
+                    const isPinned = (obj as any).isPinnedToViewport;
+                    if (isPinned) {
+                      // Unpin: calculate world position from pinned screen position
+                      const pinnedPos = (obj as any).pinnedScreenPosition;
+                      if (pinnedPos) {
+                        const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
+                        const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom);
+                        const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (pixelsPerVU * zoom);
+                        dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
+                      }
+                    } else {
+                      // Pin: calculate screen position from world position
+                      const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
+                      const screenX = obj.x * pixelsPerVU + (offset.x - scroll.x) / zoom;
+                      const screenY = obj.y * pixelsPerVU + (offset.y - scroll.y) / zoom;
+                      dispatch({ type: 'PIN_TO_VIEWPORT', payload: { id: obj.id, screenX, screenY } });
+                    }
+                  },
                   className: 'bg-pink-600 hover:bg-pink-500',
                   title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
                   icon: <Pin size={14} />
@@ -1745,7 +1781,25 @@ export const GameObjectsRenderer = memo(({
                 },
                 pin: {
                   key: 'pin',
-                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isPinnedToViewport: !(obj as any).isPinnedToViewport } }),
+                  action: () => {
+                    const isPinned = (obj as any).isPinnedToViewport;
+                    if (isPinned) {
+                      // Unpin: calculate world position from pinned screen position
+                      const pinnedPos = (obj as any).pinnedScreenPosition;
+                      if (pinnedPos) {
+                        const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
+                        const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom);
+                        const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (pixelsPerVU * zoom);
+                        dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
+                      }
+                    } else {
+                      // Pin: calculate screen position from world position
+                      const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
+                      const screenX = obj.x * pixelsPerVU + (offset.x - scroll.x) / zoom;
+                      const screenY = obj.y * pixelsPerVU + (offset.y - scroll.y) / zoom;
+                      dispatch({ type: 'PIN_TO_VIEWPORT', payload: { id: obj.id, screenX, screenY } });
+                    }
+                  },
                   className: 'bg-pink-600 hover:bg-pink-500',
                   title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
                   icon: <Pin size={14} />

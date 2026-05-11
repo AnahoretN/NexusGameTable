@@ -18,6 +18,7 @@ export * from './TabletopBackground';
 export * from './RemoteObjectsRenderer';
 export * from './GameObjectsRenderer';
 export * from './UIObjectsRenderer';
+export * from './PinnedGameObjectsRenderer';
 export * from './TabletopCursorSlot';
 export * from './TabletopEventHandlers';
 export * from './TabletopModals';

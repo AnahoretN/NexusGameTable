@@ -32,6 +32,7 @@ import {
   RemoteObjectsRenderer,
   GameObjectsRenderer,
   UIObjectsRenderer,
+  PinnedGameObjectsRenderer,
   TabletopCursorSlot,
   useTabletopEventHandlers,
   TabletopModals,
@@ -132,6 +133,7 @@ export const Tabletop: React.FC = () => {
     unpinnedUIObjects,
     pinnedDecks,
     unpinnedDecks,
+    pinnedGameObjects,
   } = useObjectFilters(state, hyperscaleLayers);
 
   // === State Management ===
@@ -1097,6 +1099,21 @@ export const Tabletop: React.FC = () => {
         setDeleteCandidateId={setDeleteCandidateId}
         offset={viewTransform?.scroll ? { x: viewTransform.scroll.x, y: viewTransform.scroll.y } : { x: 0, y: 0 }}
         zoom={viewTransform?.zoom ?? 1}
+      />
+
+      {/* Pinned Game Objects Layer */}
+      <PinnedGameObjectsRenderer
+        pinnedGameObjects={pinnedGameObjects}
+        state={state}
+        draggingId={draggingId}
+        currentTool={currentTool}
+        isCtrlPressed={isCtrlPressed}
+        isGM={isGM}
+        activePlayerId={activePlayerId}
+        pixelsPerVU={pixelsPerVU}
+        onContextMenu={handleContextMenu}
+        onMouseDown={handleMouseDown}
+        dispatch={dispatch}
       />
 
       {/* Cursor Slot Visualization */}

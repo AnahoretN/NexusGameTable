@@ -200,4 +200,6 @@ export interface FilteredObjectCollections {
   pinnedDecks: any[];
   /** Unpinned decks */
   unpinnedDecks: any[];
+  /** Pinned game objects (tokens, cards, effects, etc.) */
+  pinnedGameObjects: TableObject[];
 }
