@@ -1,10 +1,10 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Pin, RotateCw, RefreshCw, Trash2, Copy, Lock, Unlock, Eye, EyeOff, ChevronsUpDown, SkipForward, SkipBack, Rewind } from 'lucide-react';
 import { TableObject, Token as TokenType, ItemType, TokenCounter, TokenCounterDisplay } from '../../types';
-import { getTokenWithAppliedState } from '../../utils/contextMenuActions';
+import { useTokenWithState } from '../../hooks/useTokenWithState';
 
 interface PinnedGameObjectsRendererProps {
   pinnedGameObjects: TableObject[];
@@ -32,7 +32,7 @@ interface TokenCountersDisplayProps {
   dispatch: React.Dispatch<any>;
 }
 
-const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
+const TokenCountersDisplay = memo(({
   counters,
   counterDisplay,
   tokenWidth,
@@ -41,7 +41,7 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
   isGM,
   tokenId,
   dispatch
-}) => {
+}: TokenCountersDisplayProps) => {
   if (!isGM && counterDisplay?.showForPlayers === false) {
     return null;
   }
@@ -50,10 +50,13 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
   }
 
   const position = counterDisplay?.position || 'below';
-  const baseBarHeight = 7 * pixelsPerVU;
-  const gap = pixelsPerVU;
 
-  const renderBar = (counter: TokenCounter, index: number) => {
+  // Memoize bar dimensions
+  const baseBarHeight = useMemo(() => 7 * pixelsPerVU, [pixelsPerVU]);
+  const gap = useMemo(() => pixelsPerVU, [pixelsPerVU]);
+
+  // Memoize render function for each counter
+  const renderBar = useCallback((counter: TokenCounter, index: number) => {
     if (counterDisplay?.displayType === 'bars') {
       const maxValue = counter.maxValue || 100;
       const currentValue = counter.value || 0;
@@ -101,10 +104,193 @@ const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
       );
     }
     return null;
-  };
+  }, [counterDisplay, position, gap, baseBarHeight, pixelsPerVU, tokenWidth]);
 
   return <>{counters.map((c, i) => renderBar(c, i))}</>;
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison for memo
+  return (
+    prevProps.counters === nextProps.counters &&
+    prevProps.counterDisplay === nextProps.counterDisplay &&
+    prevProps.tokenWidth === nextProps.tokenWidth &&
+    prevProps.tokenHeight === nextProps.tokenHeight &&
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.isGM === nextProps.isGM &&
+    prevProps.tokenId === nextProps.tokenId
+  );
+});
+
+TokenCountersDisplay.displayName = 'PinnedTokenCountersDisplay';
+
+// Pinned Token Renderer Component
+interface PinnedTokenRendererProps {
+  obj: TableObject;
+  allObjects: Record<string, TableObject>;
+  pixelsPerVU: number;
+  isGM: boolean;
+  activePlayerId: string;
+  draggingId: string | null;
+  viewTransform: { offset: { x: number; y: number }; zoom: number; scroll: { x: number; y: number } };
+  onContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
+  onMouseDown: (e: React.MouseEvent, objId: string) => void;
+  dispatch: React.Dispatch<any>;
+}
+
+const PinnedTokenRenderer = memo(({
+  obj,
+  allObjects,
+  pixelsPerVU,
+  isGM,
+  activePlayerId,
+  draggingId,
+  viewTransform,
+  onContextMenu,
+  onMouseDown,
+  dispatch,
+}: PinnedTokenRendererProps) => {
+  // Use memoized hook to get token with applied state
+  const token = useTokenWithState(obj as TokenType, allObjects);
+  const pinnedPosition = (obj as any).pinnedScreenPosition;
+
+  if (!pinnedPosition) return null;
+
+  const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+  const canDrag = !obj.locked;
+  const isDragging = draggingId === obj.id;
+
+  // Memoize counters
+  const counters = useMemo(() => {
+    return (obj as any).counters || [];
+  }, [obj]);
+
+  const counterDisplay = useMemo(() => {
+    return (obj as any).counterDisplay;
+  }, [obj]);
+
+  return (
+    <div
+      data-object-id={obj.id}
+      className="absolute flex items-center justify-center text-white font-bold select-none group"
+      style={{
+        left: pinnedPosition.x,
+        top: pinnedPosition.y,
+        width: token.width * pixelsPerVU,
+        height: token.height * pixelsPerVU,
+        pointerEvents: 'auto',
+        transform: `rotate(${obj.rotation || 0}deg)`,
+      }}
+      onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
+      onContextMenu={(e) => onContextMenu(e, obj)}
+    >
+      <SvgTokenShape
+        shape={token.shape}
+        width={token.width * pixelsPerVU}
+        height={token.height * pixelsPerVU}
+        color={token.color || '#e74c3c'}
+        content={token.content}
+        rotation={0}
+        borderWidth={token.borderWidth ?? 2}
+        borderColor={(token as any).borderColor || 'white'}
+        opacity={token.opacity ?? 100}
+        borderOpacity={(token as any).borderOpacity ?? 100}
+        showThickness={true}
+        tokenName={(token as any).showNameOnToken || (obj as any).showName ? obj.name : undefined}
+        fontColor={(token as any).fontColor || 'white'}
+      />
+
+      <TokenCountersDisplay
+        counters={counters}
+        counterDisplay={counterDisplay}
+        tokenWidth={token.width * pixelsPerVU}
+        tokenHeight={token.height * pixelsPerVU}
+        pixelsPerVU={pixelsPerVU}
+        isGM={isGM}
+        tokenId={obj.id}
+        dispatch={dispatch}
+      />
+
+      <PinnedIndicator />
+
+      {/* Action buttons */}
+      <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 opacity-0 group-hover:opacity-100 pointer-events-auto`}>
+        {obj.actionButtons?.includes('delete') && (
+          <button
+            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }); }}
+            className="bg-red-600 hover:bg-red-500 text-white p-1 rounded"
+            title="Delete"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+        {obj.actionButtons?.includes('clone') && (
+          <button
+            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }); }}
+            className="bg-cyan-600 hover:bg-cyan-500 text-white p-1 rounded"
+            title="Clone"
+          >
+            <Copy size={14} />
+          </button>
+        )}
+        {obj.actionButtons?.includes('rotate') && (
+          <button
+            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }); }}
+            className="bg-green-600 hover:bg-green-500 text-white p-1 rounded"
+            title="Rotate"
+          >
+            <RotateCw size={14} />
+          </button>
+        )}
+        {obj.actionButtons?.includes('flip') && (
+          <button
+            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } }); }}
+            className="bg-purple-600 hover:bg-purple-500 text-white p-1 rounded"
+            title="Flip"
+          >
+            <RefreshCw size={14} />
+          </button>
+        )}
+        {obj.actionButtons?.includes('lock') && (
+          <button
+            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }); }}
+            className="bg-yellow-600 hover:bg-yellow-500 text-white p-1 rounded"
+            title={obj.locked ? 'Unlock' : 'Lock'}
+          >
+            {obj.locked ? <Unlock size={14} /> : <Lock size={14} />}
+          </button>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const isPinned = (obj as any).isPinnedToViewport;
+            if (isPinned) {
+              const pinnedPos = (obj as any).pinnedScreenPosition;
+              if (pinnedPos) {
+                const { offset, zoom, scroll } = viewTransform;
+                const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom);
+                const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (pixelsPerVU * zoom);
+                dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
+              }
+            }
+          }}
+          className="bg-pink-600 hover:bg-pink-500 text-white p-1 rounded"
+          title="Unpin"
+        >
+          <Pin size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.obj === nextProps.obj &&
+    prevProps.allObjects === nextProps.allObjects &&
+    prevProps.draggingId === nextProps.draggingId &&
+    prevProps.isGM === nextProps.isGM &&
+    prevProps.activePlayerId === nextProps.activePlayerId
+  );
+});
+
+PinnedTokenRenderer.displayName = 'PinnedTokenRenderer';
 
 export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   pinnedGameObjects,
@@ -120,127 +306,19 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   dispatch,
 }) => {
   const renderPinnedToken = (obj: TableObject) => {
-    const token = getTokenWithAppliedState(obj as TokenType, state.objects);
-    const pinnedPosition = (obj as any).pinnedScreenPosition;
-    if (!pinnedPosition) return null;
-
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    const canDrag = !obj.locked;
-    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
-
     return (
-      <div
-        key={obj.id}
-        data-object-id={obj.id}
-        className="absolute flex items-center justify-center text-white font-bold select-none group"
-        style={{
-          left: pinnedPosition.x,
-          top: pinnedPosition.y,
-          width: token.width * pixelsPerVU,
-          height: token.height * pixelsPerVU,
-          pointerEvents: 'auto',
-          transform: `rotate(${obj.rotation || 0}deg)`,
-        }}
-        onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
-        onContextMenu={(e) => onContextMenu(e, obj)}
-      >
-        <SvgTokenShape
-          shape={token.shape}
-          width={token.width * pixelsPerVU}
-          height={token.height * pixelsPerVU}
-          color={token.color || '#e74c3c'}
-          content={token.content}
-          rotation={0}
-          borderWidth={token.borderWidth ?? 2}
-          borderColor={(token as any).borderColor || 'white'}
-          opacity={token.opacity ?? 100}
-          borderOpacity={(token as any).borderOpacity ?? 100}
-          showThickness={true}
-          tokenName={(token as any).showNameOnToken || (obj as any).showName ? obj.name : undefined}
-          fontColor={(token as any).fontColor || 'white'}
-        />
-
-        <TokenCountersDisplay
-          counters={(obj as any).counters || []}
-          counterDisplay={(obj as any).counterDisplay}
-          tokenWidth={token.width * pixelsPerVU}
-          tokenHeight={token.height * pixelsPerVU}
-          pixelsPerVU={pixelsPerVU}
-          isGM={isGM}
-          tokenId={obj.id}
-          dispatch={dispatch}
-        />
-
-        <PinnedIndicator />
-
-        {/* Action buttons */}
-        <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : 'opacity-0 group-hover:opacity-100 pointer-events-auto'}`}>
-          {obj.actionButtons?.includes('delete') && (
-            <button
-              onClick={(e) => { e.stopPropagation(); dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }); }}
-              className="bg-red-600 hover:bg-red-500 text-white p-1 rounded"
-              title="Delete"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-          {obj.actionButtons?.includes('clone') && (
-            <button
-              onClick={(e) => { e.stopPropagation(); dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }); }}
-              className="bg-cyan-600 hover:bg-cyan-500 text-white p-1 rounded"
-              title="Clone"
-            >
-              <Copy size={14} />
-            </button>
-          )}
-          {obj.actionButtons?.includes('rotate') && (
-            <button
-              onClick={(e) => { e.stopPropagation(); dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }); }}
-              className="bg-green-600 hover:bg-green-500 text-white p-1 rounded"
-              title="Rotate"
-            >
-              <RotateCw size={14} />
-            </button>
-          )}
-          {obj.actionButtons?.includes('flip') && (
-            <button
-              onClick={(e) => { e.stopPropagation(); dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } }); }}
-              className="bg-purple-600 hover:bg-purple-500 text-white p-1 rounded"
-              title="Flip"
-            >
-              <RefreshCw size={14} />
-            </button>
-          )}
-          {obj.actionButtons?.includes('lock') && (
-            <button
-              onClick={(e) => { e.stopPropagation(); dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }); }}
-              className="bg-yellow-600 hover:bg-yellow-500 text-white p-1 rounded"
-              title={obj.locked ? 'Unlock' : 'Lock'}
-            >
-              {obj.locked ? <Unlock size={14} /> : <Lock size={14} />}
-            </button>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const isPinned = (obj as any).isPinnedToViewport;
-              if (isPinned) {
-                const pinnedPos = (obj as any).pinnedScreenPosition;
-                if (pinnedPos) {
-                  const { offset, zoom, scroll, pixelsPerVU: ppVU } = state.viewTransform;
-                  const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (ppVU * zoom);
-                  const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (ppVU * zoom);
-                  dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
-                }
-              }
-            }}
-            className="bg-pink-600 hover:bg-pink-500 text-white p-1 rounded"
-            title="Unpin"
-          >
-            <Pin size={14} />
-          </button>
-        </div>
-      </div>
+      <PinnedTokenRenderer
+        obj={obj}
+        allObjects={state.objects}
+        pixelsPerVU={pixelsPerVU}
+        isGM={isGM}
+        activePlayerId={activePlayerId}
+        draggingId={draggingId}
+        viewTransform={state.viewTransform}
+        onContextMenu={onContextMenu}
+        onMouseDown={onMouseDown}
+        dispatch={dispatch}
+      />
     );
   };
 
@@ -250,7 +328,6 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
 
     return (
       <div
-        key={obj.id}
         data-object-id={obj.id}
         className="absolute"
         style={{
@@ -262,8 +339,10 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
         onContextMenu={(e) => onContextMenu(e, obj)}
       >
         <EffectTemplateRendererMemo
-          effect={obj}
+          obj={obj}
           pixelsPerVU={pixelsPerVU}
+          isGM={isGM}
+          dispatch={dispatch}
         />
         <PinnedIndicator />
       </div>
@@ -304,7 +383,11 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
 
   return (
     <div className="fixed inset-0 pointer-events-none z-[600]">
-      {pinnedGameObjects.map(obj => renderPinnedGameObject(obj))}
+      {pinnedGameObjects.map(obj => (
+        <React.Fragment key={obj.id}>
+          {renderPinnedGameObject(obj)}
+        </React.Fragment>
+      ))}
     </div>
   );
 });

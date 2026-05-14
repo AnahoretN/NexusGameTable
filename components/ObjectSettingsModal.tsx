@@ -1487,7 +1487,7 @@ setGridDebugInfo(null);
 
         {/* Content */}
         <div
-          className="flex-1 overflow-y-auto custom-scrollbar p-4"
+          className="flex-1 overflow-y-auto scrollbar-thin p-4"
           data-scrollable="true"
         >
           {activeTab === 'general' && (
@@ -2187,6 +2187,7 @@ setGridDebugInfo(null);
                       value={data.content || ''}
                       onChange={value => update('content', value)}
                       className="w-full !h-10"
+                      maxSize={10 * 1024 * 1024} // 10MB for board backgrounds
                     />
                   </div>
                 </div>

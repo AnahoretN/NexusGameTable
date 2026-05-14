@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ItemType, Card as CardType, Token as TokenType, CardOrientation, Deck as DeckType, Randomizer, Counter, DiceObject, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate } from '../types';
+import { ItemType, Card as CardType, Token as TokenType, CardOrientation, Deck as DeckType, Randomizer, Counter, DiceObject, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate, TableObject } from '../types';
 import { renderCursorSlotItem } from './CursorSlotItems';
+import { getTokenWithAppliedState } from '../hooks/useTokenWithState';
 
 interface CursorSlotVisualizationProps {
   cursorSlot: (CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing | EffectTemplate)[];
@@ -37,9 +38,11 @@ const calculateItemDimensions = (
     cardHeight?: number;
     cardOrientation?: CardOrientation;
   },
-  pixelsPerVU: number
+  pixelsPerVU: number,
+  allObjects: Record<string, TableObject>
 ) => {
   const isCard = item.type === ItemType.CARD;
+  const isToken = item.type === ItemType.TOKEN;
   const isDeck = item.type === ItemType.DECK;
   const isRandomizer = item.type === ItemType.RANDOMIZER;
   const isCounter = item.type === ItemType.COUNTER;
@@ -51,8 +54,15 @@ const calculateItemDimensions = (
   const isDrawing = item.type === ItemType.DRAWING;
   const isEffectTemplate = item.type === ItemType.EFFECT_TEMPLATE;
 
+  // For tokens, apply state first to get correct dimensions
   let baseWidth = item.width ?? 50;
   let baseHeight = item.height ?? 50;
+  if (isToken) {
+    const tokenWithState = getTokenWithAppliedState(item as TokenType, allObjects);
+    baseWidth = tokenWithState.width ?? 50;
+    baseHeight = tokenWithState.height ?? 50;
+  }
+
   let isHorizontal = false;
 
   if (isCard) {
@@ -137,7 +147,7 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
       const position = cursorPositionRef.current;
 
       const newHeldItems: HeldItem[] = cursorSlot.map((item, index) => {
-        const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU);
+        const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU, state.objects as Record<string, TableObject>);
 
         // Use pixel offsets directly if available
         const clickOffsetX_PX = (item as any).clickOffsetX_PX;
@@ -252,7 +262,7 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
         >
           {/* Render active cursor slot items */}
           {sortedSlot.map((item, sortedIndex) => {
-            const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU);
+            const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU, state.objects as Record<string, TableObject>);
             // Ensure minimum dimensions to prevent rendering issues
             // Use larger minimum for Effect Templates to prevent flicker
             const minWidth = item.type === ItemType.EFFECT_TEMPLATE ? 50 : 1;

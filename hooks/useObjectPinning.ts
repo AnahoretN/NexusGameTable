@@ -119,7 +119,8 @@ export function calculateGameUnpinPosition(
   scrollLeft: number,
   scrollTop: number
 ): { x: number; y: number } {
-  // Pinned: viewportX, Unpinned: worldX where (worldX - offset.x) / zoom - scrollLeft = viewportX
+  // Convert pinned screen position to world position
+  // Formula: world = (pinnedScreenPosition + scroll - offset) / zoom
   return {
     x: (pinnedScreenPosition.x + scrollLeft - offset.x) / zoom,
     y: (pinnedScreenPosition.y + scrollTop - offset.y) / zoom

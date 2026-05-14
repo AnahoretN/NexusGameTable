@@ -2,6 +2,47 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.2.4] - 2026-05-14
+
+### ✨ New Features
+
+#### 🧲 Panel Snapping System
+**Smart panel positioning with magnetic edges**
+
+- **Edge snapping**: Panels automatically snap to screen edges when dragged near
+- **Panel-to-panel snapping**: Panels snap to each other's edges for neat layouts
+- **Visual feedback**: Snap indicators show when panels will attach
+- **Smooth dragging**: Maintains snap connection while moving
+- **Easy detachment**: Panels detach normally when dragged away
+- **Smart snap distance**: Configurable snap threshold for comfortable UX
+
+**Use cases:**
+- Organizing panels into neat layouts
+- Docking panels to screen edges
+- Creating consistent panel arrangements
+- Quick panel positioning
+
+---
+
+### 🔧 Technical Improvements
+
+#### 📜 Unified Scrollbar System
+**Consistent scrollbar styling across all panels**
+
+- **Unified styles**: All scrollbars now use consistent styling throughout the application
+- **Fixed sizes**: Scrollbar width and thumb sizes properly defined
+- **Better appearance**: Improved visual consistency across hand panels, pool panels, and other scrollable containers
+
+---
+
+### 🐛 Bug Fixes
+
+- **Hand panel containers**: Fixed layout issues with hand panel container sizing
+- **Scrollbar rendering**: Fixed inconsistent scrollbar appearance in different panels
+- **Container overflow**: Fixed overflow behavior in scrollable panel containers
+
+---
+
 ## [0.2.3] - 2026-05-10
 
 ### ✨ New Features

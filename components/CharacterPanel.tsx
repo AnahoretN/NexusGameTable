@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { useActivePlayerId, useIsGM, usePlayerList, useSettingsModalState, useIsSettingsModalOpen } from '../store/contexts';
 import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType } from '../types';
-import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload } from 'lucide-react';
-import { TextBlock, SliderBlock, TableBlock, InventoryBlock, AvatarBlock, CounterBlock } from './CharacterBlocks';
+import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload, User } from 'lucide-react';
+import { TextBlock, SliderBlock, TableBlock, InventoryBlock, CounterBlock } from './CharacterBlocks';
 import { SimpleContextMenu } from './SimpleContextMenu';
 import { CharacterSettingsModal } from './CharacterSettingsModal';
 import { logger } from '../utils/logger';
@@ -31,6 +31,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   );
   const [activeColumnId, setActiveColumnId] = useState<string>('column-1');
   const [activeSubTabId, setActiveSubTabId] = useState<string>('subtab-1');
+  const [pendingRemoveCharacterId, setPendingRemoveCharacterId] = useState<string | null>(null);
 
   // Get active character - use characterData from state for reactivity
   const activeCharacter = useMemo(() => {
@@ -261,6 +262,83 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     setCharacterNameInput('');
   }, []);
 
+  // Avatar upload state
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handler for avatar upload
+  const handleAvatarUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isGM && activeCharacter?.playerId !== activePlayerId) return;
+    if (!e.target.files || !e.target.files[0]) return;
+
+    const file = e.target.files[0];
+
+    // Check file size (limit to 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image size must be less than 2MB');
+      return;
+    }
+
+    // Create a preview URL
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const avatarUrl = event.target?.result as string;
+
+      if (!characterData || !activeCharacter) return;
+
+      const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
+        if (char.id === activeCharacter.id) {
+          return { ...char, avatarUrl };
+        }
+        return char;
+      });
+
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: panel.id,
+          updates: {
+            characterData: {
+              ...characterData,
+              characters: updatedCharacters
+            }
+          }
+        }
+      });
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input
+    if (avatarFileInputRef.current) {
+      avatarFileInputRef.current.value = '';
+    }
+  }, [characterData, activeCharacter, isGM, activePlayerId, panel.id, dispatch]);
+
+  // Handler for removing avatar
+  const handleRemoveAvatar = useCallback(() => {
+    if (!isGM && activeCharacter?.playerId !== activePlayerId) return;
+    if (!characterData || !activeCharacter) return;
+
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
+      if (char.id === activeCharacter.id) {
+        return { ...char, avatarUrl: undefined };
+      }
+      return char;
+    });
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: panel.id,
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
+        }
+      }
+    });
+  }, [characterData, activeCharacter, isGM, activePlayerId, panel.id, dispatch]);
+
   // Handler for editing block title
   const handleStartEditBlockTitle = useCallback((blockId: string, currentTitle: string) => {
     if (!canEditCharacter) return;
@@ -379,10 +457,16 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   // Handler: Remove character
   const handleRemoveCharacter = useCallback((characterId: string) => {
     if (!characterData || !isGM) return;
+    setPendingRemoveCharacterId(characterId);
+  }, [characterData, isGM]);
 
-    const newCharacters = characterData.characters.filter(c => c.id !== characterId);
+  // Handler: Confirm remove character
+  const handleConfirmRemoveCharacter = useCallback(() => {
+    if (!pendingRemoveCharacterId || !characterData) return;
+
+    const newCharacters = characterData.characters.filter(c => c.id !== pendingRemoveCharacterId);
     const newActiveId = newCharacters.length > 0
-      ? (characterData.activeCharacterId === characterId ? newCharacters[0].id : characterData.activeCharacterId)
+      ? (characterData.activeCharacterId === pendingRemoveCharacterId ? newCharacters[0].id : characterData.activeCharacterId)
       : '';
 
     dispatch({
@@ -399,10 +483,17 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       }
     });
 
-    if (characterData.activeCharacterId === characterId) {
+    if (characterData.activeCharacterId === pendingRemoveCharacterId) {
       setActiveCharacterId(newActiveId);
     }
-  }, [characterData, isGM, panel.id, dispatch]);
+
+    setPendingRemoveCharacterId(null);
+  }, [pendingRemoveCharacterId, characterData, panel.id, dispatch]);
+
+  // Handler: Cancel remove character
+  const handleCancelRemoveCharacter = useCallback(() => {
+    setPendingRemoveCharacterId(null);
+  }, []);
 
   // Handler: Select character tab
   const handleSelectCharacter = useCallback((characterId: string) => {
@@ -631,13 +722,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
           gridColumns: 4,
           items: [],
           maxItems: undefined
-        };
-        break;
-      case CharacterBlockType.AVATAR:
-        blockData = {
-          imageUrl: '',
-          name: activeCharacter?.characterName || 'Character',
-          showName: true
         };
         break;
       case CharacterBlockType.COUNTER:
@@ -1001,74 +1085,119 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       {!isCollapsed && activeCharacter && canViewCharacter && (
         <div className="flex-1 flex flex-col p-1.5 min-h-0 w-full">
           {/* Character Header */}
-          <div className="mb-2 flex-shrink-0">
-            <div className="flex items-center justify-between gap-2">
-              {/* Character Name */}
-              <div className="flex items-center gap-2 flex-1">
-                {editingCharacterName ? (
-                  <input
-                    type="text"
-                    value={characterNameInput}
-                    onChange={(e) => setCharacterNameInput(e.target.value)}
-                    onBlur={handleSaveCharacterName}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSaveCharacterName();
-                      } else if (e.key === 'Escape') {
-                        handleCancelEditCharacterName();
-                      }
-                    }}
-                    className="text-lg font-semibold bg-slate-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
-                    autoFocus
-                  />
-                ) : (
-                  <h3
-                    className="text-lg font-semibold text-white cursor-pointer hover:text-slate-300 transition-colors"
-                    onDoubleClick={handleStartEditCharacterName}
-                    title="Double-click to rename"
-                  >
-                    {activeCharacter.characterName}
-                  </h3>
-                )}
-                {isGM && (
-                  <button
-                    onClick={() => handleRemoveCharacter(activeCharacter.id)}
-                    className="p-1 text-slate-400 hover:text-red-400 transition-colors"
-                    title="Remove character"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+          <div className="mb-3 flex-shrink-0">
+            <div className="flex items-start gap-3">
+              {/* Avatar */}
+              <div className="relative group flex-shrink-0">
+                <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-slate-500 flex items-center justify-center bg-slate-700">
+                  {activeCharacter.avatarUrl ? (
+                    <img
+                      src={activeCharacter.avatarUrl}
+                      alt={activeCharacter.characterName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User size={40} className="text-slate-400" />
+                  )}
+                </div>
+
+                {/* Avatar upload/remove overlay */}
+                {(isGM || activeCharacter.playerId === activePlayerId) && (
+                  <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1">
+                      <label className="cursor-pointer bg-white text-black rounded-full p-1 hover:bg-slate-200">
+                        <Upload size={14} />
+                        <input
+                          ref={avatarFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAvatarUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      {activeCharacter.avatarUrl && (
+                        <button
+                          onClick={handleRemoveAvatar}
+                          className="bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                          title="Remove avatar"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
 
-              {/* Sub-tabs */}
-              {activeCharacter.subTabs && activeCharacter.subTabs.length > 0 && (
-                <div className="flex gap-1">
-                  {activeCharacter.subTabs.map((subTab: any) => {
-                    const isActive = subTab.id === (activeCharacter.activeSubTabId || activeSubTabId);
-                    return (
-                      <button
-                        key={subTab.id}
-                        onClick={() => handleSelectSubTab(subTab.id)}
-                        className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                          isActive
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                        }`}
-                      >
-                        {subTab.name}
-                      </button>
-                    );
-                  })}
+              {/* Character Name and Sub-tabs */}
+              <div className="flex-1 min-w-0">
+                {/* Character Name */}
+                <div className="flex items-center gap-2 mb-2">
+                  {editingCharacterName ? (
+                    <input
+                      type="text"
+                      value={characterNameInput}
+                      onChange={(e) => setCharacterNameInput(e.target.value)}
+                      onBlur={handleSaveCharacterName}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveCharacterName();
+                        } else if (e.key === 'Escape') {
+                          handleCancelEditCharacterName();
+                        }
+                      }}
+                      className="text-lg font-semibold leading-[1.2] bg-slate-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
+                      autoFocus
+                    />
+                  ) : (
+                    <h3
+                      className="text-lg font-semibold leading-[1.2] text-white cursor-pointer hover:text-slate-300 transition-colors"
+                      onDoubleClick={handleStartEditCharacterName}
+                      title="Double-click to rename"
+                    >
+                      {activeCharacter.characterName}
+                    </h3>
+                  )}
+                  {isGM && (
+                    <button
+                      onClick={() => handleRemoveCharacter(activeCharacter.id)}
+                      className="p-1 text-slate-400 hover:text-red-400 transition-colors flex-shrink-0"
+                      title="Remove character"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
-              )}
+
+                {/* Sub-tabs */}
+                {activeCharacter.subTabs && activeCharacter.subTabs.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {activeCharacter.subTabs.map((subTab: any) => {
+                      const isActive = subTab.id === (activeCharacter.activeSubTabId || activeSubTabId);
+                      return (
+                        <button
+                          key={subTab.id}
+                          onClick={() => handleSelectSubTab(subTab.id)}
+                          className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                            isActive
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                          }`}
+                        >
+                          {subTab.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Blocks Container - Multi-column layout */}
           {activeSubTab && (
             <div
-              className="flex-1 overflow-y-auto pr-1 min-h-0 w-full"
+              className="flex-1 overflow-y-auto pr-1 min-h-0 w-full scrollbar-thin"
               data-scrollable="true"
             >
               <div className="flex gap-1.5 h-full">
@@ -1092,105 +1221,72 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                       return (
                         <div
                           key={block.id}
-                          className={`w-full bg-slate-700 rounded box-border ${
-                            block.type === CharacterBlockType.AVATAR ? 'h-[200px] min-h-[200px] p-0 relative overflow-hidden' : 'p-1.5'
-                          }`}
+                          className="w-full bg-slate-700 rounded box-border p-1.5"
                           style={{ boxSizing: 'border-box' }}
                         >
-                  {/* Block header - hide for AvatarBlock */}
-                  {block.type !== CharacterBlockType.AVATAR ? (
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2 flex-1">
-                        {editingBlockTitle === block.id ? (
-                          <input
-                            type="text"
-                            value={blockTitleInput}
-                            onChange={(e) => setBlockTitleInput(e.target.value)}
-                            onBlur={() => handleSaveBlockTitle(block.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                handleSaveBlockTitle(block.id);
-                              } else if (e.key === 'Escape') {
-                                handleCancelEditBlockTitle();
-                              }
-                            }}
-                            className="text-sm font-medium bg-slate-600 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 mr-2"
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        ) : (
-                          <h4
-                            className={`text-sm font-medium ${canEditCharacter ? 'text-slate-200 cursor-pointer hover:text-white' : 'text-slate-200'}`}
-                            onDoubleClick={() => handleStartEditBlockTitle(block.id, block.title)}
-                            title={canEditCharacter ? "Double-click to rename" : block.title}
-                          >
-                            {block.title}
-                          </h4>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-0.5">
-                        {canEditCharacter && (
-                          <>
-                            <button
-                              onClick={() => handleMoveBlockUp(block.id)}
-                              className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="Move up"
-                              disabled={isFirst}
-                            >
-                              <ChevronUp size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleMoveBlockDown(block.id)}
-                              className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="Move down"
-                              disabled={isLast}
-                            >
-                              <ChevronDown size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleRemoveBlock(block.id)}
-                              className="p-1 text-slate-400 hover:text-red-400"
-                              title="Remove block"
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    /* AvatarBlock: show move and remove buttons - positioned absolutely */
-                    canEditCharacter && (
-                      <div className="absolute top-2 right-2 z-10 flex gap-0.5">
-                        <button
-                          onClick={() => handleMoveBlockUp(block.id)}
-                          className="p-1 text-slate-400 hover:text-slate-200 bg-slate-800 bg-opacity-75 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="Move up"
-                          disabled={isFirst}
-                        >
-                          <ChevronUp size={12} />
-                        </button>
-                        <button
-                          onClick={() => handleMoveBlockDown(block.id)}
-                          className="p-1 text-slate-400 hover:text-slate-200 bg-slate-800 bg-opacity-75 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="Move down"
-                          disabled={isLast}
-                        >
-                          <ChevronDown size={12} />
-                        </button>
-                        <button
-                          onClick={() => handleRemoveBlock(block.id)}
-                          className="p-1 text-slate-400 hover:text-red-400 bg-slate-800 bg-opacity-75 rounded"
-                          title="Remove avatar"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    )
-                  )}
+                          {/* Block header */}
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2 flex-1">
+                              {editingBlockTitle === block.id ? (
+                                <input
+                                  type="text"
+                                  value={blockTitleInput}
+                                  onChange={(e) => setBlockTitleInput(e.target.value)}
+                                  onBlur={() => handleSaveBlockTitle(block.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleSaveBlockTitle(block.id);
+                                    } else if (e.key === 'Escape') {
+                                      handleCancelEditBlockTitle();
+                                    }
+                                  }}
+                                  className="text-sm font-medium bg-slate-600 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 mr-2"
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : (
+                                <h4
+                                  className={`text-sm font-medium ${canEditCharacter ? 'text-slate-200 cursor-pointer hover:text-white' : 'text-slate-200'}`}
+                                  onDoubleClick={() => handleStartEditBlockTitle(block.id, block.title)}
+                                  title={canEditCharacter ? "Double-click to rename" : block.title}
+                                >
+                                  {block.title}
+                                </h4>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-0.5">
+                              {canEditCharacter && (
+                                <>
+                                  <button
+                                    onClick={() => handleMoveBlockUp(block.id)}
+                                    className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    title="Move up"
+                                    disabled={isFirst}
+                                  >
+                                    <ChevronUp size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleMoveBlockDown(block.id)}
+                                    className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    title="Move down"
+                                    disabled={isLast}
+                                  >
+                                    <ChevronDown size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleRemoveBlock(block.id)}
+                                    className="p-1 text-slate-400 hover:text-red-400"
+                                    title="Remove block"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
 
-                  {/* Block content */}
-                  {(() => {
+                          {/* Block content */}
+                          {(() => {
                     switch (block.type) {
                       case CharacterBlockType.TEXT:
                         return (
@@ -1222,14 +1318,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                           <InventoryBlock
                             block={block}
                             editable={canManageCharacter}
-                            onChange={(newData) => handleUpdateBlock(block.id, newData)}
-                          />
-                        );
-                      case CharacterBlockType.AVATAR:
-                        return (
-                          <AvatarBlock
-                            block={block}
-                            editable={canEditCharacter}
                             onChange={(newData) => handleUpdateBlock(block.id, newData)}
                           />
                         );
@@ -1334,13 +1422,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                   }
                 },
                 {
-                  name: 'Avatar Block',
-                  icon: <ImageIcon size={16} />,
-                  action: () => {
-                    handleAddBlock(CharacterBlockType.AVATAR);
-                  }
-                },
-                {
                   name: 'Counter Block',
                   icon: <Sliders size={16} />,
                   action: () => {
@@ -1380,7 +1461,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
               <div className="space-y-4">
                 <CharacterSettingsModal
                   character={settingsModal.character}
@@ -1448,6 +1529,42 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Remove Character Confirmation Modal */}
+      {pendingRemoveCharacterId && createPortal(
+        <div className="fixed inset-0 z-[100007] flex items-center justify-center bg-black/40" onClick={handleCancelRemoveCharacter}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[400px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex justify-center items-center py-3 px-4 border-b border-slate-600">
+              <h3 className="text-base font-bold text-white">Confirm Deletion</h3>
+            </div>
+
+            {/* Content */}
+            <div className="p-4">
+              <p className="text-slate-300 text-sm">
+                Are you sure you want to delete this character? This action cannot be undone.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 p-4 pt-0">
+              <button
+                onClick={handleCancelRemoveCharacter}
+                className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmRemoveCharacter}
+                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>,

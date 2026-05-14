@@ -217,10 +217,12 @@ export function constrainPixelPosition(
   minVisible: number = 50
 ): { x: number; y: number } {
   // Allow panel to go off-screen, but keep minVisible pixels visible
+  // minY: panel can go off top, but minVisible pixels of bottom must show
+  // maxY: panel can go off bottom, but minVisible pixels of top must show
   const minX = minVisible - width;
   const maxX = viewportWidth - minVisible;
   const minY = minVisible - height;
-  const maxY = viewportHeight - minVisible;
+  const maxY = viewportHeight - height + minVisible;
 
   return {
     x: Math.max(minX, Math.min(x, maxX)),

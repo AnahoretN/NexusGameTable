@@ -27,6 +27,7 @@ export const useObjectFilters = (
   // All table objects (convert from object record to array)
   const tableObjects = useMemo(() => {
     const PLAYABLE_AREA_SIZE = 5000;
+
     return (Object.values(state.objects || {}) as TableObject[]).filter((obj) => {
       // Exclude objects with isOnTable: false (hidden objects)
       if ((obj as any).isOnTable === false) {
@@ -192,7 +193,7 @@ export const useObjectFilters = (
   // Pinned game objects (tokens, cards, effects, etc. - but NOT decks, panels, or windows)
   // These are rendered in viewport coordinates, not world coordinates
   const pinnedGameObjects = useMemo(() => {
-    return (Object.values(state.objects) as TableObject[])
+    const result = (Object.values(state.objects) as TableObject[])
       .filter((obj) => {
         // Must be pinned to viewport
         if (!(obj as any).isPinnedToViewport) return false;
@@ -203,6 +204,7 @@ export const useObjectFilters = (
         return true;
       })
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+    return result;
   }, [state.objects]);
 
   return {

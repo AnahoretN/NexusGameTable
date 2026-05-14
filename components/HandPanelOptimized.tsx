@@ -446,7 +446,7 @@ interface TokenStackItemProps {
   onContextMenu: (e: React.MouseEvent, token: Token) => void;
 }
 
-const TokenStackItem: React.FC<TokenStackItemProps> = memo(({
+const TokenStackItem = memo(({
   stack,
   stackIndex,
   groupOffset,
@@ -456,7 +456,7 @@ const TokenStackItem: React.FC<TokenStackItemProps> = memo(({
   activePlayerId,
   onMouseDown,
   onContextMenu
-}) => {
+}: TokenStackItemProps) => {
   const actualIndex = groupOffset + stackIndex;
   const tokenIds = stack.tokens.map(t => t.id);
 
@@ -541,13 +541,15 @@ interface HandPanelProps {
   isDragTarget?: boolean;
   isCollapsed?: boolean;
   language?: AppLanguage;
+  shiftScrollbar?: boolean;
 }
 
 export const HandPanelOptimized: React.FC<HandPanelProps> = ({
-  width = MAIN_MENU_WIDTH,
+  width,
   isDragTarget = false,
   isCollapsed = false,
-  language = 'en'
+  language = 'en',
+  shiftScrollbar = false
 }) => {
   // ✅ ИСПРАВЛЕНО: Получаем objects и dispatch из GameContext (один вызов)
   const { state: gameState, dispatch } = useGame();
@@ -580,6 +582,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scaleMenuRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // State for selected player hand tab - MUST be declared before useMemo
   const [selectedPlayerId, setSelectedPlayerId] = useState(activePlayerId);
@@ -1544,7 +1547,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     const container = containerRef.current;
     if (!container) return;
 
-    const scrollContainer = container.querySelector('.custom-scrollbar') as HTMLElement;
+    const scrollContainer = container.querySelector('.scrollbar-thin') as HTMLElement;
     if (!scrollContainer) return;
 
     const cards = scrollContainer.querySelectorAll('[data-card-index]');
@@ -1724,13 +1727,13 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     <div
       ref={containerRef}
       data-hand-panel="true"
-      className="h-full flex flex-col transition-all"
-      style={{ width }}
+      className="h-full flex flex-col transition-all w-full"
+      style={width ? { width: shiftScrollbar ? width + 25 : width } : undefined}
       onClick={handlePanelClick}
     >
       {/* Player hand tabs */}
       {!isCollapsed && players.length > 1 && (
-        <div className="flex flex-wrap gap-1 px-1 pt-1 pb-0 border-b border-slate-700">
+        <div className="flex flex-wrap gap-1 px-1 pt-1 pb-0 border-b border-slate-700 min-w-0 max-w-full overflow-hidden box-border">
           {players.map(player => {
             const isActive = player.id === selectedPlayerId;
             const isOwnHand = player.id === activePlayerId;
@@ -1746,6 +1749,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
               <button
                 key={player.id}
                 onClick={() => setSelectedPlayerId(player.id)}
+                onContextMenu={(e) => handleTabContextMenu(e, player.id)}
                 className={`px-2 py-1 text-xs font-medium rounded-t transition-colors relative ${
                   isActive
                     ? isOwnHand
@@ -1791,22 +1795,13 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
       {/* Cards Grid */}
       {!isCollapsed && (
-        <>
-          <style>{`
-            [data-hand-panel="true"] .hand-panel-scrollbar::-webkit-scrollbar {
-              width: 16px !important;
-            }
-          `}</style>
-          <div
-            className="flex-1 hand-panel-scrollbar overflow-y-auto relative"
-            data-scrollable="true"
-          >
-            {(isDragTarget || isCursorOverHand) && (
-              <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
-            )}
-            <div className="p-1">
+        <div className="flex-1 min-h-0 w-full relative box-border">
+          {(isDragTarget || isCursorOverHand) && (
+            <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
+          )}
+          <div ref={scrollContainerRef} className="scrollbar-thin h-full pt-1 pb-1 px-1 overflow-x-auto overflow-y-hidden min-w-0 w-full box-border" data-scrollable="true">
           {cards.length === 0 ? (
-            <div className="flex flex-col items-center justify-center min-h-[200px] text-slate-500">
+            <div className="flex flex-col items-center justify-center min-h-[200px] text-slate-500 px-1">
               <p className="text-sm">
                 {isViewingOpponentHand
                   ? `${players.find(p => p.id === selectedPlayerId)?.name || translate('Player', language as Locale)} ${translate('has no cards', language as Locale)}`
@@ -1834,8 +1829,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                 const hasTokenStacks = (group as any).hasTokenStacks || false;
 
                 return (
-                  <div key={group.shape} className="mb-3">
-                    <div className="text-xs text-gray-500 font-bold mb-1 px-1">
+                  <div key={group.shape} className="mb-3 min-w-0 max-w-full box-border">
+                    <div className="text-xs text-gray-500 font-bold mb-1 px-1 truncate">
                       {group.shape === CardShape.HEX ? 'HEX'
                         : group.shape === CardShape.TRIANGLE ? 'TRIANGLE'
                           : group.shape === CardShape.CIRCLE ? 'CIRCLE'
@@ -1851,6 +1846,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                       <VirtualizedHandList
                         cards={groupCards}
                         pixelsPerVU={cardScale}
+                        className="px-1"
                         cardWidth={100}
                         cardHeight={140}
                         cardSpacing={10}
@@ -1907,7 +1903,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                         }}
                       />
                     ) : (
-                      <div className="flex flex-wrap gap-[2px] w-full">
+                      <div className="flex flex-wrap gap-[2px] min-w-0 overflow-hidden box-border hand-cards-container px-1">
                         {/* Render token stacks if this is a token group */}
                         {hasTokenStacks && tokenStacks.map((stack, stackIndex) => {
                           const actualIndex = groupOffset + stackIndex;
@@ -1994,7 +1990,6 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
           )}
           </div>
         </div>
-        </>
       )}
 
       {/* Hand Tab Settings Modal */}
@@ -2015,7 +2010,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
               <div className="space-y-4">
                 <HandTabSettingsModal
                   player={handTabSettings.player}

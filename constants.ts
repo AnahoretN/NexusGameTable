@@ -15,7 +15,12 @@ export const DECK_OFFSET = 3; // vu
 
 // UI Panel dimensions (pixels - not scaled, for interface elements)
 export const MAIN_MENU_WIDTH = 306; // px (reduced by 2% from 313)
-export const SCROLLBAR_WIDTH = 15; // px
+
+// Scrollbar widths (pixels - must match CSS values)
+export const SCROLLBAR_WIDTH_THIN = 12; // px - default/standard scrollbar
+export const SCROLLBAR_WIDTH_THICK_CSS = 25; // px - visual width in CSS
+export const SCROLLBAR_WIDTH_THICK = 17; // px - effective width for calculations (may differ from visual)
+export const SCROLLBAR_WIDTH = 15; // px - @deprecated Use SCROLLBAR_WIDTH_THIN or SCROLLBAR_WIDTH_THICK
 
 // Default object dimensions in virtual units (vu)
 export const DEFAULT_DECK_WIDTH = 120; // vu

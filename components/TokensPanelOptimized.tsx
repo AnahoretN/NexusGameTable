@@ -256,7 +256,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
       </div>
 
       <div
-        className="flex-1 overflow-y-auto custom-scrollbar p-3"
+        className="flex-1 overflow-y-auto scrollbar-thin p-3"
         data-scrollable="true"
       >
         {archetypesExpanded && (

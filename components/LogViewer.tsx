@@ -428,7 +428,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ isOpen, onClose }) => {
         )}
 
         {/* Entry list */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
           {filteredEntries.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 gap-2">
               <Clock size={48} className="opacity-50" />

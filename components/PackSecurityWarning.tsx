@@ -80,7 +80,7 @@ export const PackSecurityWarning: React.FC<PackSecurityWarningProps> = ({
 
         {/* Content */}
         <div
-          className="p-4 space-y-4 flex-1 overflow-y-auto"
+          className="p-4 space-y-4 flex-1 overflow-y-auto scrollbar-thin"
           data-scrollable="true"
         >
           <p className="text-sm text-gray-300">{t.message}</p>

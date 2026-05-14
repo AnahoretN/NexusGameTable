@@ -216,7 +216,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
 
       {/* Layer list */}
       <div
-        className="flex-1 overflow-y-auto space-y-1 min-h-0"
+        className="flex-1 overflow-y-auto space-y-1 min-h-0 scrollbar-thin"
         data-scrollable="true"
       >
         {sortedLayers.map((layer) => {

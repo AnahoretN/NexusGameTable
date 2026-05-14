@@ -54,7 +54,7 @@ const PileMenuItem = memo<{
 
 PileMenuItem.displayName = 'PileMenuItem';
 
-export const PileContextMenu: React.FC<PileContextMenuProps> = memo(({ x, y, pile, deck, onAction, onClose, language = 'en' }) => {
+export const PileContextMenu = memo(({ x, y, pile, deck, onAction, onClose, language = 'en' }: PileContextMenuProps) => {
 
   const menuItems = useMemo<PileMenuItem[]>(() => [
     {

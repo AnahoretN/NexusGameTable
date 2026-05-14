@@ -1003,8 +1003,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Only save to localStorage if position actually changed
         if (positionChanged) {
           const localSettings = loadLocalSettings();
+
+          // Convert VU to pixels if menu is unpinned (during/after drag)
+          // Pinned panels store size in pixels, unpinned panels store size in VU
+          const pixelsPerVU = state.viewTransform?.pixelsPerVU || 1;
+          const isPinned = (newPos as any).isPinnedToViewport;
+
+          // For pinned panels: width/height are already in pixels
+          // For unpinned panels: width/height are in VU, convert to pixels
+          const savedWidth = isPinned
+            ? (newPos.width || MAIN_MENU_WIDTH)
+            : ((newPos.width || MAIN_MENU_WIDTH) * pixelsPerVU);
+          const savedHeight = isPinned
+            ? (newPos.height || 400)
+            : ((newPos.height || 400) * pixelsPerVU);
+
           localSettings.mainMenuPosition = { x: newPos.x, y: newPos.y };
-          localSettings.mainMenuSize = { width: newPos.width || MAIN_MENU_WIDTH, height: newPos.height || 400 };
+          localSettings.mainMenuSize = { width: savedWidth, height: savedHeight };
           localSettings.isPositionSet = true;
           saveLocalSettings(localSettings);
         }
@@ -3764,12 +3779,18 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Also set the legacy pinnedScreenPosition for backward compatibility
         updatedObj.pinnedScreenPosition = { x: action.payload.screenX, y: action.payload.screenY };
 
-        // Store pixel dimensions if provided (to prevent size changes when pinning)
+        // Store pixel dimensions - preserve existing if not explicitly provided
         if (action.payload.pixelWidth !== undefined) {
           updatedObj.pinnedPixelWidth = action.payload.pixelWidth;
+        } else if ((obj as any).pinnedPixelWidth !== undefined) {
+          // Keep existing pinned pixel dimensions
+          updatedObj.pinnedPixelWidth = (obj as any).pinnedPixelWidth;
         }
         if (action.payload.pixelHeight !== undefined) {
           updatedObj.pinnedPixelHeight = action.payload.pixelHeight;
+        } else if ((obj as any).pinnedPixelHeight !== undefined) {
+          // Keep existing pinned pixel dimensions
+          updatedObj.pinnedPixelHeight = (obj as any).pinnedPixelHeight;
         }
 
         return {
@@ -3788,12 +3809,18 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         pinnedScreenPosition: { x: action.payload.screenX, y: action.payload.screenY }
       };
 
-      // Store pixel dimensions if provided (to prevent size changes when pinning)
+      // Store pixel dimensions - preserve existing if not explicitly provided
       if (action.payload.pixelWidth !== undefined) {
         updatedObj.pinnedPixelWidth = action.payload.pixelWidth;
+      } else if ((obj as any).pinnedPixelWidth !== undefined) {
+        // Keep existing pinned pixel dimensions
+        updatedObj.pinnedPixelWidth = (obj as any).pinnedPixelWidth;
       }
       if (action.payload.pixelHeight !== undefined) {
         updatedObj.pinnedPixelHeight = action.payload.pixelHeight;
+      } else if ((obj as any).pinnedPixelHeight !== undefined) {
+        // Keep existing pinned pixel dimensions
+        updatedObj.pinnedPixelHeight = (obj as any).pinnedPixelHeight;
       }
 
       return {
@@ -3811,6 +3838,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Skip history for unpinning to improve performance
       // Pinning/unpinning is frequent and doesn't need history tracking
 
+      // Store pixel dimensions before unpinned to prevent size changes
+      // For pinned panels, width/height are in pixels, but when unpinned they're treated as VU
+      // So we save the current pixel dimensions to restore them later when repinned
+      const pixelWidth = obj.width;
+      const pixelHeight = obj.height;
+
       return {
         ...state,
         objects: {
@@ -3822,7 +3855,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             isPinnedToViewport: false,
             pinnedScreenPosition: undefined,
             expandedPinnedPosition: undefined,
-            collapsedPinnedPosition: undefined
+            collapsedPinnedPosition: undefined,
+            // Preserve pixel dimensions for restoration when repinned
+            pinnedPixelWidth: pixelWidth,
+            pinnedPixelHeight: pixelHeight
           }
         },
       };

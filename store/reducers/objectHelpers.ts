@@ -1,7 +1,6 @@
 import { TableObject, ItemType, Card, Deck, Drawing, GeneralHistoryEntry, PanelObject, WindowObject } from '../../types';
 import { CARD_SHAPE_DIMS, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../../constants';
 import { CardShape } from '../../types';
-import { constrainPanelPosition, constrainPanelBounds, DEFAULT_SCREEN_WIDTH_VU, DEFAULT_SCREEN_HEIGHT_VU } from '../../utils/panelConstraints';
 
 /**
  * Helper functions for object manipulation in reducers
@@ -56,7 +55,6 @@ export function createNewObject(
 
 /**
  * Update an object with proper handling for special types
- * For panels and windows, applies size and position constraints
  */
 export function updateObject(
   state: any,
@@ -68,34 +66,6 @@ export function updateObject(
 
   const updatedObj = { ...obj, ...action.payload } as TableObject;
   const newObjects = { ...objects, [action.payload.id]: updatedObj };
-
-  // Apply constraints for panels and windows when position or size changes
-  if ((obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) &&
-      ('x' in action.payload || 'y' in action.payload || 'width' in action.payload || 'height' in action.payload)) {
-    const { x, y, width, height } = action.payload;
-    const currentX = x !== undefined ? x : obj.x;
-    const currentY = y !== undefined ? y : obj.y;
-    const currentWidth = width !== undefined ? width : obj.width;
-    const currentHeight = height !== undefined ? height : obj.height;
-
-    // Use provided screen dimensions or defaults
-    const screenWidth = action.payload.screenWidth ?? DEFAULT_SCREEN_WIDTH_VU;
-    const screenHeight = action.payload.screenHeight ?? DEFAULT_SCREEN_HEIGHT_VU;
-
-    const constrained = constrainPanelBounds(
-      currentX,
-      currentY,
-      currentWidth,
-      currentHeight,
-      screenWidth,
-      screenHeight
-    );
-
-    updatedObj.x = constrained.x;
-    updatedObj.y = constrained.y;
-    updatedObj.width = constrained.width;
-    updatedObj.height = constrained.height;
-  }
 
   // Ensure decks don't have excessively high z-index
   if (updatedObj.type === ItemType.DECK && (updatedObj.zIndex === undefined || updatedObj.zIndex > 100)) {
@@ -196,7 +166,6 @@ function handleDeckUpdate(
 
 /**
  * Move an object to new coordinates
- * For panels and windows, applies position constraints (50% must remain visible)
  */
 export function moveObject(
   state: any,
@@ -209,29 +178,11 @@ export function moveObject(
   const isInCursorSlot = (obj as any).inCursorSlot;
   const isLocalOnlyMove = isLocalOnly || (obj as any)._localOnly || (obj as any)._excludeFromHistory;
 
-  // Apply position constraints for panels and windows (all in VU)
-  // Panel can extend up to 50% off-screen
-  let constrainedX = x;
-  let constrainedY = y;
-
-  if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
-    const constrained = constrainPanelPosition(
-      x,
-      y,
-      obj.width,
-      obj.height,
-      DEFAULT_SCREEN_WIDTH_VU,
-      DEFAULT_SCREEN_HEIGHT_VU
-    );
-    constrainedX = constrained.x;
-    constrainedY = constrained.y;
-  }
-
   const baseUpdate = {
     ...state,
     objects: {
       ...state.objects,
-      [obj.id]: { ...obj, x: constrainedX, y: constrainedY },
+      [obj.id]: { ...obj, x, y },
     },
   };
 

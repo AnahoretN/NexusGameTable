@@ -2,15 +2,14 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useHandCardScale } from '../hooks/useHandCardScale';
 import { useLocalSettings } from '../hooks/useLocalSettings';
-import { LocalSettings } from '../utils/localSettings';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
 import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerPermissions, useLanguage, useHyperscaleLayers, useSelectedLayers } from '../store/contexts';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
-import { findGM, isGM } from '../utils/playerUtils';
-import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection, EffectTemplate } from '../types';
-import { Dices, MessageSquare, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Palette, Clock, Target } from 'lucide-react';
+import { findGM } from '../utils/playerUtils';
+import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
+import { Dices, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -26,6 +25,7 @@ import { createPack, loadPack } from '../utils/packManager';
 import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 import { convertBlobsInObjects } from '../utils/blobConverter';
 import LogViewer from './LogViewer';
+import { CharacterPanel } from './CharacterPanel';
 
 /**
  * Convert all blob URLs in objects to base64 data URLs
@@ -90,13 +90,24 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     return key[language] || key.en;
   }, [language]);
 
-  const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
-  const [chatInput, setChatInput] = useState('');
+  const [activeTab, setActiveTab] = useState<'create' | 'hand' | 'character' | 'players' | 'tools'>(() => {
+    // Restore from localStorage on mount
+    const saved = localStorage.getItem('main-menu-active-tab');
+    if (saved && ['create', 'hand', 'character', 'players', 'tools'].includes(saved)) {
+      return saved as any;
+    }
+    return 'create';
+  });
+
+  // Save activeTab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('main-menu-active-tab', activeTab);
+  }, [activeTab]);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [waitingForPeerId, setWaitingForPeerId] = useState(false);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   const [dragOverHand, setDragOverHand] = useState(false);
-  const [, setPreviousTab] = useState<'create' | 'hand' | 'chat' | 'players' | 'tools'>('create');
+  const [, setPreviousTab] = useState<'create' | 'hand' | 'character' | 'players' | 'tools'>('create');
 
   // Track cursor position when tokens first appear in cursor slot (for tools tab switching threshold)
   const cursorSlotStartPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -659,11 +670,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     }
   };
 
-  const handleSendChat = () => {
-    if (!chatInput.trim()) return;
-    setChatInput('');
-  };
-
   // Manual connection handlers
   const handleCreateManualOffer = async () => {
     const name = guestNameInput.trim() || 'Host';
@@ -677,10 +683,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
   const handleManualAnswer = async (code: string) => {
     await manualConnection.handleGuestAnswer(code);
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
   };
 
   // Create categories with proper order and labels
@@ -773,20 +775,19 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             <button onClick={() => { setActiveTab('tools'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'tools' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
               <Wrench size={20} />
             </button>
-            <button onClick={() => { setActiveTab('chat'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'chat' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
-              <MessageSquare size={20} />
+            <button onClick={() => { setActiveTab('character'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'character' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
+              <User size={20} />
             </button>
             <button onClick={() => { setActiveTab('players'); }} className={`flex-1 p-3 flex justify-center ${activeTab === 'players' ? 'bg-slate-800 text-white border-b-2 border-purple-500' : 'text-gray-500 hover:bg-slate-800'}`}>
-              <User size={20} />
+              <Network size={20} />
             </button>
           </div>
 
       <div
-        className="flex-1 overflow-y-auto custom-scrollbar relative select-none"
-        data-scrollable="true"
+        className="flex-1 relative select-none min-h-0"
       >
         {activeTab === 'create' && (
-          <div className="p-2">
+          <div className="h-full overflow-y-auto scrollbar-thin p-2" data-scrollable="true">
             {categories.map(category => (
               <CategorySection
                 key={category.id}
@@ -811,14 +812,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         )}
 
         {activeTab === 'hand' && (
-          <div className="h-full flex flex-col">
+          <div className="h-full flex flex-col min-h-0 w-full">
             {/* Hand Panel */}
-            <div className="flex-1 overflow-hidden" onClick={(e) => {
+            <div className="flex-1 min-h-0 w-full" onClick={(e) => {
               // Don't let clicks propagate to main menu container
               // This allows cursor slot drops to work properly
               e.stopPropagation();
             }}>
-              <HandPanel width={width} isDragTarget={dragOverHand} language={language} />
+              <HandPanel shiftScrollbar={false} isDragTarget={dragOverHand} language={language} />
             </div>
           </div>
         )}
@@ -827,7 +828,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           <div className="flex flex-col h-full">
             {/* Upper section - Drawing tools and tokens */}
             <div
-              className="flex-[3] overflow-y-auto px-3 py-2 space-y-3 min-h-0"
+              className="flex-[3] overflow-y-auto px-3 py-2 space-y-3 min-h-0 scrollbar-thin"
               data-scrollable="true"
             >
               {/* Drawing Tools Section */}
@@ -1019,8 +1020,47 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           </div>
         )}
 
+        {activeTab === 'character' && (
+          <div className="h-full overflow-hidden">
+            {/* Find or create character panel for embedded use */}
+            {(() => {
+              const characterPanel = Object.values(state.objects).find(
+                obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.CHARACTER
+              ) as PanelObject | undefined;
+
+              if (!characterPanel) {
+                return (
+                  <div className="h-full flex flex-col items-center justify-center p-4 text-center">
+                    <p className="text-gray-400 text-sm mb-4">{translate('No Character Panel found', language as Locale)}</p>
+                    <button
+                      onClick={() => {
+                        dispatch({
+                          type: 'CREATE_PANEL',
+                          payload: {
+                            panelType: PanelType.CHARACTER,
+                            x: window.innerWidth / 2 - 150,
+                            y: window.innerHeight / 2 - 200,
+                            width: 350,
+                            height: 500,
+                            title: translate('Character Panel', language as Locale),
+                          }
+                        });
+                      }}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors"
+                    >
+                      {translate('Create Character Panel', language as Locale)}
+                    </button>
+                  </div>
+                );
+              }
+
+              return <CharacterPanel panel={characterPanel} isCollapsed={false} />;
+            })()}
+          </div>
+        )}
+
         {activeTab === 'players' && (
-          <div className="p-4 space-y-6">
+          <div className="h-full overflow-y-auto scrollbar-thin p-4" data-scrollable="true">
             <div>
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">{translate('Session Tools', language as Locale)}</h3>
               {/* Session ID Display */}
@@ -1103,6 +1143,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   onChange={handlePackFileChange}
                   className="hidden"
                 />
+
+                {/* Spacer for resize handle */}
+                <div style={{ height: '20px', flexShrink: 0 }} />
               </div>
             </div>
 
@@ -1181,6 +1224,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
             </div>
           </div>
         )}
+
+        {/* Spacer for resize handle */}
+        <div style={{ height: '20px', flexShrink: 0 }} />
       </div>
         </>
       )}

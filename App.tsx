@@ -126,6 +126,62 @@ const PerformanceMonitor: React.FC = () => {
   return null; // This component doesn't render anything
 };
 
+// Slider progress updater - updates all range sliders to show correct progress
+const SliderUpdater: React.FC = () => {
+  useEffect(() => {
+    const updateSliderBackground = (slider: HTMLInputElement) => {
+      const min = parseFloat(slider.min);
+      const max = parseFloat(slider.max);
+      const value = parseFloat(slider.value);
+      const percentage = ((value - min) / (max - min)) * 100;
+      slider.style.background = `linear-gradient(to right, #a78bfa ${percentage}%, #4a5568 ${percentage}%)`;
+    };
+
+    // Update all sliders initially
+    const updateAllSliders = () => {
+      const sliders = document.querySelectorAll('input[type="range"]');
+      sliders.forEach(slider => {
+        updateSliderBackground(slider as HTMLInputElement);
+      });
+    };
+
+    // Initial update
+    updateAllSliders();
+
+    // Add input listeners to all sliders
+    const handleSliderInput = (e: Event) => {
+      const slider = e.target as HTMLInputElement;
+      updateSliderBackground(slider);
+    };
+
+    // Use mutation observer to handle dynamically added sliders
+    const observer = new MutationObserver(() => {
+      const sliders = document.querySelectorAll('input[type="range"]');
+      sliders.forEach(slider => {
+        const input = slider as HTMLInputElement;
+        if (!input.hasAttribute('data-slider-listener')) {
+          input.addEventListener('input', handleSliderInput);
+          input.setAttribute('data-slider-listener', 'true');
+          updateSliderBackground(input);
+        }
+      });
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Cleanup
+    return () => {
+      observer.disconnect();
+      const sliders = document.querySelectorAll('input[type="range"]');
+      sliders.forEach(slider => {
+        (slider as HTMLInputElement).removeEventListener('input', handleSliderInput);
+      });
+    };
+  }, []);
+
+  return null;
+};
+
 const App: React.FC = () => {
   return (
     <LocalSettingsProvider>
@@ -136,6 +192,7 @@ const App: React.FC = () => {
               <PlayerProvider>
                 <ThemeApplier />
                 <PerformanceMonitor />
+                <SliderUpdater />
                 <BrowserZoomBlocker />
                 <div className="w-full h-screen overflow-hidden">
                   <Suspense fallback={

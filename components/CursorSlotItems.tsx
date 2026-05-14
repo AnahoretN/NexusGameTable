@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { ItemType, Card as CardType, Token as TokenType, CardOrientation, CardShape, Deck as DeckType, Randomizer, Counter, DiceObject, TokenShape, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate } from '../types';
+import React, { useEffect, useState } from 'react';
+import { ItemType, Card as CardType, Token as TokenType, CardOrientation, CardShape, Deck as DeckType, Randomizer, Counter, DiceObject, TokenShape, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate, TableObject } from '../types';
 import { Card } from './Card';
 import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
@@ -7,6 +7,7 @@ import { Layers, Pencil } from 'lucide-react';
 import { DECK_OFFSET } from '../constants';
 import { logger } from '../utils/logger';
 import { getCardShapeStyles } from '../utils/shapeUtils';
+import { getTokenWithAppliedState } from '../hooks/useTokenWithState';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -96,6 +97,9 @@ const CursorSlotCard: React.FC<CursorSlotItemProps & { item: CardType }> = ({ it
  * Renders a token in the cursor slot
  */
 const CursorSlotToken: React.FC<CursorSlotItemProps & { item: TokenType }> = ({ item, width, height, offsetX, offsetY, zIndex, state }) => {
+  // Apply token state to get correct visual properties
+  const tokenWithState = getTokenWithAppliedState(item, state.objects as Record<string, TableObject>);
+
   return (
     <div
       style={{
@@ -110,18 +114,19 @@ const CursorSlotToken: React.FC<CursorSlotItemProps & { item: TokenType }> = ({ 
       }}
     >
       <SvgTokenShape
-        shape={item.shape}
+        shape={tokenWithState.shape}
         width={width}
         height={height}
-        color={item.color || '#34495e'}
-        content={item.content}
+        color={tokenWithState.color || '#34495e'}
+        content={tokenWithState.content}
         rotation={0}
-        borderWidth={item.borderWidth ?? 3}
-        borderColor={(item as any).borderColor || 'white'}
-        opacity={item.opacity ?? 100}
-        borderOpacity={item.borderOpacity ?? 100}
+        borderWidth={tokenWithState.borderWidth ?? 3}
+        borderColor={(tokenWithState as any).borderColor || 'white'}
+        opacity={tokenWithState.opacity ?? 100}
+        borderOpacity={(tokenWithState as any).borderOpacity ?? 100}
         showThickness={true}
-        tokenName={(item as any).showName || ((item as any).archetypeId && (state.objects[(item as any).archetypeId] as any)?.showName) ? item.name : undefined}
+        tokenName={(tokenWithState as any).showName || ((tokenWithState as any).archetypeId && (state.objects[(tokenWithState as any).archetypeId] as any)?.showName) ? item.name : undefined}
+        fontColor={(tokenWithState as any).fontColor || 'white'}
       />
     </div>
   );

@@ -40,7 +40,7 @@ const SimpleMenuItem = memo<{
 
 SimpleMenuItem.displayName = 'SimpleMenuItem';
 
-export const SimpleContextMenu: React.FC<SimpleContextMenuProps> = memo(({ x, y, onClose, items }) => {
+export const SimpleContextMenu = memo(({ x, y, onClose, items }: SimpleContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 

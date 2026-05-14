@@ -1,6 +1,6 @@
 import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, DiceGroup } from '../types';
 import type { GameState, ViewTransform } from '../store/GameContext';
-import { SCROLLBAR_WIDTH } from '../constants';
+import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
 import {
   convertImagesToPathMetadata,
@@ -569,10 +569,10 @@ function adaptStateToViewport(
 
         // Ensure object stays within screen bounds
         if (adaptedObj.x + (obj.width || 100) > currentWidth) {
-          adaptedObj.x = currentWidth - (obj.width || 100) - SCROLLBAR_WIDTH;
+          adaptedObj.x = currentWidth - (obj.width || 100) - SCROLLBAR_WIDTH_THICK;
         }
-        if (adaptedObj.y + (obj.height || 100) > currentHeight - SCROLLBAR_WIDTH) {
-          adaptedObj.y = currentHeight - (obj.height || 100) - SCROLLBAR_WIDTH;
+        if (adaptedObj.y + (obj.height || 100) > currentHeight - SCROLLBAR_WIDTH_THICK) {
+          adaptedObj.y = currentHeight - (obj.height || 100) - SCROLLBAR_WIDTH_THICK;
         }
 
         // Adapt pinnedScreenPosition if present

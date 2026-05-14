@@ -151,6 +151,8 @@ export interface ToolStates {
   isCtrlPressed: boolean;
   /** Is panning */
   isPanning: boolean;
+  /** Panning start position ref */
+  panStartRef: React.MutableRefObject<{ x: number; y: number; scrollX: number; scrollY: number } | null>;
 }
 
 /**

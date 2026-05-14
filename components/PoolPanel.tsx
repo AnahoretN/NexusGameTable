@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import {
   usePlayerList,
@@ -326,7 +327,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
   }
 
   return (
-    <div className="h-full flex flex-col bg-slate-800 w-full">
+    <div className="h-full flex flex-col bg-slate-800 w-full" data-pool-panel={panel.id}>
       {/* Tab Bar */}
       <div className="flex flex-wrap gap-0.5 px-2 pt-1 pb-0.5 border-b border-slate-700">
         {poolData.tabs.map((tab: PanelTab) => {
@@ -418,8 +419,12 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
       )}
 
       {/* Tab Settings Modal */}
-      {settingsModal && (
-        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={() => setSettingsModal(null)}>
+      {settingsModal && createPortal(
+        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setSettingsModal(null);
+          }
+        }}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
@@ -434,7 +439,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
               <div className="space-y-4">
                 <PoolTabSettingsModal
                   tab={settingsModal.tab}
@@ -471,7 +476,8 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

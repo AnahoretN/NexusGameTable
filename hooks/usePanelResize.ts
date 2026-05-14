@@ -2,11 +2,16 @@
  * Simplified Panel Resize Hook
  *
  * Provides drag-to-move and corner-resize functionality for panels/windows
- * with proper screen bounds constraints.
+ * Includes magnetism snap-to-edge functionality
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { constrainPanelBounds, getScreenDimensionsInVU } from '../utils/panelConstraints';
+import {
+  applyPositionMagnetism,
+  applyResizeMagnetism,
+  getNearbyEdges,
+  type MagnetismConfig,
+} from '../utils/panelMagnetism';
 
 export interface PanelResizeOptions {
   /** Panel/window ID */
@@ -28,6 +33,8 @@ export interface PanelResizeOptions {
   minHeight?: number;
   /** Pixels per VU (for unpinned panels) */
   pixelsPerVU?: number;
+  /** Magnetism configuration */
+  magnetism?: MagnetismConfig;
   /** Callback when position changes */
   onPositionChange?: (x: number, y: number) => void;
   /** Callback when size changes */
@@ -49,10 +56,16 @@ export interface PanelResizeState {
   currentSize: { width: number; height: number } | null;
   /** Current position during drag (for visual feedback) */
   currentPosition: { x: number; y: number } | null;
+  /** Edges that are currently snapped (for visual feedback) */
+  snappedEdges: {
+    left?: number;
+    right?: number;
+    top?: number;
+    bottom?: number;
+  };
 }
 
 const RESIZE_HANDLE_SIZE = 20; // Size of resize handle area in pixels
-const SNAP_THRESHOLD = 10; // Snap to edge threshold in pixels
 
 /**
  * Hook for panel drag-resize functionality
@@ -76,6 +89,7 @@ export function usePanelResize(options: PanelResizeOptions): {
     minWidth = 200,
     minHeight = 150,
     pixelsPerVU = 1,
+    magnetism,
     onPositionChange,
     onSizeChange,
     onDragStart,
@@ -109,6 +123,7 @@ export function usePanelResize(options: PanelResizeOptions): {
   const [isOverResizeHandle, setIsOverResizeHandle] = useState(false);
   const [currentSize, setCurrentSize] = useState<{ width: number; height: number } | null>(null);
   const [currentPosition, setCurrentPosition] = useState<{ x: number; y: number } | null>(null);
+  const [snappedEdges, setSnappedEdges] = useState<PanelResizeState['snappedEdges']>({});
 
   // Check if mouse is over resize handle area
   const checkResizeHandle = useCallback((clientX: number, clientY: number): boolean => {
@@ -169,64 +184,117 @@ export function usePanelResize(options: PanelResizeOptions): {
 
     const state = dragStateRef.current;
 
-    if (state.isResizing && currentSize) {
+    if (state.isResizing) {
       // Handle resize
       const deltaX = e.clientX - state.startX;
       const deltaY = e.clientY - state.startY;
 
-      // Calculate screen bounds
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-      const maxWidth = isPinnedToViewport ? viewportWidth : viewportWidth;
-      const maxHeight = isPinnedToViewport ? viewportHeight : viewportHeight;
 
-      const newWidth = Math.max(minWidth, Math.min(state.startWidth + deltaX, maxWidth));
-      const newHeight = Math.max(minHeight, Math.min(state.startHeight + deltaY, maxHeight));
+      let newWidth = Math.max(minWidth, state.startWidth + deltaX);
+      let newHeight = Math.max(minHeight, state.startHeight + deltaY);
 
-      setCurrentSize({ width: newWidth, height: newHeight });
-    } else if (state.isDragging && currentPosition) {
+      // Apply magnetism to resize
+      const magnetismResult = applyResizeMagnetism(
+        state.startLeft,
+        state.startTop,
+        newWidth,
+        newHeight,
+        viewportWidth,
+        viewportHeight,
+        magnetism
+      );
+
+      setSnappedEdges(magnetismResult.snappedEdges);
+      setCurrentSize({ width: magnetismResult.width, height: magnetismResult.height });
+    } else if (state.isDragging) {
       // Handle drag
       const deltaX = e.clientX - state.startX;
       const deltaY = e.clientY - state.startY;
 
-      const newX = state.startLeft + deltaX;
-      const newY = state.startTop + deltaY;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
 
-      setCurrentPosition({ x: newX, y: newY });
+      let newX = state.startLeft + deltaX;
+      let newY = state.startTop + deltaY;
+
+      // Apply magnetism to position
+      const magnetismResult = applyPositionMagnetism(
+        newX,
+        newY,
+        state.startWidth,
+        state.startHeight,
+        viewportWidth,
+        viewportHeight,
+        magnetism
+      );
+
+      setSnappedEdges(magnetismResult.snappedEdges);
+      setCurrentPosition({ x: magnetismResult.x, y: magnetismResult.y });
     }
-  }, [currentSize, currentPosition, isPinnedToViewport, minWidth, minHeight, checkResizeHandle]);
+  }, [minWidth, minHeight, checkResizeHandle, magnetism]);
 
   // Mouse leave handler
   const onMouseLeave = useCallback(() => {
     setIsOverResizeHandle(false);
-  }, []);
+    // Clear snapped edges when not actively dragging
+    if (!isDragging && !isResizing) {
+      setSnappedEdges({});
+    }
+  }, [isDragging, isResizing]);
 
   // Global mouse move handler
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const state = dragStateRef.current;
 
-      if (state.isResizing && currentSize) {
+      if (state.isResizing) {
         const deltaX = e.clientX - state.startX;
         const deltaY = e.clientY - state.startY;
 
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
-        const maxWidth = isPinnedToViewport ? viewportWidth : viewportWidth;
-        const maxHeight = isPinnedToViewport ? viewportHeight : viewportHeight;
 
-        const newWidth = Math.max(minWidth, Math.min(state.startWidth + deltaX, maxWidth));
-        const newHeight = Math.max(minHeight, Math.min(state.startHeight + deltaY, maxHeight));
+        let newWidth = Math.max(minWidth, state.startWidth + deltaX);
+        let newHeight = Math.max(minHeight, state.startHeight + deltaY);
 
-        setCurrentSize({ width: newWidth, height: newHeight });
+        // Apply magnetism to resize
+        const magnetismResult = applyResizeMagnetism(
+          state.startLeft,
+          state.startTop,
+          newWidth,
+          newHeight,
+          viewportWidth,
+          viewportHeight,
+          magnetism
+        );
+
+        setSnappedEdges(magnetismResult.snappedEdges);
+        setCurrentSize({ width: magnetismResult.width, height: magnetismResult.height });
       } else if (state.isDragging) {
         const deltaX = e.clientX - state.startX;
         const deltaY = e.clientY - state.startY;
 
-        const newX = state.startLeft + deltaX;
-        const newY = state.startTop + deltaY;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
 
-        setCurrentPosition({ x: newX, y: newY });
+        let newX = state.startLeft + deltaX;
+        let newY = state.startTop + deltaY;
+
+        // Apply magnetism to position
+        const magnetismResult = applyPositionMagnetism(
+          newX,
+          newY,
+          state.startWidth,
+          state.startHeight,
+          viewportWidth,
+          viewportHeight,
+          magnetism
+        );
+
+        setSnappedEdges(magnetismResult.snappedEdges);
+        setCurrentPosition({ x: magnetismResult.x, y: magnetismResult.y });
       } else {
         // Update hover state when not dragging/resizing
         setIsOverResizeHandle(checkResizeHandle(e.clientX, e.clientY));
@@ -236,25 +304,61 @@ export function usePanelResize(options: PanelResizeOptions): {
     const handleMouseUp = (e: MouseEvent) => {
       const state = dragStateRef.current;
 
-      if (state.isResizing && currentSize) {
-        // Finalize resize
-        const finalWidth = currentSize.width;
-        const finalHeight = currentSize.height;
+      if (state.isResizing) {
+        // Calculate final size
+        const deltaX = e.clientX - state.startX;
+        const deltaY = e.clientY - state.startY;
 
-        onSizeChange?.(finalWidth, finalHeight);
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        let finalWidth = Math.max(minWidth, state.startWidth + deltaX);
+        let finalHeight = Math.max(minHeight, state.startHeight + deltaY);
+
+        // Apply magnetism to get final size
+        const magnetismResult = applyResizeMagnetism(
+          state.startLeft,
+          state.startTop,
+          finalWidth,
+          finalHeight,
+          viewportWidth,
+          viewportHeight,
+          magnetism
+        );
+
+        onSizeChange?.(magnetismResult.width, magnetismResult.height);
 
         setIsResizing(false);
         setCurrentSize(null);
+        setSnappedEdges({});
         onDragEnd?.();
       } else if (state.isDragging) {
-        // Finalize drag
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (rect) {
-          onPositionChange?.(rect.left, rect.top);
-        }
+        // Calculate final position
+        const deltaX = e.clientX - state.startX;
+        const deltaY = e.clientY - state.startY;
+
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        let finalX = state.startLeft + deltaX;
+        let finalY = state.startTop + deltaY;
+
+        // Apply magnetism to get final position
+        const magnetismResult = applyPositionMagnetism(
+          finalX,
+          finalY,
+          state.startWidth,
+          state.startHeight,
+          viewportWidth,
+          viewportHeight,
+          magnetism
+        );
+
+        onPositionChange?.(magnetismResult.x, magnetismResult.y);
 
         setIsDragging(false);
         setCurrentPosition(null);
+        setSnappedEdges({});
         onDragEnd?.();
       }
 
@@ -279,7 +383,7 @@ export function usePanelResize(options: PanelResizeOptions): {
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isDragging, isResizing, currentSize, containerRef, isPinnedToViewport, minWidth, minHeight, onPositionChange, onSizeChange, onDragEnd, checkResizeHandle]);
+  }, [isDragging, isResizing, minWidth, minHeight, onPositionChange, onSizeChange, onDragEnd, checkResizeHandle, magnetism]);
 
   return {
     state: {
@@ -288,6 +392,7 @@ export function usePanelResize(options: PanelResizeOptions): {
       isOverResizeHandle,
       currentSize,
       currentPosition,
+      snappedEdges,
     },
     handlers: {
       onMouseDown,

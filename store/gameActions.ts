@@ -73,7 +73,7 @@ export type Action =
   | BaseAction<'SWING_CLOCKWISE', { id: string }>
   | BaseAction<'SWING_COUNTER_CLOCKWISE', { id: string }>
   | BaseAction<'PIN_TO_VIEWPORT', { id: string; screenX: number; screenY: number; pixelWidth?: number; pixelHeight?: number }>
-  | BaseAction<'UNPIN_FROM_VIEWPORT', { id: string; worldX: number; worldY: number }>
+  | BaseAction<'UNPIN_FROM_VIEWPORT', { id: string; worldX: number; worldY: number; pixelsPerVU?: number }>
   // UI Object actions
   | BaseAction<'CREATE_PANEL', { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string }>
   | BaseAction<'CREATE_WINDOW', { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string; targetLayerId?: string }>

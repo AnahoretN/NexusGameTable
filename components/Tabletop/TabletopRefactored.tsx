@@ -143,6 +143,8 @@ export const Tabletop: React.FC = () => {
   const rulerStep = toolSettings.ruler.step;
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef<{ x: number; y: number; scrollX: number; scrollY: number } | null>(null);
 
   // Cursor slot state
   const [cursorSlot, setCursorSlot] = useState<(Card | Token | Board | Deck)[]>([]);
@@ -243,7 +245,9 @@ export const Tabletop: React.FC = () => {
     setIsRulerRightClick,
     setContextMenu,
     setDeleteCandidateId,
-    setIsPanning: () => {},
+    isPanning,
+    setIsPanning,
+    panStartRef,
     scrollContainerRef,
     viewTransform,
     pixelsPerVU,
@@ -848,7 +852,7 @@ export const Tabletop: React.FC = () => {
     <div
       ref={scrollContainerRef}
       data-tabletop="true"
-      className={`w-full h-full overflow-auto relative ${
+      className={`w-full h-full overflow-auto relative scrollbar-thick ${
         currentTool === 'eraser' && isShiftPressed
           ? 'cursor-eraser-delete'
           : currentTool === 'marker' && isShiftPressed

@@ -1,4 +1,4 @@
-import { MAIN_MENU_WIDTH, SCROLLBAR_WIDTH } from '../constants';
+import { MAIN_MENU_WIDTH, SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
 
 const LOCAL_SETTINGS_KEY = 'nexus-local-settings';
@@ -159,10 +159,10 @@ export const calculateMainMenuPosition = (): { x: number; y: number; width: numb
   const screenHeight = window.innerHeight;
 
   return {
-    x: screenWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH,
+    x: screenWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH_THICK,
     y: 0,
     width: MAIN_MENU_WIDTH,
-    height: screenHeight - SCROLLBAR_WIDTH,
+    height: screenHeight - SCROLLBAR_WIDTH_THICK,
   };
 };
 

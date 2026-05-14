@@ -15,9 +15,6 @@
   --accent-color: #a78bfa;
   --accent-hover: #c4b5fd;
   --accent-bg: #7c3aed;
-  --scrollbar-track: #1a202c;
-  --scrollbar-thumb: #4a5568;
-  --scrollbar-thumb-hover: #718096;
 }
 
 /* Dark Fantasy Theme */
@@ -32,9 +29,6 @@
   --accent-color: #cd7f32;
   --accent-hover: #daa520;
   --accent-bg: #8b4513;
-  --scrollbar-track: #1a0a0a;
-  --scrollbar-thumb: #4a3535;
-  --scrollbar-thumb-hover: #5c4545;
 }
 
 /* Fairy Tale Theme */
@@ -49,9 +43,6 @@
   --accent-color: #ff6b9d;
   --accent-hover: #ff9dc4;
   --accent-bg: #c44569;
-  --scrollbar-track: #1a1a2e;
-  --scrollbar-thumb: #533483;
-  --scrollbar-thumb-hover: #6b4a9e;
 }
 
 /* Cosmos Theme */
@@ -66,9 +57,6 @@
   --accent-color: #60a5fa;
   --accent-hover: #93c5fd;
   --accent-bg: #2563eb;
-  --scrollbar-track: #0a0e1a;
-  --scrollbar-thumb: #1e3a5f;
-  --scrollbar-thumb-hover: #3b82f6;
 }
 
 /* Science Theme */
@@ -83,52 +71,19 @@
   --accent-color: #00ff88;
   --accent-hover: #00ffaa;
   --accent-bg: #00cc66;
-  --scrollbar-track: #0c0c0c;
-  --scrollbar-thumb: #404040;
-  --scrollbar-thumb-hover: #00ff88;
 }
 
 /* Apply theme colors to common elements */
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-}
-
-/* Scrollbar theming */
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track) !important;
-  border-left: 1px solid var(--border-color) !important;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb) !important;
-  border: 3px solid var(--scrollbar-track) !important;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover) !important;
-}
-::-webkit-scrollbar-corner {
-  background: var(--scrollbar-track) !important;
-}
-
-.custom-scrollbar,
-.custom-scrollbar * {
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track) !important;
-}
-
-.hand-panel-scrollbar::-webkit-scrollbar-track {
-  background: var(--scrollbar-track) !important;
-  border-left: 1px solid var(--border-color) !important;
-}
-.hand-panel-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb) !important;
-  border: 4px solid var(--scrollbar-track) !important;
-}
-.hand-panel-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover) !important;
-}
-.hand-panel-scrollbar,
-.hand-panel-scrollbar * {
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track) !important;
+  margin: 0;
+  overflow: hidden;
+  touch-action: none;
+  -ms-touch-action: none;
+  overscroll-behavior: none;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
 }
 
 /* Range slider styling - cross-browser */
@@ -136,8 +91,9 @@ input[type="range"].slider-input,
 input[type="range"] {
   -webkit-appearance: none !important;
   appearance: none !important;
-  background: transparent !important;
+  background: linear-gradient(to right, #a78bfa 50%, #4a5568 50%);
   cursor: pointer;
+  border-radius: 4px;
   /* Firefox: constrain width properly */
   width: 100%;
   max-width: 100%;
@@ -146,10 +102,10 @@ input[type="range"] {
 /* Webkit slider track (Chrome, Safari, Opera) */
 input[type="range"]::-webkit-slider-runnable-track,
 input[type="range"].slider-input::-webkit-slider-runnable-track {
-  height: 9px !important;
-  background: var(--bg-tertiary) !important;
+  height: 9px;
+  background: transparent;
   border-radius: 4px;
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(0, 0, 0, 0.3);
 }
 
 /* Webkit slider thumb (Chrome, Safari, Opera) */
@@ -159,17 +115,19 @@ input[type="range"].slider-input::-webkit-slider-thumb {
   appearance: none !important;
   width: 18px !important;
   height: 18px !important;
-  background: var(--accent-color) !important;
+  background: #ffffff !important;
   border-radius: 50%;
   margin-top: -5px;
-  border: 2px solid var(--accent-bg);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  border: 2px solid #94a3b8;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 10;
 }
 
 input[type="range"]::-webkit-slider-thumb:hover,
 input[type="range"].slider-input::-webkit-slider-thumb:hover {
-  background: var(--accent-hover) !important;
-  border-color: var(--accent-bg);
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1;
 }
 
 input[type="range"]:focus::-webkit-slider-thumb,
@@ -180,10 +138,10 @@ input[type="range"].slider-input:focus::-webkit-slider-thumb {
 /* Firefox slider track */
 input[type="range"]::-moz-range-track,
 input[type="range"].slider-input::-moz-range-track {
-  height: 9px !important;
-  background: var(--bg-tertiary) !important;
+  height: 9px;
+  background: transparent;
   border-radius: 4px;
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(0, 0, 0, 0.3);
   /* Firefox: prevent extra width */
   width: 100%;
   box-sizing: border-box;
@@ -194,19 +152,21 @@ input[type="range"]::-moz-range-thumb,
 input[type="range"].slider-input::-moz-range-thumb {
   width: 18px !important;
   height: 18px !important;
-  background: var(--accent-color) !important;
+  background: #ffffff !important;
   border-radius: 50%;
-  border: 2px solid var(--accent-bg);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  border: 2px solid #94a3b8;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   cursor: pointer;
+  position: relative;
+  z-index: 10;
   /* Firefox: prevent extra spacing */
   box-sizing: border-box;
 }
 
 input[type="range"]::-moz-range-thumb:hover,
 input[type="range"].slider-input::-moz-range-thumb:hover {
-  background: var(--accent-hover) !important;
-  border-color: var(--accent-bg);
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1;
 }
 
 input[type="range"]:focus::-moz-range-thumb,
@@ -242,78 +202,396 @@ input[type="range"]::-ms-thumb:hover {
   border-color: var(--accent-bg);
 }
 
-/* Always visible scrollbar styling for webkit browsers */
+/* ============================================
+   Token Counter Animations
+   ============================================ */
+
+/* Horizontal button fade-in animations */
+@keyframes fadeInLeftBtn {
+  from { opacity: 0; transform: translate(-50%, -50%) translateX(-5px); }
+  to { opacity: 1; transform: translate(-50%, -50%) translateX(0); }
+}
+
+@keyframes fadeInRightBtn {
+  from { opacity: 0; transform: translate(50%, -50%) translateX(5px); }
+  to { opacity: 1; transform: translate(50%, -50%) translateX(0); }
+}
+
+/* Vertical button fade-in animations */
+@keyframes fadeInTopBtn {
+  from { opacity: 0; transform: translate(-50%, -50%) translateY(-5px); }
+  to { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
+}
+
+@keyframes fadeInBottomBtn {
+  from { opacity: 0; transform: translate(-50%, 50%) translateY(5px); }
+  to { opacity: 1; transform: translate(-50%, 50%) translateY(0); }
+}
+
+/* Label fade-in animation */
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateX(-50%) translateY(-3px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Left position label fade-in */
+@keyframes fadeInLeft {
+  from { opacity: 0; transform: translateY(-50%) translateX(-5px); }
+  to { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+/* Center value fade-in */
+@keyframes fadeInCenter {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* ============================================
+   Token Object Styles
+   ============================================ */
+
+/* Base token container */
+.token-container {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  user-select: none;
+}
+
+/* Token with dragging state */
+.token-container.dragging {
+  cursor: grabbing;
+  z-index: 100000;
+}
+
+/* Token with grab cursor */
+.token-container.can-drag {
+  cursor: grab;
+}
+
+/* Token with default cursor */
+.token-container.locked {
+  cursor: default;
+}
+
+/* Token container group for hover effects */
+.token-container.group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Token shape SVG container */
+.token-shape {
+  display: block;
+}
+
+/* Token counter bar base styles */
+.token-counter-bar {
+  position: absolute;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 3px;
+  overflow: visible;
+  transition: all 0.2s ease;
+}
+
+.token-counter-bar.horizontal {
+  cursor: pointer;
+}
+
+.token-counter-bar.vertical {
+  cursor: pointer;
+}
+
+/* Token counter fill */
+.token-counter-fill {
+  position: absolute;
+  border-radius: 3px;
+  transition: width 0.3s ease, height 0.3s ease;
+}
+
+.token-counter-fill.horizontal {
+  bottom: 0;
+  left: 0;
+}
+
+.token-counter-fill.vertical {
+  bottom: 0;
+  left: 0;
+}
+
+/* Token counter label */
+.token-counter-label {
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  position: absolute;
+}
+
+.token-counter-label.horizontal {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 100%;
+}
+
+.token-counter-label.vertical {
+  left: 50%;
+  transform: translateX(-50%);
+  top: auto;
+}
+
+/* Token counter value */
+.token-counter-value {
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Token counter button */
+.token-counter-button {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.token-counter-button:hover {
+  background-color: rgba(50, 50, 50, 0.9);
+  transform: scale(1.1);
+}
+
+/* Token counter container */
+.token-counters-container {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.token-counters-container.horizontal {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.token-counters-container.vertical {
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: row;
+}
+
+.token-counters-container.above {
+  bottom: 100%;
+  margin-bottom: 4px;
+}
+
+.token-counters-container.below {
+  top: 100%;
+  margin-top: 4px;
+}
+
+.token-counters-container.center {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.token-counters-container.left {
+  right: 100%;
+  margin-right: 4px;
+}
+
+.token-counters-container.right {
+  left: 100%;
+  margin-left: 4px;
+}
+
+/* Token counter wrapper */
+.token-counter-wrapper {
+  position: absolute;
+  transition: width 0.2s ease, height 0.2s ease;
+}
+
+.token-counter-wrapper.horizontal {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.token-counter-wrapper.vertical {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Token action buttons container */
+.token-action-buttons {
+  position: absolute;
+  bottom: -1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: opacity 0.2s ease;
+  z-index: 20;
+}
+
+.token-action-buttons.force-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.token-action-buttons.force-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.token-action-buttons.hover-visible {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.token-container.group:hover .token-action-buttons.hover-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Token action button */
+.token-action-button {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  transition: background-color 0.15s ease;
+}
+
+.token-action-button:hover {
+  filter: brightness(1.1);
+}
+
+/* ============================================
+   Scrollbar System - MUST BE LAST
+   ============================================ */
+
+/* Scrollbar CSS Variables */
+:root {
+  --scrollbar-width-thin: 12px;
+  --scrollbar-width-thick: 25px;
+  --scrollbar-track: #0f172a;
+  --scrollbar-thumb: #334155;
+  --scrollbar-thumb-hover: #475569;
+  --scrollbar-radius: 2px;
+}
+
+/* ============================================
+   Thin Scrollbar (Default) - 12px
+   ============================================ */
+
+/* Webkit browsers (Chrome, Safari, Edge, Opera) */
+.scrollbar-thin::-webkit-scrollbar,
 ::-webkit-scrollbar {
-  width: 16px;
-  height: 16px;
+  width: var(--scrollbar-width-thin) !important;
+  height: var(--scrollbar-width-thin) !important;
 }
+
+.scrollbar-thin::-webkit-scrollbar-track,
 ::-webkit-scrollbar-track {
-  background: #1a202c;
-  border-left: 1px solid #2d3748;
+  background: #0f172a !important;
 }
+
+.scrollbar-thin::-webkit-scrollbar-thumb,
 ::-webkit-scrollbar-thumb {
-  background: #4a5568;
-  border-radius: 4px;
-  border: 3px solid #1a202c;
+  background: var(--scrollbar-thumb) !important;
+  border-radius: var(--scrollbar-radius) !important;
 }
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover,
 ::-webkit-scrollbar-thumb:hover {
-  background: #718096;
+  background: var(--scrollbar-thumb-hover) !important;
 }
-::-webkit-scrollbar-thumb:inactive {
-  background: #4a5568;
-}
+
+.scrollbar-thin::-webkit-scrollbar-corner,
 ::-webkit-scrollbar-corner {
-  background: #1a202c;
+  background: #0f172a !important;
 }
 
-/* Always visible scrollbar for Firefox */
-.custom-scrollbar,
-.custom-scrollbar * {
-  scrollbar-width: thin;
-  scrollbar-color: #4a5568 #1a202c;
+/* Firefox */
+.scrollbar-thin,
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--scrollbar-thumb) #0f172a !important;
 }
 
-/* Hand panel scrollbar - wider and always visible */
-.hand-panel-scrollbar {
-  overflow-y: scroll;
-  scrollbar-gutter: stable;
-  position: relative;
-  z-index: 300;
-  margin-right: 5px;
-  --scrollbar-width: 50px;
-}
-.hand-panel-scrollbar::-webkit-scrollbar {
-  width: var(--scrollbar-width);
-}
-.hand-panel-scrollbar::-webkit-scrollbar-track {
-  background: #1a202c;
-  border-left: 1px solid #2d3748;
-}
-.hand-panel-scrollbar::-webkit-scrollbar-thumb {
-  background: #4a5568;
-  border-radius: 4px;
-  border: 4px solid #1a202c;
-}
-.hand-panel-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #718096;
-}
-.hand-panel-scrollbar,
-.hand-panel-scrollbar * {
-  scrollbar-width: auto;
-  scrollbar-color: #4a5568 #1a202c;
+/* ============================================
+   Thick Scrollbar (Panels) - 25px
+   ============================================ */
+
+/* Webkit browsers (Chrome, Safari, Edge, Opera) */
+.scrollbar-thick::-webkit-scrollbar {
+  width: var(--scrollbar-width-thick) !important;
+  height: var(--scrollbar-width-thick) !important;
 }
 
-body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  margin: 0;
-  overflow: hidden;
-  /* Prevent browser zoom on touch devices */
-  touch-action: none;
-  /* Prevent zoom gestures */
-  -ms-touch-action: none;
-  /* Prevent browser overscroll behaviors */
-  overscroll-behavior: none;
-  overscroll-behavior-x: none;
-  overscroll-behavior-y: none;
+.scrollbar-thick::-webkit-scrollbar-track {
+  background: #0f172a !important;
+}
+
+.scrollbar-thick::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb) !important;
+  border-radius: var(--scrollbar-radius) !important;
+}
+
+.scrollbar-thick::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+}
+
+.scrollbar-thick::-webkit-scrollbar-corner {
+  background: #0f172a !important;
+}
+
+/* Firefox */
+.scrollbar-thick {
+  scrollbar-width: auto !important;
+  scrollbar-color: var(--scrollbar-thumb) #0f172a !important;
+}
+
+/* ============================================
+   Scrollbar Container Utilities
+   ============================================ */
+
+/* Thin scrollbar container for panels - with stable gutter */
+.scrollbar-thin {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  /* Ensure the scrollbar track is visible and prevents layout shift */
+  scrollbar-gutter: stable !important;
+  /* Prevent scrollbar from being positioned outside visible area */
+  box-sizing: border-box !important;
+}
+
+/* Thick scrollbar container for game space - standard behavior */
+.scrollbar-thick {
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  scrollbar-gutter: auto !important;
+}
+
+/* Hand panel cards container - 10vu narrower */
+.hand-cards-container {
+  width: calc(100% - 10vu) !important;
 }

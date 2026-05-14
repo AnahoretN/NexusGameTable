@@ -176,7 +176,7 @@ export const DiceValuesSettings: React.FC<DiceValuesSettingsProps> = ({ dice, on
           {/* Categories (when not searching) */}
           {!iconSearch && (
             <div
-              className="flex flex-wrap gap-2 mb-3 max-h-[100px] overflow-y-auto"
+              className="flex flex-wrap gap-2 mb-3 max-h-[100px] overflow-y-auto scrollbar-thin"
               data-scrollable="true"
             >
               {DICE_VALUE_ICONS.map((category) => (
@@ -197,7 +197,7 @@ export const DiceValuesSettings: React.FC<DiceValuesSettingsProps> = ({ dice, on
 
           {/* Icons grid */}
           <div
-            className="flex-1 overflow-y-auto"
+            className="flex-1 overflow-y-auto scrollbar-thin"
             data-scrollable="true"
           >
             <div className="grid grid-cols-8 gap-2">

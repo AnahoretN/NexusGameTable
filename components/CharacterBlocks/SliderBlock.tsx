@@ -23,10 +23,14 @@ export const SliderBlock: React.FC<SliderBlockProps> = ({ block, editable, onCha
     value: oldData.value || 0,
     maxValue: oldData.maxValue || 10,
     minValue: oldData.minValue || 0,
-    color: oldData.color || '#22c55e',
+    color: oldData.color || '#a78bfa',
     showValue: oldData.showValue !== false,
     showPercentage: oldData.showPercentage || false
-  }] : data.sliders;
+  }] : data.sliders.map(s => ({
+    ...s,
+    // Migrate green color to purple
+    color: s.color === '#22c55e' || s.color === '#10b981' ? '#a78bfa' : s.color
+  }));
 
   const handleAddSlider = useCallback(() => {
     const newSlider: SliderItem = {
@@ -35,7 +39,7 @@ export const SliderBlock: React.FC<SliderBlockProps> = ({ block, editable, onCha
       value: 5,
       maxValue: 10,
       minValue: 0,
-      color: '#22c55e',
+      color: '#a78bfa',
       showValue: true,
       showPercentage: false
     };
@@ -178,10 +182,13 @@ const SliderItemComponent: React.FC<SliderItemComponentProps> = ({
             value={slider.value}
             onChange={(e) => onSliderChange(slider.id, parseInt(e.target.value))}
             disabled={!editable}
-            className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer slider-input"
+            className="w-full h-2 rounded-lg appearance-none cursor-pointer slider-input"
             style={{
+              '--slider-fill-color': slider.color,
+              '--slider-empty-color': '#4a5568',
+              '--slider-fill-percent': `${percentage}%`,
               background: `linear-gradient(to right, ${slider.color} ${percentage}%, #4a5568 ${percentage}%)`,
-            }}
+            } as React.CSSProperties}
           />
         </div>
 

@@ -176,7 +176,7 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
 
         {/* Content */}
         <div
-          className="flex-1 overflow-y-auto custom-scrollbar p-4"
+          className="flex-1 overflow-y-auto scrollbar-thin p-4"
           data-scrollable="true"
         >
           <div className="space-y-4">

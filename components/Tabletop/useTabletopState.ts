@@ -23,6 +23,9 @@ export const useToolState = () => {
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
 
+  // Ref to track panning start position
+  const panStartRef = useRef<{ x: number; y: number; scrollX: number; scrollY: number } | null>(null);
+
   return {
     currentTool,
     setCurrentTool,
@@ -31,7 +34,8 @@ export const useToolState = () => {
     isCtrlPressed,
     setIsCtrlPressed,
     isPanning,
-    setIsPanning
+    setIsPanning,
+    panStartRef
   };
 };
 

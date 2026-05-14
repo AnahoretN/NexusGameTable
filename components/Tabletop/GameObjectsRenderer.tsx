@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useRef } from 'react';
+import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Card } from '../Card';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
@@ -9,7 +9,9 @@ import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
 import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenCounter, TokenCounterPosition, TokenCounterDisplay } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
-import { getTokenWithAppliedState } from '../../utils/contextMenuActions';
+import { useTokenWithState } from '../../hooks/useTokenWithState';
+import { TokenCountersDisplay } from './TokenCountersDisplay';
+import { TokenRenderer } from './TokenRenderer';
 
 interface GameObjectsRendererProps {
   visibleTableObjects: TableObject[];
@@ -33,561 +35,108 @@ interface GameObjectsRendererProps {
   dispatch: React.Dispatch<any>;
 }
 
-// Token counters display component
-interface TokenCountersDisplayProps {
-  counters: TokenCounter[];
-  counterDisplay: TokenCounterDisplay | undefined;
-  tokenWidth: number;
-  tokenHeight: number;
-  pixelsPerVU: number;
-  isGM: boolean;
-  tokenId: string;
-  dispatch: React.Dispatch<any>;
-}
+export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
+  const {
+    visibleTableObjects,
+    context,
+    state,
+    hyperscaleLayers,
+    selectedHyperscaleLayerIds,
+    draggingId,
+    resizingId,
+    currentTool,
+    isCtrlPressed,
+    isGM,
+    activePlayerId,
+    liveResizeSizeRef,
+    nexusBoardAddingCell,
+    onContextMenu,
+    onMouseDown,
+    onDoubleClick,
+    onResizeStart,
+    onAddNexusCell,
+    dispatch
+  } = props;
 
-const TokenCountersDisplay: React.FC<TokenCountersDisplayProps> = ({
-  counters,
-  counterDisplay,
-  tokenWidth,
-  tokenHeight,
-  pixelsPerVU,
-  isGM,
-  tokenId,
-  dispatch
-}) => {
-  // Don't show if not GM and showForPlayers is false
-  if (!isGM && counterDisplay?.showForPlayers === false) {
-    return null;
-  }
+  const { v2p, createPositionedStyle, getLayerZoomScale, getLayerInverseScale, pixelsPerVU } = context;
 
-  // Don't show if no counters
-  if (!counters || counters.length === 0) {
-    return null;
-  }
+  // Memoize effect props to prevent unnecessary re-renders of EffectTemplateRendererMemo
+  // Create stable callback references for each effect
+  const effectHandlersMap = React.useMemo(() => {
+    const map = new Map<string, {
+      onMouseDown: (e: React.MouseEvent) => void;
+      onContextMenu: (e: React.MouseEvent) => void;
+    }>();
 
-  const position = counterDisplay?.position || 'below';
-  const [hoveredCounterId, setHoveredCounterId] = useState<string | null>(null);
-  const [draggingCounterId, setDraggingCounterId] = useState<string | null>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    // Only create handlers for effects currently in visibleTableObjects
+    const effects = visibleTableObjects.filter(obj => obj.type === ItemType.EFFECT_TEMPLATE);
 
-  // Cleanup interval on unmount
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, []);
+    effects.forEach(obj => {
+      if (!map.has(obj.id)) {
+        const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
 
-  // Handle counter value change (can be delta for buttons or absolute value for slider)
-  const handleCounterChange = (counter: TokenCounter, valueOrDelta: number) => {
-    const clampedValue = Math.max(
-      counter.minValue ?? 0,
-      Math.min(counter.maxValue, valueOrDelta)
-    );
-
-    // Update the counter value
-    const updatedCounters = counters.map(c =>
-      c.id === counter.id ? { ...c, value: clampedValue } : c
-    );
-
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: tokenId,
-        updates: { counters: updatedCounters }
+        map.set(obj.id, {
+          onMouseDown: (e: React.MouseEvent) => isOwner && onMouseDown(e, obj.id),
+          onContextMenu: (e: React.MouseEvent) => onContextMenu(e, obj),
+        });
       }
     });
-  };
 
-  // Start continuous change on button hold
-  const startContinuousChange = (counter: TokenCounter, delta: number) => {
-    let currentValue = counter.value;
+    return map;
+  }, [visibleTableObjects, activePlayerId, isGM, onMouseDown, onContextMenu]);
 
-    // Apply first change immediately
-    currentValue += delta;
-    handleCounterChange(counter, currentValue);
+  // Memoize style and className for effects to prevent unnecessary re-renders
+  const effectStyleMap = React.useMemo(() => {
+    const map = new Map<string, {
+      style: React.CSSProperties;
+      className: string;
+      isDragging: boolean;
+    }>();
 
-    // Then apply changes every 250ms
-    intervalRef.current = setInterval(() => {
-      currentValue += delta;
-      // Use the original counter reference but with updated value
-      const updatedCounter = { ...counter, value: currentValue };
-      handleCounterChange(updatedCounter, currentValue);
-    }, 250);
-  };
+    const effects = visibleTableObjects.filter(obj => obj.type === ItemType.EFFECT_TEMPLATE);
 
-  // Stop continuous change
-  const stopContinuousChange = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  };
+    effects.forEach(obj => {
+      const canDrag = !obj.locked;
+      const isDraggingEffect = draggingId === obj.id;
+      const draggingClass = isDraggingEffect ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+      const objLayer = obj.hyperscaleLayerId || 'tokens';
 
-  // Check if position is vertical (left/right)
-  const isVerticalPosition = position === 'left' || position === 'right';
+      const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
+      const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
+      const isPermeable = hasSelectedLayers && !isLayerSelected;
 
-  // Calculate styles based on position
-  const getContainerStyle = (): React.CSSProperties => {
-    const baseBarHeight = 7 * pixelsPerVU;
-    const gap = pixelsPerVU;
+      // For EFFECT_TEMPLATE, don't set pointerEvents in style - the component handles it internally
+      // The component uses pointerEvents: 'none' on container and 'fill' on SVG polygon
+      const style: React.CSSProperties = isPermeable ? { pointerEvents: 'none' } : {};
 
-    if (isVerticalPosition) {
-      // Vertical layout (left/right) - calculate total width
-      const totalWidth = counters.length * (baseBarHeight + gap);
+      map.set(obj.id, {
+        style,
+        className: draggingClass,
+        isDragging: isDraggingEffect
+      });
+    });
 
-      const baseStyle: React.CSSProperties = {
-        position: 'absolute',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        pointerEvents: 'auto',
-        zIndex: 10,
-        width: `${totalWidth}px`,
-        flexDirection: 'row' as const,
-      };
+    return map;
+  }, [visibleTableObjects, draggingId, selectedHyperscaleLayerIds]);
 
-      if (position === 'left') {
-        return { ...baseStyle, right: '100%', marginRight: '4px' };
-      } else { // right
-        return { ...baseStyle, left: '100%', marginLeft: '4px' };
+  // DEBUG: Check for duplicate DOM elements for effects
+  useEffect(() => {
+    const effectElements = document.querySelectorAll('[data-object-type="EFFECT_TEMPLATE"]');
+    const effectIdCounts: Record<string, number> = {};
+
+    effectElements.forEach(el => {
+      const objectId = el.getAttribute('data-object-id');
+      if (objectId) {
+        effectIdCounts[objectId] = (effectIdCounts[objectId] || 0) + 1;
       }
-    } else {
-      // Horizontal layout (above/below/center) - calculate total height
-      const totalHeight = counters.length * (baseBarHeight + gap);
+    });
 
-      const baseStyle: React.CSSProperties = {
-        position: 'absolute',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        pointerEvents: 'auto',
-        zIndex: 10,
-        height: `${totalHeight}px`,
-      };
-
-      if (position === 'above') {
-        return { ...baseStyle, bottom: '100%', marginBottom: '4px' };
-      } else if (position === 'below') {
-        return { ...baseStyle, top: '100%', marginTop: '4px' };
-      } else { // center
-        return { ...baseStyle, top: '50%', transform: 'translate(-50%, -50%)' };
+    Object.entries(effectIdCounts).forEach(([id, count]) => {
+      if (count > 1) {
+        console.error(`[GameObjectsRenderer] DUPLICATE DOM ELEMENTS for effect ${id}! Found ${count} elements.`);
       }
-    }
-  };
-
-  const getCounterStyle = (counter: TokenCounter, index: number, isHovered: boolean): React.CSSProperties => {
-    const baseBarHeight = 7 * pixelsPerVU;
-    const maxHeight = 7 * 2 * pixelsPerVU;
-    const gap = pixelsPerVU;
-
-    if (isVerticalPosition) {
-      // Vertical counter (left/right position)
-      const barHeight = isHovered ? tokenHeight * 1.5 : tokenHeight;
-
-      return {
-        position: 'absolute' as const,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        left: `${index * (baseBarHeight + gap)}px`,
-        width: `${maxHeight}px`,
-        height: `${barHeight}px`,
-        zIndex: isHovered ? 20 : 1,
-        transition: 'height 0.2s ease',
-      };
-    } else {
-      // Horizontal counter (above/below/center position)
-      const barWidth = isHovered ? tokenWidth * 1.5 : tokenWidth;
-
-      return {
-        position: 'absolute' as const,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        top: `${index * (baseBarHeight + gap)}px`,
-        width: `${barWidth}px`,
-        height: `${maxHeight}px`,
-        zIndex: isHovered ? 20 : 1,
-        transition: 'width 0.2s ease',
-      };
-    }
-  };
-
-  const getBarStyle = (counter: TokenCounter, isHovered: boolean): React.CSSProperties => {
-    const barSize = isHovered ? 7 * 2 : 7;
-
-    if (isVerticalPosition) {
-      // Vertical bar - width is fixed, height is 100%
-      return {
-        width: `${barSize * pixelsPerVU}px`,
-        height: '100%',
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        borderRadius: '3px',
-        overflow: 'visible',
-        position: 'absolute' as const,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        transition: 'all 0.2s ease',
-        cursor: 'pointer',
-        zIndex: isHovered ? 20 : 1,
-      };
-    } else {
-      // Horizontal bar - width is 100%, height is fixed
-      return {
-        width: '100%',
-        height: `${barSize * pixelsPerVU}px`,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        borderRadius: '3px',
-        overflow: 'visible',
-        position: 'absolute' as const,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        transition: 'all 0.2s ease',
-        cursor: 'pointer',
-        zIndex: isHovered ? 20 : 1,
-      };
-    }
-  };
-
-  const getBarFillStyle = (counter: TokenCounter): React.CSSProperties => {
-    const percentage = Math.max(0, Math.min(100, (counter.value / counter.maxValue) * 100));
-
-    if (isVerticalPosition) {
-      // Vertical bar - fill from bottom
-      return {
-        width: '100%',
-        height: `${percentage}%`,
-        backgroundColor: counter.color || '#ef4444',
-        borderRadius: '3px',
-        position: 'absolute' as const,
-        bottom: '0',
-        left: '0',
-        transition: 'height 0.3s ease',
-      };
-    } else {
-      // Horizontal bar - fill from left
-      return {
-        width: `${percentage}%`,
-        height: '100%',
-        backgroundColor: counter.color || '#ef4444',
-        borderRadius: '3px',
-        transition: 'width 0.3s ease',
-      };
-    }
-  };
-
-  const getLabelStyle = (): React.CSSProperties => {
-    const fontSize = 15 * pixelsPerVU;
-
-    if (isVerticalPosition) {
-      // Vertical - label above the + button
-      const buttonSize = 24 * pixelsPerVU;
-      const offset = buttonSize / 2 + 0.5 * pixelsPerVU;
-      return {
-        fontSize: `${fontSize}px`,
-        fontWeight: 'bold',
-        color: 'white',
-        textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-        whiteSpace: 'nowrap' as const,
-        position: 'absolute' as const,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        top: `-${offset + buttonSize + 6 * pixelsPerVU}px`,
-        animation: 'fadeInDown 0.2s ease forwards',
-      };
-    } else {
-      // Horizontal - label above the bar
-      return {
-        fontSize: `${fontSize}px`,
-        fontWeight: 'bold',
-        color: 'white',
-        textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-        whiteSpace: 'nowrap' as const,
-        position: 'absolute' as const,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        bottom: '100%',
-        marginBottom: `${2 * pixelsPerVU}px`,
-        animation: 'fadeInDown 0.2s ease forwards',
-      };
-    }
-  };
-
-  const getValueStyle = (): React.CSSProperties => {
-    const fontSize = 10 * pixelsPerVU;
-    return {
-      fontSize: `${fontSize}px`,
-      fontWeight: 'bold',
-      color: 'white',
-      textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-      whiteSpace: 'nowrap' as const,
-      position: 'absolute' as const,
-      left: '50%',
-      top: '50%',
-      transform: 'translate(-50%, -50%)',
-      pointerEvents: 'none',
-      zIndex: 1,
-    };
-  };
-
-  const getButtonStyle = (isTop: boolean): React.CSSProperties => {
-    const buttonSize = 24 * pixelsPerVU;
-    const offset = buttonSize / 2 + 0.5 * pixelsPerVU;
-
-    if (isVerticalPosition) {
-      // Vertical layout - buttons at top and bottom
-      return {
-        position: 'absolute' as const,
-        left: '50%',
-        transform: isTop ? 'translate(-50%, -50%)' : 'translate(-50%, 50%)',
-        width: `${buttonSize}px`,
-        height: `${buttonSize}px`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: '50%',
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        border: '1px solid rgba(255,255,255,0.3)',
-        color: 'white',
-        fontSize: `${20 * pixelsPerVU}px`,
-        fontWeight: 'bold',
-        cursor: 'pointer',
-        transition: 'all 0.15s ease',
-        [isTop ? 'top' as const : 'bottom' as const]: `-${offset}px`,
-        animation: isTop ? 'fadeInTopBtn 0.2s ease forwards' : 'fadeInBottomBtn 0.2s ease forwards',
-      };
-    } else {
-      // Horizontal layout - buttons at left and right
-      return {
-        position: 'absolute' as const,
-        top: '50%',
-        transform: isTop ? 'translate(-50%, -50%)' : 'translate(50%, -50%)',
-        width: `${buttonSize}px`,
-        height: `${buttonSize}px`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: '50%',
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        border: '1px solid rgba(255,255,255,0.3)',
-        color: 'white',
-        fontSize: `${20 * pixelsPerVU}px`,
-        fontWeight: 'bold',
-        cursor: 'pointer',
-        transition: 'all 0.15s ease',
-        [isTop ? 'left' as const : 'right' as const]: `-${offset}px`,
-        animation: isTop ? 'fadeInLeftBtn 0.2s ease forwards' : 'fadeInRightBtn 0.2s ease forwards',
-      };
-    }
-  };
-
-  const getButtonTextStyle = (): React.CSSProperties => {
-    return {
-      position: 'relative',
-      top: `-${3 * pixelsPerVU}px`,
-    };
-  };
-
-  return (
-    <div style={getContainerStyle()}>
-      <style>{`
-        @keyframes fadeInLeftBtn {
-          from { opacity: 0; transform: translate(-50%, -50%) translateX(-5px); }
-          to { opacity: 1; transform: translate(-50%, -50%) translateX(0); }
-        }
-        @keyframes fadeInRightBtn {
-          from { opacity: 0; transform: translate(50%, -50%) translateX(5px); }
-          to { opacity: 1; transform: translate(50%, -50%) translateX(0); }
-        }
-        @keyframes fadeInTopBtn {
-          from { opacity: 0; transform: translate(-50%, -50%) translateY(-5px); }
-          to { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
-        }
-        @keyframes fadeInBottomBtn {
-          from { opacity: 0; transform: translate(-50%, 50%) translateY(5px); }
-          to { opacity: 1; transform: translate(-50%, 50%) translateY(0); }
-        }
-        @keyframes fadeInDown {
-          from { opacity: 0; transform: translateX(-50%) translateY(-3px); }
-          to { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-        @keyframes fadeInLeft {
-          from { opacity: 0; transform: translateY(-50%) translateX(-5px); }
-          to { opacity: 1; transform: translateY(-50%) translateX(0); }
-        }
-        @keyframes fadeInCenter {
-          from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-          to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-        }
-      `}</style>
-      {counters.map((counter, index) => {
-        const isHovered = hoveredCounterId === counter.id || draggingCounterId === counter.id;
-        return (
-          <div
-            key={counter.id}
-            style={getCounterStyle(counter, index, isHovered)}
-            onMouseEnter={() => {
-              if (!draggingCounterId) {
-                setHoveredCounterId(counter.id);
-              }
-            }}
-            onMouseLeave={() => {
-              if (draggingCounterId !== counter.id) {
-                setHoveredCounterId(null);
-              }
-            }}
-          >
-            {isHovered && (
-              <span style={getLabelStyle()}>
-                {counter.icon && <span style={{ marginRight: '2px' }}>{counter.icon}</span>}
-                {counter.name}
-              </span>
-            )}
-            <div
-              style={getBarStyle(counter, isHovered)}
-              title={`${counter.name}: ${counter.value}/${counter.maxValue}`}
-            >
-              <div style={getBarFillStyle(counter)} />
-              {isHovered && !isVerticalPosition && (
-                <input
-                  type="range"
-                  min={counter.minValue ?? 0}
-                  max={counter.maxValue}
-                  value={counter.value}
-                  onChange={(e) => handleCounterChange(counter, parseInt(e.target.value))}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    opacity: 0,
-                    cursor: 'pointer',
-                    zIndex: 10,
-                  }}
-                />
-              )}
-              {isHovered && isVerticalPosition && (
-                <div
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    setDraggingCounterId(counter.id);
-                    const bar = e.currentTarget;
-                    const rect = bar.getBoundingClientRect();
-                    const updateFromMouse = (mouseEvent: MouseEvent) => {
-                      const relativeY = rect.bottom - mouseEvent.clientY;
-                      const percentage = Math.max(0, Math.min(1, relativeY / rect.height));
-                      const newValue = Math.round((counter.minValue ?? 0) + percentage * (counter.maxValue - (counter.minValue ?? 0)));
-                      handleCounterChange(counter, newValue);
-                    };
-                    updateFromMouse(e.nativeEvent);
-                    const onMove = (moveEvent: MouseEvent) => updateFromMouse(moveEvent);
-                    const onUp = () => {
-                      setDraggingCounterId(null);
-                      setHoveredCounterId(null);
-                      window.removeEventListener('mousemove', onMove);
-                      window.removeEventListener('mouseup', onUp);
-                    };
-                    window.addEventListener('mousemove', onMove);
-                    window.addEventListener('mouseup', onUp);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    cursor: 'pointer',
-                    zIndex: 10,
-                  }}
-                />
-              )}
-              {isHovered && (
-                <span style={{...getValueStyle(), animation: 'fadeInCenter 0.2s ease forwards'}}>
-                  {counter.value}/{counter.maxValue}
-                </span>
-              )}
-              {isHovered && (
-                <button
-                  style={getButtonStyle(true)}
-                  onMouseDown={(e) => { e.stopPropagation(); startContinuousChange(counter, isVerticalPosition ? 1 : -1); }}
-                  onMouseUp={(e) => { e.stopPropagation(); stopContinuousChange(); }}
-                  onMouseLeave={(e) => {
-                    stopContinuousChange();
-                    e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.8)';
-                    if (isVerticalPosition) {
-                      e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
-                    } else {
-                      e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
-                    }
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(50,50,50,0.9)';
-                    if (isVerticalPosition) {
-                      e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)';
-                    } else {
-                      e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.1)';
-                    }
-                  }}
-                >
-                  <span style={getButtonTextStyle()}>{isVerticalPosition ? '+' : '-'}</span>
-                </button>
-              )}
-              {isHovered && (
-                <button
-                  style={getButtonStyle(false)}
-                  onMouseDown={(e) => { e.stopPropagation(); startContinuousChange(counter, isVerticalPosition ? -1 : 1); }}
-                  onMouseUp={(e) => { e.stopPropagation(); stopContinuousChange(); }}
-                  onMouseLeave={(e) => {
-                    stopContinuousChange();
-                    e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.8)';
-                    if (isVerticalPosition) {
-                      e.currentTarget.style.transform = 'translate(-50%, 50%) scale(1)';
-                    } else {
-                      e.currentTarget.style.transform = 'translate(50%, -50%) scale(1)';
-                    }
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(50,50,50,0.9)';
-                    if (isVerticalPosition) {
-                      e.currentTarget.style.transform = 'translate(-50%, 50%) scale(1.1)';
-                    } else {
-                      e.currentTarget.style.transform = 'translate(50%, -50%) scale(1.1)';
-                    }
-                  }}
-                >
-                  <span style={getButtonTextStyle()}>{isVerticalPosition ? '-' : '+'}</span>
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-export const GameObjectsRenderer = memo(({
-  visibleTableObjects,
-  context,
-  state,
-  hyperscaleLayers,
-  selectedHyperscaleLayerIds,
-  draggingId,
-  resizingId,
-  currentTool,
-  isCtrlPressed,
-  isGM,
-  activePlayerId,
-  liveResizeSizeRef,
-  nexusBoardAddingCell,
-  onContextMenu,
-  onMouseDown,
-  onDoubleClick,
-  onResizeStart,
-  onAddNexusCell,
-  dispatch
-}) => {
-  const { v2p, createPositionedStyle, getLayerZoomScale, getLayerInverseScale, pixelsPerVU } = context;
+    });
+  }, [visibleTableObjects]);
 
   // State for explosive dice animation (scale value and phase for each dice)
   const [explosiveScales, setExplosiveScales] = useState<Record<string, number>>({});
@@ -696,7 +245,6 @@ export const GameObjectsRenderer = memo(({
 
     return (
       <Tooltip
-        key={obj.id}
         text={obj.tooltipText}
         showImage={obj.showTooltipImage}
         imageSrc={obj.content}
@@ -751,7 +299,6 @@ export const GameObjectsRenderer = memo(({
 
     return (
       <Tooltip
-        key={obj.id}
         text={obj.tooltipText}
         showImage={obj.showTooltipImage}
         imageSrc={obj.content}
@@ -791,338 +338,25 @@ export const GameObjectsRenderer = memo(({
   };
 
   const renderToken = (obj: TableObject, globalZIndex: number) => {
-    const token = getTokenWithAppliedState(obj as TokenType, state.objects);
-
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    const canDrag = !obj.locked;
-    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
-    const objLayer = obj.hyperscaleLayerId || 'none';
-
-    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
-    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
-    const isPermeable = hasSelectedLayers && !isLayerSelected;
-
     return (
-      <Tooltip
-        key={obj.id}
-        text={obj.tooltipText}
-        showImage={obj.showTooltipImage}
-        imageSrc={obj.content}
-        scale={obj.tooltipScale}
-      >
-        <div
-          data-object-id={obj.id}
-          onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
-          onContextMenu={(e) => onContextMenu(e, obj)}
-          className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
-          style={createPositionedStyle(
-            v2p(obj.x),
-            v2p(obj.y),
-            v2p(token.width),
-            v2p(token.height),
-            globalZIndex,
-            objLayer,
-            {
-              transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
-              pointerEvents: isPermeable ? 'none' : 'auto',
-            }
-          )}
-        >
-          <SvgTokenShape
-            shape={token.shape}
-            width={v2p(token.width)}
-            height={v2p(token.height)}
-            color={token.color || '#e74c3c'}
-            content={token.content}
-            rotation={0}
-            borderWidth={token.borderWidth ?? 2}
-            borderColor={(token as any).borderColor || 'white'}
-            opacity={token.opacity ?? 100}
-            borderOpacity={(token as any).borderOpacity ?? 100}
-            showThickness={true}
-            tokenName={(token as any).showNameOnToken || (obj as any).showName || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.showName) ? obj.name : undefined}
-            fontColor={(token as any).fontColor || 'white'}
-          />
-
-          {/* Token Counters Display */}
-          <TokenCountersDisplay
-            counters={(obj as any).counters || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.counters) || []}
-            counterDisplay={(obj as any).counterDisplay || ((obj as any).archetypeId && (state.objects[(obj as any).archetypeId] as any)?.counterDisplay)}
-            tokenWidth={v2p(token.width)}
-            tokenHeight={v2p(token.height)}
-            pixelsPerVU={pixelsPerVU}
-            isGM={isGM}
-            tokenId={obj.id}
-            dispatch={dispatch}
-          />
-
-          {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
-
-          {/* Action buttons */}
-          <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : currentTool === 'zoom' ? 'opacity-100 pointer-events-auto' : currentTool === 'none' ? 'opacity-0 group-hover:opacity-100 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
-            {(() => {
-              const actionButtons = obj.actionButtons || [];
-              const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
-                flip: {
-                  key: 'flip',
-                  action: () => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } }),
-                  className: 'bg-purple-600 hover:bg-purple-500',
-                  title: 'Flip',
-                  icon: <RefreshCw size={14} />
-                },
-                rotate: {
-                  key: 'rotate',
-                  action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
-                  className: 'bg-green-600 hover:bg-green-500',
-                  title: 'Rotate',
-                  icon: <RefreshCw size={14} />
-                },
-                delete: {
-                  key: 'delete',
-                  action: () => dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
-                  className: 'bg-red-600 hover:bg-red-500',
-                  title: 'Delete',
-                  icon: <Trash2 size={14} />
-                },
-                clone: {
-                  key: 'clone',
-                  action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
-                  className: 'bg-cyan-600 hover:bg-cyan-500',
-                  title: 'Clone',
-                  icon: <Copy size={14} />
-                },
-                lock: {
-                  key: 'lock',
-                  action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
-                  className: 'bg-yellow-600 hover:bg-yellow-500',
-                  title: obj.locked ? 'Unlock' : 'Lock',
-                  icon: obj.locked ? <Unlock size={14} /> : <Lock size={14} />
-                },
-                layer: {
-                  key: 'layer',
-                  action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
-                  className: 'bg-indigo-600 hover:bg-indigo-500',
-                  title: 'Layer Up',
-                  icon: <ArrowUp size={14} />
-                },
-                layerUp: {
-                  key: 'layerUp',
-                  action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
-                  className: 'bg-blue-600 hover:bg-blue-500',
-                  title: 'Layer Up',
-                  icon: <ChevronsUp size={14} />
-                },
-                layerDown: {
-                  key: 'layerDown',
-                  action: () => dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } }),
-                  className: 'bg-blue-600 hover:bg-blue-500',
-                  title: 'Layer Down',
-                  icon: <ChevronsDown size={14} />
-                },
-                bringToFront: {
-                  key: 'bringToFront',
-                  action: () => dispatch({ type: 'BRING_TO_FRONT', payload: { id: obj.id } }),
-                  className: 'bg-indigo-600 hover:bg-indigo-500',
-                  title: 'To Top',
-                  icon: <ChevronsUp size={14} />
-                },
-                sendToBack: {
-                  key: 'sendToBack',
-                  action: () => dispatch({ type: 'SEND_TO_BACK', payload: { id: obj.id } }),
-                  className: 'bg-indigo-600 hover:bg-indigo-500',
-                  title: 'To Bottom',
-                  icon: <ChevronsDown size={14} />
-                },
-                rotateClockwise: {
-                  key: 'rotateClockwise',
-                  action: () => {
-                    const rotationStep = (obj as any).rotationStep || 45;
-                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: ((obj as any).rotation || 0) + rotationStep } } });
-                  },
-                  className: 'bg-yellow-600 hover:bg-yellow-500',
-                  title: 'Rotate CW',
-                  icon: <RotateCw size={14} />
-                },
-                rotateCounterClockwise: {
-                  key: 'rotateCounterClockwise',
-                  action: () => {
-                    const rotationStep = (obj as any).rotationStep || 45;
-                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: ((obj as any).rotation || 0) - rotationStep } } });
-                  },
-                  className: 'bg-yellow-600 hover:bg-yellow-500',
-                  title: 'Rotate CCW',
-                  icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />
-                },
-                swingClockwise: {
-                  key: 'swingClockwise',
-                  action: () => dispatch({ type: 'SWING_CLOCKWISE', payload: { id: obj.id } }),
-                  className: 'bg-orange-600 hover:bg-orange-500',
-                  title: 'Swing CW',
-                  icon: <RefreshCw size={14} />
-                },
-                swingCounterClockwise: {
-                  key: 'swingCounterClockwise',
-                  action: () => dispatch({ type: 'SWING_COUNTER_CLOCKWISE', payload: { id: obj.id } }),
-                  className: 'bg-orange-600 hover:bg-orange-500',
-                  title: 'Swing CCW',
-                  icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
-                },
-                hide: {
-                  key: 'hide',
-                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: !(obj as any).isOnTable } }),
-                  className: 'bg-gray-600 hover:bg-gray-500',
-                  title: (obj as any).isOnTable === false ? 'Show' : 'Hide',
-                  icon: (obj as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />
-                },
-                show: {
-                  key: 'show',
-                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: true } }),
-                  className: 'bg-gray-600 hover:bg-gray-500',
-                  title: 'Show',
-                  icon: <Eye size={14} />
-                },
-                pin: {
-                  key: 'pin',
-                  action: () => {
-                    const isPinned = (obj as any).isPinnedToViewport;
-                    if (isPinned) {
-                      // Unpin: calculate world position from pinned screen position
-                      const pinnedPos = (obj as any).pinnedScreenPosition;
-                      if (pinnedPos) {
-                        const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
-                        const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom);
-                        const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (pixelsPerVU * zoom);
-                        dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
-                      }
-                    } else {
-                      // Pin: calculate screen position from world position
-                      const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
-                      const screenX = obj.x * pixelsPerVU + (offset.x - scroll.x) / zoom;
-                      const screenY = obj.y * pixelsPerVU + (offset.y - scroll.y) / zoom;
-                      dispatch({ type: 'PIN_TO_VIEWPORT', payload: { id: obj.id, screenX, screenY } });
-                    }
-                  },
-                  className: 'bg-pink-600 hover:bg-pink-500',
-                  title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
-                  icon: <Pin size={14} />
-                },
-                // Token State actions
-                toggleState1: {
-                  key: 'toggleState1',
-                  action: () => {
-                    const token = obj as any;
-                    const currentStateId = token.currentStateId;
-                    let states: any[] = [];
-
-                    // Try to get states from token itself first, then from archetype
-                    if (token.states && token.states.length > 0) {
-                      states = token.states;
-                    } else if (token.archetypeId) {
-                      const archetype = state.objects[token.archetypeId];
-                      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
-                        states = archetype.states || [];
-                      }
-                    }
-
-                    if (states.length > 0) {
-                      const firstStateId = states[0].id;
-                      const newCurrentStateId = currentStateId === firstStateId ? undefined : firstStateId;
-                      dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: newCurrentStateId } } });
-                    }
-                  },
-                  className: 'bg-violet-600 hover:bg-violet-500',
-                  title: 'State 1/Default',
-                  icon: <Rewind size={14} />
-                },
-                nextState: {
-                  key: 'nextState',
-                  action: () => {
-                    const token = obj as any;
-                    const currentStateId = token.currentStateId;
-                    let states: any[] = [];
-
-                    // Try to get states from token itself first, then from archetype
-                    if (token.states && token.states.length > 0) {
-                      states = token.states;
-                    } else if (token.archetypeId) {
-                      const archetype = state.objects[token.archetypeId];
-                      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
-                        states = archetype.states || [];
-                      }
-                    }
-
-                    if (states.length > 0) {
-                      const currentIndex = currentStateId ? states.findIndex(s => s.id === currentStateId) : -1;
-                      const nextIndex = currentIndex + 1;
-                      const newCurrentStateId = nextIndex >= states.length ? undefined : states[nextIndex].id;
-                      dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: newCurrentStateId } } });
-                    }
-                  },
-                  className: 'bg-violet-600 hover:bg-violet-500',
-                  title: 'Next State',
-                  icon: <SkipForward size={14} />
-                },
-                previousState: {
-                  key: 'previousState',
-                  action: () => {
-                    const token = obj as any;
-                    const currentStateId = token.currentStateId;
-                    let states: any[] = [];
-
-                    // Try to get states from token itself first, then from archetype
-                    if (token.states && token.states.length > 0) {
-                      states = token.states;
-                    } else if (token.archetypeId) {
-                      const archetype = state.objects[token.archetypeId];
-                      if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
-                        states = archetype.states || [];
-                      }
-                    }
-
-                    if (states.length > 0) {
-                      const currentIndex = currentStateId ? states.findIndex(s => s.id === currentStateId) : -1;
-                      // Previous State logic (opposite of Next State):
-                      // -1 (default) → last state
-                      // 0 (state 1) → -1 (default)
-                      // 1 (state 2) → 0 (state 1)
-                      // etc.
-                      if (currentIndex === -1) {
-                        // From default, go to last state
-                        dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: states[states.length - 1].id } } });
-                      } else if (currentIndex === 0) {
-                        // From first state, go to default
-                        dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: undefined } } });
-                      } else {
-                        // From other states, go to previous state
-                        dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { currentStateId: states[currentIndex - 1].id } } });
-                      }
-                    }
-                  },
-                  className: 'bg-violet-600 hover:bg-violet-500',
-                  title: 'Previous State',
-                  icon: <SkipBack size={14} />
-                },
-              };
-
-              const buttons = actionButtons
-                .map(action => buttonConfigs[action])
-                .filter(Boolean)
-                .slice(0, 4);
-
-              return buttons.map(btn => (
-                <button
-                  key={btn.key}
-                  onClick={(e) => { e.stopPropagation(); btn.action(); }}
-                  className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
-                  title={btn.title}
-                >
-                  {btn.icon}
-                </button>
-              ));
-            })()}
-          </div>
-        </div>
-      </Tooltip>
+      <TokenRenderer
+        obj={obj}
+        allObjects={state.objects}
+        globalZIndex={globalZIndex}
+        v2p={v2p}
+        createPositionedStyle={createPositionedStyle}
+        getLayerInverseScale={getLayerInverseScale}
+        draggingId={draggingId}
+        currentTool={currentTool}
+        isCtrlPressed={isCtrlPressed}
+        isGM={isGM}
+        activePlayerId={activePlayerId}
+        pixelsPerVU={pixelsPerVU}
+        viewTransform={state.viewTransform}
+        onContextMenu={onContextMenu}
+        onMouseDown={onMouseDown}
+        dispatch={dispatch}
+      />
     );
   };
 
@@ -1141,7 +375,6 @@ export const GameObjectsRenderer = memo(({
 
     return (
       <Tooltip
-        key={obj.id}
         text={obj.tooltipText}
         showImage={obj.showTooltipImage}
         imageSrc={obj.content}
@@ -1405,7 +638,6 @@ export const GameObjectsRenderer = memo(({
 
     return (
       <Tooltip
-        key={obj.id}
         text={obj.tooltipText}
         showImage={obj.showTooltipImage}
         imageSrc={obj.content}
@@ -1502,7 +734,6 @@ export const GameObjectsRenderer = memo(({
 
     return (
       <Tooltip
-        key={obj.id}
         text={obj.tooltipText}
         showImage={obj.showTooltipImage}
         imageSrc={obj.content}
@@ -1836,27 +1067,20 @@ export const GameObjectsRenderer = memo(({
   };
 
   const renderEffectTemplate = (obj: TableObject, globalZIndex: number) => {
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    const canDrag = !obj.locked;
-    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
-    const objLayer = obj.hyperscaleLayerId || 'tokens';
+    const handlers = effectHandlersMap.get(obj.id);
+    const styleData = effectStyleMap.get(obj.id);
 
-    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
-    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
-    const isPermeable = hasSelectedLayers && !isLayerSelected;
+    if (!handlers || !styleData) return null;
 
     return (
       <EffectTemplateRendererMemo
-        key={obj.id}
         obj={obj}
         pixelsPerVU={pixelsPerVU}
-        isDragging={draggingId === obj.id}
-        onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
-        onContextMenu={(e) => onContextMenu(e, obj)}
-        style={{
-          pointerEvents: isPermeable ? 'none' : 'auto',
-        }}
-        className={draggingClass}
+        isDragging={styleData.isDragging}
+        onMouseDown={handlers.onMouseDown}
+        onContextMenu={handlers.onContextMenu}
+        style={styleData.style}
+        className={styleData.className}
         isGM={isGM}
         dispatch={dispatch}
         rulerStep={context.rulerStep}
@@ -1907,15 +1131,27 @@ export const GameObjectsRenderer = memo(({
 
   return (
     <>
-      {visibleTableObjects.map(obj => renderGameObject(obj))}
+      {visibleTableObjects.map(obj => {
+        const element = renderGameObject(obj);
+        return element ? React.cloneElement(element, { key: obj.id }) : null;
+      })}
     </>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison for GameObjectsRenderer
+  // Custom comparison for GameObjectsRenderer with deep array check
+  const prevObjects = prevProps.visibleTableObjects;
+  const nextObjects = nextProps.visibleTableObjects;
+
+  // Quick length check
+  if (prevObjects.length !== nextObjects.length) return false;
+
+  // Check if any object changed (by reference - objects are immutable)
+  for (let i = 0; i < prevObjects.length; i++) {
+    if (prevObjects[i] !== nextObjects[i]) return false;
+  }
+
+  // All objects are the same references, check other props
   return (
-    prevProps.visibleTableObjects === nextProps.visibleTableObjects &&
-    prevProps.context === nextProps.context &&
-    prevProps.state === nextProps.state &&
     prevProps.hyperscaleLayers === nextProps.hyperscaleLayers &&
     prevProps.selectedHyperscaleLayerIds === nextProps.selectedHyperscaleLayerIds &&
     prevProps.draggingId === nextProps.draggingId &&
@@ -1930,18 +1166,27 @@ export const GameObjectsRenderer = memo(({
     prevProps.onDoubleClick === nextProps.onDoubleClick &&
     prevProps.onResizeStart === nextProps.onResizeStart &&
     prevProps.onAddNexusCell === nextProps.onAddNexusCell &&
-    prevProps.dispatch === nextProps.dispatch
+    prevProps.dispatch === nextProps.dispatch &&
+    prevProps.context.pixelsPerVU === nextProps.context.pixelsPerVU &&
+    prevProps.context.rulerStep === nextProps.context.rulerStep
   );
 });
 
 GameObjectsRenderer.displayName = 'GameObjectsRenderer';
 
-// Export memoized component with custom comparison
+// Export memoized component with custom comparison (same as above)
 export const GameObjectsRendererMemo = memo(GameObjectsRenderer, (prevProps, nextProps) => {
+  // Deep array comparison for visibleTableObjects
+  const prevObjects = prevProps.visibleTableObjects;
+  const nextObjects = nextProps.visibleTableObjects;
+
+  if (prevObjects.length !== nextObjects.length) return false;
+
+  for (let i = 0; i < prevObjects.length; i++) {
+    if (prevObjects[i] !== nextObjects[i]) return false;
+  }
+
   return (
-    prevProps.visibleTableObjects === nextProps.visibleTableObjects &&
-    prevProps.context === nextProps.context &&
-    prevProps.state === nextProps.state &&
     prevProps.hyperscaleLayers === nextProps.hyperscaleLayers &&
     prevProps.selectedHyperscaleLayerIds === nextProps.selectedHyperscaleLayerIds &&
     prevProps.draggingId === nextProps.draggingId &&
@@ -1956,7 +1201,9 @@ export const GameObjectsRendererMemo = memo(GameObjectsRenderer, (prevProps, nex
     prevProps.onDoubleClick === nextProps.onDoubleClick &&
     prevProps.onResizeStart === nextProps.onResizeStart &&
     prevProps.onAddNexusCell === nextProps.onAddNexusCell &&
-    prevProps.dispatch === nextProps.dispatch
+    prevProps.dispatch === nextProps.dispatch &&
+    prevProps.context.pixelsPerVU === nextProps.context.pixelsPerVU &&
+    prevProps.context.rulerStep === nextProps.context.rulerStep
   );
 });
 

@@ -2049,19 +2049,18 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         return;
       }
 
-      // PRIMARY METHOD: Check if cursor is over this specific pool panel
-      const isOverThisPoolPanel = elementUnderCursor?.closest(`[data-pool-panel="${poolZone.panelId}"]`) != null;
+      // PRIMARY METHOD: Check if cursor is over this specific pool panel (root container)
+      // Use bounding rect for accurate detection - more reliable than elementFromPoint/closest
+      const poolPanelEl = document.querySelector(`[data-pool-panel="${poolZone.panelId}"]`) as HTMLElement;
+      let isOverPoolPanel = false;
 
-      // SECONDARY METHOD: Also check data-pool-content as fallback
-      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
-      const isOverPoolContent = visibleContentArea && (
-        e.clientX >= visibleContentArea.getBoundingClientRect().left &&
-        e.clientX <= visibleContentArea.getBoundingClientRect().right &&
-        e.clientY >= visibleContentArea.getBoundingClientRect().top &&
-        e.clientY <= visibleContentArea.getBoundingClientRect().bottom
-      );
+      if (poolPanelEl) {
+        const rect = poolPanelEl.getBoundingClientRect();
+        isOverPoolPanel = e.clientX >= rect.left && e.clientX <= rect.right &&
+                         e.clientY >= rect.top && e.clientY <= rect.bottom;
+      }
 
-      const isCursorOverVisibleArea = isOverThisPoolPanel || isOverPoolContent;
+      const isCursorOverVisibleArea = isOverPoolPanel;
 
       if (!isCursorOverVisibleArea) {
         // Cursor is NOT over the visible pool panel window - don't allow drop
@@ -2071,9 +2070,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Check if ALL objects will be completely visible in the pool panel window
       // Account for stacking offset - check the last (bottom-right most) object
       const lastObj = cursorSlotObjects[cursorSlotObjects.length - 1];
-      if (lastObj && visibleContentArea) {
+      if (lastObj && poolPanelEl) {
         // Get visible rect for bounds checking
-        const visibleRect = visibleContentArea.getBoundingClientRect();
+        const visibleRect = poolPanelEl.getBoundingClientRect();
 
         // Calculate stacking offset for the last object
         const objWidth = (lastObj.width || 50) * pixelsPerVU;
@@ -2252,34 +2251,18 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         return;
       }
 
-      // Find if any element under cursor is inside our pool panel
-      let isOverThisPoolPanel = false;
-      let isOverPoolContent = false;
+      // Check bounding rect of pool panel (root container with data-pool-panel)
+      let isOverPoolPanel = false;
 
-      for (const element of elementsAtCursor) {
-        if (!isOverThisPoolPanel) {
-          const poolPanelEl = element.closest(`[data-pool-panel="${poolZone.panelId}"]`);
-          if (poolPanelEl) {
-            isOverThisPoolPanel = true;
-          }
-        }
-        if (!isOverPoolContent) {
-          const poolContentEl = element.closest(`[data-pool-content="${poolZone.panelId}"]`);
-          if (poolContentEl) {
-            isOverPoolContent = true;
-          }
-        }
-        if (isOverThisPoolPanel && isOverPoolContent) break;
+      // Find the pool panel element (root container with data-pool-panel)
+      const poolPanelEl = document.querySelector(`[data-pool-panel="${poolZone.panelId}"]`);
+      if (poolPanelEl) {
+        const rect = poolPanelEl.getBoundingClientRect();
+        // Check if cursor is within the visible bounds of this pool panel
+        isOverPoolPanel = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
       }
 
-      // SECONDARY METHOD: Check bounding rect as fallback
-      const containerRect = container.getBoundingClientRect();
-      const isOverContainerRect = x >= containerRect.left && x <= containerRect.right &&
-                                  y >= containerRect.top && y <= containerRect.bottom;
-
-      const isCursorOverVisibleArea = isOverThisPoolPanel || isOverPoolContent || isOverContainerRect;
-
-      if (isCursorOverVisibleArea) {
+      if (isOverPoolPanel) {
         // IMPORTANT: Check if cursor is over a deck or pile FIRST
         // If the deck/pile is in THIS pool panel, handle it locally
         // Use elementsFromPoint to check all elements under cursor
@@ -2410,8 +2393,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           }
 
           // Get visible rect for bounds checking
-          const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
-          const visibleRect = visibleContentArea?.getBoundingClientRect();
+          const poolPanelEl = document.querySelector(`[data-pool-panel="${poolZone.panelId}"]`) as HTMLElement;
+          const visibleRect = poolPanelEl?.getBoundingClientRect();
           if (!visibleRect) {
             // Can't verify bounds, allow drop anyway
           } else {
@@ -2527,13 +2510,13 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       const container = containerRef.current;
       if (!container) return;
 
-      // Get the visible content area (data-pool-content) - this is the VISIBLE window
-      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
-      if (!visibleContentArea) {
+      // Get the visible pool panel area (data-pool-panel) - this is the VISIBLE window
+      const poolPanelEl = document.querySelector(`[data-pool-panel="${poolZone.panelId}"]`) as HTMLElement;
+      if (!poolPanelEl) {
         return;
       }
 
-      const visibleRect = visibleContentArea.getBoundingClientRect();
+      const visibleRect = poolPanelEl.getBoundingClientRect();
       const x = customEvent.detail.x;
       const y = customEvent.detail.y;
 
@@ -2654,10 +2637,10 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
       // Highlight for ANY object type in cursor slot
       // Check if cursor is over the visible pool panel area
-      const visibleContentArea = document.querySelector(`[data-pool-content="${poolZone.panelId}"]`) as HTMLElement;
-      if (!visibleContentArea) return;
+      const poolPanelEl = document.querySelector(`[data-pool-panel="${poolZone.panelId}"]`) as HTMLElement;
+      if (!poolPanelEl) return;
 
-      const rect = visibleContentArea.getBoundingClientRect();
+      const rect = poolPanelEl.getBoundingClientRect();
       const isOver = e.clientX >= rect.left && e.clientX <= rect.right &&
                     e.clientY >= rect.top && e.clientY <= rect.bottom;
 

@@ -8,6 +8,7 @@ interface FilePickerInputProps {
   className?: string;
   accept?: string; // MIME types to accept, e.g., "image/*"
   label?: string;
+  maxSize?: number; // Max file size in bytes (default: 3MB)
 }
 
 /**
@@ -65,12 +66,11 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   className = '',
   accept = 'image/*',
   label,
+  maxSize = 3 * 1024 * 1024, // Default: 3MB
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [sizeWarning, setSizeWarning] = useState<string>('');
-
-  const MAX_FILE_SIZE = 3 * 1024 * 1024; // 3MB
 
   const handleUrlChange = (newValue: string) => {
     // Validate URL - if invalid, treat as empty string
@@ -85,10 +85,12 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const maxMB = (maxSize / 1024 / 1024).toFixed(0);
+
       // Check file size
-      if (file.size > MAX_FILE_SIZE) {
+      if (file.size > maxSize) {
         const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-        setSizeWarning(`⚠️ File size: ${sizeMB}MB exceeds 3MB limit.`);
+        setSizeWarning(`⚠️ File size: ${sizeMB}MB exceeds ${maxMB}MB limit.`);
         // Reset input
         e.target.value = '';
         return;
@@ -97,7 +99,7 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
       // Show warning for files > 1MB (but allow them)
       if (file.size > 1024 * 1024) {
         const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-        setSizeWarning(`⚠️ Large file: ${sizeMB}MB. Recommended: <3MB`);
+        setSizeWarning(`⚠️ Large file: ${sizeMB}MB. Recommended: <${maxMB}MB`);
       } else {
         setSizeWarning('');
       }

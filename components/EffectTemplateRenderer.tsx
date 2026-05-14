@@ -130,6 +130,49 @@ function preloadEffectImage(src: string): Promise<void> {
 export { preloadEffectImage };
 
 /**
+ * Calculate the bounding box of a rotated rectangle
+ * Returns { x, y, width, height } of the bounding box
+ */
+function calculateRotatedBoundingBox(
+  width: number,
+  height: number,
+  rotation: number,
+  pivotX: number,
+  pivotY: number
+): { x: number; y: number; width: number; height: number } {
+  // Rectangle corners relative to pivot (unrotated)
+  const corners = [
+    { x: -pivotX, y: -pivotY },
+    { x: width - pivotX, y: -pivotY },
+    { x: width - pivotX, y: height - pivotY },
+    { x: -pivotX, y: height - pivotY }
+  ];
+
+  // Convert rotation to radians
+  const angleRad = (rotation * Math.PI) / 180;
+
+  // Rotate each corner around pivot
+  const rotatedCorners = corners.map(corner => {
+    const rx = corner.x * Math.cos(angleRad) - corner.y * Math.sin(angleRad);
+    const ry = corner.x * Math.sin(angleRad) + corner.y * Math.cos(angleRad);
+    return { x: rx + pivotX, y: ry + pivotY };
+  });
+
+  // Find bounding box
+  const minX = Math.min(...rotatedCorners.map(c => c.x));
+  const maxX = Math.max(...rotatedCorners.map(c => c.x));
+  const minY = Math.min(...rotatedCorners.map(c => c.y));
+  const maxY = Math.max(...rotatedCorners.map(c => c.y));
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
+}
+
+/**
  * Calculate the 4 corner points of a rotated rectangle
  * Returns polygon points in CSS format (e.g., "x1,y1 x2,y2 ...")
  */
@@ -796,7 +839,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     opacity: obj.opacity !== undefined ? obj.opacity / 100 : 1,
     // Disable pointer events on container - clicks go through SVG polygon instead
     pointerEvents: 'none',
-    // Use visible overflow so pivot marker is fully visible
+    // Use visible overflow so markers are visible
     overflow: 'visible',
     ...style
   };
@@ -831,7 +874,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     border: '2px solid white',
     boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
     pointerEvents: 'auto' as const,
-    zIndex: 100000, // Much higher to ensure it's always on top
+    zIndex: 10,
     transition: isDraggingPivot ? 'none' : 'transform 0.1s, background-color 0.2s',
     display: 'flex' as const,
     alignItems: 'center' as const,
@@ -942,18 +985,20 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
       {/* SVG hit area for rotated template - ensures clicks only register on the actual image area */}
       <svg
+        data-effect-svg={obj.id}
         style={{
           position: 'absolute',
           left: 0,
           top: 0,
           width: '100%',
           height: '100%',
-          pointerEvents: 'none',
+          pointerEvents: 'none', // Changed from 'auto' to let polygon handle events
           zIndex: 1,
           overflow: 'visible',
         }}
       >
         <polygon
+          data-effect-polygon={obj.id}
           points={calculateRotatedRectPolygon(
             objWidth,
             objHeight,
@@ -961,7 +1006,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
             (pivot.x / 100) * objWidth,
             (pivot.y / 100) * objHeight
           )}
-          fill="transparent"
+          fill="rgba(0, 0, 0, 0.01)"
+          stroke="transparent"
+          strokeWidth="0"
           style={{ pointerEvents: 'fill', cursor: isDragging ? 'grabbing' : 'grab' }}
           onMouseDown={(e) => {
             // Ignore clicks on markers (they have higher z-index and will catch first)
@@ -1050,7 +1097,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
               border: '2px solid white',
               boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
               pointerEvents: 'auto',
-              zIndex: 100000,
+              zIndex: 10,
               transition: isDraggingRotation ? 'none' : 'transform 0.1s, background-color 0.2s',
               cursor: isGM ? 'crosshair' : 'default',
             }}
@@ -1133,7 +1180,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
               border: '2px solid white',
               boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
               pointerEvents: 'auto',
-              zIndex: 100000,
+              zIndex: 10,
               transition: isDraggingWidth ? 'none' : 'transform 0.1s, background-color 0.2s',
               cursor: isGM ? 'ew-resize' : 'default',
             }}
@@ -1191,6 +1238,10 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 };
 
 export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProps, nextProps) => {
+  // Compare style object by value (only pointerEvents matters for effects)
+  const prevPointerEvents = prevProps.style?.pointerEvents;
+  const nextPointerEvents = nextProps.style?.pointerEvents;
+
   return (
     prevProps.obj.id === nextProps.obj.id &&
     prevProps.obj.x === nextProps.obj.x &&
@@ -1208,7 +1259,12 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
     prevProps.isDragging === nextProps.isDragging &&
     prevProps.isGM === nextProps.isGM &&
-    prevProps.rulerStep === nextProps.rulerStep
+    prevProps.rulerStep === nextProps.rulerStep &&
+    prevProps.className === nextProps.className &&
+    prevPointerEvents === nextPointerEvents &&
+    prevProps.onMouseDown === nextProps.onMouseDown &&
+    prevProps.onContextMenu === nextProps.onContextMenu &&
+    prevProps.dispatch === nextProps.dispatch
   );
 });
 

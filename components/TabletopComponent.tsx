@@ -138,6 +138,8 @@ export const Tabletop: React.FC = () => {
   const rulerStep = toolSettings.ruler.step;
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef<{ x: number; y: number; scrollX: number; scrollY: number } | null>(null);
 
   // Cursor slot state
   const [cursorSlot, setCursorSlot] = useState<(CardType | Token | Board)[]>([]);
@@ -236,7 +238,9 @@ export const Tabletop: React.FC = () => {
     setIsRulerRightClick,
     setContextMenu,
     setDeleteCandidateId,
-    setIsPanning: () => {},
+    isPanning,
+    setIsPanning,
+    panStartRef,
     scrollContainerRef,
     viewTransform,
     pixelsPerVU,

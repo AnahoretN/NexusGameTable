@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation, EffectTemplate } from '../../types';
 import { clampScrollToPlayableArea } from '../../utils/viewportConstraints';
+import { SCROLLBAR_WIDTH_THICK } from '../../constants';
 import { useIsSettingsModalOpen } from '../../store/contexts';
 import {
   parseGridCellKey,
@@ -17,6 +18,8 @@ import {
 import {
   allocateZIndexWithDefrag
 } from '../../utils/zIndexAllocator';
+import { applyPanelToPanelMagnetism, type PanelBounds, type MagnetismConfig, type GameSpaceBounds } from '../../utils/panelMagnetism';
+import { getTokenWithAppliedState } from '../../hooks/useTokenWithState';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -47,7 +50,9 @@ interface TabletopEventHandlersProps {
   setIsRulerRightClick: React.Dispatch<React.SetStateAction<boolean>>;
   setContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>>;
   setDeleteCandidateId: React.Dispatch<React.SetStateAction<string | null>>;
+  isPanning: boolean;
   setIsPanning: React.Dispatch<React.SetStateAction<boolean>>;
+  panStartRef: React.MutableRefObject<{ x: number; y: number; scrollX: number; scrollY: number } | null>;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   viewTransform: any;
   pixelsPerVU: number;
@@ -84,7 +89,7 @@ interface TabletopEventHandlersProps {
   setScroll?: (x: number, y: number) => void; // Optional setScroll from ViewTransformContext
 }
 
-// Helper function to add object to cursor slot WITH LOGGING
+// Helper function to add object to cursor slot
 const addToCursorSlot = (
   id: string,
   item: TableObject,
@@ -119,8 +124,7 @@ const addToCursorSlot = (
     return;
   }
 
-  // Note: BOARD is never added to cursor slot via shift+click
-  // CARD/TOKEN can coexist in slot, no special handling needed
+  // Note: Other items (CARD/TOKEN) can coexist in slot, no special handling needed
 
   // Check cursorSlot for the 100 item limit
   if (cursorSlot.length >= 100) {
@@ -256,24 +260,34 @@ const addToCursorSlot = (
     } as DeckType;
   } else if (item.type === ItemType.TOKEN) {
     const token = item as Token;
+    // Apply token state first to get correct visual properties for cursor slot
+    const tokenWithState = getTokenWithAppliedState(token, state.objects);
+
     itemClone = {
       id: token.id,
       type: ItemType.TOKEN,
       name: token.name,
-      width: token.width,
-      height: token.height,
-      shape: token.shape,
-      color: token.color,
-      content: token.content,
-      borderWidth: token.borderWidth,
-      borderColor: (token as any).borderColor,
-      opacity: token.opacity,
-      borderOpacity: token.borderOpacity,
+      // Use properties from applied state
+      width: tokenWithState.width,
+      height: tokenWithState.height,
+      shape: tokenWithState.shape,
+      color: tokenWithState.color,
+      content: tokenWithState.content,
+      borderWidth: tokenWithState.borderWidth,
+      borderColor: (tokenWithState as any).borderColor,
+      opacity: tokenWithState.opacity,
+      borderOpacity: (tokenWithState as any).borderOpacity,
       x: 0,  // ❌ Сбрасываем координаты в слоте курсора
       y: 0,
-      rotation: token.rotation || 0,
+      rotation: token.rotation || 0,  // rotation stays from original token
       zIndex: token.zIndex ?? 0,
       hyperscaleLayerId: token.hyperscaleLayerId ?? 'tokens',
+      // Include state-related properties for reference
+      currentStateId: (token as any).currentStateId,
+      archetypeId: token.archetypeId,
+      states: token.states,
+      fontColor: (tokenWithState as any).fontColor,
+      showName: (token as any).showName,
     } as Token;
   } else if (item.type === ItemType.BOARD) {
     const board = item as BoardType;
@@ -467,11 +481,12 @@ const addToCursorSlot = (
   });
 };
 
-// Helper function to drop cursor slot items WITH LOGGING
+// Helper function to drop cursor slot items
 const dropCursorSlot = (
   clientX: number,
   clientY: number,
-  props: TabletopEventHandlersProps
+  props: TabletopEventHandlersProps,
+  skipPoolCheck: boolean = false
 ) => {
   const {
     cursorSlot,
@@ -513,9 +528,85 @@ const dropCursorSlot = (
 
   // IMPORTANT: Check if cursor is over pool panel FIRST
   // If dropping to pool panel, don't process hand panel drop
-  const poolPanel = elementAtCursor?.closest('[data-pool-panel]');
-  if (poolPanel) {
-    // Let pool panel handle the drop
+  // Skip this check if skipPoolCheck is true (when event comes from pool panel)
+  let isOverPoolPanel = false;
+  let matchedPoolPanelId: string | null = null;
+  const poolPanel = elementAtCursor?.closest('[data-pool-panel]') as HTMLElement;
+
+  if (!skipPoolCheck) {
+    // Use getBoundingClientRect() to accurately check if cursor is over VISIBLE pool panel area
+    const poolPanelElements = document.querySelectorAll('[data-pool-panel]');
+
+    for (const element of poolPanelElements) {
+      const rect = element.getBoundingClientRect();
+      // Check if cursor is within the visible bounds of this pool panel
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        isOverPoolPanel = true;
+        matchedPoolPanelId = element.getAttribute('data-pool-panel');
+        break;
+      }
+    }
+  }
+
+  // IMPORTANT: Check if cursor slot contains BOARD or NEXUS_BOARD
+  // Boards can ONLY be dropped in pool panels OR on main tabletop
+  // Boards CANNOT be dropped in other panels (Character, Hand, etc.)
+  const hasBoardInSlot = itemsToDrop.some(item => item.type === ItemType.BOARD || item.type === ItemType.NEXUS_BOARD);
+
+  if (hasBoardInSlot) {
+    // Check if dropping to pool panel - allow it
+    if (isOverPoolPanel) {
+      return; // Let pool panel handle the drop
+    }
+
+    // Check if dropping to other panels (Character, Hand, etc.) - disallow
+    const handPanel = elementAtCursor?.closest('[data-hand-panel="true"]');
+    const characterPanel = elementAtCursor?.closest('[data-character-panel]');
+    const otherPanel = handPanel || characterPanel;
+
+    if (otherPanel) {
+      // Board is being dropped to a non-pool panel - return to original position
+      const boardItems = itemsToDrop.filter(item => item.type === ItemType.BOARD || item.type === ItemType.NEXUS_BOARD);
+      const nonBoardItems = itemsToDrop.filter(item => item.type !== ItemType.BOARD && item.type !== ItemType.NEXUS_BOARD);
+
+      // Return boards to their original positions
+      boardItems.forEach(board => {
+        const originalX = (board as any).originalX;
+        const originalY = (board as any).originalY;
+
+        if (originalX !== undefined && originalY !== undefined) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: board.id,
+              updates: {
+                x: originalX,
+                y: originalY,
+                inCursorSlot: false,
+                isOnTable: true
+              }
+            }
+          });
+        }
+      });
+
+      // Keep non-board items in cursor slot for normal drop processing
+      if (nonBoardItems.length > 0) {
+        itemsToDrop = nonBoardItems;
+      } else {
+        // Only boards were in slot, clear everything
+        setCursorSlot([]);
+        setCursorPosition(null);
+        cursorPositionRef.current = null;
+        setCursorSlotSource(null);
+        return;
+      }
+    }
+    // Otherwise, allow drop on main tabletop (continue with normal drop logic)
+  }
+
+  if (poolPanel && itemsToDrop.length > 0) {
+    // Let pool panel handle the drop (for non-board items or if boards were filtered out above)
     return;
   }
 
@@ -1004,9 +1095,10 @@ const dropCursorSlot = (
       // UI objects (panels/windows) use pixel coordinates directly
       // Game objects use world coordinates (VU) that need conversion
       if (item.type === ItemType.PANEL || item.type === ItemType.WINDOW) {
-        // For UI objects: obj.x/y are already in screen pixels
-        screenX = finalX / zoom - scrollX;
-        screenY = finalY / zoom - scrollY;
+        // For UI objects: obj.x/y are in screen pixels, convert to pinned screen position
+        // Formula: screen = (world - scroll) / zoom
+        screenX = (finalX - scrollX) / zoom;
+        screenY = (finalY - scrollY) / zoom;
       } else {
         // For game objects: obj.x/y are in world coordinates (VU)
         // Convert to pinned screen coordinates using the same formula as pinning
@@ -1085,6 +1177,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setIsRulerRightClick,
     setContextMenu,
     setDeleteCandidateId,
+    isPanning,
+    setIsPanning,
+    panStartRef,
     scrollContainerRef,
     viewTransform,
     pixelsPerVU,
@@ -1157,8 +1252,25 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     });
   }, [setPileContextMenu]);
 
-  // Mouse down handler WITH LOGGING
+  // Mouse down handler
   const handleMouseDown = useCallback((e: React.MouseEvent, objId?: string) => {
+    const target = e.target as HTMLElement;
+
+    // Check if cursor is over an EFFECT_TEMPLATE that might be stuck
+    if (!objId) {
+      const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
+      if (elementUnderCursor) {
+        const closestObject = elementUnderCursor.closest('[data-object-id]');
+        if (closestObject) {
+          const objectId = closestObject.getAttribute('data-object-id');
+          const obj = state.objects[objectId || ''];
+          if (obj && obj.type === ItemType.EFFECT_TEMPLATE) {
+            // Effect template clicked
+          }
+        }
+      }
+    }
+
     // Helper function to start ruler measurement
     const startRulerMeasurement = () => {
       const rect = scrollContainerRef.current?.getBoundingClientRect();
@@ -1176,6 +1288,20 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
     // Handle clicking on empty space (clear context menus, rulers, etc.)
     if (!objId) {
+      // Pan view: Shift + left mouse drag on empty space
+      if (e.shiftKey && e.button === 0 && scrollContainerRef.current) {
+        const scrollX = viewTransform?.scroll?.x || 0;
+        const scrollY = viewTransform?.scroll?.y || 0;
+        panStartRef.current = {
+          x: e.clientX,
+          y: e.clientY,
+          scrollX,
+          scrollY
+        };
+        setIsPanning(true);
+        return;
+      }
+
       // Ruler tool: start measuring on left mouse down (hold and drag behavior)
       if (currentTool === 'ruler' && e.button === 0) {
         startRulerMeasurement();
@@ -1235,7 +1361,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // Objects in cursor slot have inCursorSlot: true (NOT isOnTable: false, which includes cards in hand!)
     const slotHasItemsFromState = cursorSlot.length > 0;
     const objectsInCursorSlot = (Object.values(state.objects) as TableObject[]).filter(o =>
-      (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER) &&
+      (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER || o.type === ItemType.EFFECT_TEMPLATE) &&
       (o as any).inCursorSlot === true
     );
     const actuallyHasItems = slotHasItemsFromState || objectsInCursorSlot.length > 0;
@@ -1251,10 +1377,12 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
     // SHIFT+CLICK: add to slot immediately (accumulate multiple items)
     // BOARD is excluded - never added to slot via shift+click
+    // EFFECT_TEMPLATE is now supported via shift+click
     if (e.shiftKey && obj && obj.type !== ItemType.BOARD && (
       obj.type === ItemType.CARD ||
       obj.type === ItemType.TOKEN ||
-      obj.type === ItemType.COUNTER
+      obj.type === ItemType.COUNTER ||
+      obj.type === ItemType.EFFECT_TEMPLATE
     )) {
       e.preventDefault();
       e.stopPropagation();
@@ -1298,13 +1426,22 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
           const pinnedPos = (obj as any).pinnedScreenPosition || { x: obj.x, y: obj.y };
           unpinnedDuringDragRef.current.set(objId, pinnedPos);
 
-          // Unpin the object (convert to world coordinates)
+          // Unpin the object - convert screen coords to world coordinates
+          // For pinned panels, obj.x/y are in screen pixels
+          // Reverse formula of: screen = (world - scroll) / zoom
+          const scrollX = viewTransform?.scroll?.x || 0;
+          const scrollY = viewTransform?.scroll?.y || 0;
+          const zoom = viewTransform?.zoom || 1;
+          const worldX = obj.x * zoom + scrollX;
+          const worldY = obj.y * zoom + scrollY;
+
           dispatch({
             type: 'UNPIN_FROM_VIEWPORT',
             payload: {
               id: objId,
-              worldX: obj.x,
-              worldY: obj.y
+              worldX,
+              worldY,
+              pixelsPerVU
             }
           });
         }
@@ -1388,6 +1525,40 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Mouse move handler (throttled)
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
+    // Handle panning with Shift + drag
+    if (isPanning && panStartRef.current && scrollContainerRef.current) {
+      const deltaX = e.clientX - panStartRef.current.x;
+      const deltaY = e.clientY - panStartRef.current.y;
+
+      const newScrollX = panStartRef.current.scrollX - deltaX;
+      const newScrollY = panStartRef.current.scrollY - deltaY;
+
+      // Apply scroll constraints
+      const constrained = clampScrollToPlayableArea(
+        newScrollX,
+        newScrollY,
+        scrollContainerRef.current.clientWidth,
+        scrollContainerRef.current.clientHeight,
+        pixelsPerVU
+      );
+
+      scrollContainerRef.current.scrollLeft = constrained.x;
+      scrollContainerRef.current.scrollTop = constrained.y;
+
+      // Update scroll position in view transform context
+      setScroll?.(constrained.x, constrained.y);
+
+      // Update view transform
+      dispatch({
+        type: 'UPDATE_VIEW_TRANSFORM',
+        payload: {
+          ...viewTransform,
+          scroll: { x: constrained.x, y: constrained.y }
+        }
+      });
+      return;
+    }
+
     // Update cursor slot position
     if (cursorSlot.length > 0) {
       const newX = e.clientX;
@@ -1520,27 +1691,134 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         let newX = e.clientX - dragOffsetRef.current.x;
         let newY = e.clientY - dragOffsetRef.current.y;
 
-        // Constrain panel within viewport bounds
-        const panelWidth = obj.width || 300;
-        const panelHeight = obj.height || 400;
-        const maxX = window.innerWidth - panelWidth;
-        const maxY = window.innerHeight - panelHeight;
+        // Check if this object was originally pinned (before drag started)
+        // Pinned panels are temporarily unpinned during drag, so we check the ref
+        const wasOriginallyPinned = unpinnedDuringDragRef.current.has(currentDraggingId);
 
-        // Clamp position to keep panel visible
-        newX = Math.max(0, Math.min(maxX, newX));
-        newY = Math.max(0, Math.min(maxY, newY));
+        // Get actual panel dimensions from DOM for accurate magnetism
+        let panelWidth = (obj as any).width || 400;
+        let panelHeight = (obj as any).height || 300;
+        let fromDOM = false;
 
-        // For unpinned panels, convert screen pixels to world coordinates
-        // World coords account for scroll offset and zoom level
-        if (!(obj as any).isPinnedToViewport) {
-          const scrollX = viewTransform?.scroll?.x || 0;
-          const scrollY = viewTransform?.scroll?.y || 0;
-          const zoom = viewTransform?.zoom || 1;
-
-          // Convert screen pixels to world coords: (screen - scroll) * zoom
-          newX = (newX + scrollX) * zoom;
-          newY = (newY + scrollY) * zoom;
+        const panelElement = document.querySelector(`[data-ui-object="${currentDraggingId}"]`) as HTMLElement;
+        if (panelElement) {
+          const actualWidth = panelElement.offsetWidth;
+          const actualHeight = panelElement.offsetHeight;
+          if (actualWidth > 0) {
+            panelWidth = actualWidth;
+            fromDOM = true;
+          }
+          if (actualHeight > 0) {
+            panelHeight = actualHeight;
+            fromDOM = true;
+          }
         }
+
+        // Convert VU to pixels if not already from DOM (DOM values are already in pixels)
+        // For unpinned panels: width/height are in VU, convert using pixelsPerVU
+        // For pinned panels: width/height may be in pixels (from resize), but DOM is preferred
+        if (!fromDOM) {
+          // Check if this panel was originally pinned (has stored pixel dimensions)
+          if (wasOriginallyPinned && (obj as any).pinnedPixelWidth) {
+            // Pinned panel with stored pixel dimensions
+            panelWidth = (obj as any).pinnedPixelWidth || panelWidth;
+            panelHeight = (obj as any).pinnedPixelHeight || panelHeight;
+          } else {
+            // Unpinned panel or pinned panel without stored dimensions: convert VU to pixels
+            // This matches UIObjectRendererOptimized.tsx: containerWidth = vuToPx(effectiveProps.width)
+            panelWidth = panelWidth * pixelsPerVU;
+            panelHeight = panelHeight * pixelsPerVU;
+          }
+        }
+
+        // Collect other panel bounds for panel-to-panel snapping
+        const otherPanels: PanelBounds[] = [];
+        const scrollX = viewTransform?.scroll?.x || 0;
+        const scrollY = viewTransform?.scroll?.y || 0;
+        const zoom = viewTransform?.zoom || 1;
+
+        for (const [id, otherObj] of Object.entries(state.objects)) {
+          if (id === currentDraggingId) continue;
+          if (otherObj.type !== ItemType.PANEL && otherObj.type !== ItemType.WINDOW) continue;
+          if (!otherObj.visible) continue;
+
+          // Get panel bounds in screen coordinates
+          let px, py, pwidth, pheight;
+
+          // Convert ALL panels to screen coordinates for magnetism
+          // Current panel's newX/newY are in screen pixels (from e.clientX)
+          if ((otherObj as any).isPinnedToViewport) {
+            // Pinned panels: use pinnedScreenPosition (stored screen coords)
+            // obj.x/y may be in world coords after repinning, so we use pinnedScreenPosition
+            const pinnedPos = (otherObj as any).pinnedScreenPosition || { x: otherObj.x, y: otherObj.y };
+            px = pinnedPos.x;
+            py = pinnedPos.y;
+            // For pinned panels, width/height are already in pixels (from DOM resize)
+            // Use pinnedPixelWidth/Height if available, otherwise fall back to width/height
+            pwidth = ((otherObj as any).pinnedPixelWidth || (otherObj as any).width || 400);
+            pheight = ((otherObj as any).pinnedPixelHeight || (otherObj as any).height || 300);
+          } else {
+            // Unpinned panels: x/y are in world coordinates, width/height in VU
+            // Must match UIObjectRendererOptimized.tsx formula: left = (x - offset.x) / zoom
+            // where offset.x = scroll.x
+            const otherWidth = (otherObj as any).width || 400;
+            const otherHeight = (otherObj as any).height || 300;
+
+            // For unpinned panels, width/height are in VU, convert to pixels using pixelsPerVU
+            // This matches UIObjectRendererOptimized.tsx: containerWidth = vuToPx(effectiveProps.width)
+            pwidth = otherWidth * pixelsPerVU;
+            pheight = otherHeight * pixelsPerVU;
+
+            // Convert position from world to screen - matching UIObjectRendererOptimized
+            px = (otherObj.x - scrollX) / zoom;
+            py = (otherObj.y - scrollY) / zoom;
+          }
+
+          // Add all panels (don't filter by screen visibility - panels may be partially off-screen)
+          otherPanels.push({ id, x: px, y: py, width: pwidth, height: pheight });
+        }
+
+        // Apply magnetism for ALL UI panels in screen coordinates (including panel-to-panel snapping)
+        // Game space bounds for pinned panels account for scrollbars
+        // (panels are pinned to screen, not to world)
+        const gameSpaceBounds: GameSpaceBounds = {
+          left: 0,
+          top: 0,
+          right: window.innerWidth - SCROLLBAR_WIDTH_THICK,
+          bottom: window.innerHeight - SCROLLBAR_WIDTH_THICK
+        };
+
+        const magnetismConfig: MagnetismConfig = {
+          enabled: true,
+          snapThreshold: 15,
+          snapToLeft: true,
+          snapToRight: true,
+          snapToTop: true,
+          snapToBottom: true,
+          scrollbarWidth: SCROLLBAR_WIDTH_THICK,
+        };
+
+        const magnetismResult = applyPanelToPanelMagnetism(
+          newX,
+          newY,
+          panelWidth,
+          panelHeight,
+          window.innerWidth,
+          window.innerHeight,
+          otherPanels,
+          currentDraggingId,
+          magnetismConfig,
+          gameSpaceBounds
+        );
+
+        newX = magnetismResult.x;
+        newY = magnetismResult.y;
+
+        // Convert screen pixels to world coordinates for ALL panels
+        // After proper unpinning, all panels have x/y in world coords
+        // Must match UIObjectRendererOptimized.tsx reverse formula: world = screen * zoom + scroll
+        newX = newX * zoom + scrollX;
+        newY = newY * zoom + scrollY;
 
         // Update only uiObject position during drag (playerPanelSettings updated on mouseUp)
         dispatch({
@@ -1616,6 +1894,12 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     cursorSlot.length,
     setCursorPosition,
     cursorPositionRef,
+    isPanning,
+    panStartRef,
+    setScroll,
+    pixelsPerVU,
+    viewTransform,
+    dispatch,
     currentTool,
     rulerStart,
     setRulerCurrent,
@@ -1625,9 +1909,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     state.objects,
     scrollContainerRef,
     p2v,
-    pixelsPerVU,
-    viewTransform,
-    dispatch,
     activePlayerId,
     resizingId,
     resizeStart,
@@ -1635,8 +1916,15 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setLiveResizeSize
   ]);
 
-  // Mouse up handler WITH LOGGING
+  // Mouse up handler
   const handleMouseUp = useCallback((e?: MouseEvent | React.MouseEvent) => {
+    // Handle panning: stop panning on mouse up
+    if (isPanning) {
+      setIsPanning(false);
+      panStartRef.current = null;
+      return;
+    }
+
     // Handle ruler tool: clear ruler on left mouse up, clear radius on right mouse up
     if (currentTool === 'ruler') {
       const button = e?.button;
@@ -1673,6 +1961,60 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         // Get current playerPanelSettings to preserve other properties
         const currentSettings = state.playerPanelSettings?.[activePlayerId]?.[currentDraggingId];
 
+        // Get current visual size from DOM to preserve the actual rendered size
+        // This ensures that after resize, the panel keeps its new size when dragged
+        let currentWidth = currentSettings?.width ?? obj.width;
+        let currentHeight = currentSettings?.height ?? obj.height;
+
+        const panelElement = document.querySelector(`[data-ui-object="${currentDraggingId}"]`) as HTMLElement;
+        if (panelElement) {
+          const rect = panelElement.getBoundingClientRect();
+          console.log('[DRAG END] Panel element size from DOM:', {
+            id: currentDraggingId,
+            rectWidth: rect.width,
+            rectHeight: rect.height,
+            currentWidth,
+            currentHeight,
+            settingsWidth: currentSettings?.width,
+            objWidth: obj.width
+          });
+          if (rect.width > 0 && rect.height > 0) {
+            const isPinned = (obj as any).isPinnedToViewport || false;
+            console.log('[DRAG END] Panel is pinned:', isPinned);
+            // For pinned panels, use pixel values directly
+            // For unpinned panels, convert pixels to VU
+            if (isPinned) {
+              currentWidth = rect.width;
+              currentHeight = rect.height;
+              console.log('[DRAG END] Using pixel values directly:', { currentWidth, currentHeight });
+            } else {
+              // Use pixelsPerVU from viewTransform for proper conversion
+              const actualPixelsPerVU = viewTransform?.pixelsPerVU ?? 1;
+              currentWidth = Math.round((rect.width / actualPixelsPerVU) * 1000) / 1000;
+              currentHeight = Math.round((rect.height / actualPixelsPerVU) * 1000) / 1000;
+              console.log('[DRAG END] Converted to VU:', { currentWidth, currentHeight, pixelsPerVU: actualPixelsPerVU });
+            }
+          }
+        }
+
+        console.log('[DRAG END] Saving to both UPDATE_OBJECT and playerPanelSettings:', {
+          id: currentDraggingId,
+          width: currentWidth,
+          height: currentHeight
+        });
+
+        // Update the object itself with the new size (as _localOnly)
+        // This ensures obj.width/height stay in sync with visual size
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: currentDraggingId,
+            width: currentWidth,
+            height: currentHeight,
+          },
+          _localOnly: true
+        });
+
         // Clear x,y from playerPanelSettings so panel uses uiObject position directly
         // This prevents issues where playerPanelSettings overrides the actual object position
         dispatch({
@@ -1685,9 +2027,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
               // Don't store x/y in playerPanelSettings - let uiObject be the source of truth
               x: undefined,
               y: undefined,
-              // Preserve other properties
-              width: currentSettings?.width ?? obj.width,
-              height: currentSettings?.height ?? obj.height,
+              // Use current visual size from DOM instead of saved size
+              width: currentWidth,
+              height: currentHeight,
               minimized: currentSettings?.minimized ?? (obj as any).minimized ?? false,
               isPinnedToViewport: currentSettings?.isPinnedToViewport ?? (obj as any).isPinnedToViewport ?? false,
             }
@@ -1702,9 +2044,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
           const zoom = viewTransform?.zoom || 1;
 
           // Convert world coords to screen coords for pinning
-          // obj.x/y are in world coords (for unpinned panels during drag)
-          const screenX = obj.x / zoom - scrollX;
-          const screenY = obj.y / zoom - scrollY;
+          // obj.x/y are in world coords (after proper unpinning conversion)
+          // Formula: screen = (world - scroll) / zoom
+          const screenX = (obj.x - scrollX) / zoom;
+          const screenY = (obj.y - scrollY) / zoom;
 
           dispatch({
             type: 'PIN_TO_VIEWPORT',
@@ -1797,6 +2140,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       dropCursorSlot(e.clientX, e.clientY, props);
     }
   }, [
+    isPanning,
+    setIsPanning,
+    panStartRef,
     currentTool,
     rulerStart,
     setRulerStart,
@@ -2035,7 +2381,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       // Only drop if we have items in cursor slot
       if (cursorSlot.length > 0) {
-        dropCursorSlot(customEvent.detail.x, customEvent.detail.y, props);
+        // Skip pool panel check since this event comes from pool panel
+        // (pool panel already determined cursor is NOT over it)
+        dropCursorSlot(customEvent.detail.x, customEvent.detail.y, props, true);
       }
     };
 
