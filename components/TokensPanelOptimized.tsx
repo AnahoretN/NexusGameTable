@@ -227,8 +227,8 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
       <div
         ref={containerRef}
         data-tokens-panel
-        className="h-full flex items-center justify-center bg-slate-800 border border-slate-600 rounded-lg"
-        style={{ width: '40px' }}
+        className="h-full flex items-center justify-center bg-slate-800 border border-slate-600"
+        style={{ width: '40px', borderRadius: '5px' }}
       >
         <div className="text-xs text-slate-400 text-center px-1" style={{ writingMode: 'vertical-rl' }}>
           {translate('Tokens', language as Locale)}
@@ -241,8 +241,8 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
     <div
       ref={containerRef}
       data-tokens-panel
-      className="h-full flex flex-col bg-slate-800 rounded-lg"
-      style={{ width }}
+      className="h-full flex flex-col bg-slate-800"
+      style={{ width, borderRadius: '5px' }}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">

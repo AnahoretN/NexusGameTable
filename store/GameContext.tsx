@@ -3895,11 +3895,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         hyperscaleLayerId: 'interface', // All panels go on the interface layer
       };
 
-      // Main menu is pinned to viewport by default with dual position mode enabled
+      // All panels are pinned to viewport by default (they are UI elements, not game objects)
+      panel.isPinnedToViewport = true;
+      panel.pinnedScreenPosition = { x, y };
+
+      // Main menu has dual position mode enabled
       if (panelType === PanelType.MAIN_MENU) {
-        panel.isPinnedToViewport = true;
-        panel.pinnedScreenPosition = { x, y };
-        panel.dualPosition = true; // Enable dual position mode by default
+        panel.dualPosition = true;
       }
 
       // Initialize character data for CHARACTER panels with first character
@@ -4065,6 +4067,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         visible: true,
         targetObjectId,
         targetLayerId,
+        isPinnedToViewport: true,
+        pinnedScreenPosition: { x, y },
         hyperscaleLayerId: 'interface', // All windows go on the interface layer
         // Settings windows are local to the player who created them
         ownerId: windowType === WindowType.OBJECT_SETTINGS || windowType === WindowType.HYPERSCALE_LAYER_SETTINGS ? state.activePlayerId : undefined,

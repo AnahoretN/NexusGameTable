@@ -167,6 +167,84 @@ const PinnedTokenRenderer = memo(({
     return (obj as any).counterDisplay;
   }, [obj]);
 
+  // Memoize button configurations (same as TokenRenderer)
+  const buttonConfigs = useMemo(() => {
+    return {
+      flip: {
+        key: 'flip',
+        action: () => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } }),
+        className: 'bg-purple-600 hover:bg-purple-500',
+        title: 'Flip',
+        icon: <RefreshCw size={14} />
+      },
+      rotate: {
+        key: 'rotate',
+        action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
+        className: 'bg-green-600 hover:bg-green-500',
+        title: 'Rotate',
+        icon: <RefreshCw size={14} />
+      },
+      delete: {
+        key: 'delete',
+        action: () => dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
+        className: 'bg-red-600 hover:bg-red-500',
+        title: 'Delete',
+        icon: <Trash2 size={14} />
+      },
+      clone: {
+        key: 'clone',
+        action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
+        className: 'bg-cyan-600 hover:bg-cyan-500',
+        title: 'Clone',
+        icon: <Copy size={14} />
+      },
+      lock: {
+        key: 'lock',
+        action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
+        className: 'bg-yellow-600 hover:bg-yellow-500',
+        title: obj.locked ? 'Unlock' : 'Lock',
+        icon: obj.locked ? <Unlock size={14} /> : <Lock size={14} />
+      },
+      pin: {
+        key: 'pin',
+        action: () => {
+          const isPinned = (obj as any).isPinnedToViewport;
+          if (isPinned) {
+            const pinnedPos = (obj as any).pinnedScreenPosition;
+            if (pinnedPos) {
+              const { offset, zoom, scroll } = viewTransform;
+              const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom);
+              const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (pixelsPerVU * zoom);
+              dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
+            }
+          }
+        },
+        className: 'bg-pink-600 hover:bg-pink-500',
+        title: 'Unpin',
+        icon: <Pin size={14} />
+      },
+    };
+  }, [obj, dispatch, viewTransform, pixelsPerVU]);
+
+  // Memoize rendered buttons
+  const actionButtons = useMemo(() => {
+    const buttons = (obj.actionButtons || [])
+      .map(action => buttonConfigs[action])
+      .filter(Boolean)
+      .slice(0, 4);
+
+    return buttons.map(btn => (
+      <button
+        key={btn.key}
+        onClick={(e) => { e.stopPropagation(); btn.action(); }}
+        className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
+        title={btn.title}
+      >
+        {btn.icon}
+      </button>
+    ));
+  }, [obj.actionButtons, buttonConfigs]);
+
   return (
     <div
       data-object-id={obj.id}
@@ -178,6 +256,7 @@ const PinnedTokenRenderer = memo(({
         height: token.height * pixelsPerVU,
         pointerEvents: 'auto',
         transform: `rotate(${obj.rotation || 0}deg)`,
+        overflow: 'visible',
       }}
       onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
       onContextMenu={(e) => onContextMenu(e, obj)}
@@ -209,74 +288,9 @@ const PinnedTokenRenderer = memo(({
         dispatch={dispatch}
       />
 
-      <PinnedIndicator />
-
       {/* Action buttons */}
-      <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 opacity-0 group-hover:opacity-100 pointer-events-auto`}>
-        {obj.actionButtons?.includes('delete') && (
-          <button
-            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }); }}
-            className="bg-red-600 hover:bg-red-500 text-white p-1 rounded"
-            title="Delete"
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
-        {obj.actionButtons?.includes('clone') && (
-          <button
-            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }); }}
-            className="bg-cyan-600 hover:bg-cyan-500 text-white p-1 rounded"
-            title="Clone"
-          >
-            <Copy size={14} />
-          </button>
-        )}
-        {obj.actionButtons?.includes('rotate') && (
-          <button
-            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }); }}
-            className="bg-green-600 hover:bg-green-500 text-white p-1 rounded"
-            title="Rotate"
-          >
-            <RotateCw size={14} />
-          </button>
-        )}
-        {obj.actionButtons?.includes('flip') && (
-          <button
-            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } }); }}
-            className="bg-purple-600 hover:bg-purple-500 text-white p-1 rounded"
-            title="Flip"
-          >
-            <RefreshCw size={14} />
-          </button>
-        )}
-        {obj.actionButtons?.includes('lock') && (
-          <button
-            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }); }}
-            className="bg-yellow-600 hover:bg-yellow-500 text-white p-1 rounded"
-            title={obj.locked ? 'Unlock' : 'Lock'}
-          >
-            {obj.locked ? <Unlock size={14} /> : <Lock size={14} />}
-          </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            const isPinned = (obj as any).isPinnedToViewport;
-            if (isPinned) {
-              const pinnedPos = (obj as any).pinnedScreenPosition;
-              if (pinnedPos) {
-                const { offset, zoom, scroll } = viewTransform;
-                const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom);
-                const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (pixelsPerVU * zoom);
-                dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
-              }
-            }
-          }}
-          className="bg-pink-600 hover:bg-pink-500 text-white p-1 rounded"
-          title="Unpin"
-        >
-          <Pin size={14} />
-        </button>
+      <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 opacity-0 group-hover:opacity-100 pointer-events-auto">
+        {actionButtons}
       </div>
     </div>
   );
@@ -305,6 +319,12 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   onMouseDown,
   dispatch,
 }) => {
+  // Filter out the object currently being dragged to prevent visual duplication
+  // When a pinned object is being dragged, it's temporarily unpinned and rendered
+  // in GameObjectsRenderer instead. Excluding it here prevents it from showing
+  // in both places simultaneously, which causes the "clipping" effect.
+  const pinnedObjectsToRender = pinnedGameObjects.filter(obj => obj.id !== draggingId);
+
   const renderPinnedToken = (obj: TableObject) => {
     return (
       <PinnedTokenRenderer
@@ -382,8 +402,8 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   };
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-[600]">
-      {pinnedGameObjects.map(obj => (
+    <div className="fixed inset-0 pointer-events-none z-[600]" style={{ overflow: 'visible' }}>
+      {pinnedObjectsToRender.map(obj => (
         <React.Fragment key={obj.id}>
           {renderPinnedGameObject(obj)}
         </React.Fragment>

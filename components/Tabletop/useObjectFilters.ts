@@ -169,12 +169,20 @@ export const useObjectFilters = (
   }, [state.objects]);
 
   // Separate pinned and unpinned UI objects
+  // NOTE: All panels and windows are UI elements and should always be pinned to viewport
+  // This ensures they render in screen coordinates, not world coordinates
   const pinnedUIObjects = useMemo(() => {
-    return uiObjects.filter((obj) => (obj as any).isPinnedToViewport);
+    return uiObjects.filter((obj) => {
+      // UI objects (panels and windows) are always considered pinned
+      return obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || (obj as any).isPinnedToViewport;
+    });
   }, [uiObjects]);
 
   const unpinnedUIObjects = useMemo(() => {
-    return uiObjects.filter((obj) => !(obj as any).isPinnedToViewport);
+    return uiObjects.filter((obj) => {
+      // Only non-UI objects can be unpinned
+      return obj.type !== ItemType.PANEL && obj.type !== ItemType.WINDOW && !(obj as any).isPinnedToViewport;
+    });
   }, [uiObjects]);
 
   // Separate pinned and unpinned decks

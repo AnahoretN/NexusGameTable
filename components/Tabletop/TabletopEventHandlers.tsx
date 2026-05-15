@@ -1403,7 +1403,18 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       // Check if this is a UI object (panel/window) - moves immediately without threshold
       const isUIObject = obj?.type === ItemType.PANEL || obj?.type === ItemType.WINDOW;
 
+      console.log('[PANEL CLICK] Checking panel:', {
+        objId,
+        isUIObject,
+        'obj.type': obj?.type,
+        'obj.isPinnedToViewport': (obj as any)?.isPinnedToViewport,
+        'obj.x': obj?.x,
+        'obj.y': obj?.y
+      });
+
       if (isUIObject) {
+        console.log('[PANEL CLICK] Is UI object, starting drag...');
+
         // UI objects use immediate drag (no cursor slot, no threshold)
         // Find the actual panel container by looking for data-ui-object attribute
         let rect = (e.target as HTMLElement).getBoundingClientRect();
@@ -1419,32 +1430,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         setDraggingId(objId);
         draggingIdRef.current = objId; // Set ref for immediate access in handleMouseMove
 
-        // If object is pinned, unpin it temporarily during drag
-        if ((obj as any).isPinnedToViewport) {
-
-          // Store the pinned screen position to restore later
-          const pinnedPos = (obj as any).pinnedScreenPosition || { x: obj.x, y: obj.y };
-          unpinnedDuringDragRef.current.set(objId, pinnedPos);
-
-          // Unpin the object - convert screen coords to world coordinates
-          // For pinned panels, obj.x/y are in screen pixels
-          // Reverse formula of: screen = (world - scroll) / zoom
-          const scrollX = viewTransform?.scroll?.x || 0;
-          const scrollY = viewTransform?.scroll?.y || 0;
-          const zoom = viewTransform?.zoom || 1;
-          const worldX = obj.x * zoom + scrollX;
-          const worldY = obj.y * zoom + scrollY;
-
-          dispatch({
-            type: 'UNPIN_FROM_VIEWPORT',
-            payload: {
-              id: objId,
-              worldX,
-              worldY,
-              pixelsPerVU
-            }
-          });
-        }
+        // UI objects (panels/windows) are ALWAYS pinned - never unpin them
+        // They use screen coordinates directly, no conversion needed
+        console.log('[PANEL CLICK] UI object drag started, keeping pinned state');
 
         return;
       }
@@ -1814,20 +1802,16 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         newX = magnetismResult.x;
         newY = magnetismResult.y;
 
-        // Convert screen pixels to world coordinates for ALL panels
-        // After proper unpinning, all panels have x/y in world coords
-        // Must match UIObjectRendererOptimized.tsx reverse formula: world = screen * zoom + scroll
-        newX = newX * zoom + scrollX;
-        newY = newY * zoom + scrollY;
-
-        // Update only uiObject position during drag (playerPanelSettings updated on mouseUp)
+        // UI objects (panels/windows) are ALWAYS pinned - use screen coordinates directly
+        // No conversion needed - newX/newY are already in screen pixels from e.clientX
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: {
             id: currentDraggingId,
             updates: {
               x: newX,
-              y: newY
+              y: newY,
+              pinnedScreenPosition: { x: newX, y: newY }  // Keep pinnedScreenPosition in sync
             }
           },
           _localOnly: true  // Critical: ensures x,y are updated (not filtered by reducer)
@@ -2031,7 +2015,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
               width: currentWidth,
               height: currentHeight,
               minimized: currentSettings?.minimized ?? (obj as any).minimized ?? false,
-              isPinnedToViewport: currentSettings?.isPinnedToViewport ?? (obj as any).isPinnedToViewport ?? false,
+              // UI objects are ALWAYS pinned - never set to false
+              isPinnedToViewport: true,
             }
           }
         });

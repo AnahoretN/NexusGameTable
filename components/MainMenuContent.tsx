@@ -1793,9 +1793,21 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     const zoom = viewTransform.zoom;
     const offsetX = viewTransform.offset.x;
     const offsetY = viewTransform.offset.y;
+    const scrollX = viewTransform.scroll?.x ?? 0;
+    const scrollY = viewTransform.scroll?.y ?? 0;
 
-    const worldX_px = (screenX - offsetX) / zoom;
-    const worldY_px = (screenY - offsetY) / zoom;
+    console.log('[CREATE ITEM] viewTransform:', {
+      zoom,
+      offsetX,
+      offsetY,
+      scrollX,
+      scrollY,
+      screenX,
+      screenY
+    });
+
+    const worldX_px = (screenX - offsetX + scrollX) / zoom;
+    const worldY_px = (screenY - offsetY + scrollY) / zoom;
 
     // Convert pixels to VU (Virtual Units) for consistent positioning across different screen sizes
     const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
@@ -2173,12 +2185,17 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         break;
       }
       case 'PANEL': {
+        // Panels use screen coordinates (pixels), not world coordinates
+        // Center the panel on screen
+        const panelX = window.innerWidth / 2 - DEFAULT_PANEL_WIDTH / 2;
+        const panelY = window.innerHeight / 2 - DEFAULT_PANEL_HEIGHT / 2;
+
         dispatch({
           type: 'CREATE_PANEL',
           payload: {
             panelType: item.panelType!,
-            x: screenX - 150,
-            y: screenY - 200,
+            x: panelX,
+            y: panelY,
             width: DEFAULT_PANEL_WIDTH,
             height: DEFAULT_PANEL_HEIGHT,
             title: item.name,

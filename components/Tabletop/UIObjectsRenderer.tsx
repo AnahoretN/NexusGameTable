@@ -152,7 +152,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
       {unpinnedDecks.map(deck => renderUnpinnedDeck(deck))}
 
       {/* Unpinned UI Objects Container - rendered outside transform, always above game objects */}
-      <div className="fixed inset-0 pointer-events-none z-[9800]">
+      <div className="fixed inset-0 pointer-events-none z-[9800]" style={{ overflow: 'visible' }}>
         {unpinnedUIObjects.map(uiObj => (
           <UIObjectRendererMemo
             key={uiObj.id}
@@ -168,7 +168,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
       </div>
 
       {/* Pinned UI Objects Container - rendered outside transform, not affected by camera/scroll */}
-      <div className="fixed inset-0 pointer-events-none z-[9900]">
+      <div className="fixed inset-0 pointer-events-none z-[9900]" style={{ overflow: 'visible' }}>
         {pinnedUIObjects.map(uiObj => (
           <UIObjectRendererMemo
             key={uiObj.id}
@@ -184,7 +184,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
       </div>
 
       {/* Pinned Game Objects Container - rendered outside transform, below panels */}
-      <div className="fixed inset-0 pointer-events-none z-[500]">
+      <div className="fixed inset-0 pointer-events-none z-[500]" style={{ overflow: 'visible' }}>
         {pinnedDecks.map(deck => renderPinnedDeck(deck))}
       </div>
     </>

@@ -2,8 +2,8 @@ import React from 'react';
 import { TokenShape } from '../types';
 import { getTokenShapePath, generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
 
-// Border radius in viewBox units (scales with the SVG)
-const BORDER_RADIUS = 4;
+// Default border radius in viewBox units (scales with the SVG)
+const BORDER_RADIUS = 3;
 
 interface SvgTokenShapeProps {
   shape: TokenShape;
@@ -73,6 +73,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   tokenName,
   fontColor = 'white',
 }) => {
+  // All tokens use the same border radius
+  const borderRadius = BORDER_RADIUS;
   // For HEX and HEX_HORIZONTAL, generate dynamic path based on aspect ratio
   let shapeData;
   if (shape === TokenShape.HEX) {
@@ -134,8 +136,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
     y: 0,
     width: viewBoxWidth,
     height: viewBoxHeight,
-    rx: BORDER_RADIUS,
-    ry: BORDER_RADIUS,
+    rx: borderRadius,
+    ry: borderRadius,
   };
 
   return (

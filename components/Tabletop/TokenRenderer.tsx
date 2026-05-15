@@ -79,9 +79,14 @@ export const TokenRenderer = memo(({
       v2p(token.height),
       globalZIndex,
       objLayer,
-      { transform }
+      {
+        transform,
+        overflow: 'visible',
+        // Optimize for smooth dragging
+        willChange: isDragging ? 'transform, left, top' : undefined,
+      }
     );
-  }, [obj.x, obj.y, obj.rotation, token.width, token.height, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale]);
+  }, [obj.x, obj.y, obj.rotation, token.width, token.height, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging]);
 
   // Memoize token name display
   const tokenName = useMemo(() => {
@@ -343,7 +348,7 @@ export const TokenRenderer = memo(({
         icon: <SkipBack size={14} />
       },
     };
-  }, [obj, allObjects, dispatch]);
+  }, [obj, allObjects, dispatch, viewTransform, pixelsPerVU]);
 
   // Memoize rendered buttons
   const actionButtons = useMemo(() => {

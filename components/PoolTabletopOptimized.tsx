@@ -2844,8 +2844,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                       data-object-id={obj.id}
                       onMouseDown={(e) => handleObjectMouseDown(e, obj)}
                       onContextMenu={(e) => handleContextMenu(e, obj)}
-                      className={`w-full h-full bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${isDragging ? 'dragging' : ''}`}
-                      style={{ pointerEvents: 'auto' }}
+                      className={`w-full h-full bg-slate-900 border-2 border-slate-600 shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none ${isDragging ? 'dragging' : ''}`}
+                      style={{ pointerEvents: 'auto', borderRadius: '5px' }}
                     >
                       <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 } })}><Minus size={14}/></button>
                       <span className="text-xl font-bold">{counter.value}</span>

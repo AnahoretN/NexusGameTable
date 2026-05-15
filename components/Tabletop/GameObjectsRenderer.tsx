@@ -394,6 +394,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             objLayer,
             {
               transform: `rotate(${obj.rotation ?? 0}rad)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+              overflow: 'visible',
             }
           )}
         >
@@ -652,7 +653,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             if (isOwner) onMouseDown(e, obj.id);
           }}
           onContextMenu={(e) => onContextMenu(e, obj)}
-          className={`absolute bg-slate-900 border-2 border-slate-600 rounded-lg shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
+          className={`absolute bg-slate-900 border-2 border-slate-600 shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           style={createPositionedStyle(
             v2p(obj.x),
             v2p(obj.y),
@@ -663,6 +664,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             {
               transform: `rotate(${obj.rotation || 0}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
               pointerEvents: isPermeable ? 'none' : 'auto',
+              borderRadius: '5px',
             }
           )}
         >
@@ -692,7 +694,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const dice = obj as DiceObject;
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
     const canDrag = !obj.locked;
-    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    const isDragging = draggingId === obj.id;
+    const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
     const objLayer = obj.hyperscaleLayerId || 'none';
 
     const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
@@ -758,6 +761,9 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
               filter: glowColor ? `drop-shadow(0 0 8px ${glowColor}) drop-shadow(0 0 4px ${glowColor})` : undefined,
               transition: getTransitionDuration(),
               transformOrigin: 'center center',
+              overflow: 'visible',
+              // Optimize for smooth dragging
+              willChange: isDragging ? 'transform, left, top' : undefined,
             }
           )}
         >

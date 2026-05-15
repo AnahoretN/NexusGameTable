@@ -11,6 +11,16 @@ export function createPanelReducer(state: any, action: any): any {
   const { panelType, playerId, x, y, width, height, title } = action.payload;
   const id = `panel-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
+  console.log('[CREATE PANEL REDUCER] Panel coords:', {
+    panelType,
+    x,
+    y,
+    width,
+    height,
+    viewTransform: state.viewTransform,
+    'state.objects keys': Object.keys(state.objects).slice(0, 5)
+  });
+
   const panel = {
     id,
     type: ItemType.PANEL,

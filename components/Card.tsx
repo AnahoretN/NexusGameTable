@@ -385,11 +385,12 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           ) : (
             // Standard card rendering for non-geometric shapes
             <div
-              className={`w-full h-full ${!isGeometric ? 'border-2 border-gray-700 rounded-lg' : ''} ${isHovered && !isGeometric ? 'ring-2 ring-yellow-400' : ''}`}
+              className={`w-full h-full ${!isGeometric ? 'border-2 border-gray-700' : ''} ${isHovered && !isGeometric ? 'ring-2 ring-yellow-400' : ''}`}
               style={{
                   backgroundColor: card.faceUp ? (textCardsStyles?.backgroundColor || 'white') : '#1e293b',
                   position: 'relative',
                   overflow: 'hidden',
+                  borderRadius: !isGeometric ? '5px' : undefined,
               }}
             >
               {/* Inner content wrapper - handles rotation for HORIZONTAL orientation */}

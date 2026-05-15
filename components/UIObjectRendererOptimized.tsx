@@ -874,6 +874,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       // DOM manipulation during resize will override these via inline styles
       width: containerWidth,
       height: containerHeight,
+      borderRadius: '5px',
     };
 
     return style;
@@ -924,7 +925,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       data-main-menu={isMainMenu ? "true" : undefined}
       data-shift-dragging={isShiftDragging ? "true" : undefined}
       style={containerStyle}
-      className={`bg-slate-900 border-2 ${borderColor} rounded-lg shadow-2xl flex flex-col ${
+      className={`bg-slate-900 border-2 ${borderColor} shadow-2xl flex flex-col ${
         isShiftDragging || isDragOverPool ? 'ring-2 ring-purple-500 ring-opacity-50' : ''
       }`}
       onContextMenu={(e) => {

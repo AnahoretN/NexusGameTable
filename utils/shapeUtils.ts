@@ -59,7 +59,7 @@ export function getCardShapeStyles(
     case CardShape.BRIDGE:
     case CardShape.POKER:
     default:
-      return { borderRadius: '8px' };
+      return { borderRadius: '5px' };
   }
 }
 

@@ -247,106 +247,122 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
   // The z-index is already very high (9999999999) which should be above most UI elements
   return (
     <>
-      {/* Active cursor slot items - container at cursor position for relative offsets */}
-      {cursorSlot.length > 0 && (
-        <div
-          className="fixed pointer-events-none"
-          style={{
-            left: finalPosition.x,
-            top: finalPosition.y,
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-            zIndex: 999999999, // MUCH higher than hand panel (999999)
-            willChange: 'transform', // Hint to browser for optimization
-          }}
-        >
-          {/* Render active cursor slot items */}
-          {sortedSlot.map((item, sortedIndex) => {
-            const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU, state.objects as Record<string, TableObject>);
-            // Ensure minimum dimensions to prevent rendering issues
-            // Use larger minimum for Effect Templates to prevent flicker
-            const minWidth = item.type === ItemType.EFFECT_TEMPLATE ? 50 : 1;
-            const width = Math.max(dimensions.width, minWidth);
-            const height = Math.max(dimensions.height, minWidth);
-            const isCard = item.type === ItemType.CARD;
+      {/* Active cursor slot items - render each item directly at absolute screen position */}
+      {cursorSlot.length > 0 && sortedSlot.map((item, sortedIndex) => {
+        const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU, state.objects as Record<string, TableObject>);
+        // Ensure minimum dimensions to prevent rendering issues
+        // Use larger minimum for Effect Templates to prevent flicker
+        const minWidth = item.type === ItemType.EFFECT_TEMPLATE ? 50 : 1;
+        const width = Math.max(dimensions.width, minWidth);
+        const height = Math.max(dimensions.height, minWidth);
+        const isCard = item.type === ItemType.CARD;
 
-            // Container is already positioned at cursor position, so offsetX/Y are offsets from (0,0) of container
-            // Calculate offset from cursor to object's clicked point
-            let offsetX = 0;
-            let offsetY = 0;
+        // Calculate absolute screen position for this item
+        let itemX = finalPosition.x;
+        let itemY = finalPosition.y;
 
-            // Use pixel offsets directly if available
-            const clickOffsetX_PX = (item as any).clickOffsetX_PX;
-            const clickOffsetY_PX = (item as any).clickOffsetY_PX;
+        // Use pixel offsets directly if available
+        const clickOffsetX_PX = (item as any).clickOffsetX_PX;
+        const clickOffsetY_PX = (item as any).clickOffsetY_PX;
 
-            if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
-              // clickOffsetX_PX is the distance from object's top-left to the clicked point
-              // This is ALWAYS in screen pixels now (consistently from all sources)
-              // CursorSlotVisualization is rendered at screen level (no zoom transform),
-              // so we can use the offset directly
+        if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+          // clickOffsetX_PX is the distance from object's top-left to the clicked point
+          // We want the clicked point to be at the cursor
+          // So we subtract the offset from cursor position
+          itemX = finalPosition.x - clickOffsetX_PX;
+          itemY = finalPosition.y - clickOffsetY_PX;
+        } else {
+          // Fallback: try old VU-based offsets
+          const clickOffsetX = (item as any).clickOffsetX;
+          const clickOffsetY = (item as any).clickOffsetY;
 
-              // We want the clicked point to be at the cursor (container's origin)
-              // So we offset the object by NEGATIVE offset
-              offsetX = -clickOffsetX_PX;
-              offsetY = -clickOffsetY_PX;
-            } else {
-              // Fallback: try old VU-based offsets
-              const clickOffsetX = (item as any).clickOffsetX;
-              const clickOffsetY = (item as any).clickOffsetY;
+          if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
+            // Convert offset from virtual units to pixels
+            itemX = finalPosition.x - (clickOffsetX * pixelsPerVU);
+            itemY = finalPosition.y - (clickOffsetY * pixelsPerVU);
+          } else {
+            // No offset - center on cursor
+            itemX = finalPosition.x - (width / 2);
+            itemY = finalPosition.y - (height / 2);
+          }
+        }
 
-              if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
-                // Convert offset from virtual units to pixels
-                offsetX = -(clickOffsetX * pixelsPerVU);
-                offsetY = -(clickOffsetY * pixelsPerVU);
-              } else {
-                // No offset - center on cursor
-                offsetX = -(width / 2);
-                offsetY = -(height / 2);
-              }
-            }
+        // Calculate stack offset based on sorted position
+        const offsetFromFront = sortedIndex;
+        const offsetAmount = Math.min(width, height) * 0.05;
+        const stackOffsetX = offsetFromFront * offsetAmount;
+        const stackOffsetY = offsetFromFront * offsetAmount;
 
-            // Calculate stack offset based on sorted position
-            const offsetFromFront = sortedIndex;
-            const offsetAmount = Math.min(width, height) * 0.05;
-            const stackOffsetX = offsetFromFront * offsetAmount;
-            const stackOffsetY = offsetFromFront * offsetAmount;
+        // Apply stack offset
+        itemX += stackOffsetX;
+        itemY += stackOffsetY;
 
-            // Combine base offset with stack offset
-            const finalOffsetX = offsetX + stackOffsetX;
-            const finalOffsetY = offsetY + stackOffsetY;
+        // Use sequential zIndex for proper stacking in visualization
+        const totalItems = sortedSlot.length;
+        const zIndex = isCard ? (totalItems - sortedIndex) : (totalItems - sortedIndex) + 1000;
 
-            // Use sequential zIndex for proper stacking in visualization
-            const totalItems = sortedSlot.length;
-            const zIndex = isCard ? (totalItems - sortedIndex) : (totalItems - sortedIndex) + 1000;
-
-            return renderCursorSlotItem(
-              { item, width, height, offsetX: finalOffsetX, offsetY: finalOffsetY, zIndex, state },
+        // Render item directly at absolute position (no container offset)
+        return (
+          <div
+            key={item.id}
+            className="fixed pointer-events-none"
+            style={{
+              left: 0,
+              top: 0,
+              transform: `translate3d(${itemX}px, ${itemY}px, 0)`,
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              zIndex: 999999999 + zIndex,
+              willChange: 'transform',
+              backfaceVisibility: 'hidden',
+            }}
+          >
+            {renderCursorSlotItem(
+              { item, width, height, offsetX: 0, offsetY: 0, zIndex, state },
               item.id
-            );
-          })}
+            )}
+          </div>
+        );
+      })}
 
-          {/* Stack counter badge - only show if more than 1 item */}
-          {cursorSlot.length > 1 && (() => {
-            const firstItem = cursorSlot[0];
-            // Card dimensions already reflect orientation, no swap needed
-            const badgeWidth = firstItem?.width ?? 63;
-            const badgeHeight = firstItem?.height ?? 88;
-            // Convert vu to pixels for badge positioning
-            const badgeWidthPx = badgeWidth * pixelsPerVU;
-            const badgeHeightPx = badgeHeight * pixelsPerVU;
-            return (
-              <div className="absolute" style={{
-                left: `${badgeWidthPx / 2 + 4}px`,
-                top: `-${badgeHeightPx / 2 + 4}px`,
-              }}>
-                <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
-                  {cursorSlot.length}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
+      {/* Stack counter badge - only show if more than 1 item */}
+      {cursorSlot.length > 1 && (() => {
+        const firstItem = cursorSlot[0];
+        // Card dimensions already reflect orientation, no swap needed
+        const badgeWidth = firstItem?.width ?? 63;
+        const badgeHeight = firstItem?.height ?? 88;
+        // Convert vu to pixels for badge positioning
+        const badgeWidthPx = badgeWidth * pixelsPerVU;
+        const badgeHeightPx = badgeHeight * pixelsPerVU;
+
+        // Calculate absolute position for badge
+        let badgeX = finalPosition.x;
+        let badgeY = finalPosition.y;
+
+        const clickOffsetX_PX = (firstItem as any).clickOffsetX_PX;
+        const clickOffsetY_PX = (firstItem as any).clickOffsetY_PX;
+
+        if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+          badgeX = finalPosition.x - clickOffsetX_PX;
+          badgeY = finalPosition.y - clickOffsetY_PX;
+        }
+
+        return (
+          <div
+            className="fixed pointer-events-none"
+            style={{
+              left: 0,
+              top: 0,
+              transform: `translate3d(${badgeX + badgeWidthPx / 2 + 4}px, ${badgeY - badgeHeightPx / 2 - 4}px, 0)`,
+              zIndex: 999999999 + 10000,
+            }}
+          >
+            <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
+              {cursorSlot.length}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Render held items (transition after drop) - separate container with absolute positioning */}
       {cursorSlot.length === 0 && heldItems.map((heldItem, index) => {
@@ -361,11 +377,14 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
             key={`held-${item.id}`}
             className="fixed pointer-events-none"
             style={{
-              left: x,
-              top: y,
+              left: 0,
+              top: 0,
+              transform: `translate3d(${x}px, ${y}px, 0)`,
               userSelect: 'none',
               WebkitUserSelect: 'none',
               zIndex: 999999999, // MUCH higher than hand panel (999999)
+              willChange: 'transform',
+              backfaceVisibility: 'hidden',
             }}
           >
             {renderCursorSlotItem(
