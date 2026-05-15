@@ -370,7 +370,6 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
       // Validate object coordinates
       if (!isFinite(obj.x) || !isFinite(obj.y)) {
-        console.warn('[Pivot Drag] Invalid object coordinates, skipping update');
         return;
       }
 
@@ -382,7 +381,6 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       // Rotation Marker is at fixed world position (saved at drag start)
       const rotMarkerWorld = rotationMarkerWorldPosRef.current;
       if (!rotMarkerWorld || !isFinite(rotMarkerWorld.x) || !isFinite(rotMarkerWorld.y)) {
-        console.warn('[Pivot Drag] Invalid marker world position, skipping update');
         return;
       }
 
@@ -530,14 +528,12 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
       // Validate mouse coordinates
       if (!isFinite(e.clientX) || !isFinite(e.clientY)) {
-        console.warn('[Rotation Drag] Invalid mouse coordinates', { clientX: e.clientX, clientY: e.clientY });
         return;
       }
 
       // Use SAVED rect from drag start for consistent coordinate calculations
       const rect = dragStartRectRef.current;
       if (!rect) {
-        console.warn('[Rotation Drag] No saved rect');
         return;
       }
 
@@ -588,10 +584,6 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       // Safety checks: prevent coordinates from becoming NaN, Infinity, or out of reasonable bounds
       if (!isFinite(newObjX) || !isFinite(newObjY) ||
           !isFinite(newRotation) || !isFinite(finalHeight) || !isFinite(finalWidth)) {
-        console.warn('[Rotation Drag] Invalid coordinates detected, skipping update', {
-          newObjX, newObjY, newRotation, finalHeight, finalWidth,
-          pivotWorldX, pivotWorldY, newPivotOffsetX, newPivotOffsetY
-        });
         return;
       }
 
@@ -758,7 +750,6 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
       // Safety checks: prevent coordinates from becoming NaN, Infinity, or out of reasonable bounds
       if (!isFinite(newObjX) || !isFinite(newObjY) || !isFinite(finalWidth)) {
-        console.warn('[Width Drag] Invalid coordinates detected, skipping update');
         return;
       }
 
