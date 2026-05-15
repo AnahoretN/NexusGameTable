@@ -117,6 +117,32 @@ export async function restoreImagesFromPathMetadata(
       }
     }
 
+    // Process characterData.avatarUrl (for PANEL objects with character tabs)
+    if ((restoredObj as any).characterData?.characters) {
+      for (const character of (restoredObj as any).characterData.characters) {
+        if (character.avatarUrl) {
+          const result = await restoreImageFromMetadata(character.avatarUrl, loadPackImage);
+          if (result && result !== character.avatarUrl) {
+            character.avatarUrl = result;
+            restoredCount++;
+          }
+        }
+      }
+    }
+
+    // Process poolData.avatarUrl (for PANEL pool tabs with avatars)
+    if ((restoredObj as any).poolData?.tabs) {
+      for (const tab of (restoredObj as any).poolData.tabs) {
+        if (tab.avatarUrl) {
+          const result = await restoreImageFromMetadata(tab.avatarUrl, loadPackImage);
+          if (result && result !== tab.avatarUrl) {
+            tab.avatarUrl = result;
+            restoredCount++;
+          }
+        }
+      }
+    }
+
     // Process alternativeBack URL
     if ((restoredObj as any).alternativeBack?.url) {
       const result = await restoreImageFromMetadata((restoredObj as any).alternativeBack.url, loadPackImage);

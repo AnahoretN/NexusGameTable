@@ -8,6 +8,7 @@ import { TextBlock, SliderBlock, TableBlock, InventoryBlock, CounterBlock } from
 import { SimpleContextMenu } from './SimpleContextMenu';
 import { CharacterSettingsModal } from './CharacterSettingsModal';
 import { logger } from '../utils/logger';
+import { generateImageId, createImageRef, saveSingleImageToIDB, isImageRef, getImageIdFromRef } from '../utils/imageCache';
 
 interface CharacterPanelProps {
   isCollapsed?: boolean;
@@ -33,6 +34,9 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const [activeSubTabId, setActiveSubTabId] = useState<string>('subtab-1');
   const [pendingRemoveCharacterId, setPendingRemoveCharacterId] = useState<string | null>(null);
 
+  // Cache for resolved avatar URLs (convert img_ref:// to data URLs)
+  const [avatarUrlCache, setAvatarUrlCache] = useState<Record<string, string>>({});
+
   // Get active character - use characterData from state for reactivity
   const activeCharacter = useMemo(() => {
     if (!characterData) return null;
@@ -53,6 +57,55 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       setActiveSubTabId(activeCharacter.activeSubTabId);
     }
   }, [activeCharacter?.activeSubTabId]);
+
+  // Load avatar images from IndexedDB (convert img_ref:// to data URLs)
+  useEffect(() => {
+    if (!characterData?.characters) return;
+
+    const loadAvatars = async () => {
+      const newCache: Record<string, string> = {};
+
+      for (const character of characterData.characters) {
+        if (!character.avatarUrl) continue;
+
+        // If it's an image reference, load from IDB
+        if (isImageRef(character.avatarUrl)) {
+          const imageId = getImageIdFromRef(character.avatarUrl);
+          try {
+            // Try to get from IDB
+            const dataUrl = await new Promise<string | null>((resolve) => {
+              const request = indexedDB.open('NexusGameTable_Images', 1);
+              request.onerror = () => resolve(null);
+              request.onsuccess = () => {
+                const db = request.result;
+                const transaction = db.transaction(['cachedImages'], 'readonly');
+                const store = transaction.objectStore('cachedImages');
+                const getReq = store.get(imageId);
+                getReq.onerror = () => resolve(null);
+                getReq.onsuccess = () => {
+                  const entry = getReq.result;
+                  resolve(entry ? entry.data : null);
+                };
+              };
+            });
+
+            if (dataUrl) {
+              newCache[character.id] = dataUrl;
+            }
+          } catch (error) {
+            logger.error('[CharacterPanel] Failed to load avatar from IDB:', error);
+          }
+        } else {
+          // Not an image reference, use as-is
+          newCache[character.id] = character.avatarUrl;
+        }
+      }
+
+      setAvatarUrlCache(newCache);
+    };
+
+    loadAvatars();
+  }, [characterData?.characters]);
 
   // Migration: Ensure all blocks have columnId, characters have columns field, and sub-tabs exist
   useEffect(() => {
@@ -272,22 +325,32 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
     const file = e.target.files[0];
 
-    // Check file size (limit to 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Image size must be less than 2MB');
+    // Check file size (limit to 3MB)
+    if (file.size > 3 * 1024 * 1024) {
+      alert('Image size must be less than 3MB');
       return;
     }
 
     // Create a preview URL
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const avatarUrl = event.target?.result as string;
+    reader.onload = async (event) => {
+      const dataUrl = event.target?.result as string;
 
       if (!characterData || !activeCharacter) return;
 
+      // Generate unique image ID and save to IndexedDB immediately
+      const imageId = generateImageId();
+      const imageRef = createImageRef(imageId);
+
+      // Save to IDB for persistence (async but don't wait)
+      saveSingleImageToIDB(imageId, dataUrl).catch(error => {
+        logger.error('[CharacterPanel] Failed to save avatar to IDB:', error);
+      });
+
+      // Store image reference in state instead of base64
       const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
         if (char.id === activeCharacter.id) {
-          return { ...char, avatarUrl };
+          return { ...char, avatarUrl: imageRef };
         }
         return char;
       });
@@ -304,6 +367,9 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
           }
         }
       });
+
+      // Update local cache immediately so avatar shows without re-render
+      setAvatarUrlCache(prev => ({ ...prev, [activeCharacter.id]: dataUrl }));
     };
     reader.readAsDataURL(file);
 
@@ -336,6 +402,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
           }
         }
       }
+    });
+
+    // Clear from local cache
+    setAvatarUrlCache(prev => {
+      const newCache = { ...prev };
+      delete newCache[activeCharacter.id];
+      return newCache;
     });
   }, [characterData, activeCharacter, isGM, activePlayerId, panel.id, dispatch]);
 
@@ -1092,7 +1165,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                 <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-slate-500 flex items-center justify-center bg-slate-700">
                   {activeCharacter.avatarUrl ? (
                     <img
-                      src={activeCharacter.avatarUrl}
+                      src={avatarUrlCache[activeCharacter.id] || activeCharacter.avatarUrl}
                       alt={activeCharacter.characterName}
                       className="w-full h-full object-cover"
                     />
@@ -1146,7 +1219,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                           handleCancelEditCharacterName();
                         }
                       }}
-                      className="text-lg font-semibold leading-[1.2] bg-slate-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
+                      className="text-lg font-semibold leading-[1.2] bg-slate-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 w-full min-w-0"
                       autoFocus
                     />
                   ) : (

@@ -161,7 +161,7 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
                 x2={v2p(rulerCurrent.x)}
                 y2={v2p(rulerCurrent.y)}
                 stroke="white"
-                strokeWidth={v2p(1)}
+                strokeWidth={v2p(2)}
                 strokeDasharray={`${v2p(6)},${v2p(4)}`}
               />
 
@@ -178,7 +178,7 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
                     r={v2p(lineLength)}
                     fill="none"
                     stroke="white"
-                    strokeWidth={v2p(0.5)}
+                    strokeWidth={v2p(2)}
                     strokeDasharray={`${v2p(4)},${v2p(4)}`}
                   />
                 ) : null;

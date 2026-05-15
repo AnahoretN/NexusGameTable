@@ -5623,9 +5623,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
           // Check if images need restoration (metadata or img_ref:// instead of actual images)
           const needsRestoration = Object.values(savedState.objects).some((obj: any) =>
-            obj.content && (obj.content === 'B' || obj.content === 'D' ||
+            // Check content field
+            (obj.content && (obj.content === 'B' || obj.content === 'D' ||
              obj.content.startsWith('{"t":') || obj.content.startsWith('{"type":') ||
-             obj.content.startsWith('img_ref://'))
+             obj.content.startsWith('img_ref://'))) ||
+            // Check characterData.avatarUrl (for PANEL objects)
+            (obj.characterData?.characters?.some((c: any) =>
+              c.avatarUrl && (c.avatarUrl === 'B' || c.avatarUrl === 'D' ||
+               c.avatarUrl.startsWith('{"t":') || c.avatarUrl.startsWith('{"type":') ||
+               c.avatarUrl.startsWith('img_ref://'))
+            )) ||
+            // Check poolData.tabs.avatarUrl
+            (obj.poolData?.tabs?.some((t: any) =>
+              t.avatarUrl && (t.avatarUrl === 'B' || t.avatarUrl === 'D' ||
+               t.avatarUrl.startsWith('{"t":') || t.avatarUrl.startsWith('{"type":') ||
+               t.avatarUrl.startsWith('img_ref://'))
+            ))
           );
 
           // Function to add objects to state
