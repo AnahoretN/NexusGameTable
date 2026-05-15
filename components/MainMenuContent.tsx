@@ -1796,16 +1796,6 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     const scrollX = viewTransform.scroll?.x ?? 0;
     const scrollY = viewTransform.scroll?.y ?? 0;
 
-    console.log('[CREATE ITEM] viewTransform:', {
-      zoom,
-      offsetX,
-      offsetY,
-      scrollX,
-      scrollY,
-      screenX,
-      screenY
-    });
-
     const worldX_px = (screenX - offsetX + scrollX) / zoom;
     const worldY_px = (screenY - offsetY + scrollY) / zoom;
 

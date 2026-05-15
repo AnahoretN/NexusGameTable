@@ -1403,17 +1403,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       // Check if this is a UI object (panel/window) - moves immediately without threshold
       const isUIObject = obj?.type === ItemType.PANEL || obj?.type === ItemType.WINDOW;
 
-      console.log('[PANEL CLICK] Checking panel:', {
-        objId,
-        isUIObject,
-        'obj.type': obj?.type,
-        'obj.isPinnedToViewport': (obj as any)?.isPinnedToViewport,
-        'obj.x': obj?.x,
-        'obj.y': obj?.y
-      });
-
       if (isUIObject) {
-        console.log('[PANEL CLICK] Is UI object, starting drag...');
 
         // UI objects use immediate drag (no cursor slot, no threshold)
         // Find the actual panel container by looking for data-ui-object attribute
@@ -1432,8 +1422,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
         // UI objects (panels/windows) are ALWAYS pinned - never unpin them
         // They use screen coordinates directly, no conversion needed
-        console.log('[PANEL CLICK] UI object drag started, keeping pinned state');
-
         return;
       }
 
