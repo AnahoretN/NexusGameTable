@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation, EffectTemplate } from '../../types';
-import { clampScrollToPlayableArea } from '../../utils/viewportConstraints';
+import { clampScrollToPlayableArea, clampObjectPositionToPlayableArea } from '../../utils/viewportConstraints';
 import { SCROLLBAR_WIDTH_THICK } from '../../constants';
 import { useIsSettingsModalOpen } from '../../store/contexts';
 import {
@@ -147,7 +147,9 @@ const addToCursorSlot = (
     const cellKey = cellParts.join(':');
 
     const board = state.objects[boardId] as BoardType;
-    if (board && board.gridCellMagnetPoints && board.gridCellMagnetPoints[cellKey]) {
+    // Always clear gridCellKey from token when picked up, regardless of board visibility
+    // But only update board magnet points if board is visible
+    if (board && board.isOnTable !== false && board.gridCellMagnetPoints && board.gridCellMagnetPoints[cellKey]) {
       const { col, row } = parseGridCellKey(cellKey);
       const gridW = board.gridWidth || board.gridSize || 50;
       const gridH = board.gridHeight || board.gridSize || 50;
@@ -191,18 +193,19 @@ const addToCursorSlot = (
             }
           });
         }
-
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: {
-            id: id,
-            updates: {
-              gridCellKey: undefined
-            }
-          }
-        });
       }
     }
+
+    // Always clear gridCellKey from token when picked up
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: id,
+        updates: {
+          gridCellKey: undefined
+        }
+      }
+    });
   }
 
   // Clone the item to store it in the slot - STORE COMPLETE OBJECT INFO
@@ -508,8 +511,23 @@ const dropCursorSlot = (
     return;
   }
 
-  // Use a local variable to track items to drop (can be modified below)
-  let itemsToDrop = cursorSlot;
+  // IMPORTANT: Filter out items that are no longer in cursor slot
+  // This prevents race conditions where cursorSlot contains stale items
+  // after they were dropped to pool panels (where inCursorSlot was set to false
+  // but setCursorSlot hasn't been applied yet)
+  const itemsToDrop = cursorSlot.filter(item => {
+    const obj = state.objects[item.id];
+    return obj && (obj as any).inCursorSlot === true;
+  });
+
+  if (itemsToDrop.length === 0) {
+    // All items were already dropped elsewhere, just clear the slot
+    setCursorSlot([]);
+    setCursorPosition(null);
+    cursorPositionRef.current = null;
+    setCursorSlotSource(null);
+    return;
+  }
 
   // Notify that items were dropped from cursor slot
   const droppedIds = itemsToDrop.map(item => item.id);
@@ -831,6 +849,18 @@ const dropCursorSlot = (
       finalY += stackOffset.offsetY;
     }
 
+    // Clamp position to playable area to prevent objects from disappearing
+    // Ensures at least 25% of the object remains visible
+    const clamped = clampObjectPositionToPlayableArea(
+      finalX,
+      finalY,
+      item.width ?? 50,
+      item.height ?? 50,
+      0.25
+    );
+    finalX = clamped.x;
+    finalY = clamped.y;
+
     // Check for board grid magnetism
     const isToken = item.type === ItemType.TOKEN;
     const isCard = item.type === ItemType.CARD;
@@ -869,6 +899,9 @@ const dropCursorSlot = (
       for (const boardId of Object.keys(state.objects)) {
         const board = state.objects[boardId] as BoardType;
         if (board.type !== ItemType.BOARD) continue;
+
+        // Skip hidden boards - magnetism should not work when board is hidden
+        if (board.isOnTable === false) continue;
 
         // Check if object is over this board
         const boardWidth = board.width ?? 500;
@@ -1357,14 +1390,14 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     }
 
     // Check if cursor slot has items
-    // Use cursorSlot.length first (React state), fallback to state.objects check
-    // Objects in cursor slot have inCursorSlot: true (NOT isOnTable: false, which includes cards in hand!)
-    const slotHasItemsFromState = cursorSlot.length > 0;
+    // IMPORTANT: Only check state.objects.inCursorSlot, NOT cursorSlot.length
+    // cursorSlot may contain stale items after dropObjectsToPool set inCursorSlot: false
+    // but setCursorSlot hasn't been applied yet (batched React update)
     const objectsInCursorSlot = (Object.values(state.objects) as TableObject[]).filter(o =>
       (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER || o.type === ItemType.EFFECT_TEMPLATE) &&
       (o as any).inCursorSlot === true
     );
-    const actuallyHasItems = slotHasItemsFromState || objectsInCursorSlot.length > 0;
+    const actuallyHasItems = objectsInCursorSlot.length > 0;
 
     // REGULAR CLICK (no shift): if slot has items, drop them
     if (!e.shiftKey && actuallyHasItems) {
@@ -2107,7 +2140,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // dropCursorSlot will handle the logic for hand panel, deck, or table
     const isShiftHeld = e?.shiftKey === true;
 
-    const shouldDropOnMouseUp = cursorSlot.length > 0 && e && !isShiftHeld;
+    // IMPORTANT: Check state.objects.inCursorSlot, NOT cursorSlot.length
+    // cursorSlot may contain stale items after dropObjectsToPool
+    const objectsInCursorSlot = (Object.values(state.objects) as TableObject[]).filter(o =>
+      (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER || o.type === ItemType.EFFECT_TEMPLATE) &&
+      (o as any).inCursorSlot === true
+    );
+    const shouldDropOnMouseUp = objectsInCursorSlot.length > 0 && e && !isShiftHeld;
 
     if (shouldDropOnMouseUp) {
       dropCursorSlot(e.clientX, e.clientY, props);
@@ -2352,8 +2391,15 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     const handleDropFromPool = (e: Event) => {
       const customEvent = e as CustomEvent<{ x: number; y: number }>;
 
+      // IMPORTANT: Check state.objects.inCursorSlot, NOT cursorSlot.length
+      // cursorSlot may contain stale items after dropObjectsToPool
+      const objectsInCursorSlot = (Object.values(props.state.objects) as TableObject[]).filter(o =>
+        (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER || o.type === ItemType.EFFECT_TEMPLATE) &&
+        (o as any).inCursorSlot === true
+      );
+
       // Only drop if we have items in cursor slot
-      if (cursorSlot.length > 0) {
+      if (objectsInCursorSlot.length > 0) {
         // Skip pool panel check since this event comes from pool panel
         // (pool panel already determined cursor is NOT over it)
         dropCursorSlot(customEvent.detail.x, customEvent.detail.y, props, true);
@@ -2364,7 +2410,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     return () => {
       window.removeEventListener('cursor-slot-drop-to-tabletop', handleDropFromPool);
     };
-  }, [cursorSlot, props]);
+  }, [props.state.objects, props]);
 
   // Setup event listeners
   useEffect(() => {

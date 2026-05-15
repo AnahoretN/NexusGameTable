@@ -16,6 +16,7 @@ import {
   CardLocation
 } from '../../types';
 import { filterVisibleObjects, calculateViewportBounds } from '../../utils/viewportCulling';
+import { intersectsPlayableArea } from '../../utils/viewportConstraints';
 
 /**
  * Filter objects by various criteria for rendering optimization
@@ -65,9 +66,9 @@ export const useObjectFilters = (
         return true;
       }
 
-      // Exclude objects outside playable area (pool panel objects with negative or large coordinates)
-      // This prevents scrollbars from extending to include pool panel territories
-      if (obj.x < -100 || obj.y < -100 || obj.x > PLAYABLE_AREA_SIZE + 100 || obj.y > PLAYABLE_AREA_SIZE + 100) {
+      // Check if object intersects with playable area using proper intersection test
+      // This allows objects to be partially outside the area while still being rendered
+      if (!intersectsPlayableArea(obj.x, obj.y, obj.width || 100, obj.height || 100)) {
         return false;
       }
 
@@ -83,11 +84,10 @@ export const useObjectFilters = (
 
   // Remote cursor slot objects (objects in other players' cursor slots)
   const remoteCursorSlotObjects = useMemo(() => {
-    const PLAYABLE_AREA_SIZE = 5000;
     return (Object.values(state.objects || {}) as TableObject[])
       .filter((obj) => {
-        // Exclude objects outside playable area (pool panel objects)
-        if (obj.x < -100 || obj.y < -100 || obj.x > PLAYABLE_AREA_SIZE + 100 || obj.y > PLAYABLE_AREA_SIZE + 100) {
+        // Check if object intersects with playable area
+        if (!intersectsPlayableArea(obj.x, obj.y, obj.width || 100, obj.height || 100)) {
           return false;
         }
 
@@ -130,11 +130,10 @@ export const useObjectFilters = (
 
   // Remote dragging objects (objects being dragged by other players)
   const remoteDraggingObjects = useMemo(() => {
-    const PLAYABLE_AREA_SIZE = 5000;
     return (Object.values(state.objects || {}) as TableObject[])
       .filter((obj) => {
-        // Exclude objects outside playable area (pool panel objects)
-        if (obj.x < -100 || obj.y < -100 || obj.x > PLAYABLE_AREA_SIZE + 100 || obj.y > PLAYABLE_AREA_SIZE + 100) {
+        // Check if object intersects with playable area
+        if (!intersectsPlayableArea(obj.x, obj.y, obj.width || 100, obj.height || 100)) {
           return false;
         }
 

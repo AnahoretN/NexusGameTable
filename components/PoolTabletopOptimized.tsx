@@ -865,76 +865,14 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
     // Check if cursor slot already has items - drop them first (unless shift is held)
     const cursorSlotObjects = getCursorSlotObjects(state.objects);
+
     if (cursorSlotObjects.length > 0 && !e.shiftKey) {
-      // Drop existing items to this pool panel at the clicked object's position
+      // IMPORTANT: If cursor slot has items, just return without picking up new object
+      // The cursor slot items will be dropped when user clicks elsewhere (mouseup)
       e.preventDefault();
       e.stopPropagation();
 
-      const container = containerRef.current;
-      if (container) {
-        const scrollParent = container.closest('.overflow-auto');
-        if (scrollParent) {
-          const containerRect = container.getBoundingClientRect();
-          const dropPosition = calculatePoolDropPositionWithScroll(
-            e.clientX,
-            e.clientY,
-            poolZone,
-            containerRect,
-            scrollParent.scrollLeft,
-            scrollParent.scrollTop,
-            pixelsPerVU,
-            currentZoom
-          );
-          dropObjectsToPool(cursorSlotObjects, dropPosition, poolZone, dispatch, state.objects, pixelsPerVU, currentZoom, hyperscaleLayers);
-
-          // IMPORTANT: Remove dropped cards from all players' handCardOrder
-          // When cards are dropped from hand to pool panel, they should be removed from hand
-          const droppedCardIds = cursorSlotObjects.filter(obj => obj.type === ItemType.CARD).map(obj => obj.id);
-          if (droppedCardIds.length > 0) {
-            players.forEach(player => {
-              const currentHandOrder = player.handCardOrder || [];
-              const updatedHandOrder = currentHandOrder.filter(id => !droppedCardIds.includes(id));
-              if (updatedHandOrder.length !== currentHandOrder.length) {
-                dispatch({
-                  type: 'UPDATE_PLAYER',
-                  payload: {
-                    id: player.id,
-                    updates: { handCardOrder: updatedHandOrder }
-                  }
-                });
-              }
-            });
-          }
-
-          // IMPORTANT: Clear from locallyDraggingIdsRef to allow objects to reappear in pool panel
-          cursorSlotObjects.forEach(obj => {
-            locallyDraggingIdsRef.current.delete(obj.id);
-          });
-          setLocallyDraggingTrigger(prev => prev + 1);
-
-          // Track dropped objects to prevent immediate re-pickup
-          cursorSlotObjects.forEach(obj => justDroppedToPoolRef.current.add(obj.id));
-
-          // Clear the just-dropped set after 200ms
-          if (justDroppedTimerRef.current) {
-            clearTimeout(justDroppedTimerRef.current);
-          }
-          justDroppedTimerRef.current = setTimeout(() => {
-            justDroppedToPoolRef.current.clear();
-          }, 200);
-
-          cursorSlotLastAddedRef.current = Date.now();
-
-          // Clear only dropped objects from cursor slot (not the entire slot)
-          // Use queueMicrotask to ensure state updates are processed first
-          queueMicrotask(() => {
-            window.dispatchEvent(new CustomEvent('clear-cursor-slot', {
-              detail: { objectIds: cursorSlotObjects.map(o => o.id) }
-            }));
-          });
-        }
-      }
-      // Don't pick up the new object - just drop the old ones
+      console.log('[PoolTabletop] Cursor slot has items - not picking up new object');
       return;
     }
 
@@ -1988,11 +1926,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     }
 
     const cursorSlotObjects = getCursorSlotObjects(state.objects);
-
-    //   hasCursorSlotObjects: cursorSlotObjects.length > 0,
-    //   count: cursorSlotObjects.length,
-    //   poolPanelId: poolZone.panelId
-    // });
 
     if (cursorSlotObjects.length > 0) {
       const container = containerRef.current;

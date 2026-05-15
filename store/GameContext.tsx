@@ -565,6 +565,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         return state;
       }
 
+      // 🔍 DEBUG: Log inCursorSlot changes
+      const updatePayload = action.payload.updates || {};
+      if ('inCursorSlot' in updatePayload) {
+        const stack = new Error().stack?.split('\n').slice(2, 8);
+        console.log('[GameContext UPDATE_OBJECT] inCursorSlot changing', {
+          objectId: action.payload.id,
+          objectName: obj.name,
+          from: (obj as any).inCursorSlot,
+          to: updatePayload.inCursorSlot,
+          x: updatePayload.x !== undefined ? updatePayload.x : obj.x,
+          y: updatePayload.y !== undefined ? updatePayload.y : obj.y,
+          hasX: 'x' in updatePayload,
+          hasY: 'y' in updatePayload,
+          stack
+        });
+      }
+
       // For panels and windows, filter out local-only properties from network sync
       // These properties should remain local to each player and not be synced
       if ((obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) && !action._localOnly) {

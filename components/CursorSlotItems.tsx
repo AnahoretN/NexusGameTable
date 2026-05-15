@@ -413,25 +413,37 @@ const CursorSlotBoard: React.FC<CursorSlotItemProps & { item: BoardType }> = ({ 
         justifyContent: 'center',
       }}
     >
+      {/* Inner wrapper with fixed size - prevents expansion to container */}
       <div
-        className="flex items-center justify-center text-white font-bold select-none"
         style={{
-          width: '100%',
-          height: '100%',
-          border: '2px solid #212f3c',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-          backgroundColor: item.color || '#34495e',
-          backgroundImage: item.content ? `url(${item.content})` : undefined,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          borderRadius: '5px',
           position: 'relative',
-          overflow: 'hidden',
+          width: `${width}px`,
+          height: `${height}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
-        {/* Board name label */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap">
-          {item.name}
+        <div
+          className="flex items-center justify-center text-white font-bold select-none"
+          style={{
+            width: '100%',
+            height: '100%',
+            border: '2px solid #212f3c',
+            boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+            backgroundColor: item.color || '#34495e',
+            backgroundImage: item.content ? `url(${item.content})` : undefined,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            borderRadius: '5px',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Board name label */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap">
+            {item.name}
+          </div>
         </div>
       </div>
     </div>

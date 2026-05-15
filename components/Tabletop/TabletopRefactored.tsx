@@ -790,36 +790,10 @@ export const Tabletop: React.FC = () => {
         // Filter out the dropped objects from cursor slot
         setCursorSlot(prev => prev.filter(item => !objectIds.includes(item.id)));
 
-        // IMPORTANT: Also reset inCursorSlot flag for these specific objects
-        // But ONLY if they're not already on table (i.e., dropObjectsToPool wasn't called yet)
-        // This prevents race conditions where we override the proper state set by dropObjectsToPool
-        objectIds.forEach(objId => {
-          const obj = state.objects[objId];
-          if (obj) {
-            const inCursorSlot = (obj as any).inCursorSlot;
-            const isOnTable = (obj as any).isOnTable;
-
-            // Only clear inCursorSlot if the object is not already properly placed on table
-            // If isOnTable is true and location is TABLE, dropObjectsToPool already handled it
-            if (inCursorSlot && !isOnTable) {
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: {
-                  id: objId,
-                  inCursorSlot: false
-                }
-              });
-            } else if (inCursorSlot && isOnTable) {
-              dispatch({
-                type: 'UPDATE_OBJECT',
-                payload: {
-                  id: objId,
-                  inCursorSlot: false
-                }
-              });
-            }
-          }
-        });
+        // IMPORTANT: Don't dispatch UPDATE_OBJECT here!
+        // When dropping to pool panels, dropObjectsToPool has already set the correct state.
+        // Dispatching here can cause race conditions where we override the pool panel coordinates.
+        // The setCursorSlot call above is sufficient to clear the visual cursor slot.
         return;
       }
 

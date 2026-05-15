@@ -176,6 +176,14 @@ export function dropObjectsToPool(
   hyperscaleLayers?: HyperscaleLayer[],
   isFromHandOrDeck?: boolean  // NEW: Track if objects came from hand/deck for proper z-index handling
 ): void {
+  // 🔍 DEBUG: Only log when actually dropping objects
+  if (objects && objects.length > 0) {
+    console.log('[dropObjectsToPool] Dropping', {
+      count: objects.length,
+      items: objects.map(o => ({ id: o.id, name: o.name, from: { x: o.x, y: o.y }, to: { x: dropPosition.baseX, y: dropPosition.baseY } }))
+    });
+  }
+
   if (!objects || objects.length === 0) {
     return;
   }
@@ -404,6 +412,13 @@ export function dropObjectsToPool(
           layerItemIndices[layerId] = currentIndex + 1;
         }
       }
+
+      console.log('[dropObjectsToPool] Dispatching UPDATE_OBJECT', {
+        objectId: obj.id,
+        objectName: obj.name,
+        from: { x: obj.x, y: obj.y, inCursorSlot: (obj as any).inCursorSlot },
+        to: { x: updatePayload.x, y: updatePayload.y, inCursorSlot: updatePayload.inCursorSlot, isOnTable: updatePayload.isOnTable }
+      });
 
       dispatch({
         type: 'UPDATE_OBJECT',

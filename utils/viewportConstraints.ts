@@ -90,3 +90,40 @@ export function filterPlayableObjects<T extends { x: number; y: number; width?: 
     return intersectsPlayableArea(x, y, width, height);
   });
 }
+
+/**
+ * Clamp object position to playable area
+ * Ensures at least a minimum portion of the object stays within the playable area
+ * @param x - Object's top-left X coordinate
+ * @param y - Object's top-left Y coordinate
+ * @param width - Object width
+ * @param height - Object height
+ * @param minVisibleRatio - Minimum ratio of object that must stay visible (0-1), default 0.25 (25%)
+ * @returns Clamped {x, y} coordinates
+ */
+export function clampObjectPositionToPlayableArea(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  minVisibleRatio: number = 0.25
+): { x: number; y: number } {
+  const objWidth = width ?? 100;
+  const objHeight = height ?? 100;
+
+  // Calculate minimum visible portion
+  const minVisibleWidth = objWidth * minVisibleRatio;
+  const minVisibleHeight = objHeight * minVisibleRatio;
+
+  // Clamp X: ensure at least minVisibleWidth is visible on the right side
+  // and allow the object to go partially off-screen on the left
+  const maxX = PLAYABLE_AREA_SIZE - minVisibleWidth;
+  const clampedX = Math.max(-objWidth + minVisibleWidth, Math.min(x, maxX));
+
+  // Clamp Y: ensure at least minVisibleHeight is visible on the bottom side
+  // and allow the object to go partially off-screen on the top
+  const maxY = PLAYABLE_AREA_SIZE - minVisibleHeight;
+  const clampedY = Math.max(-objHeight + minVisibleHeight, Math.min(y, maxY));
+
+  return { x: clampedX, y: clampedY };
+}
