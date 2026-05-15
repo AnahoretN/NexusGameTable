@@ -153,7 +153,11 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
         return;
       }
-      if (setSettingsModalObj) setSettingsModalObj(object);
+      // Use current object from state to get latest data after updates
+      const currentObject = state.objects[object.id];
+      if (setSettingsModalObj && currentObject) {
+        setSettingsModalObj(currentObject);
+      }
       return;
 
     case 'delete':
@@ -572,15 +576,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     case 'moveToHand':
       // Move card or token to hand
       const cardToHand = object as any;
-      console.log('[contextMenuActions moveToHand] START');
-      console.log('  activePlayerId:', activePlayerId);
-      console.log('  object.id:', object.id);
-      console.log('  object.type:', object.type);
-      console.log('  object.location:', cardToHand.location);
-      console.log('  object.ownerId:', cardToHand.ownerId);
-      console.log('  object.inCursorSlot:', cardToHand.inCursorSlot);
-      console.log('  object.isOnTable:', cardToHand.isOnTable);
-      console.log('  cardToHand.deckId:', cardToHand.deckId);
 
       // Handle tokens (tokens don't have deckId)
       if (object.type === ItemType.TOKEN) {
@@ -610,7 +605,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
                 type: 'UPDATE_HAND_CARD_ORDER',
                 payload: { playerId: activePlayerId, cardOrder: newHandOrder }
               });
-              console.log('[contextMenuActions moveToHand] Token added to handCardOrder:', newHandOrder);
             }
           }
         }
@@ -620,7 +614,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       // Handle cards
       if (cardToHand.deckId) {
         const deck = state.objects[cardToHand.deckId];
-        console.log('[contextMenuActions moveToHand] deck:', deck?.id, 'deck.cardIds:', deck?.cardIds);
         if (deck) {
           // Remove from deck's cardIds
           if (deck.cardIds) {
@@ -629,7 +622,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
               type: 'UPDATE_OBJECT',
               payload: { id: cardToHand.deckId, updates: { cardIds: updatedCardIds } }
             });
-            console.log('[contextMenuActions moveToHand] removed from deck.cardIds, updatedCardIds:', updatedCardIds);
           }
           // Remove from piles if card is in a pile
           if (deck.piles && deck.piles.length > 0) {
@@ -641,7 +633,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
               type: 'UPDATE_OBJECT',
               payload: { id: cardToHand.deckId, updates: { piles: updatedPiles } }
             });
-            console.log('[contextMenuActions moveToHand] removed from piles');
           }
         }
         // Set card location to hand with proper owner
@@ -659,8 +650,6 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
             y: -999999
           }
         };
-        console.log('[contextMenuActions moveToHand] BEFORE dispatch, payload:', JSON.stringify(updatePayload, null, 2));
-        console.log('[contextMenuActions moveToHand] CardLocation.HAND:', CardLocation.HAND);
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: updatePayload
@@ -679,14 +668,9 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
                 type: 'UPDATE_HAND_CARD_ORDER',
                 payload: { playerId: activePlayerId, cardOrder: newHandOrder }
               });
-              console.log('[contextMenuActions moveToHand] Added to handCardOrder:', newHandOrder);
             }
           }
-        } else {
-          console.log('[contextMenuActions moveToHand] state.players not available, skipping handCardOrder update');
         }
-      } else {
-        console.log('[contextMenuActions moveToHand] NO deckId!');
       }
       break;
 

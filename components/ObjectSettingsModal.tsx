@@ -198,6 +198,11 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
 
+  // Sync data state with object prop when it changes
+  React.useEffect(() => {
+    setData({ ...object });
+  }, [object]);
+
   // Grid generation from image state
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const [gridGenPreview, setGridGenPreview] = useState<string | null>(null);
@@ -2189,6 +2194,27 @@ setGridDebugInfo(null);
                       className="w-full !h-10"
                       maxSize={10 * 1024 * 1024} // 10MB for board backgrounds
                     />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Background Image Opacity', language as Locale)}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={(data as any).backgroundOpacity ?? 100}
+                        onChange={e => update('backgroundOpacity', parseInt(e.target.value))}
+                        className="flex-1 accent-purple-500"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={(data as any).backgroundOpacity ?? 100}
+                        onChange={e => update('backgroundOpacity', Math.max(0, Math.min(100, parseInt(e.target.value) || 100)))}
+                        className="w-16 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm text-center"
+                      />
+                    </div>
                   </div>
                 </div>
               )}

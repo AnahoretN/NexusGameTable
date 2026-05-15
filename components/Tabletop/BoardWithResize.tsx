@@ -39,6 +39,7 @@ const SimplifiedBoard: React.FC<{
     onResizeHandleLeave,
     currentTool = 'none',
 }) => {
+
     return (
         <div
             data-object-id={obj.id}
@@ -55,15 +56,31 @@ const SimplifiedBoard: React.FC<{
                 border: '2px solid #212f3c',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
                 backgroundColor: token.color || '#34495e',
-                backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
                 borderRadius: '4px',
                 cursor: 'default',
                 overflow: 'hidden',
                 pointerEvents: 'auto',
             }}
         >
+            {/* Background image with opacity */}
+            {(obj as any).content && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        backgroundImage: `url(${(obj as any).content})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        opacity: ((obj as BoardType).backgroundOpacity ?? 100) / 100,
+                        pointerEvents: 'none',
+                    }}
+                    data-background-opacity={(obj as BoardType).backgroundOpacity ?? 100}
+                />
+            )}
+
             {/* No icon during resize - cleaner look */}
 
             {/* Resize handle - always visible in simplified mode */}
@@ -292,6 +309,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         );
     }
 
+
     return (
         <div
             data-object-id={obj.id}
@@ -308,15 +326,31 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 border: '2px solid #212f3c',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
                 backgroundColor: token.color || '#34495e',
-                backgroundImage: (obj as any).content ? `url(${(obj as any).content})` : undefined,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
                 borderRadius: '4px',
                 cursor: boardCursor,
                 overflow: 'hidden',
                 pointerEvents: 'auto', // Enable mouse events on the board
             }}
         >
+            {/* Background image with opacity */}
+            {(obj as any).content && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        backgroundImage: `url(${(obj as any).content})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        opacity: ((obj as BoardType).backgroundOpacity ?? 100) / 100,
+                        pointerEvents: 'none',
+                        zIndex: 0,
+                    }}
+                />
+            )}
+
             {/* Grid overlay - proper rendering for all grid types */}
             {gridContent}
 
@@ -415,6 +449,11 @@ export const BoardWithResizeMemo = React.memo(BoardWithResize, (prevProps, nextP
     // Check background image changes
     if (prevProps.obj.content !== nextProps.obj.content) {
         return false; // Re-render when background image changes
+    }
+
+    // Check background opacity changes
+    if ((prevProps.obj as BoardType).backgroundOpacity !== (nextProps.obj as BoardType).backgroundOpacity) {
+        return false; // Re-render when background opacity changes
     }
 
     // Check zoom changes - important for grid rendering

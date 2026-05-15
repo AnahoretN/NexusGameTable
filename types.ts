@@ -554,6 +554,9 @@ export interface Board extends GameItem {
   // Grid cell magnetism system - stores magnet points for each grid cell
   gridCellMagnetPoints?: Record<string, GridCellMagnetPoints>; // Key: "col,row" string
   defaultGridCellMagnetPointCount?: number; // Default magnet points per cell (1-12)
+
+  // Background image settings
+  backgroundOpacity?: number; // Opacity of background image (0-100), 100 = fully opaque
 }
 
 export interface Randomizer extends GameItem {
