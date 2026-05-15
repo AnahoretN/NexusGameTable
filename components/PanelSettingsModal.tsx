@@ -5,6 +5,7 @@ import { PanelObject, PanelType, AppLanguage } from '../types';
 import { useGame } from '../store/GameContext';
 import { useActivePlayerId } from '../store/contexts';
 import { Settings, Maximize2, Check } from 'lucide-react';
+import { DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
 
 type PanelSettingsTab = 'general';
 
@@ -39,23 +40,38 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
   const WORLD_SIZE = 10000; // Game world size in VU
   const MIN_PANEL_SIZE = 200; // Minimum panel size in pixels (converted to VU)
 
+  // Pool panels have fixed maximum size
+  const isPoolPanel = panel.panelType === PanelType.POOL;
+  const POOL_MAX_WIDTH = DEFAULT_POOL_WIDTH;
+  const POOL_MAX_HEIGHT = DEFAULT_POOL_HEIGHT;
+
   // Convert VU to pixels for display
   const vuToPx = (vu: number) => vu * pixelsPerVU;
   // Convert pixels to VU for storage
   const pxToVu = (px: number) => px / pixelsPerVU;
 
   // Get bounds in VU
-  const getMaxWidthVU = React.useCallback(() => pxToVu(window.innerWidth - 40), [pixelsPerVU]);
-  const getMaxHeightVU = React.useCallback(() => pxToVu(window.innerHeight - 80), [pixelsPerVU]);
+  const getMaxWidthVU = React.useCallback(() => {
+    const baseMax = pxToVu(window.innerWidth - 40);
+    return isPoolPanel ? Math.min(baseMax, POOL_MAX_WIDTH) : baseMax;
+  }, [pixelsPerVU, isPoolPanel]);
+  const getMaxHeightVU = React.useCallback(() => {
+    const baseMax = pxToVu(window.innerHeight - 80);
+    return isPoolPanel ? Math.min(baseMax, POOL_MAX_HEIGHT) : baseMax;
+  }, [pixelsPerVU, isPoolPanel]);
 
   const clampPosition = React.useCallback((posX: number, posY: number, panelWidth: number, panelHeight: number) => {
     const maxWVU = getMaxWidthVU();
     const maxHVU = getMaxHeightVU();
     const minSizeVU = pxToVu(MIN_PANEL_SIZE);
 
+    // For pool panels, enforce strict 1000x1000 max
+    const effectiveMaxWidth = isPoolPanel ? POOL_MAX_WIDTH : maxWVU;
+    const effectiveMaxHeight = isPoolPanel ? POOL_MAX_HEIGHT : maxHVU;
+
     // Clamp width and height
-    const clampedWidth = Math.max(minSizeVU, Math.min(panelWidth, maxWVU));
-    const clampedHeight = Math.max(minSizeVU, Math.min(panelHeight, maxHVU));
+    const clampedWidth = Math.max(minSizeVU, Math.min(panelWidth, effectiveMaxWidth));
+    const clampedHeight = Math.max(minSizeVU, Math.min(panelHeight, effectiveMaxHeight));
 
     // Clamp position to keep panel within world bounds
     const maxX = WORLD_SIZE - clampedWidth;
@@ -219,24 +235,37 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Width', language as Locale)}</label>
+                <label className="block text-xs font-bold text-gray-400 mb-1">
+                  {translate('Width', language as Locale)}
+                  {isPoolPanel && ` (max ${POOL_MAX_WIDTH})`}
+                </label>
                 <input
                   type="number"
                   value={width}
                   onChange={e => setWidth(Number(e.target.value))}
+                  max={isPoolPanel ? POOL_MAX_WIDTH : undefined}
                   className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Height', language as Locale)}</label>
+                <label className="block text-xs font-bold text-gray-400 mb-1">
+                  {translate('Height', language as Locale)}
+                  {isPoolPanel && ` (max ${POOL_MAX_HEIGHT})`}
+                </label>
                 <input
                   type="number"
                   value={height}
                   onChange={e => setHeight(Number(e.target.value))}
+                  max={isPoolPanel ? POOL_MAX_HEIGHT : undefined}
                   className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                 />
               </div>
             </div>
+            {isPoolPanel && (
+              <p className="text-[10px] text-yellow-500">
+                Pool panels have a maximum size of {POOL_MAX_WIDTH}×{POOL_MAX_HEIGHT} VU
+              </p>
+            )}
           </div>
 
           {/* Z-Index */}

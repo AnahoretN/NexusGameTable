@@ -1,4 +1,5 @@
-import { TableObject, ItemType } from '../../types';
+import { TableObject, ItemType, PanelType } from '../../types';
+import { DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../../constants/pool';
 
 /**
  * Reducer functions for UI object (panel/window) manipulation actions
@@ -21,14 +22,23 @@ export function createPanelReducer(state: any, action: any): any {
     'state.objects keys': Object.keys(state.objects).slice(0, 5)
   });
 
+  // For pool panels, enforce maximum size of 1000x1000 VU
+  let finalWidth = width ?? 450;
+  let finalHeight = height ?? 400;
+
+  if (panelType === PanelType.POOL) {
+    finalWidth = Math.min(finalWidth, DEFAULT_POOL_WIDTH);
+    finalHeight = Math.min(finalHeight, DEFAULT_POOL_HEIGHT);
+  }
+
   const panel = {
     id,
     type: ItemType.PANEL,
     name: title || panelType,
     x: x ?? 100,
     y: y ?? 100,
-    width: width ?? 450,
-    height: height ?? 400,
+    width: finalWidth,
+    height: finalHeight,
     rotation: 0,
     locked: false,
     minimized: false,
@@ -184,14 +194,23 @@ export function resizeUIObjectReducer(state: any, action: any): any {
   const obj = state.objects[action.payload.id];
   if (!obj) return state;
 
+  // For pool panels, enforce maximum size of 1000x1000 VU
+  let newWidth = action.payload.width;
+  let newHeight = action.payload.height;
+
+  if (obj.type === ItemType.PANEL && obj.panelType === PanelType.POOL) {
+    newWidth = Math.min(newWidth, DEFAULT_POOL_WIDTH);
+    newHeight = Math.min(newHeight, DEFAULT_POOL_HEIGHT);
+  }
+
   return {
     ...state,
     objects: {
       ...state.objects,
       [action.payload.id]: {
         ...obj,
-        width: action.payload.width,
-        height: action.payload.height,
+        width: newWidth,
+        height: newHeight,
         x: action.payload.x ?? obj.x,
         y: action.payload.y ?? obj.y,
       }

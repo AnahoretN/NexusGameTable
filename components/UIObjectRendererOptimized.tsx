@@ -25,6 +25,7 @@ import { HyperscaleLayerSettingsWindow } from './HyperscaleLayerSettingsWindow';
 import { useGame } from '../store/GameContext';
 import { useDragOverStore } from '../store/dragOverState';
 import { SCROLLBAR_WIDTH_THICK } from '../constants';
+import { DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { LocalSettings } from '../utils/localSettings';
 import { useLocalPanelSettings } from '../hooks/useLocalPanelSettings';
@@ -585,6 +586,12 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     const state = dragResizeStateRef.current;
     const handleSize = 20;
 
+    // Check if this is a pool panel (needs size constraints)
+    const isPoolPanel = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).panelType === PanelType.POOL;
+    // Max size in pixels for pool panels (1000 VU * pixelsPerVU)
+    const maxPoolWidthPx = isPoolPanel ? DEFAULT_POOL_WIDTH * pixelsPerVU : Infinity;
+    const maxPoolHeightPx = isPoolPanel ? DEFAULT_POOL_HEIGHT * pixelsPerVU : Infinity;
+
     const handleMouseDown = (e: MouseEvent) => {
       const rect = container.getBoundingClientRect();
 
@@ -627,6 +634,12 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
       let newWidth = Math.max(minSize, state.startWidth + deltaX);
       let newHeight = Math.max(minSize, state.startHeight + deltaY);
+
+      // Apply pool panel max size constraint
+      if (isPoolPanel) {
+        newWidth = Math.min(newWidth, maxPoolWidthPx);
+        newHeight = Math.min(newHeight, maxPoolHeightPx);
+      }
 
       // Get other panels for panel-to-panel snapping
       const otherPanels: PanelBounds[] = [];
@@ -706,8 +719,22 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         justFinishedResizingRef.current = true; // Mark that we just resized (to prevent drag from overwriting)
 
         const isPinned = uiObject.isPinnedToViewport;
-        const finalWidth = isPinned ? rect.width : Math.round((rect.width / pixelsPerVU) * 1000) / 1000;
-        const finalHeight = isPinned ? rect.height : Math.round((rect.height / pixelsPerVU) * 1000) / 1000;
+        let finalWidth = isPinned ? rect.width : Math.round((rect.width / pixelsPerVU) * 1000) / 1000;
+        let finalHeight = isPinned ? rect.height : Math.round((rect.height / pixelsPerVU) * 1000) / 1000;
+
+        // Apply pool panel max size constraint (in VU)
+        if (isPoolPanel) {
+          if (!isPinned) {
+            finalWidth = Math.min(finalWidth, DEFAULT_POOL_WIDTH);
+            finalHeight = Math.min(finalHeight, DEFAULT_POOL_HEIGHT);
+          } else {
+            // For pinned panels, convert pixels to VU for constraint check
+            const finalWidthVU = finalWidth / pixelsPerVU;
+            const finalHeightVU = finalHeight / pixelsPerVU;
+            finalWidth = Math.min(finalWidthVU, DEFAULT_POOL_WIDTH) * pixelsPerVU;
+            finalHeight = Math.min(finalHeightVU, DEFAULT_POOL_HEIGHT) * pixelsPerVU;
+          }
+        }
 
         if (isPanel && !isMainMenu) {
           updateLocalSettings({ width: finalWidth, height: finalHeight });
@@ -755,7 +782,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         setIsResizing(false);
       }
     };
-  }, [canResize, isPanel, isMainMenu, pixelsPerVU, uiObject.isPinnedToViewport, uiObject.id, activePlayerId, dispatch, updateLocalSettings]);
+  }, [canResize, isPanel, isMainMenu, pixelsPerVU, uiObject.isPinnedToViewport, uiObject.id, uiObject.type, (uiObject as PanelObject).panelType, activePlayerId, dispatch, updateLocalSettings]);
 
   // Global mouse up handler to clear shift-drag state
   useEffect(() => {
