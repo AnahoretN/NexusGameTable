@@ -943,19 +943,18 @@ const dropCursorSlot = (
           // Calculate initial row estimate
           const initialRow = Math.round(relY / dy);
 
-          // Check several row candidates (initialRow-1, initialRow, initialRow+1)
+          // Check a wider range of row candidates (initialRow-2 to initialRow+2)
           let bestCol = 0;
           let bestRow = 0;
           let minDistance = Infinity;
 
-          for (const rowCandidate of [initialRow - 1, initialRow, initialRow + 1]) {
-            if (rowCandidate < 0) continue;
+          for (let dRow = -2; dRow <= 2; dRow++) {
+            const rowCandidate = initialRow + dRow;
 
             // For this row, calculate the best col
-            const rowOffset = (rowCandidate % 2 === 1) ? offsetX : 0;
+            // Use bitwise AND for reliable odd/even check (works with negative numbers)
+            const rowOffset = (rowCandidate & 1) ? offsetX : 0;
             const colCandidate = Math.round((relX - rowOffset) / gridW);
-
-            if (colCandidate < 0) continue;
 
             // Calculate the actual center of this cell
             const cellCenter = calculateGridCellCenter(board, colCandidate, rowCandidate);
@@ -986,19 +985,18 @@ const dropCursorSlot = (
           // Calculate initial col estimate
           const initialCol = Math.round(relX / dx);
 
-          // Check several col candidates (initialCol-1, initialCol, initialCol+1)
+          // Check a wider range of col candidates (initialCol-2 to initialCol+2)
           let bestCol = 0;
           let bestRow = 0;
           let minDistance = Infinity;
 
-          for (const colCandidate of [initialCol - 1, initialCol, initialCol + 1]) {
-            if (colCandidate < 0) continue;
+          for (let dCol = -2; dCol <= 2; dCol++) {
+            const colCandidate = initialCol + dCol;
 
             // For this col, calculate the best row
-            const colOffset = (colCandidate % 2 === 1) ? offsetY : 0;
+            // Use bitwise AND for reliable odd/even check (works with negative numbers)
+            const colOffset = (colCandidate & 1) ? offsetY : 0;
             const rowCandidate = Math.round((relY - colOffset) / gridH);
-
-            if (rowCandidate < 0) continue;
 
             // Calculate the actual center of this cell
             const cellCenter = calculateGridCellCenter(board, colCandidate, rowCandidate);

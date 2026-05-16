@@ -269,6 +269,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             isResizing={isResizing}
             canResize={canResize}
             zoom={layerZoomScale}
+            pixelsPerVU={pixelsPerVU}
             onContextMenu={(e) => onContextMenu(e, obj)}
             onMouseDown={(e) => onMouseDown(e, obj.id)}
             onResizeStart={(e) => isOwner && onResizeStart?.(e, obj.id)}

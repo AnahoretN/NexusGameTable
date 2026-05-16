@@ -162,24 +162,31 @@ export function calculateGridCellCenter(
     const dx = gridW;
     const dy = gridH - hCap;
     const offsetX = gridW / 2;
+    const offsetY = 0;
 
-    // Position already represents hex center (same formula as HexGrid.tsx)
+    // Use same formula as HexGrid.tsx rendering for consistency
+    // HexGrid.tsx: x = c * dx + (r % 2 === 1 ? offsetX : 0)
+    //              y = r * dy + (c % 2 === 1 ? offsetY : 0)
+    // Use bitwise AND for reliable odd/even check (works with negative numbers)
     result = {
-      x: board.x + col * dx + (row % 2 === 1 ? offsetX : 0),
-      y: board.y + row * dy
+      x: board.x + col * dx + (row & 1 ? offsetX : 0),
+      y: board.y + row * dy + (col & 1 ? offsetY : 0)
     };
   } else if (board.gridType === GridType.HEX_HORIZONTAL) {
     const wCapIdeal = gridH / (2 * Math.sqrt(3));
     const wCap = Math.min(wCapIdeal, gridW / 2);
     const dx = gridW - wCap;
     const dy = gridH;
+    const offsetX = 0;
     const offsetY = gridH / 2;
 
-    // Position already represents hex center (same formula as HexGrid.tsx)
-    // For flat-top: x has no row offset, y has column offset
+    // Use same formula as HexGrid.tsx rendering for consistency
+    // HexGrid.tsx: x = c * dx + (r % 2 === 1 ? offsetX : 0)
+    //              y = r * dy + (c % 2 === 1 ? offsetY : 0)
+    // Use bitwise AND for reliable odd/even check (works with negative numbers)
     result = {
-      x: board.x + col * dx,
-      y: board.y + row * dy + (col % 2 === 1 ? offsetY : 0)
+      x: board.x + col * dx + (row & 1 ? offsetX : 0),
+      y: board.y + row * dy + (col & 1 ? offsetY : 0)
     };
   } else {
     // Fallback for other grid types
@@ -189,12 +196,12 @@ export function calculateGridCellCenter(
     };
   }
 
-  // Cache the result (DISABLED for now to ensure fresh calculations)
-  // gridCellCenterCache.set(cacheKey, {
-  //   x: result.x,
-  //   y: result.y,
-  //   timestamp: Date.now()
-  // });
+  // Apply compensation offset to fix magnetism misalignment
+  // Offset: 2.5 VU right (x+2.5) and 2.5 VU down (y+2.5)
+  result = {
+    x: result.x + 2.5,
+    y: result.y + 2.5
+  };
 
   return result;
 }

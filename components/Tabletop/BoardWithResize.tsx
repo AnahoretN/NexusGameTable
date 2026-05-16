@@ -121,6 +121,7 @@ interface BoardWithResizeProps {
     isResizing: boolean;
     canResize: boolean;
     zoom: number;
+    pixelsPerVU: number;
     onContextMenu: (e: React.MouseEvent) => void;
     onMouseDown?: (e: React.MouseEvent) => void;
     onResizeStart: (e: React.MouseEvent) => void;
@@ -141,6 +142,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     isResizing,
     canResize,
     zoom,
+    pixelsPerVU,
     onContextMenu,
     onMouseDown,
     onResizeStart,
@@ -171,15 +173,16 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     const HEX_RATIO = 1.15;
     const DEFAULT_HEX_WIDTH = 100;
     const DEFAULT_FLAT_HEX_WIDTH = 115;
+    const DEFAULT_GRID_SIZE = 50;
 
     // Use gridWidth if provided, otherwise fall back to default hex dimensions
     // Use useMemo to ensure these recalculate when gridType, gridWidth, or gridHeight change
+    // IMPORTANT: All values should be in VU (virtual units), not pixels
     const actualGridWidth = useMemo(() => {
-        return gridWidth ?? boardToken.gridWidth ?? (isHexGrid ? DEFAULT_HEX_WIDTH : (isHexHorizontalGrid ? DEFAULT_FLAT_HEX_WIDTH : gridSize));
-    }, [gridWidth, boardToken.gridWidth, isHexGrid, isHexHorizontalGrid, gridSize]);
+        return boardToken.gridWidth ?? (isHexGrid ? DEFAULT_HEX_WIDTH : (isHexHorizontalGrid ? DEFAULT_FLAT_HEX_WIDTH : DEFAULT_GRID_SIZE));
+    }, [boardToken.gridWidth, isHexGrid, isHexHorizontalGrid]);
 
     const actualGridHeight = useMemo(() => {
-        if (gridHeight !== undefined) return gridHeight;
         if (boardToken.gridHeight !== undefined) return boardToken.gridHeight;
 
         if (isHexGrid) {
@@ -187,11 +190,17 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         } else if (isHexHorizontalGrid) {
             return Math.round(calculateFlatHexHeight(actualGridWidth) * 100) / 100;
         } else {
-            return gridSize;
+            return DEFAULT_GRID_SIZE;
         }
-    }, [gridHeight, boardToken.gridHeight, isHexGrid, isHexHorizontalGrid, gridSize, actualGridWidth]);
+    }, [boardToken.gridHeight, isHexGrid, isHexHorizontalGrid, actualGridWidth]);
 
     const isCustomGrid = boardToken.gridType === GridType.CUSTOM;
+
+    // Calculate grid cell sizes in pixels (for SVG rendering)
+    // IMPORTANT: Use pixelsPerVU to match how tokens are rendered
+    // Board container is positioned with v2p() which uses pixelsPerVU
+    const gridCellWidthPx = actualGridWidth * pixelsPerVU;
+    const gridCellHeightPx = actualGridHeight * pixelsPerVU;
 
     // Grid overlay - use proper grid components for better rendering
     // Hide grid overlay during resize for performance
@@ -200,15 +209,15 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
             {isCustomGrid ? (
                 // Custom grid from image analysis
                 <svg
-                    width={actualWidth * zoom}
-                    height={actualHeight * zoom}
+                    width={actualWidth * pixelsPerVU}
+                    height={actualHeight * pixelsPerVU}
                     style={{ position: 'absolute', top: 0, left: 0 }}
                 >
                     {(boardToken as any).customGridCells?.map((cell: any) => {
-                        const x = cell.x * actualWidth * zoom;
-                        const y = cell.y * actualHeight * zoom;
-                        const w = cell.width * actualWidth * zoom;
-                        const h = cell.height * actualHeight * zoom;
+                        const x = cell.x * actualWidth * pixelsPerVU;
+                        const y = cell.y * actualHeight * pixelsPerVU;
+                        const w = cell.width * actualWidth * pixelsPerVU;
+                        const h = cell.height * actualHeight * pixelsPerVU;
 
                         // Draw cell based on shape
                         if (cell.shape === 'circle') {
@@ -265,24 +274,24 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 </svg>
             ) : (isHexGrid || isHexHorizontalGrid) ? (
                 <HexGridMemo
-                    width={actualWidth * zoom}
-                    height={actualHeight * zoom}
+                    width={actualWidth * pixelsPerVU}
+                    height={actualHeight * pixelsPerVU}
                     orientation={isHexGrid ? 'pointy-top' : 'flat-top'}
-                    hexWidth={actualGridWidth}
-                    hexHeight={actualGridHeight}
+                    hexWidth={gridCellWidthPx}
+                    hexHeight={gridCellHeightPx}
                     stroke="rgba(33,47,60,0.7)"
                     strokeWidth={1}
-                    zoom={zoom}
+                    zoom={1}
                 />
             ) : isSquareGrid ? (
                 <SquareGridMemo
-                    width={actualWidth * zoom}
-                    height={actualHeight * zoom}
-                    cellWidth={actualGridWidth}
-                    cellHeight={actualGridHeight}
+                    width={actualWidth * pixelsPerVU}
+                    height={actualHeight * pixelsPerVU}
+                    cellWidth={gridCellWidthPx}
+                    cellHeight={gridCellHeightPx}
                     stroke="rgba(33,47,60,0.7)"
                     strokeWidth={1}
-                    zoom={zoom}
+                    zoom={1}
                 />
             ) : null}
         </>

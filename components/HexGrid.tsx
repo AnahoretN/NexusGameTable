@@ -99,8 +99,9 @@ export const HexGrid: React.FC<HexGridProps> = ({
   // Start from negative coordinates to ensure coverage from (0,0)
   for (let c = -1; c < cols; c++) {
     for (let r = -1; r < rows; r++) {
-      const x = c * dx + (r % 2 === 1 ? offsetX : 0);
-      const y = r * dy + (c % 2 === 1 ? offsetY : 0);
+      // Use bitwise AND for reliable odd/even check (works with negative numbers)
+      const x = c * dx + (r & 1 ? offsetX : 0);
+      const y = r * dy + (c & 1 ? offsetY : 0);
       gridPoints.push({ x, y });
     }
   }
