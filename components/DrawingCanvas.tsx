@@ -3,6 +3,7 @@ import { useGame } from '../store/GameContext';
 import { useActivePlayerId } from '../store/contexts';
 import { useDrawingTool } from '../contexts/ToolSettingsContext';
 import { ItemType, Stroke, StrokePoint, Drawing } from '../types';
+import { findDrawingAtPosition, getStrokesBounds, getStrokeBounds } from '../utils/drawingUtils';
 
 interface DrawingCanvasProps {
   width: number;
@@ -11,31 +12,6 @@ interface DrawingCanvasProps {
   offsetY: number;
   cursorSlotLength: number; // Number of items in cursor slot
 }
-
-// Calculate bounding box of a stroke
-const getStrokeBounds = (stroke: Stroke): { minX: number; minY: number; maxX: number; maxY: number } => {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const point of stroke.points) {
-    minX = Math.min(minX, point.x);
-    minY = Math.min(minY, point.y);
-    maxX = Math.max(maxX, point.x);
-    maxY = Math.max(maxY, point.y);
-  }
-  return { minX, minY, maxX, maxY };
-};
-
-// Calculate bounding box of multiple strokes
-const getStrokesBounds = (strokes: Stroke[]): { minX: number; minY: number; maxX: number; maxY: number } => {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const stroke of strokes) {
-    const bounds = getStrokeBounds(stroke);
-    minX = Math.min(minX, bounds.minX);
-    minY = Math.min(minY, bounds.minY);
-    maxX = Math.max(maxX, bounds.maxX);
-    maxY = Math.max(maxY, bounds.maxY);
-  }
-  return { minX, minY, maxX, maxY };
-};
 
 // Find ALL drawings that overlap with the given stroke (same color only)
 // Returns array of overlapping drawings (empty array if none)
@@ -112,27 +88,6 @@ const findOverlappingDrawings = (stroke: Stroke, drawings: Drawing[]): Drawing[]
   }
   return overlapping;
 };
-
-// Find drawing at given world position (for drag selection)
-const findDrawingAtPosition = (x: number, y: number, drawings: Drawing[]): Drawing | null => {
-  // Check from top (highest z-index) to bottom
-  for (let i = drawings.length - 1; i >= 0; i--) {
-    const drawing = drawings[i];
-    const bounds = getStrokesBounds(drawing.strokes);
-
-    // Check if point is within drawing bounds (in world coords)
-    const worldMinX = bounds.minX + drawing.x;
-    const worldMaxX = bounds.maxX + drawing.x;
-    const worldMinY = bounds.minY + drawing.y;
-    const worldMaxY = bounds.maxY + drawing.y;
-
-    if (x >= worldMinX && x <= worldMaxX && y >= worldMinY && y <= worldMaxY) {
-      return drawing;
-    }
-  }
-  return null;
-};
-
 
 export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   width,
@@ -479,7 +434,8 @@ setEraserThickness(newThickness);
       return;
     }
 
-    // Shift with empty cursor slot: allow drawing AND allow moving drawings
+    // Shift with empty cursor slot: allow moving drawings, but NOT drawing on empty space
+    // (empty space Shift+drag is handled by TabletopEventHandlers for panning)
     if (e.shiftKey && currentTool === 'marker' && cursorSlotLength === 0) {
       // Use cached drawings for more up-to-date data
       const drawingsToUse = localDrawingsCache.size > 0 ? Array.from(localDrawingsCache.values()) : drawings;
@@ -493,7 +449,8 @@ setEraserThickness(newThickness);
         setDragStartDrawingPos({ x: clickedDrawing.x, y: clickedDrawing.y });
         return;
       }
-      // Not over a drawing, proceed with drawing
+      // Not over a drawing - don't draw, let TabletopEventHandlers handle panning
+      return;
     }
 
     setIsDrawing(true);

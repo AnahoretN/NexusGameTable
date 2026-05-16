@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation, EffectTemplate } from '../../types';
+import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation, EffectTemplate, Drawing } from '../../types';
 import { clampScrollToPlayableArea, clampObjectPositionToPlayableArea } from '../../utils/viewportConstraints';
 import { SCROLLBAR_WIDTH_THICK } from '../../constants';
 import { useIsSettingsModalOpen } from '../../store/contexts';
@@ -20,6 +20,7 @@ import {
 } from '../../utils/zIndexAllocator';
 import { applyPanelToPanelMagnetism, type PanelBounds, type MagnetismConfig, type GameSpaceBounds } from '../../utils/panelMagnetism';
 import { getTokenWithAppliedState } from '../../hooks/useTokenWithState';
+import { findDrawingAtPosition } from '../../utils/drawingUtils';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -1325,7 +1326,43 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // Handle clicking on empty space (clear context menus, rulers, etc.)
     if (!objId) {
       // Pan view: Shift + left mouse drag on empty space
+      // Special handling for marker tool: check if cursor is over a drawing
       if (e.shiftKey && e.button === 0 && scrollContainerRef.current) {
+        // For marker/eraser tools, check if cursor is over a drawing
+        if (currentTool === 'marker' || currentTool === 'eraser') {
+          const rect = scrollContainerRef.current.getBoundingClientRect();
+          const scrollX = viewTransform?.scroll?.x || 0;
+          const scrollY = viewTransform?.scroll?.y || 0;
+          const worldX = p2v(e.clientX - rect.left + scrollX);
+          const worldY = p2v(e.clientY - rect.top + scrollY);
+
+          // Get all drawings from state
+          const allObjects = Object.values(state.objects) as TableObject[];
+          const drawings = allObjects.filter((obj): obj is Drawing =>
+            obj.type === ItemType.DRAWING && obj.isOnTable
+          );
+
+          // Check if cursor is over a drawing
+          const clickedDrawing = findDrawingAtPosition(worldX, worldY, drawings);
+
+          if (clickedDrawing) {
+            // Cursor is over a drawing - let DrawingCanvas handle the drag
+            // Don't start panning, don't return (let DrawingCanvas receive the event)
+            return;
+          }
+
+          // Cursor is NOT over a drawing - start panning
+          panStartRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            scrollX,
+            scrollY
+          };
+          setIsPanning(true);
+          return;
+        }
+
+        // For other tools, just pan normally
         const scrollX = viewTransform?.scroll?.x || 0;
         const scrollY = viewTransform?.scroll?.y || 0;
         panStartRef.current = {
