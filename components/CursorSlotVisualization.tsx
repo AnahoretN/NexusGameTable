@@ -318,7 +318,7 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
             }}
           >
             {renderCursorSlotItem(
-              { item, width, height, offsetX: 0, offsetY: 0, zIndex, state },
+              { item, width, height, offsetX: 0, offsetY: 0, zIndex, state, pixelsPerVU },
               item.id
             )}
           </div>
@@ -388,7 +388,7 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
             }}
           >
             {renderCursorSlotItem(
-              { item, width, height, offsetX: 0, offsetY: 0, zIndex, state },
+              { item, width, height, offsetX: 0, offsetY: 0, zIndex, state, pixelsPerVU },
               `held-${item.id}`
             )}
           </div>

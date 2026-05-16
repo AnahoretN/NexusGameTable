@@ -291,8 +291,8 @@ export function syncCharacterBorderToTokens(
   const tokens = findTokensForCharacter(state, character.id, panel.id);
 
   // Use character border settings or defaults
-  const targetBorderColor = character.avatarBorderColor || '#ffffff';
-  const targetBorderWidth = character.avatarBorderWidth ?? 2;
+  const targetBorderColor = character.avatarBorderColor || '#a855f7';
+  const targetBorderWidth = character.avatarBorderWidth ?? 5;
 
   for (const token of tokens) {
     const needsUpdate =
@@ -333,8 +333,8 @@ export function syncTokenBorderToCharacter(
   const { panel, character } = result;
 
   // Use character border settings or defaults for comparison
-  const currentBorderColor = character.avatarBorderColor || '#ffffff';
-  const currentBorderWidth = character.avatarBorderWidth ?? 2;
+  const currentBorderColor = character.avatarBorderColor || '#a855f7';
+  const currentBorderWidth = character.avatarBorderWidth ?? 5;
 
   // Only sync if values actually changed (avoid infinite loop)
   if (currentBorderColor === token.borderColor && currentBorderWidth === token.borderWidth) {

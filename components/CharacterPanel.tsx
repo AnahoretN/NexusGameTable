@@ -6,6 +6,8 @@ import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType, ItemType
 import { t } from '../utils/translations';
 import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload, User, Sparkles, Settings } from 'lucide-react';
 import { TextBlock, SliderBlock, TableBlock, QuickAccessBlock, CounterBlock } from './CharacterBlocks';
+import { SliderIconModal } from './CharacterBlocks/SliderBlock';
+import { SliderItem, SliderIconShape } from '../types';
 import { AvatarSettingsModal, AvatarSettingsModalRef } from './AvatarSettingsModal';
 import { SimpleContextMenu } from './SimpleContextMenu';
 import { CharacterSettingsModal } from './CharacterSettingsModal';
@@ -520,8 +522,8 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       content: tokenContent,
       shape: 'CIRCLE' as const,
       color: '#e74c3c',
-      borderColor: character.avatarBorderColor || '#ffffff',
-      borderWidth: character.avatarBorderWidth ?? 2,
+      borderColor: character.avatarBorderColor || '#a855f7',
+      borderWidth: character.avatarBorderWidth ?? 5,
       opacity: 100,
       borderOpacity: 100,
       locked: false,
@@ -616,14 +618,20 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const [avatarSettingsModal, setAvatarSettingsModal] = useState<CharacterTab | null>(null);
   const avatarSettingsModalRef = useRef<AvatarSettingsModalRef>(null);
 
+  // Slider icon modal state
+  const [sliderIconModal, setSliderIconModal] = useState<{
+    slider: SliderItem;
+    blockId: string;
+  } | null>(null);
+
   // Sync settings modal state with UI context
   useEffect(() => {
-    if (settingsModal || avatarSettingsModal) {
+    if (settingsModal || avatarSettingsModal || sliderIconModal) {
       openSettingsModal();
     } else {
       closeSettingsModal();
     }
-  }, [settingsModal, avatarSettingsModal, openSettingsModal, closeSettingsModal]);
+  }, [settingsModal, avatarSettingsModal, sliderIconModal, openSettingsModal, closeSettingsModal]);
 
   // Handler: Open character settings
   const handleOpenCharacterSettings = useCallback((characterId: string, e: React.MouseEvent) => {
@@ -663,18 +671,20 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     });
 
     // Close the settings modal after saving
+    closeSettingsModal();
     setSettingsModal(null);
-  }, [characterData, settingsModal?.characterId, panel.id, dispatch]);
+  }, [characterData, settingsModal?.characterId, panel.id, dispatch, closeSettingsModal]);
 
   // Handler: Save avatar settings
   const handleSaveAvatarSettings = useCallback(() => {
     if (!characterData || !avatarSettingsModalRef.current) return;
 
-    const updatedCharacter = avatarSettingsModalRef.current.getValues();
+    const updates = avatarSettingsModalRef.current.getValues();
 
     const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
-      if (char.id === updatedCharacter.id) {
-        return updatedCharacter;
+      if (char.id === updates.id) {
+        // Merge updates with existing character data to avoid losing other fields
+        return { ...char, ...updates };
       }
       return char;
     });
@@ -693,8 +703,62 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     });
 
     // Close the avatar settings modal after saving
+    closeSettingsModal();
     setAvatarSettingsModal(null);
-  }, [characterData, panel.id, dispatch]);
+  }, [characterData, panel.id, dispatch, closeSettingsModal]);
+
+  // Handler: Save slider icon settings
+  const handleSaveSliderIcon = useCallback((shape: SliderIconShape, color: string) => {
+    if (!sliderIconModal || !characterData || !activeCharacter || !activeSubTab) return;
+
+    const { slider, blockId } = sliderIconModal;
+
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
+      if (char.id === activeCharacter.id) {
+        return {
+          ...char,
+          subTabs: char.subTabs?.map(subTab =>
+            subTab.id === activeSubTab.id
+              ? {
+                  ...subTab,
+                  blocks: subTab.blocks.map((block: any) =>
+                    block.id === blockId
+                      ? {
+                          ...block,
+                          data: {
+                            ...block.data,
+                            sliders: block.data.sliders.map((s: SliderItem) =>
+                              s.id === slider.id
+                                ? { ...s, iconShape: shape, color }
+                                : s
+                            )
+                          }
+                        }
+                      : block
+                  )
+                }
+              : subTab
+          )
+        };
+      }
+      return char;
+    });
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: panel.id,
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
+        }
+      }
+    });
+
+    setSliderIconModal(null);
+  }, [sliderIconModal, characterData, activeCharacter, activeSubTab, panel.id, dispatch]);
 
   // Handler: Export character to JSON
   const handleExportCharacter = useCallback(() => {
@@ -1204,9 +1268,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                 onContextMenu={(e) => handleOpenCharacterSettings(character.id, e)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors relative flex items-center gap-1 ${
                   isActive
-                    ? isOwnCharacter
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-orange-600 text-white'
+                    ? 'bg-purple-600 text-white'
                     : isOwnCharacter
                       ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                       : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
@@ -1243,8 +1305,8 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                 <div
                   className="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center bg-slate-700"
                   style={{
-                    borderColor: activeCharacter.avatarBorderColor || '#64748b',
-                    borderWidth: `${activeCharacter.avatarBorderWidth ?? 2}px`,
+                    borderColor: activeCharacter.avatarBorderColor || '#a855f7',
+                    borderWidth: `${(activeCharacter.avatarBorderWidth ?? 5) * (state.viewTransform?.pixelsPerVU || 1)}px`,
                     borderStyle: 'solid'
                   }}
                 >
@@ -1338,7 +1400,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                           onClick={() => handleSelectSubTab(subTab.id)}
                           className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
                             isActive
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-purple-600 text-white'
                               : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                           }`}
                         >
@@ -1485,6 +1547,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                             editable={canManageCharacter}
                             canEditStructure={canEditCharacter}
                             onChange={(newData) => handleUpdateBlock(block.id, newData)}
+                            onIconClick={(slider) => setSliderIconModal({ slider, blockId: block.id })}
                           />
                         );
                       case CharacterBlockType.TABLE:
@@ -1628,7 +1691,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
       {/* Avatar Settings Modal */}
       {avatarSettingsModal && createPortal(
-        <div className="fixed inset-0 z-[100008] flex items-center justify-center bg-black/40" onClick={() => setAvatarSettingsModal(null)}>
+        <div className="fixed inset-0 z-[100008] flex items-center justify-center bg-black/40" onClick={() => { closeSettingsModal(); setAvatarSettingsModal(null); }}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[400px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
@@ -1642,13 +1705,14 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
               <AvatarSettingsModal
                 ref={avatarSettingsModalRef}
                 character={avatarSettingsModal}
+                pixelsPerVU={state.viewTransform?.pixelsPerVU || 1}
               />
             </div>
 
             {/* Footer */}
             <div className="flex justify-end gap-2 p-4 border-t border-slate-700">
               <button
-                onClick={() => setAvatarSettingsModal(null)}
+                onClick={() => { closeSettingsModal(); setAvatarSettingsModal(null); }}
                 className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded transition-colors"
               >
                 {t('Cancel', language)}
@@ -1665,9 +1729,23 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         document.body
       )}
 
+      {/* Slider Icon Modal */}
+      {sliderIconModal && createPortal(
+        <div className="fixed inset-0 z-[100008] flex items-center justify-center bg-black/40" onClick={() => setSliderIconModal(null)}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[360px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
+            <SliderIconModal
+              slider={sliderIconModal.slider}
+              onClose={() => setSliderIconModal(null)}
+              onSave={handleSaveSliderIcon}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Character Settings Modal */}
       {settingsModal && createPortal(
-        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={() => setSettingsModal(null)}>
+        <div className="fixed inset-0 z-[100006] flex items-center justify-center bg-black/40" onClick={() => { closeSettingsModal(); setSettingsModal(null); }}>
           <div className="bg-slate-800 rounded-lg shadow-xl w-[575px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex justify-center items-center py-2 px-4">
@@ -1727,6 +1805,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => {
+                    closeSettingsModal();
                     setSettingsModal(null);
                     setTempSettingsCharacter(null);
                   }}
@@ -1741,6 +1820,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                       if (tempSettingsCharacter) {
                         handleSaveCharacterSettings(tempSettingsCharacter);
                       }
+                      closeSettingsModal();
                       setSettingsModal(null);
                       setTempSettingsCharacter(null);
                     }}

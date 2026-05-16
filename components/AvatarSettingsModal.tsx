@@ -10,19 +10,21 @@ export interface AvatarSettingsModalRef {
 
 interface AvatarSettingsModalProps {
   character: CharacterTab;
+  pixelsPerVU: number;
 }
 
 export const AvatarSettingsModal = forwardRef<AvatarSettingsModalRef, AvatarSettingsModalProps>(({
-  character
+  character,
+  pixelsPerVU
 }, ref) => {
   const language = useLanguage();
   const [avatarUrl, setAvatarUrl] = useState(character.avatarUrl || '');
-  const [avatarBorderColor, setAvatarBorderColor] = useState(character.avatarBorderColor || '#ffffff');
-  const [avatarBorderWidth, setAvatarBorderWidth] = useState(character.avatarBorderWidth ?? 2);
+  const [avatarBorderColor, setAvatarBorderColor] = useState(character.avatarBorderColor || '#a855f7');
+  const [avatarBorderWidth, setAvatarBorderWidth] = useState(character.avatarBorderWidth ?? 5);
 
   useImperativeHandle(ref, () => ({
     getValues: () => ({
-      ...character,
+      id: character.id,
       avatarUrl: avatarUrl || undefined,
       avatarBorderColor: avatarBorderColor,
       avatarBorderWidth: avatarBorderWidth
@@ -39,7 +41,7 @@ export const AvatarSettingsModal = forwardRef<AvatarSettingsModalRef, AvatarSett
             width: '7.5rem',
             height: '7.5rem',
             borderColor: avatarBorderColor,
-            borderWidth: `${avatarBorderWidth}px`,
+            borderWidth: `${avatarBorderWidth * pixelsPerVU}px`, // VU to pixels
             borderStyle: 'solid'
           }}
         >
@@ -91,7 +93,7 @@ export const AvatarSettingsModal = forwardRef<AvatarSettingsModalRef, AvatarSett
       <div>
         <label className="block text-xs font-bold text-gray-400 mb-1 flex items-center justify-between">
           <span>{t('Border Width', language)}</span>
-          <span className="text-white">{avatarBorderWidth}px</span>
+          <span className="text-white">{avatarBorderWidth} vu</span>
         </label>
         <div className="flex items-center">
           <input

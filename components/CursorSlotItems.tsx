@@ -52,6 +52,7 @@ interface CursorSlotItemProps {
   offsetY: number;
   zIndex: number;
   state: { objects: Record<string, any> };
+  pixelsPerVU: number;
 }
 
 /**
@@ -105,7 +106,7 @@ const CursorSlotCard: React.FC<CursorSlotItemProps & { item: CardType }> = ({ it
 /**
  * Renders a token in the cursor slot
  */
-const CursorSlotToken: React.FC<CursorSlotItemProps & { item: TokenType }> = ({ item, width, height, offsetX, offsetY, zIndex, state }) => {
+const CursorSlotToken: React.FC<CursorSlotItemProps & { item: TokenType }> = ({ item, width, height, offsetX, offsetY, zIndex, state, pixelsPerVU }) => {
   // Apply token state to get correct visual properties
   const tokenWithState = getTokenWithAppliedState(item, state.objects as Record<string, TableObject>);
   // Increase container size by 20% to prevent clipping during fast movement
@@ -145,6 +146,7 @@ const CursorSlotToken: React.FC<CursorSlotItemProps & { item: TokenType }> = ({ 
         showThickness={true}
         tokenName={(tokenWithState as any).showNameOnToken || ((tokenWithState as any).archetypeId && (state.objects[(tokenWithState as any).archetypeId] as any)?.showName) ? item.name : undefined}
         fontColor={(tokenWithState as any).fontColor || '#ffffff'}
+        pixelsPerVU={pixelsPerVU}
       />
     </div>
   );

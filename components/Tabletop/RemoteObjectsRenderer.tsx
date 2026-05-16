@@ -8,13 +8,15 @@ interface RemoteObjectsRendererProps {
   remoteDraggingObjects: TableObject[];
   v2p: (vu: number) => number;
   state: any;
+  pixelsPerVU: number;
 }
 
 export const RemoteObjectsRenderer = memo<RemoteObjectsRendererProps>(({
   remoteCursorSlotObjects,
   remoteDraggingObjects,
   v2p,
-  state
+  state,
+  pixelsPerVU
 }) => {
   const renderRemoteToken = (token: TokenType, key: string, globalZIndex: number) => (
     <div
@@ -45,6 +47,7 @@ export const RemoteObjectsRenderer = memo<RemoteObjectsRendererProps>(({
         showThickness={true}
         tokenName={(token as any).showNameOnToken || (token as any).showName || ((token as any).archetypeId && (state.objects[(token as any).archetypeId] as any)?.showName) ? token.name : undefined}
         fontColor={(token as any).fontColor || '#ffffff'}
+        pixelsPerVU={pixelsPerVU}
       />
     </div>
   );

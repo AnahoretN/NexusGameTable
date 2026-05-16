@@ -62,8 +62,8 @@ const SliderIcon: React.FC<{
   }
 };
 
-// Icon customization modal
-const IconCustomizationModal: React.FC<{
+// Exported modal component for use in CharacterPanel
+export const SliderIconModal: React.FC<{
   slider: SliderItem;
   onClose: () => void;
   onSave: (shape: SliderIconShape, color: string) => void;
@@ -81,71 +81,68 @@ const IconCustomizationModal: React.FC<{
   ];
 
   return (
-    <div className="fixed inset-0 z-[100008] flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="bg-slate-800 rounded-lg shadow-xl w-[360px] border border-slate-600" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex justify-between items-center py-3 px-4 border-b border-slate-600">
-          <h3 className="text-base font-bold text-white">Slider Icon</h3>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white transition-colors"
-          >
-            ✕
-          </button>
-        </div>
+    <>
+      <div className="flex justify-between items-center py-3 px-4 border-b border-slate-700">
+        <h3 className="text-base font-bold text-white">Slider Icon</h3>
+        <button
+          onClick={onClose}
+          className="text-slate-400 hover:text-white transition-colors"
+        >
+          ✕
+        </button>
+      </div>
 
-        {/* Content */}
-        <div className="p-4 space-y-4">
-          {/* Shape Selection */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Shape</label>
-            <div className="grid grid-cols-6 gap-2">
-              {shapes.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setShape(key)}
-                  className={`aspect-square rounded-lg flex items-center justify-center transition-all ${
-                    shape === key
-                      ? 'bg-purple-600 ring-2 ring-purple-400'
-                      : 'bg-slate-700 hover:bg-slate-600'
-                  }`}
-                  title={label}
-                >
-                  <SliderIcon shape={key} color={color} size={24} />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Color */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Color</label>
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              className="w-full h-10 rounded cursor-pointer border-0 p-0 bg-slate-900"
-            />
+      {/* Content */}
+      <div className="p-4 space-y-4">
+        {/* Shape Selection */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Shape</label>
+          <div className="grid grid-cols-6 gap-2">
+            {shapes.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setShape(key)}
+                className={`aspect-square rounded-lg flex items-center justify-center transition-all ${
+                  shape === key
+                    ? 'bg-purple-600 ring-2 ring-purple-400'
+                    : 'bg-slate-700 hover:bg-slate-600'
+                }`}
+                title={label}
+              >
+                <SliderIcon shape={key} color={color} size={24} />
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end gap-2 p-4 pt-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave(shape, color)}
-            className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors"
-          >
-            Save
-          </button>
+        {/* Color */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Color</label>
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            className="w-full h-10 rounded cursor-pointer border-0 p-0 bg-slate-900"
+          />
         </div>
       </div>
-    </div>
+
+      {/* Footer */}
+      <div className="flex justify-end gap-2 p-4 pt-0">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => onSave(shape, color)}
+          className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors"
+        >
+          Save
+        </button>
+      </div>
+    </>
   );
 };
 
@@ -154,12 +151,12 @@ interface SliderBlockProps {
   editable: boolean;
   canEditStructure?: boolean;
   onChange: (data: SliderBlockData) => void;
+  onIconClick?: (slider: SliderItem) => void;
 }
 
-export const SliderBlock: React.FC<SliderBlockProps> = ({ block, editable, onChange }) => {
+export const SliderBlock: React.FC<SliderBlockProps> = ({ block, editable, onChange, onIconClick }) => {
   const data = block.data as SliderBlockData;
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sliderId: string } | null>(null);
-  const [iconModalSlider, setIconModalSlider] = useState<string | null>(null);
 
   const isOldFormat = !data.sliders || !Array.isArray(data.sliders);
   const oldData = block.data as any;
@@ -209,18 +206,17 @@ export const SliderBlock: React.FC<SliderBlockProps> = ({ block, editable, onCha
     onChange({ sliders: updatedSliders });
   }, [sliders, onChange]);
 
-  const handleSaveIconSettings = useCallback((sliderId: string, shape: SliderIconShape, color: string) => {
-    const updatedSliders = sliders.map(slider =>
-      slider.id === sliderId
-        ? { ...slider, iconShape: shape, color }
-        : slider
-    );
-    onChange({ sliders: updatedSliders });
-    setIconModalSlider(null);
-  }, [sliders, onChange]);
+  const handleIconClick = useCallback((sliderId: string) => {
+    if (onIconClick) {
+      const slider = sliders.find(s => s.id === sliderId);
+      if (slider) {
+        onIconClick(slider);
+      }
+    }
+  }, [sliders, onIconClick]);
 
   return (
-    <div className="w-full space-y-2">
+    <div className="w-full space-y-[0.5vh]">
       {sliders.map((slider) => (
         <SliderItemComponent
           key={slider.id}
@@ -247,10 +243,7 @@ export const SliderBlock: React.FC<SliderBlockProps> = ({ block, editable, onCha
           onRemoveSlider={() => handleRemoveSlider(slider.id)}
           showContextMenu={contextMenu?.sliderId === slider.id ? contextMenu : null}
           closeContextMenu={() => setContextMenu(null)}
-          onIconClick={() => setIconModalSlider(slider.id)}
-          showIconModal={iconModalSlider === slider.id}
-          onIconModalClose={() => setIconModalSlider(null)}
-          onIconSave={(shape, color) => handleSaveIconSettings(slider.id, shape, color)}
+          onIconClick={() => handleIconClick(slider.id)}
         />
       ))}
     </div>
@@ -270,9 +263,6 @@ interface SliderItemComponentProps {
   showContextMenu: { x: number; y: number; sliderId: string } | null;
   closeContextMenu: () => void;
   onIconClick: () => void;
-  showIconModal: boolean;
-  onIconModalClose: () => void;
-  onIconSave: (shape: SliderIconShape, color: string) => void;
 }
 
 const SliderItemComponent: React.FC<SliderItemComponentProps> = ({
@@ -287,10 +277,7 @@ const SliderItemComponent: React.FC<SliderItemComponentProps> = ({
   onRemoveSlider,
   showContextMenu,
   closeContextMenu,
-  onIconClick,
-  showIconModal,
-  onIconModalClose,
-  onIconSave
+  onIconClick
 }) => {
   const percentage = ((slider.value - slider.minValue) / (slider.maxValue - slider.minValue)) * 100;
 
@@ -426,14 +413,6 @@ const SliderItemComponent: React.FC<SliderItemComponentProps> = ({
             { name: 'Add Slider', action: onAddSlider },
             ...(sliders.length > 1 ? [{ name: 'Remove Slider', action: onRemoveSlider }] : [])
           ]}
-        />
-      )}
-
-      {showIconModal && (
-        <IconCustomizationModal
-          slider={slider}
-          onClose={onIconModalClose}
-          onSave={onIconSave}
         />
       )}
     </div>

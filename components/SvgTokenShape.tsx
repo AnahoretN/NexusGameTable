@@ -24,6 +24,7 @@ interface SvgTokenShapeProps {
   tokenName?: string; // Token name to display in center
   fontColor?: string; // Font color for token name
   preserveAspectRatio?: string; // Control aspect ratio preservation (default: "none")
+  pixelsPerVU?: number; // VU to pixels conversion factor
 }
 
 /**
@@ -75,6 +76,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   tokenName,
   fontColor = '#ffffff',
   preserveAspectRatio = "none",
+  pixelsPerVU = 1,
 }) => {
   // Resolve img_ref:// to data URL from IndexedDB
   const [resolvedContent, setResolvedContent] = useState<string | undefined>(content);
@@ -162,11 +164,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   const viewBoxWidth = viewBoxMatch ? parseFloat(viewBoxMatch[2]) : 60;
   const viewBoxHeight = viewBoxMatch ? parseFloat(viewBoxMatch[3]) : 60;
 
-  // Convert pixel border width to viewBox units for consistent appearance
-  // Character avatar borderWidth is in pixels, token uses viewBox units
-  // Scale: if token is 80px wide and viewBox is 60, then 2px = 2 * (60/80) = 1.5 viewBox units
-  const pixelToViewBoxScale = viewBoxWidth / width;
-  const strokeWidth = borderWidth * pixelToViewBoxScale;
+  // Convert VU to pixels for stroke width (borderWidth is in VU)
+  const strokeWidth = borderWidth * pixelsPerVU;
 
   // Minimal stroke for rounded corners - don't waste space
   const cornerRadiusStroke = useRect ? 0 : 2;
