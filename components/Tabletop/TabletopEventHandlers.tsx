@@ -515,9 +515,14 @@ const dropCursorSlot = (
   // This prevents race conditions where cursorSlot contains stale items
   // after they were dropped to pool panels (where inCursorSlot was set to false
   // but setCursorSlot hasn't been applied yet)
+  // NOTE: We use cursorSlot as source of truth, not state.objects.inCursorSlot
+  // because state.objects may not be updated yet due to React's batched updates
+  // (especially when dropping immediately after addToCursorSlot dispatch)
   const itemsToDrop = cursorSlot.filter(item => {
+    // Check if object exists in state (may have been deleted)
+    // Don't check inCursorSlot flag - it may not be updated yet due to batching
     const obj = state.objects[item.id];
-    return obj && (obj as any).inCursorSlot === true;
+    return obj != null;
   });
 
   if (itemsToDrop.length === 0) {
@@ -2140,13 +2145,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // dropCursorSlot will handle the logic for hand panel, deck, or table
     const isShiftHeld = e?.shiftKey === true;
 
-    // IMPORTANT: Check state.objects.inCursorSlot, NOT cursorSlot.length
-    // cursorSlot may contain stale items after dropObjectsToPool
-    const objectsInCursorSlot = (Object.values(state.objects) as TableObject[]).filter(o =>
-      (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER || o.type === ItemType.EFFECT_TEMPLATE) &&
-      (o as any).inCursorSlot === true
-    );
-    const shouldDropOnMouseUp = objectsInCursorSlot.length > 0 && e && !isShiftHeld;
+    // IMPORTANT: Use cursorSlot as source of truth, NOT state.objects.inCursorSlot
+    // state.objects may not be updated yet due to React's batched updates
+    const shouldDropOnMouseUp = cursorSlot.length > 0 && e && !isShiftHeld;
 
     if (shouldDropOnMouseUp) {
       dropCursorSlot(e.clientX, e.clientY, props);
@@ -2391,15 +2392,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     const handleDropFromPool = (e: Event) => {
       const customEvent = e as CustomEvent<{ x: number; y: number }>;
 
-      // IMPORTANT: Check state.objects.inCursorSlot, NOT cursorSlot.length
-      // cursorSlot may contain stale items after dropObjectsToPool
-      const objectsInCursorSlot = (Object.values(props.state.objects) as TableObject[]).filter(o =>
-        (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER || o.type === ItemType.EFFECT_TEMPLATE) &&
-        (o as any).inCursorSlot === true
-      );
-
-      // Only drop if we have items in cursor slot
-      if (objectsInCursorSlot.length > 0) {
+      // IMPORTANT: Use cursorSlot as source of truth, NOT state.objects.inCursorSlot
+      // state.objects may not be updated yet due to React's batched updates
+      if (props.cursorSlot.length > 0) {
         // Skip pool panel check since this event comes from pool panel
         // (pool panel already determined cursor is NOT over it)
         dropCursorSlot(customEvent.detail.x, customEvent.detail.y, props, true);
@@ -2410,7 +2405,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     return () => {
       window.removeEventListener('cursor-slot-drop-to-tabletop', handleDropFromPool);
     };
-  }, [props.state.objects, props]);
+  }, [props.cursorSlot, props]);
 
   // Setup event listeners
   useEffect(() => {
