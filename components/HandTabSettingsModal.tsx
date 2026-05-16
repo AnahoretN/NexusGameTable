@@ -32,9 +32,19 @@ export const HandTabSettingsModal: React.FC<HandTabSettingsModalProps> = ({
     handVisibleToPlayerIds: player.handVisibleToPlayerIds || [],
     handManageableByPlayerIds: player.handManageableByPlayerIds || []
   });
-  const [cardScale, setCardScale] = useState(1);
 
-  // Load card scale from localStorage for this player
+  // Load card scale from localStorage on initialization
+  const [cardScale, setCardScale] = useState(() => {
+    try {
+      const key = `hand-card-scale-${player.id}`;
+      const savedScale = localStorage.getItem(key);
+      return savedScale ? parseFloat(savedScale) : 1.15;
+    } catch {
+      return 1.15;
+    }
+  });
+
+  // Update card scale when player.id changes
   useEffect(() => {
     try {
       const key = `hand-card-scale-${player.id}`;

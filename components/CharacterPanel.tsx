@@ -1,14 +1,16 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { useActivePlayerId, useIsGM, usePlayerList, useSettingsModalState, useIsSettingsModalOpen } from '../store/contexts';
-import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType } from '../types';
-import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload, User } from 'lucide-react';
-import { TextBlock, SliderBlock, TableBlock, InventoryBlock, CounterBlock } from './CharacterBlocks';
+import { useActivePlayerId, useIsGM, usePlayerList, useSettingsModalState, useIsSettingsModalOpen, useLanguage } from '../store/contexts';
+import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType, ItemType } from '../types';
+import { t } from '../utils/translations';
+import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload, User, Sparkles, Settings } from 'lucide-react';
+import { TextBlock, SliderBlock, TableBlock, QuickAccessBlock, CounterBlock } from './CharacterBlocks';
+import { AvatarSettingsModal, AvatarSettingsModalRef } from './AvatarSettingsModal';
 import { SimpleContextMenu } from './SimpleContextMenu';
 import { CharacterSettingsModal } from './CharacterSettingsModal';
 import { logger } from '../utils/logger';
-import { generateImageId, createImageRef, saveSingleImageToIDB, isImageRef, getImageIdFromRef } from '../utils/imageCache';
+import { isImageRef, getImageIdFromRef } from '../utils/imageCache';
 
 interface CharacterPanelProps {
   isCollapsed?: boolean;
@@ -23,6 +25,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
   const players = usePlayerList();
+  const language = useLanguage();
   const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
 
   // Get character data from panel - use latest from state to ensure reactivity
@@ -315,103 +318,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     setCharacterNameInput('');
   }, []);
 
-  // Avatar upload state
-  const avatarFileInputRef = useRef<HTMLInputElement>(null);
-
-  // Handler for avatar upload
-  const handleAvatarUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!isGM && activeCharacter?.playerId !== activePlayerId) return;
-    if (!e.target.files || !e.target.files[0]) return;
-
-    const file = e.target.files[0];
-
-    // Check file size (limit to 3MB)
-    if (file.size > 3 * 1024 * 1024) {
-      alert('Image size must be less than 3MB');
-      return;
-    }
-
-    // Create a preview URL
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-
-      if (!characterData || !activeCharacter) return;
-
-      // Generate unique image ID and save to IndexedDB immediately
-      const imageId = generateImageId();
-      const imageRef = createImageRef(imageId);
-
-      // Save to IDB for persistence (async but don't wait)
-      saveSingleImageToIDB(imageId, dataUrl).catch(error => {
-        logger.error('[CharacterPanel] Failed to save avatar to IDB:', error);
-      });
-
-      // Store image reference in state instead of base64
-      const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
-        if (char.id === activeCharacter.id) {
-          return { ...char, avatarUrl: imageRef };
-        }
-        return char;
-      });
-
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: panel.id,
-          updates: {
-            characterData: {
-              ...characterData,
-              characters: updatedCharacters
-            }
-          }
-        }
-      });
-
-      // Update local cache immediately so avatar shows without re-render
-      setAvatarUrlCache(prev => ({ ...prev, [activeCharacter.id]: dataUrl }));
-    };
-    reader.readAsDataURL(file);
-
-    // Reset input
-    if (avatarFileInputRef.current) {
-      avatarFileInputRef.current.value = '';
-    }
-  }, [characterData, activeCharacter, isGM, activePlayerId, panel.id, dispatch]);
-
-  // Handler for removing avatar
-  const handleRemoveAvatar = useCallback(() => {
-    if (!isGM && activeCharacter?.playerId !== activePlayerId) return;
-    if (!characterData || !activeCharacter) return;
-
-    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
-      if (char.id === activeCharacter.id) {
-        return { ...char, avatarUrl: undefined };
-      }
-      return char;
-    });
-
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
-
-    // Clear from local cache
-    setAvatarUrlCache(prev => {
-      const newCache = { ...prev };
-      delete newCache[activeCharacter.id];
-      return newCache;
-    });
-  }, [characterData, activeCharacter, isGM, activePlayerId, panel.id, dispatch]);
-
   // Handler for editing block title
   const handleStartEditBlockTitle = useCallback((blockId: string, currentTitle: string) => {
     if (!canEditCharacter) return;
@@ -568,6 +474,87 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     setPendingRemoveCharacterId(null);
   }, []);
 
+  // Helper: Get first Slider Block from character (for token counters)
+  const getFirstSliderBlock = useCallback((character: CharacterTab) => {
+    if (!character.subTabs) return null;
+    for (const subTab of character.subTabs) {
+      const sliderBlock = subTab.blocks.find(b => b.type === CharacterBlockType.SLIDER && b.visible);
+      if (sliderBlock) return sliderBlock;
+    }
+    return null;
+  }, []);
+
+  // Handler: Create character token
+  const handleCreateCharacterToken = useCallback(async (character: CharacterTab) => {
+    // Use avatar URL as-is (img_ref:// format for sync to work)
+    const tokenContent = character.avatarUrl || '';
+
+    // Get sliders from first Slider Block for counters
+    const sliderBlock = getFirstSliderBlock(character);
+    const sliders = (sliderBlock?.data as any)?.sliders || [];
+
+    // Convert sliders to token counters
+    const counters = sliders.map((slider: any) => ({
+      id: `counter-${Date.now()}-${slider.id}`,
+      name: slider.label,
+      value: slider.value,
+      maxValue: slider.maxValue,
+      minValue: slider.minValue ?? 0,
+      color: slider.color || '#ef4444',
+      icon: undefined,
+      showValue: true,
+      showBar: true
+    }));
+
+    // Create token object
+    const newTokenId = `token-${Date.now()}`;
+    const newToken = {
+      id: newTokenId,
+      type: ItemType.TOKEN,
+      name: character.characterName,
+      x: 0,
+      y: 0,
+      width: 80,
+      height: 80,
+      rotation: 0,
+      content: tokenContent,
+      shape: 'CIRCLE' as const,
+      color: '#e74c3c',
+      borderColor: character.avatarBorderColor || '#ffffff',
+      borderWidth: character.avatarBorderWidth ?? 2,
+      opacity: 100,
+      borderOpacity: 100,
+      locked: false,
+      isOnTable: false,
+      inCursorSlot: true,
+      showName: true,
+      showNameOnToken: !tokenContent, // Show name on token only if no image
+      fontColor: '#ffffff',
+      zIndex: 3000,
+      hyperscaleLayerId: 'tokens',
+      // Link to character
+      characterId: character.id,
+      panelId: panel.id,
+      // Add counters from sliders
+      counters,
+      // Set counter display to show above token by default
+      counterDisplay: {
+        position: 'above' as const,
+        showForPlayers: true
+      }
+    };
+
+    // Add token to state
+    dispatch({ type: 'ADD_OBJECT', payload: newToken });
+
+    // Dispatch event to add token to cursor slot
+    window.dispatchEvent(new CustomEvent('add-character-token-to-cursor-slot', {
+      detail: {
+        token: newToken
+      }
+    }));
+  }, [getFirstSliderBlock, panel.id, dispatch]);
+
   // Handler: Select character tab
   const handleSelectCharacter = useCallback((characterId: string) => {
     setActiveCharacterId(characterId);
@@ -625,14 +612,18 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   } | null>(null);
   const [tempSettingsCharacter, setTempSettingsCharacter] = useState<CharacterTab | null>(null);
 
+  // Avatar settings modal state
+  const [avatarSettingsModal, setAvatarSettingsModal] = useState<CharacterTab | null>(null);
+  const avatarSettingsModalRef = useRef<AvatarSettingsModalRef>(null);
+
   // Sync settings modal state with UI context
   useEffect(() => {
-    if (settingsModal) {
+    if (settingsModal || avatarSettingsModal) {
       openSettingsModal();
     } else {
       closeSettingsModal();
     }
-  }, [settingsModal, openSettingsModal, closeSettingsModal]);
+  }, [settingsModal, avatarSettingsModal, openSettingsModal, closeSettingsModal]);
 
   // Handler: Open character settings
   const handleOpenCharacterSettings = useCallback((characterId: string, e: React.MouseEvent) => {
@@ -674,6 +665,36 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     // Close the settings modal after saving
     setSettingsModal(null);
   }, [characterData, settingsModal?.characterId, panel.id, dispatch]);
+
+  // Handler: Save avatar settings
+  const handleSaveAvatarSettings = useCallback(() => {
+    if (!characterData || !avatarSettingsModalRef.current) return;
+
+    const updatedCharacter = avatarSettingsModalRef.current.getValues();
+
+    const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
+      if (char.id === updatedCharacter.id) {
+        return updatedCharacter;
+      }
+      return char;
+    });
+
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: panel.id,
+        updates: {
+          characterData: {
+            ...characterData,
+            characters: updatedCharacters
+          }
+        }
+      }
+    });
+
+    // Close the avatar settings modal after saving
+    setAvatarSettingsModal(null);
+  }, [characterData, panel.id, dispatch]);
 
   // Handler: Export character to JSON
   const handleExportCharacter = useCallback(() => {
@@ -763,37 +784,92 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         };
         break;
       case CharacterBlockType.SLIDER:
+        const now = Date.now();
         blockData = {
           sliders: [
             {
-              id: `slider-${Date.now()}`,
+              id: `slider-${now}`,
               label: 'Health',
-              value: 10,
-              maxValue: 10,
+              value: 50,
+              maxValue: 50,
+              minValue: 0,
+              color: '#ef4444',
+              showValue: true,
+              showPercentage: false,
+              iconShape: 'heart' as const
+            },
+            {
+              id: `slider-${now + 1}`,
+              label: 'Mana',
+              value: 50,
+              maxValue: 50,
+              minValue: 0,
+              color: '#3b82f6',
+              showValue: true,
+              showPercentage: false,
+              iconShape: 'star' as const
+            },
+            {
+              id: `slider-${now + 2}`,
+              label: 'Stamina',
+              value: 50,
+              maxValue: 50,
               minValue: 0,
               color: '#22c55e',
               showValue: true,
-              showPercentage: false
+              showPercentage: false,
+              iconShape: 'cross' as const
             }
           ]
         };
         break;
       case CharacterBlockType.TABLE:
+        const tableNow = Date.now();
         blockData = {
           columns: [
             { id: 'col-1', title: 'Name', width: 100, type: 'text' },
             { id: 'col-2', title: 'Value', width: 80, type: 'number' }
           ],
-          rows: [],
+          rows: [
+            { id: `row-${tableNow}`, cells: { 'col-1': 'Skill A', 'col-2': 5 } },
+            { id: `row-${tableNow + 1}`, cells: { 'col-1': 'Skill B', 'col-2': 6 } },
+            { id: `row-${tableNow + 2}`, cells: { 'col-1': 'Skill C', 'col-2': 7 } }
+          ],
           editable: true,
           addRowAllowed: true,
           addColumnAllowed: true
         };
         break;
-      case CharacterBlockType.INVENTORY:
+      case CharacterBlockType.QUICK_ACCESS:
+        const qaNow = Date.now();
         blockData = {
           gridColumns: 4,
-          items: [],
+          items: [
+            {
+              id: `item-${qaNow}`,
+              name: t('Health Potion', language),
+              quantity: 5,
+              imageUrl: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1778955185/Potion_of_Life_nwzknk.png'
+            },
+            {
+              id: `item-${qaNow + 1}`,
+              name: t('Mana Potion', language),
+              quantity: 5,
+              imageUrl: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1778955186/Potion_of_Mana_whciey.png'
+            },
+            {
+              id: `item-${qaNow + 2}`,
+              name: t('Stamina Potion', language),
+              quantity: 5,
+              imageUrl: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1778955186/Potion_of_Stamina_grcuh1.png'
+            },
+            {
+              id: `item-${qaNow + 3}`,
+              name: t('Resurrection Scroll', language),
+              quantity: 1,
+              imageUrl: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1778955200/Scroll_of_Resurrection_rk0kp9.png'
+            }
+          ],
           maxItems: undefined
         };
         break;
@@ -813,7 +889,9 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     const newBlock: CharacterBlock = {
       id: `block-${Date.now()}`,
       type: blockType,
-      title: `${blockType.charAt(0).toUpperCase() + blockType.slice(1).toLowerCase()} Block`,
+      title: blockType === CharacterBlockType.QUICK_ACCESS
+        ? 'Quick Access Block'
+        : `${blockType.charAt(0).toUpperCase() + blockType.slice(1).toLowerCase()} Block`,
       visible: true,
       order: columnBlocks.length,
       columnId: activeColumnId,
@@ -1162,7 +1240,14 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             <div className="flex items-start gap-3">
               {/* Avatar */}
               <div className="relative group flex-shrink-0">
-                <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-slate-500 flex items-center justify-center bg-slate-700">
+                <div
+                  className="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center bg-slate-700"
+                  style={{
+                    borderColor: activeCharacter.avatarBorderColor || '#64748b',
+                    borderWidth: `${activeCharacter.avatarBorderWidth ?? 2}px`,
+                    borderStyle: 'solid'
+                  }}
+                >
                   {activeCharacter.avatarUrl ? (
                     <img
                       src={avatarUrlCache[activeCharacter.id] || activeCharacter.avatarUrl}
@@ -1174,30 +1259,16 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                   )}
                 </div>
 
-                {/* Avatar upload/remove overlay */}
+                {/* Avatar settings button overlay */}
                 {(isGM || activeCharacter.playerId === activePlayerId) && (
                   <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="flex gap-1">
-                      <label className="cursor-pointer bg-white text-black rounded-full p-1 hover:bg-slate-200">
-                        <Upload size={14} />
-                        <input
-                          ref={avatarFileInputRef}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleAvatarUpload}
-                          className="hidden"
-                        />
-                      </label>
-                      {activeCharacter.avatarUrl && (
-                        <button
-                          onClick={handleRemoveAvatar}
-                          className="bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                          title="Remove avatar"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
+                    <button
+                      onClick={() => setAvatarSettingsModal(activeCharacter)}
+                      className="bg-white text-black rounded-full p-1.5 hover:bg-slate-200"
+                      title={t('Avatar settings', language)}
+                    >
+                      <Settings size={14} />
+                    </button>
                   </div>
                 )}
               </div>
@@ -1205,41 +1276,55 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
               {/* Character Name and Sub-tabs */}
               <div className="flex-1 min-w-0">
                 {/* Character Name */}
-                <div className="flex items-center gap-2 mb-2">
-                  {editingCharacterName ? (
-                    <input
-                      type="text"
-                      value={characterNameInput}
-                      onChange={(e) => setCharacterNameInput(e.target.value)}
-                      onBlur={handleSaveCharacterName}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleSaveCharacterName();
-                        } else if (e.key === 'Escape') {
-                          handleCancelEditCharacterName();
-                        }
-                      }}
-                      className="text-lg font-semibold leading-[1.2] bg-slate-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 w-full min-w-0"
-                      autoFocus
-                    />
-                  ) : (
-                    <h3
-                      className="text-lg font-semibold leading-[1.2] text-white cursor-pointer hover:text-slate-300 transition-colors"
-                      onDoubleClick={handleStartEditCharacterName}
-                      title="Double-click to rename"
-                    >
-                      {activeCharacter.characterName}
-                    </h3>
-                  )}
-                  {isGM && (
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {editingCharacterName ? (
+                      <input
+                        type="text"
+                        value={characterNameInput}
+                        onChange={(e) => setCharacterNameInput(e.target.value)}
+                        onBlur={handleSaveCharacterName}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleSaveCharacterName();
+                          } else if (e.key === 'Escape') {
+                            handleCancelEditCharacterName();
+                          }
+                        }}
+                        className="text-lg font-semibold leading-[1.2] bg-slate-700 text-white px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 w-full min-w-0"
+                        autoFocus
+                      />
+                    ) : (
+                      <h3
+                        className="text-lg font-semibold leading-[1.2] text-white cursor-pointer hover:text-slate-300 transition-colors truncate"
+                        onDoubleClick={handleStartEditCharacterName}
+                        title="Double-click to rename"
+                      >
+                        {activeCharacter.characterName}
+                      </h3>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* Character Token Button */}
                     <button
-                      onClick={() => handleRemoveCharacter(activeCharacter.id)}
-                      className="p-1 text-slate-400 hover:text-red-400 transition-colors flex-shrink-0"
-                      title="Remove character"
+                      onClick={() => handleCreateCharacterToken(activeCharacter)}
+                      className="w-5 h-5 rounded-full bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center transition-colors"
+                      title={t('Create Character Token', language)}
+                      style={{ width: '21px', height: '21px' }}
                     >
-                      <Trash2 size={14} />
+                      <Sparkles size={10} />
                     </button>
-                  )}
+                    {/* Delete Character Button */}
+                    {isGM && (
+                      <button
+                        onClick={() => handleRemoveCharacter(activeCharacter.id)}
+                        className="p-1 text-slate-400 hover:text-red-400 transition-colors"
+                        title="Remove character"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Sub-tabs */}
@@ -1330,6 +1415,30 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                             <div className="flex items-center gap-0.5">
                               {canEditCharacter && (
                                 <>
+                                  {/* Add Item button for Quick Access blocks */}
+                                  {block.type === CharacterBlockType.QUICK_ACCESS && (
+                                    <button
+                                      onClick={() => {
+                                        const qaBlock = block as any;
+                                        const qaData = qaBlock.data;
+                                        if (qaData.maxItems && qaData.items.length >= qaData.maxItems) return;
+                                        const newItem = {
+                                          id: `item-${Date.now()}`,
+                                          name: 'New Item',
+                                          quantity: 1
+                                        };
+                                        handleUpdateBlock(block.id, {
+                                          ...qaData,
+                                          items: [...qaData.items, newItem]
+                                        });
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-green-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                                      title="Add item"
+                                      disabled={block.type === CharacterBlockType.QUICK_ACCESS && (block.data as any).maxItems && (block.data as any).items.length >= (block.data as any).maxItems}
+                                    >
+                                      <Plus size={14} />
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => handleMoveBlockUp(block.id)}
                                     className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
@@ -1386,9 +1495,9 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                             onChange={(newData) => handleUpdateBlock(block.id, newData)}
                           />
                         );
-                      case CharacterBlockType.INVENTORY:
+                      case CharacterBlockType.QUICK_ACCESS:
                         return (
-                          <InventoryBlock
+                          <QuickAccessBlock
                             block={block}
                             editable={canManageCharacter}
                             onChange={(newData) => handleUpdateBlock(block.id, newData)}
@@ -1488,10 +1597,10 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                   }
                 },
                 {
-                  name: 'Inventory Block',
+                  name: 'Quick Access',
                   icon: <ImageIcon size={16} />,
                   action: () => {
-                    handleAddBlock(CharacterBlockType.INVENTORY);
+                    handleAddBlock(CharacterBlockType.QUICK_ACCESS);
                   }
                 },
                 {
@@ -1515,6 +1624,45 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             <p>You don't have permission to view this character</p>
           </div>
         </div>
+      )}
+
+      {/* Avatar Settings Modal */}
+      {avatarSettingsModal && createPortal(
+        <div className="fixed inset-0 z-[100008] flex items-center justify-center bg-black/40" onClick={() => setAvatarSettingsModal(null)}>
+          <div className="bg-slate-800 rounded-lg shadow-xl w-[400px] border border-slate-600 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex justify-center items-center py-2 px-4 border-b border-slate-700">
+              <h3 className="text-base font-bold text-white">
+                {t('Avatar Settings', language)}: {avatarSettingsModal.characterName}
+              </h3>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
+              <AvatarSettingsModal
+                ref={avatarSettingsModalRef}
+                character={avatarSettingsModal}
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-700">
+              <button
+                onClick={() => setAvatarSettingsModal(null)}
+                className="px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 rounded transition-colors"
+              >
+                {t('Cancel', language)}
+              </button>
+              <button
+                onClick={handleSaveAvatarSettings}
+                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors"
+              >
+                {t('Save', language)}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Character Settings Modal */}

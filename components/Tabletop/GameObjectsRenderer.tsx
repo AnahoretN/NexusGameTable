@@ -7,7 +7,7 @@ import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenCounter, TokenCounterPosition, TokenCounterDisplay } from '../../types';
+import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenSlider, TokenSliderPosition, TokenSliderDisplay } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 import { TokenCountersDisplay } from './TokenCountersDisplay';
@@ -747,7 +747,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
       : (obj.color || '#6366f1');
     const fontColor = isExplosiveTriggered
       ? (dice.explosiveTextColor || '#ff0000')
-      : ((obj as any).fontColor || 'white');
+      : ((obj as any).fontColor || '#ffffff');
     const glowColor = isExplosiveTriggered
       ? (dice.explosiveGlow || '#ff0000')
       : undefined;
@@ -792,7 +792,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             content={undefined}
             rotation={0}
             borderWidth={obj.borderWidth ?? 2}
-            borderColor={(obj as any).borderColor || 'white'}
+            borderColor={(obj as any).borderColor || '#ffffff'}
             opacity={obj.opacity ?? 100}
             borderOpacity={obj.borderOpacity ?? 100}
             showThickness={true}

@@ -3,7 +3,7 @@ import { SvgTokenShape } from '../SvgTokenShape';
 import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Pin, RotateCw, RefreshCw, Trash2, Copy, Lock, Unlock, Eye, EyeOff, ChevronsUpDown, SkipForward, SkipBack, Rewind, Plus, Minus } from 'lucide-react';
-import { TableObject, Token as TokenType, ItemType, TokenCounter, TokenCounterDisplay, Counter, DiceObject } from '../../types';
+import { TableObject, Token as TokenType, ItemType, TokenSlider, TokenSliderDisplay, Counter, DiceObject } from '../../types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 
 interface PinnedGameObjectsRendererProps {
@@ -20,10 +20,10 @@ interface PinnedGameObjectsRendererProps {
   dispatch: React.Dispatch<any>;
 }
 
-// Token counters display component (simplified for pinned objects)
+// Token sliders display component (simplified for pinned objects)
 interface TokenCountersDisplayProps {
-  counters: TokenCounter[];
-  counterDisplay: TokenCounterDisplay | undefined;
+  counters: TokenSlider[];
+  counterDisplay: TokenSliderDisplay | undefined;
   tokenWidth: number;
   tokenHeight: number;
   pixelsPerVU: number;
@@ -55,15 +55,15 @@ const TokenCountersDisplay = memo(({
   const baseBarHeight = useMemo(() => 7 * pixelsPerVU, [pixelsPerVU]);
   const gap = useMemo(() => pixelsPerVU, [pixelsPerVU]);
 
-  // Memoize render function for each counter
-  const renderBar = useCallback((counter: TokenCounter, index: number) => {
+  // Memoize render function for each slider
+  const renderBar = useCallback((slider: TokenSlider, index: number) => {
     if (counterDisplay?.displayType === 'bars') {
-      const maxValue = counter.maxValue || 100;
-      const currentValue = counter.value || 0;
-      const barSize = counter.width || 60;
+      const maxValue = slider.maxValue || 100;
+      const currentValue = slider.value || 0;
+      const barSize = slider.width || 60;
       const barWidth = Math.max(barSize * pixelsPerVU, tokenWidth);
       const fillPercentage = Math.min(100, Math.max(0, (currentValue / maxValue) * 100));
-      const color = counter.color || '#e74c3c';
+      const color = slider.color || '#e74c3c';
 
       const positionStyle: React.CSSProperties = {
         position: 'absolute',
@@ -81,7 +81,7 @@ const TokenCountersDisplay = memo(({
 
       return (
         <div
-          key={counter.id}
+          key={slider.id}
           style={{
             ...positionStyle,
             width: `${barWidth}px`,
@@ -317,7 +317,7 @@ const PinnedDiceRenderer = memo(({
   const sidesFontSize = 15 * pixelsPerVU;
 
   const diceColor = obj.color || '#6366f1';
-  const fontColor = (obj as any).fontColor || 'white';
+  const fontColor = (obj as any).fontColor || '#ffffff';
 
   // Memoize button configurations
   const buttonConfigs = useMemo(() => {
@@ -421,7 +421,7 @@ const PinnedDiceRenderer = memo(({
         content={undefined}
         rotation={0}
         borderWidth={obj.borderWidth ?? 2}
-        borderColor={(obj as any).borderColor || 'white'}
+        borderColor={(obj as any).borderColor || '#ffffff'}
         opacity={obj.opacity ?? 100}
         borderOpacity={obj.borderOpacity ?? 100}
         showThickness={true}
@@ -624,12 +624,12 @@ const PinnedTokenRenderer = memo(({
         content={token.content}
         rotation={0}
         borderWidth={token.borderWidth ?? 2}
-        borderColor={(token as any).borderColor || 'white'}
+        borderColor={(token as any).borderColor || '#ffffff'}
         opacity={token.opacity ?? 100}
         borderOpacity={(token as any).borderOpacity ?? 100}
         showThickness={true}
         tokenName={(token as any).showNameOnToken || (obj as any).showName ? obj.name : undefined}
-        fontColor={(token as any).fontColor || 'white'}
+        fontColor={(token as any).fontColor || '#ffffff'}
       />
 
       <TokenCountersDisplay

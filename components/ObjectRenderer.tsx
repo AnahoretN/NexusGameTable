@@ -308,12 +308,12 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
             content={token.content}
             rotation={0}
             borderWidth={token.borderWidth ?? 2}
-            borderColor={token.borderColor || 'white'}
+            borderColor={token.borderColor || '#ffffff'}
             opacity={token.opacity ?? 100}
             borderOpacity={token.borderOpacity ?? 100}
             showThickness={true}
             tokenName={showTokenName ? token.name : undefined}
-            fontColor={token.fontColor || 'white'}
+            fontColor={token.fontColor || '#ffffff'}
           />
 
           {/* Action buttons for tokens - positioned relative to token */}

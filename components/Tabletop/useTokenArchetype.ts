@@ -299,6 +299,47 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
     return () => window.removeEventListener('drop-cursor-slot-at-position', handleDropCursorSlotAtPosition);
   }, [state.objects, dispatch, p2v, scrollContainerRef, viewTransform, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource]);
 
+  // Handle add-character-token-to-cursor-slot events from CharacterPanel
+  // This adds a character token to cursor slot
+  useEffect(() => {
+    const handleAddCharacterTokenToSlot = (e: Event) => {
+      const customEvent = e as CustomEvent<{ token: Token }>;
+      const { token } = customEvent.detail;
+
+      if (!token) return;
+      if (cursorSlot.length >= 100) return;
+
+      // Add token to objects list (already done in CharacterPanel, but double-check)
+      if (!state.objects[token.id]) {
+        dispatch({ type: 'ADD_OBJECT', payload: token });
+      }
+
+      // Add to cursor slot
+      const tokenClone: Token = { ...token };
+      (tokenClone as any).cursorSlotIndex = cursorSlot.length;
+      (tokenClone as any).originalZIndex = token.zIndex ?? 0;
+      (tokenClone as any).source = 'character'; // Source: character panel
+
+      setCursorSlot(prev => [...prev, tokenClone]);
+      cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
+
+      // Set cursor position to center of screen if not set
+      if (!cursorPositionRef.current) {
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        const pos = { x: centerX, y: centerY };
+        setCursorPosition(pos);
+        cursorPositionRef.current = pos;
+      }
+
+      // Set source to 'shift' to behave like Ctrl+click (drop on click)
+      setCursorSlotSource('shift');
+    };
+
+    window.addEventListener('add-character-token-to-cursor-slot', handleAddCharacterTokenToSlot);
+    return () => window.removeEventListener('add-character-token-to-cursor-slot', handleAddCharacterTokenToSlot);
+  }, [cursorSlot.length, dispatch, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource, state.objects]);
+
   // Handle update-token-copy-from-archetype events from ObjectSettingsModal
   // This updates token copies when archetype settings change
   useEffect(() => {

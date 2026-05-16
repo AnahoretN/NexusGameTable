@@ -39,12 +39,12 @@ export const RemoteObjectsRenderer = memo<RemoteObjectsRendererProps>(({
         content={token.content}
         rotation={0}
         borderWidth={token.borderWidth ?? 2}
-        borderColor={(token as any).borderColor || 'white'}
+        borderColor={(token as any).borderColor || '#ffffff'}
         opacity={token.opacity ?? 100}
         borderOpacity={token.borderOpacity ?? 100}
         showThickness={true}
         tokenName={(token as any).showNameOnToken || (token as any).showName || ((token as any).archetypeId && (state.objects[(token as any).archetypeId] as any)?.showName) ? token.name : undefined}
-        fontColor={(token as any).fontColor || 'white'}
+        fontColor={(token as any).fontColor || '#ffffff'}
       />
     </div>
   );

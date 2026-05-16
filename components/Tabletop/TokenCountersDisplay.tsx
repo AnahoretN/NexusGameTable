@@ -1,10 +1,10 @@
 import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Plus, Minus } from 'lucide-react';
-import { TokenCounter, TokenCounterDisplay } from '../../types';
+import { TokenSlider, TokenSliderDisplay } from '../../types';
 
 interface TokenCountersDisplayProps {
-  counters: TokenCounter[];
-  counterDisplay: TokenCounterDisplay | undefined;
+  counters: TokenSlider[];
+  counterDisplay: TokenSliderDisplay | undefined;
   tokenWidth: number;  // Now in VU (virtual units)
   tokenHeight: number; // Now in VU (virtual units)
   pixelsPerVU: number;
@@ -35,7 +35,7 @@ export const TokenCountersDisplay = memo(({
     return null;
   }
 
-  const position = counterDisplay?.position || 'below';
+  const position = counterDisplay?.position || 'above';
   const [hoveredCounterId, setHoveredCounterId] = useState<string | null>(null);
   const [draggingCounterId, setDraggingCounterId] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,16 +55,16 @@ export const TokenCountersDisplay = memo(({
   // Helper to convert VU to pixels (token dimensions are in VU)
   const v2p = useCallback((vu: number) => vu * pixelsPerVU, [pixelsPerVU]);
 
-  // Handle counter value change (can be delta for buttons or absolute value for slider)
-  const handleCounterChange = useCallback((counter: TokenCounter, valueOrDelta: number) => {
+  // Handle slider value change (can be delta for buttons or absolute value for slider)
+  const handleSliderChange = useCallback((slider: TokenSlider, valueOrDelta: number) => {
     const clampedValue = Math.max(
-      counter.minValue ?? 0,
-      Math.min(counter.maxValue, valueOrDelta)
+      slider.minValue ?? 0,
+      Math.min(slider.maxValue, valueOrDelta)
     );
 
     // Update the counter value
     const updatedCounters = counters.map(c =>
-      c.id === counter.id ? { ...c, value: clampedValue } : c
+      c.id === slider.id ? { ...c, value: clampedValue } : c
     );
 
     dispatch({
@@ -77,21 +77,21 @@ export const TokenCountersDisplay = memo(({
   }, [counters, tokenId, dispatch]);
 
   // Start continuous change on button hold
-  const startContinuousChange = useCallback((counter: TokenCounter, delta: number) => {
-    let currentValue = counter.value;
+  const startContinuousChange = useCallback((slider: TokenSlider, delta: number) => {
+    let currentValue = slider.value;
 
     // Apply first change immediately
     currentValue += delta;
-    handleCounterChange(counter, currentValue);
+    handleSliderChange(slider, currentValue);
 
     // Then apply changes every 250ms
     intervalRef.current = setInterval(() => {
       currentValue += delta;
-      // Use the original counter reference but with updated value
-      const updatedCounter = { ...counter, value: currentValue };
-      handleCounterChange(updatedCounter, currentValue);
+      // Use the original slider reference but with updated value
+      const updatedSlider = { ...slider, value: currentValue };
+      handleSliderChange(updatedSlider, currentValue);
     }, 250);
-  }, [handleCounterChange]);
+  }, [handleSliderChange]);
 
   // Stop continuous change
   const stopContinuousChange = useCallback(() => {
@@ -343,15 +343,15 @@ export const TokenCountersDisplay = memo(({
   }, [isVerticalPosition, basePixelsPerVU]);
 
   // Get bar fill style
-  const getBarFillStyle = useCallback((counter: TokenCounter): React.CSSProperties => {
-    const percentage = Math.max(0, Math.min(100, (counter.value / counter.maxValue) * 100));
+  const getBarFillStyle = useCallback((slider: TokenSlider): React.CSSProperties => {
+    const percentage = Math.max(0, Math.min(100, (slider.value / slider.maxValue) * 100));
 
     if (isVerticalPosition) {
       // Vertical bar - fill from bottom
       return {
         width: '100%',
         height: `${percentage}%`,
-        backgroundColor: counter.color || '#ef4444',
+        backgroundColor: slider.color || '#ef4444',
         borderRadius: '3px',
         position: 'absolute' as const,
         bottom: '0',
@@ -363,7 +363,7 @@ export const TokenCountersDisplay = memo(({
       return {
         width: `${percentage}%`,
         height: '100%',
-        backgroundColor: counter.color || '#ef4444',
+        backgroundColor: slider.color || '#ef4444',
         borderRadius: '3px',
         transition: 'width 0.3s ease',
       };
@@ -385,9 +385,9 @@ export const TokenCountersDisplay = memo(({
   }, [draggingCounterId]);
 
   // Button handlers
-  const handleButtonMouseDown = useCallback((e: React.MouseEvent<HTMLButtonElement>, counter: TokenCounter, delta: number) => {
+  const handleButtonMouseDown = useCallback((e: React.MouseEvent<HTMLButtonElement>, slider: TokenSlider, delta: number) => {
     e.stopPropagation();
-    startContinuousChange(counter, delta);
+    startContinuousChange(slider, delta);
   }, [startContinuousChange]);
 
   const handleButtonMouseUp = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
@@ -413,16 +413,16 @@ export const TokenCountersDisplay = memo(({
   }, []);
 
   // Vertical drag handler
-  const handleVerticalDragStart = useCallback((e: React.MouseEvent<HTMLDivElement>, counter: TokenCounter) => {
+  const handleVerticalDragStart = useCallback((e: React.MouseEvent<HTMLDivElement>, slider: TokenSlider) => {
     e.stopPropagation();
-    setDraggingCounterId(counter.id);
+    setDraggingCounterId(slider.id);
     const bar = e.currentTarget;
     const rect = bar.getBoundingClientRect();
     const updateFromMouse = (mouseEvent: MouseEvent) => {
       const relativeY = rect.bottom - mouseEvent.clientY;
       const percentage = Math.max(0, Math.min(1, relativeY / rect.height));
-      const newValue = Math.round((counter.minValue ?? 0) + percentage * (counter.maxValue - (counter.minValue ?? 0)));
-      handleCounterChange(counter, newValue);
+      const newValue = Math.round((slider.minValue ?? 0) + percentage * (slider.maxValue - (slider.minValue ?? 0)));
+      handleSliderChange(slider, newValue);
     };
     updateFromMouse(e.nativeEvent);
     const onMove = (moveEvent: MouseEvent) => updateFromMouse(moveEvent);
@@ -434,12 +434,12 @@ export const TokenCountersDisplay = memo(({
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [handleCounterChange]);
+  }, [handleSliderChange]);
 
   // Range change handler
-  const handleRangeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>, counter: TokenCounter) => {
-    handleCounterChange(counter, parseInt(e.target.value));
-  }, [handleCounterChange]);
+  const handleRangeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>, slider: TokenSlider) => {
+    handleSliderChange(slider, parseInt(e.target.value));
+  }, [handleSliderChange]);
 
   const handleRangeMouseDown = useCallback((e: React.MouseEvent<HTMLInputElement>) => {
     e.stopPropagation();
@@ -447,33 +447,33 @@ export const TokenCountersDisplay = memo(({
 
   return (
     <div style={containerStyle}>
-      {counters.map((counter, index) => {
-        const isHovered = hoveredCounterId === counter.id || draggingCounterId === counter.id;
+      {counters.map((slider, index) => {
+        const isHovered = hoveredCounterId === slider.id || draggingCounterId === slider.id;
         return (
           <div
-            key={counter.id}
+            key={slider.id}
             style={getCounterStyle(index, isHovered)}
-            onMouseEnter={() => handleMouseEnter(counter.id)}
-            onMouseLeave={() => handleMouseLeave(counter.id)}
+            onMouseEnter={() => handleMouseEnter(slider.id)}
+            onMouseLeave={() => handleMouseLeave(slider.id)}
           >
             {isHovered && (
               <span style={labelStyle}>
-                {counter.icon && <span style={{ marginRight: '2px' }}>{counter.icon}</span>}
-                {counter.name}
+                {slider.icon && <span style={{ marginRight: '2px' }}>{slider.icon}</span>}
+                {slider.name}
               </span>
             )}
             <div
               style={getBarStyle(isHovered)}
-              title={`${counter.name}: ${counter.value}/${counter.maxValue}`}
+              title={`${slider.name}: ${slider.value}/${slider.maxValue}`}
             >
-              <div style={getBarFillStyle(counter)} />
+              <div style={getBarFillStyle(slider)} />
               {isHovered && !isVerticalPosition && (
                 <input
                   type="range"
-                  min={counter.minValue ?? 0}
-                  max={counter.maxValue}
-                  value={counter.value}
-                  onChange={(e) => handleRangeChange(e, counter)}
+                  min={slider.minValue ?? 0}
+                  max={slider.maxValue}
+                  value={slider.value}
+                  onChange={(e) => handleRangeChange(e, slider)}
                   onMouseDown={handleRangeMouseDown}
                   style={{
                     position: 'absolute',
@@ -489,7 +489,7 @@ export const TokenCountersDisplay = memo(({
               )}
               {isHovered && isVerticalPosition && (
                 <div
-                  onMouseDown={(e) => handleVerticalDragStart(e, counter)}
+                  onMouseDown={(e) => handleVerticalDragStart(e, slider)}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -503,13 +503,13 @@ export const TokenCountersDisplay = memo(({
               )}
               {isHovered && (
                 <span style={{...valueStyle, animation: 'fadeInCenter 0.2s ease forwards'}}>
-                  {counter.value}/{counter.maxValue}
+                  {slider.value}/{slider.maxValue}
                 </span>
               )}
               {isHovered && (
                 <button
                   style={getButtonStyle(true)}
-                  onMouseDown={(e) => handleButtonMouseDown(e, counter, isVerticalPosition ? 1 : -1)}
+                  onMouseDown={(e) => handleButtonMouseDown(e, slider, isVerticalPosition ? 1 : -1)}
                   onMouseUp={handleButtonMouseUp}
                   onMouseLeave={(e) => handleButtonMouseLeave(e, isVerticalPosition)}
                   onMouseEnter={handleButtonMouseEnter}
@@ -520,7 +520,7 @@ export const TokenCountersDisplay = memo(({
               {isHovered && (
                 <button
                   style={getButtonStyle(false)}
-                  onMouseDown={(e) => handleButtonMouseDown(e, counter, isVerticalPosition ? -1 : 1)}
+                  onMouseDown={(e) => handleButtonMouseDown(e, slider, isVerticalPosition ? -1 : 1)}
                   onMouseUp={handleButtonMouseUp}
                   onMouseLeave={(e) => handleButtonMouseLeave(e, isVerticalPosition)}
                   onMouseEnter={handleButtonMouseEnter}

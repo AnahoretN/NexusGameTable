@@ -139,12 +139,12 @@ const CursorSlotToken: React.FC<CursorSlotItemProps & { item: TokenType }> = ({ 
         content={tokenWithState.content}
         rotation={0}
         borderWidth={tokenWithState.borderWidth ?? 3}
-        borderColor={(tokenWithState as any).borderColor || 'white'}
+        borderColor={(tokenWithState as any).borderColor || '#ffffff'}
         opacity={tokenWithState.opacity ?? 100}
         borderOpacity={(tokenWithState as any).borderOpacity ?? 100}
         showThickness={true}
-        tokenName={(tokenWithState as any).showName || ((tokenWithState as any).archetypeId && (state.objects[(tokenWithState as any).archetypeId] as any)?.showName) ? item.name : undefined}
-        fontColor={(tokenWithState as any).fontColor || 'white'}
+        tokenName={(tokenWithState as any).showNameOnToken || ((tokenWithState as any).archetypeId && (state.objects[(tokenWithState as any).archetypeId] as any)?.showName) ? item.name : undefined}
+        fontColor={(tokenWithState as any).fontColor || '#ffffff'}
       />
     </div>
   );
@@ -376,11 +376,11 @@ const CursorSlotDice: React.FC<CursorSlotItemProps & { item: DiceObject }> = ({ 
         content={String(item.currentValue || 1)}
         rotation={0}
         borderWidth={item.borderWidth ?? 2}
-        borderColor={item.borderColor || 'white'}
+        borderColor={item.borderColor || '#ffffff'}
         opacity={item.opacity ?? 100}
         borderOpacity={item.borderOpacity ?? 100}
         showThickness={true}
-        fontColor={item.fontColor || 'white'}
+        fontColor={item.fontColor || '#ffffff'}
       />
     </div>
   );

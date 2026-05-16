@@ -36,6 +36,15 @@ import { logger } from '../utils/logger';
 import { clearCardDimensionsCache } from '../utils/cardUtils';
 import { findAvailableTerritory } from '../utils/territoryManager';
 import { runPoolMigrationIfNeeded } from '../utils/poolMigration';
+import {
+  syncSlidersToTokens,
+  syncCountersToCharacter,
+  syncCharacterNameToTokens,
+  syncTokenNameToCharacter,
+  syncCharacterAvatarToTokens,
+  syncTokenImageToCharacter
+} from '../utils/characterTokenSync';
+import { allocateZIndexInHyperslice, defragmentHyperslice } from '../utils/zIndexAllocator';
 
 const GameContext = createContext<{
   state: GameState;
@@ -1022,6 +1031,95 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           localSettings.mainMenuSize = { width: savedWidth, height: savedHeight };
           localSettings.isPositionSet = true;
           saveLocalSettings(localSettings);
+        }
+      }
+
+      // Character-Token Synchronization
+      console.log('[SYNC] UPDATE_OBJECT', { id: action.payload.id, objType: updatedObj.type, payload: action.payload });
+
+      // Sync FROM panel TO token when panel data changes
+      if (updatedObj.type === ItemType.PANEL && mergedUpdates.characterData) {
+        console.log('[SYNC] Panel characterData changed');
+        const panel = updatedObj as PanelObject;
+        const oldCharacterData = obj.characterData;
+        const newCharacterData = panel.characterData;
+
+        if (oldCharacterData && newCharacterData) {
+          // Import sync functions
+          // Check each character for changes
+          for (const newChar of newCharacterData.characters) {
+            const oldChar = oldCharacterData.characters.find((c: any) => c.id === newChar.id);
+            if (!oldChar) continue;
+
+            // Check for name change
+            if (oldChar.characterName !== newChar.characterName) {
+              console.log('[SYNC] Character name changed', { characterId: newChar.id, oldName: oldChar.characterName, newName: newChar.characterName });
+              syncCharacterNameToTokens({ ...state, objects: newObjects }, panel, newChar, newObjects);
+            }
+
+            // Check for avatar change
+            if (oldChar.avatarUrl !== newChar.avatarUrl) {
+              console.log('[SYNC] Character avatar changed');
+              syncCharacterAvatarToTokens({ ...state, objects: newObjects }, panel, newChar, newObjects);
+            }
+
+            // Check for slider changes
+            if (oldChar.subTabs && newChar.subTabs) {
+              let sliderSynced = false;
+              for (let i = 0; i < newChar.subTabs.length && !sliderSynced; i++) {
+                const oldSubTab = oldChar.subTabs[i];
+                const newSubTab = newChar.subTabs[i];
+                if (!oldSubTab || !newSubTab) continue;
+
+                for (const newBlock of newSubTab.blocks || []) {
+                  if (newBlock.type === 'SLIDER' && newBlock.data?.sliders) {
+                    const oldBlock = oldSubTab.blocks?.find((b: any) => b.id === newBlock.id);
+                    if (!oldBlock || !oldBlock.data?.sliders) continue;
+
+                    const slidersChanged = JSON.stringify(oldBlock.data.sliders) !== JSON.stringify(newBlock.data.sliders);
+                    if (slidersChanged) {
+                      console.log('[SYNC] Sliders changed', { oldSliders: oldBlock.data.sliders, newSliders: newBlock.data.sliders });
+                      syncSlidersToTokens({ ...state, objects: newObjects }, panel, newChar, newObjects);
+                      sliderSynced = true;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Sync FROM token TO panel when token counters change
+      if (updatedObj.type === ItemType.TOKEN && mergedUpdates.counters) {
+        console.log('[SYNC] Token counters changed', { tokenId: action.payload.id, characterId: (updatedObj as any).characterId, panelId: (updatedObj as any).panelId });
+        const token = updatedObj as any;
+        const oldCounters = obj.counters || [];
+        const newCounters = token.counters || [];
+
+        const countersChanged = JSON.stringify(oldCounters) !== JSON.stringify(newCounters);
+        if (countersChanged && token.characterId && token.panelId) {
+          console.log('[SYNC] Syncing counters to panel');
+          syncCountersToCharacter({ ...state, objects: newObjects }, token, newObjects);
+        }
+      }
+
+      // Sync FROM token TO panel when token name changes
+      if (updatedObj.type === ItemType.TOKEN && mergedUpdates.name !== undefined && obj.name !== updatedObj.name) {
+        console.log('[SYNC] Token name changed', { oldName: obj.name, newName: updatedObj.name });
+        const token = updatedObj as any;
+        if (token.characterId && token.panelId) {
+          syncTokenNameToCharacter({ ...state, objects: newObjects }, token, newObjects);
+        }
+      }
+
+      // Sync FROM token TO panel when token content changes
+      if (updatedObj.type === ItemType.TOKEN && mergedUpdates.content !== undefined && obj.content !== updatedObj.content) {
+        console.log('[SYNC] Token content changed');
+        const token = updatedObj as any;
+        if (token.characterId && token.panelId) {
+          syncTokenImageToCharacter({ ...state, objects: newObjects }, token, newObjects);
         }
       }
 

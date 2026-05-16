@@ -1,7 +1,7 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate, TokenState, TokenCounter, TokenCounterPosition } from '../types';
+import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate, TokenState, TokenSlider, TokenSliderPosition } from '../types';
 
 import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, RotateCcw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize, Upload, Loader2, Sparkles, Hash } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
@@ -353,18 +353,18 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
       : []
   );
 
-  // Initialize counters for tokens and token types
-  const [counters, setCounters] = useState<TokenCounter[]>(
+  // Initialize sliders for tokens and token types
+  const [sliders, setSliders] = useState<TokenSlider[]>(
     (tokenArchetype.type === ItemType.TOKEN_TYPE || tokenArchetype.type === ItemType.TOKEN)
       ? (tokenArchetype.counters ? tokenArchetype.counters.map(c => ({ ...c })) : [])
       : []
   );
 
-  // Counter display settings
-  const [counterPosition, setCounterPosition] = useState<TokenCounterPosition>(
+  // Slider display settings
+  const [sliderPosition, setSliderPosition] = useState<TokenSliderPosition>(
     tokenArchetype.counterDisplay?.position || 'below'
   );
-  const [counterShowForPlayers, setCounterShowForPlayers] = useState<boolean>(
+  const [sliderShowForPlayers, setSliderShowForPlayers] = useState<boolean>(
     tokenArchetype.counterDisplay?.showForPlayers !== undefined
       ? tokenArchetype.counterDisplay.showForPlayers
       : true
@@ -1310,11 +1310,11 @@ setGridDebugInfo(null);
     setData(prev => ({ ...prev, states: updated } as TableObject));
   };
 
-  // Counter management functions for tokens and token types
-  const addCounter = () => {
-    const newCounter: TokenCounter = {
-      id: `counter-${Date.now()}`,
-      name: `Counter ${counters.length + 1}`,
+  // Slider management functions for tokens and token types
+  const addSlider = () => {
+    const newSlider: TokenSlider = {
+      id: `slider-${Date.now()}`,
+      name: `Slider ${sliders.length + 1}`,
       value: 10,
       maxValue: 10,
       minValue: 0,
@@ -1324,38 +1324,38 @@ setGridDebugInfo(null);
       showBar: true
     };
 
-    const updatedCounters = [...counters, newCounter];
-    setCounters(updatedCounters);
+    const updatedSliders = [...sliders, newSlider];
+    setSliders(updatedSliders);
     // Also update data to keep in sync
-    setData(prev => ({ ...prev, counters: updatedCounters } as TableObject));
+    setData(prev => ({ ...prev, counters: updatedSliders } as TableObject));
   };
 
-  const updateCounter = (index: number, field: keyof TokenCounter, value: any) => {
-    const updated = [...counters];
+  const updateSlider = (index: number, field: keyof TokenSlider, value: any) => {
+    const updated = [...sliders];
     updated[index] = { ...updated[index], [field]: value };
-    setCounters(updated);
+    setSliders(updated);
     // Also update data to keep in sync
     setData(prev => ({ ...prev, counters: updated } as TableObject));
   };
 
-  const removeCounter = (index: number) => {
-    const updated = counters.filter((_, i) => i !== index);
-    setCounters(updated);
+  const removeSlider = (index: number) => {
+    const updated = sliders.filter((_, i) => i !== index);
+    setSliders(updated);
     // Also update data to keep in sync
     setData(prev => ({ ...prev, counters: updated } as TableObject));
   };
 
-  // Update counter display settings
-  const updateCounterDisplay = (field: 'position' | 'showForPlayers', value: any) => {
+  // Update slider display settings
+  const updateSliderDisplay = (field: 'position' | 'showForPlayers', value: any) => {
     if (field === 'position') {
-      setCounterPosition(value as TokenCounterPosition);
+      setSliderPosition(value as TokenSliderPosition);
     } else if (field === 'showForPlayers') {
-      setCounterShowForPlayers(value as boolean);
+      setSliderShowForPlayers(value as boolean);
     }
     // Update data
     const counterDisplay = {
-      position: field === 'position' ? value : counterPosition,
-      showForPlayers: field === 'showForPlayers' ? value : counterShowForPlayers
+      position: field === 'position' ? value : sliderPosition,
+      showForPlayers: field === 'showForPlayers' ? value : sliderShowForPlayers
     };
     setData(prev => ({ ...prev, counterDisplay } as TableObject));
   };
@@ -1413,7 +1413,7 @@ setGridDebugInfo(null);
                   : 'text-gray-400 hover:text-white hover:bg-slate-700/50'
               }`}
             >
-              <Hash size={16} /> {translate('Counters', language as Locale)}
+              <Hash size={16} /> {translate('Sliders', language as Locale)}
             </button>
           )}
           {isDeck && (
@@ -1526,12 +1526,16 @@ setGridDebugInfo(null);
                             update(targetProp, !(data as any)[targetProp]);
                           }}
                           className={`w-9 h-5 rounded-full transition-colors ${
-                            (data as any).showNameOnToken || (data as any).showName ? 'bg-green-600' : 'bg-slate-700'
+                            isArchetype
+                              ? ((data as any).showName ? 'bg-green-600' : 'bg-slate-700')
+                              : ((data as any).showNameOnToken ? 'bg-green-600' : 'bg-slate-700')
                           }`}
                           title={translate('Show name on token', language as Locale)}
                         >
                           <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                            (data as any).showNameOnToken || (data as any).showName ? 'translate-x-5' : 'translate-x-0.5'
+                            isArchetype
+                              ? ((data as any).showName ? 'translate-x-5' : 'translate-x-0.5')
+                              : ((data as any).showNameOnToken ? 'translate-x-5' : 'translate-x-0.5')
                           }`} />
                         </button>
                       )}
@@ -3705,16 +3709,16 @@ setGridDebugInfo(null);
 
           {activeTab === 'counters' && (
             <div className="space-y-4">
-              {/* Counter Display Settings */}
+              {/* Slider Display Settings */}
               <div className="border border-slate-600 rounded-lg p-3 bg-slate-800/50">
-                <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Counter Display', language as Locale)}</h4>
+                <h4 className="text-sm font-bold text-gray-300 mb-3">{translate('Slider Display', language as Locale)}</h4>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Position */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Position', language as Locale)}</label>
                     <select
-                      value={counterPosition}
-                      onChange={(e) => updateCounterDisplay('position', e.target.value as TokenCounterPosition)}
+                      value={sliderPosition}
+                      onChange={(e) => updateSliderDisplay('position', e.target.value as TokenSliderPosition)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     >
                       <option value="above">{translate('Above Token', language as Locale)}</option>
@@ -3728,84 +3732,84 @@ setGridDebugInfo(null);
                   <div className="flex items-center gap-2 pt-5">
                     <input
                       type="checkbox"
-                      id="counterShowForPlayers"
-                      checked={counterShowForPlayers}
-                      onChange={(e) => updateCounterDisplay('showForPlayers', e.target.checked)}
+                      id="sliderShowForPlayers"
+                      checked={sliderShowForPlayers}
+                      onChange={(e) => updateSliderDisplay('showForPlayers', e.target.checked)}
                       className="accent-purple-500"
                     />
-                    <label htmlFor="counterShowForPlayers" className="text-sm text-gray-300">
+                    <label htmlFor="sliderShowForPlayers" className="text-sm text-gray-300">
                       {translate('Show for Players', language as Locale)}
                     </label>
                   </div>
                 </div>
               </div>
 
-              {/* Counters List */}
+              {/* Sliders List */}
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold text-gray-300">{translate('Counters', language as Locale)}</h4>
+                <h4 className="text-sm font-bold text-gray-300">{translate('Sliders', language as Locale)}</h4>
                 <button
-                  onClick={addCounter}
+                  onClick={addSlider}
                   className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-medium rounded transition-colors"
                 >
-                  <Plus size={14} /> {translate('Add Counter', language as Locale)}
+                  <Plus size={14} /> {translate('Add Slider', language as Locale)}
                 </button>
               </div>
 
-              {counters.length === 0 ? (
+              {sliders.length === 0 ? (
                 <div className="text-center py-8 text-gray-500 text-sm">
-                  {translate('No counters configured. Click "Add Counter" to create one.', language as Locale)}
+                  {translate('No sliders configured. Click "Add Slider" to create one.', language as Locale)}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {counters.map((counter, index) => (
-                    <div key={counter.id} className="border border-slate-600 rounded-lg p-3 bg-slate-800/50">
-                      {/* Counter header with name, color, and delete button */}
+                  {sliders.map((slider, index) => (
+                    <div key={slider.id} className="border border-slate-600 rounded-lg p-3 bg-slate-800/50">
+                      {/* Slider header with name, color, and delete button */}
                       <div className="flex items-center gap-2 mb-3">
                         <input
                           type="text"
-                          value={counter.name}
-                          onChange={(e) => updateCounter(index, 'name', e.target.value)}
+                          value={slider.name}
+                          onChange={(e) => updateSlider(index, 'name', e.target.value)}
                           className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm font-medium"
-                          placeholder={translate('Counter name', language as Locale)}
+                          placeholder={translate('Slider name', language as Locale)}
                         />
                         {/* Color Picker */}
                         <div className="flex items-center gap-1">
                           <input
                             type="color"
-                            value={counter.color || '#ef4444'}
-                            onChange={(e) => updateCounter(index, 'color', e.target.value)}
+                            value={slider.color || '#ef4444'}
+                            onChange={(e) => updateSlider(index, 'color', e.target.value)}
                             className="w-8 h-8 rounded cursor-pointer border-0"
-                            title={translate('Counter Color', language as Locale)}
+                            title={translate('Slider Color', language as Locale)}
                           />
                         </div>
                         {/* Icon Input */}
                         <input
                           type="text"
-                          value={counter.icon || ''}
-                          onChange={(e) => updateCounter(index, 'icon', e.target.value)}
+                          value={slider.icon || ''}
+                          onChange={(e) => updateSlider(index, 'icon', e.target.value)}
                           className="w-12 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm text-center"
                           placeholder={translate('Icon', language as Locale)}
                           title={translate('Emoji icon (optional)', language as Locale)}
                         />
                         {/* Delete Button */}
                         <button
-                          onClick={() => removeCounter(index)}
+                          onClick={() => removeSlider(index)}
                           className="w-8 h-8 rounded bg-red-600 hover:bg-red-500 text-white flex items-center justify-center transition-colors"
-                          title={translate('Delete Counter', language as Locale)}
+                          title={translate('Delete Slider', language as Locale)}
                         >
                           <Trash2 size={14} />
                         </button>
                       </div>
 
-                      {/* Counter Values */}
+                      {/* Slider Values */}
                       <div className="grid grid-cols-3 gap-2 mb-3">
                         {/* Current Value */}
                         <div>
                           <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Value', language as Locale)}</label>
                           <input
                             type="number"
-                            value={counter.value}
-                            onChange={(e) => updateCounter(index, 'value', parseInt(e.target.value) || 0)}
+                            value={slider.value}
+                            onChange={(e) => updateSlider(index, 'value', parseInt(e.target.value) || 0)}
                             className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
                           />
                         </div>
@@ -3814,8 +3818,8 @@ setGridDebugInfo(null);
                           <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Max', language as Locale)}</label>
                           <input
                             type="number"
-                            value={counter.maxValue}
-                            onChange={(e) => updateCounter(index, 'maxValue', parseInt(e.target.value) || 10)}
+                            value={slider.maxValue}
+                            onChange={(e) => updateSlider(index, 'maxValue', parseInt(e.target.value) || 10)}
                             className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
                           />
                         </div>
@@ -3824,8 +3828,8 @@ setGridDebugInfo(null);
                           <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Min', language as Locale)}</label>
                           <input
                             type="number"
-                            value={counter.minValue ?? 0}
-                            onChange={(e) => updateCounter(index, 'minValue', parseInt(e.target.value) || 0)}
+                            value={slider.minValue ?? 0}
+                            onChange={(e) => updateSlider(index, 'minValue', parseInt(e.target.value) || 0)}
                             className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-sm"
                           />
                         </div>
@@ -3837,8 +3841,8 @@ setGridDebugInfo(null);
                         <label className="flex items-center gap-2 text-sm text-gray-300">
                           <input
                             type="checkbox"
-                            checked={counter.showValue !== false}
-                            onChange={(e) => updateCounter(index, 'showValue', e.target.checked)}
+                            checked={slider.showValue !== false}
+                            onChange={(e) => updateSlider(index, 'showValue', e.target.checked)}
                             className="accent-purple-500"
                           />
                           {translate('Show Value', language as Locale)}
@@ -3847,8 +3851,8 @@ setGridDebugInfo(null);
                         <label className="flex items-center gap-2 text-sm text-gray-300">
                           <input
                             type="checkbox"
-                            checked={counter.showBar !== false}
-                            onChange={(e) => updateCounter(index, 'showBar', e.target.checked)}
+                            checked={slider.showBar !== false}
+                            onChange={(e) => updateSlider(index, 'showBar', e.target.checked)}
                             className="accent-purple-500"
                           />
                           {translate('Show Bar', language as Locale)}
@@ -3858,18 +3862,18 @@ setGridDebugInfo(null);
                       {/* Preview */}
                       <div className="mt-3 pt-3 border-t border-slate-600">
                         <div className="flex items-center gap-2">
-                          {counter.icon && <span className="text-lg">{counter.icon}</span>}
-                          <span className="text-sm font-medium" style={{ color: counter.color || '#ef4444' }}>{counter.name}</span>
-                          {counter.showValue !== false && (
-                            <span className="text-sm text-gray-300">: {counter.value}/{counter.maxValue}</span>
+                          {slider.icon && <span className="text-lg">{slider.icon}</span>}
+                          <span className="text-sm font-medium" style={{ color: slider.color || '#ef4444' }}>{slider.name}</span>
+                          {slider.showValue !== false && (
+                            <span className="text-sm text-gray-300">: {slider.value}/{slider.maxValue}</span>
                           )}
-                          {counter.showBar !== false && (
+                          {slider.showBar !== false && (
                             <div className="flex-1 h-3 bg-slate-700 rounded-full overflow-hidden">
                               <div
                                 className="h-full transition-all"
                                 style={{
-                                  width: `${Math.max(0, Math.min(100, (counter.value / counter.maxValue) * 100))}%`,
-                                  backgroundColor: counter.color || '#ef4444'
+                                  width: `${Math.max(0, Math.min(100, (slider.value / slider.maxValue) * 100))}%`,
+                                  backgroundColor: slider.color || '#ef4444'
                                 }}
                               />
                             </div>

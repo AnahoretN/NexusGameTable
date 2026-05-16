@@ -7,6 +7,7 @@ export interface UseInlineEditOptions<T> {
   debounceMs?: number;
   onEnterSave?: boolean;
   onEscapeCancel?: boolean;
+  isNumberColumn?: boolean;
 }
 
 export function useInlineEdit<T extends string | number>({
@@ -15,10 +16,12 @@ export function useInlineEdit<T extends string | number>({
   editable = true,
   debounceMs = 0,
   onEnterSave = true,
-  onEscapeCancel = true
+  onEscapeCancel = true,
+  isNumberColumn = false
 }: UseInlineEditOptions<T>) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState<T>(value);
+  const [userInteracted, setUserInteracted] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Update edit value when external value changes (not during editing)
@@ -34,11 +37,31 @@ export function useInlineEdit<T extends string | number>({
       saveTimeoutRef.current = null;
     }
 
-    if (editValue !== value) {
-      onSave(editValue);
+    // For number columns, convert string to number before saving
+    let valueToSave = editValue;
+    if (isNumberColumn && typeof editValue === 'string') {
+      if (editValue === '' || editValue === '-') {
+        // Empty field means keep original value (don't save)
+        setIsEditing(false);
+        setUserInteracted(false);
+        return;
+      }
+      const parsed = parseFloat(editValue);
+      valueToSave = (Number.isNaN(parsed) ? 0 : parsed) as T;
+    }
+
+    // For number columns, always convert undefined/empty to 0 for comparison
+    const originalValue = (isNumberColumn && (value === '' || value === undefined)) ? 0 as T : value;
+
+    if (valueToSave !== originalValue) {
+      onSave(valueToSave);
+    } else if (userInteracted && isNumberColumn && (value === '' || value === undefined) && valueToSave === 0) {
+      // Special case: convert undefined/empty to 0 when user interacted
+      onSave(0 as T);
     }
     setIsEditing(false);
-  }, [editValue, value, onSave]);
+    setUserInteracted(false);
+  }, [editValue, value, onSave, isNumberColumn, userInteracted]);
 
   const cancelEdit = useCallback(() => {
     if (saveTimeoutRef.current) {
@@ -47,28 +70,39 @@ export function useInlineEdit<T extends string | number>({
     }
     setIsEditing(false);
     setEditValue(value);
+    setUserInteracted(false);
   }, [value]);
 
   const startEdit = useCallback(() => {
     if (!editable) return;
     setIsEditing(true);
     setEditValue(value);
+    setUserInteracted(false);
   }, [editable, value]);
 
-  const handleChange = useCallback((newValue: T) => {
-    setEditValue(newValue);
+  const handleChange = useCallback((newValue: T | string) => {
+    setEditValue(newValue as T);
+    // Mark that user has interacted with the input
+    setUserInteracted(true);
 
     if (debounceMs > 0) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
       saveTimeoutRef.current = setTimeout(() => {
-        if (newValue !== value) {
-          onSave(newValue);
+        if (isNumberColumn && typeof newValue === 'string') {
+          // Convert string to number for debounced save
+          const parsed = parseFloat(newValue);
+          const numValue = (Number.isNaN(parsed) ? 0 : parsed) as T;
+          if (numValue !== value) {
+            onSave(numValue);
+          }
+        } else if (newValue !== value) {
+          onSave(newValue as T);
         }
       }, debounceMs);
     }
-  }, [debounceMs, value, onSave]);
+  }, [debounceMs, value, onSave, isNumberColumn]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (onEnterSave && e.key === 'Enter') {
@@ -100,7 +134,11 @@ export function useInlineEdit<T extends string | number>({
   return {
     isEditing,
     editValue: String(editValue),
-    setEditValue: (val: string) => handleChange(typeof value === 'number' ? (parseFloat(val) || 0) as T : val as T),
+    setEditValue: (val: string) => {
+      // For number columns, keep as string during editing (will convert on save)
+      // For text columns, use as-is
+      handleChange(val as T);
+    },
     startEdit,
     saveEdit,
     cancelEdit,

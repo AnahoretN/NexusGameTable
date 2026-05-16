@@ -493,7 +493,7 @@ const TokenStackItem = memo(({
             >
               <ObjectRenderer
                 obj={stack.representativeToken}
-                pixelsPerVU={1}
+                pixelsPerVU={0.98}
                 isGM={isGM}
                 activePlayerId={activePlayerId}
                 onMouseDown={() => {}}
@@ -940,7 +940,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // Compute card dimensions
   const computeCardDimensions = useCallback((card: Card) => {
     const deck = card.deckId ? (objects[card.deckId] as DeckType | undefined) : undefined;
-    return getCardDimensions(card, deck, cardScale, 1);
+    return getCardDimensions(card, deck, cardScale, 0.98);
   }, [objects, cardScale]);
 
   // Compute card settings
@@ -1845,7 +1845,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                     {shouldVirtualize ? (
                       <VirtualizedHandList
                         cards={groupCards}
-                        pixelsPerVU={cardScale}
+                        pixelsPerVU={1}
                         className="px-1"
                         cardWidth={100}
                         cardHeight={140}

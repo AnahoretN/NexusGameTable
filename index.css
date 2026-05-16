@@ -91,7 +91,6 @@ input[type="range"].slider-input,
 input[type="range"] {
   -webkit-appearance: none !important;
   appearance: none !important;
-  background: linear-gradient(to right, #a78bfa 50%, #4a5568 50%);
   cursor: pointer;
   border-radius: 4px;
   /* Firefox: constrain width properly */
@@ -177,6 +176,11 @@ input[type="range"].slider-input:focus::-moz-range-thumb {
 /* Firefox: remove default border and padding */
 input[type="range"]::-moz-focus-outer {
   border: 0;
+}
+
+/* Character panel slider - uses inline styles for dynamic colors */
+input[type="range"].character-slider {
+  background: linear-gradient(to right, var(--slider-track-fill, #a78bfa) var(--slider-fill-percent, 50%), #4a5568 var(--slider-fill-percent, 50%)) !important;
 }
 
 /* Edge slider track */

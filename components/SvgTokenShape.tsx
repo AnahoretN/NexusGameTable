@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { TokenShape } from '../types';
 import { getTokenShapePath, generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
+import { isImageRef, getImageIdFromRef } from '../utils/imageCache';
 
 // Default border radius in viewBox units (scales with the SVG)
 const BORDER_RADIUS = 3;
@@ -63,7 +64,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   color,
   content,
   borderWidth = 2,
-  borderColor = 'white',
+  borderColor = '#ffffff',
   opacity = 100,
   borderOpacity = 100,
   rotation = 0,
@@ -72,9 +73,53 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   style = {},
   children,
   tokenName,
-  fontColor = 'white',
+  fontColor = '#ffffff',
   preserveAspectRatio = "none",
 }) => {
+  // Resolve img_ref:// to data URL from IndexedDB
+  const [resolvedContent, setResolvedContent] = useState<string | undefined>(content);
+
+  useEffect(() => {
+    if (!content) {
+      setResolvedContent(undefined);
+      return;
+    }
+
+    // If it's not an image reference, use as-is
+    if (!isImageRef(content)) {
+      setResolvedContent(content);
+      return;
+    }
+
+    // Resolve image reference from IndexedDB
+    const imageId = getImageIdFromRef(content);
+    const loadFromIDB = async () => {
+      try {
+        const dataUrl = await new Promise<string | null>((resolve) => {
+          const request = indexedDB.open('NexusGameTable_Images', 1);
+          request.onerror = () => resolve(null);
+          request.onsuccess = () => {
+            const db = request.result;
+            const transaction = db.transaction(['cachedImages'], 'readonly');
+            const store = transaction.objectStore('cachedImages');
+            const getReq = store.get(imageId);
+            getReq.onerror = () => resolve(null);
+            getReq.onsuccess = () => {
+              const entry = getReq.result;
+              resolve(entry ? entry.data : null);
+            };
+          };
+        });
+
+        setResolvedContent(dataUrl || undefined);
+      } catch (error) {
+        console.error('[SvgTokenShape] Failed to load image from IDB:', error);
+        setResolvedContent(undefined);
+      }
+    };
+
+    loadFromIDB();
+  }, [content]);
   // All tokens use the same border radius
   const borderRadius = BORDER_RADIUS;
   // For HEX and HEX_HORIZONTAL, generate dynamic path based on actual pixel dimensions
@@ -117,8 +162,12 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   const viewBoxWidth = viewBoxMatch ? parseFloat(viewBoxMatch[2]) : 60;
   const viewBoxHeight = viewBoxMatch ? parseFloat(viewBoxMatch[3]) : 60;
 
-  // Consistent stroke width for all shapes
-  const strokeWidth = borderWidth;
+  // Convert pixel border width to viewBox units for consistent appearance
+  // Character avatar borderWidth is in pixels, token uses viewBox units
+  // Scale: if token is 80px wide and viewBox is 60, then 2px = 2 * (60/80) = 1.5 viewBox units
+  const pixelToViewBoxScale = viewBoxWidth / width;
+  const strokeWidth = borderWidth * pixelToViewBoxScale;
+
   // Minimal stroke for rounded corners - don't waste space
   const cornerRadiusStroke = useRect ? 0 : 2;
 
@@ -185,7 +234,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
         )}
 
         {/* Main shape */}
-        {content ? (
+        {resolvedContent ? (
           // With image content - use clipPath
           <>
             {useRect ? (
@@ -194,7 +243,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
               <path d={path} fill={color} fillOpacity={fillOpacity} />
             )}
             <image
-              href={content}
+              href={resolvedContent}
               x="0"
               y="0"
               width="100%"
@@ -209,7 +258,6 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
                 stroke={borderColor}
                 strokeOpacity={strokeOpacityVal}
                 strokeWidth={strokeWidth}
-                vectorEffect="non-scaling-stroke"
               />
             ) : (
               <>
@@ -234,7 +282,6 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
                   strokeWidth={strokeWidth}
                   strokeLinejoin="round"
                   strokeLinecap="round"
-                  vectorEffect="non-scaling-stroke"
                 />
               </>
             )}
@@ -249,7 +296,6 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
               stroke={borderColor}
               strokeOpacity={strokeOpacityVal}
               strokeWidth={strokeWidth}
-              vectorEffect="non-scaling-stroke"
             />
           ) : (
             <>
@@ -276,7 +322,6 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
                 strokeWidth={strokeWidth}
                 strokeLinejoin="round"
                 strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
               />
             </>
           )
@@ -300,7 +345,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
               justifyContent: 'center',
               flexDirection: 'column',
               overflow: 'hidden',
-              transform: 'translateY(5%)',
+              transform: 'translateY(-1%)',
             }}
           >
             {children}

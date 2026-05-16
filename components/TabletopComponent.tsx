@@ -553,7 +553,7 @@ export const Tabletop: React.FC = () => {
                     hyperscaleLayerId: 'tokens',
                     isOnTable: true,
                     borderWidth: 2,
-                    borderColor: 'white',
+                    borderColor: '#ffffff',
                     opacity: 100,
                     borderOpacity: 100
                   } as const;

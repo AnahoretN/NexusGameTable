@@ -110,26 +110,26 @@ export interface TokenState {
   tooltipText?: string;
 }
 
-// Token Counter - numeric counter attached to a token (e.g., HP, MP, stamina)
-export interface TokenCounter {
+// Token Slider - numeric slider attached to a token (e.g., HP, MP, stamina)
+export interface TokenSlider {
   id: string;
-  name: string; // Counter name (e.g., "HP", "Mana", "Stamina")
+  name: string; // Slider name (e.g., "HP", "Mana", "Stamina")
   value: number; // Current value
   maxValue: number; // Maximum value
   minValue?: number; // Minimum value (default 0)
-  color?: string; // Counter display color (default: #ef4444 red)
-  icon?: string; // Optional emoji or icon for the counter
+  color?: string; // Slider display color (default: #ef4444 red)
+  icon?: string; // Optional emoji or icon for the slider
   showValue?: boolean; // Whether to show numeric value (default true)
   showBar?: boolean; // Whether to show progress bar (default true)
 }
 
-// Counter layout position for tokens
-export type TokenCounterPosition = 'above' | 'below' | 'center' | 'left' | 'right';
+// Slider layout position for tokens
+export type TokenSliderPosition = 'above' | 'below' | 'center' | 'left' | 'right';
 
-// Counter display settings for token/token type
-export interface TokenCounterDisplay {
-  position: TokenCounterPosition; // Where to show counters relative to token
-  showForPlayers?: boolean; // Whether players can see counters (default true - GM always sees)
+// Slider display settings for token/token type
+export interface TokenSliderDisplay {
+  position: TokenSliderPosition; // Where to show sliders relative to token
+  showForPlayers?: boolean; // Whether players can see sliders (default true - GM always sees)
 }
 
 export type ContextAction = 'flip' | 'rotate' | 'rotateClockwise' | 'rotateCounterClockwise' | 'swingClockwise' | 'swingCounterClockwise' | 'delete' | 'destroy' | 'lock' | 'clone' | 'roll' | 'layer' | 'layerUp' | 'layerDown' | 'bringToFront' | 'sendToBack' | 'millToBottom' | 'hideTop' | 'showTop' | 'moveTo' | 'moveToHand' | 'moveToTopDeck' | 'moveToBottomDeck' | 'moveToDiscard' | 'editNexusBoard' | 'closeNexusBoardEditing' | 'deleteNexusBoard' | 'returnAll' | 'returnAllAndShuffle' | 'returnAllExceptHands' | 'resetRotation' | 'configure' | 'show' | 'unpinFromViewport' | 'pinToViewport' | 'pin' | 'hide' | 'topDeck' | 'shuffleDeck' | 'searchDeck' | 'piles' | 'draw' | 'playTopCard' | 'millTopCard' | 'toBottom' | 'states' | 'switchState' | 'toggleState1' | 'nextState' | 'previousState';
@@ -361,9 +361,9 @@ export interface Token extends GameItem {
   // State system - current active state (for individual tokens)
   currentStateId?: string; // ID of the currently active state (from archetype states)
   states?: TokenState[]; // Alternative states for this token (if not using archetype)
-  // Counter system - individual token counters (override archetype counters)
-  counters?: TokenCounter[]; // Counters for this token (HP, MP, etc.)
-  counterDisplay?: TokenCounterDisplay; // How to display counters
+  // Slider system - individual token sliders (override archetype sliders)
+  counters?: TokenSlider[]; // Sliders for this token (HP, MP, etc.)
+  counterDisplay?: TokenSliderDisplay; // How to display sliders
 }
 
 // Token Type - a template for creating tokens
@@ -382,9 +382,9 @@ export interface TokenType extends GameItem {
   showName?: boolean; // Show the token name on the token itself
   // State system - alternative states for tokens
   states?: TokenState[]; // List of alternative states available for tokens of this type
-  // Counter system - default counters for spawned tokens
-  counters?: TokenCounter[]; // Default counters for tokens of this type
-  counterDisplay?: TokenCounterDisplay; // How to display counters
+  // Slider system - default sliders for spawned tokens
+  counters?: TokenSlider[]; // Default sliders for tokens of this type
+  counterDisplay?: TokenSliderDisplay; // How to display sliders
 }
 
 // Magnet point tracking - which objects are snapped to which magnet points
@@ -782,7 +782,7 @@ export enum CharacterBlockType {
   TEXT = 'TEXT',
   TABLE = 'TABLE',
   SLIDER = 'SLIDER',
-  INVENTORY = 'INVENTORY',
+  QUICK_ACCESS = 'QUICK_ACCESS',
   AVATAR = 'AVATAR',
   COUNTER = 'COUNTER',
 }
@@ -795,7 +795,7 @@ export interface CharacterBlock {
   visible: boolean;
   order: number;
   columnId: string; // ID of the column this block belongs to
-  data: TextBlockData | TableBlockData | SliderBlockData | InventoryBlockData | AvatarBlockData | CounterBlockData;
+  data: TextBlockData | TableBlockData | SliderBlockData | QuickAccessBlockData | AvatarBlockData | CounterBlockData;
 }
 
 // Text block data
@@ -827,6 +827,8 @@ export interface TableRow {
 }
 
 // Slider block data
+export type SliderIconShape = 'circle' | 'square' | 'triangle' | 'cross' | 'heart' | 'star';
+
 export interface SliderItem {
   id: string;
   label: string;
@@ -836,20 +838,21 @@ export interface SliderItem {
   color: string;
   showValue: boolean;
   showPercentage: boolean;
+  iconShape?: SliderIconShape;
 }
 
 export interface SliderBlockData {
   sliders: SliderItem[];
 }
 
-// Inventory block data
-export interface InventoryBlockData {
+// Quick Access block data
+export interface QuickAccessBlockData {
   gridColumns: number;
-  items: InventoryItem[];
+  items: QuickAccessItem[];
   maxItems?: number;
 }
 
-export interface InventoryItem {
+export interface QuickAccessItem {
   id: string;
   name: string;
   imageUrl?: string;
@@ -895,6 +898,8 @@ export interface CharacterTab {
   manageableByPlayerIds: string[]; // Can change values but not structure
   editableByPlayerIds: string[];
   avatarUrl?: string;
+  avatarBorderColor?: string; // Border color for avatar
+  avatarBorderWidth?: number; // Border width for avatar (0-20px)
 }
 
 // Character preset

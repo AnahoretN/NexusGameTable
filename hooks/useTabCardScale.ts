@@ -21,10 +21,10 @@ export const useTabCardScale = (playerId: string) => {
     try {
       const key = `hand-card-scale-${playerId}`;
       const saved = localStorage.getItem(key);
-      const newScale = saved ? parseFloat(saved) : 1;
+      const newScale = saved ? parseFloat(saved) : 1.15;
       setScale(newScale);
     } catch {
-      setScale(1);
+      setScale(1.15);
     }
   }, [playerId]);
 

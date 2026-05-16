@@ -2,7 +2,7 @@ import React, { memo, useMemo } from 'react';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Eye, EyeOff, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
-import { TableObject, Token as TokenType, ItemType, TokenCounter, TokenCounterDisplay } from '../../types';
+import { TableObject, Token as TokenType, ItemType, TokenSlider, TokenSliderDisplay } from '../../types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 import { Tooltip } from '../Tooltip';
 import { TokenCountersDisplay } from './TokenCountersDisplay';
@@ -95,8 +95,13 @@ export const TokenRenderer = memo(({
 
   // Memoize token name display
   const tokenName = useMemo(() => {
-    return (token as any).showNameOnToken ||
-           (obj as any).showName ||
+    // For tokens (not token types), check showNameOnToken
+    // For token types (archetypes), check showName
+    if (obj.type === 'TOKEN') {
+      return (token as any).showNameOnToken ? obj.name : undefined;
+    }
+    // For token types and other objects
+    return (obj as any).showName ||
            ((obj as any).archetypeId && (allObjects[(obj as any).archetypeId] as any)?.showName)
       ? obj.name
       : undefined;
@@ -396,12 +401,12 @@ export const TokenRenderer = memo(({
           content={token.content}
           rotation={0}
           borderWidth={token.borderWidth ?? 2}
-          borderColor={(token as any).borderColor || 'white'}
+          borderColor={(token as any).borderColor || '#ffffff'}
           opacity={token.opacity ?? 100}
           borderOpacity={(token as any).borderOpacity ?? 100}
           showThickness={true}
           tokenName={tokenName}
-          fontColor={(token as any).fontColor || 'white'}
+          fontColor={(token as any).fontColor || '#ffffff'}
         />
 
         {/* Token Counters Display */}

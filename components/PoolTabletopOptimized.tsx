@@ -2848,11 +2848,11 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                         content={String(displayValue)}
                         rotation={0}
                         borderWidth={dice.borderWidth ?? 2}
-                        borderColor={dice.borderColor || 'white'}
+                        borderColor={dice.borderColor || '#ffffff'}
                         opacity={dice.opacity ?? 100}
                         borderOpacity={dice.borderOpacity ?? 100}
                         showThickness={true}
-                        fontColor={dice.fontColor || 'white'}
+                        fontColor={dice.fontColor || '#ffffff'}
                       />
                       {/* Dice value - always centered */}
                       <div
