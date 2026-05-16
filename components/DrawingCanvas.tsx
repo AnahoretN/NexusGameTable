@@ -148,8 +148,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const eraserModifiedDrawingsRef = useRef<Map<string, Drawing>>(new Map());
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<StrokePoint[]>([]);
+  const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const [isOverPanel, setIsOverPanel] = useState(false);
+  const rafRef = useRef<number>();
+  const lastCursorDrawTimeRef = useRef<number>(0);
   const currentTool = useDrawingTool();
   const [isAltPressed, setIsAltPressed] = useState(false); // Track ALT key for normal cursor mode
   const [isShiftPressed, setIsShiftPressed] = useState(false); // Track Shift key for move cursor mode
@@ -399,12 +402,16 @@ setEraserThickness(newThickness);
   }, [offsetX, offsetY]);
 
   // Global mouse move handler to track cursor position even when over panels (canvas has pointer-events: none)
+  // Optimized with RAF for smooth cursor movement
   useEffect(() => {
     if (currentTool !== 'marker' && currentTool !== 'eraser') return;
 
-    const handleGlobalMouseMove = (e: MouseEvent) => {
+    let rafId: number | undefined;
+    let pendingUpdate = false;
+
+    const updateCursorPosition = (clientX: number, clientY: number) => {
       // Check if cursor is over a panel or any UI element
-      const elementsAtPoint = document.elementsFromPoint(e.clientX, e.clientY);
+      const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
       let isOverUI = elementsAtPoint.some(el =>
         el instanceof HTMLElement && (
           el.dataset.uiObject != null ||  // Panels and windows have data-ui-object
@@ -423,10 +430,10 @@ setEraserThickness(newThickness);
         if (panel instanceof HTMLElement) {
           const rect = panel.getBoundingClientRect();
           const margin = 5;
-          if (e.clientX >= rect.left - margin &&
-              e.clientX <= rect.right + margin &&
-              e.clientY >= rect.top - margin &&
-              e.clientY <= rect.bottom + margin) {
+          if (clientX >= rect.left - margin &&
+              clientX <= rect.right + margin &&
+              clientY >= rect.top - margin &&
+              clientY <= rect.bottom + margin) {
             isOverUI = true;
             break;
           }
@@ -436,27 +443,65 @@ setEraserThickness(newThickness);
       setIsOverPanel(isOverUI);
 
       // Update cursor position first
-      const pos = getWorldPosition(e.clientX, e.clientY);
+      const pos = getWorldPosition(clientX, clientY);
       // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
       const screenX = pos.x - offsetX;
       const screenY = pos.y - offsetY;
+
+      // Update ref immediately for smooth tracking
+      cursorPositionRef.current = { x: screenX, y: screenY };
       setCursorPosition({ x: screenX, y: screenY });
     };
 
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      // Store latest position
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          updateCursorPosition(e.clientX, e.clientY);
+          rafId = undefined;
+        });
+      }
+    };
+
     window.addEventListener('mousemove', handleGlobalMouseMove);
-    return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
-  }, [currentTool, offsetX, offsetY, getWorldPosition, isAltPressed, isOverPanel]);
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      if (rafId !== undefined) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [currentTool, offsetX, offsetY, getWorldPosition]);
 
   // Redraw canvas when cursor position or shift state changes (for cursor rendering)
+  // Optimized with RAF to avoid excessive redraws
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (canvas && cursorPosition && (currentTool === 'marker' || currentTool === 'eraser')) {
+    if (!canvas || !cursorPosition) return;
+
+    const shouldDrawCursor = (currentTool === 'marker' || currentTool === 'eraser');
+    if (!shouldDrawCursor) return;
+
+    // Throttle redraws using RAF
+    if (rafRef.current !== undefined) return;
+
+    rafRef.current = requestAnimationFrame(() => {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         redrawCanvas(ctx);
       }
-    }
+      rafRef.current = undefined;
+    });
   }, [cursorPosition, currentTool, redrawCanvas, isShiftPressed]); // Add isShiftPressed to trigger redraw when cursor mode changes
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== undefined) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = undefined;
+      }
+    };
+  }, []);
 
   // Keep redrawCanvas in a ref to avoid stale closures
   const redrawCanvasRef = useRef(redrawCanvas);
@@ -605,9 +650,14 @@ setEraserThickness(newThickness);
     }
 
     if (!isDrawing) {
-      // Just update cursor, don't draw
-      const ctx = canvas?.getContext('2d');
-      if (ctx) redrawCanvas(ctx);
+      // Just update cursor, use RAF for smooth rendering
+      if (rafRef.current === undefined) {
+        rafRef.current = requestAnimationFrame(() => {
+          const ctx = canvas?.getContext('2d');
+          if (ctx) redrawCanvas(ctx);
+          rafRef.current = undefined;
+        });
+      }
       return;
     }
 
@@ -619,8 +669,8 @@ setEraserThickness(newThickness);
     const ctx = canvas.getContext('2d');
     if (!ctx || currentStroke.length < 1) return;
 
-    // Redraw everything plus the current stroke
-    redrawCanvas(ctx);
+    // Skip full redraw here - canvas is already redrawn by useEffect on cursorPosition change
+    // Just draw the tool cursor on top
 
     if (currentTool === 'eraser') {
       // Eraser implementation for Drawing objects
@@ -637,7 +687,7 @@ setEraserThickness(newThickness);
 
       // Throttle eraser processing to prevent performance issues
       const now = Date.now();
-      if (now - lastEraserProcessTimeRef.current < 100) { // Limit to ~10fps for better performance
+      if (now - lastEraserProcessTimeRef.current < 50) { // Reduced to 50ms for ~20fps (smoother but still efficient)
         return; // Skip processing but cursor already shown
       }
       lastEraserProcessTimeRef.current = now;
@@ -837,27 +887,34 @@ setEraserThickness(newThickness);
         redrawCanvas(ctx, true);
       }
     } else {
-      // Marker: draw current stroke preview
+      // Marker: draw current stroke preview (optimized - only draw new segment)
+      if (currentStroke.length > 0) {
+        const lastPoint = currentStroke[currentStroke.length - 1];
+
+        // Draw only the new line segment from last point to current position
+        ctx.beginPath();
+        ctx.strokeStyle = markerColor;
+        ctx.lineWidth = markerThickness;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        const lastScreenX = lastPoint.x - offsetX;
+        const lastScreenY = lastPoint.y - offsetY;
+        const screenX = pos.x - offsetX;
+        const screenY = pos.y - offsetY;
+
+        ctx.moveTo(lastScreenX, lastScreenY);
+        ctx.lineTo(screenX, screenY);
+        ctx.stroke();
+      }
+
+      // Redraw cursor circle on top (optimized - only redraw cursor area)
+      ctx.save();
       ctx.beginPath();
-      ctx.strokeStyle = markerColor;
-      ctx.lineWidth = markerThickness;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      const allPoints = [...currentStroke, { x: pos.x, y: pos.y }];
-      allPoints.forEach((point, index) => {
-        // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-        const screenX = point.x - offsetX;
-        const screenY = point.y - offsetY;
-
-        if (index === 0) {
-          ctx.moveTo(screenX, screenY);
-        } else {
-          ctx.lineTo(screenX, screenY);
-        }
-      });
-
-      ctx.stroke();
+      ctx.arc(pos.x - offsetX, pos.y - offsetY, markerThickness / 2, 0, Math.PI * 2);
+      ctx.fillStyle = markerColor + '80'; // Add transparency
+      ctx.fill();
+      ctx.restore();
     }
   }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartPos, dragStartDrawingPos, currentTool, getWorldPosition, currentStroke, redrawCanvas, markerColor, markerThickness, offsetX, offsetY, dispatch]);
 
