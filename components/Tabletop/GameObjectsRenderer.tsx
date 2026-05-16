@@ -58,7 +58,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     dispatch
   } = props;
 
-  const { v2p, createPositionedStyle, getLayerZoomScale, getLayerInverseScale, pixelsPerVU } = context;
+  const { v2p, createPositionedStyle, getLayerZoomScale, getLayerInverseScale, pixelsPerVU, basePixelsPerVU } = context;
+
+  // Calculate zoom multiplier for UI elements compensation
+  const zoomMultiplier = pixelsPerVU / basePixelsPerVU;
 
   // Memoize effect props to prevent unnecessary re-renders of EffectTemplateRendererMemo
   // Create stable callback references for each effect
@@ -353,6 +356,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
         isGM={isGM}
         activePlayerId={activePlayerId}
         pixelsPerVU={pixelsPerVU}
+        basePixelsPerVU={basePixelsPerVU}
         viewTransform={state.viewTransform}
         onContextMenu={onContextMenu}
         onMouseDown={onMouseDown}
@@ -413,8 +417,11 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             deckTooltipScale={deck?.tooltipScale}
           />
 
-          {/* Action buttons for cards */}
-          <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : currentTool === 'zoom' ? 'opacity-100 pointer-events-auto' : currentTool === 'none' ? 'opacity-0 group-hover:opacity-100 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
+          {/* Action buttons for cards - scale to compensate parent's inverseScale */}
+          <div
+            className={`absolute -bottom-4 left-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : currentTool === 'zoom' ? 'opacity-100 pointer-events-auto' : currentTool === 'none' ? 'opacity-0 group-hover:opacity-100 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}
+            style={{ transform: 'translateX(-50%) scale(' + zoomMultiplier + ')' }}
+          >
             {(() => {
               const actionButtons = deck?.cardActionButtons || [];
               const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
@@ -635,8 +642,9 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
-    const counterWidth = Math.max(counter.width || 60, v2p(100)) / pixelsPerVU;
-    const counterHeight = 50 / pixelsPerVU;
+    // Counter dimensions in VU (will be converted to pixels by v2p)
+    const counterWidth = Math.max(counter.width || 60, 100);
+    const counterHeight = 50;
 
     return (
       <Tooltip
@@ -669,21 +677,24 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             }
           )}
         >
-          <button
-            className="p-1 hover:bg-slate-700 rounded"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => dispatch({ type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 } })}
-          >
-            <Minus size={14} />
-          </button>
-          <span className="text-xl font-bold">{counter.value}</span>
-          <button
-            className="p-1 hover:bg-slate-700 rounded"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => dispatch({ type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 } })}
-          >
-            <Plus size={14} />
-          </button>
+          {/* Counter content with scale compensation */}
+          <div className="flex items-center justify-between w-full" style={{ transform: 'scale(' + zoomMultiplier + ')' }}>
+            <button
+              className="p-1 hover:bg-slate-700 rounded"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => dispatch({ type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 } })}
+            >
+              <Minus size={14} />
+            </button>
+            <span className="text-xl font-bold">{counter.value}</span>
+            <button
+              className="p-1 hover:bg-slate-700 rounded"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => dispatch({ type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 } })}
+            >
+              <Plus size={14} />
+            </button>
+          </div>
 
           {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
         </div>
@@ -702,6 +713,9 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
     const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
     const isPermeable = hasSelectedLayers && !isLayerSelected;
+
+    // Get inverse scale for this layer (to compensate zoom)
+    const inverseScale = getLayerInverseScale(objLayer);
 
     // Detect explosive dice trigger (when explosive roll value exists)
     const isExplosiveTriggered = dice.isExplosive && dice.explosiveRollValue !== undefined;
@@ -722,8 +736,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const diceWidth = v2p(obj.width);
     const diceHeight = v2p(obj.height);
 
-    const valueFontSize = v2p(25); // 25 vu for dice value
-    const sidesFontSize = v2p(15); // 15 vu for dice sides (d6, d20, etc.)
+    // Font size based on base VU size converted to pixels
+    // Use the same approach as tokens: base size in VU, then convert to pixels
+    const valueFontSize = v2p(25); // 25 VU for dice value
+    const sidesFontSize = v2p(15); // 15 VU for dice sides
 
     // Use explosive colors when triggered, otherwise use defaults
     const diceColor = isExplosiveTriggered
@@ -782,6 +798,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             showThickness={true}
             tokenName={undefined}
             fontColor={fontColor}
+            preserveAspectRatio="none"
           >
             <div style={{
               display: 'flex',
@@ -874,8 +891,11 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
           {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
 
-          {/* Action buttons */}
-          <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : currentTool === 'zoom' ? 'opacity-100 pointer-events-auto' : currentTool === 'none' ? 'opacity-0 group-hover:opacity-100 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
+          {/* Action buttons - scale to compensate parent's inverseScale */}
+          <div
+            className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none group-hover:opacity-100"
+            style={{ transform: `translateX(-50%) scale(${zoomMultiplier})` }}
+          >
             {(() => {
               const actionButtons = obj.actionButtons || [];
               const dice = obj as DiceObject;
@@ -1140,7 +1160,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     <>
       {visibleTableObjects.map(obj => {
         const element = renderGameObject(obj);
-        return element ? React.cloneElement(element, { key: obj.id }) : null;
+        // Include pixelsPerVU in key to force re-render when zoom changes
+        return element ? React.cloneElement(element, { key: `${obj.id}-${pixelsPerVU}` }) : null;
       })}
     </>
   );
@@ -1175,6 +1196,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     prevProps.onAddNexusCell === nextProps.onAddNexusCell &&
     prevProps.dispatch === nextProps.dispatch &&
     prevProps.context.pixelsPerVU === nextProps.context.pixelsPerVU &&
+    prevProps.context.basePixelsPerVU === nextProps.context.basePixelsPerVU &&
+    prevProps.context.v2p === nextProps.context.v2p &&
     prevProps.context.rulerStep === nextProps.context.rulerStep
   );
 });
@@ -1210,6 +1233,8 @@ export const GameObjectsRendererMemo = memo(GameObjectsRenderer, (prevProps, nex
     prevProps.onAddNexusCell === nextProps.onAddNexusCell &&
     prevProps.dispatch === nextProps.dispatch &&
     prevProps.context.pixelsPerVU === nextProps.context.pixelsPerVU &&
+    prevProps.context.basePixelsPerVU === nextProps.context.basePixelsPerVU &&
+    prevProps.context.v2p === nextProps.context.v2p &&
     prevProps.context.rulerStep === nextProps.context.rulerStep
   );
 });

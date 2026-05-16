@@ -5,9 +5,10 @@ import { TokenCounter, TokenCounterDisplay } from '../../types';
 interface TokenCountersDisplayProps {
   counters: TokenCounter[];
   counterDisplay: TokenCounterDisplay | undefined;
-  tokenWidth: number;
-  tokenHeight: number;
+  tokenWidth: number;  // Now in VU (virtual units)
+  tokenHeight: number; // Now in VU (virtual units)
   pixelsPerVU: number;
+  basePixelsPerVU: number;
   isGM: boolean;
   tokenId: string;
   dispatch: React.Dispatch<any>;
@@ -19,6 +20,7 @@ export const TokenCountersDisplay = memo(({
   tokenWidth,
   tokenHeight,
   pixelsPerVU,
+  basePixelsPerVU,
   isGM,
   tokenId,
   dispatch
@@ -49,6 +51,9 @@ export const TokenCountersDisplay = memo(({
 
   // Memoize position check
   const isVerticalPosition = position === 'left' || position === 'right';
+
+  // Helper to convert VU to pixels (token dimensions are in VU)
+  const v2p = useCallback((vu: number) => vu * pixelsPerVU, [pixelsPerVU]);
 
   // Handle counter value change (can be delta for buttons or absolute value for slider)
   const handleCounterChange = useCallback((counter: TokenCounter, valueOrDelta: number) => {
@@ -96,10 +101,13 @@ export const TokenCountersDisplay = memo(({
     }
   }, []);
 
+  // Calculate zoom multiplier from pixelsPerVU / basePixelsPerVU
+  const zoomMultiplier = pixelsPerVU / basePixelsPerVU;
+
   // Memoize container style
   const containerStyle = useMemo((): React.CSSProperties => {
-    const baseBarHeight = 7 * pixelsPerVU;
-    const gap = pixelsPerVU;
+    const baseBarHeight = 7 * basePixelsPerVU;
+    const gap = basePixelsPerVU;
 
     if (isVerticalPosition) {
       // Vertical layout (left/right) - calculate total width
@@ -108,7 +116,8 @@ export const TokenCountersDisplay = memo(({
       const baseStyle: React.CSSProperties = {
         position: 'absolute',
         top: '50%',
-        transform: 'translateY(-50%)',
+        transform: `translateY(-50%) scale(${zoomMultiplier})`,
+        transformOrigin: 'center',
         pointerEvents: 'auto',
         zIndex: 10,
         width: `${totalWidth}px`,
@@ -127,7 +136,8 @@ export const TokenCountersDisplay = memo(({
       const baseStyle: React.CSSProperties = {
         position: 'absolute',
         left: '50%',
-        transform: 'translateX(-50%)',
+        transform: `translateX(-50%) scale(${zoomMultiplier})`,
+        transformOrigin: 'center',
         pointerEvents: 'auto',
         zIndex: 10,
         height: `${totalHeight}px`,
@@ -138,25 +148,25 @@ export const TokenCountersDisplay = memo(({
       } else if (position === 'below') {
         return { ...baseStyle, top: '100%', marginTop: '4px' };
       } else { // center
-        return { ...baseStyle, top: '50%', transform: 'translate(-50%, -50%)' };
+        return { ...baseStyle, top: '50%', transform: 'translate(-50%, -50%) scale(' + zoomMultiplier + ')' };
       }
     }
-  }, [counters.length, isVerticalPosition, position, pixelsPerVU]);
+  }, [counters.length, isVerticalPosition, position, basePixelsPerVU, zoomMultiplier]);
 
   // Memoize base bar dimensions
-  const baseBarHeight = useMemo(() => 7 * pixelsPerVU, [pixelsPerVU]);
-  const maxHeight = useMemo(() => 7 * 2 * pixelsPerVU, [pixelsPerVU]);
-  const gap = useMemo(() => pixelsPerVU, [pixelsPerVU]);
-  const buttonSize = useMemo(() => 24 * pixelsPerVU, [pixelsPerVU]);
-  const buttonOffset = useMemo(() => buttonSize / 2 + 0.5 * pixelsPerVU, [buttonSize, pixelsPerVU]);
+  const baseBarHeight = useMemo(() => 7 * basePixelsPerVU, [basePixelsPerVU]);
+  const maxHeight = useMemo(() => 7 * 2 * basePixelsPerVU, [basePixelsPerVU]);
+  const gap = useMemo(() => basePixelsPerVU, [basePixelsPerVU]);
+  const buttonSize = useMemo(() => 24 * basePixelsPerVU, [basePixelsPerVU]);
+  const buttonOffset = useMemo(() => buttonSize / 2 + 0.5 * basePixelsPerVU, [buttonSize, basePixelsPerVU]);
 
   // Memoize label style
   const labelStyle = useMemo((): React.CSSProperties => {
-    const fontSize = 15 * pixelsPerVU;
+    const fontSize = 15 * basePixelsPerVU;
 
     if (isVerticalPosition) {
       // Vertical - label above the + button
-      const offset = buttonOffset + buttonSize + 6 * pixelsPerVU;
+      const offset = buttonOffset + buttonSize + 6 * basePixelsPerVU;
       return {
         fontSize: `${fontSize}px`,
         fontWeight: 'bold',
@@ -181,15 +191,15 @@ export const TokenCountersDisplay = memo(({
         left: '50%',
         transform: 'translateX(-50%)',
         bottom: '100%',
-        marginBottom: `${2 * pixelsPerVU}px`,
+        marginBottom: `${2 * basePixelsPerVU}px`,
         animation: 'fadeInDown 0.2s ease forwards',
       };
     }
-  }, [isVerticalPosition, pixelsPerVU, buttonSize, buttonOffset]);
+  }, [isVerticalPosition, basePixelsPerVU, buttonSize, buttonOffset]);
 
   // Memoize value style
   const valueStyle = useMemo((): React.CSSProperties => {
-    const fontSize = 10 * pixelsPerVU;
+    const fontSize = 10 * basePixelsPerVU;
     return {
       fontSize: `${fontSize}px`,
       fontWeight: 'bold',
@@ -203,15 +213,15 @@ export const TokenCountersDisplay = memo(({
       pointerEvents: 'none',
       zIndex: 1,
     };
-  }, [pixelsPerVU]);
+  }, [basePixelsPerVU]);
 
   // Memoize button text style
   const buttonTextStyle = useMemo((): React.CSSProperties => {
     return {
       position: 'relative',
-      top: `-${3 * pixelsPerVU}px`,
+      top: `-${3 * basePixelsPerVU}px`,
     };
-  }, [pixelsPerVU]);
+  }, [basePixelsPerVU]);
 
   // Get button style with animation
   const getButtonStyle = useCallback((isTop: boolean): React.CSSProperties => {
@@ -230,7 +240,7 @@ export const TokenCountersDisplay = memo(({
         backgroundColor: 'rgba(0,0,0,0.8)',
         border: '1px solid rgba(255,255,255,0.3)',
         color: 'white',
-        fontSize: `${20 * pixelsPerVU}px`,
+        fontSize: `${20 * basePixelsPerVU}px`,
         fontWeight: 'bold',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
@@ -252,7 +262,7 @@ export const TokenCountersDisplay = memo(({
         backgroundColor: 'rgba(0,0,0,0.8)',
         border: '1px solid rgba(255,255,255,0.3)',
         color: 'white',
-        fontSize: `${20 * pixelsPerVU}px`,
+        fontSize: `${20 * basePixelsPerVU}px`,
         fontWeight: 'bold',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
@@ -260,13 +270,13 @@ export const TokenCountersDisplay = memo(({
         animation: isTop ? 'fadeInLeftBtn 0.2s ease forwards' : 'fadeInRightBtn 0.2s ease forwards',
       };
     }
-  }, [isVerticalPosition, buttonSize, buttonOffset, pixelsPerVU]);
+  }, [isVerticalPosition, buttonSize, buttonOffset, basePixelsPerVU]);
 
   // Get counter wrapper style
   const getCounterStyle = useCallback((index: number, isHovered: boolean): React.CSSProperties => {
     if (isVerticalPosition) {
-      // Vertical counter (left/right position)
-      const barHeight = isHovered ? tokenHeight * 1.5 : tokenHeight;
+      // Vertical counter (left/right position) - convert VU to pixels
+      const barHeight = isHovered ? v2p(tokenHeight) * 1.5 : v2p(tokenHeight);
 
       return {
         position: 'absolute' as const,
@@ -279,8 +289,8 @@ export const TokenCountersDisplay = memo(({
         transition: 'height 0.2s ease',
       };
     } else {
-      // Horizontal counter (above/below/center position)
-      const barWidth = isHovered ? tokenWidth * 1.5 : tokenWidth;
+      // Horizontal counter (above/below/center position) - convert VU to pixels
+      const barWidth = isHovered ? v2p(tokenWidth) * 1.5 : v2p(tokenWidth);
 
       return {
         position: 'absolute' as const,
@@ -293,7 +303,7 @@ export const TokenCountersDisplay = memo(({
         transition: 'width 0.2s ease',
       };
     }
-  }, [isVerticalPosition, tokenHeight, tokenWidth, baseBarHeight, gap, maxHeight]);
+  }, [isVerticalPosition, tokenHeight, tokenWidth, baseBarHeight, gap, maxHeight, v2p]);
 
   // Get bar background style
   const getBarStyle = useCallback((isHovered: boolean): React.CSSProperties => {
@@ -302,7 +312,7 @@ export const TokenCountersDisplay = memo(({
     if (isVerticalPosition) {
       // Vertical bar - width is fixed, height is 100%
       return {
-        width: `${barSize * pixelsPerVU}px`,
+        width: `${barSize * basePixelsPerVU}px`,
         height: '100%',
         backgroundColor: 'rgba(0,0,0,0.6)',
         borderRadius: '3px',
@@ -318,7 +328,7 @@ export const TokenCountersDisplay = memo(({
       // Horizontal bar - width is 100%, height is fixed
       return {
         width: '100%',
-        height: `${barSize * pixelsPerVU}px`,
+        height: `${barSize * basePixelsPerVU}px`,
         backgroundColor: 'rgba(0,0,0,0.6)',
         borderRadius: '3px',
         overflow: 'visible',
@@ -330,7 +340,7 @@ export const TokenCountersDisplay = memo(({
         zIndex: isHovered ? 20 : 1,
       };
     }
-  }, [isVerticalPosition, pixelsPerVU]);
+  }, [isVerticalPosition, basePixelsPerVU]);
 
   // Get bar fill style
   const getBarFillStyle = useCallback((counter: TokenCounter): React.CSSProperties => {
@@ -532,6 +542,7 @@ export const TokenCountersDisplay = memo(({
     prevProps.tokenWidth === nextProps.tokenWidth &&
     prevProps.tokenHeight === nextProps.tokenHeight &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.basePixelsPerVU === nextProps.basePixelsPerVU &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.tokenId === nextProps.tokenId
   );

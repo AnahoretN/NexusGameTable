@@ -28,6 +28,7 @@ interface TokenRendererProps {
   isGM: boolean;
   activePlayerId: string;
   pixelsPerVU: number;
+  basePixelsPerVU: number;
   viewTransform: { offset: { x: number; y: number }; zoom: number; scroll: { x: number; y: number } };
   onContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   onMouseDown: (e: React.MouseEvent, objId: string) => void;
@@ -47,6 +48,7 @@ export const TokenRenderer = memo(({
   isGM,
   activePlayerId,
   pixelsPerVU,
+  basePixelsPerVU,
   viewTransform,
   onContextMenu,
   onMouseDown,
@@ -59,6 +61,9 @@ export const TokenRenderer = memo(({
   const canDrag = !obj.locked;
   const isDragging = draggingId === obj.id;
   const objLayer = obj.hyperscaleLayerId || 'none';
+
+  // Calculate zoom multiplier for UI elements compensation
+  const zoomMultiplier = pixelsPerVU / basePixelsPerVU;
 
   // Memoize cursor class
   const cursorClass = useMemo(() => {
@@ -403,9 +408,10 @@ export const TokenRenderer = memo(({
         <TokenCountersDisplay
           counters={counters}
           counterDisplay={counterDisplay}
-          tokenWidth={v2p(token.width)}
-          tokenHeight={v2p(token.height)}
+          tokenWidth={token.width}
+          tokenHeight={token.height}
           pixelsPerVU={pixelsPerVU}
+          basePixelsPerVU={basePixelsPerVU}
           isGM={isGM}
           tokenId={obj.id}
           dispatch={dispatch}
@@ -413,8 +419,11 @@ export const TokenRenderer = memo(({
 
         {(obj as any).isPinnedToViewport && !isDragging && <PinnedIndicator />}
 
-        {/* Action buttons */}
-        <div className={actionButtonsClass}>
+        {/* Action buttons - scale to compensate parent's inverseScale */}
+        <div
+          className={actionButtonsClass}
+          style={{ transform: `translateX(-50%) scale(${zoomMultiplier})` }}
+        >
           {actionButtons}
         </div>
       </div>
@@ -429,7 +438,10 @@ export const TokenRenderer = memo(({
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.isCtrlPressed === nextProps.isCtrlPressed &&
     prevProps.isGM === nextProps.isGM &&
-    prevProps.activePlayerId === nextProps.activePlayerId
+    prevProps.activePlayerId === nextProps.activePlayerId &&
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.basePixelsPerVU === nextProps.basePixelsPerVU &&
+    prevProps.v2p === nextProps.v2p
   );
 });
 

@@ -108,6 +108,7 @@ export const Tabletop: React.FC = () => {
   // === Positioning & View Transforms ===
   const {
     pixelsPerVU,
+    basePixelsPerVU,
     v2p,
     p2v,
     zoomMultiplier,
@@ -308,6 +309,7 @@ export const Tabletop: React.FC = () => {
   // === Render Context ===
   const renderContext: TabletopRenderContext = {
     pixelsPerVU,
+    basePixelsPerVU,
     v2p,
     p2v,
     getLayerZoomScale,

@@ -67,10 +67,13 @@ export const useLayerZoom = (
   // Helper to get inverse scale for layers without zoom (to cancel out global zoom)
   const getLayerInverseScale = useCallback(
     (layerId: string): number => {
-      const scale = getLayerZoomScale(layerId);
-      return scale !== zoomMultiplier ? 1 / zoomMultiplier : 1;
+      const layer = hyperscaleLayers.find((l) => l.id === layerId);
+      const zoomEnabled = layer?.zoomEnabled ?? true;
+      // If zoom is disabled for this layer, return inverse scale to cancel out global zoom
+      // Otherwise return 1 (let the global zoom apply normally via v2p)
+      return zoomEnabled ? 1 : 1 / zoomMultiplier;
     },
-    [getLayerZoomScale, zoomMultiplier]
+    [hyperscaleLayers, zoomMultiplier]
   );
 
   return {

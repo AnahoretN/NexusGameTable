@@ -10,8 +10,10 @@ import { TableObject, Card as CardType, Token as TokenType, Board as BoardType }
  * Contains transformation functions and styling utilities
  */
 export interface TabletopRenderContext {
-  /** Virtual units to pixels conversion factor */
+  /** Virtual units to pixels conversion factor (includes zoom) */
   pixelsPerVU: number;
+  /** Base pixelsPerVU without zoom applied (for UI elements that shouldn't scale) */
+  basePixelsPerVU: number;
   /** Convert virtual units to pixels */
   v2p: (vu: number) => number;
   /** Convert pixels to virtual units */

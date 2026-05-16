@@ -22,6 +22,7 @@ interface SvgTokenShapeProps {
   children?: React.ReactNode;
   tokenName?: string; // Token name to display in center
   fontColor?: string; // Font color for token name
+  preserveAspectRatio?: string; // Control aspect ratio preservation (default: "none")
 }
 
 /**
@@ -72,25 +73,36 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   children,
   tokenName,
   fontColor = 'white',
+  preserveAspectRatio = "none",
 }) => {
   // All tokens use the same border radius
   const borderRadius = BORDER_RADIUS;
-  // For HEX and HEX_HORIZONTAL, generate dynamic path based on aspect ratio
+  // For HEX and HEX_HORIZONTAL, generate dynamic path based on actual pixel dimensions
   let shapeData;
   if (shape === TokenShape.HEX) {
-    const aspectRatio = width / height;
-    const hexWidth = 60;
-    const hexHeight = Math.round(60 / aspectRatio);
+    // Use actual pixel dimensions for correct scaling
+    const hexWidth = Math.round(width);
+    const hexHeight = Math.round(height);
     shapeData = generatePointyTopHexPath(hexWidth, hexHeight);
   } else if (shape === TokenShape.HEX_HORIZONTAL) {
-    const aspectRatio = width / height;
-    const hexHeight = 60;
-    const hexWidth = Math.round(60 * aspectRatio);
+    const hexWidth = Math.round(width);
+    const hexHeight = Math.round(height);
     shapeData = generateFlatTopHexPath(hexWidth, hexHeight);
+  } else if (shape === TokenShape.CIRCLE) {
+    // Generate circle path with actual dimensions
+    const cx = width / 2;
+    const cy = height / 2;
+    const rx = width / 2;
+    const ry = height / 2;
+    const path = `M ${cx} 0 A ${rx} ${ry} 0 1 1 ${cx} ${height} A ${rx} ${ry} 0 1 1 ${cx} 0`;
+    shapeData = { path, viewBox: `0 0 ${width} ${height}` };
+  } else if (shape === TokenShape.TRIANGLE) {
+    // Generate triangle path with actual dimensions
+    const path = `M ${width / 2} 0 L ${width} ${height} L 0 ${height} Z`;
+    shapeData = { path, viewBox: `0 0 ${width} ${height}` };
   } else {
-    // For basic shapes, use static paths
-    const aspectRatio = width / height;
-    shapeData = getTokenShapePath(shape, aspectRatio);
+    // For SQUARE and other shapes, use default with actual dimensions
+    shapeData = { path: '', viewBox: `0 0 ${width} ${height}`, useRect: true };
   }
 
   const { path, viewBox } = shapeData;
@@ -119,7 +131,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
     width,
     height,
     viewBox,
-    preserveAspectRatio: "none" as const,
+    preserveAspectRatio,
     className,
     style: {
       transform: `rotate(${rotation}deg)`,
@@ -351,6 +363,7 @@ export const SvgTokenShapeMemo = React.memo(SvgTokenShape, (prevProps, nextProps
     prevProps.showThickness === nextProps.showThickness &&
     prevProps.tokenName === nextProps.tokenName &&
     prevProps.fontColor === nextProps.fontColor &&
+    prevProps.preserveAspectRatio === nextProps.preserveAspectRatio &&
     prevLongestWord === nextLongestWord
   );
 });
