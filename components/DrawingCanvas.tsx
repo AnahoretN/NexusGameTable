@@ -355,7 +355,7 @@ setEraserThickness(newThickness);
 
       ctx.stroke();
     }
-  }, [drawings, localDrawingsCache, offsetX, offsetY, currentTool, cursorPosition, markerColor, markerThickness, eraserThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
+  }, [drawings, localDrawingsCache, offsetX, offsetY, currentTool, markerColor, markerThickness, eraserThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
 
   // Helper function to redraw with cache for immediate eraser feedback
   const redrawCanvasWithCache = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -578,7 +578,7 @@ setEraserThickness(newThickness);
     const ctx = canvas.getContext('2d');
     if (!ctx || currentStroke.length < 1) return;
 
-    // Skip full redraw here - canvas is already redrawn by useEffect on cursorPosition change
+    // Skip full redraw here - canvas is redrawn only when drawings change
     // Just draw the tool cursor on top
 
     if (currentTool === 'eraser') {
