@@ -148,11 +148,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const eraserModifiedDrawingsRef = useRef<Map<string, Drawing>>(new Map());
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<StrokePoint[]>([]);
-  const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const [isOverPanel, setIsOverPanel] = useState(false);
-  const rafRef = useRef<number>();
-  const lastCursorDrawTimeRef = useRef<number>(0);
   const currentTool = useDrawingTool();
   const [isAltPressed, setIsAltPressed] = useState(false); // Track ALT key for normal cursor mode
   const [isShiftPressed, setIsShiftPressed] = useState(false); // Track Shift key for move cursor mode
@@ -336,25 +332,6 @@ setEraserThickness(newThickness);
       ctx.globalAlpha = 1;
     });
 
-    // Draw cursor circle when marker or eraser is active (but not when over panel or ALT is pressed)
-    // Don't draw custom cursor when Shift is pressed (move mode)
-    if ((currentTool === 'marker' || currentTool === 'eraser') && cursorPosition && !isOverPanel && !isAltPressed && !isShiftPressed) {
-      ctx.beginPath();
-      // Use appropriate thickness based on current tool
-      const thickness = currentTool === 'eraser' ? eraserThickness : markerThickness;
-      const cursorRadius = thickness / 2;
-      ctx.arc(cursorPosition.x, cursorPosition.y, cursorRadius, 0, Math.PI * 2);
-      if (currentTool === 'marker') {
-        // Marker: filled circle with semi-transparent color
-        ctx.fillStyle = markerColor + '80'; // Add transparency
-        ctx.fill();
-      } else {
-        // Eraser: white outline circle
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
 
     // Draw current stroke being drawn (preview)
     if (isDrawing && currentStroke.length > 0 && currentTool === 'marker') {
@@ -402,16 +379,12 @@ setEraserThickness(newThickness);
   }, [offsetX, offsetY]);
 
   // Global mouse move handler to track cursor position even when over panels (canvas has pointer-events: none)
-  // Optimized with RAF for smooth cursor movement
   useEffect(() => {
     if (currentTool !== 'marker' && currentTool !== 'eraser') return;
 
-    let rafId: number | undefined;
-    let pendingUpdate = false;
-
-    const updateCursorPosition = (clientX: number, clientY: number) => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
       // Check if cursor is over a panel or any UI element
-      const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
+      const elementsAtPoint = document.elementsFromPoint(e.clientX, e.clientY);
       let isOverUI = elementsAtPoint.some(el =>
         el instanceof HTMLElement && (
           el.dataset.uiObject != null ||  // Panels and windows have data-ui-object
@@ -430,10 +403,10 @@ setEraserThickness(newThickness);
         if (panel instanceof HTMLElement) {
           const rect = panel.getBoundingClientRect();
           const margin = 5;
-          if (clientX >= rect.left - margin &&
-              clientX <= rect.right + margin &&
-              clientY >= rect.top - margin &&
-              clientY <= rect.bottom + margin) {
+          if (e.clientX >= rect.left - margin &&
+              e.clientX <= rect.right + margin &&
+              e.clientY >= rect.top - margin &&
+              e.clientY <= rect.bottom + margin) {
             isOverUI = true;
             break;
           }
@@ -441,67 +414,11 @@ setEraserThickness(newThickness);
       }
 
       setIsOverPanel(isOverUI);
-
-      // Update cursor position first
-      const pos = getWorldPosition(clientX, clientY);
-      // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-      const screenX = pos.x - offsetX;
-      const screenY = pos.y - offsetY;
-
-      // Update ref immediately for smooth tracking
-      cursorPositionRef.current = { x: screenX, y: screenY };
-      setCursorPosition({ x: screenX, y: screenY });
-    };
-
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      // Store latest position
-      if (!rafId) {
-        rafId = requestAnimationFrame(() => {
-          updateCursorPosition(e.clientX, e.clientY);
-          rafId = undefined;
-        });
-      }
     };
 
     window.addEventListener('mousemove', handleGlobalMouseMove);
-    return () => {
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
-      if (rafId !== undefined) {
-        cancelAnimationFrame(rafId);
-      }
-    };
-  }, [currentTool, offsetX, offsetY, getWorldPosition]);
-
-  // Redraw canvas when cursor position or shift state changes (for cursor rendering)
-  // Optimized with RAF to avoid excessive redraws
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !cursorPosition) return;
-
-    const shouldDrawCursor = (currentTool === 'marker' || currentTool === 'eraser');
-    if (!shouldDrawCursor) return;
-
-    // Throttle redraws using RAF
-    if (rafRef.current !== undefined) return;
-
-    rafRef.current = requestAnimationFrame(() => {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        redrawCanvas(ctx);
-      }
-      rafRef.current = undefined;
-    });
-  }, [cursorPosition, currentTool, redrawCanvas, isShiftPressed]); // Add isShiftPressed to trigger redraw when cursor mode changes
-
-  // Cleanup RAF on unmount
-  useEffect(() => {
-    return () => {
-      if (rafRef.current !== undefined) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = undefined;
-      }
-    };
-  }, []);
+    return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
+  }, [currentTool]);
 
   // Keep redrawCanvas in a ref to avoid stale closures
   const redrawCanvasRef = useRef(redrawCanvas);
@@ -650,15 +567,7 @@ setEraserThickness(newThickness);
     }
 
     if (!isDrawing) {
-      // Just update cursor, use RAF for smooth rendering
-      if (rafRef.current === undefined) {
-        rafRef.current = requestAnimationFrame(() => {
-          const ctx = canvas?.getContext('2d');
-          if (ctx) redrawCanvas(ctx);
-          rafRef.current = undefined;
-        });
-      }
-      return;
+      return; // Cursor is now CSS-based, no canvas redraw needed
     }
 
     setCurrentStroke(prev => [...prev, { x: pos.x, y: pos.y }]);
@@ -677,13 +586,6 @@ setEraserThickness(newThickness);
       // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
       const screenX = pos.x - offsetX;
       const screenY = pos.y - offsetY;
-
-      // Show eraser cursor (fully opaque white circle) - always show cursor
-      ctx.beginPath();
-      ctx.arc(screenX, screenY, eraserThickness / 2, 0, Math.PI * 2);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
 
       // Throttle eraser processing to prevent performance issues
       const now = Date.now();
@@ -907,14 +809,6 @@ setEraserThickness(newThickness);
         ctx.lineTo(screenX, screenY);
         ctx.stroke();
       }
-
-      // Redraw cursor circle on top (optimized - only redraw cursor area)
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(pos.x - offsetX, pos.y - offsetY, markerThickness / 2, 0, Math.PI * 2);
-      ctx.fillStyle = markerColor + '80'; // Add transparency
-      ctx.fill();
-      ctx.restore();
     }
   }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartPos, dragStartDrawingPos, currentTool, getWorldPosition, currentStroke, redrawCanvas, markerColor, markerThickness, offsetX, offsetY, dispatch]);
 
@@ -1209,18 +1103,41 @@ setEraserThickness(newThickness);
   // When tool is 'none', 'ruler', or 'zoom', disable pointer events so canvas doesn't block other interactions
   // Canvas should only capture events for drawing tools (marker, eraser)
   const pointerEvents = (currentTool === 'none' || currentTool === 'ruler' || currentTool === 'zoom') ? 'none' : 'auto';
+
+  // Generate dynamic SVG cursors for marker and eraser (size based on thickness)
+  const generateMarkerCursor = (color: string, thickness: number) => {
+    const r = Math.max(8, thickness / 2);
+    const size = Math.max(32, r * 2 + 8);
+    const cx = size / 2;
+    const cy = size / 2;
+    // Convert color to ensure it works in SVG data URI
+    const svgColor = color.replace('#', '%23');
+    return `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'><circle cx='${cx}' cy='${cy}' r='${r}' fill='${svgColor}' fill-opacity='0.5' stroke='${svgColor}' stroke-width='1'/></svg>") ${cx} ${cy}, crosshair`;
+  };
+
+  const generateEraserCursor = (thickness: number) => {
+    const r = Math.max(8, thickness / 2);
+    const size = Math.max(32, r * 2 + 8);
+    const cx = size / 2;
+    const cy = size / 2;
+    return `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'><circle cx='${cx}' cy='${cy}' r='${r}' fill='none' stroke='white' stroke-width='2'/></svg>") ${cx} ${cy}, crosshair`;
+  };
+
   // Cursor logic:
   // - ALT pressed or over panel: default cursor (normal cursor mode)
   // - Shift+marker: move cursor (for moving drawings)
   // - Shift+eraser: trash cursor (for deleting drawings)
-  // - marker/eraser without Shift: none (custom cursor drawn on canvas)
+  // - marker/eraser without Shift: dynamic SVG cursor
   const canvasCursor = isAltPressed || isOverPanel || !(currentTool === 'marker' || currentTool === 'eraser')
     ? 'default'
     : currentTool === 'marker' && isShiftPressed
       ? 'move'
       : currentTool === 'eraser' && isShiftPressed
         ? 'default' // Will be overridden by inline style
-        : 'none';
+        : currentTool === 'marker'
+          ? generateMarkerCursor(markerColor, markerThickness)
+          : generateEraserCursor(eraserThickness);
+
   // Custom cursor for eraser+shift (trash icon)
   const eraserShiftCursor = currentTool === 'eraser' && isShiftPressed
     ? `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18' /><path d='M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6' /><path d='M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2' /><line x1='10' y1='11' x2='10' y2='17' /><line x1='14' y1='11' x2='14' y2='17' /></svg>") 12 12, auto`
