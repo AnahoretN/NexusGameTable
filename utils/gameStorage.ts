@@ -75,13 +75,53 @@ export const saveGameState = async (state: GameState): Promise<void> => {
     // First: Extract images to cache and save to IndexedDB BEFORE converting to metadata
     // Get existing IDB cache to avoid re-saving images we already have (cached in memory)
     const existingIDBCache = await getOrLoadIDBCache();
+
+    // Log character avatar URLs before extraction
+    const characterAvatars: any[] = [];
+    Object.values(objectsToSave).forEach((obj: any) => {
+      if (obj.type === 'PANEL' && obj.characterData?.characters) {
+        obj.characterData.characters.forEach((char: any) => {
+          if (char.avatarUrl) {
+            characterAvatars.push({
+              characterId: char.id,
+              characterName: char.characterName,
+              avatarUrl: char.avatarUrl.substring(0, 50) + (char.avatarUrl.length > 50 ? '...' : ''),
+              avatarUrlType: char.avatarUrl.startsWith('img_ref://') ? 'img_ref' : char.avatarUrl.startsWith('data:') ? 'data_url' : 'other'
+            });
+          }
+        });
+      }
+    });
+    logger.log('[SAVE] Character avatars before extraction:', characterAvatars);
+
     const { state: extractedState, imageCache } = extractImagesFromState({ objects: objectsToSave }, existingIDBCache);
+
+    // Log after extraction
+    const characterAvatarsAfter: any[] = [];
+    Object.values(extractedState.objects || {}).forEach((obj: any) => {
+      if (obj.type === 'PANEL' && obj.characterData?.characters) {
+        obj.characterData.characters.forEach((char: any) => {
+          if (char.avatarUrl) {
+            characterAvatarsAfter.push({
+              characterId: char.id,
+              characterName: char.characterName,
+              avatarUrl: char.avatarUrl.substring(0, 50) + (char.avatarUrl.length > 50 ? '...' : ''),
+              avatarUrlType: char.avatarUrl.startsWith('img_ref://') ? 'img_ref' : char.avatarUrl.startsWith('data:') ? 'data_url' : 'other'
+            });
+          }
+        });
+      }
+    });
+    logger.log('[SAVE] Character avatars after extraction:', characterAvatarsAfter);
+    logger.log('[SAVE] Image cache size:', Object.keys(imageCache).length);
 
     // Save ONLY NEW images to IndexedDB (async - don't await to avoid blocking save)
     const newImages = getNewImages(imageCache, existingIDBCache);
+    logger.log('[SAVE] New images to save to IDB:', Object.keys(newImages).length);
     if (Object.keys(newImages).length > 0) {
       saveImageCacheToIDB(newImages)
         .then(() => {
+          logger.log('[SAVE] Successfully saved', Object.keys(newImages).length, 'new images to IDB');
           // Update cache after successful save
           if (cachedIDBCache) {
             Object.assign(cachedIDBCache, newImages);
@@ -280,6 +320,24 @@ export const loadGameState = (
     const adaptedState = shouldAdapt
       ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
       : data.state;
+
+    // Log character avatar URLs after loading from localStorage
+    const characterAvatars: any[] = [];
+    Object.values(adaptedState.objects || {}).forEach((obj: any) => {
+      if (obj.type === 'PANEL' && obj.characterData?.characters) {
+        obj.characterData.characters.forEach((char: any) => {
+          if (char.avatarUrl) {
+            characterAvatars.push({
+              characterId: char.id,
+              characterName: char.characterName,
+              avatarUrl: char.avatarUrl.substring(0, 50) + (char.avatarUrl.length > 50 ? '...' : ''),
+              avatarUrlType: char.avatarUrl.startsWith('img_ref://') ? 'img_ref' : char.avatarUrl.startsWith('data:') ? 'data_url' : char.avatarUrl === 'D' ? 'D_placeholder' : 'other'
+            });
+          }
+        });
+      }
+    });
+    logger.log('[LOAD] Character avatars loaded from localStorage:', characterAvatars);
 
     // Restore images from path metadata (async but we'll update state later)
     // For now, return the state and let the caller handle image restoration

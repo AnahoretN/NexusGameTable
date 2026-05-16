@@ -1,5 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { logger } from '../utils/logger';
+import { saveSingleImageToIDB, generateImageId, createImageRef } from '../utils/imageCache';
+
+const AVATAR_LOG_PREFIX = '[AVATAR UPLOAD]';
 
 interface FilePickerInputProps {
   value: string;
@@ -17,6 +20,11 @@ interface FilePickerInputProps {
  */
 const isValidUrl = (url: string): boolean => {
   if (!url || url.trim() === '') return true; // Empty URL is valid (user can clear the field)
+
+  // img_ref:// URLs are valid (our internal image reference format)
+  if (url.startsWith('img_ref://')) {
+    return true;
+  }
 
   try {
     // Try to create a URL object
@@ -87,12 +95,19 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
     if (file) {
       const maxMB = (maxSize / 1024 / 1024).toFixed(0);
 
+      logger.log(`${AVATAR_LOG_PREFIX} File selected:`, {
+        name: file.name,
+        size: `${(file.size / 1024).toFixed(2)}KB`,
+        type: file.type
+      });
+
       // Check file size
       if (file.size > maxSize) {
         const sizeMB = (file.size / 1024 / 1024).toFixed(2);
         setSizeWarning(`⚠️ File size: ${sizeMB}MB exceeds ${maxMB}MB limit.`);
         // Reset input
         e.target.value = '';
+        logger.warn(`${AVATAR_LOG_PREFIX} File too large, rejected`);
         return;
       }
 
@@ -106,11 +121,25 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
 
       setIsLoading(true);
       try {
+        logger.log(`${AVATAR_LOG_PREFIX} Converting to base64...`);
         // Convert to base64 for P2P sharing
         const base64Url = await fileToBase64(file);
-        onChange(base64Url);
+        logger.log(`${AVATAR_LOG_PREFIX} Converted to base64, length:`, base64Url.length);
+
+        // Save to IndexedDB immediately for persistence across page reloads
+        // Use img_ref:// format for consistent handling
+        const imageId = generateImageId();
+        const imgRefUrl = createImageRef(imageId);
+
+        logger.log(`${AVATAR_LOG_PREFIX} Saving to IndexedDB:`, { imageId, imgRefUrl });
+        await saveSingleImageToIDB(imageId, base64Url);
+        logger.log(`${AVATAR_LOG_PREFIX} Successfully saved to IndexedDB`);
+
+        // Return img_ref:// URL instead of base64
+        logger.log(`${AVATAR_LOG_PREFIX} Calling onChange with:`, imgRefUrl);
+        onChange(imgRefUrl);
       } catch (error) {
-        logger.error('Failed to convert file to base64:', error);
+        logger.error(`${AVATAR_LOG_PREFIX} Failed to process file:`, error);
       } finally {
         setIsLoading(false);
       }
@@ -130,14 +159,19 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
     </svg>
   );
 
+  // Format value for display (hide img_ref:// prefix)
+  const displayValue = value.startsWith('img_ref://') ? '(Uploaded image)' : value;
+  const isImgRef = value.startsWith('img_ref://');
+
   const inputElement = (
     <div className="relative flex items-center">
       <input
-        value={value}
+        value={displayValue}
         onChange={e => handleUrlChange(e.target.value)}
         className={`bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm pr-10 ${className}`}
         placeholder={placeholder}
-        disabled={isLoading}
+        disabled={isLoading || isImgRef}
+        title={isImgRef ? 'Image is stored locally. Upload a new image to replace.' : ''}
       />
       <button
         type="button"

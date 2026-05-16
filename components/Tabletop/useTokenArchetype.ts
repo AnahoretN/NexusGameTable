@@ -303,8 +303,8 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
   // This adds a character token to cursor slot
   useEffect(() => {
     const handleAddCharacterTokenToSlot = (e: Event) => {
-      const customEvent = e as CustomEvent<{ token: Token }>;
-      const { token } = customEvent.detail;
+      const customEvent = e as CustomEvent<{ token: Token; mousePosition?: { x: number; y: number } }>;
+      const { token, mousePosition } = customEvent.detail;
 
       if (!token) return;
       if (cursorSlot.length >= 100) return;
@@ -320,17 +320,24 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       (tokenClone as any).originalZIndex = token.zIndex ?? 0;
       (tokenClone as any).source = 'character'; // Source: character panel
 
+      // Set click offsets to center the token on cursor
+      // Token dimensions in virtual units
+      const tokenWidth = token.width ?? 80;
+      const tokenHeight = token.height ?? 80;
+      // Convert to pixels and set offset from center (half of token size)
+      (tokenClone as any).clickOffsetX_PX = (tokenWidth * pixelsPerVU) / 2;
+      (tokenClone as any).clickOffsetY_PX = (tokenHeight * pixelsPerVU) / 2;
+
       setCursorSlot(prev => [...prev, tokenClone]);
       cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
 
-      // Set cursor position to center of screen if not set
-      if (!cursorPositionRef.current) {
-        const centerX = window.innerWidth / 2;
-        const centerY = window.innerHeight / 2;
-        const pos = { x: centerX, y: centerY };
-        setCursorPosition(pos);
-        cursorPositionRef.current = pos;
-      }
+      // Set cursor position to mouse position from event, or center of screen if not provided
+      const pos = mousePosition || {
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2
+      };
+      setCursorPosition(pos);
+      cursorPositionRef.current = pos;
 
       // Set source to 'shift' to behave like Ctrl+click (drop on click)
       setCursorSlotSource('shift');

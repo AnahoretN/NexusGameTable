@@ -1199,6 +1199,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     currentTool,
     isShiftPressed,
     setIsShiftPressed,
+    isCtrlPressed,
     setIsCtrlPressed,
     draggingId,
     draggingIdRef,
@@ -1325,9 +1326,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
     // Handle clicking on empty space (clear context menus, rulers, etc.)
     if (!objId) {
-      // Pan view: Shift + left mouse drag on empty space
+      // Pan view: Ctrl + left mouse drag on empty space
       // Special handling for marker tool: check if cursor is over a drawing
-      if (e.shiftKey && e.button === 0 && scrollContainerRef.current) {
+      if ((e.ctrlKey || e.metaKey) && e.button === 0 && scrollContainerRef.current) {
         // For marker/eraser tools, check if cursor is over a drawing
         if (currentTool === 'marker' || currentTool === 'eraser') {
           const rect = scrollContainerRef.current.getBoundingClientRect();
@@ -1451,7 +1452,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // SHIFT+CLICK: add to slot immediately (accumulate multiple items)
     // BOARD is excluded - never added to slot via shift+click
     // EFFECT_TEMPLATE is now supported via shift+click
-    if (e.shiftKey && obj && obj.type !== ItemType.BOARD && (
+    // Disabled when Ctrl is held (used for panning)
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && obj && obj.type !== ItemType.BOARD && (
       obj.type === ItemType.CARD ||
       obj.type === ItemType.TOKEN ||
       obj.type === ItemType.COUNTER ||
@@ -1474,9 +1476,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       }
 
       // Check if this is a UI object (panel/window) - moves immediately without threshold
+      // Disabled when Ctrl is held (used for panning)
       const isUIObject = obj?.type === ItemType.PANEL || obj?.type === ItemType.WINDOW;
 
-      if (isUIObject) {
+      if (isUIObject && !e.ctrlKey && !e.metaKey) {
 
         // UI objects use immediate drag (no cursor slot, no threshold)
         // Find the actual panel container by looking for data-ui-object attribute
@@ -1505,6 +1508,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       // Check if we just dropped an item (prevent immediate re-add)
       const timeSinceLastDrop = Date.now() - cursorSlotLastAddedRef.current;
       if (timeSinceLastDrop < 100) {
+        return;
+      }
+
+      // Don't set up drag threshold when Ctrl is held (used for panning)
+      if (e.ctrlKey || e.metaKey) {
         return;
       }
 
@@ -1699,7 +1707,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
     // Check drag threshold for game objects (even if not yet dragging)
     // DISABLED for Shift: Shift+click adds to slot, Shift+drag does NOT
-    if (dragThresholdRef.current.targetId && !dragThresholdRef.current.addedToSlot && !isShiftPressed) {
+    // DISABLED for Ctrl: Ctrl+drag is used for panning
+    if (dragThresholdRef.current.targetId && !dragThresholdRef.current.addedToSlot && !isShiftPressed && !isCtrlPressed) {
       const targetId = dragThresholdRef.current.targetId;
       const obj = state.objects[targetId];
 
@@ -1958,7 +1967,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     resizingId,
     resizeStart,
     liveResizeSizeRef,
-    setLiveResizeSize
+    setLiveResizeSize,
+    isShiftPressed,
+    isCtrlPressed,
+    props
   ]);
 
   // Mouse up handler
