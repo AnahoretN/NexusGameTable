@@ -543,12 +543,6 @@ setEraserThickness(newThickness);
     const canvas = canvasRef.current;
     const pos = getWorldPosition(e.clientX, e.clientY);
 
-    // Convert world position to screen position for cursor display
-    // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-    const screenX = pos.x - offsetX;
-    const screenY = pos.y - offsetY;
-    setCursorPosition({ x: screenX, y: screenY });
-
     // Handle drawing dragging
     if (isDraggingDrawing && draggedDrawingId && dragStartPos && dragStartDrawingPos) {
       const dx = pos.x - dragStartPos.x;
@@ -1082,7 +1076,6 @@ setEraserThickness(newThickness);
   const handleMouseLeave = useCallback(() => {
     setIsDrawing(false);
     setCurrentStroke([]);
-    setCursorPosition(null);
     // Also cancel drawing drag
     if (isDraggingDrawing) {
       setIsDraggingDrawing(false);
@@ -1160,14 +1153,6 @@ setEraserThickness(newThickness);
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
-      onMouseEnter={(e) => {
-        // Update cursor position on enter using world-to-screen conversion
-        const pos = getWorldPosition(e.clientX, e.clientY);
-        // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-        const screenX = pos.x - offsetX;
-        const screenY = pos.y - offsetY;
-        setCursorPosition({ x: screenX, y: screenY });
-      }}
     />
   );
 };
