@@ -364,7 +364,7 @@ function restoreImageReferences(
     const imageId = img.id.startsWith('img_') ? img.id : `img_pack_${img.filename}`;
     const imgRefUrl = createImageRef(imageId);
     refToImgRefMap.set(packRef, imgRefUrl);
-    // Store base64 in managed cache (in-memory) - OVERWRITE any existing
+    // Store base64 in managed cache (in-memory) with unique ID
     addToManagedCache(imageId, img.data);
     // Also keep track of base64 for validation
     imageCache.set(imageId, img.data);
@@ -649,6 +649,9 @@ export async function loadPack(
   progressCallback?: (step: string, status: 'loading' | 'success' | 'warning' | 'error') => void
 ): Promise<Partial<GameState>> {
   try {
+    // Generate unique pack ID from filename + timestamp to prevent image ID conflicts
+    const packId = `${file.name.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}`;
+
     const logStep = (step: string, status: 'loading' | 'success' | 'warning' | 'error' = 'loading') => {
       if (progressCallback) {
         progressCallback(step, status);
@@ -758,7 +761,7 @@ export async function loadPack(
         }
 
         images.push({
-          id: `img_${images.length}`,
+          id: `img_${packId}_${images.length}`,
           filename,
           data: base64
         });
@@ -796,10 +799,10 @@ export async function loadPack(
         // Use a unique ID based on filename or generate new one
         const imageId = img.id.startsWith('img_') ? img.id : `img_pack_${img.filename}`;
 
-        // Add to managed cache (fast, in-memory) - OVERWRITE any existing
+        // Add to managed cache (fast, in-memory) with unique ID
         addToManagedCache(imageId, img.data);
 
-        // Also save to IndexedDB for persistence - OVERWRITE any existing
+        // Also save to IndexedDB for persistence with unique ID
         try {
           await saveSingleImageToIDB(imageId, img.data);
         } catch (error) {
@@ -807,7 +810,7 @@ export async function loadPack(
         }
       }
 
-      logStep(`Loaded ${images.length} pack images into browser cache (overwrote existing)`, 'success');
+      logStep(`Loaded ${images.length} pack images into browser cache (unique IDs)`, 'success');
     }
 
     // Restore image references to img_ref://

@@ -127,6 +127,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [packLoadingSteps, setPackLoadingSteps] = useState<PackLoadingStep[]>([]);
   const [isPackLoading, setIsPackLoading] = useState(false);
   const packFileInputRef = useRef<HTMLInputElement>(null);
+  const addPackFileInputRef = useRef<HTMLInputElement>(null);
   // Log viewer state
   const [showLogViewer, setShowLogViewer] = useState(false);
   // Local file restore dialog state
@@ -696,6 +697,176 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     }
   };
 
+  const handleAddPack = () => {
+    addPackFileInputRef.current?.click();
+  };
+
+  const handleAddPackFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.nexuspack')) {
+      alert(translate('Invalid pack file', language as Locale));
+      return;
+    }
+
+    try {
+      // Show loading modal
+      setIsPackLoading(true);
+      setPackLoadingSteps([{ message: `Adding pack: ${file.name}`, status: 'loading' }]);
+
+      const packData = await loadPack(file, (step, status) => {
+        addPackLoadingStep(step, status);
+      });
+
+      // Validate pack data structure
+      if (!packData.objects || typeof packData.objects !== 'object') {
+        throw new Error("Invalid pack: missing or invalid 'objects' field");
+      }
+      if (!packData.players || !Array.isArray(packData.players)) {
+        throw new Error("Invalid pack: missing or invalid 'players' field");
+      }
+
+      // ===== CRITICAL: Remap image IDs to avoid conflicts =====
+      // When adding a pack, we need to give images new IDs to prevent
+      // overwriting images from previously added packs
+      addPackLoadingStep('Remapping image IDs to prevent conflicts...', 'loading');
+
+      const {
+        getImageUrlFromRef,
+        saveSingleImageToIDB,
+        addToManagedCache,
+        createImageRef
+      } = await import('../utils/imageCache');
+
+      // Find all unique img_ref:// URLs in pack objects
+      const imgRefUrls = new Set<string>();
+      const extractImgRefs = (obj: any) => {
+        if (!obj || typeof obj !== 'object') return;
+        if (Array.isArray(obj)) {
+          obj.forEach(extractImgRefs);
+          return;
+        }
+        // Check all string values for img_ref:// URLs
+        for (const value of Object.values(obj)) {
+          if (typeof value === 'string' && value.startsWith('img_ref://')) {
+            imgRefUrls.add(value);
+          } else if (typeof value === 'object' && value !== null) {
+            extractImgRefs(value);
+          }
+        }
+      };
+
+      for (const obj of Object.values(packData.objects || {})) {
+        extractImgRefs(obj);
+      }
+
+      // Create mapping from old image IDs to new IDs
+      const imageIdMap = new Map<string, string>();
+      const generateUniqueImageId = (originalId: string): string => {
+        // Extract base ID (remove img_ref:// prefix)
+        const baseId = originalId.replace('img_ref://', '');
+        let counter = 1;
+        let newId: string;
+        do {
+          newId = `${baseId}_add${counter}`;
+          counter++;
+        } while (imgRefUrls.has(`img_ref://${newId}`) || imageIdMap.has(`img_ref://${newId}`));
+        return newId;
+      };
+
+      // For each unique img_ref://, create a new ID and copy the image
+      for (const oldImgRef of imgRefUrls) {
+        const newImageId = generateUniqueImageId(oldImgRef);
+        const newImgRef = createImageRef(newImageId);
+        imageIdMap.set(oldImgRef, newImgRef);
+
+        // Get the image data from the old ref
+        try {
+          const imageData = await getImageUrlFromRef(oldImgRef);
+          if (imageData) {
+            // Save with new ID to both caches
+            await saveSingleImageToIDB(newImageId, imageData);
+            addToManagedCache(newImageId, imageData);
+          }
+        } catch (error) {
+          logger.warn(`[ADD_PACK] Failed to copy image ${oldImgRef} to ${newImgRef}:`, error);
+        }
+      }
+
+      // Replace all img_ref:// URLs in objects with new IDs
+      const replaceImgRefs = (obj: any): any => {
+        if (!obj || typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) {
+          return obj.map(replaceImgRefs);
+        }
+        const result = { ...obj };
+        for (const [key, value] of Object.entries(result)) {
+          if (typeof value === 'string' && value.startsWith('img_ref://') && imageIdMap.has(value)) {
+            result[key] = imageIdMap.get(value);
+          } else if (typeof value === 'object' && value !== null) {
+            result[key] = replaceImgRefs(value);
+          }
+        }
+        return result;
+      };
+
+      // Apply the replacement to all pack objects
+      const remappedObjects: Record<string, any> = {};
+      for (const [id, obj] of Object.entries(packData.objects || {})) {
+        remappedObjects[id] = replaceImgRefs(obj);
+      }
+      packData.objects = remappedObjects;
+
+      addPackLoadingStep(`Remapped ${imageIdMap.size} images to prevent conflicts`, 'success');
+
+      // Count conflicts
+      const existingIds = new Set(Object.keys(state.objects));
+      let conflictCount = 0;
+      for (const id of Object.keys(packData.objects)) {
+        if (existingIds.has(id)) conflictCount++;
+      }
+
+      if (conflictCount > 0) {
+        addPackLoadingStep(`Found ${conflictCount} conflicting IDs - generating new ones`, 'loading');
+      }
+
+      // Dispatch add pack action (merges with current state)
+      dispatch({ type: 'ADD_PACK_TO_GAME', payload: packData });
+
+      // Preload all pack images into resolved cache
+      const { preloadAllPackImages } = await import('../utils/imageCache');
+      await preloadAllPackImages(packData.objects || {});
+
+      const objectCount = Object.keys(packData.objects || {}).length;
+
+      // Add final success step
+      addPackLoadingStep(`Pack added successfully! (${objectCount} objects merged into current game)`, 'success');
+
+      // Hide modal after short delay
+      setTimeout(() => {
+        setIsPackLoading(false);
+        setPackLoadingSteps([]);
+      }, 1500);
+
+      // Reset file input
+      if (addPackFileInputRef.current) {
+        addPackFileInputRef.current.value = '';
+      }
+    } catch (error) {
+      // Add error step to modal
+      addPackLoadingStep(`Error adding pack: ${(error as Error).message}`, 'error');
+
+      // Keep modal visible longer to show error
+      setTimeout(() => {
+        setIsPackLoading(false);
+        setPackLoadingSteps([]);
+      }, 3000);
+
+      logger.error(translate('Error adding pack', language as Locale), error);
+    }
+  };
+
   // Manual connection handlers
   const handleCreateManualOffer = async () => {
     const name = guestNameInput.trim() || 'Host';
@@ -1125,7 +1296,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={handleSaveGame}
-                    className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                    className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all"
                   >
                     <Save size={16} />
                     {translate('Save', language as Locale)}
@@ -1133,7 +1304,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   {currentUserIsGM && (
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all"
                     >
                       <Upload size={16} />
                       {translate('Load', language as Locale)}
@@ -1141,22 +1312,34 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   )}
                 </div>
 
-                {/* Pack buttons row */}
+                {/* Save Pack button */}
+                {currentUserIsGM && (
+                  <button
+                    onClick={handleSavePack}
+                    className="w-full py-3 px-3 rounded flex items-center justify-center gap-2 font-bold bg-purple-700 hover:bg-purple-600 text-white transition-all"
+                  >
+                    <Save size={16} />
+                    {translate('Save Pack', language as Locale)}
+                  </button>
+                )}
+
+                {/* Load Pack and Add Pack buttons row */}
                 {currentUserIsGM && (
                   <div className="grid grid-cols-2 gap-2">
                     <button
-                      onClick={handleSavePack}
-                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
-                    >
-                      <Save size={16} />
-                      {translate('Save Pack', language as Locale)}
-                    </button>
-                    <button
                       onClick={handleLoadPack}
-                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-purple-700 hover:bg-purple-600 text-white transition-all"
                     >
                       <Upload size={16} />
                       {translate('Load Pack', language as Locale)}
+                    </button>
+                    <button
+                      onClick={handleAddPack}
+                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-purple-700 hover:bg-purple-600 text-white transition-all"
+                      title="Add pack objects to current game (conflicting IDs will be regenerated)"
+                    >
+                      <Plus size={16} />
+                      {translate('Add Pack', language as Locale)}
                     </button>
                   </div>
                 )}
@@ -1180,6 +1363,13 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   type="file"
                   accept=".nexuspack"
                   onChange={handlePackFileChange}
+                  className="hidden"
+                />
+                <input
+                  ref={addPackFileInputRef}
+                  type="file"
+                  accept=".nexuspack"
+                  onChange={handleAddPackFileChange}
                   className="hidden"
                 />
 
@@ -1488,7 +1678,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                         onClick={() => {
                           navigator.clipboard.writeText(manualConnection.state.generatedCode);
                         }}
-                        className="flex-1 py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
+                        className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
                       >
                         <Copy size={16} />
                         {translate('Copy to Clipboard', language as Locale)}
@@ -1601,7 +1791,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                           onClick={() => {
                             navigator.clipboard.writeText(manualConnection.state.generatedCode);
                           }}
-                          className="w-full py-2 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
+                          className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium transition-colors flex items-center justify-center gap-2"
                         >
                           <Copy size={16} />
                           {translate('Copy to Clipboard', language as Locale)}
@@ -1725,7 +1915,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               <button
                 onClick={() => setPackModalOpen(false)}
                 disabled={isCreatingPack}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-white rounded font-medium transition-colors"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 text-white rounded font-medium transition-colors"
               >
                 {translate('Cancel', language as Locale)}
               </button>

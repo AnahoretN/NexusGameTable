@@ -42,6 +42,7 @@ import {
   syncTokenImageToCharacter
 } from '../utils/characterTokenSync';
 import { allocateZIndexInHyperslice, defragmentHyperslice } from '../utils/zIndexAllocator';
+import { addPackToGameReducer } from './reducers/appReducers';
 
 const GameContext = createContext<{
   state: GameState;
@@ -433,6 +434,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             language: state.language,
             // sessionId from save is preserved if exists (handled by spread above)
         };
+    }
+    case 'ADD_PACK_TO_GAME': {
+        // Use the helper reducer to add pack objects to current game
+        return addPackToGameReducer(state, action);
     }
     case 'SET_ACTIVE_ID': {
         return { ...state, activePlayerId: action.payload };

@@ -54,6 +54,7 @@ export type Action =
   | BaseAction<'BRING_TO_FRONT', { id: string }>
   | BaseAction<'SEND_TO_BACK', { id: string }>
   | BaseAction<'LOAD_GAME', GameState>
+  | BaseAction<'ADD_PACK_TO_GAME', Partial<GameState>> // Add pack objects to current game
   | BaseAction<'ADD_PLAYER', Player>
   | BaseAction<'REMOVE_PLAYER', { id: string }>
   | BaseAction<'UPDATE_PLAYER', { id: string; [key: string]: any }>
