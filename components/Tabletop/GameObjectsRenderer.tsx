@@ -12,6 +12,7 @@ import { TabletopRenderContext, ObjectRenderProps } from './types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 import { TokenCountersDisplay } from './TokenCountersDisplay';
 import { TokenRenderer } from './TokenRenderer';
+import { CardRenderer } from './CardRenderer';
 
 interface GameObjectsRendererProps {
   visibleTableObjects: TableObject[];
@@ -366,268 +367,27 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
   };
 
   const renderCard = (obj: TableObject, globalZIndex: number) => {
-    const card = obj as CardType;
-    const deck = card.deckId ? state.objects[card.deckId] : undefined;
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    const canDrag = !obj.locked;
-    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
-    const objLayer = obj.hyperscaleLayerId || 'none';
-
-    let baseWidth = card.width ?? (deck?.cardWidth ?? 63);
-    let baseHeight = card.height ?? (deck?.cardHeight ?? 88);
-    const pxWidth = v2p(baseWidth);
-    const pxHeight = v2p(baseHeight);
-
     return (
-      <Tooltip
-        text={obj.tooltipText}
-        showImage={obj.showTooltipImage}
-        imageSrc={obj.content}
-        scale={obj.tooltipScale}
-      >
-        <div
-          data-object-id={obj.id}
-          onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
-          onContextMenu={(e) => onContextMenu(e, obj)}
-          className={`absolute group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
-          style={createPositionedStyle(
-            v2p(obj.x),
-            v2p(obj.y),
-            pxWidth,
-            pxHeight,
-            globalZIndex,
-            objLayer,
-            {
-              transform: `rotate(${obj.rotation ?? 0}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
-              overflow: 'visible',
-            }
-          )}
-        >
-          <Card
-            card={card}
-            overrideWidth={pxWidth}
-            overrideHeight={pxHeight}
-            cardWidth={deck?.cardWidth}
-            cardHeight={deck?.cardHeight}
-            cardOrientation={deck?.cardOrientation}
-            cardNamePosition={deck?.cardNamePosition}
-            disableRotationTransform={true}
-            deckSpriteConfig={deck?.spriteConfig}
-            deckShowTooltipImage={deck?.showTooltipImage}
-            deckTooltipScale={deck?.tooltipScale}
-          />
-
-          {/* Action buttons for cards - scale to compensate parent's inverseScale */}
-          <div
-            className={`absolute -bottom-4 left-1/2 flex items-center gap-1 transition-opacity z-20 ${isCtrlPressed ? 'opacity-0 pointer-events-none' : currentTool === 'zoom' ? 'opacity-100 pointer-events-auto' : currentTool === 'none' ? 'opacity-0 group-hover:opacity-100 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}
-            style={{ transform: 'translateX(-50%) scale(' + zoomMultiplier + ')' }}
-          >
-            {(() => {
-              const actionButtons = deck?.cardActionButtons || [];
-              const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
-                flip: {
-                  key: 'flip',
-                  action: () => dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } }),
-                  className: 'bg-purple-600 hover:bg-purple-500',
-                  title: card.faceUp ? 'Face Down' : 'Face Up',
-                  icon: card.faceUp ? <EyeOff size={14} /> : <Eye size={14} />
-                },
-                swingClockwise: {
-                  key: 'swingClockwise',
-                  action: () => {
-                    const rotationStep = (card as any).rotationStep || 45;
-                    const newRotation = (card.rotation || 0) === 0 ? rotationStep : 0;
-                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: newRotation } } });
-                  },
-                  className: 'bg-orange-600 hover:bg-orange-500',
-                  title: 'Swing CW',
-                  icon: <RefreshCw size={14} />
-                },
-                swingCounterClockwise: {
-                  key: 'swingCounterClockwise',
-                  action: () => {
-                    const rotationStep = (card as any).rotationStep || 45;
-                    const newRotation = (card.rotation || 0) === 0 ? -rotationStep : 0;
-                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: newRotation } } });
-                  },
-                  className: 'bg-orange-600 hover:bg-orange-500',
-                  title: 'Swing CCW',
-                  icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
-                },
-                rotateClockwise: {
-                  key: 'rotateClockwise',
-                  action: () => {
-                    const rotationStep = (card as any).rotationStep || 45;
-                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: (card.rotation || 0) + rotationStep } } });
-                  },
-                  className: 'bg-yellow-600 hover:bg-yellow-500',
-                  title: 'Rotate CW',
-                  icon: <RotateCw size={14} />
-                },
-                rotateCounterClockwise: {
-                  key: 'rotateCounterClockwise',
-                  action: () => {
-                    const rotationStep = (card as any).rotationStep || 45;
-                    dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { rotation: (card.rotation || 0) - rotationStep } } });
-                  },
-                  className: 'bg-yellow-600 hover:bg-yellow-500',
-                  title: 'Rotate CCW',
-                  icon: <RotateCw size={14} style={{ transform: 'scaleX(-1)' }} />
-                },
-                moveToHand: {
-                  key: 'moveToHand',
-                  action: () => dispatch({
-                    type: 'UPDATE_OBJECT',
-                    payload: {
-                      id: obj.id,
-                      updates: {
-                        location: 'HAND' as CardLocation,
-                        faceUp: true,
-                        ownerId: activePlayerId,
-                        isOnTable: false,
-                        inCursorSlot: false
-                      }
-                    }
-                  }),
-                  className: 'bg-blue-600 hover:bg-blue-500',
-                  title: 'To Hand',
-                  icon: <Hand size={14} />
-                },
-                moveToTopDeck: {
-                  key: 'moveToTopDeck',
-                  action: () => dispatch({ type: 'RETURN_CARD_TO_DECK_TOP', payload: { cardId: obj.id, deckId: deck?.id } }),
-                  className: 'bg-orange-600 hover:bg-orange-500',
-                  title: 'To Top Deck',
-                  icon: <ArrowUp size={14} />
-                },
-                moveToBottomDeck: {
-                  key: 'moveToBottomDeck',
-                  action: () => dispatch({ type: 'MILL_CARD_TO_BOTTOM', payload: { deckId: deck?.id, cardId: obj.id } }),
-                  className: 'bg-yellow-600 hover:bg-yellow-500',
-                  title: 'To Bottom Deck',
-                  icon: <Undo size={14} style={{ transform: 'rotate(180deg)' }} />
-                },
-                moveToDiscard: {
-                  key: 'moveToDiscard',
-                  action: () => {
-                    const millPile = deck?.piles?.find((p: any) => p.isMillPile);
-                    if (millPile) {
-                      dispatch({ type: 'ADD_CARD_TO_PILE', payload: { cardId: obj.id, deckId: deck?.id, pileId: millPile.id } });
-                    }
-                  },
-                  className: 'bg-red-600 hover:bg-red-500',
-                  title: 'Mill',
-                  icon: <Trash2 size={14} />
-                },
-                clone: {
-                  key: 'clone',
-                  action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
-                  className: 'bg-cyan-600 hover:bg-cyan-500',
-                  title: 'Clone',
-                  icon: <Copy size={14} />
-                },
-                delete: {
-                  key: 'delete',
-                  action: () => dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
-                  className: 'bg-red-600 hover:bg-red-500',
-                  title: 'Delete',
-                  icon: <Trash2 size={14} />
-                },
-                lock: {
-                  key: 'lock',
-                  action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
-                  className: 'bg-yellow-600 hover:bg-yellow-500',
-                  title: card.locked ? 'Unlock' : 'Lock',
-                  icon: card.locked ? <Unlock size={14} /> : <Lock size={14} />
-                },
-                layerUp: {
-                  key: 'layerUp',
-                  action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
-                  className: 'bg-blue-600 hover:bg-blue-500',
-                  title: 'Layer Up',
-                  icon: <ArrowUp size={14} />
-                },
-                layerDown: {
-                  key: 'layerDown',
-                  action: () => dispatch({ type: 'MOVE_LAYER_DOWN', payload: { id: obj.id } }),
-                  className: 'bg-blue-600 hover:bg-blue-500',
-                  title: 'Layer Down',
-                  icon: <ArrowDown size={14} />
-                },
-                bringToFront: {
-                  key: 'bringToFront',
-                  action: () => dispatch({ type: 'BRING_TO_FRONT', payload: { id: obj.id } }),
-                  className: 'bg-indigo-600 hover:bg-indigo-500',
-                  title: 'To Top',
-                  icon: <ChevronsUp size={14} />
-                },
-                sendToBack: {
-                  key: 'sendToBack',
-                  action: () => dispatch({ type: 'SEND_TO_BACK', payload: { id: obj.id } }),
-                  className: 'bg-indigo-600 hover:bg-indigo-500',
-                  title: 'To Bottom',
-                  icon: <ChevronsDown size={14} />
-                },
-                hide: {
-                  key: 'hide',
-                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: !(obj as any).isOnTable } }),
-                  className: 'bg-gray-600 hover:bg-gray-500',
-                  title: (obj as any).isOnTable === false ? 'Show' : 'Hide',
-                  icon: (obj as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />
-                },
-                show: {
-                  key: 'show',
-                  action: () => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, isOnTable: true } }),
-                  className: 'bg-gray-600 hover:bg-gray-500',
-                  title: 'Show',
-                  icon: <Eye size={14} />
-                },
-                pin: {
-                  key: 'pin',
-                  action: () => {
-                    const isPinned = (obj as any).isPinnedToViewport;
-                    if (isPinned) {
-                      // Unpin: calculate world position from pinned screen position
-                      const pinnedPos = (obj as any).pinnedScreenPosition;
-                      if (pinnedPos) {
-                        const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
-                        const worldX = (pinnedPos.x * zoom - offset.x + scroll.x) / (pixelsPerVU * zoom);
-                        const worldY = (pinnedPos.y * zoom - offset.y + scroll.y) / (pixelsPerVU * zoom);
-                        dispatch({ type: 'UNPIN_FROM_VIEWPORT', payload: { id: obj.id, worldX, worldY } });
-                      }
-                    } else {
-                      // Pin: calculate screen position from world position
-                      const { offset, zoom, scroll, pixelsPerVU } = state.viewTransform;
-                      const screenX = obj.x * pixelsPerVU + (offset.x - scroll.x) / zoom;
-                      const screenY = obj.y * pixelsPerVU + (offset.y - scroll.y) / zoom;
-                      dispatch({ type: 'PIN_TO_VIEWPORT', payload: { id: obj.id, screenX, screenY } });
-                    }
-                  },
-                  className: 'bg-pink-600 hover:bg-pink-500',
-                  title: (obj as any).isPinnedToViewport ? 'Unpin' : 'Pin',
-                  icon: <Pin size={14} />
-                },
-              };
-
-              const buttons = actionButtons
-                .map(action => buttonConfigs[action])
-                .filter(Boolean)
-                .slice(0, 4);
-
-              return buttons.map(btn => (
-                <button
-                  key={btn.key}
-                  onClick={(e) => { e.stopPropagation(); btn.action(); }}
-                  className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
-                  title={btn.title}
-                >
-                  {btn.icon}
-                </button>
-              ));
-            })()}
-          </div>
-        </div>
-      </Tooltip>
+      <CardRenderer
+        key={obj.id}
+        obj={obj}
+        allObjects={state.objects}
+        globalZIndex={globalZIndex}
+        v2p={v2p}
+        createPositionedStyle={createPositionedStyle}
+        getLayerInverseScale={getLayerInverseScale}
+        draggingId={draggingId}
+        currentTool={currentTool}
+        isCtrlPressed={isCtrlPressed}
+        isGM={isGM}
+        activePlayerId={activePlayerId}
+        pixelsPerVU={pixelsPerVU}
+        basePixelsPerVU={basePixelsPerVU}
+        zoomMultiplier={zoomMultiplier}
+        onContextMenu={onContextMenu}
+        onMouseDown={onMouseDown}
+        dispatch={dispatch}
+      />
     );
   };
 

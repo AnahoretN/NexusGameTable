@@ -359,6 +359,38 @@ export async function loadImageCacheFromIDB(): Promise<ImageCache> {
 }
 
 /**
+ * Get image URL from reference (img_ref://...)
+ * First tries managed cache, then falls back to IndexedDB
+ * Returns the original URL if it's not an img_ref:// URL
+ */
+export async function getImageUrlFromRef(url: string): Promise<string> {
+  // If not an img_ref URL, return as-is
+  if (!isImageRef(url)) {
+    return url;
+  }
+
+  // Extract image ID from ref
+  const imageId = getImageIdFromRef(url);
+
+  // Try managed cache first (faster)
+  const cached = getFromManagedCache(imageId);
+  if (cached) {
+    return cached;
+  }
+
+  // Fall back to IndexedDB
+  const fromIDB = await getImageFromIDB(imageId);
+  if (fromIDB) {
+    // Add to managed cache for next time
+    addToManagedCache(imageId, fromIDB);
+    return fromIDB;
+  }
+
+  // If all else fails, return original URL
+  return url;
+}
+
+/**
  * Get specific image from IndexedDB
  */
 export async function getImageFromIDB(imageId: string): Promise<string | null> {

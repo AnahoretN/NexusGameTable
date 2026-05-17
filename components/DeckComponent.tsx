@@ -9,7 +9,7 @@ import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { executeClickAction } from '../utils/objectActionHandlers';
 import { vuToPixels } from '../utils/vuSystem';
-import { useCursorSlotHover } from '../hooks';
+import { useCursorSlotHover, useImageUrl } from '../hooks';
 
 // 🔥 OPTIMIZED: Zustand version of DeckComponent
 // Replaces: components/DeckComponent.tsx
@@ -200,18 +200,35 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     return visibleCardIds.length > 0 ? (allObjects[visibleCardIds[0]] as CardType) : null;
   }, [deck.cardIds, allObjects]);
 
+  // Convert img_ref:// URLs to displayable URLs for sprite config
+  const deckSpriteUrl = useImageUrl(deck.spriteConfig?.spriteUrl || '');
+  const deckCardBackSpriteUrl = useImageUrl(deck.spriteConfig?.cardBackSpriteUrl || '');
+  const deckCardBackUrl = useImageUrl(deck.spriteConfig?.cardBackUrl || '');
+  const topCardSpriteUrl = useImageUrl(topCard?.spriteUrl || topCard?.content || '');
+  const topCardAltBackUrl = useImageUrl(topCard?.alternativeBack?.url || '');
+
   // Helper function to get background styles for a card (handles sprite sheets)
   const getCardBackgroundStyles = useCallback((card: CardType | null) => {
     if (!card) return { backgroundColor: 'white' };
 
     const deckSpriteConfig = deck.spriteConfig;
-    const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
+    const originalSpriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl;
     const spriteIndex = card.spriteIndex !== undefined ? card.spriteIndex : deckSpriteConfig?.spriteIndex;
     const spriteColumns = card.spriteColumns || deckSpriteConfig?.columns;
     const spriteRows = card.spriteRows || deckSpriteConfig?.rows;
-    const hasSpriteSheet = spriteUrl && spriteIndex !== undefined && spriteColumns && spriteRows;
+    const hasSpriteSheet = originalSpriteUrl && spriteIndex !== undefined && spriteColumns && spriteRows;
 
-    if (hasSpriteSheet) {
+    // Determine which converted URL to use
+    let displayUrl = originalSpriteUrl;
+    if (card.spriteUrl) {
+      displayUrl = topCardSpriteUrl;
+    } else if (deckSpriteConfig?.spriteUrl) {
+      displayUrl = deckSpriteUrl;
+    } else if (card.content) {
+      displayUrl = topCardSpriteUrl;
+    }
+
+    if (hasSpriteSheet && displayUrl) {
       // Calculate background position for sprite sheet
       const col = spriteIndex % spriteColumns;
       const row = Math.floor(spriteIndex / spriteColumns);
@@ -219,15 +236,15 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
       const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
 
       return {
-        backgroundImage: `url(${spriteUrl})`,
+        backgroundImage: `url(${displayUrl})`,
         backgroundSize: `${spriteColumns * 100}% ${spriteRows * 100}%`,
         backgroundPosition: `${colPercent}% ${rowPercent}%`,
         backgroundColor: 'white'
       };
-    } else if (card.content) {
+    } else if (card.content && displayUrl) {
       // Regular card with content image
       return {
-        backgroundImage: `url(${card.content})`,
+        backgroundImage: `url(${displayUrl})`,
         backgroundSize: '100% 100%',
         backgroundPosition: 'center',
         backgroundColor: 'white'
@@ -241,7 +258,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
       backgroundPosition: 'center',
       backgroundColor: 'white'
     };
-  }, [deck.spriteConfig]);
+  }, [deck.spriteConfig, deckSpriteUrl, topCardSpriteUrl]);
 
   // Helper function to get background styles for a card back (handles priority)
   const getCardBackStyles = useCallback((card: CardType | null) => {
@@ -250,7 +267,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     // Priority 1: Check if card has alternativeBack
     if (card.alternativeBack && card.alternativeBack.url) {
       return {
-        backgroundImage: `url(${card.alternativeBack.url})`,
+        backgroundImage: topCardAltBackUrl ? `url(${topCardAltBackUrl})` : undefined,
         backgroundSize: '100% 100%',
         backgroundPosition: 'center',
         backgroundColor: '#1e293b'
@@ -278,14 +295,14 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
       const rowPercent = spriteRows > 1 ? (row / (spriteRows - 1)) * 100 : 0;
 
       return {
-        backgroundImage: `url(${deckSpriteConfig.cardBackSpriteUrl})`,
+        backgroundImage: deckCardBackSpriteUrl ? `url(${deckCardBackSpriteUrl})` : undefined,
         backgroundSize: `${spriteColumns * 100}% ${spriteRows * 100}%`,
         backgroundPosition: `${colPercent}% ${rowPercent}%`,
         backgroundColor: '#1e293b'
       };
     } else if (deckSpriteConfig?.cardBackUrl) {
       return {
-        backgroundImage: `url(${deckSpriteConfig.cardBackUrl})`,
+        backgroundImage: deckCardBackUrl ? `url(${deckCardBackUrl})` : undefined,
         backgroundSize: '100% 100%',
         backgroundPosition: 'center',
         backgroundColor: '#1e293b'
@@ -299,7 +316,7 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
       backgroundPosition: 'center',
       backgroundColor: '#1e293b'
     };
-  }, [deck.spriteConfig]);
+  }, [deck.spriteConfig, deckCardBackSpriteUrl, deckCardBackUrl, topCardAltBackUrl]);
 
   // Memoize piles grouping by position
   const { getPilePosition } = useMemo(() => {
@@ -1053,14 +1070,30 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
 
 // Memoize DeckComponent to prevent unnecessary re-renders
 export default React.memo(DeckComponent, (prevProps, nextProps) => {
-  return (
-    prevProps.deck.id === nextProps.deck.id &&
-    prevProps.deck.rotation === nextProps.deck.rotation &&
-    prevProps.deck.locked === nextProps.deck.locked &&
-    prevProps.draggingId === nextProps.draggingId &&
-    prevProps.hoveredPileId === nextProps.hoveredPileId &&
-    prevProps.currentTool === nextProps.currentTool &&
-    prevProps.disableDeckHighlight === nextProps.disableDeckHighlight
-    // УБРАЛИ сравнение массивов - они вызывают постоянные ререндеры!
-  );
+  // Check deck identity and basic properties
+  if (prevProps.deck.id !== nextProps.deck.id) return false;
+  if (prevProps.deck.rotation !== nextProps.deck.rotation) return false;
+  if (prevProps.deck.locked !== nextProps.deck.locked) return false;
+
+  // Check sprite config changes (affects card back rendering)
+  const prevSpriteConfig = prevProps.deck.spriteConfig;
+  const nextSpriteConfig = nextProps.deck.spriteConfig;
+  if (prevSpriteConfig?.cardBackUrl !== nextSpriteConfig?.cardBackUrl) return false;
+  if (prevSpriteConfig?.cardBackSpriteUrl !== nextSpriteConfig?.cardBackSpriteUrl) return false;
+  if (prevSpriteConfig?.cardBackSpriteIndex !== nextSpriteConfig?.cardBackSpriteIndex) return false;
+  if (prevSpriteConfig?.cardBackSpriteColumns !== nextSpriteConfig?.cardBackSpriteColumns) return false;
+  if (prevSpriteConfig?.cardBackSpriteRows !== nextSpriteConfig?.cardBackSpriteRows) return false;
+  if (prevSpriteConfig?.spriteUrl !== nextSpriteConfig?.spriteUrl) return false;
+
+  // Check deck content (affects deck appearance)
+  if (prevProps.deck.content !== nextProps.deck.content) return false;
+
+  // Check other props
+  if (prevProps.draggingId !== nextProps.draggingId) return false;
+  if (prevProps.hoveredPileId !== nextProps.hoveredPileId) return false;
+  if (prevProps.currentTool !== nextProps.currentTool) return false;
+  if (prevProps.disableDeckHighlight !== nextProps.disableDeckHighlight) return false;
+
+  // All props equal - skip re-render
+  return true;
 });

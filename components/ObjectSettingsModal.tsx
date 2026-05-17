@@ -10,6 +10,7 @@ import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from 
 import { CARD_SHAPE_DIMS } from '../constants';
 import { loadImageFromFile, analyzeImageForGridSmart, createDebugPreview, DetectedCell, GridAnalysisOptions } from '../utils/imageGridAnalyzer';
 import { generateUUID } from '../utils/uuid';
+import { useImageUrl } from '../hooks';
 
 // Hex grid constants
 const HEX_RATIO = 1.15;
@@ -489,6 +490,10 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   const [spriteConfig, setSpriteConfig] = useState<CardSpriteConfig | null>(
     deck.type === ItemType.DECK ? (deck.spriteConfig || null) : null
   );
+
+  // Convert img_ref:// URLs to displayable URLs for preview
+  const spriteSheetDisplayUrl = useImageUrl(spriteConfig?.spriteUrl || '');
+  const cardBackDisplayUrl = useImageUrl(spriteConfig?.cardBackUrl || '');
 
   // Reset data when object changes
   useEffect(() => {
@@ -4447,7 +4452,7 @@ setGridDebugInfo(null);
                 {spriteConfig?.cardBackUrl && (
                   <div className="bg-slate-900 rounded p-2 border border-slate-700 flex justify-center">
                     <img
-                      src={spriteConfig.cardBackUrl}
+                      src={cardBackDisplayUrl}
                       alt={`${translate('Card Back URL', language as Locale)} - ${translate('preview', language as Locale)}`}
                       className="max-w-24 max-h-32"
                       onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2275%22%3E%3Crect fill=%22%231e293b%22 width=%2250%22 height=%2275%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 fill=%22%2364748b%22 dy=%22.3em%22 font-size=%2210%22%3EN/A%3C/text%3E%3C/svg%3E'; }}
@@ -4468,7 +4473,10 @@ setGridDebugInfo(null);
                       type="number"
                       min="1"
                       value={spriteConfig?.columns || 1}
-                      onChange={(e) => setSpriteConfig(prev => ({ ...prev, columns: Math.max(1, parseInt(e.target.value) || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', rows: prev?.rows || 1, totalCards: prev?.totalCards }))}
+                      onChange={(e) => {
+                        const newColumns = Math.max(1, parseInt(e.target.value) || 1);
+                        setSpriteConfig(prev => ({ ...prev, columns: newColumns, rows: prev?.rows || 1, totalCards: newColumns * (prev?.rows || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '' }));
+                      }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     />
                   </div>
@@ -4478,7 +4486,10 @@ setGridDebugInfo(null);
                       type="number"
                       min="1"
                       value={spriteConfig?.rows || 1}
-                      onChange={(e) => setSpriteConfig(prev => ({ ...prev, rows: Math.max(1, parseInt(e.target.value) || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '', columns: prev?.columns || 1, totalCards: prev?.totalCards }))}
+                      onChange={(e) => {
+                        const newRows = Math.max(1, parseInt(e.target.value) || 1);
+                        setSpriteConfig(prev => ({ ...prev, rows: newRows, columns: prev?.columns || 1, totalCards: newRows * (prev?.columns || 1), spriteUrl: prev?.spriteUrl || '', cardBackUrl: prev?.cardBackUrl || '' }));
+                      }}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     />
                   </div>
@@ -4508,7 +4519,7 @@ setGridDebugInfo(null);
                     data-scrollable="true"
                   >
                     <img
-                      src={spriteConfig.spriteUrl}
+                      src={spriteSheetDisplayUrl}
                       alt={translate('Sprite Sheet Preview', language as Locale)}
                       className="mx-auto border border-slate-600"
                       style={{
@@ -4528,8 +4539,14 @@ setGridDebugInfo(null);
                     onClick={() => {
                       // This will be handled by the parent component via onSave
                       // The card generation will happen in the reducer
-                      (data as Deck).spriteConfig = spriteConfig;
-                      onSave(data);
+                      // Set totalCards based on columns * rows if not explicitly set
+                      const finalSpriteConfig = {
+                        ...spriteConfig,
+                        totalCards: spriteConfig.totalCards || (spriteConfig.columns * spriteConfig.rows)
+                      };
+                      // Update data with the final spriteConfig
+                      const updatedData = { ...data, spriteConfig: finalSpriteConfig };
+                      onSave(updatedData);
                       onClose();
                     }}
                     className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"

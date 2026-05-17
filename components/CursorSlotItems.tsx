@@ -8,6 +8,7 @@ import { DECK_OFFSET } from '../constants';
 import { logger } from '../utils/logger';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { getTokenWithAppliedState } from '../hooks/useTokenWithState';
+import { useImageUrl } from '../hooks';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -58,7 +59,15 @@ interface CursorSlotItemProps {
 /**
  * Renders a card in the cursor slot
  */
-const CursorSlotCard: React.FC<CursorSlotItemProps & { item: CardType }> = ({ item, width, height, offsetX, offsetY, zIndex, state }) => {
+const CursorSlotCard = React.memo<CursorSlotItemProps & { item: CardType }>(({
+  item,
+  width,
+  height,
+  offsetX,
+  offsetY,
+  zIndex,
+  state
+}) => {
   const deck = item.deckId ? state.objects[item.deckId] as DeckType | undefined : undefined;
   // Increase container size by 20% to prevent clipping during fast movement
   const containerWidth = width * 1.2;
@@ -101,12 +110,31 @@ const CursorSlotCard: React.FC<CursorSlotItemProps & { item: CardType }> = ({ it
       />
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Only re-render if critical props change
+  return (
+    prevProps.item === nextProps.item &&
+    prevProps.width === nextProps.width &&
+    prevProps.height === nextProps.height &&
+    prevProps.offsetX === nextProps.offsetX &&
+    prevProps.offsetY === nextProps.offsetY &&
+    prevProps.zIndex === nextProps.zIndex
+  );
+});
 
 /**
  * Renders a token in the cursor slot
  */
-const CursorSlotToken: React.FC<CursorSlotItemProps & { item: TokenType }> = ({ item, width, height, offsetX, offsetY, zIndex, state, pixelsPerVU }) => {
+const CursorSlotToken = React.memo<CursorSlotItemProps & { item: TokenType }>(({
+  item,
+  width,
+  height,
+  offsetX,
+  offsetY,
+  zIndex,
+  state,
+  pixelsPerVU
+}) => {
   // Apply token state to get correct visual properties
   const tokenWithState = getTokenWithAppliedState(item, state.objects as Record<string, TableObject>);
   // Increase container size by 20% to prevent clipping during fast movement
@@ -150,7 +178,18 @@ const CursorSlotToken: React.FC<CursorSlotItemProps & { item: TokenType }> = ({ 
       />
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Only re-render if critical props change
+  return (
+    prevProps.item === nextProps.item &&
+    prevProps.width === nextProps.width &&
+    prevProps.height === nextProps.height &&
+    prevProps.offsetX === nextProps.offsetX &&
+    prevProps.offsetY === nextProps.offsetY &&
+    prevProps.zIndex === nextProps.zIndex &&
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU
+  );
+});
 
 /**
  * Renders a deck in the cursor slot
@@ -669,6 +708,9 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
   const rotation = item.rotation || 0;
   const [isImageReady, setIsImageReady] = useState(false);
 
+  // Convert img_ref:// URLs to displayable URLs for effect image
+  const effectImageUrl = useImageUrl(item.content || '');
+
   // Ensure width/height are never zero to prevent black square flicker
   const safeWidth = Math.max(width, 1);
   const safeHeight = Math.max(height, 1);
@@ -682,19 +724,19 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
 
   // Preload image when component mounts
   useEffect(() => {
-    if (item.content) {
+    if (effectImageUrl) {
       // Check if already cached
-      if (effectImageCache.has(item.content)) {
+      if (effectImageCache.has(effectImageUrl)) {
         setIsImageReady(true);
         return;
       }
 
       // Preload and show when ready
-      preloadEffectImage(item.content).then(() => {
+      preloadEffectImage(effectImageUrl).then(() => {
         setIsImageReady(true);
       });
     }
-  }, [item.content]);
+  }, [effectImageUrl]);
 
   return (
     <div
@@ -730,7 +772,7 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
       >
         {/* Effect image - use 100% with objectFit: 'fill' to match EffectTemplateRenderer */}
         <img
-          src={item.content}
+          src={effectImageUrl}
           alt=""
           crossOrigin="anonymous"
           style={{

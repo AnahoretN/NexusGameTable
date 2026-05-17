@@ -437,10 +437,14 @@ export const TokenRenderer = memo(({
   );
 }, (prevProps, nextProps) => {
   // Custom comparison for memo
+  // Only re-render if this specific token is being dragged, not when ANY token is dragged
+  const prevIsDragging = prevProps.draggingId === prevProps.obj.id;
+  const nextIsDragging = nextProps.draggingId === nextProps.obj.id;
+
   return (
     prevProps.obj === nextProps.obj &&
     prevProps.allObjects === nextProps.allObjects &&
-    prevProps.draggingId === nextProps.draggingId &&
+    prevIsDragging === nextIsDragging && // Only care if THIS token is being dragged
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.isCtrlPressed === nextProps.isCtrlPressed &&
     prevProps.isGM === nextProps.isGM &&

@@ -1,7 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { TokenShape } from '../types';
 import { generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
-import { isImageRef, getImageIdFromRef } from '../utils/imageCache';
+import { isImageRef, getImageIdFromRef, getFromManagedCache } from '../utils/imageCache';
+
+// Global cache for resolved image URLs to prevent re-loading during drag operations
+const resolvedImageCache = new Map<string, string>();
+const pendingLoads = new Map<string, Promise<string | null>>();
+
+/**
+ * Initialize the global resolved image cache from the managed cache
+ * Call this during app startup to pre-populate the cache
+ */
+export function initResolvedImageCache(): void {
+  // The managed cache is already populated from IndexedDB during GameContext init
+  // We can't directly access it here, but images will be cached on first use
+  // This function exists for future preloading optimization
+}
+
+/**
+ * Preload an image into the global cache
+ */
+export function preloadImageUrl(imageId: string, dataUrl: string): void {
+  resolvedImageCache.set(imageId, dataUrl);
+}
 
 // Default border radius in viewBox units (scales with the SVG)
 const BORDER_RADIUS = 3;
@@ -79,7 +100,14 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   pixelsPerVU = 1,
 }) => {
   // Resolve img_ref:// to data URL from IndexedDB
-  const [resolvedContent, setResolvedContent] = useState<string | undefined>(content);
+  const [resolvedContent, setResolvedContent] = useState<string | undefined>(() => {
+    // Initialize from global cache if available
+    if (content && isImageRef(content)) {
+      const imageId = getImageIdFromRef(content);
+      return resolvedImageCache.get(imageId) || content;
+    }
+    return content;
+  });
 
   useEffect(() => {
     if (!content) {
@@ -93,34 +121,66 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
       return;
     }
 
-    // Resolve image reference from IndexedDB
     const imageId = getImageIdFromRef(content);
-    const loadFromIDB = async () => {
-      try {
-        const dataUrl = await new Promise<string | null>((resolve) => {
-          const request = indexedDB.open('NexusGameTable_Images', 1);
-          request.onerror = () => resolve(null);
-          request.onsuccess = () => {
-            const db = request.result;
-            const transaction = db.transaction(['cachedImages'], 'readonly');
-            const store = transaction.objectStore('cachedImages');
-            const getReq = store.get(imageId);
-            getReq.onerror = () => resolve(null);
-            getReq.onsuccess = () => {
-              const entry = getReq.result;
-              resolve(entry ? entry.data : null);
-            };
-          };
-        });
 
-        setResolvedContent(dataUrl || undefined);
-      } catch (error) {
-        console.error('[SvgTokenShape] Failed to load image from IDB:', error);
-        setResolvedContent(undefined);
+    // Check global cache first (instant)
+    if (resolvedImageCache.has(imageId)) {
+      const cached = resolvedImageCache.get(imageId);
+      if (cached && cached !== resolvedContent) {
+        setResolvedContent(cached);
       }
-    };
+      return;
+    }
 
-    loadFromIDB();
+    // Check managed cache (fast, in-memory)
+    const managedCached = getFromManagedCache(imageId);
+    if (managedCached) {
+      resolvedImageCache.set(imageId, managedCached);
+      setResolvedContent(managedCached);
+      return;
+    }
+
+    // Check if there's already a pending load for this image
+    if (pendingLoads.has(imageId)) {
+      pendingLoads.get(imageId)!.then(dataUrl => {
+        if (dataUrl) {
+          setResolvedContent(dataUrl);
+        }
+      });
+      return;
+    }
+
+    // Create new load promise from IndexedDB (slower, fallback)
+    const loadPromise = new Promise<string | null>((resolve) => {
+      const request = indexedDB.open('NexusGameTable_Images', 1);
+      request.onerror = () => resolve(null);
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction(['cachedImages'], 'readonly');
+        const store = transaction.objectStore('cachedImages');
+        const getReq = store.get(imageId);
+        getReq.onerror = () => resolve(null);
+        getReq.onsuccess = () => {
+          const entry = getReq.result;
+          const dataUrl = entry ? entry.data : null;
+          if (dataUrl) {
+            resolvedImageCache.set(imageId, dataUrl);
+          }
+          resolve(dataUrl);
+        };
+      };
+    });
+
+    pendingLoads.set(imageId, loadPromise);
+
+    loadPromise.then(dataUrl => {
+      if (dataUrl && dataUrl !== resolvedContent) {
+        setResolvedContent(dataUrl);
+      }
+      pendingLoads.delete(imageId);
+    }).catch(() => {
+      pendingLoads.delete(imageId);
+    });
   }, [content]);
   // All tokens use the same border radius
   const borderRadius = BORDER_RADIUS;

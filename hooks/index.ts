@@ -5,3 +5,4 @@ export { useDragHandlers, isDragMovement, calculateDragOffset } from './useDragH
 export { useCursorSlotHover } from './useCursorSlotHover';
 export { usePanelResize } from './usePanelResize';
 export { useUnifiedDropHandler, useDropHandler, registerDropHandler, clearDropHandlers } from './useUnifiedDropHandler';
+export { useImageUrl } from './useImageUrl';

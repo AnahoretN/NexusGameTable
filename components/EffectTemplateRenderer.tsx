@@ -9,6 +9,7 @@ import React, { useRef, useEffect, useState, useCallback, memo, useMemo } from '
 import { EffectTemplate } from '../types';
 import { generateHitboxFromImage } from '../utils/imageAnalysis';
 import { useLanguage } from '../store/contexts';
+import { useImageUrl } from '../hooks';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -249,6 +250,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   // Get current language for step text formatting
   const language = useLanguage();
 
+  // Convert img_ref:// URLs to displayable URLs for effect image
+  const effectImageUrl = useImageUrl(obj.content || '');
+
   // Memoize language check for Russian-like languages (ru, sr, uk)
   const isRussianLanguage = useMemo(() =>
     language === 'ru' || language === 'sr' || language === 'uk',
@@ -260,15 +264,15 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
   // Preload image on mount to prevent flicker when dragging
   useEffect(() => {
-    if (obj.content) {
-      preloadEffectImage(obj.content);
+    if (effectImageUrl) {
+      preloadEffectImage(effectImageUrl);
     }
-  }, [obj.content]);
+  }, [effectImageUrl]);
 
   // Generate hitbox polygon and determine base image height on first load
   useEffect(() => {
-    if (!obj.hitboxPolygon && obj.content) {
-      generateHitboxFromImage(obj.content).then(hitbox => {
+    if (!obj.hitboxPolygon && effectImageUrl) {
+      generateHitboxFromImage(effectImageUrl).then(hitbox => {
         if (hitbox && dispatch) {
           dispatch({
             type: 'SET_HITBOX_POLYGON',
@@ -279,8 +283,8 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     }
 
     // Determine base image height from loaded image
-    if (obj.content && !obj.baseImageHeight) {
-      const img = effectImageCache.get(obj.content);
+    if (effectImageUrl && !obj.baseImageHeight) {
+      const img = effectImageCache.get(effectImageUrl);
       if (img && img.naturalHeight > 0 && dispatch) {
         // Calculate baseImageHeight in VU based on image natural dimensions
         // Assuming the image is loaded with its natural aspect ratio
@@ -301,7 +305,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
         });
       }
     }
-  }, [obj.content, obj.hitboxPolygon, obj.baseImageHeight, obj.id, obj.width, dispatch]);
+  }, [effectImageUrl, obj.hitboxPolygon, obj.baseImageHeight, obj.id, obj.width, dispatch]);
 
   // Handle pivot marker drag start
   const handlePivotMouseDown = useCallback((e: React.MouseEvent) => {
@@ -955,7 +959,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       <div data-rotated-object="true" style={imageWrapperStyle}>
         {/* Effect image - use img tag directly with cached source */}
         <img
-          src={obj.content}
+          src={effectImageUrl}
           alt=""
           crossOrigin="anonymous"
           style={{
@@ -1244,6 +1248,7 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     prevProps.obj.locked === nextProps.obj.locked &&
     prevProps.obj.pivot?.x === nextProps.obj.pivot?.x &&
     prevProps.obj.pivot?.y === nextProps.obj.pivot?.y &&
+    prevProps.obj.content === nextProps.obj.content &&
     (prevProps.obj as EffectTemplate).showWidthMarker === (nextProps.obj as EffectTemplate).showWidthMarker &&
     (prevProps.obj as EffectTemplate).proportionalScaling === (nextProps.obj as EffectTemplate).proportionalScaling &&
     (prevProps.obj as any).inCursorSlot === (nextProps.obj as any).inCursorSlot &&

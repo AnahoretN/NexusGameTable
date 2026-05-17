@@ -6,6 +6,7 @@ import { Tooltip } from './Tooltip';
 import { getCardButtonConfig, ButtonAction, CardButtonConfig } from '../utils/buttonConfig';
 import { isGeometricCardShape } from '../utils/shapeUtils';
 import { SvgDeckShape, shouldUseSvgForDeck } from './SvgDeckShape';
+import { useImageUrl } from '../hooks';
 
 interface CardProps {
   card: CardType;
@@ -49,6 +50,12 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
   const shape = card.shape || CardShape.POKER;
   const orientation = cardOrientation ?? CardOrientation.VERTICAL;
 
+  // Convert img_ref:// URLs to displayable URLs
+  const cardSpriteUrl = useImageUrl(card.spriteUrl || deckSpriteConfig?.spriteUrl || card.content || '');
+  const cardBackSpriteUrl = useImageUrl(deckSpriteConfig?.cardBackSpriteUrl || '');
+  const cardBackUrl = useImageUrl(deckSpriteConfig?.cardBackUrl || '');
+  const altBackUrl = useImageUrl((card as any).alternativeBack?.url || '');
+
   // Determine display dimensions - orientation does NOT affect dimensions
   // 1. overrideWidth/overrideHeight (for hand scaling)
   // 2. card.width/card.height (individual card's own settings - this is PRIMARY)
@@ -72,9 +79,8 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
           return undefined;
         }
 
-        // Use card's spriteUrl, or deck's spriteConfig spriteUrl, or card's content
-        const spriteUrl = card.spriteUrl || deckSpriteConfig?.spriteUrl || card.content;
-        return spriteUrl ? `url(${spriteUrl})` : undefined;
+        // Use converted URL (handles img_ref://)
+        return cardSpriteUrl ? `url(${cardSpriteUrl})` : undefined;
       }
       // Card is face down - check for alternative back first
       const altBack = (card as any).alternativeBack;
@@ -84,16 +90,16 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
         // Check if current user should see it (if visibleToOthers is false, only show to those who can see card face)
         const shouldShow = altBack.visibleToOthers || shouldSeeCardFace;
         if (locationMatch && shouldShow) {
-          return `url(${altBack.url})`;
+          return altBackUrl ? `url(${altBackUrl})` : undefined;
         }
       }
       // Card is face down - check for custom sprite back (from "Set as Card Back" function)
       if (deckSpriteConfig?.cardBackSpriteUrl && deckSpriteConfig.cardBackSpriteIndex !== undefined) {
-        return `url(${deckSpriteConfig.cardBackSpriteUrl})`;
+        return cardBackSpriteUrl ? `url(${cardBackSpriteUrl})` : undefined;
       }
       // Card is face down - check for simple card back URL from deck settings
       if (deckSpriteConfig?.cardBackUrl) {
-        return `url(${deckSpriteConfig.cardBackUrl})`;
+        return cardBackUrl ? `url(${cardBackUrl})` : undefined;
       }
       // Default pattern
       return 'repeating-linear-gradient(45deg, #1e293b 0, #1e293b 10px, #0f172a 10px, #0f172a 20px)';
@@ -142,7 +148,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, ca
       backgroundSize: getBackgroundSize(),
       backgroundPosition: getBackgroundPosition(),
     };
-  }, [card.faceUp, card.spriteUrl, card.spriteIndex, card.spriteColumns, card.spriteRows, card.content, card.location, (card as any).alternativeBack, deckSpriteConfig, shouldSeeCardFace]);
+  }, [card.faceUp, card.spriteUrl, card.spriteIndex, card.spriteColumns, card.spriteRows, card.content, card.location, (card as any).alternativeBack, deckSpriteConfig, shouldSeeCardFace, cardSpriteUrl, cardBackSpriteUrl, cardBackUrl, altBackUrl]);
 
   // Memoized text cards styles calculation
   const textCardsStyles = React.useMemo(() => {

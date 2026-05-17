@@ -5,6 +5,72 @@ import { calculateFlexibleHexGrid, calculateHorizontalHexGrid, calculateFlatHexH
 import { ResizeHandleMemo } from '../ResizeHandle';
 import { HexGridMemo } from '../HexGrid';
 import { SquareGridMemo } from '../SquareGrid';
+import { isImageRef, getImageIdFromRef, getImageFromIDB } from '../../utils/imageCache';
+
+/**
+ * BoardBackgroundImage - Component that handles img_ref:// URLs for board backgrounds
+ * Loads images from IndexedDB and displays them with proper opacity
+ */
+interface BoardBackgroundImageProps {
+  content: string;
+  opacity: number;
+}
+
+const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, opacity }) => {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadImage = async () => {
+      if (!content) {
+        setImageUrl(null);
+        return;
+      }
+
+      // Check if this is an img_ref:// URL
+      if (isImageRef(content)) {
+        const imageId = getImageIdFromRef(content);
+        try {
+          const dataUrl = await getImageFromIDB(imageId);
+          setImageUrl(dataUrl);
+        } catch (error) {
+          console.error('[BoardBackgroundImage] Failed to load image from IDB:', error);
+          setImageUrl(null);
+        }
+      } else {
+        // Regular URL
+        setImageUrl(content);
+      }
+    };
+
+    loadImage();
+  }, [content]);
+
+  if (!imageUrl) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        backgroundImage: `url(${imageUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        opacity: opacity / 100,
+        pointerEvents: 'none',
+        zIndex: 0,
+      }}
+    />
+  );
+};
+
+const BoardBackgroundImageMemo = React.memo(BoardBackgroundImage, (prevProps, nextProps) => {
+  return prevProps.content === nextProps.content && prevProps.opacity === nextProps.opacity;
+});
 
 /**
  * Simplified board rendering for resize mode - much better performance
@@ -64,20 +130,9 @@ const SimplifiedBoard: React.FC<{
         >
             {/* Background image with opacity */}
             {(obj as any).content && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        backgroundImage: `url(${(obj as any).content})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                        opacity: ((obj as BoardType).backgroundOpacity ?? 100) / 100,
-                        pointerEvents: 'none',
-                    }}
-                    data-background-opacity={(obj as BoardType).backgroundOpacity ?? 100}
+                <BoardBackgroundImageMemo
+                    content={(obj as any).content}
+                    opacity={(obj as BoardType).backgroundOpacity ?? 100}
                 />
             )}
 
@@ -343,20 +398,9 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
         >
             {/* Background image with opacity */}
             {(obj as any).content && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        backgroundImage: `url(${(obj as any).content})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                        opacity: ((obj as BoardType).backgroundOpacity ?? 100) / 100,
-                        pointerEvents: 'none',
-                        zIndex: 0,
-                    }}
+                <BoardBackgroundImage
+                    content={(obj as any).content}
+                    opacity={(obj as BoardType).backgroundOpacity ?? 100}
                 />
             )}
 

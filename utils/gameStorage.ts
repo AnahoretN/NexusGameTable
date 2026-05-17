@@ -3,9 +3,12 @@ import type { GameState, ViewTransform } from '../store/GameContext';
 import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
 import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache, clearImageCacheIDB, restoreImagesFromCache, restoreImagesToState } from './imageCache';
+import * as LZString from 'lz-string';
 
 const STORAGE_KEY = 'nexus-game-state';
+const STORAGE_KEY_COMPRESSED = 'nexus-game-state-compressed';
 const STORAGE_VERSION = 8; // Version with new objects and settings (diceGroups, access control, etc.)
+const USE_COMPRESSION = true; // Enable compression for localStorage
 
 // In-memory cache for IDB images to avoid repeated reads
 let cachedIDBCache: ImageCache | null = null;
@@ -48,6 +51,117 @@ export interface StoredGameState {
   timestamp: number;
   viewport: ViewportInfo;
   state: Partial<GameState>;
+}
+
+/**
+ * Estimate available localStorage space
+ */
+function estimateAvailableSpace(): number {
+  if (typeof window === 'undefined') return 0;
+
+  try {
+    // Try with increasing test sizes
+    let testSize = 1024 * 1024; // Start with 1MB
+    let testString = '';
+    const testKey = '__storage_test__';
+
+    // Clean up any previous test
+    localStorage.removeItem(testKey);
+
+    // Binary search for approximate limit
+    let min = 0;
+    let max = 10 * 1024 * 1024; // 10MB max
+
+    while (min < max) {
+      const mid = Math.floor((min + max + 1) / 2);
+      testString = new Array(mid + 1).join('x');
+
+      try {
+        localStorage.setItem(testKey, testString);
+        localStorage.removeItem(testKey);
+        min = mid;
+      } catch (e) {
+        max = mid - 1;
+      }
+    }
+
+    // Subtract some buffer for safety
+    return Math.max(0, min - 100 * 1024); // 100KB buffer
+  } catch (error) {
+    logger.warn('[QUOTA] Could not estimate available space:', error);
+    return 0;
+  }
+}
+
+/**
+ * Compress data using LZString
+ */
+function compressData(jsonString: string): string {
+  try {
+    return LZString.compressToUTF16(jsonString);
+  } catch (error) {
+    logger.error('[COMPRESS] Failed to compress data:', error);
+    return jsonString; // Fallback to uncompressed
+  }
+}
+
+/**
+ * Decompress data using LZString
+ */
+function decompressData(compressedString: string): string | null {
+  try {
+    const decompressed = LZString.decompressFromUTF16(compressedString);
+    if (!decompressed) {
+      throw new Error('Decompression returned null');
+    }
+    return decompressed;
+  } catch (error) {
+    logger.error('[DECOMPRESS] Failed to decompress data:', error);
+    return null; // Indicate failure
+  }
+}
+
+/**
+ * Safely set item in localStorage with quota check
+ */
+function safeSetItem(key: string, value: string): boolean {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    // Check if value fits by attempting to set it
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error: any) {
+    if (error.name === 'QuotaExceededError' || error.code === 22 || error.code === 1014) {
+      logger.error(`[QUOTA] localStorage quota exceeded when setting key "${key}". Size: ${Math.round(value.length / 1024)}KB`);
+
+      // Try to free up space by removing old versions
+      if (key === STORAGE_KEY && localStorage.getItem(STORAGE_KEY_COMPRESSED)) {
+        logger.log('[QUOTA] Removing old compressed version to free space');
+        localStorage.removeItem(STORAGE_KEY_COMPRESSED);
+        try {
+          localStorage.setItem(key, value);
+          return true;
+        } catch (retryError) {
+          logger.error('[QUOTA] Still cannot save after cleanup');
+        }
+      }
+
+      if (key === STORAGE_KEY_COMPRESSED && localStorage.getItem(STORAGE_KEY)) {
+        logger.log('[QUOTA] Removing old uncompressed version to free space');
+        localStorage.removeItem(STORAGE_KEY);
+        try {
+          localStorage.setItem(key, value);
+          return true;
+        } catch (retryError) {
+          logger.error('[QUOTA] Still cannot save after cleanup');
+        }
+      }
+
+      return false;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -165,15 +279,47 @@ export const saveGameState = async (state: GameState): Promise<void> => {
       }
     };
 
-    // Save to localStorage (keeping blob URLs as-is)
+    // Save to localStorage (with compression)
     try {
       const json = JSON.stringify(storedData);
 
       // Debug: log size of each component
       const size = new Blob([json]).size;
 
-      localStorage.setItem(STORAGE_KEY, json);
-      logger.log(`[SAVE] Game saved successfully (${Math.round(size / 1024)}KB)`);
+      // Try compressed first if enabled
+      let saved = false;
+      if (USE_COMPRESSION && size > 1024) { // Only compress if larger than 1KB
+        const compressed = compressData(json);
+        const compressedSize = compressed.length;
+        const compressionRatio = ((size - compressedSize) / size * 100).toFixed(1);
+
+        logger.log(`[SAVE] Original: ${Math.round(size / 1024)}KB, Compressed: ${Math.round(compressedSize / 1024)}KB (${compressionRatio}% reduction)`);
+
+        // Try to save compressed version
+        if (safeSetItem(STORAGE_KEY_COMPRESSED, compressed)) {
+          // Remove old uncompressed version if it exists
+          localStorage.removeItem(STORAGE_KEY);
+          saved = true;
+          logger.log(`[SAVE] Game saved successfully (compressed)`);
+        } else {
+          logger.warn('[SAVE] Could not save compressed, trying uncompressed');
+        }
+      }
+
+      // Fallback to uncompressed if compressed failed or compression is disabled
+      if (!saved) {
+        if (safeSetItem(STORAGE_KEY, json)) {
+          // Remove old compressed version if it exists
+          localStorage.removeItem(STORAGE_KEY_COMPRESSED);
+          logger.log(`[SAVE] Game saved successfully (uncompressed, ${Math.round(size / 1024)}KB)`);
+        } else {
+          logger.error(`[SAVE] Failed to save game state - localStorage quota exceeded (${Math.round(size / 1024)}KB)`);
+          // Show user-facing warning
+          if (typeof window !== 'undefined' && (window as any).nexusShowQuotaWarning) {
+            (window as any).nexusShowQuotaWarning(Math.round(size / 1024));
+          }
+        }
+      }
     } catch (error) {
       logger.error('Failed to save game state:', error);
     }
@@ -193,7 +339,19 @@ export const loadGameState = async (
   if (typeof window === 'undefined') return null;
 
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    // Try compressed version first
+    let stored = localStorage.getItem(STORAGE_KEY_COMPRESSED);
+    let isCompressed = false;
+
+    // If no compressed version, try uncompressed
+    if (!stored) {
+      stored = localStorage.getItem(STORAGE_KEY);
+      isCompressed = false;
+    } else {
+      isCompressed = true;
+      logger.log('[LOAD] Found compressed save data');
+    }
+
     if (!stored) {
       return null;
     }
@@ -206,9 +364,30 @@ export const loadGameState = async (
       return null;
     }
 
+    // Decompress if needed
+    let jsonString = stored;
+    if (isCompressed) {
+      const decompressed = decompressData(stored);
+      if (decompressed === null) {
+        logger.error('[LOAD] Failed to decompress saved state, trying uncompressed fallback');
+        stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          jsonString = stored;
+          isCompressed = false;
+        } else {
+          logger.warn('[LOAD] No uncompressed fallback available');
+          clearGameState();
+          return null;
+        }
+      } else {
+        jsonString = decompressed;
+        logger.log(`[LOAD] Decompressed: ${Math.round(storedSize / 1024)}KB → ${Math.round(jsonString.length / 1024)}KB`);
+      }
+    }
+
     let parsed;
     try {
-      parsed = JSON.parse(stored);
+      parsed = JSON.parse(jsonString);
     } catch (parseError) {
       logger.error('[LOAD] Failed to parse saved state:', parseError);
       logger.warn('[LOAD] Clearing corrupted save data.');
@@ -693,6 +872,7 @@ export const clearGameState = (): void => {
 
   try {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY_COMPRESSED);
   } catch (error) {
     logger.error('Failed to clear game state:', error);
   }
@@ -706,8 +886,9 @@ export const clearAllData = (): void => {
   if (typeof window === 'undefined') return;
 
   try {
-    // Clear game state
+    // Clear game state (both compressed and uncompressed)
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY_COMPRESSED);
 
     // Clear local settings
     localStorage.removeItem('nexus-local-settings');
@@ -746,8 +927,7 @@ export const hasSavedGameState = (): boolean => {
   if (typeof window === 'undefined') return false;
 
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return !!stored;
+    return !!(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_COMPRESSED));
   } catch (error) {
     return false;
   }
@@ -785,10 +965,33 @@ export const getSavedGameTimestamp = (): number | null => {
   if (typeof window === 'undefined') return null;
 
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    let stored = localStorage.getItem(STORAGE_KEY_COMPRESSED);
+
+    // Try uncompressed if compressed not found
+    if (!stored) {
+      stored = localStorage.getItem(STORAGE_KEY);
+    }
+
     if (!stored) return null;
 
-    const data: StoredGameState = JSON.parse(stored);
+    // Decompress if needed
+    let jsonString = stored;
+    if (stored !== localStorage.getItem(STORAGE_KEY) && localStorage.getItem(STORAGE_KEY_COMPRESSED) === stored) {
+      const decompressed = decompressData(stored);
+      if (decompressed === null) {
+        // Try uncompressed fallback
+        const fallback = localStorage.getItem(STORAGE_KEY);
+        if (fallback) {
+          jsonString = fallback;
+        } else {
+          return null;
+        }
+      } else {
+        jsonString = decompressed;
+      }
+    }
+
+    const data: StoredGameState = JSON.parse(jsonString);
     return data.timestamp;
   } catch (error) {
     return null;

@@ -783,6 +783,63 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               // Clear textCardsData after processing to avoid re-processing
               deck.textCardsData = undefined;
           }
+
+          // Generate cards from sprite sheet when spriteConfig has totalCards
+          // This happens when user clicks "Generate Cards from Sprite" button
+          if (deck.spriteConfig) {
+              const spriteConfig = deck.spriteConfig;
+              const oldSpriteConfig = oldDeck.spriteConfig;
+
+              // Check if totalCards is set and sprite config is complete
+              if (spriteConfig.totalCards && spriteConfig.totalCards > 0 && spriteConfig.spriteUrl && spriteConfig.columns && spriteConfig.rows) {
+                  // Generate cards if:
+                  // 1. No previous sprite config, OR
+                  // 2. totalCards changed (was undefined or different value), OR
+                  // 3. This is explicitly a new spriteUrl
+                  const shouldGenerate = !oldSpriteConfig ||
+                      !oldSpriteConfig.totalCards ||
+                      oldSpriteConfig.totalCards !== spriteConfig.totalCards ||
+                      (oldSpriteConfig.spriteUrl !== spriteConfig.spriteUrl && oldSpriteConfig.totalCards !== spriteConfig.totalCards);
+
+                  if (shouldGenerate) {
+                      const newCardIds: string[] = [];
+                      const startIndex = (deck.baseCardIds || deck.cardIds || []).length;
+
+                      for (let i = 0; i < spriteConfig.totalCards; i++) {
+                          const cardId = `${deck.id}-sprite-card-${Date.now()}-${i}`;
+                          const newCard: Card = {
+                              id: cardId,
+                              type: ItemType.CARD,
+                              name: `Card ${startIndex + i + 1}`,
+                              deckId: deck.id,
+                              width: deck.cardWidth || deck.width || DEFAULT_DECK_WIDTH,
+                              height: deck.cardHeight || deck.height || DEFAULT_DECK_HEIGHT,
+                              shape: deck.cardShape,
+                              x: 0,
+                              y: 0,
+                              rotation: 0,
+                              location: CardLocation.DECK,
+                              faceUp: true,
+                              isOnTable: true,
+                              locked: false,
+                              // Sprite sheet properties
+                              spriteUrl: spriteConfig.spriteUrl,
+                              spriteIndex: startIndex + i,
+                              spriteColumns: spriteConfig.columns,
+                              spriteRows: spriteConfig.rows,
+                          };
+
+                          newObjects[cardId] = newCard;
+                          newCardIds.push(cardId);
+                      }
+
+                      // Update deck's cardIds and baseCardIds
+                      deck.cardIds = [...newCardIds, ...deck.cardIds];
+                      deck.baseCardIds = [...newCardIds, ...(deck.baseCardIds || [])];
+                      newObjects[deck.id] = deck;
+                  }
+              }
+          }
       }
 
       // Handle NexusCellObject updates - propagate to all cells in the same board
