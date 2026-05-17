@@ -2,8 +2,11 @@ import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, Und
 import type { GameState, ViewTransform } from '../store/GameContext';
 import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
-import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache, clearImageCacheIDB, restoreImagesFromCache, restoreImagesToState } from './imageCache';
+import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache, clearImageCacheIDB, restoreImagesFromCache, restoreImagesToState, findLocalFilePaths, replaceLocalFilePathsWithBase64, saveSingleImageToIDB, generateImageId, createImageRef, LocalFileReference } from './imageCache';
 import * as LZString from 'lz-string';
+
+// Re-export types for use in other modules
+export type { LocalFileReference };
 
 const STORAGE_KEY = 'nexus-game-state';
 const STORAGE_KEY_COMPRESSED = 'nexus-game-state-compressed';
@@ -181,6 +184,15 @@ export const saveGameState = async (state: GameState): Promise<void> => {
       objectsToSave[id] = obj;
     });
 
+    logger.log(`[SAVE] Saving ${Object.keys(objectsToSave).length} objects (filtered from ${Object.keys(state.objects).length} total)`);
+
+    // Debug: log all objects with content
+    Object.entries(objectsToSave).forEach(([id, obj]) => {
+      if (obj.content) {
+        logger.log(`[SAVE] Object ${id} (${obj.type}): content=${obj.content.substring(0, 50)}...`);
+      }
+    });
+
     // First: Extract images to cache and save to IndexedDB BEFORE converting to metadata
     // Get existing IDB cache to avoid re-saving images we already have (cached in memory)
     // IMPORTANT: Force reload IDB cache to ensure we have latest images
@@ -219,6 +231,23 @@ export const saveGameState = async (state: GameState): Promise<void> => {
     }
 
     const { state: extractedState, imageCache } = extractImagesFromState({ objects: objectsToExtract }, existingIDBCache);
+
+    // Debug: check if base64 still exists after extraction
+    let base64Count = 0;
+    let imgRefCount = 0;
+    Object.values(extractedState.objects || {}).forEach(obj => {
+      const checkValue = (val: any) => {
+        if (typeof val === 'string') {
+          if (val.startsWith('data:image/')) base64Count++;
+          if (val.startsWith('img_ref://')) imgRefCount++;
+        } else if (val && typeof val === 'object') {
+          Object.values(val).forEach(checkValue);
+        }
+      };
+      Object.values(obj).forEach(checkValue);
+    });
+
+    logger.log(`[SAVE] After extraction: ${base64Count} base64 URLs, ${imgRefCount} img_ref:// URLs`);
 
     // Save ONLY NEW images to IndexedDB (async - don't await to avoid blocking save)
     const newImages = getNewImages(imageCache, existingIDBCache);
@@ -329,6 +358,21 @@ export const saveGameState = async (state: GameState): Promise<void> => {
 };
 
 /**
+ * Information about local file paths found in saved state
+ */
+export interface LocalFileInfo {
+  path: string;
+  filename: string;
+  objectIds: string[];
+  fields: string[];
+}
+
+export interface LoadGameStateResult {
+  state: Partial<GameState> | null;
+  localFiles: LocalFileInfo[];
+}
+
+/**
  * Load the game state from localStorage
  * Adapts objects only if user is HOST or playing SOLO
  * @param isGuest Whether the current user is a guest
@@ -337,6 +381,8 @@ export const loadGameState = async (
   isGuest: boolean
 ): Promise<Partial<GameState> | null> => {
   if (typeof window === 'undefined') return null;
+
+  logger.log(`[LOAD] loadGameState called, isGuest=${isGuest}`);
 
   try {
     // Try compressed version first
@@ -489,10 +535,29 @@ export const loadGameState = async (
 
     // Load images from IDB and restore them to state
     const idbCache = await loadImageCacheFromIDB();
+    logger.log(`[LOAD] Loaded ${Object.keys(idbCache).length} images from IndexedDB`);
+
+    // Check for any img_ref:// URLs that couldn't be restored
+    const checkForUnrestored = (obj: any, path = ''): void => {
+      if (!obj || typeof obj !== 'object') return;
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'string' && value.startsWith('img_ref://')) {
+          logger.log(`[LOAD] Found unrestored img_ref:// at ${path}.${key}: ${value}`);
+        } else if (value && typeof value === 'object') {
+          checkForUnrestored(value, `${path}.${key}`);
+        }
+      }
+    };
+
     if (Object.keys(idbCache).length > 0) {
       const restoredState = restoreImagesToState(withAuditLog, idbCache);
+      // Check for any unrestored img_ref:// URLs
+      checkForUnrestored(restoredState.objects, 'objects');
       return restoredState;
     }
+
+    // Even with empty cache, check for unrestored URLs
+    checkForUnrestored(withAuditLog.objects, 'objects');
 
     return withAuditLog;
   } catch (error) {
@@ -500,6 +565,92 @@ export const loadGameState = async (
     return null;
   }
 };
+
+/**
+ * Load game state and return information about local file paths that need restoration
+ * This is an extended version of loadGameState that also detects local file paths
+ * @param isGuest Whether the current user is a guest
+ */
+export const loadGameStateWithLocalFiles = async (
+  isGuest: boolean
+): Promise<LoadGameStateResult> => {
+  const state = await loadGameState(isGuest);
+
+  if (!state || !state.objects) {
+    return { state, localFiles: [] };
+  }
+
+  // Find all local file paths in objects
+  const localFilesMap = findLocalFilePaths(state.objects);
+  const localFiles: LocalFileInfo[] = Array.from(localFilesMap.values());
+
+  if (localFiles.length > 0) {
+    logger.log(`[LOAD] Found ${localFiles.length} local file references that need restoration`);
+    localFiles.forEach(file => {
+      logger.log(`  - ${file.filename} (${file.objectIds.length} objects)`);
+    });
+  }
+
+  return { state, localFiles };
+};
+
+/**
+ * Process uploaded local files and update state with base64 data
+ * @param state The loaded game state
+ * @param localFiles List of local file info
+ * @param fileMap Map of filename -> File object (user selected files)
+ */
+export const processUploadedLocalFiles = async (
+  state: Partial<GameState>,
+  localFiles: LocalFileInfo[],
+  fileMap: Map<string, File>
+): Promise<Partial<GameState>> => {
+  if (!state.objects) return state;
+
+  // Convert files to base64 and save to IDB
+  const pathToBase64 = new Map<string, string>();
+
+  for (const localFile of localFiles) {
+    const file = fileMap.get(localFile.filename);
+    if (!file) continue;
+
+    try {
+      const base64 = await fileToBase64(file);
+
+      // Save to IndexedDB for persistence
+      const imageId = generateImageId();
+      const imgRefUrl = createImageRef(imageId);
+      await saveSingleImageToIDB(imageId, base64);
+
+      // Map the original path to img_ref URL
+      pathToBase64.set(localFile.path, imgRefUrl);
+
+      logger.log(`[LOAD] Saved local file ${localFile.filename} to cache as ${imageId}`);
+    } catch (error) {
+      logger.error(`[LOAD] Failed to process file ${localFile.filename}:`, error);
+    }
+  }
+
+  // Replace local paths with img_ref URLs in state
+  const updatedObjects = replaceLocalFilePathsWithBase64(state.objects, pathToBase64);
+
+  return {
+    ...state,
+    objects: updatedObjects
+  };
+};
+
+/**
+ * Convert File to base64 data URL
+ */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 /**
  * Migrate old format (versions < 3)

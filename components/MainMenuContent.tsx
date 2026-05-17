@@ -8,6 +8,8 @@ import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerP
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM } from '../utils/playerUtils';
+import { loadImageCacheFromIDB, restoreImagesToState, findLocalFilePaths, extractImagesFromState, saveImageCacheToIDB, getAllFileNameMappings, autoLoadImages } from '../utils/imageCache';
+import { preloadImageUrl } from '../components/SvgTokenShape';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Dices, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
@@ -26,6 +28,7 @@ import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 import { convertBlobsInObjects } from '../utils/blobConverter';
 import LogViewer from './LogViewer';
 import { CharacterPanel } from './CharacterPanel';
+import { LocalFileRestoreDialog } from './LocalFileRestoreDialog';
 
 /**
  * Convert all blob URLs in objects to base64 data URLs
@@ -131,6 +134,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const packFileInputRef = useRef<HTMLInputElement>(null);
   // Log viewer state
   const [showLogViewer, setShowLogViewer] = useState(false);
+  // Local file restore dialog state
+  const [localFilesToRestore, setLocalFilesToRestore] = useState<any[] | null>(null);
+  const [pendingLoadState, setPendingLoadState] = useState<any>(null);
   // Manual connection modal state
   const [showManualConnection, setShowManualConnection] = useState(false);
   const [manualConnectionTab, setManualConnectionTab] = useState<'create' | 'join'>('create');
@@ -494,9 +500,85 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const handleSaveGame = async () => {
     // Convert blob URLs to base64 before saving
     const convertedObjects = await convertBlobsInObjectsHelper(state.objects);
+
     // Create a clean state object without language to preserve user's language preference
     const { language, ...stateWithoutLanguage } = state;
-    const stateToSave = { ...stateWithoutLanguage, objects: convertedObjects };
+    let stateToSave = { ...stateWithoutLanguage, objects: convertedObjects };
+
+    // Collect all original paths (URLs, local file paths) from objects
+    const originalPaths: Record<string, string> = {}; // imageId -> original path
+    const collectOriginalPaths = (obj: any): void => {
+      if (!obj || typeof obj !== 'object') return;
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'string') {
+          // Check for URLs (http/https)
+          if (value.startsWith('http://') || value.startsWith('https://')) {
+            // Find if this URL corresponds to an img_ref
+            // We need to check the original state (before conversion)
+            const originalObj = state.objects[obj.id];
+            if (originalObj && originalObj[key] && originalObj[key].startsWith('img_ref://')) {
+              const imageId = originalObj[key].replace('img_ref://', '');
+              originalPaths[imageId] = value;
+            } else {
+              // This is a direct URL - save it
+              originalPaths[`url_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`] = value;
+            }
+          }
+          // Check for local file paths
+          else if ((value.startsWith('file://') ||
+                    /^[A-Za-z]:\\/.test(value) ||
+                    /^[A-Za-z]:\//.test(value) ||
+                    (value.startsWith('/') && value.length > 1 && value[1] !== '/'))) {
+            // This is a local file path - save it
+            const originalObj = state.objects[obj.id];
+            if (originalObj && originalObj[key] && originalObj[key].startsWith('img_ref://')) {
+              const imageId = originalObj[key].replace('img_ref://', '');
+              originalPaths[imageId] = value;
+            } else {
+              originalPaths[`path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`] = value;
+            }
+          }
+        } else if (value && typeof value === 'object') {
+          collectOriginalPaths(value);
+        }
+      }
+    };
+
+    Object.values(convertedObjects).forEach(obj => collectOriginalPaths(obj));
+
+    // Save filename mappings for images (for restoration from local files)
+    const fileNameMappings = getAllFileNameMappings();
+    if (fileNameMappings.size > 0) {
+      const mappingsObj: Record<string, string> = {};
+      fileNameMappings.forEach((fileName, imgRefUrl) => {
+        // Only save mappings for images that are actually used in objects
+        const isUsed = Object.values(convertedObjects).some(obj => {
+          const checkValue = (val: any): boolean => {
+            if (typeof val === 'string' && val === imgRefUrl) return true;
+            if (val && typeof val === 'object') {
+              return Object.values(val).some(checkValue);
+            }
+            return false;
+          };
+          return checkValue(obj);
+        });
+
+        if (isUsed) {
+          mappingsObj[imgRefUrl] = fileName;
+        }
+      });
+
+      if (Object.keys(mappingsObj).length > 0) {
+        (stateToSave as any)._fileNames = mappingsObj;
+        logger.log(`[SAVE_GAME] Saved ${Object.keys(mappingsObj).length} filename mappings`);
+      }
+    }
+
+    // Save original paths for auto-loading
+    if (Object.keys(originalPaths).length > 0) {
+      (stateToSave as any)._originalPaths = originalPaths;
+      logger.log(`[SAVE_GAME] Saved ${Object.keys(originalPaths).length} original paths`);
+    }
 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stateToSave));
     const downloadAnchorNode = document.createElement('a');
@@ -514,7 +596,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         if (!e.target?.result) {
           alert("Error reading file.");
@@ -533,17 +615,137 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           return;
         }
 
-        // Count objects by type for validation summary
-        const objectCount = Object.keys(json.objects).length;
-        const playerCount = json.players.length;
+        logger.log('[LOAD_GAME] Loading game state...');
 
-        // Dispatch load action
-        dispatch({ type: 'LOAD_GAME', payload: json as GameState });
+        // Load images from IndexedDB
+        const idbCache = await loadImageCacheFromIDB();
+        logger.log(`[LOAD_GAME] IndexedDB has ${Object.keys(idbCache).length} images`);
+
+        // Extract base64 images from loaded JSON and save them to IndexedDB
+        const { state: extractedState, imageCache: loadedImages } = extractImagesFromState(json, idbCache);
+
+        if (Object.keys(loadedImages).length > 0) {
+          logger.log(`[LOAD_GAME] Extracted ${Object.keys(loadedImages).length} images from save file, saving to IndexedDB...`);
+          await saveImageCacheToIDB(loadedImages);
+          logger.log(`[LOAD_GAME] Successfully saved images to IndexedDB`);
+
+          // Update idbCache with newly loaded images
+          Object.assign(idbCache, loadedImages);
+        }
+
+        // Restore filename mappings from save file
+        const savedFileNames = (json as any)._fileNames || {};
+        if (Object.keys(savedFileNames).length > 0) {
+          logger.log(`[LOAD_GAME] Found ${Object.keys(savedFileNames).length} filename mappings in save file`);
+          // Restore to global registry
+          Object.entries(savedFileNames).forEach(([imgRefUrl, fileName]) => {
+            if (typeof window !== 'undefined') {
+              if (!(window as any).__nexusFileNames) {
+                (window as any).__nexusFileNames = new Map();
+              }
+              (window as any).__nexusFileNames.set(imgRefUrl, fileName as string);
+            }
+          });
+        }
+
+        // First: try to load images from URLs (if _originalPaths exist)
+        const savedOriginalPaths = (json as any)._originalPaths || {};
+        if (Object.keys(savedOriginalPaths).length > 0) {
+          logger.log(`[LOAD_GAME] Found ${Object.keys(savedOriginalPaths).length} original paths, attempting auto-load...`);
+          const autoLoadedImages = await autoLoadImages(savedOriginalPaths);
+          if (Object.keys(autoLoadedImages).length > 0) {
+            logger.log(`[LOAD_GAME] Auto-loaded ${Object.keys(autoLoadedImages).length} images from URLs`);
+            await saveImageCacheToIDB(autoLoadedImages);
+            Object.assign(idbCache, autoLoadedImages);
+          }
+        }
+
+        // Find images that still need restoration (img_ref:// URLs not in IDB, not in JSON, and not loaded from URL)
+        const missingImages: { imgRefUrl: string; fileName?: string; objectIds: string[] }[] = [];
+        const findMissingImages = (obj: any, objId: string): void => {
+          if (!obj || typeof obj !== 'object') return;
+          for (const [key, value] of Object.entries(obj)) {
+            if (typeof value === 'string' && value.startsWith('img_ref://')) {
+              const imageId = value.replace('img_ref://', '');
+              if (!idbCache[imageId] && !loadedImages[imageId]) {
+                // Image not in IDB and not in loaded JSON - needs restoration
+                const fileName = savedFileNames[value] || (window as any).__nexusFileNames?.get(value);
+                const existing = missingImages.find(img => img.imgRefUrl === value);
+                if (existing) {
+                  if (!existing.objectIds.includes(objId)) {
+                    existing.objectIds.push(objId);
+                  }
+                } else {
+                  missingImages.push({ imgRefUrl: value, fileName, objectIds: [objId] });
+                }
+              }
+            } else if (value && typeof value === 'object') {
+              findMissingImages(value, objId);
+            }
+          }
+        };
+
+        Object.entries(extractedState.objects || {}).forEach(([objId, obj]) => {
+          findMissingImages(obj, objId);
+        });
+
+        if (missingImages.length > 0) {
+          logger.log(`[LOAD_GAME] Found ${missingImages.length} images that still need restoration`);
+
+          // Filter: only show dialog for images that have local file paths
+          const localOnlyImages = missingImages.filter(img => img.fileName);
+          const noSourceImages = missingImages.filter(img => !img.fileName);
+
+          if (noSourceImages.length > 0) {
+            logger.log(`[LOAD_GAME] - ${noSourceImages.length} images have no source (will be missing)`);
+          }
+
+          if (localOnlyImages.length > 0) {
+            logger.log(`[LOAD_GAME] - ${localOnlyImages.length} images from local files, showing restore dialog`);
+            // Convert to LocalFileInfo format
+            const localFiles = localOnlyImages.map(img => ({
+              path: img.imgRefUrl,
+              filename: img.fileName || 'unknown',
+              objectIds: img.objectIds,
+              fields: ['content']
+            }));
+            setLocalFilesToRestore(localFiles);
+            setPendingLoadState(extractedState);
+            return;
+          }
+
+          logger.log(`[LOAD_GAME] No local files to restore, continuing...`);
+        }
+
+        // Restore images from IDB cache (replaces img_ref:// with base64)
+        const restoredState = restoreImagesToState(extractedState, idbCache);
+        logger.log(`[LOAD_GAME] Restored images from IDB cache`);
+
+        // Initialize SvgTokenShape cache with loaded images
+        if (Object.keys(idbCache).length > 0) {
+          Object.entries(idbCache).forEach(([imageId, dataUrl]) => {
+            preloadImageUrl(imageId, dataUrl);
+          });
+          logger.log(`[LOAD_GAME] Preloaded ${Object.keys(idbCache).length} images into component cache`);
+        } else {
+          logger.log('[LOAD_GAME] WARNING: No images in IndexedDB, images may not display!');
+        }
+
+        // Count objects by type for validation summary
+        const objectCount = Object.keys(restoredState.objects || {}).length;
+        const playerCount = restoredState.players?.length || 0;
+
+        logger.log(`[LOAD_GAME] Loading ${objectCount} objects, ${playerCount} players`);
+
+        // Dispatch load action with restored state (images converted back to base64)
+        dispatch({ type: 'LOAD_GAME', payload: restoredState as GameState });
 
         // Reset file input to allow loading the same file again if needed
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+
+        logger.log('[LOAD_GAME] Game loaded successfully');
       } catch (err) {
         logger.error('Error loading save file:', err);
         alert("Error loading save file. Make sure it's a valid JSON file saved from Nexus Game Table.");
@@ -1690,6 +1892,64 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Local File Restore Dialog */}
+      {localFilesToRestore && pendingLoadState && (
+        <LocalFileRestoreDialog
+          localFiles={localFilesToRestore}
+          onConfirm={async (fileMap) => {
+            // Process uploaded files
+            const idbCache = await loadImageCacheFromIDB();
+
+            for (const [fileName, file] of fileMap) {
+              // Find the local file info to get the original img_ref URL
+              const localFile = localFilesToRestore.find(f => f.filename === fileName);
+              if (!localFile) continue;
+
+              // Extract the original image ID from the img_ref:// URL
+              const originalImgRefUrl = localFile.path; // e.g., "img_ref://img_1234567890_abc123"
+              const imageId = originalImgRefUrl.replace('img_ref://', '');
+
+              // Convert file to base64
+              const reader = new FileReader();
+              const base64Url = await new Promise<string>((resolve) => {
+                reader.onload = () => resolve(reader.result as string);
+                reader.readAsDataURL(file);
+              });
+
+              // Save to IndexedDB with the ORIGINAL image ID
+              await saveImageCacheToIDB(imageId, base64Url);
+              idbCache[imageId] = base64Url;
+
+              logger.log(`[LOAD_GAME] Restored file ${fileName} as ${imageId}`);
+            }
+
+            // Restore all images from IDB (including newly uploaded)
+            const restoredState = restoreImagesToState(pendingLoadState, idbCache);
+
+            // Dispatch load action
+            dispatch({ type: 'LOAD_GAME', payload: restoredState as GameState });
+
+            setLocalFilesToRestore(null);
+            setPendingLoadState(null);
+
+            if (fileInputRef.current) {
+              fileInputRef.current.value = '';
+            }
+
+            logger.log('[LOAD_GAME] Game loaded successfully with restored files');
+          }}
+          onCancel={() => {
+            // Load without images
+            dispatch({ type: 'LOAD_GAME', payload: pendingLoadState as GameState });
+            setLocalFilesToRestore(null);
+            setPendingLoadState(null);
+            if (fileInputRef.current) {
+              fileInputRef.current.value = '';
+            }
+          }}
+        />
       )}
 
       {/* Session Log Viewer */}

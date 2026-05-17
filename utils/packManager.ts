@@ -12,6 +12,12 @@ import {
   validatePack,
   getPackSecurityWarning
 } from './packSecurity';
+import {
+  addToManagedCache,
+  saveSingleImageToIDB,
+  isImageRef,
+  getImageUrlFromRef
+} from './imageCache';
 
 const PACK_VERSION = 1;
 const MANIFEST_FILENAME = 'manifest.json';
@@ -46,12 +52,18 @@ interface PackImage {
   data: string; // base64
 }
 
+interface ExtractImagesResult {
+  images: PackImage[];
+  imgRefToDataUrl: Map<string, string>; // Maps img_ref:// URLs to resolved base64 URLs
+}
+
 /**
  * Extract all images from objects (data URLs, blob URLs, and restore from metadata)
  */
-async function extractImagesFromObjects(objects: Record<string, TableObject>): Promise<PackImage[]> {
+async function extractImagesFromObjects(objects: Record<string, TableObject>): Promise<ExtractImagesResult> {
   const images: PackImage[] = [];
   const seenImages = new Set<string>();
+  const imgRefToDataUrl = new Map<string, string>(); // Track img_ref:// -> base64 mappings
   let imageIndex = 0;
 
   // Store original blob URLs for conversion
@@ -87,6 +99,23 @@ async function extractImagesFromObjects(objects: Record<string, TableObject>): P
       if (url.startsWith('pack://')) return;
 
       let dataUrl = url;
+
+      // Resolve img_ref:// URLs from cache
+      if (isImageRef(url)) {
+        try {
+          dataUrl = await getImageUrlFromRef(url);
+          if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+            logger.warn(`[PACK] Failed to resolve img_ref URL: ${url.substring(0, 50)}...`);
+            return;
+          }
+          // Store the mapping for later use in replaceImagesWithReferences
+          imgRefToDataUrl.set(url, dataUrl);
+          logger.log(`[PACK] Resolved img_ref URL to base64`);
+        } catch (error) {
+          logger.error(`[PACK] Failed to resolve img_ref URL:`, error);
+          return; // Skip this image if resolution fails
+        }
+      }
 
       // Convert blob URLs to base64
       if (url.startsWith('blob:')) {
@@ -160,7 +189,7 @@ async function extractImagesFromObjects(objects: Record<string, TableObject>): P
     logger.warn('[PACK] Pack will be created without embedded images');
   }
 
-  return images;
+  return { images, imgRefToDataUrl };
 }
 
 /**
@@ -195,12 +224,23 @@ function arrayBufferToBase64(buffer: Uint8Array): string {
 /**
  * Replace base64 URLs with image references in objects
  */
-function replaceImagesWithReferences(objects: Record<string, TableObject>, images: PackImage[]): Record<string, TableObject> {
+function replaceImagesWithReferences(objects: Record<string, TableObject>, images: PackImage[], imgRefToDataUrl?: Map<string, string>): Record<string, TableObject> {
   // Create mapping of original data URLs to image IDs
   const urlToImageMap = new Map<string, string>();
   images.forEach(img => {
     urlToImageMap.set(img.data, `pack://${IMAGES_FOLDER}${img.filename}`);
   });
+
+  // Create mapping of img_ref URLs to pack URLs (if provided)
+  const imgRefToPackUrl = new Map<string, string>();
+  if (imgRefToDataUrl) {
+    for (const [imgRef, dataUrl] of imgRefToDataUrl) {
+      const packUrl = urlToImageMap.get(dataUrl);
+      if (packUrl) {
+        imgRefToPackUrl.set(imgRef, packUrl);
+      }
+    }
+  }
 
   const processObject = (obj: any): any => {
     const processed = { ...obj };
@@ -210,6 +250,10 @@ function replaceImagesWithReferences(objects: Record<string, TableObject>, image
       if (!url) return url;
       if (url.startsWith('data:image/')) {
         return urlToImageMap.get(url) || url;
+      }
+      // Handle img_ref:// URLs
+      if (isImageRef(url) && imgRefToPackUrl.has(url)) {
+        return imgRefToPackUrl.get(url)!;
       }
       // Note: blob URLs should already be converted to base64 by extractImagesFromObjects
       // If we encounter blob URLs here, they won't be in the map (intentional - skip them)
@@ -356,15 +400,15 @@ export async function createPack(
     const zip = new JSZip();
 
     // Extract images from objects (convert blob URLs to base64)
-    const images = await extractImagesFromObjects(state.objects);
+    const { images, imgRefToDataUrl } = await extractImagesFromObjects(state.objects);
     logger.log(`[PACK] Extracted ${images.length} images`);
 
     if (images.length === 0) {
       logger.warn('[PACK] No images found in pack');
     }
 
-    // Replace image URLs with pack references
-    const processedObjects = replaceImagesWithReferences(state.objects, images);
+    // Replace image URLs with pack references (including img_ref:// URLs)
+    const processedObjects = replaceImagesWithReferences(state.objects, images, imgRefToDataUrl);
 
     // Debug: verify replacement worked (use safe sampling for large states)
     const sampleKeys = Object.keys(processedObjects).slice(0, 5);
@@ -660,6 +704,31 @@ export async function loadPack(
     }
 
     logStep(`Loaded ${images.length} images`, 'success');
+
+    // Register pack images in the image cache
+    // This ensures that if any objects still have img_ref:// URLs (from old packs),
+    // the images will be available in the cache
+    if (images.length > 0) {
+      logStep('Registering images in cache...');
+
+      // Register pack images in cache
+      for (const img of images) {
+        // Use a unique ID based on filename or generate new one
+        const imageId = img.id.startsWith('img_') ? img.id : `img_pack_${img.filename}`;
+
+        // Add to managed cache (fast, in-memory)
+        addToManagedCache(imageId, img.data);
+
+        // Also save to IndexedDB for persistence
+        try {
+          await saveSingleImageToIDB(imageId, img.data);
+        } catch (error) {
+          logger.warn(`[PACK] Failed to save image ${imageId} to IndexedDB:`, error);
+        }
+      }
+
+      logStep(`Registered ${images.length} pack images in cache`, 'success');
+    }
 
     // Restore image references to base64
     if (saveData.objects) {

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { logger } from '../utils/logger';
-import { saveSingleImageToIDB, generateImageId, createImageRef } from '../utils/imageCache';
+import { saveSingleImageToIDB, generateImageId, createImageRef, addToManagedCache, setFileNameForImageRef } from '../utils/imageCache';
 
 interface FilePickerInputProps {
   value: string;
@@ -24,6 +24,22 @@ const isValidUrl = (url: string): boolean => {
     return true;
   }
 
+  // Check for Windows absolute paths (e.g., C:\Users\...)
+  if (/^[A-Za-z]:\\/.test(url)) {
+    return true; // Windows absolute paths are valid (local file)
+  }
+
+  // Check for Windows absolute paths with forward slashes (e.g., C:/Users/...)
+  if (/^[A-Za-z]:\//.test(url)) {
+    return true; // Windows absolute paths are valid (local file)
+  }
+
+  // Check for Unix absolute paths (e.g., /home/user/...)
+  // But not protocol-relative URLs (//example.com)
+  if (url.startsWith('/') && url.length > 1 && url[1] !== '/') {
+    return true; // Unix absolute paths are valid (local file)
+  }
+
   try {
     // Try to create a URL object
     // This will throw for malformed URLs
@@ -32,7 +48,7 @@ const isValidUrl = (url: string): boolean => {
   } catch (error) {
     // If URL constructor fails, it might be a relative path or data URI
     // Check for common valid patterns
-    if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
+    if (url.startsWith('./') || url.startsWith('../')) {
       return true; // Relative paths are valid
     }
     if (url.startsWith('data:')) {
@@ -40,6 +56,9 @@ const isValidUrl = (url: string): boolean => {
     }
     if (url.startsWith('blob:')) {
       return true; // Blob URLs are valid
+    }
+    if (url.startsWith('file://')) {
+      return true; // file:// URLs are valid
     }
 
     // Check for basic URL pattern (protocol://domain)
@@ -114,12 +133,24 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
       try {
         // Convert to base64 for P2P sharing
         const base64Url = await fileToBase64(file);
+        logger.log(`[FILE_PICKER] Converted file to base64: ${base64Url.length} bytes`);
 
         // Save to IndexedDB immediately for persistence across page reloads
         // Use img_ref:// format for consistent handling
         const imageId = generateImageId();
         const imgRefUrl = createImageRef(imageId);
+
+        logger.log(`[FILE_PICKER] Saving image ${imageId} to IndexedDB...`);
         await saveSingleImageToIDB(imageId, base64Url);
+        logger.log(`[FILE_PICKER] Saved image ${imageId} to IndexedDB successfully`);
+
+        // Also add to managed cache for immediate use
+        addToManagedCache(imageId, base64Url);
+        logger.log(`[FILE_PICKER] Added image ${imageId} to managed cache`);
+
+        // Store filename metadata in a separate map for later restoration
+        setFileNameForImageRef(imgRefUrl, file.name);
+        logger.log(`[FILE_PICKER] Stored filename for ${imgRefUrl}: ${file.name}`);
 
         // Return img_ref:// URL instead of base64
         onChange(imgRefUrl);

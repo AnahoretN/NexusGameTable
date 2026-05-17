@@ -3,8 +3,9 @@ import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenTy
 import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
+import { LocalFileRestoreDialog } from '../components/LocalFileRestoreDialog';
 import { generateUUID } from '../utils/uuid';
-import { loadGameState, clearAllData } from '../utils/gameStorage';
+import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo } from '../utils/gameStorage';
 import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from '../utils/localSettings';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
@@ -17,15 +18,11 @@ import {
   extractImagesFromState,
   getNewImages,
   loadImageCacheFromIDB,
-  addToManagedCache,
-  getFromManagedCache,
   initManagedCacheFromImageCache,
-  startManagedCacheCleanup,
-  getManagedCacheStats
+  startManagedCacheCleanup
 } from '../utils/imageCache';
 import {
   throttle,
-  debounce,
   differentialSyncManager,
   webrtcStatsMonitor,
   measureSyncTime,
@@ -5704,6 +5701,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [initialLoadSteps, setInitialLoadSteps] = useState<InitialLoadStep[]>([]);
 
+  // Local file restoration state
+  const [pendingLocalFiles, setPendingLocalFiles] = useState<LocalFileInfo[] | null>(null);
+  const [pendingSavedState, setPendingSavedState] = useState<Partial<GameState> | null>(null);
+
   const addInitialLoadStep = (message: string, status: 'loading' | 'success' | 'warning' | 'error' = 'loading') => {
     setInitialLoadSteps(prev => {
       const lastStep = prev[prev.length - 1];
@@ -5713,6 +5714,89 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return [...prev, { message, status }];
     });
   };
+
+  /**
+   * Load saved state into the game (shared function for both normal load and after local file restoration)
+   */
+  const loadSavedStateIntoGame = useCallback((loadedState: Partial<GameState>) => {
+    if (!loadedState.objects || Object.keys(loadedState.objects).length === 0) {
+      setIsInitialLoading(false);
+      return;
+    }
+
+    // Function to add objects to state
+    const addObjects = (objects: Record<string, TableObject>) => {
+      const objectValues = Object.values(objects);
+
+      const cards = objectValues.filter(obj => obj.type === ItemType.CARD);
+      const decks = objectValues.filter(obj => obj.type === ItemType.DECK);
+      const otherObjects = objectValues.filter(obj =>
+        obj.type !== ItemType.CARD &&
+        obj.type !== ItemType.DECK &&
+        !(obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU)
+      );
+
+      cards.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
+      decks.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
+      otherObjects.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
+    };
+
+    addObjects(loadedState.objects);
+
+    // Migrate pool panels
+    runPoolMigrationIfNeeded(loadedState.objects);
+
+    // Restore other state
+    const updates: any[] = [];
+
+    if (loadedState.drawings || loadedState.auditLog) {
+      const syncPayload: any = { drawings: loadedState.drawings };
+      if (loadedState.auditLog) {
+        syncPayload.auditLog = loadedState.auditLog;
+      }
+      updates.push({ type: 'SYNC_STATE', payload: syncPayload });
+    }
+
+    if (loadedState.playerPermissions) {
+      updates.push({ type: 'UPDATE_PLAYER_PERMISSIONS', payload: loadedState.playerPermissions });
+    }
+
+    if (loadedState.language) {
+      updates.push({ type: 'UPDATE_LANGUAGE', payload: loadedState.language });
+    }
+
+    if (loadedState.activePlayerId && loadedState.activePlayerId !== state.activePlayerId) {
+      updates.push({ type: 'SET_ACTIVE_ID', payload: loadedState.activePlayerId });
+    }
+
+    if (loadedState.viewTransform) {
+      updates.push({ type: 'UPDATE_VIEW_TRANSFORM', payload: loadedState.viewTransform });
+    }
+
+    if (loadedState.players && loadedState.players.length > 0) {
+      const currentPlayers = state.players || [];
+      loadedState.players.forEach((player: Player) => {
+        if (player.id !== 'gm' && player.id !== 'gm-player' &&
+            !currentPlayers.find(p => p.id === player.id)) {
+          updates.push({ type: 'ADD_PLAYER', payload: player });
+        } else if (player.id !== 'gm' && player.id !== 'gm-player') {
+          updates.push({ type: 'UPDATE_PLAYER', payload: player });
+        }
+      });
+    }
+
+    if (loadedState.playerPanelSettings && Object.keys(loadedState.playerPanelSettings).length > 0) {
+      updates.push({ type: 'APPLY_SAVED_PANEL_SETTINGS', payload: { playerPanelSettings: loadedState.playerPanelSettings } });
+    }
+
+    updates.forEach(update => localDispatch(update));
+
+    createMainMenu(localDispatch);
+
+    addInitialLoadStep('Game loaded', 'success');
+    setIsInitialLoading(false);
+    initializedRef.current = true;
+  }, [localDispatch, state.activePlayerId]);
 
   // Ref to track latest state for event listeners
   const stateRef = useRef(state);
@@ -5769,119 +5853,43 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
     // Only initialize once we're sure about host status and haven't initialized yet
+    logger.log(`[INIT] Checking initialization: initialized=${initializedRef.current}, objectsCount=${Object.keys(state.objects).length}, isHost=${isHost}`);
+
     if (!initializedRef.current && Object.keys(state.objects).length === 0) {
         const isGuest = !isHost;
 
+        logger.log(`[INIT] Starting initialization, isGuest=${isGuest}`);
+
         // Guests don't load from localStorage - they receive state from host
         if (isGuest) {
+          logger.log('[INIT] Guest mode - creating main menu');
           initializedRef.current = true; // Set initialized flag for guests
           createMainMenu(localDispatch);
           setIsInitialLoading(false); // Guests don't need loading screen - they wait for host
           return;
         }
 
+        logger.log('[INIT] Host mode - loading saved game...');
+
         // Try to load saved game state from localStorage (host only)
-        // loadGameState now loads images from IDB and restores them
+        // loadGameStateWithLocalFiles loads images from IDB and detects local file paths
         (async () => {
-          const savedState = await loadGameState(false);
+          const { state: loadedState, localFiles } = await loadGameStateWithLocalFiles(false);
 
-          if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
-            // loadGameState already restored images from IDB, just add objects
-            setIsInitialLoading(true);
-            addInitialLoadStep('Loading saved game...', 'loading');
+          logger.log(`[INIT] Loaded state: ${loadedState ? 'found' : 'null'}, localFiles: ${localFiles.length}`);
 
-            // Function to add objects to state
-            // IMPORTANT: Add cards BEFORE decks to ensure deck.cardIds references exist
-            const addObjects = (objects: Record<string, TableObject>) => {
-              const objectValues = Object.values(objects);
-
-              // Separate cards and decks for proper ordering
-              const cards = objectValues.filter(obj => obj.type === ItemType.CARD);
-              const decks = objectValues.filter(obj => obj.type === ItemType.DECK);
-              const otherObjects = objectValues.filter(obj =>
-                obj.type !== ItemType.CARD &&
-                obj.type !== ItemType.DECK &&
-                !(obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU)
-              );
-
-              // Add cards first (so they exist when decks are added)
-              cards.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
-
-              // Then add decks (which reference cards via cardIds)
-              decks.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
-
-              // Finally add all other objects
-              otherObjects.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
-            };
-
-            // Add objects (images already restored from IDB by loadGameState)
-            addObjects(savedState.objects);
-
-            // Migrate pool panels that are in playable area to non-playable territories
-            runPoolMigrationIfNeeded(savedState.objects);
-
-            // Restore other state (drawings, players, etc.)
-            const updates: any[] = [];
-
-            // Restore drawings and audit log
-            if (savedState.drawings || savedState.auditLog) {
-              const syncPayload: any = { drawings: savedState.drawings };
-              // Only include auditLog if it exists (don't overwrite with undefined)
-              if (savedState.auditLog) {
-                syncPayload.auditLog = savedState.auditLog;
-              }
-              updates.push({ type: 'SYNC_STATE', payload: syncPayload });
+          if (loadedState && loadedState.objects && Object.keys(loadedState.objects).length > 0) {
+            // Check if there are local files that need restoration
+            if (localFiles.length > 0) {
+              // Show dialog for user to select local files
+              setPendingSavedState(loadedState);
+              setPendingLocalFiles(localFiles);
+              setIsInitialLoading(true);
+              addInitialLoadStep(`Found ${localFiles.length} local images requiring restoration`, 'warning');
+              return; // Wait for user to select files
             }
-
-            // Restore player permissions
-            if (savedState.playerPermissions) {
-              updates.push({ type: 'UPDATE_PLAYER_PERMISSIONS', payload: savedState.playerPermissions });
-            }
-
-            // Restore language
-            if (savedState.language) {
-              updates.push({ type: 'UPDATE_LANGUAGE', payload: savedState.language });
-            }
-
-            // Restore active player ID if different
-            if (savedState.activePlayerId && savedState.activePlayerId !== state.activePlayerId) {
-              updates.push({ type: 'SET_ACTIVE_ID', payload: savedState.activePlayerId });
-            }
-
-            // Restore view transform (zoom/pan) - only for host or single player
-            if (savedState.viewTransform && !isGuest) {
-              updates.push({ type: 'UPDATE_VIEW_TRANSFORM', payload: savedState.viewTransform });
-            }
-
-            // Restore players (merge with default players)
-            if (savedState.players && savedState.players.length > 0) {
-              const currentPlayers = state.players || [];
-              savedState.players.forEach((player: Player) => {
-                // Only add players that don't already exist (don't overwrite GM)
-                if (player.id !== 'gm' && player.id !== 'gm-player' &&
-                    !currentPlayers.find(p => p.id === player.id)) {
-                  updates.push({ type: 'ADD_PLAYER', payload: player });
-                } else if (player.id !== 'gm' && player.id !== 'gm-player') {
-                  // Update existing player with saved state (especially handCardOrder)
-                  updates.push({ type: 'UPDATE_PLAYER', payload: player });
-                }
-              });
-            }
-
-            // Restore player panel settings (individual panel positions/sizes for each player)
-            if (savedState.playerPanelSettings && Object.keys(savedState.playerPanelSettings).length > 0) {
-              updates.push({ type: 'APPLY_SAVED_PANEL_SETTINGS', payload: { playerPanelSettings: savedState.playerPanelSettings } });
-            }
-
-            // Apply all updates
-            updates.forEach(update => localDispatch(update));
-
-            // Create main menu from local settings
-            createMainMenu(localDispatch);
-
-            addInitialLoadStep('Game loaded', 'success');
-            setIsInitialLoading(false);
-            initializedRef.current = true;
+            // Load the state into game
+            loadSavedStateIntoGame(loadedState);
 
             return; // IMPORTANT: Return after async operations complete
           }
@@ -6428,6 +6436,39 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         defaultName="Player"
         title="Join Game"
       />
+      {pendingLocalFiles && pendingSavedState && (
+        <LocalFileRestoreDialog
+          localFiles={pendingLocalFiles}
+          onConfirm={async (fileMap) => {
+            setPendingLocalFiles(null);
+            let finalState = pendingSavedState;
+
+            if (fileMap.size > 0) {
+              addInitialLoadStep(`Processing ${fileMap.size} local images...`, 'loading');
+              try {
+                finalState = await processUploadedLocalFiles(pendingSavedState, pendingLocalFiles, fileMap);
+                addInitialLoadStep(`Restored ${fileMap.size} images`, 'success');
+              } catch (error) {
+                logger.error('[LOAD] Failed to process local files:', error);
+                addInitialLoadStep('Failed to restore some images', 'error');
+              }
+            } else {
+              addInitialLoadStep('Loading without local images', 'warning');
+            }
+
+            setPendingSavedState(null);
+
+            // Continue loading with the final state
+            loadSavedStateIntoGame(finalState);
+          }}
+          onCancel={() => {
+            setPendingLocalFiles(null);
+            setPendingSavedState(null);
+            setIsInitialLoading(false);
+            initializedRef.current = false; // Allow retry
+          }}
+        />
+      )}
     </GameContext.Provider>
   );
 };

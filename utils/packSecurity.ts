@@ -206,13 +206,16 @@ function validateObject(obj: any): { valid: boolean; error?: string } {
     }
   }
 
-  // Validate image URLs are either data URLs or pack:// URLs
+  // Validate image URLs are either data URLs, pack:// URLs, or img_ref:// URLs
   const urlFields = ['content', 'frontFaceUrl', 'backFaceUrl'];
   for (const field of urlFields) {
     const url = (obj as any)[field];
     if (url && typeof url === 'string') {
-      // Only allow data:image URLs or pack:// URLs
-      if (!url.startsWith('data:image/') && !url.startsWith('pack://images/') && !url.startsWith('http')) {
+      // Allow data:image, pack://images/, http, and img_ref:// URLs
+      if (!url.startsWith('data:image/') &&
+          !url.startsWith('pack://images/') &&
+          !url.startsWith('http') &&
+          !url.startsWith('img_ref://')) {
         return {
           valid: false,
           error: `Invalid URL in ${field}: ${url.substring(0, 50)}...`
