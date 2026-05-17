@@ -16,21 +16,25 @@ import { getGlobalCacheVersion } from '../SvgTokenShape';
 interface BoardBackgroundImageProps {
   content: string;
   opacity: number;
+  cacheVersion?: number; // Global cache version to force re-render when pack is loaded
 }
 
-const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, opacity }) => {
+const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, opacity, cacheVersion: externalCacheVersion }) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [cacheVersion, setCacheVersion] = useState(getGlobalCacheVersion());
+  const [internalCacheVersion, setInternalCacheVersion] = useState(getGlobalCacheVersion());
+
+  // Use external cache version if provided, otherwise use internal state
+  const currentCacheVersion = externalCacheVersion ?? internalCacheVersion;
 
   // Track global cache version for force-reload when pack is loaded
   useEffect(() => {
-    const currentVersion = getGlobalCacheVersion();
-    if (currentVersion !== cacheVersion) {
-      setCacheVersion(currentVersion);
+    const globalVersion = getGlobalCacheVersion();
+    if (globalVersion !== currentCacheVersion) {
+      setInternalCacheVersion(globalVersion);
       // Force re-resolve the image
       setImageUrl(null);
     }
-  }, [cacheVersion, content]);
+  }, [currentCacheVersion, content]);
 
   useEffect(() => {
     const loadImage = async () => {
@@ -63,7 +67,7 @@ const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, op
     };
 
     loadImage();
-  }, [content, cacheVersion]);
+  }, [content, currentCacheVersion]);
 
   if (!imageUrl) {
     return null;
@@ -89,6 +93,10 @@ const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, op
 };
 
 const BoardBackgroundImageMemo = React.memo(BoardBackgroundImage, (prevProps, nextProps) => {
+  // Re-render when cache version changes (pack loaded)
+  if (prevProps.cacheVersion !== nextProps.cacheVersion) {
+    return false;
+  }
   return prevProps.content === nextProps.content && prevProps.opacity === nextProps.opacity;
 });
 
@@ -153,6 +161,7 @@ const SimplifiedBoard: React.FC<{
                 <BoardBackgroundImage
                     content={(obj as any).content}
                     opacity={(obj as BoardType).backgroundOpacity ?? 100}
+                    cacheVersion={cacheVersion}
                 />
             )}
 
@@ -423,6 +432,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 <BoardBackgroundImage
                     content={(obj as any).content}
                     opacity={(obj as BoardType).backgroundOpacity ?? 100}
+                    cacheVersion={cacheVersion}
                 />
             )}
 

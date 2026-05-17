@@ -224,8 +224,8 @@ export const saveGameState = async (state: GameState): Promise<void> => {
     }
 
     if (foundBase64InExtracted > 0) {
-      logger.error(`[SAVE] ERROR: ${foundBase64InExtracted} base64 images found AFTER extraction!`);
-      logger.error(`[SAVE] This indicates a bug in extractImagesFromState. Skipping save.`);
+      logger.error(`[AUTOSAVE] ERROR: ${foundBase64InExtracted} base64 images found AFTER extraction!`);
+      logger.error(`[AUTOSAVE] This indicates a bug in extractImagesFromState. Skipping save.`);
       return;
     }
 
@@ -245,9 +245,9 @@ export const saveGameState = async (state: GameState): Promise<void> => {
           Object.assign(cachedIDBCache, newImages);
         }
 
-        logger.log(`[SAVE] Saved ${Object.keys(newImages).length} new images to IndexedDB`);
+        logger.log(`[AUTOSAVE] Saved ${Object.keys(newImages).length} new images to IndexedDB`);
       } catch (error) {
-        logger.error('[SAVE] Failed to save images to IndexedDB:', error);
+        logger.error('[AUTOSAVE] Failed to save images to IndexedDB:', error);
       }
     }
 
@@ -287,11 +287,11 @@ export const saveGameState = async (state: GameState): Promise<void> => {
     // Log save size for monitoring
     const sizeMB = (size / 1024 / 1024).toFixed(2);
     const objectCount = Object.keys(storedData.state.objects || {}).length;
-    logger.log(`[SAVE] Saving ${objectCount} objects, size: ${sizeMB}MB`);
+    logger.log(`[AUTOSAVE] Saving ${objectCount} objects, size: ${sizeMB}MB`);
 
     // Warn if size is abnormally large (> 5MB indicates base64 leak)
     if (size > 5 * 1024 * 1024) {
-      logger.warn(`[SAVE] WARNING: Large save size (${sizeMB}MB) - may indicate base64 images embedded!`);
+      logger.warn(`[AUTOSAVE] WARNING: Large save size (${sizeMB}MB) - may indicate base64 images embedded!`);
     }
 
     // Try compressed first
@@ -301,7 +301,7 @@ export const saveGameState = async (state: GameState): Promise<void> => {
       if (safeSetItem(STORAGE_KEY_COMPRESSED, compressed)) {
         localStorage.removeItem(STORAGE_KEY);
         saved = true;
-        logger.log(`[SAVE] Saved compressed (${Math.round(compressed.length / 1024)}KB)`);
+        logger.log(`[AUTOSAVE] Saved compressed (${Math.round(compressed.length / 1024)}KB)`);
       }
     }
 
@@ -309,13 +309,13 @@ export const saveGameState = async (state: GameState): Promise<void> => {
     if (!saved) {
       if (safeSetItem(STORAGE_KEY, json)) {
         localStorage.removeItem(STORAGE_KEY_COMPRESSED);
-        logger.log('[SAVE] Saved uncompressed');
+        logger.log('[AUTOSAVE] Saved uncompressed');
       } else {
-        logger.error('[SAVE] Failed to save - quota exceeded');
+        logger.error('[AUTOSAVE] Failed to save - quota exceeded');
       }
     }
   } catch (error) {
-    logger.error('[SAVE] Failed to save game state:', error);
+    logger.error('[AUTOSAVE] Failed to save game state:', error);
   }
 };
 

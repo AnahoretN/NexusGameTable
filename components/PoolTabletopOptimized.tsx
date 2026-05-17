@@ -13,7 +13,7 @@ import { ContextMenu } from './ContextMenu';
 import { PileContextMenu } from './PileContextMenu';
 import { executeContextMenuAction } from '../utils/contextMenuActions';
 import { executeClickAction as universalExecuteClickAction } from '../utils/objectActionHandlers';
-import { SvgTokenShape } from './SvgTokenShape';
+import { SvgTokenShape, getGlobalCacheVersion } from './SvgTokenShape';
 import { Tooltip } from './Tooltip';
 import { logger } from '../utils/logger';
 import { Plus, Minus, RefreshCw, Trash2, Copy, Lock, Unlock, ArrowUp, ArrowDown, EyeOff, Pin, Layers } from 'lucide-react';
@@ -2696,6 +2696,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                     showGrid={board.showGrid}
                     currentTool={'none'}
                     livePreviewSize={null}
+                    cacheVersion={getGlobalCacheVersion()}
                   />
                 </div>
               );

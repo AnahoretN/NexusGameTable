@@ -617,9 +617,6 @@ export async function preloadAllPackImages(objects: Record<string, any>): Promis
     }
   }
 
-  if (loadedCount > 0) {
-    logger.log(`[PRELOAD] Preloaded ${loadedCount} images into component cache`);
-  }
 }
 
 /**

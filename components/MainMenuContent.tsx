@@ -12,7 +12,7 @@ import { loadImageCacheFromIDB, restoreImagesToState, findLocalFilePaths, extrac
 import { saveSession, loadSession } from '../utils/sessionStorage';
 import { preloadImageUrl } from '../components/SvgTokenShape';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
-import { Dices, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target } from 'lucide-react';
+import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -245,6 +245,46 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Direct Connection button unlock via 'd' key pressed 3 times
+  const [directConnectionUnlocked, setDirectConnectionUnlocked] = useState(false);
+  const dKeyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dKeyPressCountRef = useRef(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Use e.code instead of e.key to work with any keyboard layout
+      // KeyD is the physical key 'D' regardless of layout
+      if (e.code === 'KeyD') {
+        // Increment press count using ref to avoid closure issues
+        dKeyPressCountRef.current += 1;
+
+        // Clear existing timeout
+        if (dKeyTimeoutRef.current) {
+          clearTimeout(dKeyTimeoutRef.current);
+        }
+
+        // Set timeout to reset count after 2 seconds
+        dKeyTimeoutRef.current = setTimeout(() => {
+          dKeyPressCountRef.current = 0;
+        }, 2000);
+
+        // Unlock after 3 presses
+        if (dKeyPressCountRef.current >= 3) {
+          setDirectConnectionUnlocked(true);
+          dKeyPressCountRef.current = 0;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (dKeyTimeoutRef.current) {
+        clearTimeout(dKeyTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -1055,57 +1095,70 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 <div className="text-sm text-gray-300 font-mono break-all">{state.sessionId || 'Generating...'}</div>
               </div>
               <div className="grid grid-cols-1 gap-2">
-                <button
-                  onClick={handleInvite}
-                  className={`w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold transition-all ${inviteCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
-                >
-                  {inviteCopied ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
-                  {inviteCopied ? translate('Link Copied!', language as Locale) : translate('Invite Player', language as Locale)}
-                </button>
-                <button
-                  onClick={() => setShowManualConnection(true)}
-                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all"
-                >
-                  <Network size={16} />
-                  {translate('Direct Connection', language as Locale)}
-                </button>
+                {/* Invite Player with Direct Connection button */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleInvite}
+                    className={`flex-1 py-2 px-3 rounded flex items-center justify-center gap-2 font-bold transition-all ${inviteCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+                  >
+                    {inviteCopied ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
+                    {inviteCopied ? translate('Link Copied!', language as Locale) : translate('Invite Player', language as Locale)}
+                  </button>
+                  <button
+                    onClick={() => directConnectionUnlocked && setShowManualConnection(true)}
+                    disabled={!directConnectionUnlocked}
+                    className={`w-12 h-10 rounded flex items-center justify-center font-bold transition-all ${
+                      directConnectionUnlocked
+                        ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                        : 'bg-slate-700 text-gray-500 cursor-not-allowed'
+                    }`}
+                    title={directConnectionUnlocked ? translate('Direct Connection', language as Locale) : translate('Locked', language as Locale)}
+                  >
+                    <Network size={16} />
+                  </button>
+                </div>
 
                 {/* Divider line before save/load buttons */}
                 <div className="border-t border-slate-600 my-2"></div>
 
-                <button
-                  onClick={handleSaveGame}
-                  className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
-                >
-                  <Save size={16} />
-                  {translate('Save Session', language as Locale)}
-                </button>
-                {currentUserIsGM && (
+                {/* Session buttons row */}
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                    onClick={handleSaveGame}
+                    className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
                   >
-                    <Upload size={16} />
-                    {translate('Load Session', language as Locale)}
+                    <Save size={16} />
+                    {translate('Save', language as Locale)}
                   </button>
-                )}
+                  {currentUserIsGM && (
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                    >
+                      <Upload size={16} />
+                      {translate('Load', language as Locale)}
+                    </button>
+                  )}
+                </div>
+
+                {/* Pack buttons row */}
                 {currentUserIsGM && (
-                  <button
-                    onClick={handleSavePack}
-                    className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
-                  >
-                    <Package size={16} />
-                    {translate('Create Pack', language as Locale)}
-                  </button>
-                )}
-                {currentUserIsGM && (
-                  <button
-                    onClick={handleLoadPack}
-                    className="w-full py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
-                  >
-                    <Package size={16} />
-                    {translate('Load Pack', language as Locale)}
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={handleSavePack}
+                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                    >
+                      <Save size={16} />
+                      {translate('Save Pack', language as Locale)}
+                    </button>
+                    <button
+                      onClick={handleLoadPack}
+                      className="py-2 px-3 rounded flex items-center justify-center gap-2 font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all"
+                    >
+                      <Upload size={16} />
+                      {translate('Load Pack', language as Locale)}
+                    </button>
+                  </div>
                 )}
                 <div className="border-t border-slate-600 my-2" />
                 <button
@@ -1135,7 +1188,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-2">
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{translate('Active Players', language as Locale)}</h3>
               {players
                 .map(p => {
@@ -1169,41 +1222,62 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   }
 
                   return (
-                    <div key={p.id} className={`flex items-center gap-3 p-2 rounded ${isCurrentPlayer ? 'bg-purple-900/30 border border-purple-700/50' : 'bg-slate-800'}`}>
+                    <div key={p.id} className={`flex items-center gap-2 p-2 rounded ${isCurrentPlayer ? 'bg-purple-900/30 border border-purple-700/50' : 'bg-slate-800'}`}>
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{backgroundColor: p.color}} />
-                      <span className="font-medium text-white truncate">{p.name}</span>
-                      {p.isGM && <span className="text-xs bg-yellow-600 px-1 rounded text-white">GM</span>}
-                      {isCurrentPlayer && <span className="text-xs bg-slate-600 px-1 rounded text-gray-300">{translate('You', language as Locale)}</span>}
+                      <span className="font-medium text-white truncate flex-1">{p.name}</span>
 
-                      {/* Rename button */}
-                      {showRenameButton && (
-                        <button
-                          onClick={() => setRenamePlayerId(p.id)}
-                          className="p-1 hover:bg-slate-700 rounded text-gray-400 hover:text-white transition-colors"
-                          title={translate('Edit name', language as Locale)}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      )}
+                      {/* All buttons and badges on the right side */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* Rename button */}
+                        {showRenameButton && (
+                          <button
+                            onClick={() => setRenamePlayerId(p.id)}
+                            className="p-1 hover:bg-slate-700 rounded text-gray-400 hover:text-white transition-colors"
+                            title={translate('Edit name', language as Locale)}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
 
-                      {/* GM Mode Switch Button - shown for both Game Master and GM Player when current user is host */}
-                      {showSwitchButton && (
-                        <button
-                          onClick={() => {
-                            if (isGameMaster) {
-                              // Clicking on Game Master block switches TO GM mode
-                              dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm' });
-                            } else {
-                              // Clicking on GM Player block switches TO GM Player mode
-                              dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm-player' });
-                            }
-                          }}
-                          className="ml-auto p-1 bg-purple-600/20 hover:bg-purple-600/40 rounded text-purple-400 hover:text-purple-300 transition-colors"
-                          title={isGameMaster ? translate('Switch to GM Mode', language as Locale) : translate('Switch to Player Mode', language as Locale)}
-                        >
-                          <User size={14} />
-                        </button>
-                      )}
+                        {/* You badge */}
+                        {isCurrentPlayer && (
+                          <button
+                            className="w-7 h-7 flex items-center justify-center bg-slate-600 hover:bg-slate-500 rounded text-white transition-colors"
+                            title={translate('You', language as Locale)}
+                          >
+                            <User size={12} />
+                          </button>
+                        )}
+
+                        {/* GM badge with crown */}
+                        {p.isGM && (
+                          <button
+                            className="w-7 h-7 flex items-center justify-center bg-yellow-600 hover:bg-yellow-500 rounded text-white transition-colors"
+                            title="GM"
+                          >
+                            <Crown size={12} />
+                          </button>
+                        )}
+
+                        {/* GM Mode Switch Button */}
+                        {showSwitchButton && (
+                          <button
+                            onClick={() => {
+                              if (isGameMaster) {
+                                // Clicking on Game Master block switches TO GM mode
+                                dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm' });
+                              } else {
+                                // Clicking on GM Player block switches TO GM Player mode
+                                dispatch({ type: 'SET_ACTIVE_ID', payload: 'gm-player' });
+                              }
+                            }}
+                            className="w-7 h-7 flex items-center justify-center bg-purple-600/20 hover:bg-purple-600/40 rounded text-purple-400 hover:text-purple-300 transition-colors"
+                            title={isGameMaster ? translate('Switch to GM Mode', language as Locale) : translate('Switch to Player Mode', language as Locale)}
+                          >
+                            <User size={12} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
