@@ -958,13 +958,25 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   const handleRotateClockwise = useCallback((cardId: string) => {
     const obj = objects[cardId] as any;
-    const rotationStep = obj?.rotationStep ?? 45;
+    // Get rotationStep from deck if card has one, otherwise from card itself
+    let rotationStep = obj?.rotationStep;
+    if (!rotationStep && obj?.deckId) {
+      const deck = objects[obj.deckId] as any;
+      rotationStep = deck?.rotationStep;
+    }
+    rotationStep = rotationStep ?? 45;
     updateCard(cardId, { rotation: (obj?.rotation || 0) + rotationStep });
   }, [objects, updateCard]);
 
   const handleRotateCounterClockwise = useCallback((cardId: string) => {
     const obj = objects[cardId] as any;
-    const rotationStep = obj?.rotationStep ?? 45;
+    // Get rotationStep from deck if card has one, otherwise from card itself
+    let rotationStep = obj?.rotationStep;
+    if (!rotationStep && obj?.deckId) {
+      const deck = objects[obj.deckId] as any;
+      rotationStep = deck?.rotationStep;
+    }
+    rotationStep = rotationStep ?? 45;
     updateCard(cardId, { rotation: (obj?.rotation || 0) - rotationStep });
   }, [objects, updateCard]);
 

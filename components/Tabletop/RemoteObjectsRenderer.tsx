@@ -68,7 +68,7 @@ export const RemoteObjectsRenderer = memo<RemoteObjectsRendererProps>(({
           top: v2p(card.y),
           width: pxWidth,
           height: pxHeight,
-          transform: `rotate(${card.rotation ?? 0}rad)`,
+          transform: `rotate(${card.rotation ?? 0}deg)`,
           opacity: 0.5,
           filter: 'brightness(0.6)',
           zIndex: globalZIndex,

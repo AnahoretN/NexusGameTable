@@ -27,11 +27,6 @@ export const QuickAccessBlock: React.FC<QuickAccessBlockProps> = ({ block, edita
     };
   }, []);
 
-  // Debug: log when hoveredItem changes
-  useEffect(() => {
-    console.log('hoveredItem state changed to:', hoveredItem?.name);
-  }, [hoveredItem]);
-
   const handleImageMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>, item: QuickAccessItem) => {
     if (tooltipTimeoutRef.current) {
       clearTimeout(tooltipTimeoutRef.current);

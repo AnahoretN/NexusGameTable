@@ -30,9 +30,16 @@ export interface ContextMenuActionParams {
 }
 
 /**
- * Helper function to get rotationStep for an object, considering archetype for tokens
+ * Helper function to get rotationStep for an object, considering archetype for tokens and deck for cards
  */
 const getRotationStep = (object: TableObject, allObjects: Record<string, TableObject>): number => {
+  // For cards with deckId, get rotationStep from deck
+  if (object.type === ItemType.CARD && (object as any).deckId) {
+    const deck = allObjects[(object as any).deckId];
+    if (deck && (deck as any).rotationStep) {
+      return (deck as any).rotationStep;
+    }
+  }
   // For tokens with archetypeId, get rotationStep from archetype
   if (object.type === ItemType.TOKEN && (object as any).archetypeId) {
     const archetype = allObjects[(object as any).archetypeId];
@@ -355,17 +362,18 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
 
     case 'rotate':
     case 'rotateClockwise':
-      dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id } });
+      {
+        const rotationStep = getRotationStep(object, state.objects);
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: rotationStep } });
+      }
       break;
 
     case 'rotateCounterClockwise':
       // Rotate counter-clockwise (negative rotation)
-      const currentRotation = object.rotation || 0;
-      const rotationStep = getRotationStep(object, state.objects);
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: { id: object.id, updates: { rotation: currentRotation - rotationStep } }
-      });
+      {
+        const rotationStep = getRotationStep(object, state.objects);
+        dispatch({ type: 'ROTATE_OBJECT', payload: { id: object.id, angle: -rotationStep } });
+      }
       break;
 
     case 'resetRotation':

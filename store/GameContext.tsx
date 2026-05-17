@@ -1035,11 +1035,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // Character-Token Synchronization
-      console.log('[SYNC] UPDATE_OBJECT', { id: action.payload.id, objType: updatedObj.type, payload: action.payload });
 
       // Sync FROM panel TO token when panel data changes
       if (updatedObj.type === ItemType.PANEL && mergedUpdates.characterData) {
-        console.log('[SYNC] Panel characterData changed');
         const panel = updatedObj as PanelObject;
         const oldCharacterData = obj.characterData;
         const newCharacterData = panel.characterData;
@@ -1053,13 +1051,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
             // Check for name change
             if (oldChar.characterName !== newChar.characterName) {
-              console.log('[SYNC] Character name changed', { characterId: newChar.id, oldName: oldChar.characterName, newName: newChar.characterName });
               syncCharacterNameToTokens({ ...state, objects: newObjects }, panel, newChar, newObjects);
             }
 
             // Check for avatar change
             if (oldChar.avatarUrl !== newChar.avatarUrl) {
-              console.log('[SYNC] Character avatar changed');
               syncCharacterAvatarToTokens({ ...state, objects: newObjects }, panel, newChar, newObjects);
             }
 
@@ -1078,7 +1074,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
                     const slidersChanged = JSON.stringify(oldBlock.data.sliders) !== JSON.stringify(newBlock.data.sliders);
                     if (slidersChanged) {
-                      console.log('[SYNC] Sliders changed', { oldSliders: oldBlock.data.sliders, newSliders: newBlock.data.sliders });
                       syncSlidersToTokens({ ...state, objects: newObjects }, panel, newChar, newObjects);
                       sliderSynced = true;
                       break;
@@ -1093,21 +1088,18 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // Sync FROM token TO panel when token counters change
       if (updatedObj.type === ItemType.TOKEN && mergedUpdates.counters) {
-        console.log('[SYNC] Token counters changed', { tokenId: action.payload.id, characterId: (updatedObj as any).characterId, panelId: (updatedObj as any).panelId });
         const token = updatedObj as any;
         const oldCounters = obj.counters || [];
         const newCounters = token.counters || [];
 
         const countersChanged = JSON.stringify(oldCounters) !== JSON.stringify(newCounters);
         if (countersChanged && token.characterId && token.panelId) {
-          console.log('[SYNC] Syncing counters to panel');
           syncCountersToCharacter({ ...state, objects: newObjects }, token, newObjects);
         }
       }
 
       // Sync FROM token TO panel when token name changes
       if (updatedObj.type === ItemType.TOKEN && mergedUpdates.name !== undefined && obj.name !== updatedObj.name) {
-        console.log('[SYNC] Token name changed', { oldName: obj.name, newName: updatedObj.name });
         const token = updatedObj as any;
         if (token.characterId && token.panelId) {
           syncTokenNameToCharacter({ ...state, objects: newObjects }, token, newObjects);
@@ -1116,7 +1108,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // Sync FROM token TO panel when token content changes
       if (updatedObj.type === ItemType.TOKEN && mergedUpdates.content !== undefined && obj.content !== updatedObj.content) {
-        console.log('[SYNC] Token content changed');
         const token = updatedObj as any;
         if (token.characterId && token.panelId) {
           syncTokenImageToCharacter({ ...state, objects: newObjects }, token, newObjects);
@@ -2536,6 +2527,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
         const angle = action.payload.angle ?? rotationStep ?? 45;
         const previousRotation = obj.rotation;
+        const newRotation = (obj.rotation + angle) % 360;
 
         // Add to general history (max 100)
         const historyEntry: GeneralHistoryEntry = {
@@ -2547,7 +2539,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         return {
             ...state,
-            objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: (obj.rotation + angle) % 360 } },
+            objects: { ...state.objects, [action.payload.id]: { ...obj, rotation: newRotation } },
             undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
@@ -4364,6 +4356,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         zIndex: newZ,
         hyperscaleLayerId,
         archetypeId: archetype.id,
+        // Inherit border settings from archetype
+        borderColor: (archetype as any).borderColor ?? '#ffffff',
+        borderWidth: (archetype as any).borderWidth ?? 2,
         // Inherit action settings from archetype
         allowedActions: archetype.allowedActions,
         allowedActionsForGM: archetype.allowedActionsForGM,
@@ -5680,7 +5675,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, imageCachesRef } = usePeerConnection(localDispatch, stateRef);
 
   // Auto-save game state to localStorage (debounced)
-  logger.log('[DEBUG] useAutoSave called with isHost:', isHost, 'initializedRef.current:', initializedRef.current);
   useAutoSave(state, isHost, initializedRef.current);
 
   // Update pixelsPerVU when window size changes

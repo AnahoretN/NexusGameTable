@@ -398,7 +398,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             globalZIndex,
             objLayer,
             {
-              transform: `rotate(${obj.rotation ?? 0}rad)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+              transform: `rotate(${obj.rotation ?? 0}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
               overflow: 'visible',
             }
           )}

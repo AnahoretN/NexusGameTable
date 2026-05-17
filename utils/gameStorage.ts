@@ -74,8 +74,6 @@ export const saveGameState = async (state: GameState): Promise<void> => {
     cacheLoadPromise = null; // Reset promise
     const existingIDBCache = await getOrLoadIDBCache();
 
-    logger.log('[SAVE] IDB cache loaded, keys:', Object.keys(existingIDBCache).length);
-
     // IMPORTANT: If state has metadata markers ('D', 'B') instead of actual images,
     // log this so we can debug
     const idbCacheToUse = existingIDBCache;
@@ -162,6 +160,8 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         lastModifiedBy: state.lastModifiedBy || 'gm',
         // Save player panel settings (individual panel positions/sizes for each player)
         playerPanelSettings: state.playerPanelSettings || {},
+        // Save audit log
+        auditLog: state.auditLog || { entries: [], maxEntries: 10000, currentReplayIndex: -1 },
       }
     };
 
@@ -302,15 +302,20 @@ export const loadGameState = async (
       ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
       : data.state;
 
+    // Ensure auditLog exists (for version 8 saves before auditLog was added)
+    const withAuditLog = {
+      ...adaptedState,
+      auditLog: adaptedState.auditLog || { entries: [], maxEntries: 10000, currentReplayIndex: -1 },
+    };
+
     // Load images from IDB and restore them to state
     const idbCache = await loadImageCacheFromIDB();
     if (Object.keys(idbCache).length > 0) {
-      logger.log(`[LOAD] Loaded ${Object.keys(idbCache).length} images from IDB`);
-      const restoredState = restoreImagesToState(adaptedState, idbCache);
+      const restoredState = restoreImagesToState(withAuditLog, idbCache);
       return restoredState;
     }
 
-    return adaptedState;
+    return withAuditLog;
   } catch (error) {
     logger.error('[LOAD_STATE] Failed to load game state:', error);
     return null;
@@ -411,6 +416,15 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
     }));
   }
 
+  // Add auditLog if missing (NEW in version 8)
+  if (!migrated.auditLog) {
+    migrated.auditLog = {
+      entries: [],
+      maxEntries: 10000,
+      currentReplayIndex: -1,
+    };
+  }
+
   // Migrate objects: ensure access control fields exist (NEW in version 8)
   if (migrated.objects) {
     const migratedObjects: Record<string, TableObject> = {};
@@ -453,6 +467,28 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
         }
       }
 
+      // Ensure tokens and token types have border settings (NEW in version 8)
+      if (obj.type === 'TOKEN' || obj.type === 'TOKEN_TYPE') {
+        const token = obj as any;
+        if (token.borderColor === undefined) {
+          (migratedObj as any).borderColor = '#ffffff';
+        }
+        if (token.borderWidth === undefined) {
+          (migratedObj as any).borderWidth = 2;
+        }
+      }
+
+      // Ensure decks have border settings (NEW in version 8)
+      if (obj.type === 'DECK') {
+        const deck = obj as any;
+        if (deck.borderColor === undefined) {
+          (migratedObj as any).borderColor = '#64748b';
+        }
+        if (deck.borderWidth === undefined) {
+          (migratedObj as any).borderWidth = 2;
+        }
+      }
+
       migratedObjects[id] = migratedObj;
     });
 
@@ -466,6 +502,8 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
   logger.log('  - Added drawings hyperscale layer');
   logger.log('  - Added hand access permissions for players');
   logger.log('  - Added access control for panel tabs and characters');
+  logger.log('  - Added border settings (borderColor/borderWidth) for tokens and decks');
+  logger.log('  - Added auditLog support');
 
   return migrated;
 }

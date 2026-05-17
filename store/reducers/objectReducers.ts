@@ -65,7 +65,6 @@ export function addObjectReducer(state: any, action: any): any {
     // Character-Token Synchronization
     // Sync FROM panel TO token when panel data changes
     if (obj.type === ItemType.PANEL && updates.characterData) {
-      console.log('[SYNC] Panel characterData changed', { panelId: action.payload.id });
       const panel = obj as PanelObject;
       const updatedPanel = { ...panel, ...updates } as PanelObject;
       const oldCharacterData = panel.characterData;
@@ -79,25 +78,16 @@ export function addObjectReducer(state: any, action: any): any {
 
           // Check for name change
           if (oldChar.characterName !== newChar.characterName) {
-            console.log('[SYNC] Character name changed, syncing to tokens', { characterId: newChar.id, oldName: oldChar.characterName, newName: newChar.characterName });
             syncCharacterNameToTokens({ ...state, objects: newObjects }, updatedPanel, newChar, newObjects);
           }
 
           // Check for avatar change
           if (oldChar.avatarUrl !== newChar.avatarUrl) {
-            console.log('[SYNC] Character avatar changed, syncing to tokens', { characterId: newChar.id });
             syncCharacterAvatarToTokens({ ...state, objects: newObjects }, updatedPanel, newChar, newObjects);
           }
 
           // Check for border settings change
           if (oldChar.avatarBorderColor !== newChar.avatarBorderColor || oldChar.avatarBorderWidth !== newChar.avatarBorderWidth) {
-            console.log('[SYNC] Character border settings changed, syncing to tokens', {
-              characterId: newChar.id,
-              oldBorderColor: oldChar.avatarBorderColor,
-              newBorderColor: newChar.avatarBorderColor,
-              oldBorderWidth: oldChar.avatarBorderWidth,
-              newBorderWidth: newChar.avatarBorderWidth
-            });
             syncCharacterBorderToTokens({ ...state, objects: newObjects }, updatedPanel, newChar, newObjects);
           }
 
@@ -120,7 +110,6 @@ export function addObjectReducer(state: any, action: any): any {
 
                   // Check length first
                   if (oldSliders.length !== newSliders.length) {
-                    console.log('[SYNC] Slider count changed, syncing to tokens', { characterId: newChar.id });
                     syncSlidersToTokens({ ...state, objects: newObjects }, updatedPanel, newChar, newObjects);
                     sliderSynced = true;
                     break;
@@ -141,12 +130,6 @@ export function addObjectReducer(state: any, action: any): any {
                         oldSlider.color !== newSlider.color ||
                         oldSlider.label !== newSlider.label) {
                       sliderValueChanged = true;
-                      console.log('[SYNC] Slider value changed', {
-                        characterId: newChar.id,
-                        sliderId: newSlider.id,
-                        old: { value: oldSlider.value, maxValue: oldSlider.maxValue, color: oldSlider.color, label: oldSlider.label },
-                        new: { value: newSlider.value, maxValue: newSlider.maxValue, color: newSlider.color, label: newSlider.label }
-                      });
                       break;
                     }
                   }
@@ -166,7 +149,6 @@ export function addObjectReducer(state: any, action: any): any {
 
     // Sync FROM token TO panel when token counters change
     if (obj.type === ItemType.TOKEN && updates.counters) {
-      console.log('[SYNC] Token counters changed', { tokenId: action.payload.id, characterId: (obj as any).characterId, panelId: (obj as any).panelId });
       const token = obj as Token;
       const updatedToken = { ...token, ...updates } as Token;
       const oldCounters = token.counters || [];
@@ -190,26 +172,18 @@ export function addObjectReducer(state: any, action: any): any {
               oldCounter.color !== newCounter.color ||
               oldCounter.name !== newCounter.name) {
             countersChanged = true;
-            console.log('[SYNC] Counter value changed', {
-              tokenId: action.payload.id,
-              counterId: newCounter.id,
-              old: { value: oldCounter.value, maxValue: oldCounter.maxValue, color: oldCounter.color, name: oldCounter.name },
-              new: { value: newCounter.value, maxValue: newCounter.maxValue, color: newCounter.color, name: newCounter.name }
-            });
             break;
           }
         }
       }
 
       if (countersChanged && token.characterId && token.panelId) {
-        console.log('[SYNC] Syncing counters to character panel', { tokenId: action.payload.id, characterId: token.characterId, panelId: token.panelId });
         syncCountersToCharacter({ ...state, objects: newObjects }, updatedToken, newObjects);
       }
     }
 
     // Sync FROM token TO panel when token name changes
     if (obj.type === ItemType.TOKEN && updates.name !== undefined && obj.name !== updates.name) {
-      console.log('[SYNC] Token name changed', { tokenId: action.payload.id, oldName: obj.name, newName: updates.name });
       const token = { ...obj, ...updates } as Token;
       if (token.characterId && token.panelId) {
         syncTokenNameToCharacter({ ...state, objects: newObjects }, token, newObjects);
@@ -218,7 +192,6 @@ export function addObjectReducer(state: any, action: any): any {
 
     // Sync FROM token TO panel when token content (image) changes
     if (obj.type === ItemType.TOKEN && updates.content !== undefined && obj.content !== updates.content) {
-      console.log('[SYNC] Token content changed', { tokenId: action.payload.id });
       const token = { ...obj, ...updates } as Token;
       if (token.characterId && token.panelId) {
         syncTokenImageToCharacter({ ...state, objects: newObjects }, token, newObjects);
@@ -232,13 +205,6 @@ export function addObjectReducer(state: any, action: any): any {
         const borderColorChanged = obj.borderColor !== token.borderColor;
         const borderWidthChanged = obj.borderWidth !== token.borderWidth;
         if (borderColorChanged || borderWidthChanged) {
-          console.log('[SYNC] Token border settings changed', {
-            tokenId: action.payload.id,
-            oldBorderColor: obj.borderColor,
-            newBorderColor: token.borderColor,
-            oldBorderWidth: obj.borderWidth,
-            newBorderWidth: token.borderWidth
-          });
           syncTokenBorderToCharacter({ ...state, objects: newObjects }, token, newObjects);
         }
       }

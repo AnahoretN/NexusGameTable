@@ -886,7 +886,9 @@ export const Tabletop: React.FC = () => {
                       rotation: 0,
                       locked: false,
                       isOnTable: true,
-                      shape: TokenShape.CIRCLE
+                      shape: TokenShape.CIRCLE,
+                      borderColor: '#ffffff',
+                      borderWidth: 2
                     }
                   });
                 }

@@ -53,16 +53,18 @@ export interface ClickActionEvent {
 // ROTATION ACTIONS
 // ============================================
 
-export function handleRotate(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
+export function handleRotate(obj: TableObject, dispatch: Dispatch<Action>, allObjects?: Record<string, TableObject>) {
+  const rotationStep = getRotationStepForObject(obj, allObjects || {});
+  dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: rotationStep } });
 }
 
-export function handleRotateClockwise(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } });
+export function handleRotateClockwise(obj: TableObject, dispatch: Dispatch<Action>, allObjects?: Record<string, TableObject>) {
+  const rotationStep = getRotationStepForObject(obj, allObjects || {});
+  dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: rotationStep } });
 }
 
-export function handleRotateCounterClockwise(obj: TableObject, dispatch: Dispatch<Action>) {
-  const rotationStep = (obj as any).rotationStep ?? 45;
+export function handleRotateCounterClockwise(obj: TableObject, dispatch: Dispatch<Action>, allObjects?: Record<string, TableObject>) {
+  const rotationStep = getRotationStepForObject(obj, allObjects || {});
   dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id, angle: -rotationStep } });
 }
 
@@ -386,9 +388,16 @@ export function handlePin(obj: TableObject, dispatch: Dispatch<Action>) {
 // ============================================
 
 /**
- * Helper function to get rotationStep for an object, considering archetype for tokens
+ * Helper function to get rotationStep for an object, considering archetype for tokens and deck for cards
  */
 const getRotationStepForObject = (obj: TableObject, allObjects: Record<string, TableObject>): number => {
+  // For cards with deckId, get rotationStep from deck
+  if (obj.type === ItemType.CARD && (obj as any).deckId) {
+    const deck = allObjects[(obj as any).deckId];
+    if (deck && (deck as any).rotationStep) {
+      return (deck as any).rotationStep;
+    }
+  }
   // For tokens with archetypeId, get rotationStep from archetype
   if (obj.type === ItemType.TOKEN && (obj as any).archetypeId) {
     const archetype = allObjects[(obj as any).archetypeId];
@@ -513,10 +522,10 @@ export function executeClickAction(
     // Rotation actions
     case 'rotate':
     case 'rotateClockwise':
-      handleRotateClockwise(obj, context.dispatch);
+      handleRotateClockwise(obj, context.dispatch, context.state.objects);
       break;
     case 'rotateCounterClockwise':
-      handleRotateCounterClockwise(obj, context.dispatch);
+      handleRotateCounterClockwise(obj, context.dispatch, context.state.objects);
       break;
     case 'resetRotation':
       handleResetRotation(obj, context.dispatch);

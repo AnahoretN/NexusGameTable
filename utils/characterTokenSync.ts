@@ -10,7 +10,6 @@ export function findTokensForCharacter(state: any, characterId: string, panelId:
       tokens.push(obj as Token);
     }
   }
-  console.log('[SYNC] findTokensForCharacter', { characterId, panelId, found: tokens.length, tokenIds: tokens.map(t => t.id) });
   return tokens;
 }
 
@@ -57,16 +56,13 @@ export function syncSlidersToTokens(
   character: CharacterTab,
   newObjects: Record<string, TableObject>
 ): Record<string, TableObject> {
-  console.log('[SYNC] syncSlidersToTokens called', { panelId: panel.id, characterId: character.id });
   const sliderBlockInfo = findSliderBlock(character);
   if (!sliderBlockInfo) {
-    console.log('[SYNC] No slider block found for character');
     return newObjects;
   }
 
   const { block: sliderBlock } = sliderBlockInfo;
   const sliders = sliderBlock.data.sliders;
-  console.log('[SYNC] Sliders to sync', { sliders });
 
   // Find all tokens for this character
   const tokens = findTokensForCharacter(state, character.id, panel.id);
@@ -89,7 +85,6 @@ export function syncSlidersToTokens(
       };
     });
 
-    console.log('[SYNC] Updating token counters', { tokenId: token.id, counters });
     newObjects[token.id] = { ...token, counters };
   }
 
@@ -166,20 +161,9 @@ export function syncCharacterNameToTokens(
   newObjects: Record<string, TableObject>
 ): Record<string, TableObject> {
   const tokens = findTokensForCharacter(state, character.id, panel.id);
-  console.log('[SYNC] syncCharacterNameToTokens called', {
-    characterId: character.id,
-    characterName: character.characterName,
-    tokensFound: tokens.length,
-    tokenIds: tokens.map(t => t.id)
-  });
 
   for (const token of tokens) {
     if (token.name !== character.characterName) {
-      console.log('[SYNC] Updating token name', {
-        tokenId: token.id,
-        oldName: token.name,
-        newName: character.characterName
-      });
       newObjects[token.id] = { ...token, name: character.characterName };
     }
   }
@@ -230,20 +214,10 @@ export function syncCharacterAvatarToTokens(
     // Sync if avatar exists and is different from token content
     // This handles both img_ref:// format and direct URLs
     if (character.avatarUrl && token.content !== character.avatarUrl) {
-      console.log('[SYNC] Updating token avatar', {
-        tokenId: token.id,
-        characterId: character.id,
-        oldContent: token.content,
-        newContent: character.avatarUrl
-      });
       newObjects[token.id] = { ...token, content: character.avatarUrl };
     }
     // If avatar was removed, clear token content
     if (!character.avatarUrl && token.content) {
-      console.log('[SYNC] Clearing token avatar', {
-        tokenId: token.id,
-        characterId: character.id
-      });
       newObjects[token.id] = { ...token, content: undefined };
     }
   }
@@ -300,14 +274,6 @@ export function syncCharacterBorderToTokens(
       token.borderWidth !== targetBorderWidth;
 
     if (needsUpdate) {
-      console.log('[SYNC] Updating token border', {
-        tokenId: token.id,
-        characterId: character.id,
-        oldBorderColor: token.borderColor,
-        newBorderColor: targetBorderColor,
-        oldBorderWidth: token.borderWidth,
-        newBorderWidth: targetBorderWidth
-      });
       newObjects[token.id] = {
         ...token,
         borderColor: targetBorderColor,
