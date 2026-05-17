@@ -872,7 +872,8 @@ const dropCursorSlot = (
     const isCard = item.type === ItemType.CARD;
     // Count tokens in cursor slot - if multiple tokens, drop as stack without magnetism
     const tokenCount = itemsToDrop.filter(i => i.type === ItemType.TOKEN).length;
-    const shouldSnapToGrid = (isToken && tokenCount <= 1) || (isCard && item.snapToGrid);
+    // For cards, we check board.snapCardsToGrid inside the loop (not item.snapToGrid)
+    const shouldSnapToGrid = (isToken && tokenCount <= 1) || isCard;
 
     let finalZIndex = item.zIndex;
     if (!useOriginalZIndex) {
