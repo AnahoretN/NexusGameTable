@@ -13,6 +13,7 @@ import {
   getPackSecurityWarning
 } from './packSecurity';
 import {
+  createImageRef,
   addToManagedCache,
   saveSingleImageToIDB,
   isImageRef,
@@ -177,6 +178,15 @@ async function extractImagesFromObjects(objects: Record<string, TableObject>): P
     if (obj.backFaceUrl) {
       await processImageField(obj.backFaceUrl, 'back');
     }
+
+    // Process characterData[].avatarUrl (for CharacterPanel avatars)
+    if (obj.characterData?.characters && Array.isArray(obj.characterData.characters)) {
+      for (const character of obj.characterData.characters) {
+        if (character.avatarUrl) {
+          await processImageField(character.avatarUrl, 'avatar');
+        }
+      }
+    }
   };
 
   // Process all objects
@@ -288,6 +298,22 @@ function replaceImagesWithReferences(objects: Record<string, TableObject>, image
       processed.backFaceUrl = processImageField(processed.backFaceUrl);
     }
 
+    // Process characterData[].avatarUrl
+    if (processed.characterData?.characters && Array.isArray(processed.characterData.characters)) {
+      processed.characterData = {
+        ...processed.characterData,
+        characters: processed.characterData.characters.map((character: any) => {
+          if (character.avatarUrl) {
+            return {
+              ...character,
+              avatarUrl: processImageField(character.avatarUrl)
+            };
+          }
+          return character;
+        })
+      };
+    }
+
     return processed;
   };
 
@@ -300,21 +326,29 @@ function replaceImagesWithReferences(objects: Record<string, TableObject>, image
 }
 
 /**
- * Restore image references to base64 URLs in objects
+ * Restore image references to img_ref:// URLs in objects
+ * Images are stored in IndexedDB, so we use img_ref:// instead of base64
  */
 function restoreImageReferences(
   objects: Record<string, TableObject>,
   images: PackImage[],
   progressCallback?: (step: string, status: 'loading' | 'success' | 'warning' | 'error') => void
 ): Record<string, TableObject> {
-  // Create mapping of image references to base64 data
-  const refToImageMap = new Map<string, string>();
+  // Create mapping of image references to img_ref:// URLs
+  const refToImgRefMap = new Map<string, string>();
+  const imageCache = new Map<string, string>(); // imageId -> base64
+
   images.forEach(img => {
     const packRef = `pack://${IMAGES_FOLDER}${img.filename}`;
-    refToImageMap.set(packRef, img.data);
+    const imgRefUrl = createImageRef(img.id);
+    refToImgRefMap.set(packRef, imgRefUrl);
+    // Store base64 in managed cache (in-memory)
+    addToManagedCache(img.id, img.data);
+    // Also keep track of base64 for validation
+    imageCache.set(img.id, img.data);
   });
 
-  if (refToImageMap.size === 0 && progressCallback) {
+  if (refToImgRefMap.size === 0 && progressCallback) {
     progressCallback('No images to restore!', 'warning');
   }
 
@@ -326,9 +360,9 @@ function restoreImageReferences(
       if (!url) return url;
 
       if (url.startsWith('pack://')) {
-        const base64 = refToImageMap.get(url);
-        if (base64) {
-          return base64;
+        const imgRef = refToImgRefMap.get(url);
+        if (imgRef) {
+          return imgRef;
         } else {
           if (progressCallback) {
             progressCallback(`No mapping found for pack reference: ${url}`, 'error');
@@ -366,6 +400,22 @@ function restoreImageReferences(
     }
     if (processed.backFaceUrl) {
       processed.backFaceUrl = processImageField(processed.backFaceUrl);
+    }
+
+    // Process characterData[].avatarUrl
+    if (processed.characterData?.characters && Array.isArray(processed.characterData.characters)) {
+      processed.characterData = {
+        ...processed.characterData,
+        characters: processed.characterData.characters.map((character: any) => {
+          if (character.avatarUrl) {
+            return {
+              ...character,
+              avatarUrl: processImageField(character.avatarUrl)
+            };
+          }
+          return character;
+        })
+      };
     }
 
     return processed;
@@ -730,7 +780,7 @@ export async function loadPack(
       logStep(`Registered ${images.length} pack images in cache`, 'success');
     }
 
-    // Restore image references to base64
+    // Restore image references to img_ref://
     if (saveData.objects) {
       logStep(`Restoring image references...`);
 
@@ -749,7 +799,7 @@ export async function loadPack(
       if (remainingRefs) {
         logStep(`WARNING: ${remainingRefs.length} pack:// references still remain after restoration!`, 'error');
       } else {
-        logStep('All pack:// references successfully restored to base64', 'success');
+        logStep('All pack:// references successfully restored to img_ref://', 'success');
       }
     }
 

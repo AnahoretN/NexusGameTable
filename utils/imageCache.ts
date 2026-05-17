@@ -152,8 +152,14 @@ export function extractImagesToCache(obj: any, cache: ImageCache = {}, existingC
       continue;
     }
 
+    // Handle arrays (must check before objects since arrays are also objects in JS)
+    if (Array.isArray(value)) {
+      result[key] = value.map(item => extractImagesToCache(item, cache, existingCache, existingCacheMap, originalPathMap));
+      continue;
+    }
+
     // Handle nested objects
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (value && typeof value === 'object') {
       result[key] = extractImagesToCache(value, cache, existingCache, existingCacheMap, originalPathMap);
     }
     // Check for base64 data URLs in ANY string field (not just specific keys)
