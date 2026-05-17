@@ -133,24 +133,19 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
       try {
         // Convert to base64 for P2P sharing
         const base64Url = await fileToBase64(file);
-        logger.log(`[FILE_PICKER] Converted file to base64: ${base64Url.length} bytes`);
 
         // Save to IndexedDB immediately for persistence across page reloads
         // Use img_ref:// format for consistent handling
         const imageId = generateImageId();
         const imgRefUrl = createImageRef(imageId);
 
-        logger.log(`[FILE_PICKER] Saving image ${imageId} to IndexedDB...`);
         await saveSingleImageToIDB(imageId, base64Url);
-        logger.log(`[FILE_PICKER] Saved image ${imageId} to IndexedDB successfully`);
 
         // Also add to managed cache for immediate use
         addToManagedCache(imageId, base64Url);
-        logger.log(`[FILE_PICKER] Added image ${imageId} to managed cache`);
 
         // Store filename metadata in a separate map for later restoration
         setFileNameForImageRef(imgRefUrl, file.name);
-        logger.log(`[FILE_PICKER] Stored filename for ${imgRefUrl}: ${file.name}`);
 
         // Return img_ref:// URL instead of base64
         onChange(imgRefUrl);
