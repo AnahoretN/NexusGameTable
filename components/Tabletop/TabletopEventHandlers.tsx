@@ -519,7 +519,7 @@ const dropCursorSlot = (
   // NOTE: We use cursorSlot as source of truth, not state.objects.inCursorSlot
   // because state.objects may not be updated yet due to React's batched updates
   // (especially when dropping immediately after addToCursorSlot dispatch)
-  const itemsToDrop = cursorSlot.filter(item => {
+  let itemsToDrop = cursorSlot.filter(item => {
     // Check if object exists in state (may have been deleted)
     // Don't check inCursorSlot flag - it may not be updated yet due to batching
     const obj = state.objects[item.id];

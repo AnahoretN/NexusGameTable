@@ -41,10 +41,7 @@ export const QuickAccessBlock: React.FC<QuickAccessBlockProps> = ({ block, edita
       y: rect.top
     };
 
-    console.log('Tooltip will show for:', item.name, 'at', hoveredItemRef.current.x, hoveredItemRef.current.y);
-
     tooltipTimeoutRef.current = setTimeout(() => {
-      console.log('Tooltip timeout fired for:', hoveredItemRef.current?.name);
       if (hoveredItemRef.current) {
         setHoveredItem(hoveredItemRef.current);
       }
@@ -52,7 +49,6 @@ export const QuickAccessBlock: React.FC<QuickAccessBlockProps> = ({ block, edita
   }, []);
 
   const handleImageMouseLeave = useCallback(() => {
-    console.log('Mouse left, hiding tooltip');
     if (tooltipTimeoutRef.current) {
       clearTimeout(tooltipTimeoutRef.current);
       tooltipTimeoutRef.current = null;

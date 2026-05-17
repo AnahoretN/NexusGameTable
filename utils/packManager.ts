@@ -3,6 +3,7 @@ import { saveAs } from 'file-saver';
 import type { GameState } from '../store/GameContext';
 import type { TableObject } from '../types';
 import { logger } from './logger';
+import { getManagedCacheStats } from './imageCache';
 import {
   validatePackFile,
   validateManifest,
@@ -804,6 +805,34 @@ export async function loadPack(
     }
 
     logStep('Pack loaded successfully!', 'success');
+
+    // SECURITY CHECK: Verify no base64 images remain in objects (should all be img_ref://)
+    let base64Count = 0;
+    let totalBase64Size = 0;
+    for (const obj of Object.values(saveData.objects || {})) {
+      const objJson = JSON.stringify(obj);
+      const matches = objJson.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g);
+      if (matches) {
+        base64Count += matches.length;
+        matches.forEach(m => { totalBase64Size += m.length; });
+      }
+    }
+
+    if (base64Count > 0) {
+      logStep(`WARNING: Found ${base64Count} base64 images in loaded objects (should be img_ref://)!`, 'error');
+      logger.error(`[PACK] Loaded pack contains ${base64Count} embedded base64 images (${Math.round(totalBase64Size / 1024 / 1024)}MB)`);
+      logger.error(`[PACK] This will cause localStorage to overflow on save!`);
+    } else {
+      logStep('Verified: No base64 images in loaded objects (all using img_ref://)', 'success');
+    }
+
+    // Check managed cache size
+    const cacheStats = getManagedCacheStats();
+    logStep(`Managed cache: ${cacheStats.count} images, ${cacheStats.totalSizeMB}MB`, 'success');
+    if (cacheStats.totalSize > 50 * 1024 * 1024) {
+      logStep(`WARNING: Managed cache is very large (${cacheStats.totalSizeMB}MB)`, 'warning');
+    }
+
     return saveData;
   } catch (error) {
     if (progressCallback) {

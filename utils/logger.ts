@@ -8,24 +8,24 @@ const isDevelopment = import.meta.env.DEV;
 export const logger = {
   log: (...args: unknown[]) => {
     if (isDevelopment) {
-      console.log('[Nexus]', ...args);
+      console.log(...args);
     }
   },
 
   warn: (...args: unknown[]) => {
     if (isDevelopment) {
-      console.warn('[Nexus]', ...args);
+      console.warn(...args);
     }
   },
 
   error: (...args: unknown[]) => {
     // Keep only error logging
-    console.error('[Nexus]', ...args);
+    console.error(...args);
   },
 
   debug: (...args: unknown[]) => {
     if (isDevelopment) {
-      console.log('[Nexus DEBUG]', ...args);
+      console.log('[DEBUG]', ...args);
     }
   },
 };

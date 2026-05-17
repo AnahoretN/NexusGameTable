@@ -5,7 +5,7 @@ import { PlayerNameModal } from '../components/PlayerNameModal';
 import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
 import { LocalFileRestoreDialog } from '../components/LocalFileRestoreDialog';
 import { generateUUID } from '../utils/uuid';
-import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo } from '../utils/gameStorage';
+import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo, initializeImageCache } from '../utils/gameStorage';
 import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from '../utils/localSettings';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState } from './gameState';
@@ -169,6 +169,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'LOAD_GAME': {
+        // Debug: Check payload size before processing
+        const payloadJson = JSON.stringify(action.payload);
+        const payloadSizeMB = Math.round(payloadJson.length / 1024 / 1024 * 100) / 100;
+        if (payloadSizeMB > 1) {
+          console.warn(`[LOAD_GAME] Large payload detected: ${payloadSizeMB}MB`);
+        }
+
         // Deep clone objects to avoid mutating the original payload
         const migratedObjects: Record<string, TableObject> = {};
         Object.entries(action.payload.objects || {}).forEach(([id, obj]) => {
@@ -5642,11 +5649,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'SET_PIVOT_POINT': {
       const { objectId, pivot } = action.payload;
       if (!state.objects[objectId]) {
-        console.warn('[SET_PIVOT_POINT] Object not found:', objectId);
         return state;
       }
-
-      console.log('[SET_PIVOT_POINT] Updating pivot for', objectId, 'to', pivot);
 
       return {
         ...state,
@@ -5853,30 +5857,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
     // Only initialize once we're sure about host status and haven't initialized yet
-    logger.log(`[INIT] Checking initialization: initialized=${initializedRef.current}, objectsCount=${Object.keys(state.objects).length}, isHost=${isHost}`);
-
     if (!initializedRef.current && Object.keys(state.objects).length === 0) {
         const isGuest = !isHost;
 
-        logger.log(`[INIT] Starting initialization, isGuest=${isGuest}`);
-
         // Guests don't load from localStorage - they receive state from host
         if (isGuest) {
-          logger.log('[INIT] Guest mode - creating main menu');
           initializedRef.current = true; // Set initialized flag for guests
           createMainMenu(localDispatch);
           setIsInitialLoading(false); // Guests don't need loading screen - they wait for host
           return;
         }
 
-        logger.log('[INIT] Host mode - loading saved game...');
-
         // Try to load saved game state from localStorage (host only)
         // loadGameStateWithLocalFiles loads images from IDB and detects local file paths
         (async () => {
-          const { state: loadedState, localFiles } = await loadGameStateWithLocalFiles(false);
+          // Initialize image cache from IndexedDB FIRST
+          // This ensures all img_ref:// URLs can be resolved by components
+          await initializeImageCache();
 
-          logger.log(`[INIT] Loaded state: ${loadedState ? 'found' : 'null'}, localFiles: ${localFiles.length}`);
+          const { state: loadedState, localFiles } = await loadGameStateWithLocalFiles(false);
 
           if (loadedState && loadedState.objects && Object.keys(loadedState.objects).length > 0) {
             // Check if there are local files that need restoration

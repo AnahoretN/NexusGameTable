@@ -1,12 +1,36 @@
+/**
+ * Game State Storage with Image Reference System
+ *
+ * NEW ARCHITECTURE:
+ * - State ALWAYS contains img_ref:// URLs (never base64 in memory)
+ * - Images stored in IndexedDB with ID-based lookup
+ * - Components use useImageUrl() hook to resolve img_ref:// to displayable URLs
+ * - Managed cache provides fast in-memory access to frequently used images
+ */
+
 import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, DiceGroup } from '../types';
 import type { GameState, ViewTransform } from '../store/GameContext';
 import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
-import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache, clearImageCacheIDB, restoreImagesFromCache, restoreImagesToState, findLocalFilePaths, replaceLocalFilePathsWithBase64, saveSingleImageToIDB, generateImageId, createImageRef, LocalFileReference } from './imageCache';
+import {
+  extractImagesFromState,
+  saveImageCacheToIDB,
+  loadImageCacheFromIDB,
+  getNewImages,
+  ImageCache,
+  clearImageCacheIDB,
+  findLocalFilePaths,
+  replaceLocalFilePathsWithBase64,
+  saveSingleImageToIDB,
+  generateImageId,
+  createImageRef,
+  addToManagedCache,
+  getManagedCacheStats
+} from './imageCache';
 import * as LZString from 'lz-string';
 
 // Re-export types for use in other modules
-export type { LocalFileReference };
+export type { LocalFileReference } from './imageCache';
 
 const STORAGE_KEY = 'nexus-game-state';
 const STORAGE_KEY_COMPRESSED = 'nexus-game-state-compressed';
@@ -16,6 +40,7 @@ const USE_COMPRESSION = true; // Enable compression for localStorage
 // In-memory cache for IDB images to avoid repeated reads
 let cachedIDBCache: ImageCache | null = null;
 let cacheLoadPromise: Promise<ImageCache> | null = null;
+let isCacheInitialized = false;
 
 /**
  * Get IDB cache from memory or load it once (cached for performance)
@@ -33,6 +58,7 @@ async function getOrLoadIDBCache(): Promise<ImageCache> {
   const cache = await cacheLoadPromise;
   cachedIDBCache = cache;
   cacheLoadPromise = null;
+  isCacheInitialized = true;
 
   return cache;
 }
@@ -42,6 +68,40 @@ async function getOrLoadIDBCache(): Promise<ImageCache> {
  */
 function invalidateIDBCache(): void {
   cachedIDBCache = null;
+}
+
+/**
+ * Initialize managed cache from IndexedDB on startup
+ * This ensures all images are available for components to use via useImageUrl
+ */
+export async function initializeImageCache(): Promise<void> {
+  if (isCacheInitialized) {
+    return;
+  }
+
+  try {
+    const idbCache = await loadImageCacheFromIDB();
+    const imageCount = Object.keys(idbCache).length;
+
+    if (imageCount > 0) {
+      // Populate managed cache
+      for (const [imageId, data] of Object.entries(idbCache)) {
+        addToManagedCache(imageId, data);
+      }
+
+      cachedIDBCache = idbCache;
+      isCacheInitialized = true;
+
+      const stats = getManagedCacheStats();
+      logger.log(`[STORAGE] Initialized image cache: ${imageCount} images, ${stats.totalSizeMB}MB`);
+    } else {
+      logger.log('[STORAGE] No cached images found in IndexedDB');
+      isCacheInitialized = true;
+    }
+  } catch (error) {
+    logger.error('[STORAGE] Failed to initialize image cache:', error);
+    isCacheInitialized = true; // Don't retry on failure
+  }
 }
 
 interface ViewportInfo {
@@ -54,46 +114,6 @@ export interface StoredGameState {
   timestamp: number;
   viewport: ViewportInfo;
   state: Partial<GameState>;
-}
-
-/**
- * Estimate available localStorage space
- */
-function estimateAvailableSpace(): number {
-  if (typeof window === 'undefined') return 0;
-
-  try {
-    // Try with increasing test sizes
-    let testSize = 1024 * 1024; // Start with 1MB
-    let testString = '';
-    const testKey = '__storage_test__';
-
-    // Clean up any previous test
-    localStorage.removeItem(testKey);
-
-    // Binary search for approximate limit
-    let min = 0;
-    let max = 10 * 1024 * 1024; // 10MB max
-
-    while (min < max) {
-      const mid = Math.floor((min + max + 1) / 2);
-      testString = new Array(mid + 1).join('x');
-
-      try {
-        localStorage.setItem(testKey, testString);
-        localStorage.removeItem(testKey);
-        min = mid;
-      } catch (e) {
-        max = mid - 1;
-      }
-    }
-
-    // Subtract some buffer for safety
-    return Math.max(0, min - 100 * 1024); // 100KB buffer
-  } catch (error) {
-    logger.warn('[QUOTA] Could not estimate available space:', error);
-    return 0;
-  }
 }
 
 /**
@@ -119,7 +139,7 @@ function decompressData(compressedString: string): string | null {
     }
     return decompressed;
   } catch (error) {
-    logger.error('[DECOMPRESS] Failed to decompress data:', error);
+    logger.error('[DECOMPRESS] Failed to decompress saved state:', error);
     return null; // Indicate failure
   }
 }
@@ -131,7 +151,6 @@ function safeSetItem(key: string, value: string): boolean {
   if (typeof window === 'undefined') return false;
 
   try {
-    // Check if value fits by attempting to set it
     localStorage.setItem(key, value);
     return true;
   } catch (error: any) {
@@ -168,7 +187,12 @@ function safeSetItem(key: string, value: string): boolean {
 }
 
 /**
- * Save the current game state to localStorage with viewport info
+ * Save the current game state to localStorage
+ *
+ * NEW ARCHITECTURE:
+ * 1. Extract any base64 images from state and replace with img_ref:// URLs
+ * 2. Save new images to IndexedDB
+ * 3. Save state (with img_ref:// URLs) to localStorage
  */
 export const saveGameState = async (state: GameState): Promise<void> => {
   if (typeof window === 'undefined') return;
@@ -177,91 +201,54 @@ export const saveGameState = async (state: GameState): Promise<void> => {
     // Filter out main menu panel (each player has their own local position)
     const objectsToSave: Record<string, TableObject> = {};
     Object.entries(state.objects).forEach(([id, obj]) => {
-      // Skip main menu panel - it's recreated locally for each player
       if (obj.type === 'PANEL' && (obj as any).panelType === 'MAIN_MENU') {
         return;
       }
       objectsToSave[id] = obj;
     });
 
-    logger.log(`[SAVE] Saving ${Object.keys(objectsToSave).length} objects (filtered from ${Object.keys(state.objects).length} total)`);
-
-    // Debug: log all objects with content
-    Object.entries(objectsToSave).forEach(([id, obj]) => {
-      if (obj.content) {
-        logger.log(`[SAVE] Object ${id} (${obj.type}): content=${obj.content.substring(0, 50)}...`);
-      }
-    });
-
-    // First: Extract images to cache and save to IndexedDB BEFORE converting to metadata
-    // Get existing IDB cache to avoid re-saving images we already have (cached in memory)
-    // IMPORTANT: Force reload IDB cache to ensure we have latest images
-    cachedIDBCache = null; // Reset to force reload
-    cacheLoadPromise = null; // Reset promise
+    // Get existing IDB cache to avoid re-saving images we already have
     const existingIDBCache = await getOrLoadIDBCache();
 
-    // IMPORTANT: If state has metadata markers ('D', 'B') instead of actual images,
-    // log this so we can debug
-    const idbCacheToUse = existingIDBCache;
-    const objectsToExtract: Record<string, TableObject> = {};
+    // Extract images: replace base64 with img_ref:// URLs
+    const { state: extractedState, imageCache } = extractImagesFromState(
+      { objects: objectsToSave },
+      existingIDBCache
+    );
 
-    // Helper to check for metadata markers in an object
-    const hasMetadataMarkers = (obj: any): boolean => {
-      if (!obj) return false;
-      const checkValue = (val: any): boolean => {
-        if (val === 'D' || val === 'B') return true;
-        if (typeof val === 'object' && val !== null) {
-          for (const v of Object.values(val)) {
-            if (checkValue(v)) return true;
-          }
-        }
-        return false;
-      };
-      return checkValue(obj);
-    };
-
-    for (const [id, obj] of Object.entries(objectsToSave)) {
-      if (hasMetadataMarkers(obj)) {
-        logger.warn('[SAVE] Object has metadata markers (D/B), this indicates a bug:', id);
-        // Just pass through - extractImagesToCache should handle it
-        objectsToExtract[id] = obj;
-      } else {
-        objectsToExtract[id] = obj;
-      }
+    // Verify extraction worked (no base64 should remain)
+    let foundBase64InExtracted = 0;
+    for (const obj of Object.values(extractedState.objects || {})) {
+      const objJson = JSON.stringify(obj);
+      foundBase64InExtracted += (objJson.match(/data:image\//g) || []).length;
     }
 
-    const { state: extractedState, imageCache } = extractImagesFromState({ objects: objectsToExtract }, existingIDBCache);
+    if (foundBase64InExtracted > 0) {
+      logger.error(`[SAVE] ERROR: ${foundBase64InExtracted} base64 images found AFTER extraction!`);
+      logger.error(`[SAVE] This indicates a bug in extractImagesFromState. Skipping save.`);
+      return;
+    }
 
-    // Debug: check if base64 still exists after extraction
-    let base64Count = 0;
-    let imgRefCount = 0;
-    Object.values(extractedState.objects || {}).forEach(obj => {
-      const checkValue = (val: any) => {
-        if (typeof val === 'string') {
-          if (val.startsWith('data:image/')) base64Count++;
-          if (val.startsWith('img_ref://')) imgRefCount++;
-        } else if (val && typeof val === 'object') {
-          Object.values(val).forEach(checkValue);
-        }
-      };
-      Object.values(obj).forEach(checkValue);
-    });
-
-    logger.log(`[SAVE] After extraction: ${base64Count} base64 URLs, ${imgRefCount} img_ref:// URLs`);
-
-    // Save ONLY NEW images to IndexedDB (async - don't await to avoid blocking save)
+    // Save ONLY NEW images to IndexedDB
     const newImages = getNewImages(imageCache, existingIDBCache);
     if (Object.keys(newImages).length > 0) {
-      saveImageCacheToIDB(newImages)
-        .then(() => {
-          // Update cache after successful save
-          if (cachedIDBCache) {
-            Object.assign(cachedIDBCache, newImages);
-          }
-        })
-        .catch(error => {
-          logger.error('[SAVE] Failed to save images to IndexedDB:', error);
-        });
+      try {
+        await saveImageCacheToIDB(newImages);
+
+        // Update in-memory cache
+        for (const [imageId, data] of Object.entries(newImages)) {
+          addToManagedCache(imageId, data);
+        }
+
+        // Update cached IDB cache
+        if (cachedIDBCache) {
+          Object.assign(cachedIDBCache, newImages);
+        }
+
+        logger.log(`[SAVE] Saved ${Object.keys(newImages).length} new images to IndexedDB`);
+      } catch (error) {
+        logger.error('[SAVE] Failed to save images to IndexedDB:', error);
+      }
     }
 
     // Create stored data structure
@@ -273,87 +260,62 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         height: window.innerHeight
       },
       state: {
-        // Save objects (the main game data) - with img_ref:// URLs
+        // Save objects with img_ref:// URLs (NOT base64!)
         objects: extractedState.objects || {},
-        // Save players
         players: state.players,
-        // Save active player ID (so user stays as same role)
         activePlayerId: state.activePlayerId,
-        // Save dice rolls
         diceRolls: state.diceRolls,
-        // Save view transform (zoom, pan position)
         viewTransform: state.viewTransform,
-        // Save drawings
         drawings: state.drawings,
-        // Save player permissions
         playerPermissions: state.playerPermissions,
-        // Save language
         language: state.language,
-        // Save session ID
         sessionId: state.sessionId,
-        // Save hyperscale layers
         hyperscaleLayers: state.hyperscaleLayers,
-        // Save selected hyperscale layer IDs
         selectedHyperscaleLayerIds: state.selectedHyperscaleLayerIds,
-        // Save dice groups (NEW in version 8)
         diceGroups: state.diceGroups || [],
-        // Save connection lock state (NEW in version 8)
         connectionsLocked: state.connectionsLocked || false,
-        // Save last modified player info (NEW in version 8)
         lastModifiedBy: state.lastModifiedBy || 'gm',
-        // Save player panel settings (individual panel positions/sizes for each player)
         playerPanelSettings: state.playerPanelSettings || {},
-        // Save audit log
         auditLog: state.auditLog || { entries: [], maxEntries: 10000, currentReplayIndex: -1 },
       }
     };
 
-    // Save to localStorage (with compression)
-    try {
-      const json = JSON.stringify(storedData);
+    // Save to localStorage
+    const json = JSON.stringify(storedData);
+    const size = new Blob([json]).size;
 
-      // Debug: log size of each component
-      const size = new Blob([json]).size;
+    // Log save size for monitoring
+    const sizeMB = (size / 1024 / 1024).toFixed(2);
+    const objectCount = Object.keys(storedData.state.objects || {}).length;
+    logger.log(`[SAVE] Saving ${objectCount} objects, size: ${sizeMB}MB`);
 
-      // Try compressed first if enabled
-      let saved = false;
-      if (USE_COMPRESSION && size > 1024) { // Only compress if larger than 1KB
-        const compressed = compressData(json);
-        const compressedSize = compressed.length;
-        const compressionRatio = ((size - compressedSize) / size * 100).toFixed(1);
+    // Warn if size is abnormally large (> 5MB indicates base64 leak)
+    if (size > 5 * 1024 * 1024) {
+      logger.warn(`[SAVE] WARNING: Large save size (${sizeMB}MB) - may indicate base64 images embedded!`);
+    }
 
-        logger.log(`[SAVE] Original: ${Math.round(size / 1024)}KB, Compressed: ${Math.round(compressedSize / 1024)}KB (${compressionRatio}% reduction)`);
-
-        // Try to save compressed version
-        if (safeSetItem(STORAGE_KEY_COMPRESSED, compressed)) {
-          // Remove old uncompressed version if it exists
-          localStorage.removeItem(STORAGE_KEY);
-          saved = true;
-          logger.log(`[SAVE] Game saved successfully (compressed)`);
-        } else {
-          logger.warn('[SAVE] Could not save compressed, trying uncompressed');
-        }
+    // Try compressed first
+    let saved = false;
+    if (USE_COMPRESSION && size > 1024) {
+      const compressed = compressData(json);
+      if (safeSetItem(STORAGE_KEY_COMPRESSED, compressed)) {
+        localStorage.removeItem(STORAGE_KEY);
+        saved = true;
+        logger.log(`[SAVE] Saved compressed (${Math.round(compressed.length / 1024)}KB)`);
       }
+    }
 
-      // Fallback to uncompressed if compressed failed or compression is disabled
-      if (!saved) {
-        if (safeSetItem(STORAGE_KEY, json)) {
-          // Remove old compressed version if it exists
-          localStorage.removeItem(STORAGE_KEY_COMPRESSED);
-          logger.log(`[SAVE] Game saved successfully (uncompressed, ${Math.round(size / 1024)}KB)`);
-        } else {
-          logger.error(`[SAVE] Failed to save game state - localStorage quota exceeded (${Math.round(size / 1024)}KB)`);
-          // Show user-facing warning
-          if (typeof window !== 'undefined' && (window as any).nexusShowQuotaWarning) {
-            (window as any).nexusShowQuotaWarning(Math.round(size / 1024));
-          }
-        }
+    // Fallback to uncompressed
+    if (!saved) {
+      if (safeSetItem(STORAGE_KEY, json)) {
+        localStorage.removeItem(STORAGE_KEY_COMPRESSED);
+        logger.log('[SAVE] Saved uncompressed');
+      } else {
+        logger.error('[SAVE] Failed to save - quota exceeded');
       }
-    } catch (error) {
-      logger.error('Failed to save game state:', error);
     }
   } catch (error) {
-    logger.error('Failed to save game state:', error);
+    logger.error('[SAVE] Failed to save game state:', error);
   }
 };
 
@@ -374,28 +336,27 @@ export interface LoadGameStateResult {
 
 /**
  * Load the game state from localStorage
- * Adapts objects only if user is HOST or playing SOLO
- * @param isGuest Whether the current user is a guest
+ *
+ * NEW ARCHITECTURE:
+ * 1. Load state from localStorage (contains img_ref:// URLs)
+ * 2. Load images from IndexedDB into managed cache
+ * 3. Return state with img_ref:// URLs intact (NOT replaced with base64)
+ *
+ * Components will use useImageUrl() to resolve img_ref:// URLs as needed
  */
 export const loadGameState = async (
   isGuest: boolean
 ): Promise<Partial<GameState> | null> => {
   if (typeof window === 'undefined') return null;
 
-  logger.log(`[LOAD] loadGameState called, isGuest=${isGuest}`);
-
   try {
     // Try compressed version first
     let stored = localStorage.getItem(STORAGE_KEY_COMPRESSED);
-    let isCompressed = false;
+    let isCompressed = !!stored;
 
     // If no compressed version, try uncompressed
     if (!stored) {
       stored = localStorage.getItem(STORAGE_KEY);
-      isCompressed = false;
-    } else {
-      isCompressed = true;
-      logger.log('[LOAD] Found compressed save data');
     }
 
     if (!stored) {
@@ -404,8 +365,8 @@ export const loadGameState = async (
 
     // Check size before parsing
     const storedSize = stored.length;
-    if (storedSize > 50 * 1024 * 1024) { // 50MB limit (string length)
-      logger.warn(`[LOAD] Saved state too large: ${Math.round(storedSize / 1024 / 1024)}MB. Clearing and returning null.`);
+    if (storedSize > 50 * 1024 * 1024) { // 50MB limit
+      logger.warn(`[LOAD] Saved state too large: ${Math.round(storedSize / 1024 / 1024)}MB. Clearing.`);
       clearGameState();
       return null;
     }
@@ -414,20 +375,18 @@ export const loadGameState = async (
     let jsonString = stored;
     if (isCompressed) {
       const decompressed = decompressData(stored);
-      if (decompressed === null) {
-        logger.error('[LOAD] Failed to decompress saved state, trying uncompressed fallback');
+      if (!decompressed) {
+        logger.warn('[LOAD] Failed to decompress, trying uncompressed');
         stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
           jsonString = stored;
           isCompressed = false;
         } else {
-          logger.warn('[LOAD] No uncompressed fallback available');
           clearGameState();
           return null;
         }
       } else {
         jsonString = decompressed;
-        logger.log(`[LOAD] Decompressed: ${Math.round(storedSize / 1024)}KB → ${Math.round(jsonString.length / 1024)}KB`);
       }
     }
 
@@ -436,7 +395,6 @@ export const loadGameState = async (
       parsed = JSON.parse(jsonString);
     } catch (parseError) {
       logger.error('[LOAD] Failed to parse saved state:', parseError);
-      logger.warn('[LOAD] Clearing corrupted save data.');
       clearGameState();
       return null;
     }
@@ -447,14 +405,11 @@ export const loadGameState = async (
     }
 
     if (parsed.version === 3) {
-      // Version 3 had adaptation issues - migrate to version 4
       return migrateVersion3(parsed);
     }
 
-    // Version 4 can be loaded directly (will be converted to newer version on next save)
     if (parsed.version === 4) {
       const data: StoredGameState = parsed;
-      // Check if state is too old (more than 7 days)
       const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
       if (data.timestamp < weekAgo) {
         clearGameState();
@@ -464,14 +419,11 @@ export const loadGameState = async (
       const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
-      // Migrate to version 6 by adding hyperscale layers
       return migrateToVersion6(adaptedState);
     }
 
-    // Version 5 migration - add hyperscale layers if missing
     if (parsed.version === 5) {
       const data: StoredGameState = parsed;
-      // Check if state is too old (more than 7 days)
       const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
       if (data.timestamp < weekAgo) {
         clearGameState();
@@ -481,14 +433,11 @@ export const loadGameState = async (
       const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
-      // Migrate to version 6 by adding hyperscale layers
       return migrateToVersion6(adaptedState);
     }
 
-    // Version 7 migration - add new fields (diceGroups, connectionsLocked, lastModifiedBy, etc.)
     if (parsed.version === 7) {
       const data: StoredGameState = parsed;
-      // Check if state is too old (more than 7 days)
       const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
       if (data.timestamp < weekAgo) {
         clearGameState();
@@ -498,78 +447,53 @@ export const loadGameState = async (
       const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
-
-      // Migrate to version 8 by adding new fields
       return migrateToVersion8(adaptedState);
     }
 
     const data: StoredGameState = parsed;
 
-    // Check version
     if (data.version !== STORAGE_VERSION) {
-      logger.warn(`[LOAD] Unsupported save version: ${data.version} (current: ${STORAGE_VERSION})`);
+      logger.warn(`[LOAD] Unsupported save version: ${data.version}`);
       clearGameState();
       return null;
     }
 
-    // Check if state is too old (more than 7 days)
     const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
     if (data.timestamp < weekAgo) {
       clearGameState();
       return null;
     }
 
-    // If guest - DON'T adapt objects (host controls their position)
-    // If host or solo game - adapt objects to new screen size
     const shouldAdapt = !isGuest;
-
     const adaptedState = shouldAdapt
       ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
       : data.state;
 
-    // Ensure auditLog exists (for version 8 saves before auditLog was added)
     const withAuditLog = {
       ...adaptedState,
       auditLog: adaptedState.auditLog || { entries: [], maxEntries: 10000, currentReplayIndex: -1 },
     };
 
-    // Load images from IDB and restore them to state
+    // Load images from IDB into managed cache
+    // DO NOT replace img_ref:// URLs in state - keep them as-is
     const idbCache = await loadImageCacheFromIDB();
-    logger.log(`[LOAD] Loaded ${Object.keys(idbCache).length} images from IndexedDB`);
-
-    // Check for any img_ref:// URLs that couldn't be restored
-    const checkForUnrestored = (obj: any, path = ''): void => {
-      if (!obj || typeof obj !== 'object') return;
-      for (const [key, value] of Object.entries(obj)) {
-        if (typeof value === 'string' && value.startsWith('img_ref://')) {
-          logger.log(`[LOAD] Found unrestored img_ref:// at ${path}.${key}: ${value}`);
-        } else if (value && typeof value === 'object') {
-          checkForUnrestored(value, `${path}.${key}`);
-        }
-      }
-    };
-
     if (Object.keys(idbCache).length > 0) {
-      const restoredState = restoreImagesToState(withAuditLog, idbCache);
-      // Check for any unrestored img_ref:// URLs
-      checkForUnrestored(restoredState.objects, 'objects');
-      return restoredState;
+      for (const [imageId, data] of Object.entries(idbCache)) {
+        addToManagedCache(imageId, data);
+      }
+      logger.log(`[LOAD] Loaded ${Object.keys(idbCache).length} images to managed cache`);
     }
 
-    // Even with empty cache, check for unrestored URLs
-    checkForUnrestored(withAuditLog.objects, 'objects');
-
+    // Return state with img_ref:// URLs intact
     return withAuditLog;
   } catch (error) {
-    logger.error('[LOAD_STATE] Failed to load game state:', error);
+    logger.error('[LOAD] Failed to load game state:', error);
     return null;
   }
 };
 
 /**
- * Load game state and return information about local file paths that need restoration
- * This is an extended version of loadGameState that also detects local file paths
- * @param isGuest Whether the current user is a guest
+ * Load game state and detect local file paths
  */
 export const loadGameStateWithLocalFiles = async (
   isGuest: boolean
@@ -580,25 +504,14 @@ export const loadGameStateWithLocalFiles = async (
     return { state, localFiles: [] };
   }
 
-  // Find all local file paths in objects
   const localFilesMap = findLocalFilePaths(state.objects);
   const localFiles: LocalFileInfo[] = Array.from(localFilesMap.values());
-
-  if (localFiles.length > 0) {
-    logger.log(`[LOAD] Found ${localFiles.length} local file references that need restoration`);
-    localFiles.forEach(file => {
-      logger.log(`  - ${file.filename} (${file.objectIds.length} objects)`);
-    });
-  }
 
   return { state, localFiles };
 };
 
 /**
- * Process uploaded local files and update state with base64 data
- * @param state The loaded game state
- * @param localFiles List of local file info
- * @param fileMap Map of filename -> File object (user selected files)
+ * Process uploaded local files and replace with img_ref:// URLs
  */
 export const processUploadedLocalFiles = async (
   state: Partial<GameState>,
@@ -607,8 +520,7 @@ export const processUploadedLocalFiles = async (
 ): Promise<Partial<GameState>> => {
   if (!state.objects) return state;
 
-  // Convert files to base64 and save to IDB
-  const pathToBase64 = new Map<string, string>();
+  const pathToImgRef = new Map<string, string>();
 
   for (const localFile of localFiles) {
     const file = fileMap.get(localFile.filename);
@@ -616,23 +528,19 @@ export const processUploadedLocalFiles = async (
 
     try {
       const base64 = await fileToBase64(file);
-
-      // Save to IndexedDB for persistence
       const imageId = generateImageId();
       const imgRefUrl = createImageRef(imageId);
+
       await saveSingleImageToIDB(imageId, base64);
+      addToManagedCache(imageId, base64);
 
-      // Map the original path to img_ref URL
-      pathToBase64.set(localFile.path, imgRefUrl);
-
-      logger.log(`[LOAD] Saved local file ${localFile.filename} to cache as ${imageId}`);
+      pathToImgRef.set(localFile.path, imgRefUrl);
     } catch (error) {
       logger.error(`[LOAD] Failed to process file ${localFile.filename}:`, error);
     }
   }
 
-  // Replace local paths with img_ref URLs in state
-  const updatedObjects = replaceLocalFilePathsWithBase64(state.objects, pathToBase64);
+  const updatedObjects = replaceLocalFilePathsWithBase64(state.objects, pathToImgRef);
 
   return {
     ...state,
@@ -640,9 +548,6 @@ export const processUploadedLocalFiles = async (
   };
 };
 
-/**
- * Convert File to base64 data URL
- */
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -652,12 +557,12 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/**
- * Migrate old format (versions < 3)
- */
+// ============================================================
+// MIGRATION FUNCTIONS
+// ============================================================
+
 function migrateOldFormat(parsed: any): Partial<GameState> | null {
   try {
-    // Old format might be wrapped in viewportAdapter structure
     if (parsed.state && parsed.state.state) {
       return parsed.state.state;
     }
@@ -671,40 +576,28 @@ function migrateOldFormat(parsed: any): Partial<GameState> | null {
   }
 }
 
-/**
- * Migrate from version 3 (which adapted all objects including pinned ones)
- */
 function migrateVersion3(parsed: any): Partial<GameState> | null {
-  // Version 3 already adapted state, just return it as is
-  // But will update version on next save
   if (parsed.state) {
     return parsed.state;
   }
   return parsed;
 }
 
-/**
- * Migrate from version 7 to version 8 (add diceGroups, connectionsLocked, lastModifiedBy, etc.)
- */
 function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
   const migrated = { ...state };
 
-  // Add diceGroups if missing (NEW in version 8)
   if (!migrated.diceGroups) {
     migrated.diceGroups = [];
   }
 
-  // Add connectionsLocked if missing (NEW in version 8)
   if (migrated.connectionsLocked === undefined) {
     migrated.connectionsLocked = false;
   }
 
-  // Add lastModifiedBy if missing (NEW in version 8)
   if (!migrated.lastModifiedBy) {
     migrated.lastModifiedBy = 'gm';
   }
 
-  // Ensure all hyperscale layers have zoomEnabled field
   if (migrated.hyperscaleLayers) {
     migrated.hyperscaleLayers = migrated.hyperscaleLayers.map(layer => ({
       ...layer,
@@ -712,7 +605,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
     }));
   }
 
-  // Add 'drawings' layer to hyperscale layers if missing (NEW in version 8)
   const hasDrawingsLayer = migrated.hyperscaleLayers?.some(layer => layer.id === 'drawings');
   if (!hasDrawingsLayer && migrated.hyperscaleLayers) {
     migrated.hyperscaleLayers.push({
@@ -729,7 +621,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
       order: 3
     });
 
-    // Update selected layer IDs to include 'drawings'
     if (migrated.selectedHyperscaleLayerIds) {
       if (!migrated.selectedHyperscaleLayerIds.includes('drawings')) {
         migrated.selectedHyperscaleLayerIds = [...migrated.selectedHyperscaleLayerIds, 'drawings'];
@@ -737,7 +628,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
     }
   }
 
-  // Migrate players: add hand access permissions if missing (NEW in version 8)
   if (migrated.players) {
     migrated.players = migrated.players.map(player => ({
       ...player,
@@ -746,7 +636,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
     }));
   }
 
-  // Add auditLog if missing (NEW in version 8)
   if (!migrated.auditLog) {
     migrated.auditLog = {
       entries: [],
@@ -755,17 +644,14 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
     };
   }
 
-  // Migrate objects: ensure access control fields exist (NEW in version 8)
   if (migrated.objects) {
     const migratedObjects: Record<string, TableObject> = {};
     Object.entries(migrated.objects).forEach(([id, obj]) => {
       const migratedObj = { ...obj };
 
-      // Ensure panels have proper access control
       if (obj.type === 'PANEL') {
         const panel = obj as any;
 
-        // Ensure poolData has proper access control for tabs
         if (panel.poolData?.tabs) {
           panel.poolData.tabs = panel.poolData.tabs.map((tab: any) => ({
             ...tab,
@@ -775,7 +661,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
           }));
         }
 
-        // Ensure characterData has proper access control for characters
         if (panel.characterData?.characters) {
           panel.characterData.characters = panel.characterData.characters.map((character: any) => ({
             ...character,
@@ -786,7 +671,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
         }
       }
 
-      // Ensure dice objects have diceGroupId field (for linking to groups)
       if (obj.type === 'DICE_OBJECT') {
         const dice = obj as any;
         if (dice.diceGroupId === undefined) {
@@ -797,7 +681,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
         }
       }
 
-      // Ensure tokens and token types have border settings (NEW in version 8)
       if (obj.type === 'TOKEN' || obj.type === 'TOKEN_TYPE') {
         const token = obj as any;
         if (token.borderColor === undefined) {
@@ -808,7 +691,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
         }
       }
 
-      // Ensure decks have border settings (NEW in version 8)
       if (obj.type === 'DECK') {
         const deck = obj as any;
         if (deck.borderColor === undefined) {
@@ -825,26 +707,12 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
     migrated.objects = migratedObjects;
   }
 
-  logger.log('[MIGRATION] Migrated from version 7 to version 8:');
-  logger.log('  - Added diceGroups support');
-  logger.log('  - Added connectionsLocked field');
-  logger.log('  - Added lastModifiedBy field');
-  logger.log('  - Added drawings hyperscale layer');
-  logger.log('  - Added hand access permissions for players');
-  logger.log('  - Added access control for panel tabs and characters');
-  logger.log('  - Added border settings (borderColor/borderWidth) for tokens and decks');
-  logger.log('  - Added auditLog support');
-
   return migrated;
 }
 
-/**
- * Migrate from version 5 to version 6 (add hyperscale layers)
- */
 function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
   const migrated = { ...state };
 
-  // Add hyperscale layers if missing
   if (!migrated.hyperscaleLayers || migrated.hyperscaleLayers.length === 0) {
     migrated.hyperscaleLayers = [
       {
@@ -902,13 +770,11 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
     ];
   }
 
-  // Migrate: Add zoomEnabled to existing layers that don't have it
   migrated.hyperscaleLayers = migrated.hyperscaleLayers.map(layer => ({
     ...layer,
     zoomEnabled: layer.zoomEnabled ?? (layer.id !== 'interface')
   }));
 
-  // Add selected layer IDs if missing
   if (!migrated.selectedHyperscaleLayerIds || migrated.selectedHyperscaleLayerIds.length === 0) {
     migrated.selectedHyperscaleLayerIds = ['boards', 'cards', 'tokens', 'interface'];
   }
@@ -916,16 +782,6 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
   return migrated;
 }
 
-/**
- * Adapt game state to new screen size
- *
- * IMPORTANT: This function is ONLY called for host or solo game
- * Guests don't adapt objects - their position is controlled by host
- *
- * VU (Virtual Units) are screen-independent - they should NOT be scaled!
- * Only viewport-pinned objects use screen coordinates and need adjustment.
- * The camera (viewTransform) adjusts to keep the same visual view.
- */
 function adaptStateToViewport(
   savedState: Partial<GameState>,
   savedViewport: ViewportInfo,
@@ -934,7 +790,6 @@ function adaptStateToViewport(
 ): Partial<GameState> {
   const newState = { ...savedState };
 
-  // Check if adaptation is needed
   const needsAdaptation =
     savedViewport.width !== currentWidth ||
     savedViewport.height !== currentHeight;
@@ -943,10 +798,6 @@ function adaptStateToViewport(
     return newState;
   }
 
-  logger.log(`Adapting game state from ${savedViewport.width}x${savedViewport.height} to ${currentWidth}x${currentHeight}`);
-
-  // VU coordinates are screen-independent - DON'T scale them!
-  // Only adapt viewport-pinned objects (they use screen coordinates)
   if (newState.objects) {
     const adaptedObjects: Record<string, TableObject> = {};
 
@@ -954,15 +805,12 @@ function adaptStateToViewport(
       const adaptedObj = { ...obj };
 
       if (obj.isPinnedToViewport) {
-        // Pinned objects use screen coordinates - need to adjust for screen size change
-        // Keep relative position the same (e.g., if it was at 50% of screen width, keep it there)
         const relativeX = obj.x / savedViewport.width;
         const relativeY = obj.y / savedViewport.height;
 
         adaptedObj.x = relativeX * currentWidth;
         adaptedObj.y = relativeY * currentHeight;
 
-        // Ensure object stays within screen bounds
         if (adaptedObj.x + (obj.width || 100) > currentWidth) {
           adaptedObj.x = currentWidth - (obj.width || 100) - SCROLLBAR_WIDTH_THICK;
         }
@@ -970,7 +818,6 @@ function adaptStateToViewport(
           adaptedObj.y = currentHeight - (obj.height || 100) - SCROLLBAR_WIDTH_THICK;
         }
 
-        // Adapt pinnedScreenPosition if present
         if (obj.pinnedScreenPosition) {
           const pinnedRelativeX = obj.pinnedScreenPosition.x / savedViewport.width;
           const pinnedRelativeY = obj.pinnedScreenPosition.y / savedViewport.height;
@@ -980,7 +827,6 @@ function adaptStateToViewport(
           };
         }
 
-        // Adapt expandedPinnedPosition if present
         if (obj.expandedPinnedPosition) {
           const expandedRelativeX = obj.expandedPinnedPosition.x / savedViewport.width;
           const expandedRelativeY = obj.expandedPinnedPosition.y / savedViewport.height;
@@ -990,7 +836,6 @@ function adaptStateToViewport(
           };
         }
 
-        // Adapt collapsedPinnedPosition if present
         if (obj.collapsedPinnedPosition) {
           const collapsedRelativeX = obj.collapsedPinnedPosition.x / savedViewport.width;
           const collapsedRelativeY = obj.collapsedPinnedPosition.y / savedViewport.height;
@@ -1000,7 +845,6 @@ function adaptStateToViewport(
           };
         }
       }
-      // Regular objects: keep VU coordinates unchanged! They're screen-independent.
 
       adaptedObjects[id] = adaptedObj;
     });
@@ -1008,16 +852,9 @@ function adaptStateToViewport(
     newState.objects = adaptedObjects;
   }
 
-  // ViewTransform stores VU coordinates - don't scale them!
-  // The visual appearance will be correct because VU is screen-independent
-  // No changes needed to viewTransform
-
   return newState;
 }
 
-/**
- * Clear the saved game state from localStorage
- */
 export const clearGameState = (): void => {
   if (typeof window === 'undefined') return;
 
@@ -1029,37 +866,25 @@ export const clearGameState = (): void => {
   }
 };
 
-/**
- * Clear ALL saved data (game state, local settings, peer cache, etc.)
- * This completely resets the application to initial state
- */
 export const clearAllData = (): void => {
   if (typeof window === 'undefined') return;
 
   try {
-    // Clear game state (both compressed and uncompressed)
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(STORAGE_KEY_COMPRESSED);
-
-    // Clear local settings
     localStorage.removeItem('nexus-local-settings');
-
-    // Clear language preference
     localStorage.removeItem('app-language');
 
-    // Clear any PeerJS-related data that might be cached
     Object.keys(localStorage).forEach(key => {
       if (key.startsWith('peerjs')) {
         localStorage.removeItem(key);
       }
     });
 
-    // Clear IndexedDB (this is where large images are cached!)
     clearImageCacheIDB().catch(error => {
       logger.error('[CLEAR] Failed to clear IndexedDB:', error);
     });
 
-    // Clear URL parameters to reset guest/host state
     if (window.location.search.includes('hostId')) {
       const cleanUrl = window.location.pathname + window.location.hash;
       window.history.replaceState({}, '', cleanUrl);
@@ -1071,9 +896,6 @@ export const clearAllData = (): void => {
   }
 };
 
-/**
- * Check if there is a saved game state
- */
 export const hasSavedGameState = (): boolean => {
   if (typeof window === 'undefined') return false;
 
@@ -1084,53 +906,22 @@ export const hasSavedGameState = (): boolean => {
   }
 };
 
-/**
- * Check if game state is too large for localStorage (simplified check)
- */
-export const isGameStateTooLarge = (state: GameState): { tooLarge: boolean; reason?: string; recommendation?: string } => {
-  if (typeof window === 'undefined') return { tooLarge: false };
-
-  try {
-    const objectCount = Object.keys(state.objects).length;
-
-    // Simple check: too many objects might indicate large images
-    if (objectCount > 1000) {
-      return {
-        tooLarge: true,
-        reason: `Too many objects (${objectCount}). Consider using packs for large games.`,
-        recommendation: 'Use "Create Pack" for large games with many images'
-      };
-    }
-
-    return { tooLarge: false };
-  } catch (error) {
-    return { tooLarge: true, reason: 'Cannot analyze game state' };
-  }
-};
-
-/**
- * Get the timestamp of the saved game state
- * Returns null if no saved state exists
- */
 export const getSavedGameTimestamp = (): number | null => {
   if (typeof window === 'undefined') return null;
 
   try {
     let stored = localStorage.getItem(STORAGE_KEY_COMPRESSED);
 
-    // Try uncompressed if compressed not found
     if (!stored) {
       stored = localStorage.getItem(STORAGE_KEY);
     }
 
     if (!stored) return null;
 
-    // Decompress if needed
     let jsonString = stored;
     if (stored !== localStorage.getItem(STORAGE_KEY) && localStorage.getItem(STORAGE_KEY_COMPRESSED) === stored) {
       const decompressed = decompressData(stored);
       if (decompressed === null) {
-        // Try uncompressed fallback
         const fallback = localStorage.getItem(STORAGE_KEY);
         if (fallback) {
           jsonString = fallback;
@@ -1149,9 +940,6 @@ export const getSavedGameTimestamp = (): number | null => {
   }
 };
 
-/**
- * Format timestamp to readable date/time
- */
 export const formatTimestamp = (timestamp: number): string => {
   const date = new Date(timestamp);
   return date.toLocaleString();

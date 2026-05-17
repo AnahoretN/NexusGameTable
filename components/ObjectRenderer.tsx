@@ -452,7 +452,6 @@ function getActionButtonConfig(
   // Universal action handler
   const handleAction = (actionName: string) => {
     return () => {
-      console.log('[ObjectRenderer handleAction] actionName:', actionName, 'obj.id:', obj.id, 'obj.location:', (obj as any).location);
       executeActionButtonUniversal(obj, actionName, {
         dispatch,
         setDeleteCandidateId,

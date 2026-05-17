@@ -248,23 +248,13 @@ export function restoreImagesFromCache(obj: any, cache: ImageCache): any {
       if (cache[imageId]) {
         result[key] = cache[imageId];
         restoredCount++;
-        // Log successful restoration
-        if (restoredCount <= 5) { // Only log first 5 to avoid spam
-          logger.log(`[RESTORE] Restored ${imageId} for field ${key}`);
-        }
       } else {
-        // Log missing images for debugging
         missingCount++;
-        logger.log(`[RESTORE] MISSING: ${imageId} for field ${key} - not found in cache (${Object.keys(cache).length} items)`);
         result[key] = value; // Fallback to original if not in cache
       }
     } else {
       result[key] = value;
     }
-  }
-
-  if ((restoredCount > 0 || missingCount > 0) && (obj.id || obj.name)) {
-    logger.log(`[RESTORE] Object ${obj.id || obj.name}: restored ${restoredCount}, missing ${missingCount}`);
   }
 
   return result;
@@ -277,10 +267,40 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
   const cache: ImageCache = { ...existingCache };
   const originalPathMap = new Map<string, string>(); // path -> imageId
 
-  // Build reverse lookup map for O(1) search
+  // Build reverse lookup map for O(1) search)
   const existingCacheMap = Object.keys(existingCache).length > 0
     ? new Map(Object.entries(existingCache).map(([id, data]) => [data, id]))
     : undefined;
+
+  // Debug: Count img_ref URLs before processing
+  let imgRefCountBefore = 0;
+  let base64CountBefore = 0;
+  const base64Details: Array<{objectId: string, field: string, size: number}> = [];
+  for (const [id, obj] of Object.entries(state.objects || {})) {
+    const objJson = JSON.stringify(obj);
+    const matches = objJson.match(/data:image\/[^;]+;base64,/g);
+    if (matches) {
+      imgRefCountBefore += (objJson.match(/img_ref:\/\//g) || []).length;
+      base64CountBefore += matches.length;
+      // Find which field has base64
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'string' && value.startsWith('data:image/')) {
+          base64Details.push({objectId: id, field: key, size: value.length});
+        }
+      }
+    }
+  }
+
+  if (base64CountBefore > 0) {
+    logger.warn(`[EXTRACT] Found ${base64CountBefore} base64 images in state before extraction - they should be img_ref:// URLs`);
+    // Log details of ALL base64 images with object types
+    base64Details.forEach(d => {
+      const obj = (state.objects || {})[d.objectId];
+      const objType = obj?.type || 'unknown';
+      const objName = obj?.name || 'unnamed';
+      logger.warn(`[EXTRACT] - ${objType} "${objName}" (${d.objectId}).${d.field} has base64 data (${Math.round(d.size/1024)}KB)`);
+    });
+  }
 
   // Process objects (but skip main menu - each player has their own)
   const processedObjects: Record<string, any> = {};
@@ -291,6 +311,19 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
     }
     processedObjects[id] = extractImagesToCache(obj, cache, existingCache, existingCacheMap, originalPathMap);
   });
+
+  // Debug: Count after processing
+  let imgRefCountAfter = 0;
+  let base64CountAfter = 0;
+  for (const obj of Object.values(processedObjects)) {
+    const objJson = JSON.stringify(obj);
+    imgRefCountAfter += (objJson.match(/img_ref:\/\//g) || []).length;
+    base64CountAfter += (objJson.match(/data:image\//g) || []).length;
+  }
+
+  if (base64CountAfter > 0) {
+    logger.error(`[EXTRACT] FAILED: ${base64CountAfter} base64 images remain after extraction!`);
+  }
 
   // Extract original paths from cache
   const originalPaths: Record<string, string> = cache._originalPaths || {};
@@ -314,11 +347,8 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
  */
 export function restoreImagesToState(state: any, imageCache: ImageCache): any {
   if (!state || !state.objects) {
-    logger.log('[RESTORE] No state or objects to restore');
     return state;
   }
-
-  logger.log(`[RESTORE] Restoring images for ${Object.keys(state.objects).length} objects with ${Object.keys(imageCache).length} cached images`);
 
   const restoredObjects: any = {};
   Object.entries(state.objects || {}).forEach(([id, obj]) => {
@@ -418,8 +448,6 @@ export async function saveImageCacheToIDB(cache: ImageCache): Promise<void> {
  */
 export async function saveSingleImageToIDB(imageId: string, dataUrl: string): Promise<void> {
   try {
-    logger.log(`[IDB] Saving image ${imageId} to IndexedDB (${dataUrl.length} bytes)`);
-
     const db = await initIDB();
     const transaction = db.transaction([IDB_STORE_NAME], 'readwrite');
     const store = transaction.objectStore(IDB_STORE_NAME);
@@ -434,7 +462,6 @@ export async function saveSingleImageToIDB(imageId: string, dataUrl: string): Pr
       const request = store.put(entry);
 
       request.onsuccess = () => {
-        logger.log(`[IDB] Successfully saved image ${imageId}`);
         resolve();
       };
 
@@ -867,7 +894,6 @@ export function findLocalFilePaths(objects: Record<string, any>): Map<string, Lo
       if (value && typeof value === 'string' && isLocalFilePath(value)) {
         localPathsFound++;
         const filename = extractFilenameFromPath(value);
-        logger.log(`[LOCAL_FILES] Found local path in ${objId}.${field}: ${filename} (${value.substring(0, 50)}...)`);
 
         if (localFiles.has(value)) {
           const ref = localFiles.get(value)!;
@@ -944,9 +970,6 @@ export function findLocalFilePaths(objects: Record<string, any>): Map<string, Lo
       }
     }
   }
-
-  // Debug logging
-  logger.log(`[LOCAL_FILES] Searched ${totalStringsChecked} strings, found ${localPathsFound} local file paths`);
 
   return localFiles;
 }
@@ -1044,10 +1067,8 @@ export async function autoLoadImages(originalPaths: Record<string, string>): Pro
     // Only auto-load from URLs (http/https)
     if (originalPath.startsWith('http://') || originalPath.startsWith('https://')) {
       try {
-        logger.log(`[AUTO_LOAD] Loading image ${imageId} from URL: ${originalPath}`);
         const base64Url = await loadImageFromUrl(originalPath);
         loadedImages[imageId] = base64Url;
-        logger.log(`[AUTO_LOAD] Successfully loaded ${imageId}`);
       } catch (error) {
         logger.error(`[AUTO_LOAD] Failed to load ${imageId} from ${originalPath}:`, error);
       }
