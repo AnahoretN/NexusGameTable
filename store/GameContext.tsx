@@ -113,6 +113,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // But MERGE playerPanelSettings from host (guest receives all players' settings)
         const { viewTransform, _lastPanelSettingsUpdate, _pendingPanelSettings, ...payloadWithoutViewTransform } = action.payload;
 
+        // Filter out undefined values to prevent overwriting valid state with undefined
+        Object.keys(payloadWithoutViewTransform).forEach(key => {
+          if (payloadWithoutViewTransform[key] === undefined) {
+            delete payloadWithoutViewTransform[key];
+          }
+        });
+
         // Merge playerPanelSettings from host with local settings
         // Host has all players' settings, guest needs to preserve their own and receive others'
         const mergedPlayerPanelSettings = {
@@ -5418,11 +5425,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     // Audit log actions
     case 'ADD_AUDIT_LOG_ENTRY': {
       const entry = action.payload;
-      const newEntries = [...state.auditLog.entries, entry].slice(-state.auditLog.maxEntries);
+      // Defensive check for missing auditLog (migration edge case)
+      const currentLog = state.auditLog || { entries: [], maxEntries: 10000, currentReplayIndex: -1 };
+      const newEntries = [...currentLog.entries, entry].slice(-currentLog.maxEntries);
       return {
         ...state,
         auditLog: {
-          ...state.auditLog,
+          ...currentLog,
           entries: newEntries,
           currentReplayIndex: newEntries.length - 1,
         },
@@ -5757,9 +5766,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Restore other state (drawings, players, etc.)
             const updates: any[] = [];
 
-            // Restore drawings
-            if (savedState.drawings) {
-              updates.push({ type: 'SYNC_STATE', payload: { drawings: savedState.drawings } });
+            // Restore drawings and audit log
+            if (savedState.drawings || savedState.auditLog) {
+              const syncPayload: any = { drawings: savedState.drawings };
+              // Only include auditLog if it exists (don't overwrite with undefined)
+              if (savedState.auditLog) {
+                syncPayload.auditLog = savedState.auditLog;
+              }
+              updates.push({ type: 'SYNC_STATE', payload: syncPayload });
             }
 
             // Restore player permissions
