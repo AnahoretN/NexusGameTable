@@ -10,6 +10,8 @@
  */
 
 import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
+import { isImageRef, getImageIdFromRef, getFromManagedCache } from '../utils/imageCache';
+import { getGlobalCacheVersion } from './SvgTokenShape';
 
 export interface LazyImageProps {
   src: string;
@@ -167,7 +169,61 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
+  const [cacheVersion, setCacheVersion] = useState(getGlobalCacheVersion());
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Track global cache version for force-reload when pack is loaded
+  useEffect(() => {
+    const currentVersion = getGlobalCacheVersion();
+    if (currentVersion !== cacheVersion) {
+      setCacheVersion(currentVersion);
+      // Force re-resolve the image
+      if (isImageRef(src)) {
+        setResolvedSrc(null);
+        setIsLoaded(false);
+      }
+    }
+  }, [cacheVersion, src]);
+
+  // Resolve img_ref:// URLs
+  useEffect(() => {
+    if (!isVisible) return;
+
+    const resolveSrc = async () => {
+      if (isImageRef(src)) {
+        const imageId = getImageIdFromRef(src);
+        // Try managed cache first
+        const cached = getFromManagedCache(imageId);
+        if (cached) {
+          setResolvedSrc(cached);
+          return;
+        }
+        // Try IndexedDB
+        try {
+          const request = indexedDB.open('NexusGameTable_Images', 1);
+          request.onsuccess = () => {
+            const db = request.result;
+            const transaction = db.transaction(['cachedImages'], 'readonly');
+            const store = transaction.objectStore('cachedImages');
+            const getReq = store.get(imageId);
+            getReq.onsuccess = () => {
+              const entry = getReq.result;
+              if (entry?.data) {
+                setResolvedSrc(entry.data);
+              }
+            };
+          };
+        } catch (e) {
+          console.warn('[LazyBackgroundImage] Failed to load from IndexedDB:', e);
+        }
+      } else {
+        setResolvedSrc(src);
+      }
+    };
+
+    resolveSrc();
+  }, [src, isVisible]);
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') {
@@ -193,23 +249,25 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
   }, [rootMargin, threshold]);
 
   useEffect(() => {
-    if (!isVisible || isLoaded) return;
+    if (!isVisible || isLoaded || !resolvedSrc) return;
 
     const img = new Image();
     if (crossOrigin) {
       img.crossOrigin = crossOrigin;
     }
     img.onload = () => setIsLoaded(true);
-    img.src = src;
-  }, [src, isVisible, isLoaded, crossOrigin]);
+    img.src = resolvedSrc;
+  }, [resolvedSrc, isVisible, isLoaded, crossOrigin]);
 
   const backgroundStyle = React.useMemo(() => ({
-    backgroundImage: isLoaded ? `url(${src})` : 'none',
+    backgroundImage: isLoaded && resolvedSrc ? `url(${resolvedSrc})` : 'none',
     backgroundColor: isLoaded ? 'transparent' : (placeholder === 'transparent' ? 'transparent' : placeholder),
     backgroundSize: style?.backgroundSize || 'cover',
-    backgroundPosition: 'center',
+    backgroundPosition: style?.backgroundPosition || 'center',
+    backgroundRepeat: style?.backgroundRepeat || 'no-repeat',
+    imageRendering: style?.imageRendering,
     ...style,
-  }), [isLoaded, src, placeholder, style]);
+  }), [isLoaded, resolvedSrc, placeholder, style]);
 
   return (
     <div

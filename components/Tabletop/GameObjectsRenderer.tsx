@@ -13,6 +13,7 @@ import { useTokenWithState } from '../../hooks/useTokenWithState';
 import { TokenCountersDisplay } from './TokenCountersDisplay';
 import { TokenRenderer } from './TokenRenderer';
 import { CardRenderer } from './CardRenderer';
+import { getGlobalCacheVersion } from '../SvgTokenShape';
 
 interface GameObjectsRendererProps {
   visibleTableObjects: TableObject[];
@@ -283,6 +284,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             showGrid={board.showGrid}
             currentTool={currentTool}
             livePreviewSize={resizingId === obj.id ? liveResizeSizeRef.current : null}
+            cacheVersion={getGlobalCacheVersion()}
           />
         </div>
       </Tooltip>

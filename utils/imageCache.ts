@@ -584,6 +584,45 @@ export async function clearImageCacheIDB(): Promise<void> {
 }
 
 /**
+ * Preload all images from game objects into the resolved image cache
+ * This forces components to re-render with new images after loading a pack
+ */
+export async function preloadAllPackImages(objects: Record<string, any>): Promise<void> {
+  // Import dynamically to avoid circular dependency
+  const { preloadImageUrl: preload } = await import('../components/SvgTokenShape');
+
+  const imageIds = new Set<string>();
+
+  // Collect all img_ref:// URLs from objects
+  for (const obj of Object.values(objects)) {
+    const collectImageRefs = (value: any): void => {
+      if (typeof value === 'string' && isImageRef(value)) {
+        const imageId = getImageIdFromRef(value);
+        imageIds.add(imageId);
+      } else if (value && typeof value === 'object') {
+        Object.values(value).forEach(v => collectImageRefs(v));
+      }
+    };
+
+    collectImageRefs(obj);
+  }
+
+  // Preload all images from managed cache into resolved cache
+  let loadedCount = 0;
+  for (const imageId of imageIds) {
+    const dataUrl = getFromManagedCache(imageId);
+    if (dataUrl) {
+      preload(imageId, dataUrl);
+      loadedCount++;
+    }
+  }
+
+  if (loadedCount > 0) {
+    logger.log(`[PRELOAD] Preloaded ${loadedCount} images into component cache`);
+  }
+}
+
+/**
  * Clean old images from IndexedDB (older than specified days)
  */
 export async function cleanOldImagesFromIDB(daysOld: number = 30): Promise<number> {
@@ -646,7 +685,7 @@ export async function getIDBCacheInfo(): Promise<{ count: number; totalSize: num
 // MEMORY-MANAGED IMAGE CACHE (with size limits and LRU eviction)
 // ============================================================
 
-const MAX_CACHE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB default limit
+const MAX_CACHE_SIZE_BYTES = 250 * 1024 * 1024; // 250MB default limit
 const MAX_CACHE_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 interface ManagedCacheEntry {
@@ -685,8 +724,12 @@ export function addToManagedCache(imageId: string, data: string): void {
 
   // Check if this image is already in cache
   if (managedCache[imageId]) {
-    // Update last access time
+    // Update the data and size (important for pack loading - new pack may have different image with same ID)
+    const oldSize = managedCache[imageId].size;
+    managedCache[imageId].data = data;
+    managedCache[imageId].size = dataSize;
     managedCache[imageId].lastAccess = Date.now();
+    currentCacheSize = currentCacheSize - oldSize + dataSize;
     return;
   }
 

@@ -18,6 +18,7 @@ import {
   addToManagedCache,
   saveSingleImageToIDB,
   isImageRef,
+  extractImagesFromState,
   getImageUrlFromRef
 } from './imageCache';
 
@@ -87,6 +88,8 @@ async function extractImagesFromObjects(objects: Record<string, TableObject>): P
     if (obj.spriteConfig?.cardBackUrl) await collectBlobUrls(obj.spriteConfig.cardBackUrl);
     if (obj.frontFaceUrl) await collectBlobUrls(obj.frontFaceUrl);
     if (obj.backFaceUrl) await collectBlobUrls(obj.backFaceUrl);
+    if (obj.spriteUrl) await collectBlobUrls(obj.spriteUrl);
+    if (obj.cardBackSpriteUrl) await collectBlobUrls(obj.cardBackSpriteUrl);
   };
 
   const processObject = async (obj: any) => {
@@ -178,6 +181,14 @@ async function extractImagesFromObjects(objects: Record<string, TableObject>): P
     }
     if (obj.backFaceUrl) {
       await processImageField(obj.backFaceUrl, 'back');
+    }
+
+    // Process Card spriteUrl and cardBackSpriteUrl (for sprite sheet cards)
+    if (obj.spriteUrl) {
+      await processImageField(obj.spriteUrl, 'cardsprite');
+    }
+    if (obj.cardBackSpriteUrl) {
+      await processImageField(obj.cardBackSpriteUrl, 'cardbacksprite');
     }
 
     // Process characterData[].avatarUrl (for CharacterPanel avatars)
@@ -299,6 +310,14 @@ function replaceImagesWithReferences(objects: Record<string, TableObject>, image
       processed.backFaceUrl = processImageField(processed.backFaceUrl);
     }
 
+    // Process Card spriteUrl and cardBackSpriteUrl (for sprite sheet cards)
+    if (processed.spriteUrl) {
+      processed.spriteUrl = processImageField(processed.spriteUrl);
+    }
+    if (processed.cardBackSpriteUrl) {
+      processed.cardBackSpriteUrl = processImageField(processed.cardBackSpriteUrl);
+    }
+
     // Process characterData[].avatarUrl
     if (processed.characterData?.characters && Array.isArray(processed.characterData.characters)) {
       processed.characterData = {
@@ -341,12 +360,14 @@ function restoreImageReferences(
 
   images.forEach(img => {
     const packRef = `pack://${IMAGES_FOLDER}${img.filename}`;
-    const imgRefUrl = createImageRef(img.id);
+    // Use the same ID logic as registration step for consistency
+    const imageId = img.id.startsWith('img_') ? img.id : `img_pack_${img.filename}`;
+    const imgRefUrl = createImageRef(imageId);
     refToImgRefMap.set(packRef, imgRefUrl);
-    // Store base64 in managed cache (in-memory)
-    addToManagedCache(img.id, img.data);
+    // Store base64 in managed cache (in-memory) - OVERWRITE any existing
+    addToManagedCache(imageId, img.data);
     // Also keep track of base64 for validation
-    imageCache.set(img.id, img.data);
+    imageCache.set(imageId, img.data);
   });
 
   if (refToImgRefMap.size === 0 && progressCallback) {
@@ -401,6 +422,14 @@ function restoreImageReferences(
     }
     if (processed.backFaceUrl) {
       processed.backFaceUrl = processImageField(processed.backFaceUrl);
+    }
+
+    // Process Card spriteUrl and cardBackSpriteUrl (for sprite sheet cards)
+    if (processed.spriteUrl) {
+      processed.spriteUrl = processImageField(processed.spriteUrl);
+    }
+    if (processed.cardBackSpriteUrl) {
+      processed.cardBackSpriteUrl = processImageField(processed.cardBackSpriteUrl);
     }
 
     // Process characterData[].avatarUrl
@@ -767,10 +796,10 @@ export async function loadPack(
         // Use a unique ID based on filename or generate new one
         const imageId = img.id.startsWith('img_') ? img.id : `img_pack_${img.filename}`;
 
-        // Add to managed cache (fast, in-memory)
+        // Add to managed cache (fast, in-memory) - OVERWRITE any existing
         addToManagedCache(imageId, img.data);
 
-        // Also save to IndexedDB for persistence
+        // Also save to IndexedDB for persistence - OVERWRITE any existing
         try {
           await saveSingleImageToIDB(imageId, img.data);
         } catch (error) {
@@ -778,7 +807,7 @@ export async function loadPack(
         }
       }
 
-      logStep(`Registered ${images.length} pack images in cache`, 'success');
+      logStep(`Loaded ${images.length} pack images into browser cache (overwrote existing)`, 'success');
     }
 
     // Restore image references to img_ref://
@@ -822,13 +851,53 @@ export async function loadPack(
       logStep(`WARNING: Found ${base64Count} base64 images in loaded objects (should be img_ref://)!`, 'error');
       logger.error(`[PACK] Loaded pack contains ${base64Count} embedded base64 images (${Math.round(totalBase64Size / 1024 / 1024)}MB)`);
       logger.error(`[PACK] This will cause localStorage to overflow on save!`);
+      logger.log(`[PACK] Extracting base64 images to cache now...`);
+
+      // Extract any remaining base64 images to img_ref:// URLs
+      try {
+        const { state: extractedState, imageCache: extractedCache } = extractImagesFromState(
+          { objects: saveData.objects },
+          {} // Start with empty cache - will create new image IDs
+        );
+
+        // Update saveData with extracted state
+        saveData.objects = extractedState.objects;
+
+        // Save extracted images to IndexedDB and managed cache
+        const imagesSaved: string[] = [];
+        for (const [imageId, base64Data] of Object.entries(extractedCache)) {
+          if (imageId !== '_originalPaths' && typeof base64Data === 'string') {
+            try {
+              await saveSingleImageToIDB(imageId, base64Data);
+              addToManagedCache(imageId, base64Data);
+              imagesSaved.push(imageId);
+            } catch (error) {
+              logger.warn(`[PACK] Failed to save extracted image ${imageId}:`, error);
+            }
+          }
+        }
+
+        logStep(`Extracted ${imagesSaved.length} base64 images to img_ref:// URLs`, 'success');
+      } catch (error) {
+        logger.error('[PACK] Failed to extract base64 images:', error);
+        logStep('Failed to extract base64 images - pack may not work correctly', 'warning');
+      }
     } else {
       logStep('Verified: No base64 images in loaded objects (all using img_ref://)', 'success');
     }
 
     // Check managed cache size
     const cacheStats = getManagedCacheStats();
-    logStep(`Managed cache: ${cacheStats.count} images, ${cacheStats.totalSizeMB}MB`, 'success');
+    logStep(`Browser cache: ${cacheStats.count} images, ${cacheStats.totalSizeMB}MB`, 'success');
+
+    // Calculate pack image size
+    let packImageSize = 0;
+    images.forEach(img => {
+      packImageSize += img.data.length;
+    });
+    const packImageSizeMB = Math.round(packImageSize / 1024 / 1024 * 100) / 100;
+    logStep(`Pack images: ${images.length} files, ${packImageSizeMB}MB`, 'success');
+
     if (cacheStats.totalSize > 50 * 1024 * 1024) {
       logStep(`WARNING: Managed cache is very large (${cacheStats.totalSizeMB}MB)`, 'warning');
     }

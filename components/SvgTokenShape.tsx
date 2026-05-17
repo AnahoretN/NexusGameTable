@@ -7,6 +7,9 @@ import { isImageRef, getImageIdFromRef, getFromManagedCache } from '../utils/ima
 const resolvedImageCache = new Map<string, string>();
 const pendingLoads = new Map<string, Promise<string | null>>();
 
+// Global version counter - incrementing this forces all SvgTokenShape components to reload
+let globalCacheVersion = 0;
+
 /**
  * Initialize the global resolved image cache from the managed cache
  * Call this during app startup to pre-populate the cache
@@ -22,6 +25,23 @@ export function initResolvedImageCache(): void {
  */
 export function preloadImageUrl(imageId: string, dataUrl: string): void {
   resolvedImageCache.set(imageId, dataUrl);
+}
+
+/**
+ * Get the current global cache version
+ */
+export function getGlobalCacheVersion(): number {
+  return globalCacheVersion;
+}
+
+/**
+ * Clear the global resolved image cache
+ * Call this when loading a pack to force re-loading of all images
+ */
+export function clearResolvedImageCache(): void {
+  resolvedImageCache.clear();
+  pendingLoads.clear();
+  globalCacheVersion++; // Increment version to force all components to reload
 }
 
 // Default border radius in viewBox units (scales with the SVG)
@@ -108,6 +128,20 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
     }
     return content;
   });
+
+  // Track global cache version for force-reload when pack is loaded
+  const [cacheVersion, setCacheVersion] = useState(getGlobalCacheVersion());
+
+  useEffect(() => {
+    const currentVersion = getGlobalCacheVersion();
+    if (currentVersion !== cacheVersion) {
+      setCacheVersion(currentVersion);
+      // Force re-resolve content by setting to undefined first
+      if (content && isImageRef(content)) {
+        setResolvedContent(undefined); // This will trigger the content useEffect
+      }
+    }
+  }, [cacheVersion, content]);
 
   useEffect(() => {
     if (!content) {

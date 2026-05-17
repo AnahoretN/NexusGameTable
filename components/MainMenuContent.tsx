@@ -9,6 +9,7 @@ import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM } from '../utils/playerUtils';
 import { loadImageCacheFromIDB, restoreImagesToState, findLocalFilePaths, extractImagesFromState, saveImageCacheToIDB, getAllFileNameMappings, autoLoadImages } from '../utils/imageCache';
+import { saveSession, loadSession } from '../utils/sessionStorage';
 import { preloadImageUrl } from '../components/SvgTokenShape';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
 import { Dices, User, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target } from 'lucide-react';
@@ -24,19 +25,13 @@ import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
 import { useManualConnection, testWebRTCConnectivity } from '../store/useManualConnection';
 import { createPack, loadPack } from '../utils/packManager';
+import { clearGameState } from '../utils/gameStorage';
+import { clearImageCacheIDB } from '../utils/imageCache';
+import { clearResolvedImageCache } from './SvgTokenShape';
 import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
-import { convertBlobsInObjects } from '../utils/blobConverter';
 import LogViewer from './LogViewer';
 import { CharacterPanel } from './CharacterPanel';
 import { LocalFileRestoreDialog } from './LocalFileRestoreDialog';
-
-/**
- * Convert all blob URLs in objects to base64 data URLs
- * 🚀 OPTIMIZED: Uses blobConverter for non-blocking async conversion
- */
-const convertBlobsInObjectsHelper = async (objects: Record<string, TableObject>): Promise<Record<string, TableObject>> => {
-  return convertBlobsInObjects(objects);
-};
 
 // Get icon component for object type
 const getTypeIcon = (obj: TableObject): React.ReactElement => {
@@ -498,233 +493,33 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   }, [waitingForPeerId, peerId]);
 
   const handleSaveGame = async () => {
-    // Convert blob URLs to base64 before saving
-    const convertedObjects = await convertBlobsInObjectsHelper(state.objects);
-
-    // Create a clean state object without language to preserve user's language preference
-    const { language, ...stateWithoutLanguage } = state;
-    let stateToSave = { ...stateWithoutLanguage, objects: convertedObjects };
-
-    // Collect all original paths (URLs, local file paths) from objects
-    const originalPaths: Record<string, string> = {}; // imageId -> original path
-    const collectOriginalPaths = (obj: any): void => {
-      if (!obj || typeof obj !== 'object') return;
-      for (const [key, value] of Object.entries(obj)) {
-        if (typeof value === 'string') {
-          // Check for URLs (http/https)
-          if (value.startsWith('http://') || value.startsWith('https://')) {
-            // Find if this URL corresponds to an img_ref
-            // We need to check the original state (before conversion)
-            const originalObj = state.objects[obj.id];
-            if (originalObj && originalObj[key] && originalObj[key].startsWith('img_ref://')) {
-              const imageId = originalObj[key].replace('img_ref://', '');
-              originalPaths[imageId] = value;
-            } else {
-              // This is a direct URL - save it
-              originalPaths[`url_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`] = value;
-            }
-          }
-          // Check for local file paths
-          else if ((value.startsWith('file://') ||
-                    /^[A-Za-z]:\\/.test(value) ||
-                    /^[A-Za-z]:\//.test(value) ||
-                    (value.startsWith('/') && value.length > 1 && value[1] !== '/'))) {
-            // This is a local file path - save it
-            const originalObj = state.objects[obj.id];
-            if (originalObj && originalObj[key] && originalObj[key].startsWith('img_ref://')) {
-              const imageId = originalObj[key].replace('img_ref://', '');
-              originalPaths[imageId] = value;
-            } else {
-              originalPaths[`path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`] = value;
-            }
-          }
-        } else if (value && typeof value === 'object') {
-          collectOriginalPaths(value);
-        }
-      }
-    };
-
-    Object.values(convertedObjects).forEach(obj => collectOriginalPaths(obj));
-
-    // Save filename mappings for images (for restoration from local files)
-    const fileNameMappings = getAllFileNameMappings();
-    if (fileNameMappings.size > 0) {
-      const mappingsObj: Record<string, string> = {};
-      fileNameMappings.forEach((fileName, imgRefUrl) => {
-        // Only save mappings for images that are actually used in objects
-        const isUsed = Object.values(convertedObjects).some(obj => {
-          const checkValue = (val: any): boolean => {
-            if (typeof val === 'string' && val === imgRefUrl) return true;
-            if (val && typeof val === 'object') {
-              return Object.values(val).some(checkValue);
-            }
-            return false;
-          };
-          return checkValue(obj);
-        });
-
-        if (isUsed) {
-          mappingsObj[imgRefUrl] = fileName;
-        }
-      });
-
-      if (Object.keys(mappingsObj).length > 0) {
-        (stateToSave as any)._fileNames = mappingsObj;
-      }
-    }
-
-    // Save original paths for auto-loading
-    if (Object.keys(originalPaths).length > 0) {
-      (stateToSave as any)._originalPaths = originalPaths;
-    }
-
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stateToSave));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `nexustable_save_${new Date().toISOString().slice(0, 10)}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+    // Use simplified save system - saves everything as JSON
+    await saveSession(state);
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleLoadGame = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLoadGame = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        if (!e.target?.result) {
-          alert("Error reading file.");
-          return;
-        }
+    try {
+      // Use simplified load system - validates and sanitizes automatically
+      const loadedState = await loadSession(file);
 
-        const json = JSON.parse(e.target.result as string);
+      // Dispatch load action with validated state
+      dispatch({ type: 'LOAD_GAME', payload: loadedState });
 
-        // Validate save file structure
-        if (!json.objects || typeof json.objects !== 'object') {
-          alert("Invalid save file: missing or invalid 'objects' field.");
-          return;
-        }
-        if (!json.players || !Array.isArray(json.players)) {
-          alert("Invalid save file: missing or invalid 'players' field.");
-          return;
-        }
-
-        // Load images from IndexedDB
-        const idbCache = await loadImageCacheFromIDB();
-
-        // Extract base64 images from loaded JSON and save them to IndexedDB
-        const { state: extractedState, imageCache: loadedImages } = extractImagesFromState(json, idbCache);
-
-        if (Object.keys(loadedImages).length > 0) {
-          await saveImageCacheToIDB(loadedImages);
-
-          // Update idbCache with newly loaded images
-          Object.assign(idbCache, loadedImages);
-        }
-
-        // Restore filename mappings from save file
-        const savedFileNames = (json as any)._fileNames || {};
-        if (Object.keys(savedFileNames).length > 0) {
-          // Restore to global registry
-          Object.entries(savedFileNames).forEach(([imgRefUrl, fileName]) => {
-            if (typeof window !== 'undefined') {
-              if (!(window as any).__nexusFileNames) {
-                (window as any).__nexusFileNames = new Map();
-              }
-              (window as any).__nexusFileNames.set(imgRefUrl, fileName as string);
-            }
-          });
-        }
-
-        // First: try to load images from URLs (if _originalPaths exist)
-        const savedOriginalPaths = (json as any)._originalPaths || {};
-        if (Object.keys(savedOriginalPaths).length > 0) {
-          const autoLoadedImages = await autoLoadImages(savedOriginalPaths);
-          if (Object.keys(autoLoadedImages).length > 0) {
-            await saveImageCacheToIDB(autoLoadedImages);
-            Object.assign(idbCache, autoLoadedImages);
-          }
-        }
-
-        // Find images that still need restoration (img_ref:// URLs not in IDB, not in JSON, and not loaded from URL)
-        const missingImages: { imgRefUrl: string; fileName?: string; objectIds: string[] }[] = [];
-        const findMissingImages = (obj: any, objId: string): void => {
-          if (!obj || typeof obj !== 'object') return;
-          for (const [key, value] of Object.entries(obj)) {
-            if (typeof value === 'string' && value.startsWith('img_ref://')) {
-              const imageId = value.replace('img_ref://', '');
-              if (!idbCache[imageId] && !loadedImages[imageId]) {
-                // Image not in IDB and not in loaded JSON - needs restoration
-                const fileName = savedFileNames[value] || (window as any).__nexusFileNames?.get(value);
-                const existing = missingImages.find(img => img.imgRefUrl === value);
-                if (existing) {
-                  if (!existing.objectIds.includes(objId)) {
-                    existing.objectIds.push(objId);
-                  }
-                } else {
-                  missingImages.push({ imgRefUrl: value, fileName, objectIds: [objId] });
-                }
-              }
-            } else if (value && typeof value === 'object') {
-              findMissingImages(value, objId);
-            }
-          }
-        };
-
-        Object.entries(extractedState.objects || {}).forEach(([objId, obj]) => {
-          findMissingImages(obj, objId);
-        });
-
-        if (missingImages.length > 0) {
-          // Filter: only show dialog for images that have local file paths
-          const localOnlyImages = missingImages.filter(img => img.fileName);
-          const noSourceImages = missingImages.filter(img => !img.fileName);
-
-          if (localOnlyImages.length > 0) {
-            // Convert to LocalFileInfo format
-            const localFiles = localOnlyImages.map(img => ({
-              path: img.imgRefUrl,
-              filename: img.fileName || 'unknown',
-              objectIds: img.objectIds,
-              fields: ['content']
-            }));
-            setLocalFilesToRestore(localFiles);
-            setPendingLoadState(extractedState);
-            return;
-          }
-        }
-
-        // Restore images from IDB cache (replaces img_ref:// with base64)
-        const restoredState = restoreImagesToState(extractedState, idbCache);
-
-        // Initialize SvgTokenShape cache with loaded images
-        if (Object.keys(idbCache).length > 0) {
-          Object.entries(idbCache).forEach(([imageId, dataUrl]) => {
-            preloadImageUrl(imageId, dataUrl);
-          });
-        }
-
-        // Count objects by type for validation summary
-        const objectCount = Object.keys(restoredState.objects || {}).length;
-        const playerCount = restoredState.players?.length || 0;
-
-        // Dispatch load action with restored state (images converted back to base64)
-        dispatch({ type: 'LOAD_GAME', payload: restoredState as GameState });
-
-        // Reset file input to allow loading the same file again if needed
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-      } catch (err) {
-        logger.error('Error loading save file:', err);
-        alert("Error loading save file. Make sure it's a valid JSON file saved from Nexus Game Table.");
+      // Reset file input to allow loading the same file again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-    };
-    reader.readAsText(file);
+
+      logger.log('[LOAD] Game loaded successfully');
+    } catch (err) {
+      logger.error('Error loading save file:', err);
+      alert(`Error loading save file: ${(err as Error).message}`);
+    }
   };
 
   const handleSavePack = () => {
@@ -800,6 +595,18 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       setIsPackLoading(true);
       setPackLoadingSteps([{ message: `Loading pack: ${file.name}`, status: 'loading' }]);
 
+      // Clear cache before loading pack to prevent overflow
+      addPackLoadingStep('Clearing browser cache...', 'loading');
+      try {
+        clearGameState();
+        await clearImageCacheIDB();
+        clearResolvedImageCache(); // Clear component-level image cache
+        addPackLoadingStep('Cache cleared', 'success');
+      } catch (error) {
+        logger.warn('[PACK] Failed to clear cache:', error);
+        addPackLoadingStep('Cache clear failed (continuing anyway)', 'warning');
+      }
+
       const packData = await loadPack(file, (step, status) => {
         addPackLoadingStep(step, status);
       });
@@ -814,6 +621,10 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
       // Dispatch load action
       dispatch({ type: 'LOAD_GAME', payload: packData as GameState });
+
+      // Preload all pack images into resolved cache to force re-render with new images
+      const { preloadAllPackImages } = await import('../utils/imageCache');
+      await preloadAllPackImages(packData.objects || {});
 
       const objectCount = Object.keys(packData.objects || {}).length;
       const playerCount = packData.players?.length || 0;

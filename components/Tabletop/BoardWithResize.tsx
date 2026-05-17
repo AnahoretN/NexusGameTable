@@ -5,11 +5,13 @@ import { calculateFlexibleHexGrid, calculateHorizontalHexGrid, calculateFlatHexH
 import { ResizeHandleMemo } from '../ResizeHandle';
 import { HexGridMemo } from '../HexGrid';
 import { SquareGridMemo } from '../SquareGrid';
-import { isImageRef, getImageIdFromRef, getImageFromIDB } from '../../utils/imageCache';
+import { isImageRef, getImageIdFromRef, getImageFromIDB, getFromManagedCache } from '../../utils/imageCache';
+import { getGlobalCacheVersion } from '../SvgTokenShape';
 
 /**
  * BoardBackgroundImage - Component that handles img_ref:// URLs for board backgrounds
  * Loads images from IndexedDB and displays them with proper opacity
+ * Tracks global cache version to reload images when pack is loaded
  */
 interface BoardBackgroundImageProps {
   content: string;
@@ -18,6 +20,17 @@ interface BoardBackgroundImageProps {
 
 const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, opacity }) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [cacheVersion, setCacheVersion] = useState(getGlobalCacheVersion());
+
+  // Track global cache version for force-reload when pack is loaded
+  useEffect(() => {
+    const currentVersion = getGlobalCacheVersion();
+    if (currentVersion !== cacheVersion) {
+      setCacheVersion(currentVersion);
+      // Force re-resolve the image
+      setImageUrl(null);
+    }
+  }, [cacheVersion, content]);
 
   useEffect(() => {
     const loadImage = async () => {
@@ -29,6 +42,13 @@ const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, op
       // Check if this is an img_ref:// URL
       if (isImageRef(content)) {
         const imageId = getImageIdFromRef(content);
+        // Try managed cache first (faster)
+        const managedCached = getFromManagedCache(imageId);
+        if (managedCached) {
+          setImageUrl(managedCached);
+          return;
+        }
+        // Fall back to IndexedDB
         try {
           const dataUrl = await getImageFromIDB(imageId);
           setImageUrl(dataUrl);
@@ -43,7 +63,7 @@ const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, op
     };
 
     loadImage();
-  }, [content]);
+  }, [content, cacheVersion]);
 
   if (!imageUrl) {
     return null;
@@ -130,7 +150,7 @@ const SimplifiedBoard: React.FC<{
         >
             {/* Background image with opacity */}
             {(obj as any).content && (
-                <BoardBackgroundImageMemo
+                <BoardBackgroundImage
                     content={(obj as any).content}
                     opacity={(obj as BoardType).backgroundOpacity ?? 100}
                 />
@@ -188,6 +208,7 @@ interface BoardWithResizeProps {
     showGrid?: boolean;
     currentTool?: string;
     livePreviewSize?: { width: number; height: number } | null; // Live preview during resize
+    cacheVersion?: number; // Global cache version to force re-render when pack is loaded
 }
 
 export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
@@ -209,6 +230,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     showGrid,
     currentTool = 'none',
     livePreviewSize,
+    cacheVersion,
 }) => {
     // Use live preview size during resize, otherwise use actual size
     const actualWidth = isResizing && livePreviewSize ? livePreviewSize.width : (token.width ?? 100);
@@ -440,6 +462,11 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
 
 // Memoize the component to prevent unnecessary re-renders
 export const BoardWithResizeMemo = React.memo(BoardWithResize, (prevProps, nextProps) => {
+    // IMPORTANT: Check cache version to force re-render when pack is loaded
+    if (prevProps.cacheVersion !== nextProps.cacheVersion) {
+        return false; // Force re-render when cache version changes
+    }
+
     // IMPORTANT: Check currentTool changes to ensure proper re-rendering
     if (prevProps.currentTool !== nextProps.currentTool) {
         return false; // Force re-render when tool changes (especially for zoom)
