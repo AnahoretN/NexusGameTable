@@ -6,8 +6,6 @@ import { t } from '../utils/translations';
 import { isImageRef, getImageIdFromRef } from '../utils/imageCache';
 import { logger } from '../utils/logger';
 
-const AVATAR_LOG_PREFIX = '[AVATAR SETTINGS]';
-
 export interface AvatarSettingsModalRef {
   getValues: () => CharacterTab;
 }
@@ -33,56 +31,37 @@ export const AvatarSettingsModal = forwardRef<AvatarSettingsModalRef, AvatarSett
   useEffect(() => {
     const loadAvatar = async () => {
       if (!avatarUrl) {
-        logger.log(`${AVATAR_LOG_PREFIX} No avatar URL to load`);
         setResolvedAvatarUrl('');
         return;
       }
 
-      logger.log(`${AVATAR_LOG_PREFIX} Loading avatar:`, avatarUrl);
-
       // If it's an image reference, load from IDB
       if (isImageRef(avatarUrl)) {
         const imageId = getImageIdFromRef(avatarUrl);
-        logger.log(`${AVATAR_LOG_PREFIX} Detected img_ref://, imageId:`, imageId);
-
         try {
           const dataUrl = await new Promise<string | null>((resolve) => {
             const request = indexedDB.open('NexusGameTable_Images', 1);
-            request.onerror = () => {
-              logger.error(`${AVATAR_LOG_PREFIX} Failed to open IndexedDB`);
-              resolve(null);
-            };
+            request.onerror = () => resolve(null);
             request.onsuccess = () => {
               const db = request.result;
               const transaction = db.transaction(['cachedImages'], 'readonly');
               const store = transaction.objectStore('cachedImages');
               const getReq = store.get(imageId);
-              getReq.onerror = () => {
-                logger.error(`${AVATAR_LOG_PREFIX} Failed to get image from store`);
-                resolve(null);
-              };
+              getReq.onerror = () => resolve(null);
               getReq.onsuccess = () => {
                 const entry = getReq.result;
-                logger.log(`${AVATAR_LOG_PREFIX} IndexedDB get result:`, entry ? 'FOUND' : 'NOT FOUND');
                 resolve(entry ? entry.data : null);
               };
             };
           });
 
-          if (dataUrl) {
-            logger.log(`${AVATAR_LOG_PREFIX} Successfully loaded from IDB, data URL length:`, dataUrl.length);
-          } else {
-            logger.warn(`${AVATAR_LOG_PREFIX} No data found in IDB for imageId:`, imageId);
-          }
-
           setResolvedAvatarUrl(dataUrl || '');
         } catch (error) {
-          logger.error(`${AVATAR_LOG_PREFIX} Failed to load avatar from IDB:`, error);
+          logger.error('[AvatarSettingsModal] Failed to load avatar from IDB:', error);
           setResolvedAvatarUrl('');
         }
       } else {
         // Not an image reference, use as-is
-        logger.log(`${AVATAR_LOG_PREFIX} Not an img_ref:// URL, using as-is`);
         setResolvedAvatarUrl(avatarUrl);
       }
     };

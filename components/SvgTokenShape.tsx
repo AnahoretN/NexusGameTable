@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TokenShape } from '../types';
-import { getTokenShapePath, generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
+import { generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
 import { isImageRef, getImageIdFromRef } from '../utils/imageCache';
 
 // Default border radius in viewBox units (scales with the SVG)
@@ -138,7 +138,6 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   } else if (shape === TokenShape.CIRCLE) {
     // Generate circle path with actual dimensions
     const cx = width / 2;
-    const cy = height / 2;
     const rx = width / 2;
     const ry = height / 2;
     const path = `M ${cx} 0 A ${rx} ${ry} 0 1 1 ${cx} ${height} A ${rx} ${ry} 0 1 1 ${cx} 0`;
@@ -383,7 +382,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
  * Check if a token shape should use SVG rendering
  * Now all token shapes use SVG rendering for consistency
  */
-export function shouldUseSvgForToken(shape: TokenShape): boolean {
+export function shouldUseSvgForToken(_shape: TokenShape): boolean {
   return true;
 }
 

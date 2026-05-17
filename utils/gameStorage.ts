@@ -2,12 +2,7 @@ import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, Und
 import type { GameState, ViewTransform } from '../store/GameContext';
 import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
-import {
-  convertImagesToPathMetadata,
-  restoreImagesFromPathMetadata,
-  getImagePathVersion
-} from './imagePathStorage';
-import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache, clearImageCacheIDB } from './imageCache';
+import { extractImagesFromState, saveImageCacheToIDB, loadImageCacheFromIDB, getNewImages, ImageCache, clearImageCacheIDB, restoreImagesFromCache, restoreImagesToState } from './imageCache';
 
 const STORAGE_KEY = 'nexus-game-state';
 const STORAGE_VERSION = 8; // Version with new objects and settings (diceGroups, access control, etc.)
@@ -74,54 +69,50 @@ export const saveGameState = async (state: GameState): Promise<void> => {
 
     // First: Extract images to cache and save to IndexedDB BEFORE converting to metadata
     // Get existing IDB cache to avoid re-saving images we already have (cached in memory)
+    // IMPORTANT: Force reload IDB cache to ensure we have latest images
+    cachedIDBCache = null; // Reset to force reload
+    cacheLoadPromise = null; // Reset promise
     const existingIDBCache = await getOrLoadIDBCache();
 
-    // Log character avatar URLs before extraction
-    const characterAvatars: any[] = [];
-    Object.values(objectsToSave).forEach((obj: any) => {
-      if (obj.type === 'PANEL' && obj.characterData?.characters) {
-        obj.characterData.characters.forEach((char: any) => {
-          if (char.avatarUrl) {
-            characterAvatars.push({
-              characterId: char.id,
-              characterName: char.characterName,
-              avatarUrl: char.avatarUrl.substring(0, 50) + (char.avatarUrl.length > 50 ? '...' : ''),
-              avatarUrlType: char.avatarUrl.startsWith('img_ref://') ? 'img_ref' : char.avatarUrl.startsWith('data:') ? 'data_url' : 'other'
-            });
-          }
-        });
-      }
-    });
-    logger.log('[SAVE] Character avatars before extraction:', characterAvatars);
+    logger.log('[SAVE] IDB cache loaded, keys:', Object.keys(existingIDBCache).length);
 
-    const { state: extractedState, imageCache } = extractImagesFromState({ objects: objectsToSave }, existingIDBCache);
+    // IMPORTANT: If state has metadata markers ('D', 'B') instead of actual images,
+    // log this so we can debug
+    const idbCacheToUse = existingIDBCache;
+    const objectsToExtract: Record<string, TableObject> = {};
 
-    // Log after extraction
-    const characterAvatarsAfter: any[] = [];
-    Object.values(extractedState.objects || {}).forEach((obj: any) => {
-      if (obj.type === 'PANEL' && obj.characterData?.characters) {
-        obj.characterData.characters.forEach((char: any) => {
-          if (char.avatarUrl) {
-            characterAvatarsAfter.push({
-              characterId: char.id,
-              characterName: char.characterName,
-              avatarUrl: char.avatarUrl.substring(0, 50) + (char.avatarUrl.length > 50 ? '...' : ''),
-              avatarUrlType: char.avatarUrl.startsWith('img_ref://') ? 'img_ref' : char.avatarUrl.startsWith('data:') ? 'data_url' : 'other'
-            });
+    // Helper to check for metadata markers in an object
+    const hasMetadataMarkers = (obj: any): boolean => {
+      if (!obj) return false;
+      const checkValue = (val: any): boolean => {
+        if (val === 'D' || val === 'B') return true;
+        if (typeof val === 'object' && val !== null) {
+          for (const v of Object.values(val)) {
+            if (checkValue(v)) return true;
           }
-        });
+        }
+        return false;
+      };
+      return checkValue(obj);
+    };
+
+    for (const [id, obj] of Object.entries(objectsToSave)) {
+      if (hasMetadataMarkers(obj)) {
+        logger.warn('[SAVE] Object has metadata markers (D/B), this indicates a bug:', id);
+        // Just pass through - extractImagesToCache should handle it
+        objectsToExtract[id] = obj;
+      } else {
+        objectsToExtract[id] = obj;
       }
-    });
-    logger.log('[SAVE] Character avatars after extraction:', characterAvatarsAfter);
-    logger.log('[SAVE] Image cache size:', Object.keys(imageCache).length);
+    }
+
+    const { state: extractedState, imageCache } = extractImagesFromState({ objects: objectsToExtract }, existingIDBCache);
 
     // Save ONLY NEW images to IndexedDB (async - don't await to avoid blocking save)
     const newImages = getNewImages(imageCache, existingIDBCache);
-    logger.log('[SAVE] New images to save to IDB:', Object.keys(newImages).length);
     if (Object.keys(newImages).length > 0) {
       saveImageCacheToIDB(newImages)
         .then(() => {
-          logger.log('[SAVE] Successfully saved', Object.keys(newImages).length, 'new images to IDB');
           // Update cache after successful save
           if (cachedIDBCache) {
             Object.assign(cachedIDBCache, newImages);
@@ -132,9 +123,6 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         });
     }
 
-    // Then: Convert EXTRACTED objects (with img_ref://) to path metadata for localStorage
-    const convertedObjects = convertImagesToPathMetadata(extractedState.objects || {});
-
     // Create stored data structure
     const storedData: StoredGameState = {
       version: STORAGE_VERSION,
@@ -144,8 +132,8 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         height: window.innerHeight
       },
       state: {
-        // Save objects (the main game data) - keeping original URLs
-        objects: convertedObjects,
+        // Save objects (the main game data) - with img_ref:// URLs
+        objects: extractedState.objects || {},
         // Save players
         players: state.players,
         // Save active player ID (so user stays as same role)
@@ -195,20 +183,13 @@ export const saveGameState = async (state: GameState): Promise<void> => {
 };
 
 /**
- * Callback function type for loading images from packs
- */
-type PackImageLoader = (filename: string) => Promise<string>;
-
-/**
  * Load the game state from localStorage
  * Adapts objects only if user is HOST or playing SOLO
  * @param isGuest Whether the current user is a guest
- * @param loadPackImage Optional callback to load images from packs
  */
-export const loadGameState = (
-  isGuest: boolean,
-  loadPackImage?: PackImageLoader
-): Partial<GameState> | null => {
+export const loadGameState = async (
+  isGuest: boolean
+): Promise<Partial<GameState> | null> => {
   if (typeof window === 'undefined') return null;
 
   try {
@@ -321,26 +302,14 @@ export const loadGameState = (
       ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
       : data.state;
 
-    // Log character avatar URLs after loading from localStorage
-    const characterAvatars: any[] = [];
-    Object.values(adaptedState.objects || {}).forEach((obj: any) => {
-      if (obj.type === 'PANEL' && obj.characterData?.characters) {
-        obj.characterData.characters.forEach((char: any) => {
-          if (char.avatarUrl) {
-            characterAvatars.push({
-              characterId: char.id,
-              characterName: char.characterName,
-              avatarUrl: char.avatarUrl.substring(0, 50) + (char.avatarUrl.length > 50 ? '...' : ''),
-              avatarUrlType: char.avatarUrl.startsWith('img_ref://') ? 'img_ref' : char.avatarUrl.startsWith('data:') ? 'data_url' : char.avatarUrl === 'D' ? 'D_placeholder' : 'other'
-            });
-          }
-        });
-      }
-    });
-    logger.log('[LOAD] Character avatars loaded from localStorage:', characterAvatars);
+    // Load images from IDB and restore them to state
+    const idbCache = await loadImageCacheFromIDB();
+    if (Object.keys(idbCache).length > 0) {
+      logger.log(`[LOAD] Loaded ${Object.keys(idbCache).length} images from IDB`);
+      const restoredState = restoreImagesToState(adaptedState, idbCache);
+      return restoredState;
+    }
 
-    // Restore images from path metadata (async but we'll update state later)
-    // For now, return the state and let the caller handle image restoration
     return adaptedState;
   } catch (error) {
     logger.error('[LOAD_STATE] Failed to load game state:', error);
@@ -677,30 +646,6 @@ function adaptStateToViewport(
 
   return newState;
 }
-
-/**
- * Restore images from path metadata in loaded game state
- * Call this after loadGameState to restore actual image URLs
- * @param state The loaded game state
- * @param loadPackImage Optional callback to load images from packs
- */
-export const restoreImagesInState = async (
-  state: Partial<GameState>,
-  loadPackImage?: PackImageLoader
-): Promise<Partial<GameState>> => {
-  if (!state.objects) return state;
-
-  try {
-    const restoredObjects = await restoreImagesFromPathMetadata(state.objects, loadPackImage);
-    return {
-      ...state,
-      objects: restoredObjects
-    };
-  } catch (error) {
-    logger.error('[RESTORE] Failed to restore images:', error);
-    return state; // Return original state on error
-  }
-};
 
 /**
  * Clear the saved game state from localStorage

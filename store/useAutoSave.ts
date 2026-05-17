@@ -97,7 +97,12 @@ export function useAutoSave(
     if (!isHost) return;
 
     // Don't save during initialization
-    if (!isInitialized) return;
+    if (!isInitialized) {
+      logger.log('[AUTOSAVE] Skipping save - not initialized yet');
+      return;
+    }
+
+    logger.log('[AUTOSAVE] State changed, scheduling save in 5 seconds...');
 
     // Check if ANY object is being dragged (by any player)
     const isAnyDragging = Object.values(state.objects).some(
@@ -127,11 +132,13 @@ export function useAutoSave(
 
     // Schedule save for this player in 5 seconds
     playerTimersRef.current[modifierPlayerId] = setTimeout(async () => {
+      logger.log('[AUTOSAVE] Timer expired, checking if safe to save...');
       // Check minimum interval between saves
       const timeSinceLastSave = Date.now() - lastSaveTimeRef.current;
       const minInterval = 10000; // 10 seconds
 
       if (timeSinceLastSave < minInterval) {
+        logger.log('[AUTOSAVE] Skipping save - saved too recently');
         delete playerTimersRef.current[modifierPlayerId];
         return;
       }
@@ -151,9 +158,11 @@ export function useAutoSave(
         return;
       }
 
+      logger.log('[AUTOSAVE] Saving game state...');
       await saveGameState(state);
       lastSaveTimeRef.current = Date.now();
       delete playerTimersRef.current[modifierPlayerId];
+      logger.log('[AUTOSAVE] Game state saved successfully');
     }, 5000);
   }, [state, isHost, isInitialized]);
 }

@@ -71,66 +71,43 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       const newCache: Record<string, string> = {};
       const charactersWithAvatars = characterData.characters.filter(c => c.avatarUrl);
 
-      logger.log('[CHARACTER PANEL] Loading avatars for characters:', {
-        total: characterData.characters.length,
-        withAvatars: charactersWithAvatars.length,
-        characters: charactersWithAvatars.map(c => ({ id: c.id, name: c.characterName, avatarUrl: c.avatarUrl }))
-      });
-
       for (const character of charactersWithAvatars) {
         if (!character.avatarUrl) continue;
 
         // If it's an image reference, load from IDB
         if (isImageRef(character.avatarUrl)) {
           const imageId = getImageIdFromRef(character.avatarUrl);
-          logger.log('[CHARACTER PANEL] Loading avatar from IDB:', {
-            characterId: character.id,
-            characterName: character.characterName,
-            imageId
-          });
 
           try {
             // Try to get from IDB
             const dataUrl = await new Promise<string | null>((resolve) => {
               const request = indexedDB.open('NexusGameTable_Images', 1);
-              request.onerror = () => {
-                logger.error('[CHARACTER PANEL] Failed to open IndexedDB for', character.id);
-                resolve(null);
-              };
+              request.onerror = () => resolve(null);
               request.onsuccess = () => {
                 const db = request.result;
                 const transaction = db.transaction(['cachedImages'], 'readonly');
                 const store = transaction.objectStore('cachedImages');
                 const getReq = store.get(imageId);
-                getReq.onerror = () => {
-                  logger.error('[CHARACTER PANEL] Failed to get image for', character.id);
-                  resolve(null);
-                };
+                getReq.onerror = () => resolve(null);
                 getReq.onsuccess = () => {
                   const entry = getReq.result;
-                  logger.log('[CHARACTER PANEL] IDB result for', character.id, ':', entry ? 'FOUND' : 'NOT FOUND');
                   resolve(entry ? entry.data : null);
                 };
               };
             });
 
             if (dataUrl) {
-              logger.log('[CHARACTER PANEL] Successfully loaded avatar for', character.id, ', data URL length:', dataUrl.length);
               newCache[character.id] = dataUrl;
-            } else {
-              logger.warn('[CHARACTER PANEL] No data found in IDB for', character.id, ', imageId:', imageId);
             }
           } catch (error) {
-            logger.error('[CHARACTER PANEL] Failed to load avatar from IDB for', character.id, ':', error);
+            // Silently fail - avatar will be missing
           }
         } else {
           // Not an image reference, use as-is
-          logger.log('[CHARACTER PANEL] Using avatar URL as-is for', character.id);
           newCache[character.id] = character.avatarUrl;
         }
       }
 
-      logger.log('[CHARACTER PANEL] Avatar cache updated:', Object.keys(newCache));
       setAvatarUrlCache(newCache);
     };
 
@@ -710,40 +687,29 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
     const updates = avatarSettingsModalRef.current.getValues();
 
-    logger.log('[CHARACTER PANEL] Saving avatar settings:', {
-      characterId: updates.id,
-      avatarUrl: updates.avatarUrl,
-      avatarUrlType: updates.avatarUrl?.startsWith('img_ref://') ? 'img_ref' : updates.avatarUrl?.startsWith('data:') ? 'data_url' : 'other'
-    });
-
     const updatedCharacters = characterData.characters.map((char: CharacterTab) => {
       if (char.id === updates.id) {
         // Merge updates with existing character data to avoid losing other fields
-        const updated = { ...char, ...updates };
-        logger.log('[CHARACTER PANEL] Updated character:', {
-          id: updated.id,
-          characterName: updated.characterName,
-          avatarUrl: updated.avatarUrl
-        });
-        return updated;
+        return { ...char, ...updates };
       }
       return char;
     });
+
+    // Update the character data in the panel object
+    const updatedCharacterData = {
+      ...characterData,
+      characters: updatedCharacters
+    };
 
     dispatch({
       type: 'UPDATE_OBJECT',
       payload: {
         id: panel.id,
         updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
+          characterData: updatedCharacterData
         }
       }
     });
-
-    logger.log('[CHARACTER PANEL] Dispatched UPDATE_OBJECT for panel:', panel.id);
 
     // Close the avatar settings modal after saving
     closeSettingsModal();

@@ -2,8 +2,6 @@ import React, { useRef, useState } from 'react';
 import { logger } from '../utils/logger';
 import { saveSingleImageToIDB, generateImageId, createImageRef } from '../utils/imageCache';
 
-const AVATAR_LOG_PREFIX = '[AVATAR UPLOAD]';
-
 interface FilePickerInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -95,19 +93,12 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
     if (file) {
       const maxMB = (maxSize / 1024 / 1024).toFixed(0);
 
-      logger.log(`${AVATAR_LOG_PREFIX} File selected:`, {
-        name: file.name,
-        size: `${(file.size / 1024).toFixed(2)}KB`,
-        type: file.type
-      });
-
       // Check file size
       if (file.size > maxSize) {
         const sizeMB = (file.size / 1024 / 1024).toFixed(2);
         setSizeWarning(`⚠️ File size: ${sizeMB}MB exceeds ${maxMB}MB limit.`);
         // Reset input
         e.target.value = '';
-        logger.warn(`${AVATAR_LOG_PREFIX} File too large, rejected`);
         return;
       }
 
@@ -121,25 +112,19 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
 
       setIsLoading(true);
       try {
-        logger.log(`${AVATAR_LOG_PREFIX} Converting to base64...`);
         // Convert to base64 for P2P sharing
         const base64Url = await fileToBase64(file);
-        logger.log(`${AVATAR_LOG_PREFIX} Converted to base64, length:`, base64Url.length);
 
         // Save to IndexedDB immediately for persistence across page reloads
         // Use img_ref:// format for consistent handling
         const imageId = generateImageId();
         const imgRefUrl = createImageRef(imageId);
-
-        logger.log(`${AVATAR_LOG_PREFIX} Saving to IndexedDB:`, { imageId, imgRefUrl });
         await saveSingleImageToIDB(imageId, base64Url);
-        logger.log(`${AVATAR_LOG_PREFIX} Successfully saved to IndexedDB`);
 
         // Return img_ref:// URL instead of base64
-        logger.log(`${AVATAR_LOG_PREFIX} Calling onChange with:`, imgRefUrl);
         onChange(imgRefUrl);
       } catch (error) {
-        logger.error(`${AVATAR_LOG_PREFIX} Failed to process file:`, error);
+        logger.error('Failed to convert file to base64:', error);
       } finally {
         setIsLoading(false);
       }

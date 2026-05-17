@@ -103,6 +103,9 @@ export function extractImagesToCache(obj: any, cache: ImageCache = {}, existingC
           result[key] = createImageRef(imageId);
           cache[imageId] = value;
         }
+      } else if (isImageRef(value)) {
+        // Keep img_ref:// URLs as-is - they'll be loaded during restore
+        result[key] = value;
       } else {
         result[key] = value;
       }
@@ -180,33 +183,6 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
     }
     processedObjects[id] = extractImagesToCache(obj, cache, existingCache, existingCacheMap);
   });
-
-  // Debug: check if extraction worked
-  const stateJson = JSON.stringify(processedObjects);
-  const hasBase64 = stateJson.includes('data:image/');
-  const hasRefs = stateJson.includes('img_ref://');
-
-  if (hasBase64) {
-    logger.warn('[P2P Debug] extractImagesFromState: State still has base64 data! Extraction failed.');
-    logger.warn('[P2P Debug] Objects with remaining base64:', Object.values(processedObjects).filter((obj: any) => {
-      const json = JSON.stringify(obj);
-      return json.includes('data:image/');
-    }).map((obj: any) => {
-      // Log which fields have base64
-      const fieldsWithBase64: string[] = [];
-      const findBase64 = (item: any, path = '') => {
-        if (typeof item === 'string' && item.startsWith('data:image/')) {
-          fieldsWithBase64.push(path || 'unknown');
-        } else if (typeof item === 'object' && item !== null) {
-          Object.entries(item).forEach(([key, value]) => {
-            findBase64(value, path ? `${path}.${key}` : key);
-          });
-        }
-      };
-      findBase64(obj);
-      return { id: obj.id, type: obj.type, fields: fieldsWithBase64 };
-    }));
-  }
 
 
   // Debug: check DECK objects specifically

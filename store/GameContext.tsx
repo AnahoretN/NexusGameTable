@@ -5680,6 +5680,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, imageCachesRef } = usePeerConnection(localDispatch, stateRef);
 
   // Auto-save game state to localStorage (debounced)
+  logger.log('[DEBUG] useAutoSave called with isHost:', isHost, 'initializedRef.current:', initializedRef.current);
   useAutoSave(state, isHost, initializedRef.current);
 
   // Update pixelsPerVU when window size changes
@@ -5720,55 +5721,46 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         // Try to load saved game state from localStorage (host only)
-        const savedState = loadGameState(false);
+        // loadGameState now loads images from IDB and restores them
+        (async () => {
+          const savedState = await loadGameState(false);
 
-        if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
-          // Check if images need restoration (metadata or img_ref:// instead of actual images)
-          const needsRestoration = Object.values(savedState.objects).some((obj: any) =>
-            // Check content field
-            (obj.content && (obj.content === 'B' || obj.content === 'D' ||
-             obj.content.startsWith('{"t":') || obj.content.startsWith('{"type":') ||
-             obj.content.startsWith('img_ref://'))) ||
-            // Check characterData.avatarUrl (for PANEL objects)
-            (obj.characterData?.characters?.some((c: any) =>
-              c.avatarUrl && (c.avatarUrl === 'B' || c.avatarUrl === 'D' ||
-               c.avatarUrl.startsWith('{"t":') || c.avatarUrl.startsWith('{"type":') ||
-               c.avatarUrl.startsWith('img_ref://'))
-            )) ||
-            // Check poolData.tabs.avatarUrl
-            (obj.poolData?.tabs?.some((t: any) =>
-              t.avatarUrl && (t.avatarUrl === 'B' || t.avatarUrl === 'D' ||
-               t.avatarUrl.startsWith('{"t":') || t.avatarUrl.startsWith('{"type":') ||
-               t.avatarUrl.startsWith('img_ref://'))
-            ))
-          );
+          if (savedState && savedState.objects && Object.keys(savedState.objects).length > 0) {
+            // loadGameState already restored images from IDB, just add objects
+            setIsInitialLoading(true);
+            addInitialLoadStep('Loading saved game...', 'loading');
 
-          // Function to add objects to state
-          // IMPORTANT: Add cards BEFORE decks to ensure deck.cardIds references exist
-          const addObjects = (objects: Record<string, TableObject>) => {
-            const objectValues = Object.values(objects);
+            // Function to add objects to state
+            // IMPORTANT: Add cards BEFORE decks to ensure deck.cardIds references exist
+            const addObjects = (objects: Record<string, TableObject>) => {
+              const objectValues = Object.values(objects);
 
-            // Separate cards and decks for proper ordering
-            const cards = objectValues.filter(obj => obj.type === ItemType.CARD);
-            const decks = objectValues.filter(obj => obj.type === ItemType.DECK);
-            const otherObjects = objectValues.filter(obj =>
-              obj.type !== ItemType.CARD &&
-              obj.type !== ItemType.DECK &&
-              !(obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU)
-            );
+              // Separate cards and decks for proper ordering
+              const cards = objectValues.filter(obj => obj.type === ItemType.CARD);
+              const decks = objectValues.filter(obj => obj.type === ItemType.DECK);
+              const otherObjects = objectValues.filter(obj =>
+                obj.type !== ItemType.CARD &&
+                obj.type !== ItemType.DECK &&
+                !(obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU)
+              );
 
-            // Add cards first (so they exist when decks are added)
-            cards.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
+              // Add cards first (so they exist when decks are added)
+              cards.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
 
-            // Then add decks (which reference cards via cardIds)
-            decks.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
+              // Then add decks (which reference cards via cardIds)
+              decks.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
 
-            // Finally add all other objects
-            otherObjects.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
-          };
+              // Finally add all other objects
+              otherObjects.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
+            };
 
-          // Restore other state (drawings, players, etc.)
-          const restoreOtherState = () => {
+            // Add objects (images already restored from IDB by loadGameState)
+            addObjects(savedState.objects);
+
+            // Migrate pool panels that are in playable area to non-playable territories
+            runPoolMigrationIfNeeded(savedState.objects);
+
+            // Restore other state (drawings, players, etc.)
             const updates: any[] = [];
 
             // Restore drawings
@@ -5821,72 +5813,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // Create main menu from local settings
             createMainMenu(localDispatch);
-          };
 
-          if (needsRestoration) {
-            // Only show loading modal for IndexedDB operations
-            setIsInitialLoading(true);
-            addInitialLoadStep('Loading saved game...', 'loading');
-
-            // Load images from IndexedDB in background
-            loadImageCacheFromIDB().then(imageCache => {
-              if (Object.keys(imageCache).length > 0) {
-                addInitialLoadStep(`Restoring ${Object.keys(imageCache).length} images...`, 'loading');
-
-                // Restore images in objects BEFORE adding them
-                const restoredObjects: Record<string, TableObject> = {};
-                Object.entries(savedState.objects || {}).forEach(([id, obj]) => {
-                  restoredObjects[id] = restoreImagesFromCache(obj, imageCache);
-                });
-
-                // Add restored objects
-                addObjects(restoredObjects);
-
-                // Migrate pool panels that are in playable area to non-playable territories
-                runPoolMigrationIfNeeded(restoredObjects);
-
-                addInitialLoadStep('Images restored', 'success');
-              } else {
-                // Just add objects without restoration
-                addObjects(savedState.objects || {});
-              }
-
-              // After objects are added, restore other state
-              restoreOtherState();
-
-              // Check if we need to reconnect to host (for guests)
-              if (!isHost) {
-                setIsInitialLoading(false);
-                initializedRef.current = true;
-              } else {
-                // Host is ready immediately
-                setIsInitialLoading(false);
-                initializedRef.current = true;
-              }
-            }).catch(error => {
-              logger.error('[LOAD] Failed to load images from IndexedDB:', error);
-              // Just add objects without restoration
-              addObjects(savedState.objects || {});
-              // Still restore other state
-              restoreOtherState();
-
-              // IMPORTANT: Mark as initialized even on error
-              setIsInitialLoading(false);
-              initializedRef.current = true;
-            });
-          } else {
-            // No restoration needed - add objects directly
-            addObjects(savedState.objects || {});
-
-            // Restore other state
-            restoreOtherState();
-
-            // Mark as initialized
+            addInitialLoadStep('Game loaded', 'success');
+            setIsInitialLoading(false);
             initializedRef.current = true;
-          }
 
-          return; // IMPORTANT: Return after async operations complete
-        }
+            return; // IMPORTANT: Return after async operations complete
+          }
 
         // No saved state or empty saved state, create default game board (only for host)
         if (isHost) {
@@ -5949,6 +5882,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Create main menu (for everyone)
         createMainMenu(localDispatch);
+        })();
     }
   }, [isHost]); // Only depend on isHost - connectionStatus changes should NOT re-trigger initialization
 
