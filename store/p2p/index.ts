@@ -16,6 +16,7 @@ export * from './types';
 // ============================================================================
 
 export * from './protocol/messages';
+export * from './protocol/authoritativeMessages';
 
 // ============================================================================
 // ASSET TRANSFER (New CAS system)
@@ -66,14 +67,40 @@ export {
 } from './protocol/assetMessages';
 
 // ============================================================================
+// SYNC (New Authoritative System)
+// ============================================================================
+
+export {
+  HostEventQueue,
+  reduxActionToGameAction,
+  shouldSyncAction,
+} from './sync/HostEventQueue';
+
+export {
+  GuestStateManager,
+} from './sync/GuestStateManager';
+
+// ============================================================================
+// MIDDLEWARE
+// ============================================================================
+
+export {
+  createAuthoritativeMiddleware,
+  getGlobalAuthoritativeMiddleware,
+  updateSyncState,
+  getSyncState,
+} from './middleware/authoritativeMiddleware';
+export type { SyncState } from './middleware/authoritativeMiddleware';
+
+// ============================================================================
 // CONNECTION
 // ============================================================================
 
 export {
   ConnectionManager,
   isConnected,
-  isHost,
-  isGuest,
+  isHost as isP2PHost,
+  isGuest as isP2PGuest,
 } from './connection/manager';
 
 // ============================================================================

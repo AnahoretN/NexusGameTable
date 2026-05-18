@@ -89,7 +89,12 @@ export const LazyImage = memo<LazyImageProps>(({
 
       // Resolve asset hash to ObjectURL
       if (isAssetHash(srcToLoad)) {
-        finalSrc = await getAssetURL(srcToLoad);
+        const url = await getAssetURL(srcToLoad);
+        if (url) {
+          finalSrc = url;
+        } else {
+          throw new Error(`getAssetURL returned null for ${srcToLoad}`);
+        }
       }
 
       setImageSrc(finalSrc);
@@ -111,6 +116,8 @@ export const LazyImage = memo<LazyImageProps>(({
 
     } catch (error) {
       console.error(`[LazyImage] Failed to load ${srcToLoad}:`, error);
+      // 🔥 FIX: Don't set imageSrc to hash URLs - they cause CSP violations
+      // Leave imageSrc as null to show placeholder
       setIsError(true);
       onError?.();
     }
@@ -213,13 +220,23 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
       try {
         if (isAssetHash(src)) {
           const objectUrl = await getAssetURL(src);
-          setResolvedSrc(objectUrl);
+          if (objectUrl) {
+            setResolvedSrc(objectUrl);
+          } else {
+            console.error(`[LazyBackgroundImage] getAssetURL returned null for ${src}`);
+            // Don't set resolvedSrc - will show placeholder instead
+          }
         } else {
           setResolvedSrc(src);
         }
       } catch (error) {
         console.error(`[LazyBackgroundImage] Failed to resolve ${src}:`, error);
-        setResolvedSrc(src); // Fallback
+        // 🔥 FIX: Never fall back to hash URLs - they cause CSP violations
+        // Only set resolvedSrc if it's not a hash
+        if (!isAssetHash(src)) {
+          setResolvedSrc(src);
+        }
+        // For hash URLs that fail, leave resolvedSrc as null to show placeholder
       }
     };
 

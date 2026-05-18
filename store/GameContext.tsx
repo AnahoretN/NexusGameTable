@@ -14,6 +14,7 @@ import { Action } from './gameActions';
 import { createAuditLogEntry } from './auditLogger';
 import { useAutoSave } from './useAutoSave';
 import { usePeerConnection } from './usePeerConnection';
+import { isInCursorSlot, getOriginalPosition } from '../utils/cursorSlotTracker';
 import {
   initAssetDB,
   autoMigrate,
@@ -61,8 +62,16 @@ const GameContext = createContext<{
 } | null>(null);
 
 const gameReducer = (state: GameState, action: Action): GameState => {
-  // 🔥 OPTIMIZED: Track changes for differential sync (exclude SYNC_STATE to avoid loops)
-  if (action.type !== 'SYNC_STATE') {
+  // 🔥 OPTIMIZED: Track changes for differential sync
+  // Exclude SYNC_STATE to avoid loops
+  // Exclude UPDATE_OBJECT with inCursorSlot=true to prevent local cursor slot state from syncing to host
+  // Also exclude objects at -999999 position (cursor slot hidden position)
+  const shouldExcludeFromSync =
+    action.type === 'SYNC_STATE' ||
+    (action.type === 'UPDATE_OBJECT' && action.payload?.updates?.inCursorSlot === true) ||
+    (action.type === 'UPDATE_OBJECT' && (action.payload?.updates?.x < -900000 || action.payload?.updates?.y < -900000));
+
+  if (!shouldExcludeFromSync) {
     differentialSyncManager.addChange({
       type: 'object',
       action: action,
@@ -123,21 +132,55 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               const incomingObjects = action.payload.objects;
               finalObjects = { ...state.objects };
 
-              // Update or add each incoming object
-              Object.entries(incomingObjects).forEach(([id, obj]) => {
-                // Skip main menu - it's local
-                if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
-                  return;
-                }
-                finalObjects[id] = obj;
-              });
+                // Update or add each incoming object
+                Object.entries(incomingObjects).forEach(([id, obj]) => {
+                  // 🔥 DEBUG: Log incoming object properties
+                  const existingObj = state.objects[id];
+                  console.log(`[SYNC_STATE Partial] Object ${id}:`, {
+                    name: obj.name,
+                    hasContent: !!obj.content,
+                    contentPreview: obj.content?.substring(0, 20) || 'none',
+                    hadContentBefore: !!existingObj?.content,
+                    keysIn: Object.keys(obj),
+                    keysExisting: existingObj ? Object.keys(existingObj) : [],
+                    inCursorSlotTracker: isInCursorSlot(id)
+                  });
+
+                  // Skip main menu - it's local
+                  if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+                    return;
+                  }
+
+                  // 🔥 FIX: Use global cursorSlot tracker instead of state.objects
+                  // This prevents race condition where Redux hasn't updated yet
+                  if (isInCursorSlot(id)) {
+                    // Object is currently being dragged locally - preserve drag state
+                    console.log(`[SYNC_STATE Partial] Object ${id} is in cursor slot (tracker), preserving drag state`);
+
+                    const localObj = state.objects[id] as any;
+                    const originalPos = getOriginalPosition(id);
+
+                    finalObjects[id] = {
+                      ...obj,  // Take other updates from host
+                      inCursorSlot: true,  // Preserve drag state
+                      isOnTable: true,
+                      x: -999999,  // Keep in cursor slot position
+                      y: -999999,
+                      originalX: originalPos?.x ?? localObj?.originalX ?? obj.x,
+                      originalY: originalPos?.y ?? localObj?.originalY ?? obj.y
+                    };
+                    return;
+                  }
+
+                  finalObjects[id] = obj;
+                });
 
               console.log('[SYNC_STATE] Partial sync: merged objects', {
                 incoming: Object.keys(incomingObjects).length,
                 total: Object.keys(finalObjects).length
               });
             } else {
-              // For full sync, REPLACE all objects (except local main menu)
+              // For full sync, REPLACE all objects (except local main menu and cursor slot items)
               const incomingObjects = { ...action.payload.objects };
               const incomingMainMenuId = Object.keys(incomingObjects).find(id => {
                 const obj = incomingObjects[id];
@@ -146,6 +189,29 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               if (incomingMainMenuId) {
                 delete incomingObjects[incomingMainMenuId];
               }
+
+              // 🔥 FIX: Use global cursorSlot tracker instead of state.objects
+              // This prevents race condition where Redux hasn't updated yet
+              Object.keys(incomingObjects).forEach(id => {
+                if (isInCursorSlot(id)) {
+                  // Object is currently being dragged locally - preserve drag state
+                  console.log(`[SYNC_STATE Full] Object ${id} is in cursor slot (tracker), preserving drag state`);
+
+                  const incomingObj = incomingObjects[id];
+                  const localObj = state.objects[id] as any;
+                  const originalPos = getOriginalPosition(id);
+
+                  incomingObjects[id] = {
+                    ...incomingObj,  // Take other updates from host
+                    inCursorSlot: true,  // Preserve drag state
+                    isOnTable: true,
+                    x: -999999,  // Keep in cursor slot position
+                    y: -999999,
+                    originalX: originalPos?.x ?? localObj?.originalX ?? incomingObj.x,
+                    originalY: originalPos?.y ?? localObj?.originalY ?? incomingObj.y
+                  };
+                }
+              });
 
               // Merge incoming objects with local main menu (if exists)
               finalObjects = localMainMenu

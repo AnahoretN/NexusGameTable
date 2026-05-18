@@ -222,7 +222,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
           result = allowedActionsForGM.includes(actionToCheck) ||
                  allowedActionsForGM.includes(parentAction);
         }
-      } else if (allowedActionsForGM !== undefined && allowedActionsForGM.length === 0) {
+      } else if (allowedActionsForGM != null && allowedActionsForGM.length === 0) {
         // Empty array means NO actions allowed
         result = false;
       } else {
@@ -241,7 +241,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
           result = allowedActions.includes(actionToCheck) ||
                  allowedActions.includes(parentAction);
         }
-      } else if (allowedActions !== undefined && allowedActions.length === 0) {
+      } else if (allowedActions != null && allowedActions.length === 0) {
         // Empty array means NO actions allowed
         result = false;
       } else {

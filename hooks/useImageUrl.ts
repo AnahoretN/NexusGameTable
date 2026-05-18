@@ -89,18 +89,21 @@ export function useImageUrl(url: string): string {
 
 /**
  * Preload an image URL into the cache
+ * @returns Promise that resolves when preloading is complete
  */
-export function preloadImageUrl(url: string): void {
+export function preloadImageUrl(url: string): Promise<void> {
   if (!url || resolvedUrlCache.has(url)) {
-    return;
+    return Promise.resolve();
   }
 
   // SHA-256 hash - preload from CAS system
   if (isValidHash(url)) {
-    getAssetURL(url).then(resolvedUrl => {
+    return getAssetURL(url).then(resolvedUrl => {
       resolvedUrlCache.set(url, resolvedUrl);
     });
   }
+
+  return Promise.resolve();
 }
 
 /**
@@ -116,4 +119,55 @@ export function clearUrlCache(): void {
 export function clearAllImageCaches(): void {
   clearUrlCache();
   assetCache.clear();
+}
+
+/**
+ * Preload all image URLs from pack objects into the cache
+ * Iterates through all objects and preloads their image URLs
+ */
+export async function preloadAllPackImages(objects: Record<string, any>): Promise<void> {
+  if (!objects || typeof objects !== 'object') return;
+
+  const urlsToPreload = new Set<string>();
+
+  // Collect all image URLs from objects
+  for (const obj of Object.values(objects)) {
+    if (!obj || typeof obj !== 'object') continue;
+
+    // Direct fields
+    const urlFields = ['content', 'frontFaceUrl', 'backFaceUrl', 'spriteUrl', 'cardBackSpriteUrl'];
+    for (const field of urlFields) {
+      if (obj[field] && typeof obj[field] === 'string') {
+        urlsToPreload.add(obj[field]);
+      }
+    }
+
+    // Nested: alternativeBack.url
+    if (obj.alternativeBack?.url && typeof obj.alternativeBack.url === 'string') {
+      urlsToPreload.add(obj.alternativeBack.url);
+    }
+
+    // Nested: spriteConfig
+    if (obj.spriteConfig) {
+      if (obj.spriteConfig.spriteUrl && typeof obj.spriteConfig.spriteUrl === 'string') {
+        urlsToPreload.add(obj.spriteConfig.spriteUrl);
+      }
+      if (obj.spriteConfig.cardBackUrl && typeof obj.spriteConfig.cardBackUrl === 'string') {
+        urlsToPreload.add(obj.spriteConfig.cardBackUrl);
+      }
+    }
+
+    // Nested: characterData[].characters[].avatarUrl
+    if (obj.characterData?.characters && Array.isArray(obj.characterData.characters)) {
+      for (const character of obj.characterData.characters) {
+        if (character?.avatarUrl && typeof character.avatarUrl === 'string') {
+          urlsToPreload.add(character.avatarUrl);
+        }
+      }
+    }
+  }
+
+  // Preload all collected URLs
+  const preloadPromises = Array.from(urlsToPreload).map(url => preloadImageUrl(url));
+  await Promise.all(preloadPromises);
 }

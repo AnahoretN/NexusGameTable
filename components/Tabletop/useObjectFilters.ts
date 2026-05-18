@@ -55,10 +55,12 @@ export const useObjectFilters = (
         }
       }
 
-      // Exclude objects in local cursor slot (they are rendered by CursorSlotVisualization)
-      if ((obj as any).inCursorSlot && !(obj as any).cursorSlotOwnerId) {
-        return false;
-      }
+      // 🔥 FIX: Don't filter out local cursor slot objects
+      // They should remain visible on table during drag
+      // Remote cursor slot objects (with cursorSlotOwnerId) are filtered separately
+      // if ((obj as any).inCursorSlot && !(obj as any).cursorSlotOwnerId) {
+      //   return false;
+      // }
 
       // Effect Templates can extend far beyond playable area when stretched
       // Skip coordinate filtering for them to allow proper rendering

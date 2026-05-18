@@ -78,17 +78,17 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
     effects.forEach(obj => {
       if (!map.has(obj.id)) {
-        const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+        const canDrag = !obj.locked; // 🔥 FIX: Only check locked, not ownership
 
         map.set(obj.id, {
-          onMouseDown: (e: React.MouseEvent) => isOwner && onMouseDown(e, obj.id),
+          onMouseDown: (e: React.MouseEvent) => canDrag && onMouseDown(e, obj.id),
           onContextMenu: (e: React.MouseEvent) => onContextMenu(e, obj),
         });
       }
     });
 
     return map;
-  }, [visibleTableObjects, activePlayerId, isGM, onMouseDown, onContextMenu]);
+  }, [visibleTableObjects, onMouseDown, onContextMenu]);
 
   // Memoize style and className for effects to prevent unnecessary re-renders
   const effectStyleMap = React.useMemo(() => {
@@ -240,7 +240,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const gridSize = v2p(board.gridSize || 50);
     const gridW_px = v2p(board.gridWidth || board.gridSize || 50);
     const gridH_px = v2p(board.gridHeight || board.gridSize || 50);
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    // 🔥 FIX: Don't check ownership - all players can interact with shared objects
     const objLayer = obj.hyperscaleLayerId || 'none';
     const layerZoomScale = getLayerZoomScale(objLayer);
 
@@ -270,14 +270,14 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
           <BoardWithResizeMemo
             token={board}
             obj={obj}
-            isOwner={isOwner}
+            isOwner={true} // 🔥 FIX: All players are "owners" for shared objects
             isResizing={isResizing}
             canResize={canResize}
             zoom={layerZoomScale}
             pixelsPerVU={pixelsPerVU}
             onContextMenu={(e) => onContextMenu(e, obj)}
             onMouseDown={(e) => onMouseDown(e, obj.id)}
-            onResizeStart={(e) => isOwner && onResizeStart?.(e, obj.id)}
+            onResizeStart={(e) => canResize && onResizeStart?.(e, obj.id)}
             gridSize={gridSize}
             gridWidth={gridW_px}
             gridHeight={gridH_px}
@@ -300,7 +300,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const boardY = mainCell?.y ?? obj.y;
     const boardWidth = mainCell?.width ?? nexusBoard.cellWidth ?? 100;
     const boardHeight = mainCell?.height ?? nexusBoard.cellHeight ?? 150;
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    const canDrag = !obj.locked; // 🔥 FIX: Only check locked, not ownership
     const isDragging = draggingId === obj.id;
     const objLayer = obj.hyperscaleLayerId || 'none';
 
@@ -329,9 +329,9 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
         >
           <NexusBoardMemo
             board={nexusBoard}
-            isOwner={isOwner}
+            isOwner={true} // 🔥 FIX: All players are "owners" for shared objects
             isDragging={isDragging}
-            onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
+            onMouseDown={(e) => canDrag && onMouseDown(e, obj.id)}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
             onAddCell={(direction) => onAddNexusCell?.(obj.id, direction)}
             showAddUI={showAddUI}
@@ -395,8 +395,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
   const renderCounter = (obj: TableObject, globalZIndex: number) => {
     const counter = obj as Counter;
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    const canDrag = !obj.locked;
+    const canDrag = !obj.locked; // 🔥 FIX: Only check locked, not ownership
     const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
     const objLayer = obj.hyperscaleLayerId || 'none';
 
@@ -421,7 +420,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             if ((e.target as HTMLElement).closest('button')) {
               return;
             }
-            if (isOwner) onMouseDown(e, obj.id);
+            if (canDrag) onMouseDown(e, obj.id);
           }}
           onContextMenu={(e) => onContextMenu(e, obj)}
           className={`absolute bg-slate-900 border-2 border-slate-600 shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
@@ -466,8 +465,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
   const renderDice = (obj: TableObject, globalZIndex: number) => {
     const dice = obj as DiceObject;
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    const canDrag = !obj.locked;
+    const canDrag = !obj.locked; // 🔥 FIX: Only check locked, not ownership
     const isDragging = draggingId === obj.id;
     const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
     const objLayer = obj.hyperscaleLayerId || 'none';
@@ -523,8 +521,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
       >
         <div
           data-object-id={obj.id}
-          onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
-          onDoubleClick={(e) => isOwner && onDoubleClick?.(e, obj)}
+          onMouseDown={(e) => canDrag && onMouseDown(e, obj.id)}
+          onDoubleClick={(e) => canDrag && onDoubleClick?.(e, obj)}
           onContextMenu={(e) => onContextMenu(e, obj)}
           className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           style={createPositionedStyle(
@@ -922,8 +920,9 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     <>
       {visibleTableObjects.map(obj => {
         const element = renderGameObject(obj);
-        // Include pixelsPerVU in key to force re-render when zoom changes
-        return element ? React.cloneElement(element, { key: `${obj.id}-${pixelsPerVU}` }) : null;
+        // Use only obj.id as key - pixelsPerVU changes should trigger re-render via props, not remount
+        // This prevents tokens from disappearing during SYNC_STATE when pixelsPerVU fluctuates
+        return element ? React.cloneElement(element, { key: obj.id }) : null;
       })}
     </>
   );

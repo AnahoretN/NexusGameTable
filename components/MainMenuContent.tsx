@@ -662,7 +662,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       dispatch({ type: 'LOAD_GAME', payload: packData as GameState });
 
       // Preload all pack images into resolved cache to force re-render with new images
-      const { preloadAllPackImages } = await import('../utils/imageCompat');
+      const { preloadAllPackImages } = await import('../hooks/useImageUrl');
       await preloadAllPackImages(packData.objects || {});
 
       const objectCount = Object.keys(packData.objects || {}).length;
@@ -830,7 +830,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       dispatch({ type: 'ADD_PACK_TO_GAME', payload: packData });
 
       // Preload all pack images into resolved cache
-      const { preloadAllPackImages } = await import('../utils/imageCompat');
+      const { preloadAllPackImages } = await import('../hooks/useImageUrl');
       await preloadAllPackImages(packData.objects || {});
 
       const objectCount = Object.keys(packData.objects || {}).length;

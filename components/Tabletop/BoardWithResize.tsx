@@ -8,6 +8,16 @@ import { SquareGridMemo } from '../SquareGrid';
 import { isHashRef, isImageRef } from '../../utils/imageCompat';
 import { getGlobalCacheVersion } from '../SvgTokenShape';
 import { getAssetURL } from '../../utils/assets';
+import { assetEvents } from '../../utils/assets/assetCache';
+
+// Global cache version for P2P asset updates
+let globalAssetVersion = 0;
+
+// Subscribe to asset update events
+assetEvents.subscribe(() => {
+  globalAssetVersion++;
+  console.log(`[BoardWithResize] Asset update event received, version: ${globalAssetVersion}`);
+});
 
 /**
  * BoardBackgroundImage - Component that handles board background images
@@ -59,12 +69,15 @@ const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, op
         }
       } catch (error) {
         console.error('[BoardBackgroundImage] Failed to load image:', error);
-        setImageUrl(null);
+        // If asset not found, it might be loading via P2P - clear to retry
+        if ((error as Error).message.includes('Asset not found')) {
+          setImageUrl(null); // Clear to force retry
+        }
       }
     };
 
     loadImage();
-  }, [content, currentCacheVersion]);
+  }, [content, currentCacheVersion, globalAssetVersion]); // Added globalAssetVersion
 
   if (!imageUrl) {
     return null;

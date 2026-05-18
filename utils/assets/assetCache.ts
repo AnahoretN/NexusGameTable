@@ -125,6 +125,12 @@ class AssetCache {
         throw new Error(`Asset not found: ${hash}`);
       }
 
+      // 🔥 NEW: Check if blob is valid
+      if (!entry.blob || entry.blob.size === 0) {
+        console.error(`[AssetCache] Invalid blob for ${hash}: size=${entry.blob?.size}, type=${entry.blob?.type}`);
+        throw new Error(`Asset has empty or invalid blob: ${hash}`);
+      }
+
       // Create ObjectURL
       const url = URL.createObjectURL(entry.blob);
 
@@ -437,6 +443,22 @@ export function startAssetCacheCleanup(intervalMs?: number): () => void {
 // REACT HOOK
 // ============================================================================
 
+// Global event emitter for asset updates
+class AssetEventEmitter {
+  private listeners = new Set<() => void>();
+
+  subscribe(callback: () => void): () => void {
+    this.listeners.add(callback);
+    return () => this.listeners.delete(callback);
+  }
+
+  emit(): void {
+    this.listeners.forEach(callback => callback());
+  }
+}
+
+export const assetEvents = new AssetEventEmitter();
+
 /**
  * React hook for loading asset URLs
  *
@@ -445,6 +467,7 @@ export function startAssetCacheCleanup(intervalMs?: number): () => void {
  */
 export function useAssetURL(hash: string | null): string | null {
   const [url, setUrl] = React.useState<string | null>(null);
+  const [retryCount, setRetryCount] = React.useState(0);
 
   React.useEffect(() => {
     if (!hash) {
@@ -453,24 +476,46 @@ export function useAssetURL(hash: string | null): string | null {
     }
 
     let cancelled = false;
+    let timeoutId: NodeJS.Timeout;
 
-    assetCache.getObjectURL(hash)
-      .then((loadedUrl) => {
+    const loadAsset = async () => {
+      try {
+        const loadedUrl = await assetCache.getObjectURL(hash);
         if (!cancelled) {
           setUrl(loadedUrl);
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         console.error(`Failed to load asset ${hash}:`, error);
         if (!cancelled) {
           setUrl(null);
+          // Retry after 1 second if asset not found (might be loading via P2P)
+          if ((error as Error).message.includes('Asset not found')) {
+            timeoutId = setTimeout(() => {
+              if (!cancelled) {
+                setRetryCount(c => c + 1);
+              }
+            }, 1000);
+          }
         }
-      });
+      }
+    };
+
+    loadAsset();
+
+    // Subscribe to asset update events
+    const unsubscribe = assetEvents.subscribe(() => {
+      if (!cancelled && hash) {
+        console.log(`[useAssetURL] Reloading asset ${hash} after update event`);
+        loadAsset();
+      }
+    });
 
     return () => {
       cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      unsubscribe();
     };
-  }, [hash]);
+  }, [hash, retryCount]);
 
   return url;
 }

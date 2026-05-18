@@ -149,7 +149,7 @@ const PinnedCounterRenderer = memo(({
 
   if (!pinnedPosition) return null;
 
-  const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+  // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
   const canDrag = !obj.locked;
   const isDragging = draggingId === obj.id;
 
@@ -237,7 +237,7 @@ const PinnedCounterRenderer = memo(({
         if ((e.target as HTMLElement).closest('button')) {
           return;
         }
-        if (isOwner) onMouseDown(e, obj.id);
+        if (canDrag) onMouseDown(e, obj.id);
       }}
       onContextMenu={(e) => onContextMenu(e, obj)}
     >
@@ -306,7 +306,7 @@ const PinnedDiceRenderer = memo(({
 
   if (!pinnedPosition) return null;
 
-  const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+  // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
   const canDrag = !obj.locked;
   const isDragging = draggingId === obj.id;
 
@@ -409,8 +409,8 @@ const PinnedDiceRenderer = memo(({
         transform: `rotate(${obj.rotation || 0}deg)`,
         overflow: 'visible',
       }}
-      onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
-      onDoubleClick={(e) => isOwner && onDoubleClick?.(e, obj)}
+      onMouseDown={(e) => canDrag && onMouseDown(e, obj.id)}
+      onDoubleClick={(e) => canDrag && onDoubleClick?.(e, obj)}
       onContextMenu={(e) => onContextMenu(e, obj)}
     >
       <SvgTokenShape
@@ -509,7 +509,7 @@ const PinnedTokenRenderer = memo(({
 
   if (!pinnedPosition) return null;
 
-  const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+  // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
   const canDrag = !obj.locked;
   const isDragging = draggingId === obj.id;
 

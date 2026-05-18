@@ -1303,9 +1303,9 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                     borderStyle: 'solid'
                   }}
                 >
-                  {activeCharacter.avatarUrl ? (
+                  {activeCharacter.avatarUrl && avatarUrlCache[activeCharacter.id] ? (
                     <img
-                      src={avatarUrlCache[activeCharacter.id] || activeCharacter.avatarUrl}
+                      src={avatarUrlCache[activeCharacter.id]}
                       alt={activeCharacter.characterName}
                       className="w-full h-full object-cover"
                     />

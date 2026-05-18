@@ -90,28 +90,59 @@ async function databaseExists(name: string): Promise<boolean> {
  * Count entries in old database
  */
 async function countOldEntries(): Promise<number> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const request = indexedDB.open(OLD_DB_NAME, OLD_DB_VERSION);
 
     request.onsuccess = () => {
       const db = request.result;
-      const transaction = db.transaction([OLD_STORE_NAME], 'readonly');
-      const store = transaction.objectStore(OLD_STORE_NAME);
 
-      const countRequest = store.count();
-
-      countRequest.onsuccess = () => {
+      // Check if the store exists
+      if (!db.objectStoreNames.contains(OLD_STORE_NAME)) {
+        console.warn('[Migration] Old database exists but has different structure');
         db.close();
-        resolve(countRequest.result);
-      };
+        resolve(0); // No entries to migrate
+        return;
+      }
 
-      countRequest.onerror = () => {
+      try {
+        const transaction = db.transaction([OLD_STORE_NAME], 'readonly');
+        const store = transaction.objectStore(OLD_STORE_NAME);
+
+        const countRequest = store.count();
+
+        countRequest.onsuccess = () => {
+          db.close();
+          resolve(countRequest.result);
+        };
+
+        countRequest.onerror = () => {
+          db.close();
+          console.warn('[Migration] Failed to count old entries:', countRequest.error);
+          resolve(0); // Assume no entries on error
+        };
+
+        transaction.onerror = () => {
+          db.close();
+          console.warn('[Migration] Transaction error:', transaction.error);
+          resolve(0); // Assume no entries on error
+        };
+      } catch (error) {
         db.close();
-        reject(countRequest.error);
-      };
+        console.warn('[Migration] Error creating transaction:', error);
+        resolve(0); // Assume no entries on error
+      }
     };
 
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      console.warn('[Migration] Failed to open old database:', request.error);
+      resolve(0); // Assume no entries on error
+    };
+
+    request.onupgradeneeded = () => {
+      // Database doesn't exist yet, will be created
+      request.result.close();
+      resolve(0);
+    };
   });
 }
 
@@ -239,29 +270,54 @@ export async function migrateFromOldSystem(
 async function readOldDatabase(
   onProgress?: MigrationProgressCallback
 ): Promise<OldIDBEntry[]> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const request = indexedDB.open(OLD_DB_NAME, OLD_DB_VERSION);
 
     request.onsuccess = () => {
       const db = request.result;
-      const transaction = db.transaction([OLD_STORE_NAME], 'readonly');
-      const store = transaction.objectStore(OLD_STORE_NAME);
 
-      const getAllRequest = store.getAll();
-
-      getAllRequest.onsuccess = () => {
-        const entries: OldIDBEntry[] = getAllRequest.result;
+      // Check if the store exists
+      if (!db.objectStoreNames.contains(OLD_STORE_NAME)) {
+        console.warn('[Migration] Old database exists but has different structure');
         db.close();
-        resolve(entries);
-      };
+        resolve([]); // No entries to migrate
+        return;
+      }
 
-      getAllRequest.onerror = () => {
+      try {
+        const transaction = db.transaction([OLD_STORE_NAME], 'readonly');
+        const store = transaction.objectStore(OLD_STORE_NAME);
+
+        const getAllRequest = store.getAll();
+
+        getAllRequest.onsuccess = () => {
+          const entries: OldIDBEntry[] = getAllRequest.result;
+          db.close();
+          resolve(entries);
+        };
+
+        getAllRequest.onerror = () => {
+          db.close();
+          console.warn('[Migration] Failed to read old entries:', getAllRequest.error);
+          resolve([]); // Return empty array on error
+        };
+
+        transaction.onerror = () => {
+          db.close();
+          console.warn('[Migration] Transaction error:', transaction.error);
+          resolve([]); // Return empty array on error
+        };
+      } catch (error) {
         db.close();
-        reject(getAllRequest.error);
-      };
+        console.warn('[Migration] Error reading old database:', error);
+        resolve([]); // Return empty array on error
+      }
     };
 
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      console.warn('[Migration] Failed to open old database for reading:', request.error);
+      resolve([]); // Return empty array on error
+    };
   });
 }
 

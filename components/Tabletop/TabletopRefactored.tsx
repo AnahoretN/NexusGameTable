@@ -18,6 +18,7 @@ import { useGame } from '../../store/GameContext';
 import { useActivePlayerId, useIsGM, useViewTransform, useHyperscaleLayers, useLayerSelection, useLanguage } from '../../store/contexts';
 import { useLocalSettings } from '../../hooks/useLocalSettings';
 import { useDragOverStore } from '../../store/dragOverState';
+import { addToCursorSlot, removeFromCursorSlot } from '../../utils/cursorSlotTracker';
 import { executeClickAction as executeObjectClickAction } from '../../utils/objectActionHandlers';
 import { useToolSettings } from '../../contexts/ToolSettingsContext';
 
@@ -746,6 +747,11 @@ export const Tabletop: React.FC = () => {
       setCursorSlot(newSlot);
       cursorSlotLastAddedRef.current = Date.now();
 
+      // 🔥 FIX: Add to global tracker before dispatch
+      const originalX = cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x;
+      const originalY = cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y;
+      addToCursorSlot(cardId, originalX, originalY);
+
       // IMPORTANT: Hide object from table while in cursor slot (same as in addToCursorSlot)
       dispatch({
         type: 'UPDATE_OBJECT',
@@ -763,8 +769,8 @@ export const Tabletop: React.FC = () => {
           clickOffsetY: finalClickOffsetY,
           sourceZoom: sourceZoom, // Store zoom level of source for accurate coordinate conversion
           // Store original position BEFORE updating to -999999
-          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
-          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y
+          originalX: originalX,
+          originalY: originalY
         } as Partial<TableObject> & { id: string } & Record<string, unknown>
       });
     };
@@ -798,6 +804,9 @@ export const Tabletop: React.FC = () => {
         // The setCursorSlot call above is sufficient to clear the visual cursor slot.
         return;
       }
+
+      // 🔥 FIX: Clear global tracker for all cursor slot objects
+      cursorSlot.forEach(item => removeFromCursorSlot(item.id));
 
       // IMPORTANT: Also reset inCursorSlot flag for all objects
       // This prevents objects from staying in cursor slot state after clear

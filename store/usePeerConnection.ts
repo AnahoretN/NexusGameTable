@@ -389,22 +389,45 @@ async function getLocalIPAddress(): Promise<string | null> {
 async function handleAssetManifest(manifest: any, connection: any): Promise<void> {
   try {
     const { findMissingHashes } = await import('../utils/assets');
-    const { hashes } = manifest;
+    // Extract hashes from assets array
+    const hashes = manifest.assets?.map((a: any) => a.hash) || [];
 
     // Find which assets we're missing
-    const missingHashes = await findMissingHashes(hashes || []);
+    const missingHashes = await findMissingHashes(hashes);
 
     if (missingHashes.length > 0) {
-      console.log(`[Asset Transfer] Requesting ${missingHashes.length} missing assets`);
-      connection.send({
+      console.log(`[Asset Transfer] Requesting ${missingHashes.length} missing assets:`, missingHashes);
+
+      // 🔥 NEW: Initialize progress tracking
+      initAssetProgress(missingHashes.length);
+
+      // Check connection state
+      const peerjsConn = connection as any;
+      if (!peerjsConn || !peerjsConn.open) {
+        console.error(`[Asset Transfer] Cannot send ASSET_REQUEST - connection not open. State:`, peerjsConn ? peerjsConn.connectionState : 'null');
+        return;
+      }
+
+      const requestMsg = {
         type: 'ASSET_REQUEST',
         payload: {
           sessionId: manifest.sessionId,
           hashes: missingHashes
         }
-      });
+      };
+      console.log(`[Asset Transfer] Sending ASSET_REQUEST to host:`, requestMsg);
+      try {
+        peerjsConn.send(requestMsg);
+        console.log(`[Asset Transfer] ASSET_REQUEST sent successfully`);
+      } catch (err) {
+        console.error(`[Asset Transfer] Failed to send ASSET_REQUEST:`, err);
+      }
     } else {
       console.log(`[Asset Transfer] All ${hashes?.length || 0} assets already cached`);
+      // 🔥 NEW: Notify that assets are already complete
+      if (onAssetCompleteCallback) {
+        onAssetCompleteCallback();
+      }
     }
   } catch (error) {
     console.error('[Asset Transfer] Failed to handle manifest:', error);
@@ -415,78 +438,244 @@ async function handleAssetManifest(manifest: any, connection: any): Promise<void
  * Handle asset request from guest (host side)
  */
 async function handleAssetRequest(request: any, connection: any): Promise<void> {
+  console.log(`[Asset Transfer Host] === Starting asset request handler ===`);
   try {
+    console.log(`[Asset Transfer Host] Received ASSET_REQUEST:`, request);
+
+    if (!connection || !connection.open) {
+      console.error(`[Asset Transfer Host] Connection not available!`);
+      return;
+    }
+
     const { assetDB } = await import('../utils/assets');
-    const { hashes } = request.payload;
+    const { hashes } = request;
+
+    console.log(`[Asset Transfer Host] Looking for ${hashes.length} hashes`);
 
     // Get manifest of all assets
     const manifest = await assetDB.getManifest();
+    console.log(`[Asset Transfer Host] DB has ${manifest.assets.length} total assets`);
 
     // Filter to only requested hashes
     const requestedAssets = manifest.assets.filter(a =>
       hashes.includes(a.hash)
     );
 
-    console.log(`[Asset Transfer] Sending ${requestedAssets.length} assets to guest`);
+    console.log(`[Asset Transfer Host] Found ${requestedAssets.length} matching assets to send`);
 
     // Start streaming assets
     for (const asset of requestedAssets) {
-      const entry = await assetDB.getAsset(asset.hash);
-      if (entry && entry.blob) {
-        const arrayBuffer = await entry.blob.arrayBuffer();
+      try {
+        console.log(`[Asset Transfer Host] Fetching asset ${asset.hash}...`);
+        const entry = await assetDB.getAsset(asset.hash);
+        if (entry && entry.blob) {
+          const arrayBuffer = await entry.blob.arrayBuffer();
+          const size = arrayBuffer.byteLength;
 
-        connection.send({
-          type: 'ASSET_CHUNK',
-          payload: {
-            hash: asset.hash,
-            data: Array.from(new Uint8Array(arrayBuffer)),
-            mimeType: asset.mimeType,
-            size: asset.size
+          console.log(`[Asset Transfer Host] Sending ${asset.hash} (${(size / 1024).toFixed(1)}KB)`);
+
+          // PeerJS has serialization issues with large arrays
+          // Send metadata first, then binary data
+          const CHUNK_SIZE = 4 * 1024; // 4KB chunks - safe for PeerJS
+          const uint8Array = new Uint8Array(arrayBuffer);
+          const totalChunks = Math.ceil(uint8Array.length / CHUNK_SIZE);
+
+          // Send asset metadata first
+          connection.send({
+            type: 'ASSET_START',
+            payload: {
+              hash: asset.hash,
+              totalChunks: totalChunks,
+              mimeType: asset.mimeType,
+              size: asset.size
+            }
+          });
+
+          console.log(`[Asset Transfer Host] Starting ${totalChunks} chunks for ${asset.hash}`);
+
+          // Send chunks as binary data
+          for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, uint8Array.length);
+            const chunk = uint8Array.slice(start, end);
+
+            // Send binary chunk directly (PeerJS handles ArrayBuffer)
+            connection.send(chunk);
           }
-        });
+
+          console.log(`[Asset Transfer Host] Completed sending ${asset.hash}`);
+        } else {
+          console.warn(`[Asset Transfer Host] Asset ${asset.hash} not found in DB`);
+        }
+      } catch (err) {
+        console.error(`[Asset Transfer Host] Failed to send asset ${asset.hash}:`, err);
       }
     }
 
     // Send complete message
-    connection.send({
-      type: 'ASSET_COMPLETE',
-      payload: {
-        totalAssets: hashes.length,
-        successfulAssets: requestedAssets.length,
-        failedAssets: []
-      }
-    });
+    console.log(`[Asset Transfer Host] Sending ASSET_COMPLETE`);
+    try {
+      connection.send({
+        type: 'ASSET_COMPLETE',
+        payload: {
+          totalAssets: hashes.length,
+          successfulAssets: requestedAssets.length,
+          failedAssets: []
+        }
+      });
+      console.log(`[Asset Transfer Host] ASSET_COMPLETE sent`);
+    } catch (err) {
+      console.error(`[Asset Transfer Host] Failed to send ASSET_COMPLETE:`, err);
+    }
 
   } catch (error) {
-    console.error('[Asset Transfer] Failed to handle request:', error);
+    console.error('[Asset Transfer Host] Failed to handle request:', error);
+  }
+}
+
+// Global store for incoming asset transfers
+interface AssetTransfer {
+  hash: string;
+  chunks: Uint8Array[];
+  totalChunks: number;
+  mimeType: string;
+  expectedSize: number;
+  receivedCount: number;
+}
+const incomingAssets = new Map<string, AssetTransfer>();
+let currentAssetHash: string | null = null; // Track which asset we're currently receiving
+
+// 🔥 NEW: Progress tracking for asset transfer
+let totalAssetsToReceive = 0;
+let assetsCompleted = 0;
+let totalChunksToReceive = 0;
+let chunksReceived = 0;
+let onAssetProgressCallback: ((progress: number) => void) | null = null;
+let onAssetCompleteCallback: (() => void) | null = null;
+// 🔥 FIX: Track if we're waiting for additional assets from SYNC_STATE (objects)
+let waitingForAdditionalAssets = false;
+let onAdditionalAssetsCompleteCallback: (() => void) | null = null;
+
+/**
+ * 🔥 NEW: Initialize asset transfer progress tracking
+ * Call this when starting to receive assets
+ */
+function initAssetProgress(assetCount: number, onProgress?: (progress: number) => void): void {
+  totalAssetsToReceive = assetCount;
+  assetsCompleted = 0;
+  totalChunksToReceive = 0;
+  chunksReceived = 0;
+  onAssetProgressCallback = onProgress || null;
+  console.log(`[Asset Transfer] Initialized progress tracking for ${assetCount} assets`);
+}
+
+/**
+ * 🔥 NEW: Reset asset transfer progress
+ */
+function resetAssetProgress(): void {
+  totalAssetsToReceive = 0;
+  assetsCompleted = 0;
+  totalChunksToReceive = 0;
+  chunksReceived = 0;
+  onAssetProgressCallback = null;
+  onAssetCompleteCallback = null;
+  waitingForAdditionalAssets = false;
+  onAdditionalAssetsCompleteCallback = null;
+}
+
+/**
+ * Handle asset start message (metadata)
+ */
+function handleAssetStart(payload: any): void {
+  const { hash, totalChunks, mimeType, size } = payload;
+  console.log(`[Asset Transfer Guest] Starting to receive ${hash} (${totalChunks} chunks, ${(size / 1024).toFixed(1)}KB)`);
+
+  incomingAssets.set(hash, {
+    hash,
+    chunks: [],
+    totalChunks,
+    mimeType,
+    expectedSize: size,
+    receivedCount: 0
+  });
+  currentAssetHash = hash;
+
+  // 🔥 NEW: Track total chunks for progress
+  totalChunksToReceive += totalChunks;
+}
+
+/**
+ * Handle binary chunk data (ArrayBuffer)
+ */
+async function handleBinaryChunk(data: ArrayBuffer): Promise<void> {
+  if (!currentAssetHash || !incomingAssets.has(currentAssetHash)) {
+    console.warn('[Asset Transfer Guest] Received binary chunk but no active asset transfer');
+    return;
+  }
+
+  const transfer = incomingAssets.get(currentAssetHash)!;
+  const chunk = new Uint8Array(data);
+  transfer.chunks.push(chunk);
+  transfer.receivedCount++;
+
+  // 🔥 NEW: Update progress
+  chunksReceived++;
+  if (totalChunksToReceive > 0 && onAssetProgressCallback) {
+    const progress = Math.round((chunksReceived / totalChunksToReceive) * 100);
+    onAssetProgressCallback(progress);
+  }
+
+  console.log(`[Asset Transfer Guest] Chunk ${transfer.receivedCount}/${transfer.totalChunks} for ${currentAssetHash} (${data.byteLength} bytes)`);
+
+  // Check if complete
+  if (transfer.receivedCount >= transfer.totalChunks) {
+    await completeAssetTransfer(transfer);
   }
 }
 
 /**
- * Handle asset chunk received from host (guest side)
+ * Complete asset transfer and store in database
  */
-async function handleAssetChunk(chunk: any): Promise<void> {
+async function completeAssetTransfer(transfer: AssetTransfer): Promise<void> {
   try {
     const { assetDB } = await import('../utils/assets');
-    const { hash, data, mimeType, size } = chunk;
 
-    // Convert array back to ArrayBuffer
-    const arrayBuffer = new Uint8Array(data).buffer;
+    console.log(`[Asset Transfer Guest] Assembling ${transfer.hash} from ${transfer.chunks.length} chunks...`);
+
+    // Calculate total size
+    const totalSize = transfer.chunks.reduce((sum, c) => sum + c.length, 0);
+    const assembledArray = new Uint8Array(totalSize);
+
+    // Assemble chunks
+    let offset = 0;
+    for (const chunk of transfer.chunks) {
+      assembledArray.set(chunk, offset);
+      offset += chunk.length;
+    }
 
     // Create blob
-    const blob = new Blob([arrayBuffer], { type: mimeType });
+    const blob = new Blob([assembledArray], { type: transfer.mimeType });
 
     // Store in database
     await assetDB.putAsset(
-      { hash, value: hash.replace('sha256:', ''), algorithm: 'SHA-256' },
+      { hash: transfer.hash, value: transfer.hash.replace('sha256:', ''), algorithm: 'SHA-256' },
       blob,
-      mimeType,
+      transfer.mimeType,
       'transfer'
     );
 
-    console.log(`[Asset Transfer] Received asset ${hash} (${size} bytes)`);
+    console.log(`[Asset Transfer Guest] ✅ Complete asset ${transfer.hash} stored (${transfer.expectedSize} bytes)`);
+
+    // 🔥 NEW: Track completed assets
+    assetsCompleted++;
+
+    // Clean up
+    incomingAssets.delete(transfer.hash);
+    if (currentAssetHash === transfer.hash) {
+      currentAssetHash = null;
+    }
   } catch (error) {
-    console.error('[Asset Transfer] Failed to handle chunk:', error);
+    console.error('[Asset Transfer Guest] Failed to complete transfer:', error);
   }
 }
 
@@ -596,17 +785,47 @@ export function usePeerConnection(
     ]);
     setP2pLoadingProgress(0);
     setIsP2PLoadingModalOpen(false);
+
+    // 🔥 NEW: Reset asset progress callback
+    onAssetProgressCallback = null;
   }, []);
+
+  // 🔥 NEW: Setup asset progress callback
+  const setupAssetProgressCallback = useCallback(() => {
+    onAssetProgressCallback = (progress: number) => {
+      updateP2PLoadingStep('images', 'loading', `Receiving game assets... ${progress}%`, progress);
+    };
+    onAssetCompleteCallback = async () => {
+      updateP2PLoadingStep('images', 'success', 'All game assets cached');
+      // 🔥 FIX: Don't emit asset event here - components will load assets on demand
+      // Emitting here causes unnecessary re-renders and transparency issues
+      console.log('[P2P Guest] All assets already cached, skipping asset event emit');
+    };
+  }, [updateP2PLoadingStep]);
 
   // Signalling server timeout - disconnect after this time of inactivity
   const SIGNALLING_TIMEOUT_MS = 120000; // 2 minutes
 
   // Central Network Data Handler
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
+    // Check if this is binary data (ArrayBuffer) - asset chunk
+    if (data instanceof ArrayBuffer || (data && data.constructor && data.constructor.name === 'Uint8Array')) {
+      // Convert Uint8Array to ArrayBuffer if needed
+      const buffer = data instanceof ArrayBuffer ? data : data.buffer;
+      handleBinaryChunk(buffer);
+      return;
+    }
+
     // Log ALL incoming messages for debugging
     console.log(`[P2P Network] 📨 Received message type: ${data.type}`);
 
-    if (data.type === 'SYNC_STATE') {
+    // 🔥 FIX: Process ASSET_MANIFEST BEFORE SYNC_STATE
+    // This ensures assets are requested before tokens try to load them
+    if (data.type === 'ASSET_MANIFEST') {
+      // 🔥 NEW: Guest received asset manifest from host
+      console.log(`[P2P Network] 📋 Received ASSET_MANIFEST (${data.payload.assets?.length || 0} assets)`);
+      handleAssetManifest(data.payload, senderConn);
+    } else if (data.type === 'SYNC_STATE') {
       // Received full state update (Guest receives from Host)
       // Check if data is compressed
       const isCompressed = data.compressed === true;
@@ -622,8 +841,23 @@ export function usePeerConnection(
       console.log(`[P2P Network] 📊 State contains:`, {
         objects: Object.keys(payload.objects || {}).length,
         players: payload.players?.length || 0,
-        diceRolls: payload.diceRolls?.length || 0
+        diceRolls: payload.diceRolls?.length || 0,
+        isPartial: payload._isPartial || false,
+        changeCount: payload._changeCount || 0
       });
+
+      // 🔥 DEBUG: Log sample objects to see what properties are being sent
+      const sampleObjects = Object.entries(payload.objects || {}).slice(0, 3);
+      console.log(`[P2P Network] 📋 Sample objects in SYNC_STATE:`, sampleObjects.map(([id, obj]: [string, any]) => ({
+        id,
+        name: obj.name,
+        type: obj.type,
+        hasContent: !!obj.content,
+        contentPreview: obj.content?.substring(0, 30) || 'none',
+        x: obj.x,
+        y: obj.y,
+        keys: Object.keys(obj)
+      })));
 
       // 🔥 NEW: Update progress - state synchronized
       updateP2PLoadingStep('state', 'loading', 'Synchronizing game state...');
@@ -631,20 +865,111 @@ export function usePeerConnection(
       localDispatch({ type: 'SYNC_STATE', payload });
       console.log(`[P2P Network] ✅ SYNC_STATE dispatched to game state`);
 
-      // 🔥 NEW: All steps complete!
-      updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+      // 🔥 FIX: Check for missing image hashes in objects and request them BEFORE marking state as complete
+      // This prevents the modal from closing before all assets are loaded
+      (async () => {
+        try {
+          const { findMissingHashes, isValidHash } = await import('../utils/assets');
+          const objectHashes = new Set<string>();
+
+          // Collect all hashes from objects
+          for (const obj of Object.values(payload.objects || {})) {
+            if (!obj || typeof obj !== 'object') continue;
+
+            // Common fields that contain image hashes
+            const hashFields = ['content', 'frontFaceUrl', 'backFaceUrl', 'spriteUrl',
+                               'cardBackSpriteUrl', 'avatarUrl', 'backgroundUrl'];
+
+            for (const field of hashFields) {
+              const value = (obj as any)[field];
+              if (value && typeof value === 'string' && isValidHash(value)) {
+                objectHashes.add(value);
+              }
+            }
+
+            // Check nested properties
+            if (obj.alternativeBack?.url && isValidHash(obj.alternativeBack.url)) {
+              objectHashes.add(obj.alternativeBack.url);
+            }
+            if (obj.spriteConfig?.spriteUrl && isValidHash(obj.spriteConfig.spriteUrl)) {
+              objectHashes.add(obj.spriteConfig.spriteUrl);
+            }
+            if (obj.spriteConfig?.cardBackUrl && isValidHash(obj.spriteConfig.cardBackUrl)) {
+              objectHashes.add(obj.spriteConfig.cardBackUrl);
+            }
+          }
+
+          if (objectHashes.size > 0) {
+            console.log(`[P2P Guest] Checking ${objectHashes.size} unique image hashes from objects...`);
+
+            const missingHashes = await findMissingHashes(Array.from(objectHashes));
+            if (missingHashes.length > 0) {
+              console.log(`[P2P Guest] ⚠️ Found ${missingHashes.length} missing hashes not in manifest:`, missingHashes);
+
+              // 🔥 FIX: Set flag to indicate we're waiting for additional assets
+              waitingForAdditionalAssets = true;
+
+              // Request missing assets from host
+              const requestMsg = {
+                type: 'ASSET_REQUEST',
+                payload: {
+                  sessionId: payload.sessionId || 'default',
+                  hashes: missingHashes
+                }
+              };
+
+              // Get host connection
+              const hostConn = hostConnectionRef.current;
+              if (hostConn && hostConn.open) {
+                console.log(`[P2P Guest] 📤 Requesting ${missingHashes.length} missing assets from host`);
+                hostConn.send(requestMsg);
+
+                // Initialize progress tracking for these assets
+                initAssetProgress(missingHashes.length);
+
+                // 🔥 FIX: Update images step back to loading since we're downloading more
+                updateP2PLoadingStep('images', 'loading', `Receiving additional ${missingHashes.length} assets from objects...`);
+
+                // 🔥 FIX: Set up callback to mark state as complete after these assets finish
+                onAdditionalAssetsCompleteCallback = () => {
+                  waitingForAdditionalAssets = false;
+                  updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+                  console.log('[P2P Guest] ✅ All additional assets loaded, marking state as complete');
+                };
+              } else {
+                console.warn(`[P2P Guest] Cannot request missing assets - no host connection`);
+                waitingForAdditionalAssets = false;
+                updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+              }
+            } else {
+              console.log(`[P2P Guest] ✅ All ${objectHashes.size} image hashes are cached`);
+              // 🔥 FIX: Only mark state as complete if NO additional assets are needed
+              updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+            }
+          } else {
+            // No image hashes in objects, mark state as complete
+            updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+          }
+        } catch (error) {
+          console.error('[P2P Guest] Failed to check for missing hashes:', error);
+          // Mark state as complete even on error to prevent modal from being stuck
+          updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+        }
+      })();
     } else if (data.type === 'PLAYER_PANEL_SETTINGS') {
       // Guest received their individual panel settings from host
       const { playerId, settings } = data.payload;
       console.log(`[P2P Network] 📥 Received PLAYER_PANEL_SETTINGS for ${playerId} (${Object.keys(settings).length} panels)`);
-    } else if (data.type === 'ASSET_MANIFEST') {
-      // 🔥 NEW: Guest received asset manifest from host
-      console.log(`[P2P Network] 📋 Received ASSET_MANIFEST (${data.payload.assets?.length || 0} assets)`);
-      handleAssetManifest(data.payload, conn);
-    } else if (data.type === 'ASSET_CHUNK') {
-      // 🔥 NEW: Guest received asset chunk from host
-      handleAssetChunk(data.payload);
-    } else if (data.type === 'ASSET_PROGRESS') {
+
+      // Apply individual panel settings using special action
+      localDispatch({
+        type: 'APPLY_PLAYER_PANEL_SETTINGS',
+        payload: { settings }
+      });
+    } else if (data.type === 'ASSET_START') {
+      // 🔥 NEW: Guest received asset metadata before binary chunks
+      console.log(`[P2P Network] 📋 Received ASSET_START`);
+      handleAssetStart(data.payload);
     } else if (data.type === 'ASSET_PROGRESS') {
       // 🔥 NEW: Progress update for asset transfer
       const progress = data.payload;
@@ -652,16 +977,41 @@ export function usePeerConnection(
     } else if (data.type === 'ASSET_COMPLETE') {
       // 🔥 NEW: Asset transfer complete
       console.log(`[P2P Network] ✅ Asset transfer complete: ${data.payload.successfulAssets}/${data.payload.totalAssets} assets`);
+
+      // 🔥 FIX: Wait for all pending asset saves to complete before emitting event
+      // Use a longer delay to ensure IndexedDB transactions are fully committed
+      setTimeout(async () => {
+        // 🔥 NEW: Update loading step - images complete
+        updateP2PLoadingStep('images', 'success', `Received ${data.payload.successfulAssets} game assets`);
+        resetAssetProgress(); // Reset progress tracking
+
+        // 🔥 FIX: Only emit asset event if new assets were actually added
+        // Don't emit if all assets were already cached (prevents unnecessary re-renders)
+        if (data.payload.successfulAssets > 0) {
+          // Trigger asset reload in all components
+          try {
+            const { assetEvents } = await import('../utils/assets/assetCache');
+            // Emit event to trigger reload in all components
+            assetEvents.emit();
+            console.log('[P2P Guest] Emitted asset update event to refresh components (new assets received)');
+          } catch (error) {
+            console.error('[P2P Guest] Failed to emit asset event:', error);
+          }
+        } else {
+          console.log('[P2P Guest] No new assets added, skipping asset event emit');
+        }
+
+        // 🔥 FIX: If we were waiting for additional assets from SYNC_STATE, now mark state as complete
+        if (waitingForAdditionalAssets && onAdditionalAssetsCompleteCallback) {
+          console.log('[P2P Guest] ✅ Additional assets from objects complete, finalizing loading...');
+          onAdditionalAssetsCompleteCallback();
+          onAdditionalAssetsCompleteCallback = null;
+        }
+      }, 200); // Increased delay to ensure all pending saves complete
     } else if (data.type === 'ASSET_REQUEST') {
       // 🔥 NEW: Host received asset request from guest
       console.log(`[P2P Network] 📨 Received ASSET_REQUEST for ${data.payload.hashes?.length || 0} assets`);
-      handleAssetRequest(data.payload, conn);
-
-      // Apply individual panel settings using special action
-      localDispatch({
-        type: 'APPLY_PLAYER_PANEL_SETTINGS',
-        payload: { settings }
-      });
+      handleAssetRequest(data.payload, senderConn);
     } else if (data.type === 'POSITION_UPDATE') {
       // Lightweight position update for smooth dragging (batched)
       const positions = data.payload;
@@ -699,25 +1049,6 @@ export function usePeerConnection(
       // Host received player name update request
       console.log(`[P2P Network] ✏️ Received UPDATE_PLAYER_NAME`);
       localDispatch(data.payload);
-    } else if (data.type === 'POSITION_UPDATE') {
-      // 🔥 NEW: Host received batched position updates from guest
-      const positions = data.payload;
-      console.log(`[P2P Host] 📥 Received POSITION_UPDATE for ${positions.length} objects`);
-
-      // Update each object's position (skipNetworkSync prevents re-broadcasting)
-      positions.forEach((pos: { id: string; x?: number; y?: number; rotation?: number; zIndex?: number }) => {
-        const existingObj = stateRef.current.objects[pos.id];
-        if (existingObj) {
-          localDispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: pos.id,
-              ...pos,
-              skipNetworkSync: true // Prevent re-broadcasting
-            }
-          });
-        }
-      });
     } else if (data.type === 'ACTION') {
       // Host received action request from Guest
       const actionType = data.payload?.type;
@@ -1039,6 +1370,7 @@ export function usePeerConnection(
         // 🔥 NEW: Update progress - handshake complete
         updateP2PLoadingStep('handshake', 'success', 'Handshake complete');
         updateP2PLoadingStep('images', 'loading', 'Waiting for game images...');
+        setupAssetProgressCallback(); // 🔥 NEW: Setup progress callback for images
 
         // TEMPORARILY DISABLED: Keep signalling connection alive to debug disconnect issue
         // setTimeout(() => {
@@ -1055,7 +1387,7 @@ export function usePeerConnection(
           setWaitingForPlayerName(null);
           return;
         }
-        handleNetworkData(data, null);
+        handleNetworkData(data, conn);
       });
 
       conn.on('close', () => {
@@ -1120,7 +1452,9 @@ export function usePeerConnection(
       // Обработка входящих данных
       const unsubscribeData = room.onData((data: any, peerId: string) => {
         console.log(`[Trystero] 📥 Received data from ${peerId}:`, data);
-        handleNetworkData(data, null);
+        // Create connection-like wrapper for Trystero room
+        const trysteroConn = { send: (msg: any) => room.send(msg) };
+        handleNetworkData(data, trysteroConn);
       });
 
       // Отправляем HELO хосту
@@ -1232,7 +1566,7 @@ export function usePeerConnection(
           setWaitingForPlayerName(null);
           return;
         }
-        handleNetworkData(data, null);
+        handleNetworkData(data, conn);
       });
 
       conn.on('close', () => {

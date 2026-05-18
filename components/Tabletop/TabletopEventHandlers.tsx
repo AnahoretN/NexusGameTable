@@ -21,6 +21,7 @@ import {
 import { applyPanelToPanelMagnetism, type PanelBounds, type MagnetismConfig, type GameSpaceBounds } from '../../utils/panelMagnetism';
 import { getTokenWithAppliedState } from '../../hooks/useTokenWithState';
 import { findDrawingAtPosition } from '../../utils/drawingUtils';
+import { addToCursorSlot, removeFromCursorSlot } from '../../utils/cursorSlotTracker';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -91,7 +92,7 @@ interface TabletopEventHandlersProps {
 }
 
 // Helper function to add object to cursor slot
-const addToCursorSlot = (
+const addToCursorSlotLocal = (
   id: string,
   item: TableObject,
   mousePosition: { x: number; y: number } | undefined,
@@ -462,6 +463,10 @@ const addToCursorSlot = (
     });
   }
 
+  // 🔥 FIX: Add to global cursor slot tracker IMMEDIATELY before dispatch
+  // This prevents SYNC_STATE from overwriting the cursor slot state
+  addToCursorSlot(id, (itemClone as any).originalX, (itemClone as any).originalY);
+
   dispatch({
     type: 'UPDATE_OBJECT',
     payload: {
@@ -528,6 +533,8 @@ const dropCursorSlot = (
 
   if (itemsToDrop.length === 0) {
     // All items were already dropped elsewhere, just clear the slot
+    // 🔥 FIX: Clear cursor slot tracker for all items
+    cursorSlot.forEach(item => removeFromCursorSlot(item.id));
     setCursorSlot([]);
     setCursorPosition(null);
     cursorPositionRef.current = null;
@@ -599,6 +606,9 @@ const dropCursorSlot = (
         const originalY = (board as any).originalY;
 
         if (originalX !== undefined && originalY !== undefined) {
+          // 🔥 FIX: Remove from tracker before dispatch
+          removeFromCursorSlot(board.id);
+
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -1102,6 +1112,9 @@ const dropCursorSlot = (
       rotationMarkerDistance: (item as EffectTemplate).rotationMarkerDistance,
     } : {};
 
+    // 🔥 FIX: Remove from tracker before dispatch
+    removeFromCursorSlot(item.id);
+
     dispatch({
       type: 'UPDATE_OBJECT',
       payload: {
@@ -1409,14 +1422,12 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       return;
     }
 
-    // Check if object is locked - locked objects can't be interacted with (even for GM)
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
+    // Only check if explicitly locked
     if (obj.locked) {
       return;
     }
-    if (!isOwner) {
-      return;
-    }
+    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
 
     // Handle different tools
     if (currentTool === 'marker') {
@@ -1462,7 +1473,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     )) {
       e.preventDefault();
       e.stopPropagation();
-      addToCursorSlot(objId, obj, { x: e.clientX, y: e.clientY }, props, 'shift');
+      addToCursorSlotLocal(objId, obj, { x: e.clientX, y: e.clientY }, props, 'shift');
       return;
     }
 
@@ -1552,14 +1563,12 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
   const handleDoubleClick = useCallback((e: React.MouseEvent, obj: TableObject) => {
     if (!obj) return;
 
-    // Check if object is locked - locked objects can't be interacted with (even for GM)
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+    // 🔥 FIX: All objects are shared - anyone can interact with them
+    // Only check if explicitly locked
     if (obj.locked) {
       return;
     }
-    if (!isOwner) {
-      return;
-    }
+    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
 
     // Only handle dice objects - always roll only the clicked dice
     if (obj.type === ItemType.DICE_OBJECT) {
@@ -1725,7 +1734,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
           dragThresholdRef.current.addedToSlot = true;
 
           // Add object to cursor slot (same as shift+click)
-          addToCursorSlot(targetId, obj, { x: e.clientX, y: e.clientY }, props, 'hold');
+          addToCursorSlotLocal(targetId, obj, { x: e.clientX, y: e.clientY }, props, 'hold');
         }
       }
     }

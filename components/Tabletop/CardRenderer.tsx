@@ -3,6 +3,7 @@ import { Card as CardComponent } from '../Card';
 import { TableObject, Card as CardType, Deck as DeckType, CardLocation } from '../../types';
 import { Eye, EyeOff, RefreshCw, RotateCw, Hand, ArrowUp, Undo, Trash2 } from 'lucide-react';
 import { Tooltip } from '../Tooltip';
+import { removeFromCursorSlot } from '../../utils/cursorSlotTracker';
 
 interface CardRendererProps {
   obj: TableObject;
@@ -53,10 +54,16 @@ export const CardRenderer = memo(({
 }: CardRendererProps) => {
   const card = obj as CardType;
   const deck = card.deckId ? allObjects[card.deckId] as DeckType | undefined : undefined;
-  const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+  // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
+  // Only check if explicitly locked
   const canDrag = !obj.locked;
   const isDragging = draggingId === obj.id;
   const objLayer = obj.hyperscaleLayerId || 'none';
+
+  // 🔥 DEBUG: Log locked cards
+  if (obj.locked) {
+    console.warn(`[CardRenderer] ⚠️ Card "${obj.name || obj.id}" is LOCKED - cannot be moved`);
+  }
 
   // Memoize cursor class
   const cursorClass = useMemo(() => {
@@ -158,19 +165,22 @@ export const CardRenderer = memo(({
       },
       moveToHand: {
         key: 'moveToHand',
-        action: () => dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: {
-            id: obj.id,
-            updates: {
-              location: 'HAND' as CardLocation,
-              faceUp: true,
-              ownerId: activePlayerId,
-              isOnTable: false,
-              inCursorSlot: false
+        action: () => {
+          removeFromCursorSlot(obj.id);
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: obj.id,
+              updates: {
+                location: 'HAND' as CardLocation,
+                faceUp: true,
+                ownerId: activePlayerId,
+                isOnTable: false,
+                inCursorSlot: false
+              }
             }
-          }
-        }),
+          });
+        },
         className: 'bg-blue-600 hover:bg-blue-500',
         title: 'To Hand',
         icon: <Hand size={14} />
@@ -231,7 +241,7 @@ export const CardRenderer = memo(({
     >
       <div
         data-object-id={obj.id}
-        onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
+        onMouseDown={(e) => canDrag && onMouseDown(e, obj.id)}
         onContextMenu={(e) => onContextMenu(e, obj)}
         className={`absolute group ${cursorClass}`}
         style={positionStyle}

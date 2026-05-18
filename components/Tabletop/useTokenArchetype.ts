@@ -17,6 +17,7 @@ import { useGame } from '../../store/GameContext';
 import { useViewTransform } from '../../store/contexts';
 import { ItemType, TokenType, Token } from '../../types';
 import { generateUUID } from '../../utils/uuid';
+import { addToCursorSlot, removeFromCursorSlot } from '../../utils/cursorSlotTracker';
 
 interface UseTokenArchetypeProps {
   cursorSlot: any[];
@@ -127,6 +128,9 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
         rotationStep: archetype.rotationStep,
       };
 
+      // 🔥 FIX: Add to global tracker before creating object
+      addToCursorSlot(newToken.id, 0, 0);
+
       // Add token to objects list
       dispatch({ type: 'ADD_OBJECT', payload: newToken });
 
@@ -213,6 +217,8 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
             detail: { cardIds: items.map(i => i.id) }
           }));
         }
+        // 🔥 FIX: Clear global tracker
+        cursorSlot.forEach(item => removeFromCursorSlot(item.id));
         setCursorSlot([]);
         setCursorPosition(null);
         cursorPositionRef.current = null;
@@ -274,6 +280,9 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
           return;
         }
 
+        // 🔥 FIX: Remove from global tracker before dispatch
+        removeFromCursorSlot(item.id);
+
         // Restore object to table at new position
         dispatch({
           type: 'UPDATE_OBJECT',
@@ -289,6 +298,8 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       });
 
       // Clear cursor slot
+      // 🔥 FIX: Any remaining items in tracker should be cleared
+      cursorSlot.forEach(item => removeFromCursorSlot(item.id));
       setCursorSlot([]);
       setCursorPosition(null);
       cursorPositionRef.current = null;

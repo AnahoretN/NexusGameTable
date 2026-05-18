@@ -206,20 +206,56 @@ function validateObject(obj: any): { valid: boolean; error?: string } {
     }
   }
 
-  // Validate image URLs are either data URLs, pack:// URLs, or img_ref:// URLs
-  const urlFields = ['content', 'frontFaceUrl', 'backFaceUrl'];
+  // Validate image URLs are either data URLs, pack:// URLs, img_ref:// URLs, or sha256: hashes
+  const validateUrl = (url: string, fieldName: string): { valid: boolean; error?: string } => {
+    if (!url || typeof url !== 'string') return { valid: true };
+    // Allow data:image, pack://images/, http, img_ref://, and sha256: URLs
+    if (!url.startsWith('data:image/') &&
+        !url.startsWith('pack://images/') &&
+        !url.startsWith('http') &&
+        !url.startsWith('img_ref://') &&
+        !url.startsWith('sha256:')) {
+      return {
+        valid: false,
+        error: `Invalid URL in ${fieldName}: ${url.substring(0, 50)}...`
+      };
+    }
+    return { valid: true };
+  };
+
+  // Direct fields
+  const urlFields = ['content', 'frontFaceUrl', 'backFaceUrl', 'spriteUrl', 'cardBackSpriteUrl'];
   for (const field of urlFields) {
     const url = (obj as any)[field];
-    if (url && typeof url === 'string') {
-      // Allow data:image, pack://images/, http, and img_ref:// URLs
-      if (!url.startsWith('data:image/') &&
-          !url.startsWith('pack://images/') &&
-          !url.startsWith('http') &&
-          !url.startsWith('img_ref://')) {
-        return {
-          valid: false,
-          error: `Invalid URL in ${field}: ${url.substring(0, 50)}...`
-        };
+    const validation = validateUrl(url, field);
+    if (!validation.valid) return validation;
+  }
+
+  // Nested: alternativeBack.url
+  if (obj.alternativeBack?.url) {
+    const validation = validateUrl(obj.alternativeBack.url, 'alternativeBack.url');
+    if (!validation.valid) return validation;
+  }
+
+  // Nested: spriteConfig.spriteUrl, spriteConfig.cardBackUrl
+  if (obj.spriteConfig) {
+    if (obj.spriteConfig.spriteUrl) {
+      const validation = validateUrl(obj.spriteConfig.spriteUrl, 'spriteConfig.spriteUrl');
+      if (!validation.valid) return validation;
+    }
+    if (obj.spriteConfig.cardBackUrl) {
+      const validation = validateUrl(obj.spriteConfig.cardBackUrl, 'spriteConfig.cardBackUrl');
+      if (!validation.valid) return validation;
+    }
+  }
+
+  // Nested: characterData[].characters[].avatarUrl
+  if (obj.characterData?.characters && Array.isArray(obj.characterData.characters)) {
+    for (let i = 0; i < obj.characterData.characters.length; i++) {
+      const character = obj.characterData.characters[i];
+      if (character?.avatarUrl) {
+        const validation = validateUrl(character.avatarUrl, `characterData.characters[${i}].avatarUrl`);
+        if (!validation.valid) return validation;
       }
     }
   }

@@ -57,10 +57,33 @@ export const TokenRenderer = memo(({
   // Use memoized hook to get token with applied state
   const token = useTokenWithState(obj as TokenType, allObjects);
 
-  const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
+  // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
+  // Only check if explicitly locked
   const canDrag = !obj.locked;
   const isDragging = draggingId === obj.id;
   const objLayer = obj.hyperscaleLayerId || 'none';
+
+  // 🔥 DEBUG: Log token state for ALL tokens to identify issues
+  console.log(`[TokenRenderer] Token "${obj.name || obj.id}" state:`, {
+    id: obj.id,
+    name: obj.name,
+    locked: obj.locked,
+    canDrag: canDrag,
+    isDragging: isDragging,
+    currentTool: currentTool,
+    content: obj.content?.substring(0, 30) + '...',
+    hasOwnerId: !!(obj as any).ownerId,
+    x: obj.x,
+    y: obj.y
+  });
+
+  // 🔥 DEBUG: Log why token cannot be dragged
+  if (obj.locked) {
+    console.warn(`[TokenRenderer] ⚠️ Token "${obj.name || obj.id}" is LOCKED - cannot be moved`);
+  }
+  if (currentTool !== 'none' && currentTool !== 'zoom') {
+    console.warn(`[TokenRenderer] ⚠️ Token "${obj.name || obj.id}" cannot be dragged - current tool is "${currentTool}"`);
+  }
 
   // Calculate zoom multiplier for UI elements compensation
   const zoomMultiplier = pixelsPerVU / basePixelsPerVU;
@@ -388,7 +411,24 @@ export const TokenRenderer = memo(({
     >
       <div
         data-object-id={obj.id}
-        onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
+        onMouseDown={(e) => {
+          console.log(`[TokenRenderer] onMouseDown for "${obj.name || obj.id}":`, {
+            canDrag: canDrag,
+            objLocked: obj.locked,
+            currentTool: currentTool,
+            button: e.button,
+            target: (e.target as HTMLElement).className,
+            dataObjectId: (e.target as HTMLElement).getAttribute('data-object-id')
+          });
+          if (canDrag) {
+            onMouseDown(e, obj.id);
+          } else {
+            console.warn(`[TokenRenderer] ⚠️ onMouseDown blocked for "${obj.name || obj.id}" - canDrag=${canDrag}, locked=${obj.locked}`);
+          }
+        }}
+        onClick={(e) => {
+          console.log(`[TokenRenderer] onClick for "${obj.name || obj.id}" - click events work!`);
+        }}
         onContextMenu={(e) => onContextMenu(e, obj)}
         className={`absolute flex items-center justify-center text-white font-bold select-none group ${cursorClass}`}
         style={positionStyle}
@@ -440,9 +480,29 @@ export const TokenRenderer = memo(({
   const prevIsDragging = prevProps.draggingId === prevProps.obj.id;
   const nextIsDragging = nextProps.draggingId === nextProps.obj.id;
 
+  // Compare token properties deeply instead of by reference
+  // This prevents unnecessary re-renders during SYNC_STATE when object references change
+  // but the actual token content/position hasn't changed
+  const prevToken = prevProps.obj as TokenType;
+  const nextToken = nextProps.obj as TokenType;
+
+  const tokensEqual = (
+    prevToken.id === nextToken.id &&
+    prevToken.x === nextToken.x &&
+    prevToken.y === nextToken.y &&
+    prevToken.width === nextToken.width &&
+    prevToken.height === nextToken.height &&
+    prevToken.content === nextToken.content &&
+    prevToken.color === nextToken.color &&
+    prevToken.shape === nextToken.shape &&
+    prevToken.locked === nextToken.locked &&
+    prevToken.opacity === nextToken.opacity &&
+    prevToken.rotation === nextToken.rotation &&
+    prevToken.zIndex === nextToken.zIndex
+  );
+
   return (
-    prevProps.obj === nextProps.obj &&
-    prevProps.allObjects === nextProps.allObjects &&
+    tokensEqual &&
     prevIsDragging === nextIsDragging && // Only care if THIS token is being dragged
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.isCtrlPressed === nextProps.isCtrlPressed &&

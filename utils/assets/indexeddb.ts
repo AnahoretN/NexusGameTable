@@ -85,6 +85,13 @@ class AssetDatabase {
    * Initialize the database
    */
   async init(): Promise<IDBDatabase> {
+    // If database is closed, reset and reinitialize
+    if (this.db && this.db.readyState === 'closed') {
+      console.warn('[AssetDB] Database was closed, reinitializing...');
+      this.db = null;
+      this.initPromise = null;
+    }
+
     if (this.db) return this.db;
     if (this.initPromise) return this.initPromise;
 
@@ -123,6 +130,46 @@ class AssetDatabase {
   }
 
   /**
+   * Safely create a transaction with retry on database closed error
+   */
+  private async createTransaction(
+    mode: IDBTransactionMode,
+    storeNames: string[] = [STORE_ASSETS]
+  ): Promise<IDBTransaction> {
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      try {
+        const db = await this.init();
+
+        // Check if database is closing or closed
+        if (!db || db.readyState === 'closed') {
+          throw new Error('Database is closed');
+        }
+
+        return db.transaction(storeNames, mode);
+      } catch (error) {
+        attempts++;
+        console.warn(`[AssetDB] Transaction attempt ${attempts} failed:`, error);
+
+        if (attempts >= maxAttempts) {
+          throw error;
+        }
+
+        // Reset connection and retry
+        this.db = null;
+        this.initPromise = null;
+
+        // Small delay before retry
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+
+    throw new Error('Failed to create transaction after retries');
+  }
+
+  /**
    * Store an asset in the database
    *
    * @param hashResult - Hash result from hashing module
@@ -137,8 +184,6 @@ class AssetDatabase {
     mimeType: string,
     source: AssetEntry['source'] = 'local'
   ): Promise<boolean> {
-    const db = await this.init();
-
     // Check if asset already exists
     const existing = await this.getAsset(hashResult.hash);
     if (existing) {
@@ -157,11 +202,11 @@ class AssetDatabase {
       source
     };
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_ASSETS], 'readwrite');
-      const store = transaction.objectStore(STORE_ASSETS);
-      const request = store.put(entry);
+    const transaction = await this.createTransaction('readwrite');
+    const store = transaction.objectStore(STORE_ASSETS);
+    const request = store.put(entry);
 
+    return new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(request.error);
     });
@@ -174,14 +219,13 @@ class AssetDatabase {
    * @returns Asset entry or null if not found
    */
   async getAsset(hash: string): Promise<AssetEntry | null> {
-    const db = await this.init();
     const normalizedHash = hash.startsWith(HASH_PREFIX) ? hash : `${HASH_PREFIX}${hash}`;
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_ASSETS], 'readonly');
-      const store = transaction.objectStore(STORE_ASSETS);
-      const request = store.get(normalizedHash);
+    const transaction = await this.createTransaction('readonly');
+    const store = transaction.objectStore(STORE_ASSETS);
+    const request = store.get(normalizedHash);
 
+    return new Promise((resolve, reject) => {
       request.onsuccess = () => {
         const result: AssetEntry | undefined = request.result;
         if (result) {
