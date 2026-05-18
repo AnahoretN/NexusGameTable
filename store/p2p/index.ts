@@ -18,6 +18,54 @@ export * from './types';
 export * from './protocol/messages';
 
 // ============================================================================
+// ASSET TRANSFER (New CAS system)
+// ============================================================================
+
+export {
+  assetTransferHost,
+  assetTransferGuest,
+  type AssetTransferHost,
+  type AssetTransferGuest,
+  type TransferProgress,
+  type ProgressCallback,
+  type CompleteCallback,
+  type ErrorCallback,
+  type TransferResult,
+  type TransferError,
+  type HostTransferConfig,
+  type GuestTransferConfig,
+} from './assetTransfer';
+
+export {
+  AssetMessageFactory,
+  AssetMessageType,
+  type AssetMessage,
+  type AssetManifestMessage,
+  type AssetRequestMessage,
+  type AssetChunkMessage,
+  type AssetAckMessage,
+  type AssetProgressMessage,
+  type AssetCompleteMessage,
+  type AssetErrorMessage,
+  type AssetCancelMessage,
+  type AssetManifestEntry,
+  type AssetManifestPayload,
+  type AssetRequestPayload,
+  type AssetChunkPayload,
+  type AssetAckPayload,
+  type AssetProgressPayload,
+  type AssetCompletePayload,
+  type AssetErrorPayload,
+  type AssetCancelPayload,
+  type AssetErrorCode,
+  calculateAssetPriority,
+  groupAssetsByPriority,
+  calculateChunkSize,
+  isAssetMessage,
+  getAssetPayload,
+} from './protocol/assetMessages';
+
+// ============================================================================
 // CONNECTION
 // ============================================================================
 
@@ -27,32 +75,6 @@ export {
   isHost,
   isGuest,
 } from './connection/manager';
-
-// ============================================================================
-// IMAGES
-// ============================================================================
-
-export {
-  ImageManifestBuilder,
-  getImagesByPriority,
-  getMissingImages,
-  getManifestTotalSize,
-  getImagesInPriorityRange,
-  compareManifests,
-} from './images/manifest';
-
-export {
-  ProgressiveImageLoader,
-  chunkImageData,
-  createImageChunks,
-} from './images/loader';
-
-export {
-  HostImageTransferManager,
-  GuestImageTransferManager,
-  calculateChunkSize,
-  estimateTransferTime,
-} from './images/transfer';
 
 // ============================================================================
 // STATE
@@ -79,56 +101,8 @@ export {
 } from './state/sync';
 
 // ============================================================================
-// FACTORY
-// ============================================================================
-
-import { ConnectionManager } from './connection/manager';
-import { HostImageTransferManager } from './images/transfer';
-import { GuestImageTransferManager } from './images/transfer';
-import { HostStateSyncManager } from './state/sync';
-import { GuestStateSyncManager } from './state/sync';
-import { PlayerRole } from './types';
-
-/**
- * Create a complete P2P system for host
- */
-export function createHostP2PSystem(connectionManager: ConnectionManager) {
-  return {
-    imageTransfer: new HostImageTransferManager(),
-    stateSync: new HostStateSyncManager(),
-  };
-}
-
-/**
- * Create a complete P2P system for guest
- */
-export function createGuestP2PSystem(connectionManager: ConnectionManager) {
-  return {
-    imageTransfer: new GuestImageTransferManager(),
-    stateSync: new GuestStateSyncManager(),
-  };
-}
-
-// ============================================================================
-// HOOKS
-// ============================================================================
-
-export { useP2PConnection, useP2PImages } from './hooks';
-export type { UseP2PConnectionReturn, UseP2PImagesReturn, ImageLoadStatus } from './hooks';
-
-// ============================================================================
 // OPTIMIZATIONS (New P2P Performance Modules)
 // ============================================================================
-
-export {
-  objectExtractionCache,
-  extractImagesIncremental,
-  needsBoardContentExtraction,
-  extractBoardContentOnly,
-  p2pChangeTracker,
-  createLazyExtractor,
-  startExtractionCacheCleanup,
-} from './optimizedStateSync';
 
 export {
   ActionBatcher,
@@ -148,3 +122,10 @@ export {
   defer,
   deferWithPriority,
 } from './idleWorkScheduler';
+
+// ============================================================================
+// HOOKS
+// ============================================================================
+
+export { useP2PConnection } from './hooks';
+export type { UseP2PConnectionReturn } from './hooks';

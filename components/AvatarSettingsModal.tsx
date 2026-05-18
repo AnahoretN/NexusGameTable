@@ -1,10 +1,9 @@
-import React, { useState, forwardRef, useImperativeHandle, useEffect } from 'react';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { CharacterTab } from '../types';
 import { FilePickerInput } from './FilePickerInput';
 import { useLanguage } from '../store/contexts';
 import { t } from '../utils/translations';
-import { isImageRef, getImageIdFromRef } from '../utils/imageCache';
-import { logger } from '../utils/logger';
+import { useImageUrl } from '../hooks/useImageUrl';
 
 export interface AvatarSettingsModalRef {
   getValues: () => CharacterTab;
@@ -24,50 +23,8 @@ export const AvatarSettingsModal = forwardRef<AvatarSettingsModalRef, AvatarSett
   const [avatarBorderColor, setAvatarBorderColor] = useState(character.avatarBorderColor || '#a855f7');
   const [avatarBorderWidth, setAvatarBorderWidth] = useState(character.avatarBorderWidth ?? 5);
 
-  // State for resolved avatar URL (convert img_ref:// to data URL for display)
-  const [resolvedAvatarUrl, setResolvedAvatarUrl] = useState<string>('');
-
-  // Load avatar from IndexedDB if it's an img_ref:// URL
-  useEffect(() => {
-    const loadAvatar = async () => {
-      if (!avatarUrl) {
-        setResolvedAvatarUrl('');
-        return;
-      }
-
-      // If it's an image reference, load from IDB
-      if (isImageRef(avatarUrl)) {
-        const imageId = getImageIdFromRef(avatarUrl);
-        try {
-          const dataUrl = await new Promise<string | null>((resolve) => {
-            const request = indexedDB.open('NexusGameTable_Images', 1);
-            request.onerror = () => resolve(null);
-            request.onsuccess = () => {
-              const db = request.result;
-              const transaction = db.transaction(['cachedImages'], 'readonly');
-              const store = transaction.objectStore('cachedImages');
-              const getReq = store.get(imageId);
-              getReq.onerror = () => resolve(null);
-              getReq.onsuccess = () => {
-                const entry = getReq.result;
-                resolve(entry ? entry.data : null);
-              };
-            };
-          });
-
-          setResolvedAvatarUrl(dataUrl || '');
-        } catch (error) {
-          logger.error('[AvatarSettingsModal] Failed to load avatar from IDB:', error);
-          setResolvedAvatarUrl('');
-        }
-      } else {
-        // Not an image reference, use as-is
-        setResolvedAvatarUrl(avatarUrl);
-      }
-    };
-
-    loadAvatar();
-  }, [avatarUrl]);
+  // Use the unified hook that supports both img_ref:// and sha256: URLs
+  const resolvedAvatarUrl = useImageUrl(avatarUrl);
 
   useImperativeHandle(ref, () => ({
     getValues: () => ({

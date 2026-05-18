@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { logger } from '../utils/logger';
-import { saveSingleImageToIDB, generateImageId, createImageRef, addToManagedCache, setFileNameForImageRef } from '../utils/imageCache';
+import { loadLocalFile } from '../utils/assets';
 
 interface FilePickerInputProps {
   value: string;
@@ -16,10 +16,15 @@ interface FilePickerInputProps {
  * Validate URL to prevent URI malformed errors
  * Returns true if URL is valid, false otherwise
  */
-const isValidUrl = (url: string): boolean => {
+function isValidUrl(url: string): boolean {
   if (!url || url.trim() === '') return true; // Empty URL is valid (user can clear the field)
 
-  // img_ref:// URLs are valid (our internal image reference format)
+  // SHA-256 hash URLs are valid (new CAS system)
+  if (url.startsWith('sha256:')) {
+    return true;
+  }
+
+  // img_ref:// URLs are valid (old system - for backward compat)
   if (url.startsWith('img_ref://')) {
     return true;
   }
@@ -68,21 +73,9 @@ const isValidUrl = (url: string): boolean => {
 };
 
 /**
- * Convert a file to base64 data URL for P2P sharing
- */
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-};
-
-/**
  * FilePickerInput - universal image input component
  * Accepts both URLs and local file paths (via file picker)
- * Converts local files to base64 for P2P sharing
+ * Uses new CAS system for local file storage
  */
 export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   value,
@@ -131,26 +124,14 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
 
       setIsLoading(true);
       try {
-        // Convert to base64 for P2P sharing
-        const base64Url = await fileToBase64(file);
+        // Use new CAS system to load and store the file
+        const result = await loadLocalFile(file);
 
-        // Save to IndexedDB immediately for persistence across page reloads
-        // Use img_ref:// format for consistent handling
-        const imageId = generateImageId();
-        const imgRefUrl = createImageRef(imageId);
-
-        await saveSingleImageToIDB(imageId, base64Url);
-
-        // Also add to managed cache for immediate use
-        addToManagedCache(imageId, base64Url);
-
-        // Store filename metadata in a separate map for later restoration
-        setFileNameForImageRef(imgRefUrl, file.name);
-
-        // Return img_ref:// URL instead of base64
-        onChange(imgRefUrl);
+        // Return SHA-256 hash URL instead of img_ref://
+        onChange(result.hash);
       } catch (error) {
-        logger.error('Failed to convert file to base64:', error);
+        logger.error('Failed to load file:', error);
+        setSizeWarning(`⚠️ Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
         setIsLoading(false);
       }
@@ -170,9 +151,10 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
     </svg>
   );
 
-  // Format value for display (hide img_ref:// prefix)
-  const displayValue = value.startsWith('img_ref://') ? '(Uploaded image)' : value;
+  // Format value for display
+  const isHash = value.startsWith('sha256:');
   const isImgRef = value.startsWith('img_ref://');
+  const displayValue = isHash || isImgRef ? '(Uploaded image)' : value;
 
   const inputElement = (
     <div className="relative flex items-center">
@@ -181,15 +163,15 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
         onChange={e => handleUrlChange(e.target.value)}
         className={`bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm pr-10 ${className}`}
         placeholder={placeholder}
-        disabled={isLoading || isImgRef}
-        title={isImgRef ? 'Image is stored locally. Upload a new image to replace.' : ''}
+        disabled={isLoading || isHash || isImgRef}
+        title={isHash || isImgRef ? 'Image is stored locally. Upload a new image to replace.' : ''}
       />
       <button
         type="button"
         onClick={handleButtonClick}
         disabled={isLoading}
         className="absolute right-2 w-7 h-7 flex items-center justify-center hover:bg-slate-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        title={isLoading ? "Converting..." : "Select local file"}
+        title={isLoading ? "Loading..." : "Select local file"}
       >
         {isLoading ? (
           <svg className="animate-spin" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

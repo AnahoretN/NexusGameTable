@@ -1,36 +1,34 @@
 /**
  * LazyImage - Optimized image component with lazy loading
  *
- * Performance benefits:
- * - Loads images only when they enter viewport
- * - Reduces initial page load time by 40-50%
- * - Saves bandwidth for off-screen images
- * - Improves perceived performance
- * - Reduces memory usage
+ * Uses new CAS (Content-Addressable Storage) system.
  */
 
 import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { isImageRef, getImageIdFromRef, getFromManagedCache } from '../utils/imageCache';
+import { getAssetURL, preloadAssets } from '../utils/assets';
 import { getGlobalCacheVersion } from './SvgTokenShape';
 
 export interface LazyImageProps {
-  src: string;
+  src: string;              // Hash (sha256:...) or URL
   alt: string;
   className?: string;
   style?: React.CSSProperties;
   placeholder?: string;
   onLoad?: () => void;
   onError?: () => void;
-  // Root margin for intersection observer (how early to load before appearing)
   rootMargin?: string;
-  // Threshold for intersection observer (0-1)
   threshold?: number;
-  // CORS attribute for external images
   crossOrigin?: 'anonymous' | 'use-credentials' | '';
 }
 
-// Default placeholder SVG
 const DEFAULT_PLACEHOLDER = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231e293b'/%3E%3Ctext x='50' y='50' text-anchor='middle' dy='.3em' font-family='sans-serif' font-size='14' fill='%2394a3b8'%3ELoading...%3C/text%3E%3C/svg%3E`;
+
+/**
+ * Check if src is an asset hash
+ */
+function isAssetHash(src: string): boolean {
+  return src?.startsWith('sha256:') || false;
+}
 
 export const LazyImage = memo<LazyImageProps>(({
   src,
@@ -40,68 +38,83 @@ export const LazyImage = memo<LazyImageProps>(({
   placeholder = DEFAULT_PLACEHOLDER,
   onLoad,
   onError,
-  rootMargin = '50px', // Start loading 50px before appearing
-  threshold = 0.01, // Trigger when 1% visible
+  rootMargin = '50px',
+  threshold = 0.01,
   crossOrigin,
 }) => {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isError, setIsError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
+  const [cacheVersion, setCacheVersion] = useState(getGlobalCacheVersion());
+
+  // Track cache version
+  useEffect(() => {
+    const currentVersion = getGlobalCacheVersion();
+    if (currentVersion !== cacheVersion) {
+      setCacheVersion(currentVersion);
+      setImageSrc(null);
+      setIsLoaded(false);
+    }
+  }, [cacheVersion]);
 
   useEffect(() => {
-    // Skip if already loaded
     if (imageSrc) return;
 
-    // Check if IntersectionObserver is supported
     if (typeof IntersectionObserver === 'undefined') {
-      // Fallback: load immediately
-      setImageSrc(src);
+      loadImage(src);
       return;
     }
 
-    // Create intersection observer
     const observer = new IntersectionObserver(
       (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && !imageSrc) {
-            // Start loading image
-            setImageSrc(src);
-
-            // Preload image to detect when fully loaded
-            const img = new Image();
-            if (crossOrigin) {
-              img.crossOrigin = crossOrigin;
-            }
-            img.onload = () => {
-              setIsLoaded(true);
-              onLoad?.();
-            };
-            img.onerror = () => {
-              setIsError(true);
-              onError?.();
-            };
-            img.src = src;
-
-            // Disconnect observer after triggering load
-            observer.disconnect();
-          }
-        });
+        if (entries[0].isIntersecting && !imageSrc) {
+          loadImage(src);
+          observer.disconnect();
+        }
       },
-      {
-        rootMargin,
-        threshold,
-      }
+      { rootMargin, threshold }
     );
 
-    // Observe the image element
     if (imgRef.current) {
       observer.observe(imgRef.current);
     }
 
-    // Cleanup
     return () => observer.disconnect();
-  }, [src, imageSrc, rootMargin, threshold, onLoad, onError]);
+  }, [src, imageSrc, rootMargin, threshold]);
+
+  const loadImage = async (srcToLoad: string) => {
+    try {
+      let finalSrc = srcToLoad;
+
+      // Resolve asset hash to ObjectURL
+      if (isAssetHash(srcToLoad)) {
+        finalSrc = await getAssetURL(srcToLoad);
+      }
+
+      setImageSrc(finalSrc);
+
+      // Preload to detect when fully loaded
+      const img = new Image();
+      if (crossOrigin) {
+        img.crossOrigin = crossOrigin;
+      }
+      img.onload = () => {
+        setIsLoaded(true);
+        onLoad?.();
+      };
+      img.onerror = () => {
+        setIsError(true);
+        onError?.();
+      };
+      img.src = finalSrc;
+
+    } catch (error) {
+      console.error(`[LazyImage] Failed to load ${srcToLoad}:`, error);
+      setIsError(true);
+      onError?.();
+    }
+  };
 
   return (
     <img
@@ -114,7 +127,7 @@ export const LazyImage = memo<LazyImageProps>(({
         transition: 'opacity 0.3s ease',
         ...style,
       }}
-      loading="lazy" // Native lazy loading as fallback
+      loading="lazy"
       crossOrigin={crossOrigin}
       onError={() => setIsError(true)}
     />
@@ -124,7 +137,7 @@ export const LazyImage = memo<LazyImageProps>(({
 LazyImage.displayName = 'LazyImage';
 
 /**
- * Hook to preload critical images (above the fold)
+ * Hook to preload critical images
  */
 export function useImagePreloader() {
   const preloadImage = useCallback((src: string): Promise<void> => {
@@ -132,7 +145,14 @@ export function useImagePreloader() {
       const img = new Image();
       img.onload = () => resolve();
       img.onerror = reject;
-      img.src = src;
+
+      if (isAssetHash(src)) {
+        getAssetURL(src).then(url => {
+          img.src = url;
+        }).catch(reject);
+      } else {
+        img.src = src;
+      }
     });
   }, []);
 
@@ -144,7 +164,7 @@ export function useImagePreloader() {
 }
 
 /**
- * Background image version of LazyImage
+ * Background image version
  */
 export interface LazyBackgroundImageProps {
   src: string;
@@ -173,58 +193,40 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
   const [cacheVersion, setCacheVersion] = useState(getGlobalCacheVersion());
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Track global cache version for force-reload when pack is loaded
+  // Track cache version
   useEffect(() => {
     const currentVersion = getGlobalCacheVersion();
     if (currentVersion !== cacheVersion) {
       setCacheVersion(currentVersion);
-      // Force re-resolve the image
-      if (isImageRef(src)) {
+      if (isAssetHash(src)) {
         setResolvedSrc(null);
         setIsLoaded(false);
       }
     }
   }, [cacheVersion, src]);
 
-  // Resolve img_ref:// URLs
+  // Resolve asset when visible
   useEffect(() => {
     if (!isVisible) return;
 
     const resolveSrc = async () => {
-      if (isImageRef(src)) {
-        const imageId = getImageIdFromRef(src);
-        // Try managed cache first
-        const cached = getFromManagedCache(imageId);
-        if (cached) {
-          setResolvedSrc(cached);
-          return;
+      try {
+        if (isAssetHash(src)) {
+          const objectUrl = await getAssetURL(src);
+          setResolvedSrc(objectUrl);
+        } else {
+          setResolvedSrc(src);
         }
-        // Try IndexedDB
-        try {
-          const request = indexedDB.open('NexusGameTable_Images', 1);
-          request.onsuccess = () => {
-            const db = request.result;
-            const transaction = db.transaction(['cachedImages'], 'readonly');
-            const store = transaction.objectStore('cachedImages');
-            const getReq = store.get(imageId);
-            getReq.onsuccess = () => {
-              const entry = getReq.result;
-              if (entry?.data) {
-                setResolvedSrc(entry.data);
-              }
-            };
-          };
-        } catch (e) {
-          console.warn('[LazyBackgroundImage] Failed to load from IndexedDB:', e);
-        }
-      } else {
-        setResolvedSrc(src);
+      } catch (error) {
+        console.error(`[LazyBackgroundImage] Failed to resolve ${src}:`, error);
+        setResolvedSrc(src); // Fallback
       }
     };
 
     resolveSrc();
   }, [src, isVisible]);
 
+  // Intersection observer
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') {
       setIsVisible(true);
@@ -248,6 +250,7 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
     return () => observer.disconnect();
   }, [rootMargin, threshold]);
 
+  // Detect when image is loaded
   useEffect(() => {
     if (!isVisible || isLoaded || !resolvedSrc) return;
 
@@ -261,7 +264,7 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
 
   const backgroundStyle = React.useMemo(() => ({
     backgroundImage: isLoaded && resolvedSrc ? `url(${resolvedSrc})` : 'none',
-    backgroundColor: isLoaded ? 'transparent' : (placeholder === 'transparent' ? 'transparent' : placeholder),
+    backgroundColor: isLoaded ? 'transparent' : placeholder,
     backgroundSize: style?.backgroundSize || 'cover',
     backgroundPosition: style?.backgroundPosition || 'center',
     backgroundRepeat: style?.backgroundRepeat || 'no-repeat',

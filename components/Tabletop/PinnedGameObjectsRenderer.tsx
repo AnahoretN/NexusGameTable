@@ -630,7 +630,6 @@ const PinnedTokenRenderer = memo(({
         showThickness={true}
         tokenName={(token as any).showNameOnToken || (obj as any).showName ? obj.name : undefined}
         fontColor={(token as any).fontColor || '#ffffff'}
-        pixelsPerVU={pixelsPerVU}
       />
 
       <TokenCountersDisplay

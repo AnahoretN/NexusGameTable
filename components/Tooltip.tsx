@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { getAssetURL, isValidHash } from '../utils/assets';
 
 // Global tooltip tracker for memory management
 interface TooltipTracker {
@@ -57,6 +58,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [resolvedImageSrc, setResolvedImageSrc] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<number | null>(null);
   const tooltipId = useRef<string>(`tooltip-${Date.now()}-${Math.random()}`);
@@ -113,8 +115,24 @@ export const Tooltip: React.FC<TooltipProps> = ({
     };
   }, []);
 
+  // Resolve sha256: URLs to blob URLs
+  useEffect(() => {
+    if (!imageSrc) {
+      setResolvedImageSrc(null);
+      return;
+    }
+
+    if (isValidHash(imageSrc)) {
+      getAssetURL(imageSrc)
+        .then(setResolvedImageSrc)
+        .catch(() => setResolvedImageSrc(null));
+    } else {
+      setResolvedImageSrc(imageSrc);
+    }
+  }, [imageSrc]);
+
   // Only show tooltip if we have actual content to display
-  const hasImageContent = showImage && imageSrc;
+  const hasImageContent = showImage && resolvedImageSrc;
   const hasTextContent = text && text.trim().length > 0;
   const hasContent = hasImageContent || hasTextContent;
 
@@ -168,7 +186,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
               style={{
                 width: tooltipWidth,
                 height: hasTextContent ? tooltipHeight : tooltipHeight,
-                backgroundImage: `url(${imageSrc})`,
+                backgroundImage: `url(${resolvedImageSrc})`,
                 backgroundSize: `${spriteColumns! * 100}% ${spriteRows! * 100}%`,
                 backgroundPosition: `${spriteColPercent}% ${spriteRowPercent}%`,
                 backgroundRepeat: 'no-repeat',
@@ -178,7 +196,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
           ) : (
             // Regular image: use img tag
             <img
-              src={imageSrc}
+              src={resolvedImageSrc!}
               alt=""
               className="block w-full h-full object-cover"
               style={{

@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { getTokenWithAppliedState } from '../hooks/useTokenWithState';
 import { useImageUrl } from '../hooks';
+import { getAssetURL } from '../utils/assets';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -17,7 +18,18 @@ const preloadPromises = new Map<string, Promise<void>>();
 /**
  * Preload an Effect Template image and cache it
  */
-function preloadEffectImage(src: string): Promise<void> {
+async function preloadEffectImage(src: string): Promise<void> {
+  // Resolve sha256: hashes to blob URLs before loading
+  let resolvedSrc = src;
+  if (src?.startsWith('sha256:')) {
+    try {
+      resolvedSrc = await getAssetURL(src);
+    } catch (error) {
+      console.error('[CursorSlotItems] Failed to resolve asset:', src, error);
+      return; // Skip preload if we can't resolve
+    }
+  }
+
   if (effectImageCache.has(src)) {
     return Promise.resolve();
   }
@@ -38,7 +50,7 @@ function preloadEffectImage(src: string): Promise<void> {
       effectImageCache.set(src, img);
       resolve(); // Don't reject - allow render to continue
     };
-    img.src = src;
+    img.src = resolvedSrc;
   });
 
   preloadPromises.set(src, promise);
@@ -69,12 +81,6 @@ const CursorSlotCard = React.memo<CursorSlotItemProps & { item: CardType }>(({
   state
 }) => {
   const deck = item.deckId ? state.objects[item.deckId] as DeckType | undefined : undefined;
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
 
   return (
     <div
@@ -82,9 +88,9 @@ const CursorSlotCard = React.memo<CursorSlotItemProps & { item: CardType }>(({
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -137,12 +143,6 @@ const CursorSlotToken = React.memo<CursorSlotItemProps & { item: TokenType }>(({
 }) => {
   // Apply token state to get correct visual properties
   const tokenWithState = getTokenWithAppliedState(item, state.objects as Record<string, TableObject>);
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
 
   return (
     <div
@@ -150,9 +150,9 @@ const CursorSlotToken = React.memo<CursorSlotItemProps & { item: TokenType }>(({
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -174,7 +174,6 @@ const CursorSlotToken = React.memo<CursorSlotItemProps & { item: TokenType }>(({
         showThickness={true}
         tokenName={(tokenWithState as any).showNameOnToken || ((tokenWithState as any).archetypeId && (state.objects[(tokenWithState as any).archetypeId] as any)?.showName) ? item.name : undefined}
         fontColor={(tokenWithState as any).fontColor || '#ffffff'}
-        pixelsPerVU={pixelsPerVU}
       />
     </div>
   );
@@ -201,12 +200,6 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
   const visibleCardCount = cardIds.length;
   const totalCardCount = (item.baseCardIds || cardIds).length;
   const shapeStyles = getCardShapeStyles(cardShape, cardOrientation);
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
 
   return (
     <div
@@ -214,9 +207,9 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -224,89 +217,77 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
         justifyContent: 'center',
       }}
     >
-      {/* Inner wrapper with fixed size - prevents expansion to container */}
-      <div
-        style={{
-          position: 'relative',
-          width: `${width}px`,
-          height: `${height}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        {shouldUseSvgForDeck(cardShape) ? (
-          <>
-            {[2, 1, 0].map(i => (
-              <div
-                key={i}
-                className="absolute pointer-events-none"
-                style={{
-                  width: `${width}px`,
-                  height: `${height}px`,
-                  top: 0,
-                  left: 0,
-                  transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
-                  zIndex: -i,
-                }}
-              >
-                <SvgDeckShape
-                  shape={cardShape}
-                  width={width}
-                  height={height}
-                  backgroundColor="#1e293b"
-                  borderColor="#475569"
-                  borderWidth={2}
-                  orientation={cardOrientation}
-                />
-              </div>
-            ))}
-            <div className="absolute inset-0">
+      {shouldUseSvgForDeck(cardShape) ? (
+        <>
+          {[2, 1, 0].map(i => (
+            <div
+              key={i}
+              className="absolute pointer-events-none"
+              style={{
+                width: `${width}px`,
+                height: `${height}px`,
+                top: 0,
+                left: 0,
+                transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
+                zIndex: -i,
+              }}
+            >
               <SvgDeckShape
                 shape={cardShape}
                 width={width}
                 height={height}
-                backgroundColor="#0f172a"
-                borderColor={item.locked ? "#dc2626" : "#64748b"}
+                backgroundColor="#1e293b"
+                borderColor="#475569"
                 borderWidth={2}
                 orientation={cardOrientation}
-              >
-                <Layers className="text-slate-400 mb-1" size={shouldUseSvgForDeck(cardShape) ? 12 : 16} />
-                <DeckLabel
-                  name={item.name}
-                  count={visibleCardCount}
-                  totalCount={totalCardCount}
-                  shape={cardShape}
-                />
-              </SvgDeckShape>
-            </div>
-          </>
-        ) : (
-          <>
-            {[2, 1, 0].map(i => (
-              <div
-                key={i}
-                className="absolute bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
-                style={{
-                  width: `${width}px`,
-                  height: `${height}px`,
-                  top: 0,
-                  left: 0,
-                  transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
-                  zIndex: -i,
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-                  ...shapeStyles
-                }}
               />
-            ))}
-            <div className="absolute inset-0 bg-slate-900 border-2 border-slate-500 flex flex-col items-center justify-center" style={shapeStyles}>
-              <Layers className="text-slate-400 mb-2" size={24} />
-              <span className="text-xs text-slate-300 font-bold px-2 text-center select-none drop-shadow-md">{item.name}</span>
-              <span className="text-xs text-slate-500 select-none drop-shadow-md">{visibleCardCount} / {totalCardCount}</span>
             </div>
-          </>
-        )}
-      </div>
+          ))}
+          <div className="absolute inset-0">
+            <SvgDeckShape
+              shape={cardShape}
+              width={width}
+              height={height}
+              backgroundColor="#0f172a"
+              borderColor={item.locked ? "#dc2626" : "#64748b"}
+              borderWidth={2}
+              orientation={cardOrientation}
+            >
+              <Layers className="text-slate-400 mb-1" size={shouldUseSvgForDeck(cardShape) ? 12 : 16} />
+              <DeckLabel
+                name={item.name}
+                count={visibleCardCount}
+                totalCount={totalCardCount}
+                shape={cardShape}
+              />
+            </SvgDeckShape>
+          </div>
+        </>
+      ) : (
+        <>
+          {[2, 1, 0].map(i => (
+            <div
+              key={i}
+              className="absolute bg-slate-800 border-2 border-slate-600 shadow-md pointer-events-none"
+              style={{
+                width: `${width}px`,
+                height: `${height}px`,
+                top: 0,
+                left: 0,
+                transform: `translate(${i * DECK_OFFSET}px, ${i * DECK_OFFSET}px)`,
+                zIndex: -i,
+                boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                ...shapeStyles
+              }}
+            />
+          ))}
+          <div className="absolute inset-0 bg-slate-900 border-2 border-slate-500 flex flex-col items-center justify-center" style={shapeStyles}>
+            <Layers className="text-slate-400 mb-2" size={24} />
+            <span className="text-xs text-slate-300 font-bold px-2 text-center select-none drop-shadow-md">{item.name}</span>
+            <span className="text-xs text-slate-500 select-none drop-shadow-md">{visibleCardCount} / {totalCardCount}</span>
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -315,20 +296,16 @@ const CursorSlotDeck: React.FC<CursorSlotItemProps & { item: DeckType }> = ({ it
  * Renders a randomizer in the cursor slot
  */
 const CursorSlotRandomizer: React.FC<CursorSlotItemProps & { item: Randomizer }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-
   return (
     <div
       className="bg-gradient-to-br from-purple-900 to-purple-700 border-2 border-purple-400 rounded-full shadow-lg flex items-center justify-center"
       style={{
         position: 'absolute',
-        left: -width * 0.1, // Center object in the larger container
-        top: -height * 0.1,
+        left: 0,
+        top: 0,
         transform: `translate(${offsetX}px, ${offsetY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
       }}
@@ -342,22 +319,15 @@ const CursorSlotRandomizer: React.FC<CursorSlotItemProps & { item: Randomizer }>
  * Renders a counter in the cursor slot
  */
 const CursorSlotCounter: React.FC<CursorSlotItemProps & { item: Counter }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
-
   return (
     <div
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -368,8 +338,8 @@ const CursorSlotCounter: React.FC<CursorSlotItemProps & { item: Counter }> = ({ 
       <div
         className="bg-slate-900 border-2 border-slate-600 shadow-xl flex items-center justify-between p-2 gap-2 text-white"
         style={{
-          width: `${width}px`,
-          height: `${height}px`,
+          width: '100%',
+          height: '100%',
           borderRadius: '5px',
         }}
       >
@@ -386,12 +356,6 @@ const CursorSlotCounter: React.FC<CursorSlotItemProps & { item: Counter }> = ({ 
  */
 const CursorSlotDice: React.FC<CursorSlotItemProps & { item: DiceObject }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
   const diceShape = item.shape || TokenShape.SQUARE;
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
 
   return (
     <div
@@ -399,9 +363,9 @@ const CursorSlotDice: React.FC<CursorSlotItemProps & { item: DiceObject }> = ({ 
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -431,22 +395,15 @@ const CursorSlotDice: React.FC<CursorSlotItemProps & { item: DiceObject }> = ({ 
  * Renders a board in the cursor slot
  */
 const CursorSlotBoard: React.FC<CursorSlotItemProps & { item: BoardType }> = ({ item, width, height, offsetX, offsetY, zIndex, state: _state }) => {
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
-
   return (
     <div
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -454,37 +411,25 @@ const CursorSlotBoard: React.FC<CursorSlotItemProps & { item: BoardType }> = ({ 
         justifyContent: 'center',
       }}
     >
-      {/* Inner wrapper with fixed size - prevents expansion to container */}
       <div
+        className="flex items-center justify-center text-white font-bold select-none"
         style={{
+          width: '100%',
+          height: '100%',
+          border: '2px solid #212f3c',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+          backgroundColor: item.color || '#34495e',
+          backgroundImage: item.content ? `url(${item.content})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          borderRadius: '5px',
           position: 'relative',
-          width: `${width}px`,
-          height: `${height}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          overflow: 'hidden',
         }}
       >
-        <div
-          className="flex items-center justify-center text-white font-bold select-none"
-          style={{
-            width: '100%',
-            height: '100%',
-            border: '2px solid #212f3c',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-            backgroundColor: item.color || '#34495e',
-            backgroundImage: item.content ? `url(${item.content})` : undefined,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            borderRadius: '5px',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Board name label */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap">
-            {item.name}
-          </div>
+        {/* Board name label */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap">
+          {item.name}
         </div>
       </div>
     </div>
@@ -495,22 +440,15 @@ const CursorSlotBoard: React.FC<CursorSlotItemProps & { item: BoardType }> = ({ 
  * Renders a battlefield cell in the cursor slot
  */
 const CursorSlotBattlefieldCell: React.FC<CursorSlotItemProps & { item: BattlefieldCell }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
-
   return (
     <div
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -541,12 +479,6 @@ const CursorSlotBattlefieldCell: React.FC<CursorSlotItemProps & { item: Battlefi
  */
 const CursorSlotNexusBoard: React.FC<CursorSlotItemProps & { item: NexusBoard }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
   const cellCount = item.cells?.length || 1;
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
 
   return (
     <div
@@ -554,9 +486,9 @@ const CursorSlotNexusBoard: React.FC<CursorSlotItemProps & { item: NexusBoard }>
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -615,22 +547,15 @@ const CursorSlotNexusBoard: React.FC<CursorSlotItemProps & { item: NexusBoard }>
  * Renders a Nexus cell in the cursor slot
  */
 const CursorSlotNexusCell: React.FC<CursorSlotItemProps & { item: NexusCellObject }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
-
   return (
     <div
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -660,12 +585,6 @@ const CursorSlotNexusCell: React.FC<CursorSlotItemProps & { item: NexusCellObjec
  */
 const CursorSlotDrawing: React.FC<CursorSlotItemProps & { item: Drawing }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
   const strokeCount = item.strokes?.length || 0;
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = width * 1.2;
-  const containerHeight = height * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - width) / 2;
-  const paddingY = (containerHeight - height) / 2;
 
   return (
     <div
@@ -673,9 +592,9 @@ const CursorSlotDrawing: React.FC<CursorSlotItemProps & { item: Drawing }> = ({ 
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex,
         pointerEvents: 'none',
         display: 'flex',
@@ -715,13 +634,6 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
   const safeWidth = Math.max(width, 1);
   const safeHeight = Math.max(height, 1);
 
-  // Increase container size by 20% to prevent clipping during fast movement
-  const containerWidth = safeWidth * 1.2;
-  const containerHeight = safeHeight * 1.2;
-  // Calculate padding to center the object
-  const paddingX = (containerWidth - safeWidth) / 2;
-  const paddingY = (containerHeight - safeHeight) / 2;
-
   // Preload image when component mounts
   useEffect(() => {
     if (effectImageUrl) {
@@ -744,9 +656,9 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
         position: 'absolute',
         left: 0,
         top: 0,
-        transform: `translate(${offsetX - paddingX}px, ${offsetY - paddingY}px)`,
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        width: `${safeWidth}px`,
+        height: `${safeHeight}px`,
         zIndex,
         pointerEvents: 'none',
         willChange: 'transform',
@@ -761,8 +673,8 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
       <div
         style={{
           position: 'relative',
-          width: `${safeWidth}px`,
-          height: `${safeHeight}px`,
+          width: '100%',
+          height: '100%',
           transform: `rotate(${rotation}deg)`,
           transformOrigin: `${pivot.x}% ${pivot.y}%`,
           backfaceVisibility: 'hidden' as 'hidden',

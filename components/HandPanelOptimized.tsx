@@ -442,6 +442,7 @@ interface TokenStackItemProps {
   isDragOver: boolean;
   isGM: boolean;
   activePlayerId: string;
+  cardScale: number;
   onMouseDown: (e: React.MouseEvent, tokenIds: string[], index: number, element: HTMLDivElement) => void;
   onContextMenu: (e: React.MouseEvent, token: Token) => void;
 }
@@ -454,11 +455,16 @@ const TokenStackItem = memo(({
   isDragOver,
   isGM,
   activePlayerId,
+  cardScale,
   onMouseDown,
   onContextMenu
 }: TokenStackItemProps) => {
   const actualIndex = groupOffset + stackIndex;
   const tokenIds = stack.tokens.map(t => t.id);
+
+  // Use actual token dimensions from the representative token
+  const tokenWidth = (stack.representativeToken.width || 50) * cardScale;
+  const tokenHeight = (stack.representativeToken.height || 50) * cardScale;
 
   return (
     <div
@@ -467,10 +473,13 @@ const TokenStackItem = memo(({
       data-token-ids={JSON.stringify(tokenIds)}
       className="relative flex-shrink-0 group"
       style={{
-        width: 88,
-        height: 88,
+        width: tokenWidth,
+        height: tokenHeight,
         zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
         transform: isDragOver ? 'scale(1.05)' : undefined,
+        overflow: 'visible',
+        outline: '2px solid cyan',
+        outlineOffset: '-2px',
       }}
       onMouseDown={(e) => onMouseDown(e, tokenIds, actualIndex, e.currentTarget as HTMLDivElement)}
       onContextMenu={(e) => onContextMenu(e, stack.representativeToken)}
@@ -486,14 +495,14 @@ const TokenStackItem = memo(({
               style={{
                 top: -i * 2,
                 left: -i * 2,
-                width: 88,
-                height: 88,
+                width: tokenWidth,
+                height: tokenHeight,
                 opacity: 0.7,
               }}
             >
               <ObjectRenderer
                 obj={stack.representativeToken}
-                pixelsPerVU={0.98}
+                pixelsPerVU={cardScale}
                 isGM={isGM}
                 activePlayerId={activePlayerId}
                 onMouseDown={() => {}}
@@ -508,7 +517,7 @@ const TokenStackItem = memo(({
       <div className="relative">
         <ObjectRenderer
           obj={stack.representativeToken}
-          pixelsPerVU={1}
+          pixelsPerVU={cardScale}
           isGM={isGM}
           activePlayerId={activePlayerId}
           onMouseDown={(e) => e.preventDefault()}
@@ -1930,6 +1939,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                               isDragOver={dragOverIndex === actualIndex}
                               isGM={isGM}
                               activePlayerId={selectedPlayerId}
+                              cardScale={cardScale}
                               onMouseDown={(e, tokenIds, index, element) => {
                                 // For token stacks, we handle the first token ID
                                 handleCardMouseDown(e, tokenIds[0], index, element);

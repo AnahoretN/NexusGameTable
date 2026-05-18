@@ -12,7 +12,8 @@ import { AvatarSettingsModal, AvatarSettingsModalRef } from './AvatarSettingsMod
 import { SimpleContextMenu } from './SimpleContextMenu';
 import { CharacterSettingsModal } from './CharacterSettingsModal';
 import { logger } from '../utils/logger';
-import { isImageRef, getImageIdFromRef } from '../utils/imageCache';
+import { isHashRef, isImageRef } from '../utils/imageCompat';
+import { getAssetURL } from '../utils/assets';
 
 interface CharacterPanelProps {
   isCollapsed?: boolean;
@@ -74,37 +75,20 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       for (const character of charactersWithAvatars) {
         if (!character.avatarUrl) continue;
 
-        // If it's an image reference, load from IDB
-        if (isImageRef(character.avatarUrl)) {
-          const imageId = getImageIdFromRef(character.avatarUrl);
-
-          try {
-            // Try to get from IDB
-            const dataUrl = await new Promise<string | null>((resolve) => {
-              const request = indexedDB.open('NexusGameTable_Images', 1);
-              request.onerror = () => resolve(null);
-              request.onsuccess = () => {
-                const db = request.result;
-                const transaction = db.transaction(['cachedImages'], 'readonly');
-                const store = transaction.objectStore('cachedImages');
-                const getReq = store.get(imageId);
-                getReq.onerror = () => resolve(null);
-                getReq.onsuccess = () => {
-                  const entry = getReq.result;
-                  resolve(entry ? entry.data : null);
-                };
-              };
-            });
-
-            if (dataUrl) {
-              newCache[character.id] = dataUrl;
-            }
-          } catch (error) {
-            // Silently fail - avatar will be missing
+        try {
+          if (isHashRef(character.avatarUrl)) {
+            // New CAS system: sha256:hash
+            const url = await getAssetURL(character.avatarUrl);
+            newCache[character.id] = url;
+          } else if (isImageRef(character.avatarUrl)) {
+            // Old img_ref:// system - not supported
+            console.warn('[CharacterPanel] img_ref:// URLs are no longer supported for avatars');
+          } else {
+            // Regular URL (data:image/, http://, etc.)
+            newCache[character.id] = character.avatarUrl;
           }
-        } else {
-          // Not an image reference, use as-is
-          newCache[character.id] = character.avatarUrl;
+        } catch (error) {
+          // Silently fail - avatar will be missing
         }
       }
 

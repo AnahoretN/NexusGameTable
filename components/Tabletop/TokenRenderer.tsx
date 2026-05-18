@@ -407,7 +407,6 @@ export const TokenRenderer = memo(({
           showThickness={true}
           tokenName={tokenName}
           fontColor={(token as any).fontColor || '#ffffff'}
-          pixelsPerVU={pixelsPerVU}
         />
 
         {/* Token Counters Display */}

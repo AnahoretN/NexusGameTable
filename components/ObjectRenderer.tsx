@@ -288,6 +288,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
             zIndex,
             cursor: isDragging ? 'grabbing' : 'grab',
             pointerEvents: isDragging ? 'none' : 'auto',
+            overflow: 'visible',
             ...style
           }}
           className="relative"
@@ -314,7 +315,6 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
             showThickness={true}
             tokenName={showTokenName ? token.name : undefined}
             fontColor={token.fontColor || '#ffffff'}
-            pixelsPerVU={pixelsPerVU}
           />
 
           {/* Action buttons for tokens - positioned relative to token */}

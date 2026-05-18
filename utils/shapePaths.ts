@@ -1,5 +1,31 @@
 import { TokenShape, CardShape, CardOrientation } from '../types';
 
+/**
+ * Generate a circle path with inset for border
+ * @param width - The width of the bounding box
+ * @param height - The height of the bounding box
+ * @param inset - Optional inset to keep border inside the viewBox (e.g., borderWidth/2)
+ */
+export function generateCirclePath(width: number, height: number, inset: number = 0): { path: string; viewBox: string } {
+  const cx = width / 2;
+  const cy = height / 2;
+  const rx = Math.max(0, width / 2 - inset);
+  const ry = Math.max(0, height / 2 - inset);
+  const path = `M ${cx} ${cy - ry} A ${rx} ${ry} 0 1 1 ${cx} ${cy + ry} A ${rx} ${ry} 0 1 1 ${cx} ${cy - ry}`;
+  return { path, viewBox: `0 0 ${width} ${height}` };
+}
+
+/**
+ * Generate a triangle path with inset for border
+ * @param width - The width of the bounding box
+ * @param height - The height of the bounding box
+ * @param inset - Optional inset to keep border inside the viewBox (e.g., borderWidth/2)
+ */
+export function generateTrianglePath(width: number, height: number, inset: number = 0): { path: string; viewBox: string } {
+  const path = `M ${width / 2} ${inset} L ${width - inset} ${height - inset} L ${inset} ${height - inset} Z`;
+  return { path, viewBox: `0 0 ${width} ${height}` };
+}
+
 // SVG paths for basic shapes that don't change with aspect ratio
 const BASIC_SHAPE_PATHS: Record<TokenShape, { path: string; viewBox: string; useRect?: boolean }> = {
   [TokenShape.TRIANGLE]: {
@@ -30,8 +56,9 @@ const BASIC_SHAPE_PATHS: Record<TokenShape, { path: string; viewBox: string; use
  * Top and bottom angles are always 120° regardless of width/height ratio
  * @param width - The width of the bounding box
  * @param height - The height of the bounding box
+ * @param inset - Optional inset to keep border inside the viewBox (e.g., borderWidth/2)
  */
-export function generatePointyTopHexPath(width: number, height: number): { path: string; viewBox: string } {
+export function generatePointyTopHexPath(width: number, height: number, inset: number = 0): { path: string; viewBox: string } {
   // To keep 120° angle at top vertex: shoulder Y must be W/(2√3)
   // This preserves the top/bottom angles at 120°
   // Side angles will vary with aspect ratio
@@ -39,7 +66,7 @@ export function generatePointyTopHexPath(width: number, height: number): { path:
   const shoulderY1 = width / 2 / Math.sqrt(3);  // W/2 divided by tan(60°)
   const shoulderY2 = height - shoulderY1;
 
-  const path = `M ${width / 2} 0 L ${width} ${shoulderY1} L ${width} ${shoulderY2} L ${width / 2} ${height} L 0 ${shoulderY2} L 0 ${shoulderY1} Z`;
+  const path = `M ${width / 2} ${inset} L ${width - inset} ${shoulderY1 + inset * 0.577} L ${width - inset} ${shoulderY2 - inset * 0.577} L ${width / 2} ${height - inset} L ${inset} ${shoulderY2 - inset * 0.577} L ${inset} ${shoulderY1 + inset * 0.577} Z`;
 
   return { path, viewBox: `0 0 ${width} ${height}` };
 }
@@ -49,15 +76,16 @@ export function generatePointyTopHexPath(width: number, height: number): { path:
  * Left and right angles are always 120° regardless of width/height ratio
  * @param width - The width of the bounding box
  * @param height - The height of the bounding box
+ * @param inset - Optional inset to keep border inside the viewBox (e.g., borderWidth/2)
  */
-export function generateFlatTopHexPath(width: number, height: number): { path: string; viewBox: string } {
+export function generateFlatTopHexPath(width: number, height: number, inset: number = 0): { path: string; viewBox: string } {
   // To keep 120° angle at left vertex: shoulder X must be H/(2√3)
   // This preserves the left/right angles at 120°
 
   const shoulderX1 = height / 2 / Math.sqrt(3);  // H/2 divided by tan(60°)
   const shoulderX2 = width - shoulderX1;
 
-  const path = `M ${shoulderX1} 0 L ${shoulderX2} 0 L ${width} ${height / 2} L ${shoulderX2} ${height} L ${shoulderX1} ${height} L 0 ${height / 2} Z`;
+  const path = `M ${shoulderX1 + inset * 0.577} ${inset} L ${shoulderX2 - inset * 0.577} ${inset} L ${width - inset} ${height / 2} L ${shoulderX2 - inset * 0.577} ${height - inset} L ${shoulderX1 + inset * 0.577} ${height - inset} L ${inset} ${height / 2} Z`;
 
   return { path, viewBox: `0 0 ${width} ${height}` };
 }

@@ -55,7 +55,7 @@ const TokenArchetypeCard = memo<{
       title={`${archetype.name} (${maxCopies > 0 ? `${copyCount}/${maxCopies}` : copyCount})\n${translate('Click to add to cursor slot', language as Locale)}`}
     >
       {/* Preview of the token using SvgTokenShape */}
-      <div className="w-full h-full flex items-center justify-center overflow-hidden rounded">
+      <div className="w-full h-full flex items-center justify-center overflow-hidden rounded" style={{ outline: '2px solid cyan', outlineOffset: '-2px' }}>
         <SvgTokenShape
           shape={archetype.shape || TokenShape.SQUARE}
           width={tokenWidth}
@@ -67,7 +67,6 @@ const TokenArchetypeCard = memo<{
           opacity={archetype.opacity ?? 100}
           borderOpacity={archetype.borderOpacity ?? 100}
           className="drop-shadow-md"
-          style={{ width: `${tokenWidth}%`, height: `${tokenHeight}%` }}
         />
       </div>
 

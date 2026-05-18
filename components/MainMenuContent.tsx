@@ -8,7 +8,7 @@ import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerP
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM } from '../utils/playerUtils';
-import { loadImageCacheFromIDB, restoreImagesToState, findLocalFilePaths, extractImagesFromState, saveImageCacheToIDB, getAllFileNameMappings, autoLoadImages } from '../utils/imageCache';
+import { findLocalFilePaths } from '../utils/imageCompat';
 import { saveSession, loadSession } from '../utils/sessionStorage';
 import { preloadImageUrl } from '../components/SvgTokenShape';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
@@ -26,7 +26,6 @@ import { LayersPanel } from './LayersPanel';
 import { useManualConnection, testWebRTCConnectivity } from '../store/useManualConnection';
 import { createPack, loadPack } from '../utils/packManager';
 import { clearGameState } from '../utils/gameStorage';
-import { clearImageCacheIDB } from '../utils/imageCache';
 import { clearResolvedImageCache } from './SvgTokenShape';
 import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 import LogViewer from './LogViewer';
@@ -640,7 +639,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       addPackLoadingStep('Clearing browser cache...', 'loading');
       try {
         clearGameState();
-        await clearImageCacheIDB();
         clearResolvedImageCache(); // Clear component-level image cache
         addPackLoadingStep('Cache cleared', 'success');
       } catch (error) {
@@ -664,7 +662,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       dispatch({ type: 'LOAD_GAME', payload: packData as GameState });
 
       // Preload all pack images into resolved cache to force re-render with new images
-      const { preloadAllPackImages } = await import('../utils/imageCache');
+      const { preloadAllPackImages } = await import('../utils/imageCompat');
       await preloadAllPackImages(packData.objects || {});
 
       const objectCount = Object.keys(packData.objects || {}).length;
@@ -727,19 +725,19 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         throw new Error("Invalid pack: missing or invalid 'players' field");
       }
 
-      // ===== CRITICAL: Remap image IDs to avoid conflicts =====
-      // When adding a pack, we need to give images new IDs to prevent
-      // overwriting images from previously added packs
-      addPackLoadingStep('Remapping image IDs to prevent conflicts...', 'loading');
+      // ===== CRITICAL: Migrate img_ref:// URLs to sha256 hashes =====
+      // Old packs use img_ref://, new system uses sha256 hashes
+      addPackLoadingStep('Migrating images to CAS system...', 'loading');
 
       const {
-        getImageUrlFromRef,
-        saveSingleImageToIDB,
-        addToManagedCache,
-        createImageRef
-      } = await import('../utils/imageCache');
+        getImageUrlFromRef
+      } = await import('../utils/imageCompat');
+      const {
+        hashDataURL,
+        storeAssetFromDataURL
+      } = await import('../utils/assets');
 
-      // Find all unique img_ref:// URLs in pack objects
+      // Find all img_ref:// URLs in pack objects
       const imgRefUrls = new Set<string>();
       const extractImgRefs = (obj: any) => {
         if (!obj || typeof obj !== 'object') return;
@@ -761,40 +759,37 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         extractImgRefs(obj);
       }
 
-      // Create mapping from old image IDs to new IDs
-      const imageIdMap = new Map<string, string>();
-      const generateUniqueImageId = (originalId: string): string => {
-        // Extract base ID (remove img_ref:// prefix)
-        const baseId = originalId.replace('img_ref://', '');
-        let counter = 1;
-        let newId: string;
-        do {
-          newId = `${baseId}_add${counter}`;
-          counter++;
-        } while (imgRefUrls.has(`img_ref://${newId}`) || imageIdMap.has(`img_ref://${newId}`));
-        return newId;
-      };
+      // Create mapping from img_ref:// to sha256 hash
+      const imageMigrationMap = new Map<string, string>();
+      let migratedCount = 0;
+      let skippedCount = 0;
 
-      // For each unique img_ref://, create a new ID and copy the image
+      // For each img_ref://, hash the image data and create sha256 hash
       for (const oldImgRef of imgRefUrls) {
-        const newImageId = generateUniqueImageId(oldImgRef);
-        const newImgRef = createImageRef(newImageId);
-        imageIdMap.set(oldImgRef, newImgRef);
-
-        // Get the image data from the old ref
         try {
           const imageData = await getImageUrlFromRef(oldImgRef);
-          if (imageData) {
-            // Save with new ID to both caches
-            await saveSingleImageToIDB(newImageId, imageData);
-            addToManagedCache(newImageId, imageData);
+          if (imageData && imageData.startsWith('data:image/')) {
+            // Hash the image data
+            const hashResult = await hashDataURL(imageData);
+            const hash = hashResult.hash;
+
+            // Store in asset database
+            await storeAssetFromDataURL(imageData, 'pack');
+
+            // Create mapping
+            imageMigrationMap.set(oldImgRef, hash);
+            migratedCount++;
+          } else {
+            logger.warn(`[ADD_PACK] Could not load image for ${oldImgRef}`);
+            skippedCount++;
           }
         } catch (error) {
-          logger.warn(`[ADD_PACK] Failed to copy image ${oldImgRef} to ${newImgRef}:`, error);
+          logger.warn(`[ADD_PACK] Failed to migrate image ${oldImgRef}:`, error);
+          skippedCount++;
         }
       }
 
-      // Replace all img_ref:// URLs in objects with new IDs
+      // Replace all img_ref:// URLs in objects with sha256 hashes
       const replaceImgRefs = (obj: any): any => {
         if (!obj || typeof obj !== 'object') return obj;
         if (Array.isArray(obj)) {
@@ -802,8 +797,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         }
         const result = { ...obj };
         for (const [key, value] of Object.entries(result)) {
-          if (typeof value === 'string' && value.startsWith('img_ref://') && imageIdMap.has(value)) {
-            result[key] = imageIdMap.get(value);
+          if (typeof value === 'string' && imageMigrationMap.has(value)) {
+            result[key] = imageMigrationMap.get(value);
           } else if (typeof value === 'object' && value !== null) {
             result[key] = replaceImgRefs(value);
           }
@@ -811,14 +806,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         return result;
       };
 
-      // Apply the replacement to all pack objects
-      const remappedObjects: Record<string, any> = {};
+      // Apply the migration to all pack objects
+      const migratedObjects: Record<string, any> = {};
       for (const [id, obj] of Object.entries(packData.objects || {})) {
-        remappedObjects[id] = replaceImgRefs(obj);
+        migratedObjects[id] = replaceImgRefs(obj);
       }
-      packData.objects = remappedObjects;
+      packData.objects = migratedObjects;
 
-      addPackLoadingStep(`Remapped ${imageIdMap.size} images to prevent conflicts`, 'success');
+      addPackLoadingStep(`Migrated ${migratedCount} images to sha256${skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}`, 'success');
 
       // Count conflicts
       const existingIds = new Set(Object.keys(state.objects));
@@ -835,7 +830,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       dispatch({ type: 'ADD_PACK_TO_GAME', payload: packData });
 
       // Preload all pack images into resolved cache
-      const { preloadAllPackImages } = await import('../utils/imageCache');
+      const { preloadAllPackImages } = await import('../utils/imageCompat');
       await preloadAllPackImages(packData.objects || {});
 
       const objectCount = Object.keys(packData.objects || {}).length;
@@ -1946,36 +1941,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       {localFilesToRestore && pendingLoadState && (
         <LocalFileRestoreDialog
           localFiles={localFilesToRestore}
-          onConfirm={async (fileMap) => {
-            // Process uploaded files
-            const idbCache = await loadImageCacheFromIDB();
-
-            for (const [fileName, file] of fileMap) {
-              // Find the local file info to get the original img_ref URL
-              const localFile = localFilesToRestore.find(f => f.filename === fileName);
-              if (!localFile) continue;
-
-              // Extract the original image ID from the img_ref:// URL
-              const originalImgRefUrl = localFile.path; // e.g., "img_ref://img_1234567890_abc123"
-              const imageId = originalImgRefUrl.replace('img_ref://', '');
-
-              // Convert file to base64
-              const reader = new FileReader();
-              const base64Url = await new Promise<string>((resolve) => {
-                reader.onload = () => resolve(reader.result as string);
-                reader.readAsDataURL(file);
-              });
-
-              // Save to IndexedDB with the ORIGINAL image ID
-              await saveImageCacheToIDB(imageId, base64Url);
-              idbCache[imageId] = base64Url;
-            }
-
-            // Restore all images from IDB (including newly uploaded)
-            const restoredState = restoreImagesToState(pendingLoadState, idbCache);
-
-            // Dispatch load action
-            dispatch({ type: 'LOAD_GAME', payload: restoredState as GameState });
+          onConfirm={async (_fileMap) => {
+            // Load state without processing local files (old system not supported)
+            dispatch({ type: 'LOAD_GAME', payload: pendingLoadState as GameState });
 
             setLocalFilesToRestore(null);
             setPendingLoadState(null);

@@ -10,6 +10,7 @@ import { EffectTemplate } from '../types';
 import { generateHitboxFromImage } from '../utils/imageAnalysis';
 import { useLanguage } from '../store/contexts';
 import { useImageUrl } from '../hooks';
+import { getAssetURL } from '../utils/assets';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -99,7 +100,18 @@ function generateRulerTicks(
 /**
  * Preload an Effect Template image and cache it
  */
-function preloadEffectImage(src: string): Promise<void> {
+async function preloadEffectImage(src: string): Promise<void> {
+  // Resolve sha256: hashes to blob URLs before loading
+  let resolvedSrc = src;
+  if (src?.startsWith('sha256:')) {
+    try {
+      resolvedSrc = await getAssetURL(src);
+    } catch (error) {
+      console.error('[EffectTemplateRenderer] Failed to resolve asset:', src, error);
+      return; // Skip preload if we can't resolve
+    }
+  }
+
   if (effectImageCache.has(src)) {
     return Promise.resolve();
   }
@@ -120,7 +132,7 @@ function preloadEffectImage(src: string): Promise<void> {
       effectImageCache.set(src, img);
       resolve(); // Don't reject - allow render to continue
     };
-    img.src = src;
+    img.src = resolvedSrc;
   });
 
   preloadPromises.set(src, promise);

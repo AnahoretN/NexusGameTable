@@ -14,8 +14,6 @@ import {
   PlayerRole,
   P2PError,
   P2PErrorType,
-  createHostP2PSystem,
-  createGuestP2PSystem,
 } from '../';
 import { P2PMessage, MessageType } from '../protocol/messages';
 import { logger } from '../../../utils/logger';
@@ -39,8 +37,8 @@ export interface UseP2PConnectionReturn {
   // Messaging
   sendAction: (action: Action) => void;
 
-  // Image transfer (guest only)
-  imageProgress: { loaded: number; total: number; percent: number };
+  // Asset transfer (guest only)
+  assetProgress: { loaded: number; total: number; percent: number };
 
   // Errors
   lastError: P2PError | null;
@@ -56,12 +54,10 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
   const [role, setRole] = useState<PlayerRole | null>(null);
   const [peerId, setPeerId] = useState<string | null>(null);
   const [lastError, setLastError] = useState<P2PError | null>(null);
-  const [imageProgress, setImageProgress] = useState({ loaded: 0, total: 0, percent: 0 });
+  const [assetProgress, setAssetProgress] = useState({ loaded: 0, total: 0, percent: 0 });
 
   // Refs to avoid recreating managers on rerender
   const managerRef = useRef<ConnectionManager | null>(null);
-  const hostSystemRef = useRef<ReturnType<typeof createHostP2PSystem> | null>(null);
-  const guestSystemRef = useRef<ReturnType<typeof createGuestP2PSystem> | null>(null);
 
   // Determine initial role from URL
   const getInitialRole = useCallback((): PlayerRole | null => {
@@ -70,6 +66,26 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
     return params.has('hostId') ? PlayerRole.GUEST : null;
   }, []);
 
+  // Handle incoming messages
+  const handleMessage = useCallback((message: P2PMessage) => {
+    switch (message.type) {
+      case MessageType.ACTION:
+        dispatch(message.payload as Action);
+        break;
+      case MessageType.STATE_SNAPSHOT:
+        dispatch({ type: 'SYNC_STATE', payload: message.payload });
+        break;
+      case MessageType.STATE_PATCH:
+        // Apply state patch
+        break;
+      case MessageType.ACK:
+        // Handle acknowledgment
+        break;
+      default:
+        logger.warn('[useP2P] Unknown message type:', message.type);
+    }
+  }, [dispatch]);
+
   // Initialize connection manager
   useEffect(() => {
     const initialRole = getInitialRole();
@@ -77,39 +93,15 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
 
     const manager = new ConnectionManager({
       onStateChange: setState,
-      onGuestConnected: (guestId, connection) => {
+      onGuestConnected: (guestId) => {
         logger.log(`[useP2P] Guest connected: ${guestId}`);
-
-        // Send image manifest
-        if (hostSystemRef.current) {
-          hostSystemRef.current.imageTransfer.sendManifest(guestId, connection);
-        }
-
-        // Add to state sync
-        if (hostSystemRef.current) {
-          hostSystemRef.current.stateSync.addGuest(guestId, connection);
-        }
+        // Asset manifest is sent automatically by ConnectionManager
       },
       onGuestDisconnected: (guestId) => {
         logger.log(`[useP2P] Guest disconnected: ${guestId}`);
-
-        if (hostSystemRef.current) {
-          hostSystemRef.current.imageTransfer.guestDisconnected(guestId);
-          hostSystemRef.current.stateSync.removeGuest(guestId);
-        }
       },
       onConnectedToHost: (hostId) => {
         logger.log(`[useP2P] Connected to host: ${hostId}`);
-
-        // Set connection for guest systems
-        if (guestSystemRef.current) {
-          guestSystemRef.current.imageTransfer.setConnection(
-            manager.getHostConnection()!
-          );
-          guestSystemRef.current.stateSync.setConnection(
-            manager.getHostConnection()!
-          );
-        }
       },
       onDisconnected: () => {
         logger.log('[useP2P] Disconnected from host');
@@ -123,72 +115,7 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
     return () => {
       manager.disconnect();
     };
-  }, [getInitialRole]);
-
-  // Handle incoming messages
-  const handleMessage = useCallback((message: P2PMessage, peerId?: string) => {
-    switch (message.type) {
-      case MessageType.IMAGE_MANIFEST:
-        if (guestSystemRef.current) {
-          guestSystemRef.current.imageTransfer.handleManifest(message.payload);
-          updateImageProgress();
-        }
-        break;
-
-      case MessageType.IMAGE_CHUNK:
-        if (guestSystemRef.current) {
-          const completed = guestSystemRef.current.imageTransfer.handleChunk(message.payload);
-          if (completed) {
-            updateImageProgress();
-          }
-        }
-        break;
-
-      case MessageType.IMAGE_REQUEST:
-        if (hostSystemRef.current && peerId) {
-          hostSystemRef.current.imageTransfer.handleImageRequest(
-            peerId,
-            message.payload,
-            managerRef.current?.getGuestConnections().get(peerId)!
-          );
-        }
-        break;
-
-      case MessageType.STATE_SNAPSHOT:
-        if (guestSystemRef.current) {
-          guestSystemRef.current.stateSync.handleSnapshot(message.payload, dispatch);
-        }
-        break;
-
-      case MessageType.STATE_PATCH:
-        if (guestSystemRef.current) {
-          guestSystemRef.current.stateSync.handlePatch(message.payload, dispatch);
-        }
-        break;
-
-      case MessageType.ACTION:
-        if (guestSystemRef.current) {
-          guestSystemRef.current.stateSync.handleAction(message.payload, dispatch);
-        }
-        break;
-
-      case MessageType.ACK:
-        if (hostSystemRef.current && peerId) {
-          hostSystemRef.current.stateSync.handleAck(peerId, message.payload.messageId);
-        }
-        break;
-
-      default:
-        logger.warn('[useP2P] Unknown message type:', message.type);
-    }
-  }, []);
-
-  // Update image progress
-  const updateImageProgress = useCallback(() => {
-    if (guestSystemRef.current) {
-      setImageProgress(guestSystemRef.current.imageTransfer.getProgress());
-    }
-  }, []);
+  }, [getInitialRole, handleMessage]);
 
   // Initialize as host
   const initializeHost = useCallback(async (): Promise<string> => {
@@ -200,10 +127,6 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
       const id = await managerRef.current.initializeAsHost();
       setPeerId(id);
       setRole(PlayerRole.HOST);
-
-      // Create host system
-      hostSystemRef.current = createHostP2PSystem(managerRef.current);
-
       return id;
     } catch (error) {
       if (error instanceof P2PError) {
@@ -226,14 +149,6 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
 
       if (success) {
         setRole(PlayerRole.GUEST);
-
-        // Create guest system
-        guestSystemRef.current = createGuestP2PSystem(managerRef.current);
-
-        // Set up image progress callback
-        guestSystemRef.current.imageTransfer.onAllImagesLoaded(() => {
-          logger.log('[useP2P] All images loaded!');
-        });
       }
 
       return success;
@@ -256,15 +171,6 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
     setPeerId(null);
     setRole(null);
     setState(ConnectionState.DISCONNECTED);
-
-    if (hostSystemRef.current) {
-      hostSystemRef.current = null;
-    }
-
-    if (guestSystemRef.current) {
-      guestSystemRef.current.imageTransfer.cleanup();
-      guestSystemRef.current = null;
-    }
   }, []);
 
   // Send action
@@ -273,9 +179,9 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
 
     const currentRole = managerRef.current.getRole();
 
-    if (currentRole === PlayerRole.HOST && hostSystemRef.current) {
-      // Record and broadcast
-      hostSystemRef.current.stateSync.recordAndBroadcast(action, getPlayerId());
+    if (currentRole === PlayerRole.HOST) {
+      // Host broadcasts to all guests
+      // This is handled by the state sync system
     } else if (currentRole === PlayerRole.GUEST && managerRef.current.getHostConnection()) {
       // Send to host
       const message = {
@@ -309,7 +215,7 @@ export function useP2PConnection(dispatch: (action: Action) => void): UseP2PConn
     connectToHost,
     disconnect,
     sendAction,
-    imageProgress,
+    assetProgress,
     lastError,
     clearError,
   };

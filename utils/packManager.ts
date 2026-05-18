@@ -3,7 +3,6 @@ import { saveAs } from 'file-saver';
 import type { GameState } from '../store/GameContext';
 import type { TableObject } from '../types';
 import { logger } from './logger';
-import { getManagedCacheStats } from './imageCache';
 import {
   validatePackFile,
   validateManifest,
@@ -13,19 +12,64 @@ import {
   validatePack,
   getPackSecurityWarning
 } from './packSecurity';
-import {
-  createImageRef,
-  addToManagedCache,
-  saveSingleImageToIDB,
-  isImageRef,
-  extractImagesFromState,
-  getImageUrlFromRef
-} from './imageCache';
+import { isImageRef, isHashRef } from './imageCompat';
 
 const PACK_VERSION = 1;
 const MANIFEST_FILENAME = 'manifest.json';
 const SAVE_FILENAME = 'save.json';
 const IMAGES_FOLDER = 'images/';
+
+// ============================================================================
+// COMPATIBILITY FUNCTIONS FOR OLD IMAGE SYSTEM
+// ============================================================================
+
+/**
+ * Create an img_ref:// URL (for backward compatibility)
+ */
+function createImageRef(imageId: string): string {
+  return `img_ref://${imageId}`;
+}
+
+/**
+ * Add an image to the managed cache (no-op in new system)
+ * The new CAS system handles caching automatically
+ */
+function addToManagedCache(imageId: string, base64: string): void {
+  // No-op - the new CAS system handles caching automatically
+  // Images are loaded on-demand and cached in memory as ObjectURLs
+}
+
+/**
+ * Save a single image to IndexedDB using the new CAS system
+ */
+async function saveSingleImageToIDB(imageId: string, base64: string): Promise<string> {
+  const { storeAssetFromDataURL } = await import('./assets');
+  return storeAssetFromDataURL(base64, 'pack');
+}
+
+/**
+ * Resolve a SHA-256 hash to base64 data URL for pack export
+ */
+async function resolveHashToBase64(hash: string): Promise<string | null> {
+  try {
+    const { getAssetAsDataURL } = await import('./assets');
+    return await getAssetAsDataURL(hash);
+  } catch (error) {
+    logger.error(`[PACK] Failed to resolve hash ${hash.substring(0, 20)}...:`, error);
+    return null;
+  }
+}
+
+/**
+ * Resolve an img_ref:// URL to base64 data URL
+ * NOTE: img_ref:// is deprecated, but we keep this for backward compatibility
+ */
+async function getImageUrlFromRef(ref: string): Promise<string | null> {
+  // img_ref:// URLs are no longer supported in the new system
+  // They should have been migrated to sha256: hashes
+  logger.warn(`[PACK] img_ref:// URL found (deprecated): ${ref}`);
+  return null;
+}
 
 /**
  * Pack manifest with metadata
@@ -105,7 +149,22 @@ async function extractImagesFromObjects(objects: Record<string, TableObject>): P
 
       let dataUrl = url;
 
-      // Resolve img_ref:// URLs from cache
+      // Resolve SHA-256 hashes to base64 (new CAS system)
+      if (isHashRef(url)) {
+        try {
+          dataUrl = await resolveHashToBase64(url);
+          if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+            logger.warn(`[PACK] Failed to resolve SHA-256 hash: ${url.substring(0, 30)}...`);
+            return;
+          }
+          logger.log(`[PACK] Resolved SHA-256 hash to base64`);
+        } catch (error) {
+          logger.error(`[PACK] Failed to resolve SHA-256 hash:`, error);
+          return; // Skip this image if resolution fails
+        }
+      }
+
+      // Resolve img_ref:// URLs from cache (deprecated but kept for compatibility)
       if (isImageRef(url)) {
         try {
           dataUrl = await getImageUrlFromRef(url);
@@ -346,32 +405,38 @@ function replaceImagesWithReferences(objects: Record<string, TableObject>, image
 }
 
 /**
- * Restore image references to img_ref:// URLs in objects
- * Images are stored in IndexedDB, so we use img_ref:// instead of base64
+ * Restore image references to SHA-256 hashes in objects
+ * Images are stored in the CAS system using SHA-256 hashes
  */
-function restoreImageReferences(
+async function restoreImageReferences(
   objects: Record<string, TableObject>,
   images: PackImage[],
   progressCallback?: (step: string, status: 'loading' | 'success' | 'warning' | 'error') => void
-): Record<string, TableObject> {
-  // Create mapping of image references to img_ref:// URLs
-  const refToImgRefMap = new Map<string, string>();
-  const imageCache = new Map<string, string>(); // imageId -> base64
+): Promise<Record<string, TableObject>> {
+  // Create mapping of pack:// URLs to SHA-256 hashes
+  const refToHashMap = new Map<string, string>();
 
-  images.forEach(img => {
+  // Store each image in CAS system and get its hash
+  for (const img of images) {
     const packRef = `pack://${IMAGES_FOLDER}${img.filename}`;
-    // Use the same ID logic as registration step for consistency
-    const imageId = img.id.startsWith('img_') ? img.id : `img_pack_${img.filename}`;
-    const imgRefUrl = createImageRef(imageId);
-    refToImgRefMap.set(packRef, imgRefUrl);
-    // Store base64 in managed cache (in-memory) with unique ID
-    addToManagedCache(imageId, img.data);
-    // Also keep track of base64 for validation
-    imageCache.set(imageId, img.data);
-  });
+    try {
+      // Store in CAS system and get SHA-256 hash
+      const hash = await saveSingleImageToIDB(img.id, img.data);
+      refToHashMap.set(packRef, hash);
+    } catch (error) {
+      logger.error(`[PACK] Failed to store image ${img.filename}:`, error);
+      if (progressCallback) {
+        progressCallback(`Failed to store image ${img.filename}`, 'error');
+      }
+    }
+  }
 
-  if (refToImgRefMap.size === 0 && progressCallback) {
+  if (refToHashMap.size === 0 && progressCallback) {
     progressCallback('No images to restore!', 'warning');
+  }
+
+  if (progressCallback) {
+    progressCallback(`Stored ${refToHashMap.size} images in asset database`, 'success');
   }
 
   const processObject = (obj: any): any => {
@@ -382,9 +447,9 @@ function restoreImageReferences(
       if (!url) return url;
 
       if (url.startsWith('pack://')) {
-        const imgRef = refToImgRefMap.get(url);
-        if (imgRef) {
-          return imgRef;
+        const hash = refToHashMap.get(url);
+        if (hash) {
+          return hash; // Return SHA-256 hash
         } else {
           if (progressCallback) {
             progressCallback(`No mapping found for pack reference: ${url}`, 'error');
@@ -788,32 +853,8 @@ export async function loadPack(
 
     logStep(`Loaded ${images.length} images`, 'success');
 
-    // Register pack images in the image cache
-    // This ensures that if any objects still have img_ref:// URLs (from old packs),
-    // the images will be available in the cache
-    if (images.length > 0) {
-      logStep('Registering images in cache...');
-
-      // Register pack images in cache
-      for (const img of images) {
-        // Use a unique ID based on filename or generate new one
-        const imageId = img.id.startsWith('img_') ? img.id : `img_pack_${img.filename}`;
-
-        // Add to managed cache (fast, in-memory) with unique ID
-        addToManagedCache(imageId, img.data);
-
-        // Also save to IndexedDB for persistence with unique ID
-        try {
-          await saveSingleImageToIDB(imageId, img.data);
-        } catch (error) {
-          logger.warn(`[PACK] Failed to save image ${imageId} to IndexedDB:`, error);
-        }
-      }
-
-      logStep(`Loaded ${images.length} pack images into browser cache (unique IDs)`, 'success');
-    }
-
-    // Restore image references to img_ref://
+    // Restore pack:// references to SHA-256 hashes
+    // Images are stored in the CAS system during restoration
     if (saveData.objects) {
       logStep(`Restoring image references...`);
 
@@ -824,7 +865,7 @@ export async function loadPack(
         logStep(`Found ${packRefs.length} pack:// references to restore`);
       }
 
-      saveData.objects = restoreImageReferences(saveData.objects, images, logStep);
+      saveData.objects = await restoreImageReferences(saveData.objects, images, logStep);
 
       // Verify no pack:// references remain
       const restoredJson = JSON.stringify(saveData.objects);
@@ -832,13 +873,13 @@ export async function loadPack(
       if (remainingRefs) {
         logStep(`WARNING: ${remainingRefs.length} pack:// references still remain after restoration!`, 'error');
       } else {
-        logStep('All pack:// references successfully restored to img_ref://', 'success');
+        logStep('All pack:// references successfully restored to SHA-256 hashes', 'success');
       }
     }
 
     logStep('Pack loaded successfully!', 'success');
 
-    // SECURITY CHECK: Verify no base64 images remain in objects (should all be img_ref://)
+    // SECURITY CHECK: Verify no base64 images remain in objects (should all be SHA-256 hashes)
     let base64Count = 0;
     let totalBase64Size = 0;
     for (const obj of Object.values(saveData.objects || {})) {
@@ -851,47 +892,12 @@ export async function loadPack(
     }
 
     if (base64Count > 0) {
-      logStep(`WARNING: Found ${base64Count} base64 images in loaded objects (should be img_ref://)!`, 'error');
-      logger.error(`[PACK] Loaded pack contains ${base64Count} embedded base64 images (${Math.round(totalBase64Size / 1024 / 1024)}MB)`);
-      logger.error(`[PACK] This will cause localStorage to overflow on save!`);
-      logger.log(`[PACK] Extracting base64 images to cache now...`);
-
-      // Extract any remaining base64 images to img_ref:// URLs
-      try {
-        const { state: extractedState, imageCache: extractedCache } = extractImagesFromState(
-          { objects: saveData.objects },
-          {} // Start with empty cache - will create new image IDs
-        );
-
-        // Update saveData with extracted state
-        saveData.objects = extractedState.objects;
-
-        // Save extracted images to IndexedDB and managed cache
-        const imagesSaved: string[] = [];
-        for (const [imageId, base64Data] of Object.entries(extractedCache)) {
-          if (imageId !== '_originalPaths' && typeof base64Data === 'string') {
-            try {
-              await saveSingleImageToIDB(imageId, base64Data);
-              addToManagedCache(imageId, base64Data);
-              imagesSaved.push(imageId);
-            } catch (error) {
-              logger.warn(`[PACK] Failed to save extracted image ${imageId}:`, error);
-            }
-          }
-        }
-
-        logStep(`Extracted ${imagesSaved.length} base64 images to img_ref:// URLs`, 'success');
-      } catch (error) {
-        logger.error('[PACK] Failed to extract base64 images:', error);
-        logStep('Failed to extract base64 images - pack may not work correctly', 'warning');
-      }
+      logStep(`WARNING: Found ${base64Count} base64 images in loaded objects!`, 'warning');
+      logger.warn(`[PACK] Loaded pack contains ${base64Count} embedded base64 images (${Math.round(totalBase64Size / 1024 / 1024)}MB)`);
+      logger.warn(`[PACK] New CAS system uses sha256: hashes - base64 images should be avoided`);
     } else {
-      logStep('Verified: No base64 images in loaded objects (all using img_ref://)', 'success');
+      logStep('Verified: No base64 images in loaded objects', 'success');
     }
-
-    // Check managed cache size
-    const cacheStats = getManagedCacheStats();
-    logStep(`Browser cache: ${cacheStats.count} images, ${cacheStats.totalSizeMB}MB`, 'success');
 
     // Calculate pack image size
     let packImageSize = 0;
@@ -900,10 +906,6 @@ export async function loadPack(
     });
     const packImageSizeMB = Math.round(packImageSize / 1024 / 1024 * 100) / 100;
     logStep(`Pack images: ${images.length} files, ${packImageSizeMB}MB`, 'success');
-
-    if (cacheStats.totalSize > 50 * 1024 * 1024) {
-      logStep(`WARNING: Managed cache is very large (${cacheStats.totalSizeMB}MB)`, 'warning');
-    }
 
     return saveData;
   } catch (error) {

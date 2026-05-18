@@ -17,7 +17,6 @@ import { ActionRecorder, applyActions, compressPositionUpdates } from './actions
 import { DataChannelLike } from '../types';
 import { MessageFactory, MessageType } from '../protocol/messages';
 import { logger } from '../../../utils/logger';
-import { extractImagesFromState } from '../../../utils/imageCache';
 
 // ============================================================================
 // HOST SIDE: State Sync Manager
@@ -96,12 +95,10 @@ export class HostStateSyncManager {
     const guest = this.guest.get(guestId);
     if (!guest || !this.currentState) return;
 
-    const { state: stateWithRefs, imageCache } = extractImagesFromState(this.currentState);
-
     const snapshot: StateSnapshotPayload = {
       sessionId: this.currentState.sessionId || '',
       version: this.recorder.getCurrentVersion(),
-      state: stateWithRefs,
+      state: this.currentState, // State now contains sha256 hashes instead of base64
       timestamp: Date.now(),
     };
 

@@ -47,7 +47,6 @@ export const RemoteObjectsRenderer = memo<RemoteObjectsRendererProps>(({
         showThickness={true}
         tokenName={(token as any).showNameOnToken || (token as any).showName || ((token as any).archetypeId && (state.objects[(token as any).archetypeId] as any)?.showName) ? token.name : undefined}
         fontColor={(token as any).fontColor || '#ffffff'}
-        pixelsPerVU={pixelsPerVU}
       />
     </div>
   );

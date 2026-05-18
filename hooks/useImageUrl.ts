@@ -1,27 +1,43 @@
 import { useState, useEffect } from 'react';
-import { isImageRef, getImageUrlFromRef, getFromManagedCache } from '../utils/imageCache';
+import { getAssetURL, isValidHash, assetCache } from '../utils/assets';
 
-// Global cache for resolved URLs to prevent re-loading during drag operations
+// ============================================================================
+// URL CACHE
+// ============================================================================
+
 const resolvedUrlCache = new Map<string, string>();
 const pendingResolves = new Map<string, Promise<string>>();
 
 /**
- * React hook to convert img_ref:// URLs to displayable URLs
- * Returns the actual URL (data URL or original URL)
- * Optimized to prevent flicker during drag operations
+ * React hook to convert asset URLs to displayable URLs
+ *
+ * Supports:
+ * - SHA-256 hashes: "sha256:abc123..." → loads from new CAS system
+ * - Regular URLs: "https://..." → used as-is
+ *
+ * @deprecated Use useAssetURL from utils/assets instead
  */
 export function useImageUrl(url: string): string {
   const [displayUrl, setDisplayUrl] = useState<string>(() => {
-    // Initialize from cache if available
-    if (url && isImageRef(url)) {
-      return resolvedUrlCache.get(url) || url;
+    if (url && resolvedUrlCache.has(url)) {
+      return resolvedUrlCache.get(url)!;
+    }
+    // Don't return sha256: URLs directly - they cause CSP violations
+    // Return empty string until resolved
+    if (url && isValidHash(url)) {
+      return '';
     }
     return url;
   });
 
   useEffect(() => {
-    // If not an img_ref URL, use as-is
-    if (!isImageRef(url)) {
+    if (!url) {
+      setDisplayUrl(url);
+      return;
+    }
+
+    // Regular URL - use as-is (not a hash)
+    if (!isValidHash(url)) {
       setDisplayUrl(url);
       return;
     }
@@ -35,16 +51,7 @@ export function useImageUrl(url: string): string {
       return;
     }
 
-    // Check managed cache (fast, in-memory)
-    const imageId = url.replace('img_ref://', '');
-    const managedCached = getFromManagedCache(imageId);
-    if (managedCached) {
-      resolvedUrlCache.set(url, managedCached);
-      setDisplayUrl(managedCached);
-      return;
-    }
-
-    // Check if there's already a pending resolve for this URL
+    // Check for pending resolve
     if (pendingResolves.has(url)) {
       pendingResolves.get(url)!.then(resolvedUrl => {
         setDisplayUrl(resolvedUrl);
@@ -52,15 +59,22 @@ export function useImageUrl(url: string): string {
       return;
     }
 
-    // Convert img_ref:// to actual URL
+    // Resolve SHA-256 hash to ObjectURL
     let cancelled = false;
-    const resolvePromise = getImageUrlFromRef(url).then((resolvedUrl) => {
+    const resolvePromise = getAssetURL(url).then((resolvedUrl) => {
       if (!cancelled) {
         resolvedUrlCache.set(url, resolvedUrl);
         setDisplayUrl(resolvedUrl);
       }
       pendingResolves.delete(url);
       return resolvedUrl;
+    }).catch((error) => {
+      console.error(`Failed to resolve URL ${url}:`, error);
+      if (!cancelled) {
+        setDisplayUrl(url); // Fallback to original URL
+      }
+      pendingResolves.delete(url);
+      return url;
     });
 
     pendingResolves.set(url, resolvePromise);
@@ -68,7 +82,7 @@ export function useImageUrl(url: string): string {
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [url, displayUrl]);
 
   return displayUrl;
 }
@@ -77,12 +91,15 @@ export function useImageUrl(url: string): string {
  * Preload an image URL into the cache
  */
 export function preloadImageUrl(url: string): void {
-  if (isImageRef(url) && !resolvedUrlCache.has(url)) {
-    const imageId = url.replace('img_ref://', '');
-    const managedCached = getFromManagedCache(imageId);
-    if (managedCached) {
-      resolvedUrlCache.set(url, managedCached);
-    }
+  if (!url || resolvedUrlCache.has(url)) {
+    return;
+  }
+
+  // SHA-256 hash - preload from CAS system
+  if (isValidHash(url)) {
+    getAssetURL(url).then(resolvedUrl => {
+      resolvedUrlCache.set(url, resolvedUrl);
+    });
   }
 }
 
@@ -91,4 +108,12 @@ export function preloadImageUrl(url: string): void {
  */
 export function clearUrlCache(): void {
   resolvedUrlCache.clear();
+}
+
+/**
+ * Clear both URL cache and asset cache
+ */
+export function clearAllImageCaches(): void {
+  clearUrlCache();
+  assetCache.clear();
 }

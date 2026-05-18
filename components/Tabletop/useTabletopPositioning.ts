@@ -15,7 +15,8 @@ export const useTabletopPositioning = (
   localSettings: { zoom?: number }
 ) => {
   // Get the base pixelsPerVU conversion factor
-  const basePixelsPerVU = viewTransform?.pixelsPerVU ?? 1.08;
+  // Normalize to make 1 VU = 1 px at zoom 100% (typical screen has pixelsPerVU ~1.08)
+  const basePixelsPerVU = 1.0;
 
   // Local zoom multiplier (100 = default, 150 = 50% larger objects, etc.)
   const zoomMultiplier = (localSettings.zoom ?? 100) / 100;

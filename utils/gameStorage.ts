@@ -1,107 +1,89 @@
 /**
  * Game State Storage with Image Reference System
  *
- * NEW ARCHITECTURE:
- * - State ALWAYS contains img_ref:// URLs (never base64 in memory)
- * - Images stored in IndexedDB with ID-based lookup
- * - Components use useImageUrl() hook to resolve img_ref:// to displayable URLs
- * - Managed cache provides fast in-memory access to frequently used images
+ * NEW ARCHITECTURE (CAS):
+ * - State ALWAYS contains sha256: hashes (never base64 in memory)
+ * - Images stored in IndexedDB (AssetDB)
+ * - Components use useImageUrl() hook to resolve sha256: to displayable URLs
  */
 
 import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, DiceGroup } from '../types';
 import type { GameState, ViewTransform } from '../store/GameContext';
 import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
-import {
-  extractImagesFromState,
-  saveImageCacheToIDB,
-  loadImageCacheFromIDB,
-  getNewImages,
-  ImageCache,
-  clearImageCacheIDB,
-  findLocalFilePaths,
-  replaceLocalFilePathsWithBase64,
-  saveSingleImageToIDB,
-  generateImageId,
-  createImageRef,
-  addToManagedCache,
-  getManagedCacheStats
-} from './imageCache';
 import * as LZString from 'lz-string';
+import { findLocalFilePaths, type LocalFileReference } from './imageCompat';
 
-// Re-export types for use in other modules
-export type { LocalFileReference } from './imageCache';
+// Re-export for other modules
+export type { LocalFileReference };
+export { findLocalFilePaths };
 
 const STORAGE_KEY = 'nexus-game-state';
 const STORAGE_KEY_COMPRESSED = 'nexus-game-state-compressed';
 const STORAGE_VERSION = 8; // Version with new objects and settings (diceGroups, access control, etc.)
 const USE_COMPRESSION = true; // Enable compression for localStorage
 
-// In-memory cache for IDB images to avoid repeated reads
-let cachedIDBCache: ImageCache | null = null;
-let cacheLoadPromise: Promise<ImageCache> | null = null;
-let isCacheInitialized = false;
-
 /**
- * Get IDB cache from memory or load it once (cached for performance)
- */
-async function getOrLoadIDBCache(): Promise<ImageCache> {
-  if (cachedIDBCache) {
-    return cachedIDBCache;
-  }
-
-  if (cacheLoadPromise) {
-    return cacheLoadPromise;
-  }
-
-  cacheLoadPromise = loadImageCacheFromIDB();
-  const cache = await cacheLoadPromise;
-  cachedIDBCache = cache;
-  cacheLoadPromise = null;
-  isCacheInitialized = true;
-
-  return cache;
-}
-
-/**
- * Invalidate IDB cache (call after saving new images)
- */
-function invalidateIDBCache(): void {
-  cachedIDBCache = null;
-}
-
-/**
- * Initialize managed cache from IndexedDB on startup
- * This ensures all images are available for components to use via useImageUrl
+ * Initialize image system (no-op in CAS system)
+ * Assets are managed by AssetDB
  */
 export async function initializeImageCache(): Promise<void> {
-  if (isCacheInitialized) {
-    return;
-  }
+  // No-op - images are managed by the new CAS system
+  logger.log('[STORAGE] Image cache initialized (CAS system manages assets)');
+}
 
-  try {
-    const idbCache = await loadImageCacheFromIDB();
-    const imageCount = Object.keys(idbCache).length;
+// ============================================================================
+// COMPATIBILITY FUNCTIONS FOR OLD IMAGE SYSTEM
+// These bridge the old img_ref:// system with the new SHA-256 hash system
+// ============================================================================
 
-    if (imageCount > 0) {
-      // Populate managed cache
-      for (const [imageId, data] of Object.entries(idbCache)) {
-        addToManagedCache(imageId, data);
-      }
+/**
+ * Generate a unique image ID (for backward compatibility)
+ * In the new system, we use SHA-256 hashes directly
+ */
+export function generateImageId(): string {
+  // Generate a random ID (timestamp + random)
+  return `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
 
-      cachedIDBCache = idbCache;
-      isCacheInitialized = true;
+/**
+ * Create an img_ref:// URL (for backward compatibility)
+ * Note: The new system prefers sha256: hashes directly
+ */
+export function createImageRef(imageId: string): string {
+  return `img_ref://${imageId}`;
+}
 
-      const stats = getManagedCacheStats();
-      logger.log(`[STORAGE] Initialized image cache: ${imageCount} images, ${stats.totalSizeMB}MB`);
-    } else {
-      logger.log('[STORAGE] No cached images found in IndexedDB');
-      isCacheInitialized = true;
-    }
-  } catch (error) {
-    logger.error('[STORAGE] Failed to initialize image cache:', error);
-    isCacheInitialized = true; // Don't retry on failure
-  }
+/**
+ * Save a single image to IndexedDB using the new CAS system
+ * @param imageId - Legacy image ID (not used in new system, kept for compat)
+ * @param base64 - Base64 data URL
+ * @returns The SHA-256 hash of the stored image
+ */
+export async function saveSingleImageToIDB(imageId: string, base64: string): Promise<string> {
+  const { storeAssetFromDataURL } = await import('./assets');
+  return storeAssetFromDataURL(base64, 'local');
+}
+
+/**
+ * Add an image to the managed cache (no-op in new system)
+ * The new asset system handles caching automatically
+ * @param imageId - Legacy image ID (not used)
+ * @param base64 - Base64 data URL (not used)
+ */
+export function addToManagedCache(imageId: string, base64: string): void {
+  // No-op - the new CAS system handles caching automatically via assetCache
+  // Images are loaded on-demand and cached in memory as ObjectURLs
+}
+
+/**
+ * Load images from IDB into managed cache (no-op in new system)
+ * The new system loads images on-demand
+ * @returns Empty object (no preloading in new system)
+ */
+export async function loadImageCacheFromIDB(): Promise<Record<string, string>> {
+  // No-op - images are loaded on-demand in the new system
+  return {};
 }
 
 interface ViewportInfo {
@@ -189,10 +171,10 @@ function safeSetItem(key: string, value: string): boolean {
 /**
  * Save the current game state to localStorage
  *
- * NEW ARCHITECTURE:
- * 1. Extract any base64 images from state and replace with img_ref:// URLs
- * 2. Save new images to IndexedDB
- * 3. Save state (with img_ref:// URLs) to localStorage
+ * NEW ARCHITECTURE (CAS):
+ * - State already contains sha256: hashes (no base64 extraction needed)
+ * - Images are stored in IndexedDB AssetDB
+ * - Just save state as-is to localStorage
  */
 export const saveGameState = async (state: GameState): Promise<void> => {
   if (typeof window === 'undefined') return;
@@ -207,50 +189,6 @@ export const saveGameState = async (state: GameState): Promise<void> => {
       objectsToSave[id] = obj;
     });
 
-    // Get existing IDB cache to avoid re-saving images we already have
-    const existingIDBCache = await getOrLoadIDBCache();
-
-    // Extract images: replace base64 with img_ref:// URLs
-    const { state: extractedState, imageCache } = extractImagesFromState(
-      { objects: objectsToSave },
-      existingIDBCache
-    );
-
-    // Verify extraction worked (no base64 should remain)
-    let foundBase64InExtracted = 0;
-    for (const obj of Object.values(extractedState.objects || {})) {
-      const objJson = JSON.stringify(obj);
-      foundBase64InExtracted += (objJson.match(/data:image\//g) || []).length;
-    }
-
-    if (foundBase64InExtracted > 0) {
-      logger.error(`[AUTOSAVE] ERROR: ${foundBase64InExtracted} base64 images found AFTER extraction!`);
-      logger.error(`[AUTOSAVE] This indicates a bug in extractImagesFromState. Skipping save.`);
-      return;
-    }
-
-    // Save ONLY NEW images to IndexedDB
-    const newImages = getNewImages(imageCache, existingIDBCache);
-    if (Object.keys(newImages).length > 0) {
-      try {
-        await saveImageCacheToIDB(newImages);
-
-        // Update in-memory cache
-        for (const [imageId, data] of Object.entries(newImages)) {
-          addToManagedCache(imageId, data);
-        }
-
-        // Update cached IDB cache
-        if (cachedIDBCache) {
-          Object.assign(cachedIDBCache, newImages);
-        }
-
-        logger.log(`[AUTOSAVE] Saved ${Object.keys(newImages).length} new images to IndexedDB`);
-      } catch (error) {
-        logger.error('[AUTOSAVE] Failed to save images to IndexedDB:', error);
-      }
-    }
-
     // Create stored data structure
     const storedData: StoredGameState = {
       version: STORAGE_VERSION,
@@ -260,8 +198,8 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         height: window.innerHeight
       },
       state: {
-        // Save objects with img_ref:// URLs (NOT base64!)
-        objects: extractedState.objects || {},
+        // State already contains sha256: hashes
+        objects: objectsToSave,
         players: state.players,
         activePlayerId: state.activePlayerId,
         diceRolls: state.diceRolls,
@@ -474,15 +412,9 @@ export const loadGameState = async (
       auditLog: adaptedState.auditLog || { entries: [], maxEntries: 10000, currentReplayIndex: -1 },
     };
 
-    // Load images from IDB into managed cache
-    // DO NOT replace img_ref:// URLs in state - keep them as-is
-    const idbCache = await loadImageCacheFromIDB();
-    if (Object.keys(idbCache).length > 0) {
-      for (const [imageId, data] of Object.entries(idbCache)) {
-        addToManagedCache(imageId, data);
-      }
-      logger.log(`[LOAD] Loaded ${Object.keys(idbCache).length} images to managed cache`);
-    }
+    // Note: Images are now loaded on-demand by the CAS asset system
+    // The migration to the new system happens during app initialization
+    // No need to preload images here - they will be fetched as needed
 
     // Return state with img_ref:// URLs intact
     return withAuditLog;
@@ -555,6 +487,58 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * Replace local file paths in objects with img_ref URLs
+ * This is used when processing uploaded local files
+ */
+function replaceLocalFilePathsWithBase64(
+  objects: Record<string, unknown>,
+  pathToImgRef: Map<string, string>
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...objects };
+
+  for (const [objectId, obj] of Object.entries(objects)) {
+    if (obj && typeof obj === 'object') {
+      const updated = replaceInObject(obj, pathToImgRef);
+      if (updated !== obj) {
+        result[objectId] = updated;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Recursively replace local file paths in an object
+ */
+function replaceInObject(
+  obj: unknown,
+  pathToImgRef: Map<string, string>
+): unknown {
+  if (!obj || typeof obj !== 'object') {
+    // Check if this string is a local file path
+    if (typeof obj === 'string') {
+      const replacement = pathToImgRef.get(obj);
+      if (replacement) {
+        return replacement;
+      }
+    }
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => replaceInObject(item, pathToImgRef));
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key] = replaceInObject(value, pathToImgRef);
+  }
+
+  return result;
 }
 
 // ============================================================

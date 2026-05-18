@@ -5,12 +5,13 @@ import { calculateFlexibleHexGrid, calculateHorizontalHexGrid, calculateFlatHexH
 import { ResizeHandleMemo } from '../ResizeHandle';
 import { HexGridMemo } from '../HexGrid';
 import { SquareGridMemo } from '../SquareGrid';
-import { isImageRef, getImageIdFromRef, getImageFromIDB, getFromManagedCache } from '../../utils/imageCache';
+import { isHashRef, isImageRef } from '../../utils/imageCompat';
 import { getGlobalCacheVersion } from '../SvgTokenShape';
+import { getAssetURL } from '../../utils/assets';
 
 /**
- * BoardBackgroundImage - Component that handles img_ref:// URLs for board backgrounds
- * Loads images from IndexedDB and displays them with proper opacity
+ * BoardBackgroundImage - Component that handles board background images
+ * Supports both sha256: hashes (new CAS system) and regular URLs
  * Tracks global cache version to reload images when pack is loaded
  */
 interface BoardBackgroundImageProps {
@@ -43,26 +44,22 @@ const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, op
         return;
       }
 
-      // Check if this is an img_ref:// URL
-      if (isImageRef(content)) {
-        const imageId = getImageIdFromRef(content);
-        // Try managed cache first (faster)
-        const managedCached = getFromManagedCache(imageId);
-        if (managedCached) {
-          setImageUrl(managedCached);
-          return;
-        }
-        // Fall back to IndexedDB
-        try {
-          const dataUrl = await getImageFromIDB(imageId);
-          setImageUrl(dataUrl);
-        } catch (error) {
-          console.error('[BoardBackgroundImage] Failed to load image from IDB:', error);
+      try {
+        if (isHashRef(content)) {
+          // New CAS system: sha256:hash
+          const url = await getAssetURL(content);
+          setImageUrl(url);
+        } else if (isImageRef(content)) {
+          // Old img_ref:// system - not supported, show placeholder
+          console.warn('[BoardBackgroundImage] img_ref:// URLs are no longer supported');
           setImageUrl(null);
+        } else {
+          // Regular URL (data:image/, http://, etc.)
+          setImageUrl(content);
         }
-      } else {
-        // Regular URL
-        setImageUrl(content);
+      } catch (error) {
+        console.error('[BoardBackgroundImage] Failed to load image:', error);
+        setImageUrl(null);
       }
     };
 
@@ -118,6 +115,7 @@ const SimplifiedBoard: React.FC<{
     onResizeHandleEnter?: () => void;
     onResizeHandleLeave?: () => void;
     currentTool?: string;
+    cacheVersion?: number;
 }> = ({
     token,
     obj,
@@ -132,6 +130,7 @@ const SimplifiedBoard: React.FC<{
     onResizeHandleEnter,
     onResizeHandleLeave,
     currentTool = 'none',
+    cacheVersion,
 }) => {
 
     return (
@@ -400,6 +399,7 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 onResizeHandleEnter={onResizeHandleEnter}
                 onResizeHandleLeave={onResizeHandleLeave}
                 currentTool={currentTool}
+                cacheVersion={cacheVersion}
             />
         );
     }

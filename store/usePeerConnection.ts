@@ -3,9 +3,21 @@ import { Peer } from 'peerjs';
 import { Action } from './gameActions';
 import { Player } from '../types';
 import { logger } from '../utils/logger';
-import { extractImagesFromState, restoreImagesFromCache, addToManagedCache } from '../utils/imageCache';
 import { filterLocalPanelProperties } from '../utils/panelSync';
 import { getPlayerId } from './gameConstants';
+// 🔥 NEW: CAS Asset System
+import {
+  assetTransferHost,
+  assetTransferGuest,
+  type HostTransferConfig,
+  type GuestTransferConfig,
+  type TransferProgress
+} from './p2p/assetTransfer';
+import {
+  AssetMessageFactory,
+  AssetMessageType,
+  type AssetManifestMessage
+} from './p2p/protocol/assetMessages';
 import {
   throttle,
   debounce,
@@ -45,8 +57,6 @@ const p2pSingleton = {
   peer: null as Peer | null,
   hostConnection: null as any,
   connections: [] as any[],
-  imageCaches: new Map<string, any>(),
-  extractedObjectsCache: new Map<string, any>(),
   room: null as any,
   peerId: null as string | null,
   isInitialized: false,
@@ -76,8 +86,6 @@ export function resetP2PSingleton() {
   p2pSingleton.peer = null;
   p2pSingleton.hostConnection = null;
   p2pSingleton.connections = [];
-  p2pSingleton.imageCaches.clear();
-  p2pSingleton.extractedObjectsCache.clear();
   p2pSingleton.room = null;
   p2pSingleton.peerId = null;
   p2pSingleton.isInitialized = false;
@@ -97,7 +105,6 @@ type TrysteroRoom = {
 };
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
-export type ImageCache = Record<string, string>; // imageId -> base64 data
 
 export interface WaitingForPlayerName {
   hostId: string;
@@ -120,8 +127,6 @@ export interface UsePeerConnectionReturn {
   initializeHost: () => void; // Initialize host peer on demand
   hostConnectionRef: React.RefObject<any>;
   connectionsRef: React.RefObject<any[]>;
-  imageCachesRef: React.RefObject<Map<string, ImageCache>>; // Map<peerId, ImageCache>
-  extractedObjectsCacheRef: React.RefObject<Map<string, any>>; // Cache for extracted objects
   roomRef: React.RefObject<any>; // Trystero room ref for fallback
   // 🔥 NEW: P2P Loading Progress
   p2pLoadingSteps: P2PLoadingStep[];
@@ -374,6 +379,117 @@ async function getLocalIPAddress(): Promise<string | null> {
   }
 }
 
+// ============================================================================
+// 🔥 NEW: ASSET TRANSFER HANDLERS
+// ============================================================================
+
+/**
+ * Handle asset manifest received from host (guest side)
+ */
+async function handleAssetManifest(manifest: any, connection: any): Promise<void> {
+  try {
+    const { findMissingHashes } = await import('../utils/assets');
+    const { hashes } = manifest;
+
+    // Find which assets we're missing
+    const missingHashes = await findMissingHashes(hashes || []);
+
+    if (missingHashes.length > 0) {
+      console.log(`[Asset Transfer] Requesting ${missingHashes.length} missing assets`);
+      connection.send({
+        type: 'ASSET_REQUEST',
+        payload: {
+          sessionId: manifest.sessionId,
+          hashes: missingHashes
+        }
+      });
+    } else {
+      console.log(`[Asset Transfer] All ${hashes?.length || 0} assets already cached`);
+    }
+  } catch (error) {
+    console.error('[Asset Transfer] Failed to handle manifest:', error);
+  }
+}
+
+/**
+ * Handle asset request from guest (host side)
+ */
+async function handleAssetRequest(request: any, connection: any): Promise<void> {
+  try {
+    const { assetDB } = await import('../utils/assets');
+    const { hashes } = request.payload;
+
+    // Get manifest of all assets
+    const manifest = await assetDB.getManifest();
+
+    // Filter to only requested hashes
+    const requestedAssets = manifest.assets.filter(a =>
+      hashes.includes(a.hash)
+    );
+
+    console.log(`[Asset Transfer] Sending ${requestedAssets.length} assets to guest`);
+
+    // Start streaming assets
+    for (const asset of requestedAssets) {
+      const entry = await assetDB.getAsset(asset.hash);
+      if (entry && entry.blob) {
+        const arrayBuffer = await entry.blob.arrayBuffer();
+
+        connection.send({
+          type: 'ASSET_CHUNK',
+          payload: {
+            hash: asset.hash,
+            data: Array.from(new Uint8Array(arrayBuffer)),
+            mimeType: asset.mimeType,
+            size: asset.size
+          }
+        });
+      }
+    }
+
+    // Send complete message
+    connection.send({
+      type: 'ASSET_COMPLETE',
+      payload: {
+        totalAssets: hashes.length,
+        successfulAssets: requestedAssets.length,
+        failedAssets: []
+      }
+    });
+
+  } catch (error) {
+    console.error('[Asset Transfer] Failed to handle request:', error);
+  }
+}
+
+/**
+ * Handle asset chunk received from host (guest side)
+ */
+async function handleAssetChunk(chunk: any): Promise<void> {
+  try {
+    const { assetDB } = await import('../utils/assets');
+    const { hash, data, mimeType, size } = chunk;
+
+    // Convert array back to ArrayBuffer
+    const arrayBuffer = new Uint8Array(data).buffer;
+
+    // Create blob
+    const blob = new Blob([arrayBuffer], { type: mimeType });
+
+    // Store in database
+    await assetDB.putAsset(
+      { hash, value: hash.replace('sha256:', ''), algorithm: 'SHA-256' },
+      blob,
+      mimeType,
+      'transfer'
+    );
+
+    console.log(`[Asset Transfer] Received asset ${hash} (${size} bytes)`);
+  } catch (error) {
+    console.error('[Asset Transfer] Failed to handle chunk:', error);
+  }
+}
+
 export function usePeerConnection(
   localDispatch: React.Dispatch<Action>,
   stateRef: React.RefObject<any>
@@ -396,7 +512,7 @@ export function usePeerConnection(
     { id: 'connect', message: 'Connecting to signaling server...', status: 'pending' },
     { id: 'p2p', message: 'Establishing P2P connection...', status: 'pending' },
     { id: 'handshake', message: 'Handshake with host...', status: 'pending' },
-    { id: 'images', message: 'Receiving game images...', status: 'pending' },
+    { id: 'images', message: 'Receiving game assets...', status: 'pending' },
     { id: 'state', message: 'Synchronizing game state...', status: 'pending' },
   ]);
   const [p2pLoadingProgress, setP2pLoadingProgress] = useState(0);
@@ -414,9 +530,6 @@ export function usePeerConnection(
   const connectionsRef = useRef<any[]>(p2pSingleton.connections);
   const hostConnectionRef = useRef<any>(p2pSingleton.hostConnection);
   const roomRef = useRef<TrysteroRoom | null>(p2pSingleton.room);
-  const imageCachesRef = useRef<Map<string, ImageCache>>(p2pSingleton.imageCaches);
-  const localImageCacheRef = useRef<ImageCache>({}); // Guest's local image cache (always local)
-  const extractedObjectsCacheRef = useRef<Map<string, any>>(new Map()); // Cache extracted objects (with img_ref://) to avoid re-extraction
   const isIntentionalDisconnectRef = useRef(false); // Track intentional disconnect vs network error
   const guestReconnectStateRef = useRef({ attempts: 0, startTime: null as number | null }); // Guest reconnect state
   const hostReconnectStateRef = useRef({ attempts: 0, startTime: null as number | null }); // Host reconnect state
@@ -424,20 +537,12 @@ export function usePeerConnection(
   const expectedPlayerCountRef = useRef(0); // Track expected player count for signalling disconnect timing
   const signallingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timer for signalling disconnect
 
-  // Fix for image sync issue: Store pending SYNC_STATE if IMAGE_CACHE hasn't arrived yet
-  const pendingSyncStateRef = useRef<any>(null); // Stores SYNC_STATE payload until IMAGE_CACHE arrives
-  const hasReceivedInitialImageCacheRef = useRef(false); // Track if we've received initial IMAGE_CACHE
-  const imageChunksRef = useRef<Map<number, any>>(new Map()); // Store received chunks
-  const expectedImageChunksRef = useRef<number | null>(null); // Total expected chunks
-
   // 🔥 SYNC: Sync singleton with refs after updates
   const syncSingleton = useCallback(() => {
     p2pSingleton.peer = peerRef.current;
     p2pSingleton.connections = connectionsRef.current;
     p2pSingleton.hostConnection = hostConnectionRef.current;
     p2pSingleton.room = roomRef.current;
-    p2pSingleton.imageCaches = imageCachesRef.current;
-    p2pSingleton.extractedObjectsCache = extractedObjectsCacheRef.current;
     p2pSingleton.peerId = peerRef.current?.id || null;
     p2pSingleton.isInitialized = !!peerRef.current;
   }, []);
@@ -486,7 +591,7 @@ export function usePeerConnection(
       { id: 'connect', message: 'Connecting to signaling server...', status: 'pending' },
       { id: 'p2p', message: 'Establishing P2P connection...', status: 'pending' },
       { id: 'handshake', message: 'Handshake with host...', status: 'pending' },
-      { id: 'images', message: 'Receiving game images...', status: 'pending' },
+      { id: 'images', message: 'Receiving game assets...', status: 'pending' },
       { id: 'state', message: 'Synchronizing game state...', status: 'pending' },
     ]);
     setP2pLoadingProgress(0);
@@ -499,7 +604,7 @@ export function usePeerConnection(
   // Central Network Data Handler
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
     // Log ALL incoming messages for debugging
-    console.log(`[P2P Network] 📨 Received message type: ${data.type}, hasReceivedInitialImageCacheRef: ${hasReceivedInitialImageCacheRef.current}`);
+    console.log(`[P2P Network] 📨 Received message type: ${data.type}`);
 
     if (data.type === 'SYNC_STATE') {
       // Received full state update (Guest receives from Host)
@@ -520,128 +625,37 @@ export function usePeerConnection(
         diceRolls: payload.diceRolls?.length || 0
       });
 
-      // Check if we have the image cache yet
-      if (!hasReceivedInitialImageCacheRef.current) {
-        // Store SYNC_STATE for later processing after IMAGE_CACHE arrives
-        console.log(`[P2P Network] ⏳ Deferring SYNC_STATE until IMAGE_CACHE arrives`);
-        pendingSyncStateRef.current = payload;
-        return;
-      }
-
-      // Restore images from local cache before dispatching
-      const restoredState = restoreImagesFromCache(payload, localImageCacheRef.current);
-
       // 🔥 NEW: Update progress - state synchronized
       updateP2PLoadingStep('state', 'loading', 'Synchronizing game state...');
 
-      localDispatch({ type: 'SYNC_STATE', payload: restoredState });
+      localDispatch({ type: 'SYNC_STATE', payload });
       console.log(`[P2P Network] ✅ SYNC_STATE dispatched to game state`);
 
       // 🔥 NEW: All steps complete!
       updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-    } else if (data.type === 'IMAGE_CACHE_CHUNK') {
-      // Received image cache chunk from host (Guest only)
-      const { payload, chunkIndex, totalChunks, isLastChunk, compressed } = data;
-
-      // 🔥 OPTIMIZED: Decompress chunk if compressed
-      const decompressedPayload = compressed === true
-        ? decompressWebRTCData(payload, true)
-        : payload;
-
-      console.log(`[P2P Network] 📦 Received IMAGE_CACHE_CHUNK ${chunkIndex + 1}/${totalChunks} (${Object.keys(decompressedPayload).length} images, compressed: ${compressed || false})`);
-
-      // 🔥 NEW: Update loading progress for images
-      const progress = Math.round(((chunkIndex + 1) / totalChunks) * 100);
-      updateP2PLoadingStep('images', 'loading', `Receiving game images... (${chunkIndex + 1}/${totalChunks})`, progress);
-
-      // Store this chunk
-      imageChunksRef.current.set(chunkIndex, decompressedPayload);
-      expectedImageChunksRef.current = totalChunks;
-
-      // Check if we received all chunks
-      if (imageChunksRef.current.size === totalChunks) {
-        console.log(`[P2P Network] 🎉 All ${totalChunks} chunks received, assembling image cache...`);
-
-        // Merge all chunks
-        const allImages: ImageCache = {};
-        for (let i = 0; i < totalChunks; i++) {
-          const chunk = imageChunksRef.current.get(i);
-          if (chunk) {
-            Object.assign(allImages, chunk);
-          }
-        }
-
-        console.log(`[P2P Network] 🖼️ Assembled IMAGE_CACHE (${Object.keys(allImages).length} images total)`);
-        console.log(`[P2P Network] 📊 Image cache keys:`, Object.keys(allImages));
-
-        localImageCacheRef.current = { ...localImageCacheRef.current, ...allImages };
-
-        // IMPORTANT: Also add received images to managedCache for pack images
-        // This ensures that pack-loaded images are available for rendering
-        for (const [imageId, dataUrl] of Object.entries(allImages)) {
-          addToManagedCache(imageId, dataUrl);
-        }
-
-        hasReceivedInitialImageCacheRef.current = true;
-        console.log(`[P2P Network] ✅ Set hasReceivedInitialImageCacheRef = true`);
-
-        // 🔥 NEW: Update progress - images loaded
-        updateP2PLoadingStep('images', 'success', `Game images received (${Object.keys(allImages).length} images)`);
-
-        // Clear chunks
-        imageChunksRef.current.clear();
-        expectedImageChunksRef.current = null;
-
-        // If we have a pending SYNC_STATE, process it now
-        if (pendingSyncStateRef.current) {
-          console.log(`[P2P Network] 🔄 Processing pending SYNC_STATE with new IMAGE_CACHE`);
-          const restoredState = restoreImagesFromCache(pendingSyncStateRef.current, localImageCacheRef.current);
-          localDispatch({ type: 'SYNC_STATE', payload: restoredState });
-          pendingSyncStateRef.current = null;
-          console.log(`[P2P Network] ✅ Pending SYNC_STATE dispatched to game state`);
-        } else {
-          // Re-dispatch to update state with restored images
-          console.log(`[P2P Network] 🔄 Dispatching RESTORE_IMAGES action`);
-          localDispatch({ type: 'RESTORE_IMAGES', payload: allImages });
-        }
-      }
-    } else if (data.type === 'IMAGE_CACHE') {
-      // Legacy: Received full image cache from host (Guest only)
-      const isCompressed = data.compressed === true;
-      const newImages = isCompressed
-        ? decompressWebRTCData(data.payload, true)
-        : data.payload;
-
-      console.log(`[P2P Network] 🖼️ Received IMAGE_CACHE (${Object.keys(newImages).length} images, compressed: ${isCompressed})`);
-      console.log(`[P2P Network] 📊 Image cache keys:`, Object.keys(newImages));
-
-      localImageCacheRef.current = { ...localImageCacheRef.current, ...newImages };
-
-      // IMPORTANT: Also add received images to managedCache for pack images
-      // This ensures that pack-loaded images are available for rendering
-      for (const [imageId, dataUrl] of Object.entries(newImages)) {
-        addToManagedCache(imageId, dataUrl);
-      }
-
-      hasReceivedInitialImageCacheRef.current = true;
-      console.log(`[P2P Network] ✅ Set hasReceivedInitialImageCacheRef = true`);
-
-      // If we have a pending SYNC_STATE, process it now
-      if (pendingSyncStateRef.current) {
-        console.log(`[P2P Network] 🔄 Processing pending SYNC_STATE with new IMAGE_CACHE`);
-        const restoredState = restoreImagesFromCache(pendingSyncStateRef.current, localImageCacheRef.current);
-        localDispatch({ type: 'SYNC_STATE', payload: restoredState });
-        pendingSyncStateRef.current = null;
-        console.log(`[P2P Network] ✅ Pending SYNC_STATE dispatched to game state`);
-      } else {
-        // Re-dispatch to update state with restored images
-        console.log(`[P2P Network] 🔄 Dispatching RESTORE_IMAGES action`);
-        localDispatch({ type: 'RESTORE_IMAGES', payload: newImages });
-      }
     } else if (data.type === 'PLAYER_PANEL_SETTINGS') {
       // Guest received their individual panel settings from host
       const { playerId, settings } = data.payload;
       console.log(`[P2P Network] 📥 Received PLAYER_PANEL_SETTINGS for ${playerId} (${Object.keys(settings).length} panels)`);
+    } else if (data.type === 'ASSET_MANIFEST') {
+      // 🔥 NEW: Guest received asset manifest from host
+      console.log(`[P2P Network] 📋 Received ASSET_MANIFEST (${data.payload.assets?.length || 0} assets)`);
+      handleAssetManifest(data.payload, conn);
+    } else if (data.type === 'ASSET_CHUNK') {
+      // 🔥 NEW: Guest received asset chunk from host
+      handleAssetChunk(data.payload);
+    } else if (data.type === 'ASSET_PROGRESS') {
+    } else if (data.type === 'ASSET_PROGRESS') {
+      // 🔥 NEW: Progress update for asset transfer
+      const progress = data.payload;
+      console.log(`[P2P Network] 📊 Asset transfer progress: ${progress.percentage?.toFixed(1)}%`);
+    } else if (data.type === 'ASSET_COMPLETE') {
+      // 🔥 NEW: Asset transfer complete
+      console.log(`[P2P Network] ✅ Asset transfer complete: ${data.payload.successfulAssets}/${data.payload.totalAssets} assets`);
+    } else if (data.type === 'ASSET_REQUEST') {
+      // 🔥 NEW: Host received asset request from guest
+      console.log(`[P2P Network] 📨 Received ASSET_REQUEST for ${data.payload.hashes?.length || 0} assets`);
+      handleAssetRequest(data.payload, conn);
 
       // Apply individual panel settings using special action
       localDispatch({
@@ -1005,13 +1019,6 @@ export function usePeerConnection(
         // 🔥 NEW: Update progress - P2P connection established
         updateP2PLoadingStep('p2p', 'success', 'P2P connection established');
         updateP2PLoadingStep('handshake', 'loading', 'Handshake with host...');
-
-        // Reset image cache sync state for new connection
-        hasReceivedInitialImageCacheRef.current = false;
-        pendingSyncStateRef.current = null;
-        imageChunksRef.current.clear();
-        expectedImageChunksRef.current = null;
-        console.log(`[P2P Guest] 🔄 Reset image cache sync state for new connection`);
 
         const persistentPlayerId = getPlayerId();
         const myPlayer: Player = {
@@ -1502,129 +1509,61 @@ export function usePeerConnection(
 
           console.log(`[P2P Host] 📤 Data channel ready, sending state to guest...`);
 
-          // Send current state to new player with image references
-          // Also send all images in cache
-          console.log(`[P2P Host] 🔍 Extracting images from state for P2P sync...`);
-          const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
+          // 🔥 NEW: Send asset manifest instead of IMAGE_CACHE
+          (async () => {
+            try {
+              const { assetDB } = await import('../utils/assets');
+              const manifest = await assetDB.getManifest();
 
-          console.log(`[P2P Host] 📊 Extracted:`, {
-            imageCacheKeys: Object.keys(imageCache).length,
-            stateObjects: Object.keys(stateWithRefs.objects || {}).length
-          });
+              console.log(`[P2P Host] 📋 Sending ASSET_MANIFEST to guest (${manifest.totalCount} assets, ${(manifest.totalSize / 1024 / 1024).toFixed(2)}MB)`);
+
+              conn.send({
+                type: 'ASSET_MANIFEST',
+                payload: {
+                  sessionId: stateRef.current?.sessionId || 'default',
+                  version: 1,
+                  timestamp: Date.now(),
+                  assets: manifest.assets.map(a => ({
+                    hash: a.hash,
+                    size: a.size,
+                    mimeType: a.mimeType,
+                    priority: 5
+                  })),
+                  totalSize: manifest.totalSize,
+                  totalCount: manifest.totalCount
+                }
+              });
+            } catch (error) {
+              console.error('[P2P Host] Failed to send asset manifest:', error);
+              // Fallback: send empty manifest
+              conn.send({
+                type: 'ASSET_MANIFEST',
+                payload: {
+                  sessionId: stateRef.current?.sessionId || 'default',
+                  version: 1,
+                  timestamp: Date.now(),
+                  assets: [],
+                  totalSize: 0,
+                  totalCount: 0
+                }
+              });
+            }
+          })();
 
           // Filter out local panel properties before syncing
-          // Each player should have their own panel position, size, and minimized state
-          stateWithRefs.objects = filterLocalPanelProperties(stateWithRefs.objects);
+          const stateToSend = { ...stateRef.current };
+          if (stateToSend.objects) {
+            stateToSend.objects = filterLocalPanelProperties(stateToSend.objects);
+          }
 
-          // IMPORTANT: Send IMAGE_CACHE BEFORE SYNC_STATE to ensure images are available
-          // when the guest processes the state. This fixes the issue where guests don't see images.
-          // ALWAYS send IMAGE_CACHE, even if empty, to signal the guest that they can process SYNC_STATE
-          const imageCount = Object.keys(imageCache).length;
-          const cacheSize = JSON.stringify(imageCache).length;
-
-          // 🔥 OPTIMIZED: Send images in chunks to avoid blocking main thread
-          const sendImageCacheInChunks = async () => {
-            if (imageCount === 0) {
-              console.log(`[P2P Host] 📤 Sending empty IMAGE_CACHE to guest (no images in cache)`);
-              conn.send({ type: 'IMAGE_CACHE', payload: {}, compressed: false });
-              sendSyncState();
-              return;
-            }
-
-            const entries = Object.entries(imageCache);
-            const CHUNK_SIZE = 3; // Send 3 images at a time to avoid blocking
-
-            console.log(`[P2P Host] 📤 Sending IMAGE_CACHE in chunks (${imageCount} images, ${cacheSize} chars, ${Math.ceil(entries.length / CHUNK_SIZE)} chunks)`);
-
-            for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
-              // Check connection still open
-              if (!conn.open) {
-                console.warn(`[P2P Host] ⚠️ Connection closed during image chunk sending`);
-                return;
-              }
-
-              const chunk = Object.fromEntries(entries.slice(i, i + CHUNK_SIZE));
-              const isLastChunk = i + CHUNK_SIZE >= entries.length;
-
-              // 🔥 OPTIMIZED: Compress image chunks to reduce bandwidth
-              const chunkString = JSON.stringify(chunk);
-              const compressedChunk = compressWebRTCData(chunk);
-              const chunkWasCompressed = compressedChunk.length < chunkString.length;
-
-              if (chunkWasCompressed) {
-                const savedPercent = ((1 - compressedChunk.length / chunkString.length) * 100).toFixed(1);
-                console.log(`[P2P Host] 🗜️ Compressed chunk ${Math.floor(i / CHUNK_SIZE) + 1}: ${chunkString.length} → ${compressedChunk.length} chars (${savedPercent}% smaller)`);
-              }
-
-              conn.send({
-                type: 'IMAGE_CACHE_CHUNK',
-                payload: compressedChunk,
-                chunkIndex: Math.floor(i / CHUNK_SIZE),
-                totalChunks: Math.ceil(entries.length / CHUNK_SIZE),
-                isLastChunk: isLastChunk,
-                compressed: chunkWasCompressed
-              });
-
-              console.log(`[P2P Host] 📤 Sent image chunk ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(entries.length / CHUNK_SIZE)}`);
-
-              // 🔥 OPTIMIZED: Use requestIdleCallback for better performance
-              // Falls back to setTimeout(0) if requestIdleCallback is not available
-              if (!isLastChunk) {
-                await new Promise(resolve => {
-                  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-                    (window as any).requestIdleCallback(() => resolve(), { timeout: 10 });
-                  } else {
-                    setTimeout(resolve, 0);
-                  }
-                });
-              }
-            }
-
-            console.log(`[P2P Host] ✅ All image chunks sent`);
-
-            // Send SYNC_STATE after all chunks are sent
-            sendSyncState();
-          };
-
-          // Function to send SYNC_STATE
-          const sendSyncState = () => {
-            if (!conn.open) {
-              console.warn(`[P2P Host] ⚠️ Connection closed before sending SYNC_STATE`);
-              return;
-            }
-
-            // Now send SYNC_STATE (after IMAGE_CACHE)
-            const stateSize = JSON.stringify(stateWithRefs).length;
-
-            console.log(`[P2P Host] 📤 Sending SYNC_STATE to guest (${stateSize} chars)`);
-
-            // Compress SYNC_STATE data
-            const compressedState = compressWebRTCData(stateWithRefs);
-            const stateWasCompressed = compressedState.length < stateSize;
-
-            if (stateWasCompressed) {
-              const savedPercent = ((1 - compressedState.length / stateSize) * 100).toFixed(1);
-              console.log(`[P2P Host] 🗜️ Compressed SYNC_STATE: ${stateSize} → ${compressedState.length} chars (${savedPercent}% smaller)`);
-              conn.send({
-                type: 'SYNC_STATE',
-                payload: compressedState,
-                compressed: true
-              });
-            } else {
-              conn.send({ type: 'SYNC_STATE', payload: stateWithRefs, compressed: false });
-            }
-          };
-
-          // Initialize cache for this guest
-          imageCachesRef.current.set(conn.peer, imageCache);
+          // Send state (now contains only hashes, not base64)
+          console.log(`[P2P Host] 📤 Sending SYNC_STATE to guest`);
+          conn.send({ type: 'SYNC_STATE', payload: stateToSend });
 
           // Store reference to connection for sending player panel settings later
           (conn as any).pendingPlayerId = null; // Will be set when HELO is received
 
-          // Start sending images (will trigger SYNC_STATE when complete)
-          sendImageCacheInChunks().catch(err => {
-            console.error(`[P2P Host] ❌ Error sending image chunks:`, err);
-          });
+          console.log(`[P2P Host] ✅ Initial sync complete (ASSET_MANIFEST + SYNC_STATE sent)`);
         }, 50); // 50ms delay to ensure data channel is fully ready
 
         // Handle Disconnection
@@ -1864,8 +1803,6 @@ export function usePeerConnection(
     setPlayerName,
     hostConnectionRef,
     connectionsRef,
-    imageCachesRef,
-    extractedObjectsCacheRef, // Cache for extracted objects (with img_ref:// URLs)
     roomRef, // Trystero room ref for fallback
     // Expose signalling control functions for manual management
     disconnectFromSignalling,
