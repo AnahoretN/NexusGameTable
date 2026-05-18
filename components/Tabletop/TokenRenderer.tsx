@@ -501,8 +501,12 @@ export const TokenRenderer = memo(({
     prevToken.zIndex === nextToken.zIndex
   );
 
+  // Compare counters deeply (important for character token sync)
+  const countersEqual = JSON.stringify(prevToken.counters) === JSON.stringify(nextToken.counters);
+
   return (
     tokensEqual &&
+    countersEqual && // Important: re-render when counters change (character sync)
     prevIsDragging === nextIsDragging && // Only care if THIS token is being dragged
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.isCtrlPressed === nextProps.isCtrlPressed &&

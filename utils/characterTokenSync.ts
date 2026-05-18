@@ -58,6 +58,7 @@ export function syncSlidersToTokens(
 ): Record<string, TableObject> {
   const sliderBlockInfo = findSliderBlock(character);
   if (!sliderBlockInfo) {
+    console.log('[syncSlidersToTokens] No slider block found for character', character.id);
     return newObjects;
   }
 
@@ -66,6 +67,13 @@ export function syncSlidersToTokens(
 
   // Find all tokens for this character
   const tokens = findTokensForCharacter(state, character.id, panel.id);
+
+  console.log('[syncSlidersToTokens] Syncing sliders to tokens', {
+    characterId: character.id,
+    panelId: panel.id,
+    tokensFound: tokens.length,
+    sliders: sliders.map(s => ({ name: s.label, value: s.value }))
+  });
 
   // Update each token's counters
   for (const token of tokens) {
@@ -85,6 +93,7 @@ export function syncSlidersToTokens(
       };
     });
 
+    console.log('[syncSlidersToTokens] Updating token', token.id, 'with counters', counters);
     newObjects[token.id] = { ...token, counters };
   }
 

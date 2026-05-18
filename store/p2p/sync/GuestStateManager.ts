@@ -70,9 +70,9 @@ export class GuestStateManager {
       const lastUpdate = this.objectTimestamps.get(action.objectId);
       const now = Date.now();
 
-      // If we sent an update for this object in the last 50ms, skip it
+      // If we sent an update for this object in the last 25ms, skip it
       // This prevents spamming host during drag operations
-      if (lastUpdate && (now - lastUpdate) < 50) {
+      if (lastUpdate && (now - lastUpdate) < 25) {
         return false;
       }
     }

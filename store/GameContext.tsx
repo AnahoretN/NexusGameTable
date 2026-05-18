@@ -1220,6 +1220,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const oldCharacterData = obj.characterData;
         const newCharacterData = panel.characterData;
 
+        logger.debug('[GameContext] Character data changed for panel', { panelId: panel.id });
+
         if (oldCharacterData && newCharacterData) {
           // Import sync functions
           // Check each character for changes

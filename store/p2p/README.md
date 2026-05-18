@@ -182,10 +182,10 @@ To test the P2P system:
 
 ## Migration from Old System
 
-The old system files can be removed after migration:
+The old system files have been removed:
 
-- `store/usePeerConnection.ts` (replaced by `useP2PConnection`)
-- `utils/webrtcSyncManager.ts` (replaced by new state sync)
-- `utils/webrtcOptimization.ts` (integrated into new system)
+- ~~`store/usePeerConnection.ts`~~ (replaced by `useP2PConnection`)
+- ~~`utils/webrtcSyncManager.ts`~~ (replaced by authoritative sync)
+- ~~`utils/webrtcOptimization.ts`~~ (integrated into new system)
 
 Note: This is a **full replacement** - all players must update to the new version to play together.

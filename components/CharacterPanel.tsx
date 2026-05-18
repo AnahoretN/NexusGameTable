@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { useActivePlayerId, useIsGM, usePlayerList, useSettingsModalState, useIsSettingsModalOpen, useLanguage } from '../store/contexts';
-import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType, ItemType } from '../types';
+import { useActivePlayerId, useIsGM, usePlayerList, useSettingsModalState, useLanguage } from '../store/contexts';
+import { PanelObject, CharacterTab, CharacterBlock, CharacterBlockType, ItemType, TableObject } from '../types';
 import { t } from '../utils/translations';
 import { Plus, Trash2, Lock, Type as TypeIcon, Image as ImageIcon, List, Sliders, ChevronUp, ChevronDown, Save, Upload, User, Sparkles, Settings } from 'lucide-react';
 import { TextBlock, SliderBlock, TableBlock, QuickAccessBlock, CounterBlock } from './CharacterBlocks';
@@ -29,12 +29,29 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const isGM = useIsGM();
   const players = usePlayerList();
   const language = useLanguage();
-  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
+  const [, openSettingsModal, closeSettingsModal] = useSettingsModalState();
 
   // Get character data from panel - use latest from state to ensure reactivity
-  const characterData = (state.objects[panel.id] as PanelObject)?.characterData || panel.characterData;
+  const serverCharacterData = (state.objects[panel.id] as PanelObject)?.characterData || panel.characterData;
+
+  // Local shadow state for character data (optimistic updates)
+  // This allows immediate UI updates while debouncing P2P sync
+  const [localCharacterData, setLocalCharacterData] = useState(serverCharacterData);
+
+  // Sync local state when server state changes externally
+  useEffect(() => {
+    // Only update if the server data actually changed (check by reference or deep compare)
+    // This prevents overwriting local optimistic updates
+    const serverJson = JSON.stringify(serverCharacterData);
+    const localJson = JSON.stringify(localCharacterData);
+
+    if (serverJson !== localJson) {
+      setLocalCharacterData(serverCharacterData);
+    }
+  }, [serverCharacterData]);
+
   const [activeCharacterId, setActiveCharacterId] = useState<string>(
-    characterData?.activeCharacterId || ''
+    localCharacterData?.activeCharacterId || ''
   );
   const [activeColumnId, setActiveColumnId] = useState<string>('column-1');
   const [activeSubTabId, setActiveSubTabId] = useState<string>('subtab-1');
@@ -42,6 +59,78 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
   // Cache for resolved avatar URLs (convert img_ref:// to data URLs)
   const [avatarUrlCache, setAvatarUrlCache] = useState<Record<string, string>>({});
+
+  // Debounced dispatch for character panel changes (reduces P2P traffic)
+  // Changes are accumulated locally and sent to host after 500ms of inactivity
+  const pendingCharacterUpdateRef = useRef<any>(null);
+  const debouncedDispatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isUpdatingFromServerRef = useRef(false);
+
+  /**
+   * Dispatch character update with debouncing (500ms delay)
+   * This prevents spamming the host with rapid slider changes
+   * Local state is updated immediately for responsive UI
+   */
+  const dispatchCharacterUpdate = useCallback((updatedCharacterData: any, immediate = false) => {
+    // Update local state immediately (optimistic update)
+    setLocalCharacterData(updatedCharacterData);
+
+    // Skip debounced dispatch if this is from server sync
+    if (isUpdatingFromServerRef.current) {
+      return;
+    }
+
+    // Store the latest update
+    pendingCharacterUpdateRef.current = updatedCharacterData;
+
+    // Clear any pending timer
+    if (debouncedDispatchTimerRef.current) {
+      clearTimeout(debouncedDispatchTimerRef.current);
+    }
+
+    // If immediate is true, dispatch right away (for important changes)
+    // Otherwise, dispatch after 500ms of no further changes
+    if (immediate) {
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: panel.id,
+          updates: {
+            characterData: updatedCharacterData
+          }
+        }
+      });
+      pendingCharacterUpdateRef.current = null;
+    } else {
+      debouncedDispatchTimerRef.current = setTimeout(() => {
+        if (pendingCharacterUpdateRef.current) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: panel.id,
+              updates: {
+                characterData: pendingCharacterUpdateRef.current
+              }
+            }
+          });
+          pendingCharacterUpdateRef.current = null;
+        }
+        debouncedDispatchTimerRef.current = null;
+      }, 500);
+    }
+  }, [panel.id, dispatch]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debouncedDispatchTimerRef.current) {
+        clearTimeout(debouncedDispatchTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Use local character data for UI
+  const characterData = localCharacterData;
 
   // Get active character - use characterData from state for reactivity
   const activeCharacter = useMemo(() => {
@@ -170,20 +259,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     });
 
     if (needsUpdate) {
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: panel.id,
-          updates: {
-            characterData: {
-              ...characterData,
-              characters: updatedCharacters
-            }
-          }
-        }
-      });
+      // Use immediate dispatch for migration (one-time important change)
+      dispatchCharacterUpdate({
+        ...characterData,
+        characters: updatedCharacters
+      }, true);
     }
-  }, [characterData, panel.id, dispatch]);
+  }, [characterData, dispatchCharacterUpdate]);
 
   // Get current player info
   // Note: isGM is now from useIsGM() hook above
@@ -285,21 +367,14 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
+    // Use immediate dispatch for character name (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
 
     setEditingCharacterName(false);
-  }, [characterData, activeCharacter, characterNameInput, panel.id, dispatch]);
+  }, [characterData, activeCharacter, characterNameInput, dispatchCharacterUpdate]);
 
   const handleCancelEditCharacterName = useCallback(() => {
     setEditingCharacterName(false);
@@ -336,22 +411,15 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
+    // Use debounced dispatch for block title changes (reduces P2P traffic)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
     });
 
     setEditingBlockTitle(null);
     setBlockTitleInput('');
-  }, [characterData, activeCharacter, activeSubTab, blockTitleInput, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, blockTitleInput, dispatchCharacterUpdate]);
 
   const handleCancelEditBlockTitle = useCallback(() => {
     setEditingBlockTitle(null);
@@ -403,23 +471,16 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       isUniversal: false
     };
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...baseData,
-            characters: [...updatedCharacters, newCharacter],
-            activeCharacterId: newCharacter.id
-          }
-        }
-      }
-    });
+    // Use immediate dispatch for adding characters (important change)
+    dispatchCharacterUpdate({
+      ...baseData,
+      characters: [...updatedCharacters, newCharacter],
+      activeCharacterId: newCharacter.id
+    }, true);
 
     setActiveCharacterId(newCharacter.id);
     setActiveSubTabId('subtab-1');
-  }, [characterData, isGM, panel.id, dispatch]);
+  }, [characterData, isGM, dispatchCharacterUpdate]);
 
   // Handler: Remove character
   const handleRemoveCharacter = useCallback((characterId: string) => {
@@ -436,26 +497,19 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       ? (characterData.activeCharacterId === pendingRemoveCharacterId ? newCharacters[0].id : characterData.activeCharacterId)
       : '';
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: newCharacters,
-            activeCharacterId: newActiveId
-          }
-        }
-      }
-    });
+    // Use immediate dispatch for removing characters (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: newCharacters,
+      activeCharacterId: newActiveId
+    }, true);
 
     if (characterData.activeCharacterId === pendingRemoveCharacterId) {
       setActiveCharacterId(newActiveId);
     }
 
     setPendingRemoveCharacterId(null);
-  }, [pendingRemoveCharacterId, characterData, panel.id, dispatch]);
+  }, [pendingRemoveCharacterId, characterData, dispatchCharacterUpdate]);
 
   // Handler: Cancel remove character
   const handleCancelRemoveCharacter = useCallback(() => {
@@ -533,7 +587,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     };
 
     // Add token to state
-    dispatch({ type: 'ADD_OBJECT', payload: newToken });
+    dispatch({ type: 'ADD_OBJECT', payload: newToken as any });
 
     // Get current mouse position from event or fall back to current cursor position
     const mousePos = e ? { x: e.clientX, y: e.clientY } : null;
@@ -552,20 +606,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     setActiveCharacterId(characterId);
 
     if (characterData) {
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: panel.id,
-          updates: {
-            characterData: {
-              ...characterData,
-              activeCharacterId: characterId
-            }
-          }
-        }
-      });
+      // Use immediate dispatch for character selection (important UI change)
+      dispatchCharacterUpdate({
+        ...characterData,
+        activeCharacterId: characterId
+      }, true);
     }
-  }, [characterData, panel.id, dispatch]);
+  }, [characterData, dispatchCharacterUpdate]);
 
   // Handler: Select sub-tab
   const handleSelectSubTab = useCallback((subTabId: string) => {
@@ -582,20 +629,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         return char;
       });
 
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: panel.id,
-          updates: {
-            characterData: {
-              ...characterData,
-              characters: updatedCharacters
-            }
-          }
-        }
-      });
+      // Use immediate dispatch for sub-tab selection (important UI change)
+      dispatchCharacterUpdate({
+        ...characterData,
+        characters: updatedCharacters
+      }, true);
     }
-  }, [characterData, activeCharacter, panel.id, dispatch]);
+  }, [characterData, activeCharacter, dispatchCharacterUpdate]);
 
   // Character settings modal state
   const [settingsModal, setSettingsModal] = useState<{
@@ -647,23 +687,16 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
+    // Use immediate dispatch for settings (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
 
     // Close the settings modal after saving
     closeSettingsModal();
     setSettingsModal(null);
-  }, [characterData, settingsModal?.characterId, panel.id, dispatch, closeSettingsModal]);
+  }, [characterData, settingsModal?.characterId, dispatchCharacterUpdate, closeSettingsModal]);
 
   // Handler: Save avatar settings
   const handleSaveAvatarSettings = useCallback(() => {
@@ -685,20 +718,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       characters: updatedCharacters
     };
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: updatedCharacterData
-        }
-      }
-    });
+    // Use immediate dispatch for avatar settings (important change)
+    dispatchCharacterUpdate(updatedCharacterData, true);
 
     // Close the avatar settings modal after saving
     closeSettingsModal();
     setAvatarSettingsModal(null);
-  }, [characterData, panel.id, dispatch, closeSettingsModal]);
+  }, [characterData, dispatchCharacterUpdate, closeSettingsModal]);
 
   // Handler: Save slider icon settings
   const handleSaveSliderIcon = useCallback((shape: SliderIconShape, color: string) => {
@@ -737,21 +763,14 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
+    // Use immediate dispatch for slider icon (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
 
     setSliderIconModal(null);
-  }, [sliderIconModal, characterData, activeCharacter, activeSubTab, panel.id, dispatch]);
+  }, [sliderIconModal, characterData, activeCharacter, activeSubTab, dispatchCharacterUpdate]);
 
   // Handler: Export character to JSON
   const handleExportCharacter = useCallback(() => {
@@ -798,18 +817,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
           return char;
         });
 
-        dispatch({
-          type: 'UPDATE_OBJECT',
-          payload: {
-            id: panel.id,
-            updates: {
-              characterData: {
-                ...characterData,
-                characters: updatedCharacters
-              }
-            }
-          }
-        });
+        // Use immediate dispatch for importing characters (important change)
+        dispatchCharacterUpdate({
+          ...characterData,
+          characters: updatedCharacters
+        }, true);
 
         setSettingsModal(null);
       } catch (error) {
@@ -819,7 +831,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     };
 
     reader.readAsText(file);
-  }, [settingsModal, characterData, panel.id, dispatch]);
+  }, [settingsModal, characterData, dispatchCharacterUpdate]);
 
   // Handler: Add block to character
   const handleAddBlock = useCallback((blockType: CharacterBlockType, targetColumnId?: string) => {
@@ -969,19 +981,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
-  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch, activeColumnId]);
+    // Use immediate dispatch for adding blocks (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, activeColumnId, dispatchCharacterUpdate]);
 
   // Handler: Add new column
   const handleAddColumn = useCallback(() => {
@@ -1007,19 +1012,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     // Set the new column as active
     setActiveColumnId(newColumnId);
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
-  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
+    // Use immediate dispatch for adding columns (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, dispatchCharacterUpdate]);
 
   // Handler: Remove column
   const handleRemoveColumn = useCallback((columnIdToRemove: string) => {
@@ -1063,19 +1061,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
-  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
+    // Use immediate dispatch for removing columns (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, dispatchCharacterUpdate]);
 
   // Handler: Update block data
   const handleUpdateBlock = useCallback((blockId: string, newData: any) => {
@@ -1100,19 +1091,66 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
+    // Check if this is a slider block update - if so, immediately sync to tokens
+    // We do this BEFORE the debounced dispatch so tokens update right away
+    const updatedBlock = activeSubTab.blocks.find((b: any) => b.id === blockId);
+    if (updatedBlock?.type === 'SLIDER' && newData?.sliders) {
+      console.log('[CharacterPanel] Slider block updated, syncing to tokens immediately', {
+        characterId: activeCharacter.id,
+        panelId: panel.id,
+        sliders: newData.sliders.map((s: any) => ({ name: s.label, value: s.value }))
+      });
+
+      // Find all tokens for this character and update them immediately
+      let tokensUpdated = 0;
+      for (const obj of Object.values(state.objects) as TableObject[]) {
+        if (obj.type === ItemType.TOKEN &&
+            (obj as any).characterId === activeCharacter.id &&
+            (obj as any).panelId === panel.id) {
+          const token = obj as any;
+          const sliders = newData.sliders;
+
+          // Map sliders to token counters
+          const counters = sliders.map((slider: any) => {
+            const existingCounter = token.counters?.find((c: any) => c.name === slider.label);
+            return {
+              id: existingCounter?.id || `counter-${Date.now()}-${slider.id}`,
+              name: slider.label,
+              value: slider.value,
+              maxValue: slider.maxValue,
+              minValue: slider.minValue ?? 0,
+              color: slider.color || '#ef4444',
+              icon: undefined,
+              showValue: true,
+              showBar: true
+            };
+          });
+
+          console.log('[CharacterPanel] Updating token', token.id, 'with counters', counters);
+
+          // Immediate token update with network sync disabled
+          // This prevents duplicate sync when the character update is processed
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: token.id,
+              updates: { counters }
+            },
+            skipNetworkSync: true
+          } as any);
+          tokensUpdated++;
         }
       }
+      console.log('[CharacterPanel] Updated', tokensUpdated, 'tokens for character', activeCharacter.id);
+    }
+
+    // Use debounced dispatch for slider changes (reduces P2P traffic)
+    // Character panel updates are batched and sent after 500ms
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
     });
-  }, [characterData, activeCharacter, activeSubTab, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, dispatchCharacterUpdate, state.objects, panel.id, dispatch]);
 
   // Handler: Remove block
   const handleRemoveBlock = useCallback((blockId: string) => {
@@ -1132,19 +1170,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
-  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
+    // Use immediate dispatch for removing blocks (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, dispatchCharacterUpdate]);
 
   // Move block handlers
   const handleMoveBlockUp = useCallback((blockId: string) => {
@@ -1178,19 +1209,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
-  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
+    // Use immediate dispatch for moving blocks (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, dispatchCharacterUpdate]);
 
   const handleMoveBlockDown = useCallback((blockId: string) => {
     if (!characterData || !activeCharacter || !activeSubTab || !canEditCharacter) return;
@@ -1223,19 +1247,12 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       return char;
     });
 
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      payload: {
-        id: panel.id,
-        updates: {
-          characterData: {
-            ...characterData,
-            characters: updatedCharacters
-          }
-        }
-      }
-    });
-  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, panel.id, dispatch]);
+    // Use immediate dispatch for moving blocks (important change)
+    dispatchCharacterUpdate({
+      ...characterData,
+      characters: updatedCharacters
+    }, true);
+  }, [characterData, activeCharacter, activeSubTab, canEditCharacter, dispatchCharacterUpdate]);
 
   if (!characterData) {
     return (

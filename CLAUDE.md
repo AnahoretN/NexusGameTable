@@ -45,7 +45,7 @@ graphify-out/graph.html
 - **Object Settings & Translations** — UI configuration
 - **Player Context & Hooks** — `usePlayers()`, `useActivePlayer()`
 - **Game Context & State** — `useGame()`, game state
-- **WebRTC & Networking** — `WebRTCSyncManager`, peer connections
+- **WebRTC & Networking** — Authoritative host sync, peer connections
 - **Tabletop Core** — Main game board rendering
 - **Drawing & Canvas** — Drawing tools
 - **Performance Monitoring** — FPS tracking, memory
@@ -56,7 +56,7 @@ graphify-out/graph.html
 2. `executeClickAction()` — 34 edges (click handler router)
 3. `MemoryManager` — 16 edges (memory optimization)
 4. `useUI()` — 11 edges (UI context)
-5. `WebRTCSyncManager` — 11 edges (P2P sync)
+5. `DifferentialSyncManager` — 8 edges (State sync)
 
 ### Project Structure
 
@@ -75,7 +75,7 @@ store/
 utils/
 ├── objectActionHandlers.ts  # Card/deck actions
 ├── poolPlacement.ts         # Pool panel positioning
-└── webrtcSyncManager.ts     # Multiplayer sync
+└── webrtcOptimization.ts    # WebRTC performance tuning
 ```
 
 ## Current Branch: refactor/tabletop-component-breakdown
