@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useRef, useCal
 import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
 import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
+import { P2PLoadingModal } from '../components/P2PLoadingModal';
 import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
 import { LocalFileRestoreDialog } from '../components/LocalFileRestoreDialog';
 import { generateUUID } from '../utils/uuid';
@@ -19,8 +20,16 @@ import {
   getNewImages,
   loadImageCacheFromIDB,
   initManagedCacheFromImageCache,
-  startManagedCacheCleanup
+  startManagedCacheCleanup,
+  addToManagedCache
 } from '../utils/imageCache';
+import {
+  extractImagesIncremental,
+  p2pChangeTracker,
+  needsBoardContentExtraction,
+  extractBoardContentOnly,
+  startExtractionCacheCleanup
+} from './p2p/optimizedStateSync';
 import {
   throttle,
   differentialSyncManager,
@@ -89,27 +98,74 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Only process objects if they're in the payload
         let finalObjects = state.objects; // Default to current objects
         if (action.payload.objects) {
-            // Filter out main menu from incoming state to preserve local position
-            const incomingObjects = { ...action.payload.objects };
-            const incomingMainMenuId = Object.keys(incomingObjects).find(id => {
-              const obj = incomingObjects[id];
-              return obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU;
-            });
-            if (incomingMainMenuId) {
-              delete incomingObjects[incomingMainMenuId];
+            // 🔥 OPTIMIZED: Convert board.content from base64 to img_ref:// on first sync
+            // This prevents expensive extraction on every broadcast
+            const objects = action.payload.objects;
+            for (const [id, obj] of Object.entries(objects)) {
+              if (obj?.type === ItemType.BOARD && obj?.content && obj.content.startsWith('data:image/')) {
+                // Generate image ID and create reference
+                const imageId = `board_${obj.id}_${Date.now()}`;
+                const imgRef = `img_ref://${imageId}`;
+
+                // Store in managed cache
+                addToManagedCache(imageId, obj.content);
+
+                // Replace content with reference
+                obj.content = imgRef;
+
+                console.log(`[SYNC_STATE] Converted board "${obj.name || id}" content to img_ref:// (${Math.round(obj.content.length/1024)}KB)`);
+              }
             }
 
-            // Merge incoming objects with local main menu (if exists)
-            finalObjects = localMainMenu
-              ? { ...incomingObjects, [localMainMenu.id]: localMainMenu }
-              : incomingObjects;
+            // Check if this is a partial sync (differential update)
+            const isPartialSync = action.payload._isPartial === true;
+
+            if (isPartialSync) {
+              // For partial sync, MERGE incoming objects with existing ones
+              // Only update objects that are in the payload
+              const incomingObjects = action.payload.objects;
+              finalObjects = { ...state.objects };
+
+              // Update or add each incoming object
+              Object.entries(incomingObjects).forEach(([id, obj]) => {
+                // Skip main menu - it's local
+                if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+                  return;
+                }
+                finalObjects[id] = obj;
+              });
+
+              console.log('[SYNC_STATE] Partial sync: merged objects', {
+                incoming: Object.keys(incomingObjects).length,
+                total: Object.keys(finalObjects).length
+              });
+            } else {
+              // For full sync, REPLACE all objects (except local main menu)
+              const incomingObjects = { ...action.payload.objects };
+              const incomingMainMenuId = Object.keys(incomingObjects).find(id => {
+                const obj = incomingObjects[id];
+                return obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU;
+              });
+              if (incomingMainMenuId) {
+                delete incomingObjects[incomingMainMenuId];
+              }
+
+              // Merge incoming objects with local main menu (if exists)
+              finalObjects = localMainMenu
+                ? { ...incomingObjects, [localMainMenu.id]: localMainMenu }
+                : incomingObjects;
+
+              console.log('[SYNC_STATE] Full sync: replaced all objects', {
+                total: Object.keys(finalObjects).length
+              });
+            }
 
             // Don't restore local panel settings - all settings come from host's playerPanelSettings
         }
 
         // Remove viewTransform and internal fields from payload to prevent overwriting local settings
         // But MERGE playerPanelSettings from host (guest receives all players' settings)
-        const { viewTransform, _lastPanelSettingsUpdate, _pendingPanelSettings, ...payloadWithoutViewTransform } = action.payload;
+        const { viewTransform, _lastPanelSettingsUpdate, _pendingPanelSettings, _isPartial, _syncTimestamp, ...payloadWithoutViewTransform } = action.payload;
 
         // Filter out undefined values to prevent overwriting valid state with undefined
         Object.keys(payloadWithoutViewTransform).forEach(key => {
@@ -5815,11 +5871,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const manualConnectionRef = useRef<any>(null);
   // Track which connection we've set up handlers for to prevent duplicates
   const manualConnectionSetupRef = useRef<string | null>(null);
+  // Fix for image sync issue: Track image cache and pending state for manual P2P
+  const manualImageCacheRef = useRef<Record<string, string>>({});
+  const pendingManualSyncStateRef = useRef<any>(null);
+  const hasReceivedManualImageCacheRef = useRef(false);
+
+  // 🔥 NEW: P2P Action batching for rapid position updates
+  const pendingPositionUpdatesRef = useRef<Map<string, any>>(new Map());
+  const positionBatchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const POSITION_BATCH_WINDOW = 30; // 30ms batching window
+
   // Expose manual connection ref globally so MainMenuContent can set it
   (window as any).__setManualConnection = (conn: any) => {
     // Only update if it's a different connection
     if (conn && conn.peer !== manualConnectionSetupRef.current) {
       manualConnectionRef.current = conn;
+      // Reset image cache state on new connection
+      manualImageCacheRef.current = {};
+      pendingManualSyncStateRef.current = null;
+      hasReceivedManualImageCacheRef.current = false;
     }
   };
 
@@ -5831,7 +5901,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [state]);
 
   // Peer.js connection management
-  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, imageCachesRef } = usePeerConnection(localDispatch, stateRef);
+  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, imageCachesRef, extractedObjectsCacheRef, p2pLoadingSteps, p2pLoadingProgress, isP2PLoadingModalOpen } = usePeerConnection(localDispatch, stateRef);
 
   // Auto-save game state to localStorage (debounced)
   useAutoSave(state, isHost, initializedRef.current);
@@ -5966,6 +6036,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Initialize managed image cache for better memory management
   useEffect(() => {
     let stopCleanup: (() => void) | null = null;
+    let stopExtractionCleanup: (() => void) | null = null;
 
     const initManagedCache = async () => {
       try {
@@ -5980,8 +6051,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Start automatic cleanup (every 5 minutes)
         stopCleanup = startManagedCacheCleanup();
 
+        // 🔥 NEW: Start extraction cache cleanup (every 30 seconds)
+        stopExtractionCleanup = startExtractionCacheCleanup(30000);
+
         return () => {
           if (stopCleanup) stopCleanup();
+          if (stopExtractionCleanup) stopExtractionCleanup();
         };
       } catch (error) {
         // Failed to initialize managed cache
@@ -6105,10 +6180,42 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Audit log deduplication - prevent duplicate entries from React Strict Mode
   const lastAuditLogRef = useRef<{ action: string; payload: any; timestamp: number } | null>(null);
 
+  // 🔥 NEW: Helper function to flush batched position updates
+  const flushPositionUpdates = useCallback(() => {
+    const pending = pendingPositionUpdatesRef.current;
+    if (pending.size === 0) return;
+
+    // Send POSITION_UPDATE with all pending updates
+    const positions = Array.from(pending.values());
+
+    if (hostConnectionRef.current && connectionStatus === 'connected') {
+      hostConnectionRef.current.send({
+        type: 'POSITION_UPDATE',
+        payload: positions
+      });
+    } else if (manualConnectionRef.current && manualConnectionRef.current.open === true) {
+      manualConnectionRef.current.send({
+        type: 'POSITION_UPDATE',
+        payload: positions
+      });
+    }
+
+    // Clear pending updates
+    pending.clear();
+    positionBatchTimeoutRef.current = null;
+  }, [connectionStatus]);
+
   // Middleware Dispatcher - memoized with useCallback to prevent infinite loops
   const dispatch = useCallback((action: Action) => {
       // Local-only actions are executed locally but never sent over network
       if (action._localOnly) {
+          localDispatch(action);
+          return;
+      }
+
+      // 🔥 OPTIMIZATION: skipNetworkSync flag prevents network sync for position updates received from host
+      // This prevents infinite loops when POSITION_UPDATE messages are received
+      if ((action as any).skipNetworkSync) {
           localDispatch(action);
           return;
       }
@@ -6172,6 +6279,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // Local-only actions - execute locally only, don't send to host
               localDispatch(action);
               return;
+          }
+
+          // 🔥 NEW: Batch position updates for UPDATE_OBJECT
+          if (action.type === 'UPDATE_OBJECT' && action.payload) {
+            const payload = action.payload;
+            const keys = Object.keys(payload);
+            const isPositionUpdate = keys.every(k =>
+              k === 'id' || k === 'x' || k === 'y' || k === 'rotation' || k === 'zIndex'
+            );
+
+            if (isPositionUpdate && payload.id) {
+              // Add to pending updates
+              pendingPositionUpdatesRef.current.set(payload.id, payload);
+
+              // Reset batch timeout
+              if (positionBatchTimeoutRef.current) {
+                clearTimeout(positionBatchTimeoutRef.current);
+              }
+
+              positionBatchTimeoutRef.current = setTimeout(() => {
+                flushPositionUpdates();
+              }, POSITION_BATCH_WINDOW);
+
+              // Execute locally immediately for responsiveness
+              localDispatch(action);
+              return; // Skip sending to host individually
+            }
           }
 
           const hasPeerJSConnection = hostConnectionRef.current && connectionStatus === 'connected';
@@ -6252,18 +6386,88 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // 🔥 FIX: Always send FULL state for new connections, use differential sync only for updates
           let stateToSend = stateForBroadcast;
           let isPartialSync = false;
+          let changeCount = 0;
 
           if (!isFirstConnection) {
             // For existing connections, check if we can use differential sync
             const shouldSendFullState = differentialSyncManager.shouldSendFullState();
             if (!shouldSendFullState) {
-              stateToSend = differentialSyncManager.getPartialState(stateForBroadcast, Date.now());
-              isPartialSync = stateToSend._isPartial || false;
+              const partialState = differentialSyncManager.getPartialState(stateForBroadcast, Date.now());
+              isPartialSync = partialState._isPartial || false;
+              changeCount = partialState._changeCount || 0;
+
+              // 🔥 OPTIMIZATION: If only 1-2 objects changed and they're just position updates,
+              // send lightweight POSITION_UPDATE instead of full SYNC_STATE
+              if (isPartialSync && changeCount <= 2) {
+                const changedObjects = Object.entries(partialState.objects);
+                // Check if changes are only position updates (no images, no other properties)
+                const isOnlyPositionUpdates = changedObjects.every(([id, obj]: [string, any]) => {
+                  const existingObj = stateForBroadcast.objects[id];
+                  if (!existingObj) return false;
+                  // Check if only x, y changed
+                  const keys = Object.keys(obj);
+                  return keys.length === Object.keys(existingObj).length &&
+                    keys.every(key => key === 'x' || key === 'y' || key === 'id' || key === 'type');
+                });
+
+                if (isOnlyPositionUpdates && changedObjects.length <= 2) {
+                  // Send lightweight position updates
+                  const positions = changedObjects.map(([id, obj]: [string, any]) => ({
+                    id,
+                    x: obj.x,
+                    y: obj.y
+                  }));
+
+                  conn.send({
+                    type: 'POSITION_UPDATE',
+                    payload: positions
+                  });
+
+                  console.log('[P2P Broadcast] Sent POSITION_UPDATE for', positions.length, 'objects');
+                  return; // Skip full SYNC_STATE
+                }
+              }
+
+              stateToSend = partialState;
             }
           }
 
-          // Extract images to cache and get state with references
-          const { state: stateWithRefs, imageCache: newCache } = extractImagesFromState(stateToSend, existingCache || {});
+          // 🔥 OPTIMIZED: Extract images to cache and get state with references
+          // For partial sync with only position updates, skip expensive extraction
+          // BUT only if FULL state doesn't contain base64 images (which would be huge)
+          let stateWithRefs: any;
+          let newCache: ImageCache;
+
+          // 🔥 OPTIMIZED: Check if we need expensive extraction
+          // For partial sync with only position updates, skip extraction
+          // Use incremental extraction that only scans changed objects
+          const fullStateJson = JSON.stringify(stateForBroadcast);
+          const hasBase64InFullState = fullStateJson.includes('data:image/');
+
+          if (isPartialSync && changeCount <= 2 && !hasBase64InFullState) {
+            // Fast path: just use the partial state as-is (objects already have img_ref://)
+            stateWithRefs = stateToSend;
+            newCache = existingCache || {};
+          } else if (isPartialSync && changeCount <= 5 && !needsBoardContentExtraction(stateForBroadcast)) {
+            // 🔥 NEW: Use incremental extraction for small partial syncs
+            // Only extract changed objects, use cache for unchanged ones
+            const changedObjects = Object.entries(stateToSend.objects);
+            const changedIds = new Set(changedObjects.map(([id]: [string, any]) => id));
+            const incrementalResult = extractImagesIncremental(stateToSend, existingCache || {}, changedIds);
+            stateWithRefs = incrementalResult.stateWithRefs;
+            newCache = incrementalResult.imageCache;
+          } else if (isPartialSync && changeCount <= 5 && hasBase64InFullState) {
+            // 🔥 NEW: Board has base64 but only few objects changed
+            // Use extractBoardContentOnly for fast board-only extraction
+            const extracted = extractBoardContentOnly(stateToSend, existingCache || {});
+            stateWithRefs = extracted.state;
+            newCache = extracted.imageCache;
+          } else {
+            // Full extraction needed (large sync or many changes)
+            const extracted = extractImagesFromState(stateToSend, existingCache || {});
+            stateWithRefs = extracted.state;
+            newCache = extracted.imageCache;
+          }
 
           // For first connection, send ALL images. For updates, send only new ones.
           const imagesToSend = isFirstConnection ? newCache : getNewImages(newCache, existingCache || {});
@@ -6272,9 +6476,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           measureSyncTime(
             () => {
               // Debug: Check if state actually has references
-              const stateJson = JSON.stringify(stateWithRefs);
-              const hasBase64 = stateJson.includes('data:image/');
-              const hasRefs = stateJson.includes('img_ref://');
+              const finalStateJson = JSON.stringify(stateWithRefs);
+              const hasRefs = finalStateJson.includes('img_ref://');
 
               // Send state with image references
               conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
@@ -6282,11 +6485,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // Send images (all images for new connection, only new for existing)
               if (Object.keys(imagesToSend).length > 0) {
                 conn.send({ type: 'IMAGE_CACHE', payload: imagesToSend });
+
                 // Update the cache for this guest
-                imageCachesRef.current!.set(peerId, newCache);
+                // 🔥 CRITICAL: For updates, MERGE with existing cache instead of replacing
+                if (isFirstConnection) {
+                  imageCachesRef.current!.set(peerId, newCache);
+                } else {
+                  // Merge new images with existing cache
+                  const mergedCache = { ...existingCache, ...newCache };
+                  imageCachesRef.current!.set(peerId, mergedCache);
+                }
               }
 
-              return { stateSize: stateJson.length, isPartial: isPartialSync };
+              return { stateSize: finalStateJson.length, isPartial: isPartialSync };
             },
             (result, syncTime) => {
               // 🔥 OPTIMIZED: Record statistics
@@ -6345,11 +6556,36 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const handleData = (data: any) => {
                     if (data.type === 'SYNC_STATE') {
+              // Check if we have the image cache yet (fix for image sync issue)
+              if (!hasReceivedManualImageCacheRef.current) {
+                // Store SYNC_STATE for later processing after IMAGE_CACHE arrives
+                console.log('[Manual P2P] Deferring SYNC_STATE until IMAGE_CACHE arrives');
+                pendingManualSyncStateRef.current = data.payload;
+                return;
+              }
               // Restore images from local cache before dispatching
-              const restoredState = restoreImagesFromCache(data.payload, {});
+              const restoredState = restoreImagesFromCache(data.payload, manualImageCacheRef.current);
               localDispatch({ type: 'SYNC_STATE', payload: restoredState });
           } else if (data.type === 'IMAGE_CACHE') {
-              localDispatch({ type: 'RESTORE_IMAGES', payload: data.payload });
+              console.log('[Manual P2P] Received IMAGE_CACHE');
+              manualImageCacheRef.current = { ...manualImageCacheRef.current, ...data.payload };
+
+              // IMPORTANT: Also add received images to managedCache for pack images
+              for (const [imageId, dataUrl] of Object.entries(data.payload)) {
+                  addToManagedCache(imageId, dataUrl);
+              }
+
+              hasReceivedManualImageCacheRef.current = true;
+
+              // If we have a pending SYNC_STATE, process it now
+              if (pendingManualSyncStateRef.current) {
+                console.log('[Manual P2P] Processing pending SYNC_STATE with new IMAGE_CACHE');
+                const restoredState = restoreImagesFromCache(pendingManualSyncStateRef.current, manualImageCacheRef.current);
+                localDispatch({ type: 'SYNC_STATE', payload: restoredState });
+                pendingManualSyncStateRef.current = null;
+              } else {
+                localDispatch({ type: 'RESTORE_IMAGES', payload: data.payload });
+              }
           } else if (data.type === 'HELO') {
               // Host received HELO from guest - add player and send current state
               const newPlayer = data.payload;
@@ -6358,22 +6594,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               // Send current state to new player (with safety checks)
               setTimeout(() => {
-                  console.log('[Manual P2P] Sending SYNC_STATE to guest, conn:', conn?.peer, 'conn.open:', conn?.open, 'conn.dataChannel.readyState:', conn?.dataChannel?.readyState);
+                  console.log('[Manual P2P] Sending data to guest, conn:', conn?.peer, 'conn.open:', conn?.open, 'conn.dataChannel.readyState:', conn?.dataChannel?.readyState);
                   if (conn && conn.open && conn.dataChannel && conn.dataChannel.readyState === 'open') {
                       try {
                           const { state: stateWithRefs, imageCache } = extractImagesFromState(stateRef.current);
+
+                          // IMPORTANT: Send IMAGE_CACHE BEFORE SYNC_STATE to ensure images are available
+                          // when the guest processes the state. This fixes the issue where guests don't see images.
+                          // ALWAYS send IMAGE_CACHE, even if empty, to signal the guest that they can process SYNC_STATE
+                          const imageCount = Object.keys(imageCache).length;
+                          if (imageCount > 0) {
+                              console.log('[Manual P2P] Sending IMAGE_CACHE FIRST, cache size:', JSON.stringify(imageCache).length);
+                              conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
+                          } else {
+                              // Always send empty IMAGE_CACHE to signal guest that they can process SYNC_STATE
+                              console.log('[Manual P2P] Sending empty IMAGE_CACHE (no images in cache)');
+                              conn.send({ type: 'IMAGE_CACHE', payload: {} });
+                          }
+
                           console.log('[Manual P2P] Sending SYNC_STATE, state size:', JSON.stringify(stateWithRefs).length);
                           conn.send({ type: 'SYNC_STATE', payload: stateWithRefs });
-                          if (Object.keys(imageCache).length > 0) {
-                              console.log('[Manual P2P] Sending IMAGE_CACHE, cache size:', JSON.stringify(imageCache).length);
-                              conn.send({ type: 'IMAGE_CACHE', payload: imageCache });
-                          }
+
                           console.log('[Manual P2P] Successfully sent state to guest');
                       } catch (e) {
-                          console.error('[Manual P2P] Error sending SYNC_STATE:', e);
+                          console.error('[Manual P2P] Error sending state:', e);
                       }
                   } else {
-                      console.warn('[Manual P2P] Cannot send SYNC_STATE - conn is closed or null. conn:', conn, 'open:', conn?.open, 'readyState:', conn?.dataChannel?.readyState);
+                      console.warn('[Manual P2P] Cannot send state - conn is closed or null. conn:', conn, 'open:', conn?.open, 'readyState:', conn?.dataChannel?.readyState);
                   }
               }, 100);
           } else if (data.type === 'UPDATE_PLAYER_NAME') {
@@ -6385,6 +6632,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const handleOpen = () => {
           console.log('[Manual P2P] Connection opened');
+          // Reset image cache sync state for new connection
+          manualImageCacheRef.current = {};
+          pendingManualSyncStateRef.current = null;
+          hasReceivedManualImageCacheRef.current = false;
+          console.log('[Manual P2P] Reset image cache sync state for new connection');
           // HELO is now handled by useManualConnection with proper guest name
       };
 
@@ -6427,6 +6679,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
   }, [localDispatch, isHost]);
 
+  // 🔥 NEW: Cleanup position batch timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (positionBatchTimeoutRef.current) {
+        clearTimeout(positionBatchTimeoutRef.current);
+      }
+      pendingPositionUpdatesRef.current.clear();
+    };
+  }, []);
+
   return (
     <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, stateRef }}>
       {children}
@@ -6439,6 +6701,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         onSubmit={setPlayerName}
         defaultName="Player"
         title="Join Game"
+      />
+      <P2PLoadingModal
+        isOpen={isP2PLoadingModalOpen}
+        steps={p2pLoadingSteps}
+        overallProgress={p2pLoadingProgress}
       />
       {pendingLocalFiles && pendingSavedState && (
         <LocalFileRestoreDialog

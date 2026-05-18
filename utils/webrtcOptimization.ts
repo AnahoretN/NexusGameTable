@@ -105,7 +105,7 @@ class DebouncedFunction<T extends (...args: any[]) => any> {
 
 // WebRTC optimization configuration
 export const WEBRTC_OPTIMIZATION_CONFIG = {
-  // Throttle state sync to max once per 100ms
+  // Throttle state sync to max once per 100ms (balanced between responsiveness and bandwidth)
   STATE_SYNC_THROTTLE: 100,
 
   // Debounce panel settings sync to wait 300ms after last change

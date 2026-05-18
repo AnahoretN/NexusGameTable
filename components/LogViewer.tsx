@@ -187,31 +187,34 @@ export const LogViewer: React.FC<LogViewerProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
+  // Get audit log entries safely (handle case where auditLog is undefined from old saves)
+  const auditLogEntries = state.auditLog?.entries || [];
+
   // Filter entries
   const filteredEntries = useMemo(() => {
-    return filterAuditLog(state.auditLog.entries, {
+    return filterAuditLog(auditLogEntries, {
       actionTypes: filters.actionTypes.length > 0 ? filters.actionTypes : undefined,
       playerIds: filters.playerIds.length > 0 ? filters.playerIds : undefined,
       searchQuery: searchQuery || undefined,
     });
-  }, [state.auditLog.entries, filters, searchQuery]);
+  }, [auditLogEntries, filters, searchQuery]);
 
   // Get unique action types and players for filters
   const uniqueActionTypes = useMemo(() => {
     const types = new Set<AuditActionType>();
-    state.auditLog.entries.forEach(entry => types.add(entry.actionType));
+    auditLogEntries.forEach(entry => types.add(entry.actionType));
     return Array.from(types);
-  }, [state.auditLog.entries]);
+  }, [auditLogEntries]);
 
   const uniquePlayerIds = useMemo(() => {
     const playerMap = new Map<string, string>();
-    state.auditLog.entries.forEach(entry => {
+    auditLogEntries.forEach(entry => {
       if (!playerMap.has(entry.playerId)) {
         playerMap.set(entry.playerId, entry.playerName);
       }
     });
     return Array.from(playerMap.entries()).map(([id, name]) => ({ id, name }));
-  }, [state.auditLog.entries]);
+  }, [auditLogEntries]);
 
   // Export functions
   const handleExportText = useCallback(() => {
@@ -255,10 +258,10 @@ export const LogViewer: React.FC<LogViewerProps> = ({ isOpen, onClose }) => {
   // Restore to point - undo all actions after this point
   const handleRestoreToPoint = useCallback((entryId: string) => {
     if (!isGM) return;
-    const index = state.auditLog.entries.findIndex(e => e.id === entryId);
+    const index = auditLogEntries.findIndex(e => e.id === entryId);
     if (index === -1) return;
 
-    const currentIndex = state.auditLog.entries.length - 1;
+    const currentIndex = auditLogEntries.length - 1;
     const undoCount = currentIndex - index;
 
     if (undoCount <= 0) return;
@@ -269,7 +272,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ isOpen, onClose }) => {
         dispatch({ type: 'UNDO_GENERAL' } as any);
       }
     }
-  }, [dispatch, isGM, state.auditLog.entries, language]);
+  }, [dispatch, isGM, auditLogEntries, language]);
 
   // Close on escape
   useEffect(() => {

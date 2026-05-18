@@ -1,6 +1,9 @@
 /**
  * Data Compression Utilities for WebRTC
  * Provides compression/decompression for network data transmission
+ *
+ * 🔥 OPTIMIZED: Compression is only used for messages larger than 2KB
+ * Small messages like position updates are sent uncompressed to reduce latency
  */
 
 import * as LZString from 'lz-string';
@@ -12,6 +15,10 @@ export interface CompressionStats {
   compressionTime: number;
   decompressionTime: number;
 }
+
+// 🔥 OPTIMIZED: Increased threshold to avoid compression overhead on small messages
+// Position updates, chat messages, and other small actions are sent uncompressed
+const COMPRESSION_THRESHOLD = 2048; // 2KB - only compress messages larger than this
 
 class DataCompressionManager {
   private stats: CompressionStats[] = [];
@@ -191,11 +198,29 @@ export const dataCompressionManager = new DataCompressionManager();
 
 // Convenience functions
 export function compressWebRTCData(data: any): string {
+  const jsonString = JSON.stringify(data);
+
+  // 🔥 OPTIMIZED: Skip compression for small messages to reduce latency
+  if (jsonString.length < COMPRESSION_THRESHOLD) {
+    return jsonString;
+  }
+
   return dataCompressionManager.compressData(data);
 }
 
 export function decompressWebRTCData(compressed: string, isCompressed: boolean = true): any {
-  return dataCompressionManager.decompressData(compressed, isCompressed);
+  // 🔥 OPTIMIZED: Handle uncompressed data seamlessly
+  // If isCompressed is false or data is smaller than threshold, parse directly
+  if (!isCompressed || compressed.length < COMPRESSION_THRESHOLD) {
+    try {
+      return JSON.parse(compressed);
+    } catch (e) {
+      // If parsing fails, try decompression anyway
+      return dataCompressionManager.decompressData(compressed, true);
+    }
+  }
+
+  return dataCompressionManager.decompressData(compressed, true);
 }
 
 export function getCompressionStats() {

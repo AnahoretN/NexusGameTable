@@ -183,8 +183,8 @@ export function extractImagesToCache(obj: any, cache: ImageCache = {}, existingC
       } else if (isImageRef(value)) {
         // Keep img_ref:// URLs as-is - they'll be loaded during restore
         result[key] = value;
-      } else if (isLocalFilePath(value) || (value.startsWith('http://') || value.startsWith('https://'))) {
-        // This is an original path (local file or URL) - save it and replace with img_ref
+      } else if (isLocalFilePath(value)) {
+        // This is a local file path - save it and replace with img_ref
         // First check if we already have this path cached
         const existingId = originalPathMap.get(value);
 
@@ -203,6 +203,12 @@ export function extractImagesToCache(obj: any, cache: ImageCache = {}, existingC
           }
           cache._originalPaths[imageId] = value;
         }
+      } else if (value.startsWith('http://') || value.startsWith('https://')) {
+        // HTTP/HTTPS URLs: Keep as-is, don't replace with img_ref://
+        // These URLs can be loaded directly from the web
+        // Converting them to img_ref:// would require fetching and storing the image data,
+        // which could fail and would cause images to disappear on page reload
+        result[key] = value;
       } else {
         result[key] = value;
       }
@@ -323,6 +329,22 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
 
   if (base64CountAfter > 0) {
     logger.error(`[EXTRACT] FAILED: ${base64CountAfter} base64 images remain after extraction!`);
+  }
+
+  // IMPORTANT: Also extract all images from managedCache (pack images)
+  // These are images that were loaded from packs and need to be sent to guests
+  const managedCacheData = getManagedCache();
+  let managedCacheCount = 0;
+  for (const [imageId, entry] of Object.entries(managedCacheData)) {
+    // Only add if not already in cache (avoid duplicates)
+    if (!cache[imageId]) {
+      cache[imageId] = entry.data;
+      managedCacheCount++;
+    }
+  }
+
+  if (managedCacheCount > 0) {
+    logger.log(`[EXTRACT] Added ${managedCacheCount} images from managedCache to imageCache for P2P sync`);
   }
 
   // Extract original paths from cache
@@ -533,8 +555,12 @@ export async function getImageUrlFromRef(url: string): Promise<string> {
     return fromIDB;
   }
 
-  // If all else fails, return original URL
-  return url;
+  // Image not found in cache or IndexedDB
+  // This can happen with legacy saved states where HTTP URLs were converted to img_ref://
+  // but the image data was never saved to IndexedDB
+  // Return a transparent 1x1 pixel placeholder to prevent broken image icons
+  logger.warn(`[IMAGE_CACHE] Image not found for ${url}, using transparent placeholder`);
+  return 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 }
 
 /**
@@ -1154,3 +1180,33 @@ export function getAllFileNameMappings(): Map<string, string> {
   if (!registry) return new Map();
   return new Map(registry);
 }
+
+// ============================================================================
+// OPTIMIZED IMAGE TRANSFER EXPORTS
+// ============================================================================
+
+// Re-export optimized transfer functions for convenience
+export {
+  blobImageCache,
+  compressImage,
+  compressImages,
+  calculateImageHash,
+  findDuplicates,
+  chunkImage,
+  assembleImage
+} from './blobImageCache';
+
+export {
+  createManifest,
+  getMissingImages,
+  compressForTransfer,
+  transferImagesWithProgress,
+  getAdaptiveQuality,
+  estimateNetworkSpeed,
+  type CompressionOptions,
+  type ImageManifest,
+  type ImageManifestEntry,
+  type TransferProgress,
+  type ProgressCallback
+} from './optimizedImageTransfer';
+

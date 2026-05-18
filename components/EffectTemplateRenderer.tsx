@@ -962,6 +962,14 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
           src={effectImageUrl}
           alt=""
           crossOrigin="anonymous"
+          onError={(e) => {
+            // If loading fails due to CORS, retry without crossOrigin attribute
+            const img = e.currentTarget;
+            if (img.crossOrigin === 'anonymous') {
+              img.removeAttribute('crossOrigin');
+              img.src = effectImageUrl; // Retry loading
+            }
+          }}
           style={{
             position: 'absolute',
             left: 0,
