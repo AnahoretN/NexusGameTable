@@ -3,6 +3,7 @@ import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenTy
 import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { P2PLoadingModal } from '../components/P2PLoadingModal';
+import { GuestConnectionModal } from '../components/GuestConnectionModal';
 import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
 import { LocalFileRestoreDialog } from '../components/LocalFileRestoreDialog';
 import { generateUUID } from '../utils/uuid';
@@ -47,6 +48,7 @@ import {
   syncTokenImageToCharacter
 } from '../utils/characterTokenSync';
 import { allocateZIndexInHyperslice, defragmentHyperslice } from '../utils/zIndexAllocator';
+import { isObjectIndividual } from '../utils/individualPositions';
 import { addPackToGameReducer } from './reducers/appReducers';
 
 const GameContext = createContext<{
@@ -85,11 +87,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // ensuring we don't accidentally become someone else visually
         const currentActiveId = state.activePlayerId;
         const currentViewTransform = state.viewTransform;
-
-        // Keep our local main menu panel (each player has their own)
-        const localMainMenu = Object.values(state.objects).find(
-          obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
-        );
 
         // Check if this is a reconnection to the same session
         // If session ID matches, restore local panel settings; otherwise use host's settings
@@ -136,8 +133,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 Object.entries(incomingObjects).forEach(([id, obj]) => {
                   // 🔥 DEBUG: Log incoming object properties
                   const existingObj = state.objects[id];
+                  const isPanel = obj.type === ItemType.PANEL;
+                  const hasCharacterData = isPanel && (obj as PanelObject).characterData;
+
                   console.log(`[SYNC_STATE Partial] Object ${id}:`, {
                     name: obj.name,
+                    type: obj.type,
+                    isPanel,
+                    hasCharacterData,
+                    characterDataKeys: hasCharacterData ? Object.keys((obj as PanelObject).characterData || {}) : [],
                     hasContent: !!obj.content,
                     contentPreview: obj.content?.substring(0, 20) || 'none',
                     hadContentBefore: !!existingObj?.content,
@@ -146,8 +150,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     inCursorSlotTracker: isInCursorSlot(id)
                   });
 
-                  // Skip main menu - it's local
-                  if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+                  // Skip individual objects - they are per-player and should not be synced from host
+                  if (isObjectIndividual(obj, state.hyperscaleLayers)) {
                     return;
                   }
 
@@ -213,10 +217,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 }
               });
 
-              // Merge incoming objects with local main menu (if exists)
-              finalObjects = localMainMenu
-                ? { ...incomingObjects, [localMainMenu.id]: localMainMenu }
-                : incomingObjects;
+              // Merge incoming objects with local individual objects
+              // Individual objects (on layers with individualObjects: true) are per-player
+              // and should be preserved when receiving state from host
+              const localIndividualObjects: Record<string, TableObject> = {};
+              Object.values(state.objects).forEach(obj => {
+                if (isObjectIndividual(obj, state.hyperscaleLayers)) {
+                  localIndividualObjects[obj.id] = obj;
+                }
+              });
+
+              finalObjects = {
+                ...incomingObjects,
+                ...localIndividualObjects
+              };
 
               console.log('[SYNC_STATE] Full sync: replaced all objects', {
                 total: Object.keys(finalObjects).length
@@ -238,35 +252,87 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         });
 
         // Merge playerPanelSettings from host with local settings
-        // Host has all players' settings, guest needs to preserve their own and receive others'
+        // CRITICAL: Local settings must have priority to prevent panels from jumping
+        // When host sends state, it may have stale settings for current player
+        const currentPlayerId = currentActiveId;
+
+        // First, get all settings from host (for all players)
+        const hostPlayerPanelSettings = action.payload.playerPanelSettings || {};
+
+        // Then, ensure current player's local settings override host's settings
         const mergedPlayerPanelSettings = {
-          ...action.payload.playerPanelSettings, // All settings from host
-          ...(state.playerPanelSettings || {}) // Keep local settings (shouldn't conflict, but just in case)
+          ...hostPlayerPanelSettings,
+          [currentPlayerId]: {
+            ...(hostPlayerPanelSettings[currentPlayerId] || {}),
+            ...(state.playerPanelSettings?.[currentPlayerId] || {})
+          }
+        };
+
+        // Merge playerObjectPositions from host with local positions
+        // CRITICAL: Local positions must have priority for same reason
+        const hostPlayerObjectPositions = action.payload.playerObjectPositions || {};
+        const mergedPlayerObjectPositions = {
+          ...hostPlayerObjectPositions,
+          [currentPlayerId]: {
+            ...(hostPlayerObjectPositions[currentPlayerId] || {}),
+            ...(state.playerObjectPositions?.[currentPlayerId] || {})
+          }
         };
 
         // Apply current player's panel settings to objects
-        const currentPlayerId = currentActiveId;
         const currentPanelSettings = mergedPlayerPanelSettings[currentPlayerId] || {};
 
         const updatedObjects = { ...finalObjects };
         Object.entries(currentPanelSettings).forEach(([panelId, panelSettings]: [string, any]) => {
           if (updatedObjects[panelId] && (updatedObjects[panelId].type === ItemType.PANEL || updatedObjects[panelId].type === ItemType.WINDOW)) {
+            const existingPanel = updatedObjects[panelId];
+            // Only apply properties that are defined in panelSettings
+            // This prevents accidentally overwriting important properties like characterData with undefined
+            const filteredSettings: any = {};
+            Object.entries(panelSettings).forEach(([key, value]) => {
+              if (value !== undefined) {
+                filteredSettings[key] = value;
+              }
+            });
             updatedObjects[panelId] = {
-              ...updatedObjects[panelId],
-              ...panelSettings
+              ...existingPanel,
+              ...filteredSettings
             };
+          }
+        });
+
+        // Apply current player's individual object positions for objects on individual position layers
+        const currentPlayerObjectPositions = mergedPlayerObjectPositions[currentPlayerId] || {};
+        Object.entries(currentPlayerObjectPositions).forEach(([objectId, position]: [string, any]) => {
+          if (updatedObjects[objectId]) {
+            const obj = updatedObjects[objectId];
+            const layerId = obj.hyperscaleLayerId || 'tokens';
+            const layer = action.payload.hyperscaleLayers?.find((l: HyperscaleLayer) => l.id === layerId);
+
+            // Only apply individual position if layer has individualPosition enabled
+            if (layer?.individualPosition) {
+              updatedObjects[objectId] = {
+                ...obj,
+                x: position.x,
+                y: position.y,
+                ...(position.rotation !== undefined && { rotation: position.rotation }),
+                ...(position.zIndex !== undefined && { zIndex: position.zIndex })
+              };
+            }
           }
         });
 
         return {
             ...state, // Keep existing state as base
             ...payloadWithoutViewTransform, // Merge with payload (excluding viewTransform and internal fields)
-            objects: updatedObjects, // Use objects with applied panel settings
+            objects: updatedObjects, // Use objects with applied panel settings and individual positions
             activePlayerId: currentActiveId,
             // CRITICAL: Never use viewTransform from remote state - always keep local
             viewTransform: currentViewTransform,
             // CRITICAL: Merge playerPanelSettings from host
             playerPanelSettings: mergedPlayerPanelSettings,
+            // CRITICAL: Merge playerObjectPositions from host
+            playerObjectPositions: mergedPlayerObjectPositions,
             // CRITICAL: Keep internal fields
             _lastPanelSettingsUpdate: state._lastPanelSettingsUpdate,
             _pendingPanelSettings: state._pendingPanelSettings,
@@ -537,12 +603,31 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             activePlayerId: currentActiveId,
             // Preserve current language - don't override with language from pack/save
             language: state.language,
+            // 🔥 NEW: Ensure usedPacks exists (may be missing in old saves)
+            usedPacks: action.payload.usedPacks || {},
             // sessionId from save is preserved if exists (handled by spread above)
         };
     }
     case 'ADD_PACK_TO_GAME': {
         // Use the helper reducer to add pack objects to current game
         return addPackToGameReducer(state, action);
+    }
+    case 'REGISTER_PACK': {
+        // Register an asset pack that was loaded
+        const { packName, packHash, packSize, imageCount } = action.payload;
+        return {
+            ...state,
+            usedPacks: {
+                ...state.usedPacks,
+                [packName]: {
+                    name: packName,
+                    hash: packHash,
+                    size: packSize,
+                    imageCount,
+                    required: true
+                }
+            }
+        };
     }
     case 'SET_ACTIVE_ID': {
         return { ...state, activePlayerId: action.payload };
@@ -556,9 +641,64 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'REMOVE_PLAYER': {
+        // 🔥 NEW: Also remove guest pack status when player disconnects
+        const { [action.payload.id]: removedStatus, ...remainingStatus } = state.guestPackStatus;
         return {
             ...state,
-            players: state.players.filter(p => p.id !== action.payload.id)
+            players: state.players.filter(p => p.id !== action.payload.id),
+            guestPackStatus: remainingStatus,
+        };
+    }
+    // 🔥 NEW: Initialize guest pack status when guest connects
+    case 'INITIALIZE_GUEST_PACK_STATUS': {
+        const { guestId, guestName, connectedAt } = action.payload;
+        return {
+            ...state,
+            guestPackStatus: {
+                ...state.guestPackStatus,
+                [guestId]: {
+                    playerId: guestId,
+                    playerName: guestName,
+                    loadedPacks: {},
+                    connectedAt,
+                    lastUpdate: Date.now(),
+                }
+            }
+        };
+    }
+    // 🔥 NEW: Update guest pack status when guest loads a pack
+    case 'UPDATE_GUEST_PACK_STATUS': {
+        const { guestId, packName, packHash, imageCount } = action.payload;
+        const guestStatus = state.guestPackStatus[guestId];
+        if (!guestStatus) {
+            console.warn(`[GameContext] Guest ${guestId} not found in guestPackStatus`);
+            return state;
+        }
+        return {
+            ...state,
+            guestPackStatus: {
+                ...state.guestPackStatus,
+                [guestId]: {
+                    ...guestStatus,
+                    loadedPacks: {
+                        ...guestStatus.loadedPacks,
+                        [packName]: {
+                            name: packName,
+                            hash: packHash,
+                            imageCount,
+                            loadedAt: Date.now(),
+                        }
+                    },
+                    lastUpdate: Date.now(),
+                }
+            }
+        };
+    }
+    case 'REMOVE_GUEST_PACK_STATUS': {
+        const { [action.payload.guestId]: removed, ...remaining } = state.guestPackStatus;
+        return {
+            ...state,
+            guestPackStatus: remaining,
         };
     }
     case 'UPDATE_PLAYER': {
@@ -691,8 +831,96 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'UPDATE_OBJECT': {
       const obj = state.objects[action.payload.id];
       if (!obj) {
-        logger.warn('[UPDATE_OBJECT] Object not found', { id: action.payload.id });
+        logger.warn('[UPDATE_OBJECT] Object not found', {
+          id: action.payload.id,
+          payloadKeys: Object.keys(action.payload),
+          hasUpdates: !!action.payload.updates,
+          updatesKeys: action.payload.updates ? Object.keys(action.payload.updates) : [],
+          allObjectIds: Object.keys(state.objects).slice(0, 10)
+        });
         return state;
+      }
+
+      // 🔥 DEBUG: Log characterData updates for panels
+      if (obj.type === ItemType.PANEL) {
+        const updates = action.payload.updates || action.payload;
+        const hasCharacterData = updates.characterData !== undefined;
+        if (hasCharacterData) {
+          console.log('[UPDATE_OBJECT] Panel characterData update', {
+            panelId: action.payload.id,
+            panelType: (obj as PanelObject).panelType,
+            hasCharacterData: true,
+            characterDataKeys: Object.keys(updates.characterData || {}),
+            charactersCount: updates.characterData?.characters?.length || 0
+          });
+        }
+      }
+
+      // Check if object is on a hyperscale layer with individualPosition enabled
+      const individualLayerId = obj.hyperscaleLayerId || 'tokens';
+      const individualLayer = state.hyperscaleLayers.find(l => l.id === individualLayerId);
+      const isIndividualPositionLayer = individualLayer?.individualPosition === true;
+      const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
+
+      // For individual position/objects layers coming from network, save position but don't sync to other guests
+      // This allows host to store guest positions without broadcasting them
+      if ((isIndividualPositionLayer || isIndividualObjectsLayer) && !action._localOnly) {
+        const updates = action.payload.updates || {};
+        const { id, updates: _updates, ...restOfPayload } = action.payload;
+        const mergedUpdates = Object.keys(updates).length > 0 ? updates : restOfPayload;
+
+        // Check if this is a position update
+        const hasPositionUpdate =
+          mergedUpdates.x !== undefined ||
+          mergedUpdates.y !== undefined ||
+          mergedUpdates.rotation !== undefined ||
+          mergedUpdates.zIndex !== undefined;
+
+        if (hasPositionUpdate && (action.payload as any).playerId) {
+          // Store the individual position for this player (host only)
+          const playerId = (action.payload as any).playerId;
+          const currentPosition = state.playerObjectPositions[playerId]?.[obj.id] || {};
+
+          const newPosition = {
+            x: mergedUpdates.x !== undefined ? mergedUpdates.x : currentPosition.x,
+            y: mergedUpdates.y !== undefined ? mergedUpdates.y : currentPosition.y,
+            rotation: mergedUpdates.rotation !== undefined ? mergedUpdates.rotation : currentPosition.rotation,
+            zIndex: mergedUpdates.zIndex !== undefined ? mergedUpdates.zIndex : currentPosition.zIndex
+          };
+
+          // Return state with updated individual position
+          return {
+            ...state,
+            playerObjectPositions: {
+              ...state.playerObjectPositions,
+              [playerId]: {
+                ...(state.playerObjectPositions[playerId] || {}),
+                [obj.id]: newPosition
+              }
+            }
+          };
+        }
+
+        // For individual objects layers, skip all network updates entirely
+        if (isIndividualObjectsLayer) {
+          return state;
+        }
+
+        // For individual position layers, filter out position properties
+        const filteredUpdates: any = {};
+        Object.entries(mergedUpdates).forEach(([key, value]) => {
+          if (key !== 'x' && key !== 'y' && key !== 'rotation' && key !== 'zIndex') {
+            filteredUpdates[key] = value;
+          }
+        });
+
+        // If all properties were filtered out, skip this action
+        if (Object.keys(filteredUpdates).length === 0) {
+          return state;
+        }
+
+        // Continue with filtered updates
+        action.payload.updates = filteredUpdates;
       }
 
       // For panels and windows, filter out local-only properties from network sync
@@ -954,6 +1182,77 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   }
               }
           }
+      }
+
+      // 🔥 FIX: Handle Panel characterData updates - sync to tokens
+      // When characterData changes on a panel, update counters on all linked tokens
+      if (updatedObj.type === ItemType.PANEL && mergedUpdates.characterData) {
+        const panel = updatedObj as PanelObject;
+        const oldPanel = obj as PanelObject;
+        const newCharacterData = panel.characterData;
+        const oldCharacterData = oldPanel.characterData;
+
+        if (oldCharacterData && newCharacterData) {
+          // Check each character for slider changes
+          for (const newChar of newCharacterData.characters) {
+            const oldChar = oldCharacterData.characters.find((c: any) => c.id === newChar.id);
+            if (!oldChar) continue;
+
+            // Check for slider changes in subTabs
+            if (oldChar.subTabs && newChar.subTabs) {
+              for (let i = 0; i < newChar.subTabs.length; i++) {
+                const oldSubTab = oldChar.subTabs[i];
+                const newSubTab = newChar.subTabs[i];
+                if (!oldSubTab || !newSubTab) continue;
+
+                for (const newBlock of newSubTab.blocks || []) {
+                  if (newBlock.type === 'SLIDER' && newBlock.data?.sliders) {
+                    const oldBlock = oldSubTab.blocks?.find((b: any) => b.id === newBlock.id);
+                    if (!oldBlock || !oldBlock.data?.sliders) continue;
+
+                    // Check if sliders changed
+                    const oldSliders = oldBlock.data.sliders;
+                    const newSliders = newBlock.data.sliders;
+
+                    let slidersChanged = false;
+                    if (oldSliders.length !== newSliders.length) {
+                      slidersChanged = true;
+                    } else {
+                      for (const newSlider of newSliders) {
+                        const oldSlider = oldSliders.find((s: any) => s.id === newSlider.id);
+                        if (!oldSlider ||
+                            oldSlider.value !== newSlider.value ||
+                            oldSlider.maxValue !== newSlider.maxValue ||
+                            oldSlider.minValue !== newSlider.minValue ||
+                            oldSlider.color !== newSlider.color ||
+                            oldSlider.label !== newSlider.label) {
+                          slidersChanged = true;
+                          break;
+                        }
+                      }
+                    }
+
+                    if (slidersChanged) {
+                      console.log('[UPDATE_OBJECT] Syncing sliders to tokens', {
+                        characterId: newChar.id,
+                        panelId: panel.id,
+                        sliders: newSliders.map((s: any) => ({ name: s.label, value: s.value }))
+                      });
+
+                      // Sync sliders to all tokens for this character
+                      syncSlidersToTokens(
+                        { ...state, objects: newObjects },
+                        panel,
+                        newChar,
+                        newObjects
+                      );
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
 
       // Handle NexusCellObject updates - propagate to all cells in the same board
@@ -5584,9 +5883,52 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       };
     }
+    case 'UPDATE_PLAYER_OBJECT_POSITION': {
+      // Store individual object position for a player on layers with individualPosition (host only)
+      const { playerId, objectId, x, y, rotation, zIndex } = action.payload;
+
+      // Initialize player positions if not exists
+      if (!state.playerObjectPositions[playerId]) {
+        return {
+          ...state,
+          playerObjectPositions: {
+            ...state.playerObjectPositions,
+            [playerId]: {
+              [objectId]: { x, y, rotation, zIndex }
+            },
+          },
+        };
+      }
+
+      // Update object position for this player
+      return {
+        ...state,
+        playerObjectPositions: {
+          ...state.playerObjectPositions,
+          [playerId]: {
+            ...state.playerObjectPositions[playerId],
+            [objectId]: { x, y, rotation, zIndex }
+          }
+        },
+      };
+    }
+    case 'APPLY_PLAYER_OBJECT_POSITIONS': {
+      // Apply player object positions from saved game state (used when loading from file)
+      const { playerObjectPositions: savedObjectPositions } = action.payload;
+
+      return {
+        ...state,
+        playerObjectPositions: {
+          ...state.playerObjectPositions,
+          ...savedObjectPositions
+        }
+      };
+    }
     case 'CLEAR_SAVED_STATE': {
-      // Clear ALL saved data from localStorage including URL parameters
-      clearAllData();
+      // Clear ALL saved data from browser storage
+      clearAllData().catch(error => {
+        logger.error('[GAME] Failed to clear all data:', error);
+      });
 
       // Reset to initial state but preserve current language
       const resetState = {
@@ -5946,13 +6288,58 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Expose dispatch for dice roll animations
   (window as any).__diceRollDispatch = localDispatch;
+  // Expose game state for debugging
+  (window as any).__gameState = state;
 
   useEffect(() => {
       stateRef.current = state;
+      // Also update debug reference
+      if (typeof window !== 'undefined') {
+        (window as any).__gameState = state;
+      }
   }, [state]);
 
   // Peer.js connection management
-  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, p2pLoadingSteps, p2pLoadingProgress, isP2PLoadingModalOpen } = usePeerConnection(localDispatch, stateRef);
+  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, p2pLoadingSteps, p2pLoadingProgress, isP2PLoadingModalOpen, requiredPacks, onPackLoaded, suggestedPlayerName } = usePeerConnection(localDispatch, stateRef);
+
+  // 🔥 NEW: Guest connection modal state
+  const [guestConnectionModalOpen, setGuestConnectionModalOpen] = useState(false);
+  const [guestReadyToJoin, setGuestReadyToJoin] = useState(false);
+  const loadedPacksRef = useRef<Set<string>>(new Set());
+
+  // Show guest connection modal when waiting for player name
+  useEffect(() => {
+    if (waitingForPlayerName && !isHost) {
+      setGuestConnectionModalOpen(true);
+    }
+  }, [waitingForPlayerName, isHost]);
+
+  // Check if guest is ready to join
+  useEffect(() => {
+    if (!isHost && guestConnectionModalOpen) {
+      // Check if all connection steps are complete (except packs which are handled separately)
+      const connectionStepsComplete = p2pLoadingSteps.every(
+        step => step.status === 'success' || step.id === 'packs'
+      );
+      // Check if all required packs are loaded
+      const allPacksLoaded = requiredPacks.length === 0 || requiredPacks.every(
+        pack => loadedPacksRef.current.has(pack.name)
+      );
+      // Connection is complete when steps are done and packs are loaded
+      setGuestReadyToJoin(connectionStepsComplete && allPacksLoaded);
+    }
+  }, [isHost, guestConnectionModalOpen, p2pLoadingSteps, requiredPacks]);
+
+  // Handle pack loaded for guest
+  const handlePackLoaded = (packName: string, hashes: string[]) => {
+    loadedPacksRef.current.add(packName);
+    onPackLoaded(packName, hashes);
+  };
+
+  // Handle joining the game
+  const handleJoinGame = () => {
+    setGuestConnectionModalOpen(false);
+  };
 
   // Auto-save game state to localStorage (debounced)
   useAutoSave(state, isHost, initializedRef.current);
@@ -6335,17 +6722,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             );
 
             if (isPositionUpdate && payload.id) {
-              // Add to pending updates
-              pendingPositionUpdatesRef.current.set(payload.id, payload);
+              // Check if object is on a hyperscale layer with individualPosition enabled
+              // If so, skip batching for this object (don't send to host)
+              const obj = state.objects[payload.id];
+              const individualLayerId = obj?.hyperscaleLayerId || 'tokens';
+              const individualLayer = state.hyperscaleLayers.find(l => l.id === individualLayerId);
+              const isIndividualPositionLayer = individualLayer?.individualPosition === true;
 
-              // Reset batch timeout
-              if (positionBatchTimeoutRef.current) {
-                clearTimeout(positionBatchTimeoutRef.current);
+              if (!isIndividualPositionLayer) {
+                // Add to pending updates (only for non-individual position layers)
+                pendingPositionUpdatesRef.current.set(payload.id, payload);
+
+                // Reset batch timeout
+                if (positionBatchTimeoutRef.current) {
+                  clearTimeout(positionBatchTimeoutRef.current);
+                }
+
+                positionBatchTimeoutRef.current = setTimeout(() => {
+                  flushPositionUpdates();
+                }, POSITION_BATCH_WINDOW);
               }
-
-              positionBatchTimeoutRef.current = setTimeout(() => {
-                flushPositionUpdates();
-              }, POSITION_BATCH_WINDOW);
 
               // Execute locally immediately for responsiveness
               localDispatch(action);
@@ -6408,6 +6804,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (obj.type === ItemType.WINDOW && (obj as WindowObject).ownerId) {
             return;
           }
+
+          // Check if object is on a hyperscale layer with individualObjects or individualPosition
+          const layerId = obj.hyperscaleLayerId || 'tokens';
+          const layer = currentState.hyperscaleLayers.find(l => l.id === layerId);
+
+          // Skip individual objects entirely - they don't exist for other players
+          if (layer?.individualObjects) {
+            return;
+          }
+
+          // For individual position layers, keep the object but positions will be filtered per guest
+          // Guests will use their own individual positions from playerObjectPositions
+          if (layer?.individualPosition) {
+            filteredObjects[id] = obj;
+            return;
+          }
+
           // For objects being dragged by host, use broadcast coordinates (prevents showing drag path)
           if ((obj as any).draggingPlayerId === currentState.activePlayerId && (obj as any).broadcastX !== undefined) {
             // Create a copy with broadcast coordinates instead of current position
@@ -6450,8 +6863,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               });
 
               if (isOnlyPositionUpdates && changedObjects.length <= 2) {
+                // Filter out position updates for objects on individual position layers
+                const filteredPositions = changedObjects.filter(([id, obj]: [string, any]) => {
+                  const existingObj = stateForBroadcast.objects[id];
+                  if (!existingObj || !existingObj.hyperscaleLayerId) return true;
+
+                  const layerId = existingObj.hyperscaleLayerId;
+                  const layer = currentState.hyperscaleLayers.find(l => l.id === layerId);
+                  // Don't send position updates for individual position layers
+                  return !layer?.individualPosition;
+                });
+
+                if (filteredPositions.length === 0) {
+                  // All filtered out, skip this update
+                  return;
+                }
+
                 // Send lightweight position updates
-                const positions = changedObjects.map(([id, obj]: [string, any]) => ({
+                const positions = filteredPositions.map(([id, obj]: [string, any]) => ({
                   id,
                   x: obj.x,
                   y: obj.y
@@ -6474,7 +6903,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           measureSyncTime(
             () => {
               const stateJson = JSON.stringify(stateToSend);
-              // Send state with sha256 hashes (assets are transferred separately via ASSET_MANIFEST)
+              // Send state with sha256 hashes (assets are loaded from packs by guest)
               conn.send({ type: 'SYNC_STATE', payload: stateToSend });
               return { stateSize: stateJson.length, isPartial: isPartialSync };
             },
@@ -6626,16 +7055,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         steps={initialLoadSteps}
         isVisible={isInitialLoading}
       />
-      <PlayerNameModal
-        isOpen={waitingForPlayerName !== null}
-        onSubmit={setPlayerName}
-        defaultName="Player"
-        title="Join Game"
-      />
-      <P2PLoadingModal
-        isOpen={isP2PLoadingModalOpen}
-        steps={p2pLoadingSteps}
-        overallProgress={p2pLoadingProgress}
+      {/* 🔥 NEW: Unified Guest Connection Modal */}
+      <GuestConnectionModal
+        isOpen={guestConnectionModalOpen}
+        initialPlayerName={suggestedPlayerName || ''}
+        onPlayerNameSubmit={setPlayerName}
+        requiredPacks={requiredPacks}
+        onPackLoaded={handlePackLoaded}
+        dispatch={localDispatch}
+        connectionSteps={p2pLoadingSteps}
+        connectionProgress={p2pLoadingProgress}
+        canJoin={guestReadyToJoin}
+        onJoin={handleJoinGame}
       />
       {pendingLocalFiles && pendingSavedState && (
         <LocalFileRestoreDialog

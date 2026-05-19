@@ -13,6 +13,8 @@ import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
 import * as LZString from 'lz-string';
 import { findLocalFilePaths, type LocalFileReference } from './imageCompat';
+import { assetDB, clearAssetCache } from './assets';
+import { deleteOldDatabase } from './assets/migration';
 
 // Re-export for other modules
 export type { LocalFileReference };
@@ -215,6 +217,8 @@ export const saveGameState = async (state: GameState): Promise<void> => {
         lastModifiedBy: state.lastModifiedBy || 'gm',
         playerPanelSettings: state.playerPanelSettings || {},
         auditLog: state.auditLog || { entries: [], maxEntries: 10000, currentReplayIndex: -1 },
+        // 🔥 NEW: Save usedPacks for P2P sync
+        usedPacks: state.usedPacks || {},
       }
     };
 
@@ -850,33 +854,104 @@ export const clearGameState = (): void => {
   }
 };
 
-export const clearAllData = (): void => {
+/**
+ * Clear ALL application data from browser storage
+ * - localStorage (game state, settings, peerjs data)
+ * - sessionStorage (temporary session data)
+ * - IndexedDB (all asset databases)
+ * - Cache API (PWA caches)
+ * - Service Workers (unregister all)
+ * - URL parameters (clean hostId from URL)
+ */
+export const clearAllData = async (): Promise<void> => {
   if (typeof window === 'undefined') return;
 
   try {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(STORAGE_KEY_COMPRESSED);
-    localStorage.removeItem('nexus-local-settings');
-    localStorage.removeItem('app-language');
+    logger.log('[CLEAR] Starting complete data cleanup...');
 
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('peerjs')) {
-        localStorage.removeItem(key);
+    // 1. Clear all localStorage
+    logger.log('[CLEAR] Clearing localStorage...');
+    const localStorageKeys = Object.keys(localStorage);
+    localStorageKeys.forEach(key => {
+      localStorage.removeItem(key);
+    });
+
+    // 2. Clear sessionStorage
+    logger.log('[CLEAR] Clearing sessionStorage...');
+    const sessionStorageKeys = Object.keys(sessionStorage);
+    sessionStorageKeys.forEach(key => {
+      sessionStorage.removeItem(key);
+    });
+
+    // 3. Clear IndexedDB - main asset database
+    logger.log('[CLEAR] Clearing IndexedDB (AssetDB)...');
+    try {
+      await assetDB.clear();
+    } catch (idbError) {
+      logger.error('[CLEAR] Failed to clear AssetDB:', idbError);
+    }
+
+    // 4. Clear old IndexedDB databases (migration remnants)
+    logger.log('[CLEAR] Clearing old IndexedDB databases...');
+    try {
+      await deleteOldDatabase();
+    } catch (oldDbError) {
+      logger.error('[CLEAR] Failed to delete old database:', oldDbError);
+    }
+
+    // 5. Clear any remaining IndexedDB databases
+    logger.log('[CLEAR] Checking for remaining IndexedDB databases...');
+    try {
+      const databases = await indexedDB.databases();
+      for (const db of databases) {
+        if (db.name && db.name.includes('Nexus')) {
+          logger.log(`[CLEAR] Deleting database: ${db.name}`);
+          indexedDB.deleteDatabase(db.name);
+        }
       }
-    });
+    } catch (listError) {
+      logger.error('[CLEAR] Failed to list databases:', listError);
+    }
 
-    clearImageCacheIDB().catch(error => {
-      logger.error('[CLEAR] Failed to clear IndexedDB:', error);
-    });
+    // 6. Clear Cache API (PWA caches)
+    logger.log('[CLEAR] Clearing Cache API...');
+    try {
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames.map(cacheName => caches.delete(cacheName))
+      );
+      logger.log(`[CLEAR] Deleted ${cacheNames.length} cache(s)`);
+    } catch (cacheError) {
+      logger.error('[CLEAR] Failed to clear caches:', cacheError);
+    }
 
+    // 7. Unregister Service Workers
+    logger.log('[CLEAR] Unregistering Service Workers...');
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(
+        registrations.map(registration => registration.unregister())
+      );
+      logger.log(`[CLEAR] Unregistered ${registrations.length} service worker(s)`);
+    } catch (swError) {
+      logger.error('[CLEAR] Failed to unregister service workers:', swError);
+    }
+
+    // 8. Clear in-memory asset cache
+    logger.log('[CLEAR] Clearing in-memory asset cache...');
+    clearAssetCache();
+
+    // 9. Clean URL parameters (remove hostId)
     if (window.location.search.includes('hostId')) {
       const cleanUrl = window.location.pathname + window.location.hash;
       window.history.replaceState({}, '', cleanUrl);
+      logger.log('[CLEAR] Cleaned URL parameters');
     }
 
-    logger.log('[CLEAR] All data cleared successfully');
+    logger.log('[CLEAR] ✓ All data cleared successfully');
   } catch (error) {
     logger.error('[CLEAR] Failed to clear all data:', error);
+    throw error;
   }
 };
 

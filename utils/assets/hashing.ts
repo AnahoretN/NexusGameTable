@@ -82,16 +82,13 @@ export async function computeSHA256(input: HashInput): Promise<HashResult> {
 }
 
 /**
- * Compute SHA-256 hash and return only the hash string with prefix
- *
- * Convenience function for most use cases.
+ * Compute SHA-256 hash of an asset
  *
  * @param input - Data to hash
- * @returns Hash string with prefix (e.g., "sha256:a1b2c3...")
+ * @returns HashResult with full hash and metadata
  */
-export async function hashAsset(input: HashInput): Promise<string> {
-  const result = await computeSHA256(input);
-  return result.hash;
+export async function hashAsset(input: HashInput): Promise<HashResult> {
+  return computeSHA256(input);
 }
 
 /**

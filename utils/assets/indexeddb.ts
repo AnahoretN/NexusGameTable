@@ -553,9 +553,9 @@ export async function storeAsset(
   source: AssetEntry['source'] = 'local'
 ): Promise<string> {
   const { hashAsset } = await import('./hashing');
-  const hash = await hashAsset(blob);
-  await assetDB.putAsset({ hash, value: hash.replace('sha256:', ''), algorithm: 'SHA-256' }, blob, mimeType, source);
-  return hash;
+  const hashResult = await hashAsset(blob);
+  await assetDB.putAsset({ hash: hashResult.hash, value: hashResult.value, algorithm: hashResult.algorithm }, blob, mimeType, source);
+  return hashResult.hash;
 }
 
 /**

@@ -12,7 +12,7 @@ import { findLocalFilePaths } from '../utils/imageCompat';
 import { saveSession, loadSession } from '../utils/sessionStorage';
 import { preloadImageUrl } from '../components/SvgTokenShape';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
-import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target } from 'lucide-react';
+import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target, AlertCircle } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -646,6 +646,26 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         addPackLoadingStep('Cache clear failed (continuing anyway)', 'warning');
       }
 
+      // 🔥 NEW: Calculate pack file hash for registration
+      addPackLoadingStep('Calculating pack hash...', 'loading');
+      let packHash = '';
+      let packSize = file.size;
+      let imageCount = 0;
+
+      try {
+        const { hashAsset } = await import('../utils/assets/hashing');
+        const hashResult = await hashAsset(file);
+        packHash = hashResult.hash || '';
+        if (packHash) {
+          addPackLoadingStep(`Pack hash: ${packHash.substring(0, 16)}...`, 'success');
+        } else {
+          addPackLoadingStep('Pack hash not available', 'warning');
+        }
+      } catch (error) {
+        logger.warn('[PACK] Failed to calculate pack hash:', error);
+        addPackLoadingStep('Hash calculation failed (continuing anyway)', 'warning');
+      }
+
       const packData = await loadPack(file, (step, status) => {
         addPackLoadingStep(step, status);
       });
@@ -658,8 +678,25 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         throw new Error("Invalid pack: missing or invalid 'players' field");
       }
 
+      // 🔥 NEW: Count images in pack for registration
+      imageCount = Object.values(packData.objects || {}).length;
+
       // Dispatch load action
       dispatch({ type: 'LOAD_GAME', payload: packData as GameState });
+
+      // 🔥 NEW: Register the pack for P2P sync
+      if (packHash) {
+        dispatch({
+          type: 'REGISTER_PACK',
+          payload: {
+            packName: file.name.replace(/\.[^/.]+$/, ''), // Remove extension
+            packHash,
+            packSize,
+            imageCount
+          }
+        });
+        addPackLoadingStep(`Pack registered for sync`, 'success');
+      }
 
       // Preload all pack images into resolved cache to force re-render with new images
       const { preloadAllPackImages } = await import('../hooks/useImageUrl');
@@ -826,8 +863,43 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         addPackLoadingStep(`Found ${conflictCount} conflicting IDs - generating new ones`, 'loading');
       }
 
+      // 🔥 NEW: Calculate pack file hash for registration
+      addPackLoadingStep('Calculating pack hash...', 'loading');
+      let packHash = '';
+      let packSize = file.size;
+      let imageCount = 0;
+
+      try {
+        const { hashAsset } = await import('../utils/assets/hashing');
+        const hashResult = await hashAsset(file);
+        packHash = hashResult.hash || '';
+        if (packHash) {
+          addPackLoadingStep(`Pack hash: ${packHash.substring(0, 16)}...`, 'success');
+        } else {
+          addPackLoadingStep('Pack hash not available', 'warning');
+        }
+      } catch (error) {
+        logger.warn('[ADD_PACK] Failed to calculate pack hash:', error);
+        addPackLoadingStep('Hash calculation failed (continuing anyway)', 'warning');
+      }
+
       // Dispatch add pack action (merges with current state)
       dispatch({ type: 'ADD_PACK_TO_GAME', payload: packData });
+
+      // 🔥 NEW: Register the pack for P2P sync
+      imageCount = Object.keys(packData.objects || {}).length;
+      if (packHash) {
+        dispatch({
+          type: 'REGISTER_PACK',
+          payload: {
+            packName: file.name.replace(/\.[^/.]+$/, ''), // Remove extension
+            packHash,
+            packSize,
+            imageCount
+          }
+        });
+        addPackLoadingStep(`Pack registered for sync`, 'success');
+      }
 
       // Preload all pack images into resolved cache
       const { preloadAllPackImages } = await import('../hooks/useImageUrl');
@@ -1284,6 +1356,28 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                   </button>
                 </div>
 
+                {/* 🔥 NEW: Registered Asset Packs indicator */}
+                {(() => {
+                  const usedPacks = state.usedPacks || {};
+                  const packCount = Object.keys(usedPacks).length;
+                  if (packCount === 0) return null;
+                  return (
+                    <div className={`p-2 rounded border text-xs ${packCount > 0 ? 'bg-green-500/10 border-green-500/30' : 'bg-slate-800 border-slate-700'}`}>
+                      <div className="flex items-center gap-2">
+                        <Package size={14} className={packCount > 0 ? 'text-green-500' : 'text-slate-500'} />
+                        <span className="text-gray-400">
+                          {packCount} asset pack{packCount !== 1 ? 's' : ''} registered for guests
+                        </span>
+                      </div>
+                      {packCount > 0 && (
+                        <div className="mt-1 text-gray-500 pl-6">
+                          {Object.keys(usedPacks).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Divider line before save/load buttons */}
                 <div className="border-t border-slate-600 my-2"></div>
 
@@ -1406,10 +1500,42 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     showRenameButton = true;
                   }
 
+                  // 🔥 NEW: Calculate pack loading status for guests
+                  const guestPackStatus = state.guestPackStatus?.[p.id];
+                  const totalPacks = Object.keys(state.usedPacks || {}).length;
+                  const loadedPacks = guestPackStatus ? Object.keys(guestPackStatus.loadedPacks || {}).length : 0;
+                  const packsLoaded = totalPacks > 0 && loadedPacks >= totalPacks;
+                  const showPackStatus = isGMView && totalPacks > 0 && !p.isGM && guestPackStatus;
+
                   return (
                     <div key={p.id} className={`flex items-center gap-2 p-2 rounded ${isCurrentPlayer ? 'bg-purple-900/30 border border-purple-700/50' : 'bg-slate-800'}`}>
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{backgroundColor: p.color}} />
-                      <span className="font-medium text-white truncate flex-1">{p.name}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-white truncate">{p.name}</span>
+                          {/* 🔥 NEW: Pack loading indicator for guests */}
+                          {showPackStatus && (
+                            <div className="flex items-center gap-1 flex-shrink-0" title={`${loadedPacks}/${totalPacks} packs loaded`}>
+                              {packsLoaded ? (
+                                <Package size={12} className="text-green-500" />
+                              ) : (
+                                <div className="relative">
+                                  <Package size={12} className="text-amber-500" />
+                                  <span className="absolute -top-1 -right-1 text-[9px] font-bold text-amber-500">
+                                    {totalPacks - loadedPacks}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {/* 🔥 NEW: Show pack loading progress for guests */}
+                        {showPackStatus && !packsLoaded && (
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {loadedPacks}/{totalPacks} packs loaded
+                          </div>
+                        )}
+                      </div>
 
                       {/* All buttons and badges on the right side */}
                       <div className="flex items-center gap-1 flex-shrink-0">

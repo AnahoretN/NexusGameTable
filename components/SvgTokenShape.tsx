@@ -281,10 +281,41 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
       return;
     }
 
-    // Load from new asset system
-    const loadPromise = getAssetURL(content)
+    // Load from new asset system with retry mechanism
+    const loadWithRetry = async (retries = 3): Promise<string | null> => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const objectUrl = await getAssetURL(content);
+          console.log(`[SvgTokenShape] Asset loaded: ${content?.substring(0, 30)}... -> ${objectUrl?.substring(0, 50)}...`);
+          return objectUrl;
+        } catch (error) {
+          const isAssetNotFound = (error as Error).message.includes('Asset not found');
+          if (isAssetNotFound && i < retries - 1) {
+            // Asset might still be saving to IndexedDB - wait and retry
+            const delay = 100 * Math.pow(2, i); // 100ms, 200ms, 400ms
+            console.log(`[SvgTokenShape] Asset not found, retry ${i + 1}/${retries} after ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            // Final retry failed or different error
+            if (isAssetNotFound) {
+              objectURLCache.delete(content);
+            }
+            console.error(`[SvgTokenShape] Failed to load asset ${content?.substring(0, 30)}...:`, error);
+            throw error;
+          }
+        }
+      }
+      return null;
+    };
+
+    const loadPromise = loadWithRetry()
       .then((objectUrl) => {
-        console.log(`[SvgTokenShape] Asset loaded: ${content?.substring(0, 30)}... -> ${objectUrl?.substring(0, 50)}...`);
+        if (!objectUrl) {
+          setResolvedContent(undefined);
+          setIsLoaded(true);
+          return null;
+        }
+
         // 🔥 FIX: Revoke old ObjectURL before setting new one to prevent memory leaks
         // Use previous value from state (captured in closure)
         setResolvedContent(prevUrl => {
@@ -299,12 +330,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
         return objectUrl;
       })
       .catch((error) => {
-        // If asset not found, it might be loading via P2P - clear cache to retry
-        if ((error as Error).message.includes('Asset not found')) {
-          objectURLCache.delete(content);
-          setIsLoaded(false); // Allow retry
-        }
-        console.error(`[SvgTokenShape] Failed to load asset ${content?.substring(0, 30)}...:`, error);
+        console.error(`[SvgTokenShape] Failed to load asset ${content?.substring(0, 30)}... after retries:`, error);
         setResolvedContent(undefined);
         setIsLoaded(true);
         return null;

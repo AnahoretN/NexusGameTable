@@ -32,7 +32,20 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const [, openSettingsModal, closeSettingsModal] = useSettingsModalState();
 
   // Get character data from panel - use latest from state to ensure reactivity
-  const serverCharacterData = (state.objects[panel.id] as PanelObject)?.characterData || panel.characterData;
+  // IMPORTANT: Preserve local characterData if server data is missing to prevent data loss
+  const stateCharacterData = (state.objects[panel.id] as PanelObject)?.characterData;
+  const serverCharacterData = stateCharacterData || panel.characterData;
+
+  // DEBUG: Log when serverCharacterData changes
+  useEffect(() => {
+    console.log('[CharacterPanel] serverCharacterData reference changed', {
+      panelId: panel.id,
+      hasData: !!serverCharacterData,
+      hasStateData: !!stateCharacterData,
+      hasPanelData: !!panel.characterData,
+      charactersCount: serverCharacterData?.characters?.length || 0
+    });
+  }, [serverCharacterData, stateCharacterData, panel.characterData]);
 
   // Local shadow state for character data (optimistic updates)
   // This allows immediate UI updates while debouncing P2P sync
@@ -41,12 +54,27 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   // Sync local state when server state changes externally
   useEffect(() => {
     // Only update if the server data actually changed (check by reference or deep compare)
+    // IMPORTANT: Don't overwrite local data with undefined/empty server data
     // This prevents overwriting local optimistic updates
     const serverJson = JSON.stringify(serverCharacterData);
     const localJson = JSON.stringify(localCharacterData);
 
-    if (serverJson !== localJson) {
+    console.log('[CharacterPanel] Server state sync check', {
+      serverChanged: serverJson !== localJson,
+      hasServerData: !!serverCharacterData,
+      hasLocalData: !!localCharacterData,
+      hasServerCharacters: !!serverCharacterData?.characters?.length,
+      hasLocalCharacters: !!localCharacterData?.characters?.length
+    });
+
+    // Additional protection: don't overwrite local data with undefined/empty server data
+    // Only sync if server has valid data
+    if (serverJson !== localJson && serverCharacterData?.characters?.length > 0) {
+      console.log('[CharacterPanel] Syncing local state from server');
       setLocalCharacterData(serverCharacterData);
+    } else if (serverJson !== localJson && !serverCharacterData && localCharacterData?.characters?.length > 0) {
+      // Server data is empty but we have local data - keep local data
+      console.log('[CharacterPanel] Server data empty, preserving local data');
     }
   }, [serverCharacterData]);
 
@@ -72,11 +100,14 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
    * Local state is updated immediately for responsive UI
    */
   const dispatchCharacterUpdate = useCallback((updatedCharacterData: any, immediate = false) => {
+    console.log('[CharacterPanel] dispatchCharacterUpdate called', { panelId: panel.id, immediate });
+
     // Update local state immediately (optimistic update)
     setLocalCharacterData(updatedCharacterData);
 
     // Skip debounced dispatch if this is from server sync
     if (isUpdatingFromServerRef.current) {
+      console.log('[CharacterPanel] dispatchCharacterUpdate skipped (from server sync)');
       return;
     }
 
@@ -91,6 +122,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     // If immediate is true, dispatch right away (for important changes)
     // Otherwise, dispatch after 500ms of no further changes
     if (immediate) {
+      console.log('[CharacterPanel] Dispatching UPDATE_OBJECT immediately', { panelId: panel.id });
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
@@ -102,8 +134,10 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       });
       pendingCharacterUpdateRef.current = null;
     } else {
+      console.log('[CharacterPanel] Scheduling debounced UPDATE_OBJECT (500ms)', { panelId: panel.id });
       debouncedDispatchTimerRef.current = setTimeout(() => {
         if (pendingCharacterUpdateRef.current) {
+          console.log('[CharacterPanel] Dispatching debounced UPDATE_OBJECT', { panelId: panel.id });
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {

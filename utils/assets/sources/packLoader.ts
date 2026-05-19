@@ -22,6 +22,7 @@ export interface PackEntry {
 
 export interface LoadPackResult {
   packName: string;
+  packHash: string;        // SHA-256 hash of the pack file itself (for verification)
   totalEntries: number;
   imageEntries: number;
   successfulHashes: string[];
@@ -88,7 +89,13 @@ export async function loadPack(
 
   // Unzip the file
   const buffer = await zipBlob.arrayBuffer();
-  const unzipped = fflate.unzSync(buffer);
+
+  // Compute hash of pack file for verification
+  const { hashAsset } = await import('../hashing');
+  const packHashResult = await hashAsset(new Blob([buffer]));
+  const packHash = packHashResult.hash;
+
+  const unzipped = fflate.unzipSync(new Uint8Array(buffer));
 
   const entries: PackEntry[] = [];
   let totalSize = 0;
@@ -176,6 +183,7 @@ export async function loadPack(
 
   return {
     packName,
+    packHash,
     totalEntries: entries.length,
     imageEntries: imageEntries.length,
     successfulHashes,
@@ -202,7 +210,7 @@ export async function listPackContents(zipBlob: Blob): Promise<PackEntry[]> {
   const fflate = await importfflate();
 
   const buffer = await zipBlob.arrayBuffer();
-  const unzipped = fflate.unzSync(buffer);
+  const unzipped = fflate.unzipSync(new Uint8Array(buffer));
 
   const entries: PackEntry[] = [];
 
@@ -256,7 +264,7 @@ export async function extractSingleFile(
   const fflate = await importfflate();
 
   const buffer = await zipBlob.arrayBuffer();
-  const unzipped = fflate.unzSync(buffer);
+  const unzipped = fflate.unzipSync(new Uint8Array(buffer));
 
   const data = unzipped[filePath];
   if (!data) return null;

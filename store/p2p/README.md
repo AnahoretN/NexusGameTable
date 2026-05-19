@@ -2,71 +2,113 @@
 
 ## Overview
 
-The new P2P system provides a clean, simplified architecture for multiplayer game synchronization. It fixes the critical race condition where guests received state before images, and introduces incremental sync to reduce bandwidth usage.
+The Nexus Game Table uses a simplified WebRTC-based P2P system for multiplayer game synchronization. The system uses PeerJS for signaling and direct WebRTC connections for data transfer between host and guests.
 
 ## Key Features
 
-1. **Progressive Image Loading**: Images are sent once per connection, loaded by priority
-2. **Action-Based Sync**: Instead of full state, only actions are transmitted
-3. **Reliable/Unreliable Messaging**: Critical actions get ACK, position updates are fire-and-forget
-4. **Simplified Connection**: Single connection path, no complex fallback logic
+1. **Direct PeerJS Connection**: Uses PeerJS cloud servers for signaling
+2. **Fallback Connection**: Supports multiple connection methods (PeerJS Cloud, community servers, Trystero torrent trackers)
+3. **Simplified Asset Sync**: Guests load asset packs locally instead of P2P transfer
+4. **Action-Based State Sync**: Game state synchronized via action messages
+5. **Progressive Loading**: Visual feedback during connection process
 
 ## Architecture
 
 ```
-store/p2p/
-├── index.ts                      # Main exports
-├── types.ts                      # Type definitions
-├── protocol/
-│   └── messages.ts               # Message protocol
-├── connection/
-│   └── manager.ts                # Connection management
-├── images/
-│   ├── manifest.ts               # Image manifest builder
-│   ├── loader.ts                 # Progressive image loader
-│   └── transfer.ts               # Image transfer manager
-├── state/
-│   ├── actions.ts                # Action recorder
-│   └── sync.ts                   # State sync manager
-└── hooks/
-    ├── useP2PConnection.ts       # Main React hook
-    ├── useP2PImages.ts           # Image hook
-    └── index.ts                  # Hooks export
+store/
+├── usePeerConnection.ts    # Main P2P hook (host + guest logic)
+└── p2p/
+    ├── index.ts            # Utility exports (ActionBatcher, etc.)
+    ├── actionBatcher.ts    # Action batching for optimization
+    └── idleWorkScheduler.ts # Idle work scheduling
 ```
+
+## Current System (as of 0.2.5)
+
+### Connection Flow
+
+#### Guest Joins Game
+
+```
+1. Guest opens URL with ?hostId=<host_peer_id>
+2. Modal appears asking for player name
+3. Guest connects to signaling server (PeerJS)
+4. P2P connection established with host
+5. Handshake: Guest sends HELO message
+6. Host sends PACKS_NEEDED (list of required asset packs)
+7. Host sends SYNC_STATE (full game state)
+8. If packs needed: Guest loads packs locally via modal
+9. Guest sends PACK_LOADED confirmations
+10. Game ready!
+```
+
+#### Message Types
+
+| Type | Direction | Description |
+|------|-----------|-------------|
+| `HELO` | Guest → Host | Guest introduction with player info |
+| `PACKS_NEEDED` | Host → Guest | List of required asset packs |
+| `PACK_LOADED` | Guest → Host | Confirmation that pack was loaded |
+| `SYNC_STATE` | Host → Guest | Full game state snapshot |
+| `ACTION` | Guest → Host | Game action from guest |
+| `POSITION_UPDATE` | Both | Batched position updates |
+| `PLAYER_PANEL_SETTINGS` | Host → Guest | Individual panel settings |
+
+### Asset Sync System (Simplified)
+
+**Old System (Removed):**
+- Images transferred via WebRTC binary chunks
+- Complex progress tracking
+- Slow for large games
+
+**New System:**
+1. Host tracks which packs are used in `state.usedPacks`
+2. On guest join, host sends `PACKS_NEEDED` with pack list
+3. Guest loads packs locally from disk
+4. Guest verifies pack hash matches expected
+5. Guest sends `PACK_LOADED` confirmation
+6. Images render from guest's local IndexedDB
+
+### Loading Steps
+
+Guest sees 5 loading steps:
+
+1. **Connect** - Connecting to signaling server
+2. **P2P** - Establishing WebRTC connection
+3. **Handshake** - Exchanging initial messages
+4. **Packs** - Loading asset packs (if needed)
+5. **State** - Synchronizing game state
 
 ## Usage
 
 ### Host Side
 
 ```typescript
-import { useP2PConnection } from '@/store/p2p';
+import { usePeerConnection } from './usePeerConnection';
 
 function GameComponent() {
   const dispatch = useGameDispatch();
-  const {
-    state: connectionState,
-    peerId,
-    initializeHost,
-    disconnect,
-    sendAction,
-  } = useP2PConnection(dispatch);
+  const stateRef = useRef(state);
 
-  // Initialize host
-  const handleHostInit = async () => {
-    try {
-      const id = await initializeHost();
-      console.log('Host ID:', id);
-      // Share this ID with players
-    } catch (error) {
-      console.error('Failed to initialize host:', error);
-    }
+  const {
+    peerId,
+    isHost,
+    connectionStatus,
+    initializeHost,
+    connectionsRef,
+  } = usePeerConnection(dispatch, stateRef);
+
+  // Initialize host when user clicks Invite
+  const handleInvite = () => {
+    initializeHost();
+    // Share peerId with players
   };
 
   return (
     <div>
-      <button onClick={handleHostInit}>Start Hosting</button>
-      <p>Peer ID: {peerId}</p>
-      <p>Status: {connectionState}</p>
+      <button onClick={handleInvite}>Invite Players</button>
+      <p>Share this ID: {peerId}</p>
+      <p>Connected: {connectionsRef.current.length} players</p>
     </div>
   );
 }
@@ -75,117 +117,148 @@ function GameComponent() {
 ### Guest Side
 
 ```typescript
-import { useP2PConnection, useP2PImages } from '@/store/p2p';
-
-function JoinGame({ hostId }: { hostId: string }) {
+function JoinGame() {
   const dispatch = useGameDispatch();
-  const {
-    state: connectionState,
-    connectToHost,
-    disconnect,
-    imageProgress,
-  } = useP2PConnection(dispatch);
+  const stateRef = useRef(state);
 
-  const handleJoin = async () => {
-    const success = await connectToHost(hostId);
-    if (!success) {
-      alert('Failed to connect to host');
-    }
-  };
+  const {
+    isHost,
+    connectionStatus,
+    waitingForPlayerName,
+    setPlayerName,
+    requiredPacks,
+    isPackModalOpen,
+    onPackLoaded,
+  } = usePeerConnection(dispatch, stateRef);
 
   return (
     <div>
-      <button onClick={handleJoin}>Join Game</button>
-      <p>Status: {connectionState}</p>
-      {imageProgress.total > 0 && (
-        <p>Images: {imageProgress.loaded}/{imageProgress.total} ({imageProgress.percent.toFixed(1)}%)</p>
+      {waitingForPlayerName && (
+        <PlayerNameModal
+          onSubmit={setPlayerName}
+        />
+      )}
+      {isPackModalOpen && (
+        <PackDownloadModal
+          isOpen={isPackModalOpen}
+          requiredPacks={requiredPacks}
+          onPackLoaded={onPackLoaded}
+          onCancel={() => {}}
+          dispatch={dispatch}
+        />
       )}
     </div>
   );
 }
 ```
 
-## Integration with GameContext
+## Connection Fallback System
 
-To integrate with the existing GameContext:
+The system tries multiple connection methods in order:
 
-1. Replace `usePeerConnection` with `useP2PConnection`
-2. Initialize state sync manager with current game state
-3. Send actions through the new system instead of directly via PeerJS
+1. **PeerJS Cloud Servers** (parallel attempt)
+   - `0.peerjs.com`, `1.peerjs.com`, `2.peerjs.com`
+   - 8-second timeout per server
+
+2. **Community Servers** (if configured)
+   - User-configured servers from settings
+   - Same parallel approach
+
+3. **Trystero Torrent Trackers** (if enabled)
+   - Decentralized signaling via BitTorrent trackers
+   - 20-second timeout
+
+## State Management
+
+### usedPacks
+
+Tracks which asset packs are required for the current game:
 
 ```typescript
-// In GameContext.tsx
-import { useP2PConnection, HostStateSyncManager } from '@/store/p2p';
+interface PackInfo {
+  name: string;       // Pack filename
+  hash: string;       // SHA-256 for verification
+  size: number;       // File size in bytes
+  imageCount: number; // Number of images
+  required: boolean;  // Always true currently
+}
 
-const hostStateSyncRef = useRef<HostStateSyncManager | null>(null);
+interface GameState {
+  // ... other fields ...
+  usedPacks: Record<string, PackInfo>;
+}
+```
 
-// Initialize when hosting
-useEffect(() => {
-  if (isHost && connectionState === 'CONNECTED') {
-    hostStateSyncRef.current = new HostStateSyncManager();
-    hostStateSyncRef.current.initialize(state);
+### Registering Packs
+
+When host loads a pack, it's registered via action:
+
+```typescript
+dispatch({
+  type: 'REGISTER_PACK',
+  payload: {
+    packName: 'my-assets',
+    packHash: 'abc123...',
+    packSize: 12345678,
+    imageCount: 500
   }
-}, [isHost, connectionState]);
-
-// Send actions
-useEffect(() => {
-  if (!isHost || !hostStateSyncRef.current) return;
-
-  // Record and broadcast action
-  hostStateSyncRef.current.recordAndBroadcast(lastAction, currentPlayerId);
-}, [lastAction]);
+});
 ```
 
-## Message Flow
+## Removed Systems
 
-### Initial Connection (Guest Joins)
+The following have been removed in simplification:
 
-```
-Guest                          Host
-  |                              |
-  |------ HANDSHAKE ------------->|
-  |<----- HANDSHAKE_ACK ---------|
-  |                              |
-  |<----- IMAGE_MANIFEST --------|
-  |                              |
-  |------ IMAGE_REQUEST -------->|
-  |<----- IMAGE_CHUNK (1/n) -----|
-  |<----- IMAGE_CHUNK (2/n) -----|
-  |...                            |
-  |<----- IMAGE_CHUNK (n/n) -----|
-  |                              |
-  |<----- STATE_SNAPSHOT --------|
-```
+- `store/p2p/hooks/` - Old hook-based system
+- `store/p2p/connection/` - Connection manager
+- `store/p2p/images/` - Image manifest/transfer
+- `store/p2p/state/` - State sync manager
+- `store/p2p/protocol/` - Message protocol definitions
+- `store/p2p/assetTransfer.ts` - WebRTC binary transfer
+- `utils/workers/assetTransfer.worker.ts` - Transfer worker
 
-### During Game
+## Debugging
 
-```
-Host performs action:
-1. Apply locally
-2. Record in action history
-3. Broadcast to guests
+### Console Commands
 
-Guest receives action:
-1. Apply to local state
-2. Send ACK (if reliable)
+```javascript
+// Check P2P status
+nexusP2PDebug.getDiagnostics();
+
+// Test connection to host
+nexusP2PDebug.testConnection('host-id-here');
+
+// Compression stats
+nexusP2PDebug.getCompressionStats();
 ```
 
-## Testing
+### Log Messages
 
-To test the P2P system:
+Look for these prefixes in console:
+- `[P2P Init]` - Initialization
+- `[P2P Guest]` - Guest-side events
+- `[P2P Host]` - Host-side events
+- `[Connect]` - Connection attempts
+- `[P2P Network]` - Message handling
 
-1. Start hosting in one browser window
-2. Copy the Peer ID
-3. Join as guest in another window with `?hostId=<ID>` in URL
-4. Verify images load progressively
-5. Verify actions sync correctly
+## Troubleshooting
 
-## Migration from Old System
+### Guest can't connect
 
-The old system files have been removed:
+1. Check firewall allows WebRTC (UDP ports)
+2. Try different network (avoid symmetric NAT)
+3. Enable Trystero fallback in settings
+4. Check browser console for errors
 
-- ~~`store/usePeerConnection.ts`~~ (replaced by `useP2PConnection`)
-- ~~`utils/webrtcSyncManager.ts`~~ (replaced by authoritative sync)
-- ~~`utils/webrtcOptimization.ts`~~ (integrated into new system)
+### Pack modal doesn't appear
 
-Note: This is a **full replacement** - all players must update to the new version to play together.
+1. Check if host has `usedPacks` in state
+2. Look for `[P2P Host] 📦 Sending PACKS_NEEDED` message
+3. Look for `[P2P Network] 📦 Received PACKS_NEEDED` message
+4. Verify pack was registered with `REGISTER_PACK` action
+
+### Images don't load for guest
+
+1. Verify guest loaded correct pack (hash match)
+2. Check IndexedDB has the images
+3. Look for `PACK_LOADED` confirmation in console

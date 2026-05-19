@@ -55,8 +55,13 @@ export type Action =
   | BaseAction<'SEND_TO_BACK', { id: string }>
   | BaseAction<'LOAD_GAME', GameState>
   | BaseAction<'ADD_PACK_TO_GAME', Partial<GameState>> // Add pack objects to current game
+  | BaseAction<'REGISTER_PACK', { packName: string; packHash: string; packSize: number; imageCount: number }> // Register asset pack used in game
   | BaseAction<'ADD_PLAYER', Player>
   | BaseAction<'REMOVE_PLAYER', { id: string }>
+  // 🔥 NEW: Guest pack status tracking actions (host only)
+  | BaseAction<'INITIALIZE_GUEST_PACK_STATUS', { guestId: string; guestName: string; connectedAt: number }>
+  | BaseAction<'UPDATE_GUEST_PACK_STATUS', { guestId: string; packName: string; packHash: string; imageCount: number }>
+  | BaseAction<'REMOVE_GUEST_PACK_STATUS', { guestId: string }>
   | BaseAction<'UPDATE_PLAYER', { id: string; [key: string]: any }>
   | BaseAction<'UPDATE_PLAYER_NAME', { playerId: string; name: string }>
   | BaseAction<'UPDATE_PLAYER_PERMISSIONS', PlayerPermissions>
@@ -116,6 +121,9 @@ export type Action =
   | BaseAction<'APPLY_PLAYER_PANEL_SETTINGS', { settings: Record<string, any> }> // Apply individual settings to panels
   | BaseAction<'APPLY_SAVED_PANEL_SETTINGS', { playerPanelSettings: Record<string, any> }> // Apply saved settings from file
   | BaseAction<'REQUEST_PLAYER_PANEL_SETTINGS', { playerId: string }> // Guest requests their panel settings from host
+  // Player object positions actions (for layers with individualPosition)
+  | BaseAction<'UPDATE_PLAYER_OBJECT_POSITION', { playerId: string; objectId: string; x: number; y: number; rotation?: number; zIndex?: number }>
+  | BaseAction<'APPLY_PLAYER_OBJECT_POSITIONS', { playerObjectPositions: Record<string, Record<string, { x: number; y: number; rotation?: number; zIndex?: number }>> }> // Apply saved positions from file
   // Undo actions
   | ActionWithoutPayload<'UNDO_MARKER'>
   | ActionWithoutPayload<'UNDO_GENERAL'>

@@ -5,19 +5,6 @@ import { Player } from '../types';
 import { logger } from '../utils/logger';
 import { filterLocalPanelProperties } from '../utils/panelSync';
 import { getPlayerId } from './gameConstants';
-// 🔥 NEW: CAS Asset System
-import {
-  assetTransferHost,
-  assetTransferGuest,
-  type HostTransferConfig,
-  type GuestTransferConfig,
-  type TransferProgress
-} from './p2p/assetTransfer';
-import {
-  AssetMessageFactory,
-  AssetMessageType,
-  type AssetManifestMessage
-} from './p2p/protocol/assetMessages';
 import {
   throttle,
   debounce,
@@ -35,14 +22,11 @@ import {
 } from '../utils/dataCompression';
 import { joinRoom } from 'trystero';
 import { getConnectionSettings } from '../utils/localSettings';
-// 🔥 NEW: P2P Optimizations
 import {
   ActionBatcher,
   PredictivePositionSender,
   getActionPriority,
-  defer,
-  extractImagesIncremental,
-  needsBoardContentExtraction
+  defer
 } from './p2p';
 
 // ============================================================================
@@ -132,6 +116,11 @@ export interface UsePeerConnectionReturn {
   p2pLoadingSteps: P2PLoadingStep[];
   p2pLoadingProgress: number; // 0-100 overall progress
   isP2PLoadingModalOpen: boolean; // Whether the P2P loading modal is visible
+  // 🔥 NEW: Pack download modal for guests
+  requiredPacks: Array<{ name: string; hash: string; size: number }>;
+  onPackLoaded: (packName: string, hashes: string[]) => void;
+  // 🔥 NEW: Suggested player name for guests
+  suggestedPlayerName: string;
 }
 
 /**
@@ -380,304 +369,8 @@ async function getLocalIPAddress(): Promise<string | null> {
 }
 
 // ============================================================================
-// 🔥 NEW: ASSET TRANSFER HANDLERS
+// PACK HANDLING (Simplified - no P2P asset transfer)
 // ============================================================================
-
-/**
- * Handle asset manifest received from host (guest side)
- */
-async function handleAssetManifest(manifest: any, connection: any): Promise<void> {
-  try {
-    const { findMissingHashes } = await import('../utils/assets');
-    // Extract hashes from assets array
-    const hashes = manifest.assets?.map((a: any) => a.hash) || [];
-
-    // Find which assets we're missing
-    const missingHashes = await findMissingHashes(hashes);
-
-    if (missingHashes.length > 0) {
-      console.log(`[Asset Transfer] Requesting ${missingHashes.length} missing assets:`, missingHashes);
-
-      // 🔥 NEW: Initialize progress tracking
-      initAssetProgress(missingHashes.length);
-
-      // Check connection state
-      const peerjsConn = connection as any;
-      if (!peerjsConn || !peerjsConn.open) {
-        console.error(`[Asset Transfer] Cannot send ASSET_REQUEST - connection not open. State:`, peerjsConn ? peerjsConn.connectionState : 'null');
-        return;
-      }
-
-      const requestMsg = {
-        type: 'ASSET_REQUEST',
-        payload: {
-          sessionId: manifest.sessionId,
-          hashes: missingHashes
-        }
-      };
-      console.log(`[Asset Transfer] Sending ASSET_REQUEST to host:`, requestMsg);
-      try {
-        peerjsConn.send(requestMsg);
-        console.log(`[Asset Transfer] ASSET_REQUEST sent successfully`);
-      } catch (err) {
-        console.error(`[Asset Transfer] Failed to send ASSET_REQUEST:`, err);
-      }
-    } else {
-      console.log(`[Asset Transfer] All ${hashes?.length || 0} assets already cached`);
-      // 🔥 NEW: Notify that assets are already complete
-      if (onAssetCompleteCallback) {
-        onAssetCompleteCallback();
-      }
-    }
-  } catch (error) {
-    console.error('[Asset Transfer] Failed to handle manifest:', error);
-  }
-}
-
-/**
- * Handle asset request from guest (host side)
- */
-async function handleAssetRequest(request: any, connection: any): Promise<void> {
-  console.log(`[Asset Transfer Host] === Starting asset request handler ===`);
-  try {
-    console.log(`[Asset Transfer Host] Received ASSET_REQUEST:`, request);
-
-    if (!connection || !connection.open) {
-      console.error(`[Asset Transfer Host] Connection not available!`);
-      return;
-    }
-
-    const { assetDB } = await import('../utils/assets');
-    const { hashes } = request;
-
-    console.log(`[Asset Transfer Host] Looking for ${hashes.length} hashes`);
-
-    // Get manifest of all assets
-    const manifest = await assetDB.getManifest();
-    console.log(`[Asset Transfer Host] DB has ${manifest.assets.length} total assets`);
-
-    // Filter to only requested hashes
-    const requestedAssets = manifest.assets.filter(a =>
-      hashes.includes(a.hash)
-    );
-
-    console.log(`[Asset Transfer Host] Found ${requestedAssets.length} matching assets to send`);
-
-    // Start streaming assets
-    for (const asset of requestedAssets) {
-      try {
-        console.log(`[Asset Transfer Host] Fetching asset ${asset.hash}...`);
-        const entry = await assetDB.getAsset(asset.hash);
-        if (entry && entry.blob) {
-          const arrayBuffer = await entry.blob.arrayBuffer();
-          const size = arrayBuffer.byteLength;
-
-          console.log(`[Asset Transfer Host] Sending ${asset.hash} (${(size / 1024).toFixed(1)}KB)`);
-
-          // PeerJS has serialization issues with large arrays
-          // Send metadata first, then binary data
-          const CHUNK_SIZE = 4 * 1024; // 4KB chunks - safe for PeerJS
-          const uint8Array = new Uint8Array(arrayBuffer);
-          const totalChunks = Math.ceil(uint8Array.length / CHUNK_SIZE);
-
-          // Send asset metadata first
-          connection.send({
-            type: 'ASSET_START',
-            payload: {
-              hash: asset.hash,
-              totalChunks: totalChunks,
-              mimeType: asset.mimeType,
-              size: asset.size
-            }
-          });
-
-          console.log(`[Asset Transfer Host] Starting ${totalChunks} chunks for ${asset.hash}`);
-
-          // Send chunks as binary data
-          for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, uint8Array.length);
-            const chunk = uint8Array.slice(start, end);
-
-            // Send binary chunk directly (PeerJS handles ArrayBuffer)
-            connection.send(chunk);
-          }
-
-          console.log(`[Asset Transfer Host] Completed sending ${asset.hash}`);
-        } else {
-          console.warn(`[Asset Transfer Host] Asset ${asset.hash} not found in DB`);
-        }
-      } catch (err) {
-        console.error(`[Asset Transfer Host] Failed to send asset ${asset.hash}:`, err);
-      }
-    }
-
-    // Send complete message
-    console.log(`[Asset Transfer Host] Sending ASSET_COMPLETE`);
-    try {
-      connection.send({
-        type: 'ASSET_COMPLETE',
-        payload: {
-          totalAssets: hashes.length,
-          successfulAssets: requestedAssets.length,
-          failedAssets: []
-        }
-      });
-      console.log(`[Asset Transfer Host] ASSET_COMPLETE sent`);
-    } catch (err) {
-      console.error(`[Asset Transfer Host] Failed to send ASSET_COMPLETE:`, err);
-    }
-
-  } catch (error) {
-    console.error('[Asset Transfer Host] Failed to handle request:', error);
-  }
-}
-
-// Global store for incoming asset transfers
-interface AssetTransfer {
-  hash: string;
-  chunks: Uint8Array[];
-  totalChunks: number;
-  mimeType: string;
-  expectedSize: number;
-  receivedCount: number;
-}
-const incomingAssets = new Map<string, AssetTransfer>();
-let currentAssetHash: string | null = null; // Track which asset we're currently receiving
-
-// 🔥 NEW: Progress tracking for asset transfer
-let totalAssetsToReceive = 0;
-let assetsCompleted = 0;
-let totalChunksToReceive = 0;
-let chunksReceived = 0;
-let onAssetProgressCallback: ((progress: number) => void) | null = null;
-let onAssetCompleteCallback: (() => void) | null = null;
-// 🔥 FIX: Track if we're waiting for additional assets from SYNC_STATE (objects)
-let waitingForAdditionalAssets = false;
-let onAdditionalAssetsCompleteCallback: (() => void) | null = null;
-
-/**
- * 🔥 NEW: Initialize asset transfer progress tracking
- * Call this when starting to receive assets
- */
-function initAssetProgress(assetCount: number, onProgress?: (progress: number) => void): void {
-  totalAssetsToReceive = assetCount;
-  assetsCompleted = 0;
-  totalChunksToReceive = 0;
-  chunksReceived = 0;
-  onAssetProgressCallback = onProgress || null;
-  console.log(`[Asset Transfer] Initialized progress tracking for ${assetCount} assets`);
-}
-
-/**
- * 🔥 NEW: Reset asset transfer progress
- */
-function resetAssetProgress(): void {
-  totalAssetsToReceive = 0;
-  assetsCompleted = 0;
-  totalChunksToReceive = 0;
-  chunksReceived = 0;
-  onAssetProgressCallback = null;
-  onAssetCompleteCallback = null;
-  waitingForAdditionalAssets = false;
-  onAdditionalAssetsCompleteCallback = null;
-}
-
-/**
- * Handle asset start message (metadata)
- */
-function handleAssetStart(payload: any): void {
-  const { hash, totalChunks, mimeType, size } = payload;
-  console.log(`[Asset Transfer Guest] Starting to receive ${hash} (${totalChunks} chunks, ${(size / 1024).toFixed(1)}KB)`);
-
-  incomingAssets.set(hash, {
-    hash,
-    chunks: [],
-    totalChunks,
-    mimeType,
-    expectedSize: size,
-    receivedCount: 0
-  });
-  currentAssetHash = hash;
-
-  // 🔥 NEW: Track total chunks for progress
-  totalChunksToReceive += totalChunks;
-}
-
-/**
- * Handle binary chunk data (ArrayBuffer)
- */
-async function handleBinaryChunk(data: ArrayBuffer): Promise<void> {
-  if (!currentAssetHash || !incomingAssets.has(currentAssetHash)) {
-    console.warn('[Asset Transfer Guest] Received binary chunk but no active asset transfer');
-    return;
-  }
-
-  const transfer = incomingAssets.get(currentAssetHash)!;
-  const chunk = new Uint8Array(data);
-  transfer.chunks.push(chunk);
-  transfer.receivedCount++;
-
-  // 🔥 NEW: Update progress
-  chunksReceived++;
-  if (totalChunksToReceive > 0 && onAssetProgressCallback) {
-    const progress = Math.round((chunksReceived / totalChunksToReceive) * 100);
-    onAssetProgressCallback(progress);
-  }
-
-  console.log(`[Asset Transfer Guest] Chunk ${transfer.receivedCount}/${transfer.totalChunks} for ${currentAssetHash} (${data.byteLength} bytes)`);
-
-  // Check if complete
-  if (transfer.receivedCount >= transfer.totalChunks) {
-    await completeAssetTransfer(transfer);
-  }
-}
-
-/**
- * Complete asset transfer and store in database
- */
-async function completeAssetTransfer(transfer: AssetTransfer): Promise<void> {
-  try {
-    const { assetDB } = await import('../utils/assets');
-
-    console.log(`[Asset Transfer Guest] Assembling ${transfer.hash} from ${transfer.chunks.length} chunks...`);
-
-    // Calculate total size
-    const totalSize = transfer.chunks.reduce((sum, c) => sum + c.length, 0);
-    const assembledArray = new Uint8Array(totalSize);
-
-    // Assemble chunks
-    let offset = 0;
-    for (const chunk of transfer.chunks) {
-      assembledArray.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    // Create blob
-    const blob = new Blob([assembledArray], { type: transfer.mimeType });
-
-    // Store in database
-    await assetDB.putAsset(
-      { hash: transfer.hash, value: transfer.hash.replace('sha256:', ''), algorithm: 'SHA-256' },
-      blob,
-      transfer.mimeType,
-      'transfer'
-    );
-
-    console.log(`[Asset Transfer Guest] ✅ Complete asset ${transfer.hash} stored (${transfer.expectedSize} bytes)`);
-
-    // 🔥 NEW: Track completed assets
-    assetsCompleted++;
-
-    // Clean up
-    incomingAssets.delete(transfer.hash);
-    if (currentAssetHash === transfer.hash) {
-      currentAssetHash = null;
-    }
-  } catch (error) {
-    console.error('[Asset Transfer Guest] Failed to complete transfer:', error);
-  }
-}
 
 export function usePeerConnection(
   localDispatch: React.Dispatch<Action>,
@@ -701,11 +394,19 @@ export function usePeerConnection(
     { id: 'connect', message: 'Connecting to signaling server...', status: 'pending' },
     { id: 'p2p', message: 'Establishing P2P connection...', status: 'pending' },
     { id: 'handshake', message: 'Handshake with host...', status: 'pending' },
-    { id: 'images', message: 'Receiving game assets...', status: 'pending' },
+    { id: 'packs', message: 'Loading asset packs...', status: 'pending' },
     { id: 'state', message: 'Synchronizing game state...', status: 'pending' },
   ]);
   const [p2pLoadingProgress, setP2pLoadingProgress] = useState(0);
   const [isP2PLoadingModalOpen, setIsP2PLoadingModalOpen] = useState(false); // 🔥 NEW: Separate state for modal visibility
+
+  // 🔥 NEW: Pack download modal state for guests
+  const [requiredPacks, setRequiredPacks] = useState<Array<{ name: string; hash: string; size: number }>>([]);
+  const loadedPacksRef = useRef<Set<string>>(new Set()); // Track which packs have been loaded
+  const [suggestedPlayerName, setSuggestedPlayerName] = useState<string>(''); // 🔥 NEW: Suggested name for new guest
+
+  // 🔥 NEW: Track if we received empty PACKS_NEEDED (for warning)
+  const receivedEmptyPacksRef = useRef(false);
 
   // Log initial role detection for debugging
   useEffect(() => {
@@ -752,8 +453,8 @@ export function usePeerConnection(
       });
 
       // Update overall progress based on completed steps
-      // Step IDs in order: connect, p2p, handshake, images, state
-      const stepOrder = ['connect', 'p2p', 'handshake', 'images', 'state'] as const;
+      // Step IDs in order: connect, p2p, handshake, packs, state
+      const stepOrder = ['connect', 'p2p', 'handshake', 'packs', 'state'] as const;
       const stepIndex = stepOrder.indexOf(stepId as any);
       if (stepIndex !== -1) {
         const stepProgress = status === 'success' ? 100 : progress || 0;
@@ -762,13 +463,10 @@ export function usePeerConnection(
         setP2pLoadingProgress(newProgress);
       }
 
-      // 🔥 NEW: Open modal on first step loading, close on last step success
+      // 🔥 NEW: Open modal on first step loading
+      // Note: Modal is no longer auto-closed - managed by GameContext
       if (stepId === 'connect' && status === 'loading') {
         setIsP2PLoadingModalOpen(true);
-      }
-      if (stepId === 'state' && status === 'success') {
-        // Small delay to show 100% progress before closing
-        setTimeout(() => setIsP2PLoadingModalOpen(false), 500);
       }
 
       return updated;
@@ -780,51 +478,117 @@ export function usePeerConnection(
       { id: 'connect', message: 'Connecting to signaling server...', status: 'pending' },
       { id: 'p2p', message: 'Establishing P2P connection...', status: 'pending' },
       { id: 'handshake', message: 'Handshake with host...', status: 'pending' },
-      { id: 'images', message: 'Receiving game assets...', status: 'pending' },
+      { id: 'packs', message: 'Loading asset packs...', status: 'pending' },
       { id: 'state', message: 'Synchronizing game state...', status: 'pending' },
     ]);
     setP2pLoadingProgress(0);
     setIsP2PLoadingModalOpen(false);
-
-    // 🔥 NEW: Reset asset progress callback
-    onAssetProgressCallback = null;
   }, []);
-
-  // 🔥 NEW: Setup asset progress callback
-  const setupAssetProgressCallback = useCallback(() => {
-    onAssetProgressCallback = (progress: number) => {
-      updateP2PLoadingStep('images', 'loading', `Receiving game assets... ${progress}%`, progress);
-    };
-    onAssetCompleteCallback = async () => {
-      updateP2PLoadingStep('images', 'success', 'All game assets cached');
-      // 🔥 FIX: Don't emit asset event here - components will load assets on demand
-      // Emitting here causes unnecessary re-renders and transparency issues
-      console.log('[P2P Guest] All assets already cached, skipping asset event emit');
-    };
-  }, [updateP2PLoadingStep]);
 
   // Signalling server timeout - disconnect after this time of inactivity
   const SIGNALLING_TIMEOUT_MS = 120000; // 2 minutes
 
   // Central Network Data Handler
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
-    // Check if this is binary data (ArrayBuffer) - asset chunk
-    if (data instanceof ArrayBuffer || (data && data.constructor && data.constructor.name === 'Uint8Array')) {
-      // Convert Uint8Array to ArrayBuffer if needed
-      const buffer = data instanceof ArrayBuffer ? data : data.buffer;
-      handleBinaryChunk(buffer);
-      return;
-    }
-
     // Log ALL incoming messages for debugging
     console.log(`[P2P Network] 📨 Received message type: ${data.type}`);
 
-    // 🔥 FIX: Process ASSET_MANIFEST BEFORE SYNC_STATE
-    // This ensures assets are requested before tokens try to load them
-    if (data.type === 'ASSET_MANIFEST') {
-      // 🔥 NEW: Guest received asset manifest from host
-      console.log(`[P2P Network] 📋 Received ASSET_MANIFEST (${data.payload.assets?.length || 0} assets)`);
-      handleAssetManifest(data.payload, senderConn);
+    // 🔥 NEW: Process PACKS_NEEDED BEFORE SYNC_STATE
+    // This ensures guest knows which packs are needed before state sync
+    if (data.type === 'PACKS_NEEDED') {
+      // 🔥 NEW: Guest received pack list from host
+      const { packs, nextPlayerNumber } = data.payload;
+      console.log(`[P2P Network] 📦 Received PACKS_NEEDED (${packs.length} packs: ${packs.map(p => p.name).join(', ')})`);
+      console.log(`[P2P Network] 🔍 PACKS_NEEDED payload:`, data.payload);
+
+      // 🔥 NEW: Set suggested player name (Player X where X is the next player number)
+      if (nextPlayerNumber !== undefined) {
+        const suggestedName = `Player ${nextPlayerNumber}`;
+        console.log(`[P2P Guest] 👤 Suggested player name: ${suggestedName}`);
+        setSuggestedPlayerName(suggestedName);
+      }
+
+      // 🔥 NEW: Update handshake step and show modal for player name
+      updateP2PLoadingStep('handshake', 'success', 'Connected to host!');
+      updateP2PLoadingStep('packs', 'loading', `Waiting for ${packs.length} asset pack(s)...`);
+
+      if (packs.length > 0) {
+        // Set required packs and show modal
+        console.log(`[P2P Guest] 🔄 Setting requiredPacks:`, packs);
+        setRequiredPacks(packs);
+        console.log(`[P2P Guest] ✅ Pack loading step activated!`);
+      } else {
+        // No packs needed - mark as complete
+        updateP2PLoadingStep('packs', 'success', 'No asset packs needed');
+        // 🔥 NEW: Track that we received empty packs list
+        receivedEmptyPacksRef.current = true;
+        console.log(`[P2P Network] ⚠️ Host sent empty PACKS_NEEDED - will check if game has images after SYNC_STATE`);
+      }
+
+      // 🔥 NEW: Show modal for player name input NOW (after receiving PACKS_NEEDED)
+      // Get hostId from URL or connection
+      const params = new URLSearchParams(window.location.search);
+      const hostId = params.get('hostId') || senderConn.peer;
+      console.log(`[P2P Guest] 📋 Showing player name modal...`);
+      setWaitingForPlayerName({ hostId });
+    } else if (data.type === 'PACK_LOADED') {
+      // 🔥 NEW: Host received notification that guest loaded a pack
+      const { packName, hashes } = data.payload;
+      const guestId = senderConn.peer;
+
+      console.log(`[P2P Host] 📦 Guest ${guestId} loaded pack: ${packName} (${hashes.length} images)`);
+
+      // Get guest info
+      const guest = stateRef.current?.players.find(p => p.id === guestId);
+      if (!guest) {
+        console.warn(`[P2P Host] ⚠️ Guest ${guestId} not found in players list`);
+        return;
+      }
+
+      // Find pack info to get hash
+      const packInfo = Object.values(stateRef.current?.usedPacks || {}).find(p => p.name === packName);
+      if (!packInfo) {
+        console.warn(`[P2P Host] ⚠️ Pack ${packName} not found in usedPacks`);
+        return;
+      }
+
+      // Update guest pack status
+      const currentStatus = stateRef.current?.guestPackStatus?.[guestId];
+      if (currentStatus) {
+        localDispatch({
+          type: 'UPDATE_GUEST_PACK_STATUS',
+          payload: {
+            guestId,
+            packName,
+            packHash: packInfo.hash,
+            imageCount: hashes.length,
+          }
+        });
+      } else {
+        // Initialize guest status
+        localDispatch({
+          type: 'INITIALIZE_GUEST_PACK_STATUS',
+          payload: {
+            guestId,
+            guestName: guest.name,
+            connectedAt: Date.now(),
+          }
+        });
+        // Then update with pack info
+        setTimeout(() => {
+          localDispatch({
+            type: 'UPDATE_GUEST_PACK_STATUS',
+            payload: {
+              guestId,
+              packName,
+              packHash: packInfo.hash,
+              imageCount: hashes.length,
+            }
+          });
+        }, 50);
+      }
+
+      console.log(`[P2P Host] ✅ Updated pack status for ${guest.name}`);
     } else if (data.type === 'SYNC_STATE') {
       // Received full state update (Guest receives from Host)
       // Check if data is compressed
@@ -865,97 +629,32 @@ export function usePeerConnection(
       localDispatch({ type: 'SYNC_STATE', payload });
       console.log(`[P2P Network] ✅ SYNC_STATE dispatched to game state`);
 
-      // 🔥 FIX: Check for missing image hashes in objects and request them BEFORE marking state as complete
-      // This prevents the modal from closing before all assets are loaded
-      (async () => {
-        try {
-          const { findMissingHashes, isValidHash } = await import('../utils/assets');
-          const objectHashes = new Set<string>();
+      // 🔥 NEW: Mark state as complete immediately
+      // Images will be loaded from packs by the guest
+      updateP2PLoadingStep('state', 'success', 'Game synchronized!');
 
-          // Collect all hashes from objects
-          for (const obj of Object.values(payload.objects || {})) {
-            if (!obj || typeof obj !== 'object') continue;
+      // 🔥 NEW: Check if game likely needs asset packs but host didn't register any
+      // Show warning if: 1) we received empty PACKS_NEEDED, 2) game has objects with images
+      if (receivedEmptyPacksRef.current && payload.usedPacks && Object.keys(payload.usedPacks).length === 0) {
+        // Check if any objects have image content (sha256: hashes or URLs)
+        const objectsHaveImages = Object.values(payload.objects || {}).some((obj: any) => {
+          // Check for various image content fields
+          return !!(obj.content && (
+            obj.content.startsWith('sha256:') ||
+            obj.content.startsWith('http://') ||
+            obj.content.startsWith('https://') ||
+            obj.content.startsWith('data:image/')
+          ));
+        });
 
-            // Common fields that contain image hashes
-            const hashFields = ['content', 'frontFaceUrl', 'backFaceUrl', 'spriteUrl',
-                               'cardBackSpriteUrl', 'avatarUrl', 'backgroundUrl'];
-
-            for (const field of hashFields) {
-              const value = (obj as any)[field];
-              if (value && typeof value === 'string' && isValidHash(value)) {
-                objectHashes.add(value);
-              }
-            }
-
-            // Check nested properties
-            if (obj.alternativeBack?.url && isValidHash(obj.alternativeBack.url)) {
-              objectHashes.add(obj.alternativeBack.url);
-            }
-            if (obj.spriteConfig?.spriteUrl && isValidHash(obj.spriteConfig.spriteUrl)) {
-              objectHashes.add(obj.spriteConfig.spriteUrl);
-            }
-            if (obj.spriteConfig?.cardBackUrl && isValidHash(obj.spriteConfig.cardBackUrl)) {
-              objectHashes.add(obj.spriteConfig.cardBackUrl);
-            }
-          }
-
-          if (objectHashes.size > 0) {
-            console.log(`[P2P Guest] Checking ${objectHashes.size} unique image hashes from objects...`);
-
-            const missingHashes = await findMissingHashes(Array.from(objectHashes));
-            if (missingHashes.length > 0) {
-              console.log(`[P2P Guest] ⚠️ Found ${missingHashes.length} missing hashes not in manifest:`, missingHashes);
-
-              // 🔥 FIX: Set flag to indicate we're waiting for additional assets
-              waitingForAdditionalAssets = true;
-
-              // Request missing assets from host
-              const requestMsg = {
-                type: 'ASSET_REQUEST',
-                payload: {
-                  sessionId: payload.sessionId || 'default',
-                  hashes: missingHashes
-                }
-              };
-
-              // Get host connection
-              const hostConn = hostConnectionRef.current;
-              if (hostConn && hostConn.open) {
-                console.log(`[P2P Guest] 📤 Requesting ${missingHashes.length} missing assets from host`);
-                hostConn.send(requestMsg);
-
-                // Initialize progress tracking for these assets
-                initAssetProgress(missingHashes.length);
-
-                // 🔥 FIX: Update images step back to loading since we're downloading more
-                updateP2PLoadingStep('images', 'loading', `Receiving additional ${missingHashes.length} assets from objects...`);
-
-                // 🔥 FIX: Set up callback to mark state as complete after these assets finish
-                onAdditionalAssetsCompleteCallback = () => {
-                  waitingForAdditionalAssets = false;
-                  updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-                  console.log('[P2P Guest] ✅ All additional assets loaded, marking state as complete');
-                };
-              } else {
-                console.warn(`[P2P Guest] Cannot request missing assets - no host connection`);
-                waitingForAdditionalAssets = false;
-                updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-              }
-            } else {
-              console.log(`[P2P Guest] ✅ All ${objectHashes.size} image hashes are cached`);
-              // 🔥 FIX: Only mark state as complete if NO additional assets are needed
-              updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-            }
-          } else {
-            // No image hashes in objects, mark state as complete
-            updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-          }
-        } catch (error) {
-          console.error('[P2P Guest] Failed to check for missing hashes:', error);
-          // Mark state as complete even on error to prevent modal from being stuck
-          updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+        if (objectsHaveImages) {
+          console.warn(`[P2P Guest] ⚠️ Game has images but host didn't register any packs!`);
+          // Show warning after a short delay
+          setTimeout(() => {
+            setShowMissingAssetWarning(true);
+          }, 1000);
         }
-      })();
+      }
     } else if (data.type === 'PLAYER_PANEL_SETTINGS') {
       // Guest received their individual panel settings from host
       const { playerId, settings } = data.payload;
@@ -966,52 +665,6 @@ export function usePeerConnection(
         type: 'APPLY_PLAYER_PANEL_SETTINGS',
         payload: { settings }
       });
-    } else if (data.type === 'ASSET_START') {
-      // 🔥 NEW: Guest received asset metadata before binary chunks
-      console.log(`[P2P Network] 📋 Received ASSET_START`);
-      handleAssetStart(data.payload);
-    } else if (data.type === 'ASSET_PROGRESS') {
-      // 🔥 NEW: Progress update for asset transfer
-      const progress = data.payload;
-      console.log(`[P2P Network] 📊 Asset transfer progress: ${progress.percentage?.toFixed(1)}%`);
-    } else if (data.type === 'ASSET_COMPLETE') {
-      // 🔥 NEW: Asset transfer complete
-      console.log(`[P2P Network] ✅ Asset transfer complete: ${data.payload.successfulAssets}/${data.payload.totalAssets} assets`);
-
-      // 🔥 FIX: Wait for all pending asset saves to complete before emitting event
-      // Use a longer delay to ensure IndexedDB transactions are fully committed
-      setTimeout(async () => {
-        // 🔥 NEW: Update loading step - images complete
-        updateP2PLoadingStep('images', 'success', `Received ${data.payload.successfulAssets} game assets`);
-        resetAssetProgress(); // Reset progress tracking
-
-        // 🔥 FIX: Only emit asset event if new assets were actually added
-        // Don't emit if all assets were already cached (prevents unnecessary re-renders)
-        if (data.payload.successfulAssets > 0) {
-          // Trigger asset reload in all components
-          try {
-            const { assetEvents } = await import('../utils/assets/assetCache');
-            // Emit event to trigger reload in all components
-            assetEvents.emit();
-            console.log('[P2P Guest] Emitted asset update event to refresh components (new assets received)');
-          } catch (error) {
-            console.error('[P2P Guest] Failed to emit asset event:', error);
-          }
-        } else {
-          console.log('[P2P Guest] No new assets added, skipping asset event emit');
-        }
-
-        // 🔥 FIX: If we were waiting for additional assets from SYNC_STATE, now mark state as complete
-        if (waitingForAdditionalAssets && onAdditionalAssetsCompleteCallback) {
-          console.log('[P2P Guest] ✅ Additional assets from objects complete, finalizing loading...');
-          onAdditionalAssetsCompleteCallback();
-          onAdditionalAssetsCompleteCallback = null;
-        }
-      }, 200); // Increased delay to ensure all pending saves complete
-    } else if (data.type === 'ASSET_REQUEST') {
-      // 🔥 NEW: Host received asset request from guest
-      console.log(`[P2P Network] 📨 Received ASSET_REQUEST for ${data.payload.hashes?.length || 0} assets`);
-      handleAssetRequest(data.payload, senderConn);
     } else if (data.type === 'POSITION_UPDATE') {
       // Lightweight position update for smooth dragging (batched)
       const positions = data.payload;
@@ -1053,6 +706,26 @@ export function usePeerConnection(
       // Host received action request from Guest
       const actionType = data.payload?.type;
       console.log(`[P2P Network] 🎮 Received ACTION:`, actionType);
+
+      // 🔥 DEBUG: Log payload details for UPDATE_OBJECT
+      if (actionType === 'UPDATE_OBJECT') {
+        const payload = data.payload;
+        console.log('[P2P Host] 🔍 UPDATE_OBJECT payload details:', {
+          hasPayload: !!payload,
+          payloadKeys: payload ? Object.keys(payload) : [],
+          hasId: !!payload?.id,
+          id: payload?.id,
+          hasUpdates: !!payload?.updates,
+          updatesKeys: payload?.updates ? Object.keys(payload.updates) : [],
+          hasCharacterData: !!(payload?.updates?.characterData || payload?.characterData),
+          // Check if object exists in current state
+          objectExists: !!stateRef.current?.objects[payload?.id],
+          objectType: stateRef.current?.objects[payload?.id]?.type,
+          // Log sample of characterData if present
+          characterDataSample: payload?.updates?.characterData || payload?.characterData ?
+            (payload?.updates?.characterData || payload?.characterData) : null
+        });
+      }
 
       // Filter out local-only actions that should not affect host state
       // These actions are screen-specific and should not be synced
@@ -1349,28 +1022,11 @@ export function usePeerConnection(
 
         // 🔥 NEW: Update progress - P2P connection established
         updateP2PLoadingStep('p2p', 'success', 'P2P connection established');
-        updateP2PLoadingStep('handshake', 'loading', 'Handshake with host...');
+        updateP2PLoadingStep('handshake', 'loading', 'Waiting for host info...');
 
-        const persistentPlayerId = getPlayerId();
-        const myPlayer: Player = {
-          id: persistentPlayerId,
-          name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
-          color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-          isGM: false
-        };
-
-        console.log(`[P2P Guest] 👤 Created player object:`, myPlayer);
-
-        localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
-        localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
-
-        console.log(`[P2P Guest] 📤 Sending HELO to host...`);
-        conn.send({ type: 'HELO', payload: myPlayer });
-
-        // 🔥 NEW: Update progress - handshake complete
-        updateP2PLoadingStep('handshake', 'success', 'Handshake complete');
-        updateP2PLoadingStep('images', 'loading', 'Waiting for game images...');
-        setupAssetProgressCallback(); // 🔥 NEW: Setup progress callback for images
+        // 🔥 CHANGED: Don't create player or send HELO yet
+        // Wait for PACKS_NEEDED to get suggested player name first
+        console.log(`[P2P Guest] ⏳ Waiting for PACKS_NEEDED to get player number...`);
 
         // TEMPORARILY DISABLED: Keep signalling connection alive to debug disconnect issue
         // setTimeout(() => {
@@ -1379,7 +1035,10 @@ export function usePeerConnection(
       });
 
       conn.on('data', (data: any) => {
-        console.log(`[P2P Guest] 📥 Received data from host:`, data.type);
+        // 🔥 FIX: Only log type for non-binary data (binary chunks don't have type property)
+        if (data && typeof data === 'object' && data.type) {
+          console.log(`[P2P Guest] 📥 Received data from host:`, data.type);
+        }
         if (data.type === 'CONNECTION_LOCKED') {
           console.warn(`[P2P Guest] 🔒 Host has locked new connections!`);
           alert("The host has locked new connections. Please contact the host to join.");
@@ -1558,7 +1217,10 @@ export function usePeerConnection(
       });
 
       conn.on('data', (data: any) => {
-        console.log(`[P2P Guest] 📥 Received data from host:`, data.type);
+        // 🔥 FIX: Only log type for non-binary data (binary chunks don't have type property)
+        if (data && typeof data === 'object' && data.type) {
+          console.log(`[P2P Guest] 📥 Received data from host:`, data.type);
+        }
         if (data.type === 'CONNECTION_LOCKED') {
           console.warn(`[P2P Guest] 🔒 Host has locked new connections!`);
           alert("The host has locked new connections. Please contact the host to join.");
@@ -1717,8 +1379,34 @@ export function usePeerConnection(
 
     const { hostId } = waitingForPlayerName;
     setWaitingForPlayerName(null);
-    connectToHost(hostId, name.trim() || `Player ${Math.floor(Math.random() * 100)}`);
-  }, [waitingForPlayerName, connectToHost]);
+
+    // 🔥 CHANGED: If already connected to host, create player and send HELO
+    const hostConn = hostConnectionRef.current;
+    if (hostConn && hostConn.open) {
+      console.log(`[P2P Guest] 👤 Creating player with name: ${name}`);
+      const persistentPlayerId = getPlayerId();
+      const myPlayer: Player = {
+        id: persistentPlayerId,
+        name: name.trim() || suggestedPlayerName || `Player ${Math.floor(Math.random() * 100)}`,
+        color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+        isGM: false
+      };
+
+      console.log(`[P2P Guest] 👤 Created player object:`, myPlayer);
+      localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+      localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
+
+      console.log(`[P2P Guest] 📤 Sending HELO to host...`);
+      hostConn.send({ type: 'HELO', payload: myPlayer });
+
+      // 🔥 NEW: Update progress - handshake complete
+      updateP2PLoadingStep('handshake', 'success', 'Handshake complete!');
+    } else {
+      // Fallback: not connected yet, use old logic
+      console.log(`[P2P Guest] 🔌 Not connected yet, connecting to host...`);
+      connectToHost(hostId, name.trim() || suggestedPlayerName || `Player ${Math.floor(Math.random() * 100)}`);
+    }
+  }, [waitingForPlayerName, connectToHost, suggestedPlayerName, localDispatch, updateP2PLoadingStep]);
 
   // Initialize host peer on demand (when user clicks Invite button)
   const initializeHost = useCallback(async () => {
@@ -1843,46 +1531,62 @@ export function usePeerConnection(
 
           console.log(`[P2P Host] 📤 Data channel ready, sending state to guest...`);
 
-          // 🔥 NEW: Send asset manifest instead of IMAGE_CACHE
-          (async () => {
-            try {
-              const { assetDB } = await import('../utils/assets');
-              const manifest = await assetDB.getManifest();
+          // 🔥 NEW: Send PACKS_NEEDED (simplified asset sync)
+          const usedPacks = stateRef.current?.usedPacks || {};
+          const packList = Object.values(usedPacks);
 
-              console.log(`[P2P Host] 📋 Sending ASSET_MANIFEST to guest (${manifest.totalCount} assets, ${(manifest.totalSize / 1024 / 1024).toFixed(2)}MB)`);
+          // 🔥 DEBUG: Log usedPacks state for debugging
+          console.log(`[P2P Host] 🔍 usedPacks state:`, {
+            keys: Object.keys(usedPacks),
+            packCount: packList.length,
+            packs: packList.map(p => ({ name: p.name, hash: p.hash?.substring(0, 8) + '...', size: p.size })),
+            stateRefExists: !!stateRef.current,
+            hasUsedPacksProperty: !!stateRef.current?.usedPacks
+          });
 
-              conn.send({
-                type: 'ASSET_MANIFEST',
-                payload: {
-                  sessionId: stateRef.current?.sessionId || 'default',
-                  version: 1,
-                  timestamp: Date.now(),
-                  assets: manifest.assets.map(a => ({
-                    hash: a.hash,
-                    size: a.size,
-                    mimeType: a.mimeType,
-                    priority: 5
-                  })),
-                  totalSize: manifest.totalSize,
-                  totalCount: manifest.totalCount
-                }
-              });
-            } catch (error) {
-              console.error('[P2P Host] Failed to send asset manifest:', error);
-              // Fallback: send empty manifest
-              conn.send({
-                type: 'ASSET_MANIFEST',
-                payload: {
-                  sessionId: stateRef.current?.sessionId || 'default',
-                  version: 1,
-                  timestamp: Date.now(),
-                  assets: [],
-                  totalSize: 0,
-                  totalCount: 0
-                }
-              });
-            }
-          })();
+          // 🔥 NEW: Calculate next player number (count non-GM players + 1)
+          const players = stateRef.current?.players || [];
+          const nonGMCount = players.filter(p => !p.isGM).length;
+          const nextPlayerNumber = nonGMCount + 1;
+          console.log(`[P2P Host] 👤 Next player number: ${nextPlayerNumber} (current non-GM players: ${nonGMCount})`);
+
+          if (packList.length > 0) {
+            console.log(`[P2P Host] 📦 Sending PACKS_NEEDED to guest (${packList.length} packs: ${packList.map(p => p.name).join(', ')})`);
+            conn.send({
+              type: 'PACKS_NEEDED',
+              payload: {
+                packs: packList.map(p => ({
+                  name: p.name,
+                  hash: p.hash,
+                  size: p.size
+                })),
+                nextPlayerNumber
+              }
+            });
+          } else {
+            // 🔥 DEBUG: Check if game has images but no packs registered
+            const objects = stateRef.current?.objects || {};
+            const objectCount = Object.keys(objects).length;
+            const objectsWithImages = Object.values(objects).filter((obj: any) =>
+              obj.content && (
+                obj.content.startsWith('sha256:') ||
+                obj.content.startsWith('http://') ||
+                obj.content.startsWith('https://') ||
+                obj.content.startsWith('data:image/')
+              )
+            ).length;
+
+            console.log(`[P2P Host] 📦 No packs registered! Objects: ${objectCount}, With images: ${objectsWithImages}`);
+            console.log(`[P2P Host] 💡 TIP: Host should load asset pack via menu to register packs for guests`);
+
+            conn.send({
+              type: 'PACKS_NEEDED',
+              payload: {
+                packs: [],
+                nextPlayerNumber
+              }
+            });
+          }
 
           // Filter out local panel properties before syncing
           const stateToSend = { ...stateRef.current };
@@ -1897,7 +1601,7 @@ export function usePeerConnection(
           // Store reference to connection for sending player panel settings later
           (conn as any).pendingPlayerId = null; // Will be set when HELO is received
 
-          console.log(`[P2P Host] ✅ Initial sync complete (ASSET_MANIFEST + SYNC_STATE sent)`);
+          console.log(`[P2P Host] ✅ Initial sync complete (PACKS_NEEDED + SYNC_STATE sent)`);
         }, 50); // 50ms delay to ensure data channel is fully ready
 
         // Handle Disconnection
@@ -2038,17 +1742,18 @@ export function usePeerConnection(
     const params = new URLSearchParams(window.location.search);
     const hostIdToJoin = params.get('hostId');
 
-    // If we have a hostId in URL, show modal for player name first
+    // If we have a hostId in URL, connect to host immediately (modal will show after PACKS_NEEDED)
     if (hostIdToJoin) {
       console.log(`[P2P Guest] 📋 Detected hostId in URL: ${hostIdToJoin}`);
-      console.log(`[P2P Guest] 👋 Waiting for player name input...`);
-      setWaitingForPlayerName({ hostId: hostIdToJoin });
+      console.log(`[P2P Guest] 🔌 Connecting to host (modal will show after receiving PACKS_NEEDED)...`);
+      // Start connection immediately - modal will show after PACKS_NEEDED is received
+      connectToHost(hostIdToJoin, ''); // Empty name for now, will be set after modal
       return;
     }
 
     // No hostId = host mode - peer will be initialized when user clicks Invite
     console.log(`[P2P Init] 🎮 Host mode - PeerJS will initialize on first Invite`);
-  }, []);
+  }, [connectToHost]);
 
   // ============================================================================
   // 🔥 CLEANUP LOGIC: Preserve P2P connection across HMR remounts
@@ -2128,6 +1833,37 @@ export function usePeerConnection(
   }, [syncSingleton]);
 
   // Old useEffect code removed - host now initializes on demand via initializeHost()
+
+  // 🔥 NEW: Pack loaded handler (guest side)
+  const onPackLoaded = useCallback((packName: string, hashes: string[]) => {
+    console.log(`[P2P Guest] 📦 Pack loaded: ${packName} with ${hashes.length} images`);
+
+    // Track loaded pack
+    loadedPacksRef.current.add(packName);
+
+    // Notify host that pack was loaded
+    const hostConn = hostConnectionRef.current;
+    if (hostConn && hostConn.open) {
+      hostConn.send({
+        type: 'PACK_LOADED',
+        payload: {
+          packName,
+          hashes
+        }
+      });
+      console.log(`[P2P Guest] 📤 Sent PACK_LOADED for ${packName}`);
+    }
+
+    // Check if all required packs are loaded
+    const allLoaded = requiredPacks.every(p => loadedPacksRef.current.has(p.name));
+    if (allLoaded) {
+      console.log(`[P2P Guest] ✅ All packs loaded!`);
+
+      // Update loading step to success - modal stays open, managed by GameContext
+      updateP2PLoadingStep('packs', 'success', `Loaded ${requiredPacks.length} asset pack(s)`);
+    }
+  }, [requiredPacks, updateP2PLoadingStep]);
+
   return {
     peerId,
     isHost,
@@ -2146,6 +1882,11 @@ export function usePeerConnection(
     p2pLoadingSteps,
     p2pLoadingProgress,
     isP2PLoadingModalOpen,
+    // 🔥 NEW: Pack download for guests
+    requiredPacks,
+    onPackLoaded,
+    // 🔥 NEW: Suggested player name for guests
+    suggestedPlayerName,
   };
 }
 
@@ -2261,6 +2002,34 @@ if (typeof window !== 'undefined') {
           resolve({ success: false, error: err });
         });
       });
+    },
+    // 🔥 NEW: Check current usedPacks state
+    checkUsedPacks: () => {
+      const state = (window as any).__gameState;
+      if (!state) {
+        console.error('[P2P Debug] Game state not found. Make sure game is loaded.');
+        return;
+      }
+      const usedPacks = state.usedPacks || {};
+      const packCount = Object.keys(usedPacks).length;
+      console.log('[P2P Debug] ════════════════════════════════════════════');
+      console.log('[P2P Debug] 📦 USED PACKS STATUS');
+      console.log('[P2P Debug] ════════════════════════════════════════════');
+      console.log(`[P2P Debug] Pack count: ${packCount}`);
+      if (packCount > 0) {
+        console.log('[P2P Debug] Packs:');
+        Object.entries(usedPacks).forEach(([name, info]: [string, any]) => {
+          console.log(`[P2P Debug]   - ${name}:`);
+          console.log(`[P2P Debug]     Hash: ${info.hash?.substring(0, 16)}...`);
+          console.log(`[P2P Debug]     Size: ${(info.size / 1024 / 1024).toFixed(2)} MB`);
+          console.log(`[P2P Debug]     Images: ${info.imageCount}`);
+        });
+      } else {
+        console.warn('[P2P Debug] ⚠️ No packs registered!');
+        console.warn('[P2P Debug] 💡 Load a pack via menu to register it for P2P sync');
+      }
+      console.log('[P2P Debug] ════════════════════════════════════════════');
+      return usedPacks;
     }
   };
 }

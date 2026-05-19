@@ -28,6 +28,18 @@ export interface PlayerPanelSettings {
   };
 }
 
+// Individual object positions for each player on layers with individualPosition enabled
+export interface PlayerObjectPositions {
+  [playerId: string]: {
+    [objectId: string]: {
+      x: number;
+      y: number;
+      rotation?: number;
+      zIndex?: number;
+    };
+  };
+}
+
 export interface GameState {
   objects: Record<string, TableObject>;
   players: Player[];
@@ -46,7 +58,10 @@ export interface GameState {
   diceGroups: DiceGroup[]; // Dice groups for rolling multiple dice together
   lastModifiedBy?: string; // ID of player who last modified the game state
   playerPanelSettings: PlayerPanelSettings; // Individual panel settings for each player
+  playerObjectPositions: PlayerObjectPositions; // Individual object positions for each player on layers with individualPosition
   auditLog: AuditLogState; // Session audit log
+  usedPacks: Record<string, import('../types').PackInfo>; // Asset packs used in this game (for P2P sync)
+  guestPackStatus: Record<string, import('../types').GuestPackStatus>; // 🔥 NEW: Track guest pack loading status (host only)
   // Internal fields (not persisted)
   _lastPanelSettingsUpdate?: number; // Timestamp of last panel settings update
   _pendingPanelSettings?: PlayerPanelSettings; // Pending settings waiting for throttle timeout
@@ -89,12 +104,18 @@ export const initialState: GameState = {
   lastModifiedBy: 'gm',
   // Individual panel settings for each player (stored on host)
   playerPanelSettings: {},
+  // Individual object positions for each player on layers with individualPosition (stored on host)
+  playerObjectPositions: {},
   // Session audit log
   auditLog: {
     entries: [],
     maxEntries: 10000,
     currentReplayIndex: -1,
   },
+  // Asset packs used in this game (for P2P sync)
+  usedPacks: {},
+  // 🔥 NEW: Track guest pack loading status (host only, not persisted)
+  guestPackStatus: {},
   // Default hyperscale layers
   hyperscaleLayers: [
     {

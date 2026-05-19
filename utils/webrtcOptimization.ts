@@ -184,6 +184,12 @@ class DifferentialSyncManager {
       }
     });
 
+    console.log('[DifferentialSyncManager] getPartialState', {
+      pendingChangesCount: this.pendingChanges.length,
+      changedObjectIds: Array.from(changedObjectIds),
+      pendingActions: this.pendingChanges.map(c => ({ type: c.action.type, payloadId: c.action.payload?.id }))
+    });
+
     // Limit number of objects in partial sync
     const objectIds = Array.from(changedObjectIds).slice(
       0,
@@ -194,17 +200,30 @@ class DifferentialSyncManager {
     const partialObjects: Record<string, any> = {};
     objectIds.forEach(id => {
       if (currentState.objects[id]) {
-        partialObjects[id] = currentState.objects[id];
+        const obj = currentState.objects[id];
+        partialObjects[id] = obj;
+        console.log('[DifferentialSyncManager] Including object', {
+          id,
+          type: obj.type,
+          hasCharacterData: !!(obj as any).characterData
+        });
       }
     });
 
-    return {
+    const result = {
       ...currentState,
       objects: partialObjects,
       _isPartial: true,
       _changeCount: objectIds.length,
       _timestamp: currentStateTime,
     };
+
+    console.log('[DifferentialSyncManager] Partial state result', {
+      objectCount: Object.keys(partialObjects).length,
+      _changeCount: result._changeCount
+    });
+
+    return result;
   }
 
   clearChanges(): void {

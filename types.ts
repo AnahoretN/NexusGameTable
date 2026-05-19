@@ -68,6 +68,29 @@ export enum CardLocation {
   CURSOR_SLOT = 'CURSOR_SLOT',
 }
 
+// Asset pack information for P2P synchronization
+export interface PackInfo {
+  name: string;           // Pack filename (e.g., "my-assets.zip")
+  hash: string;           // SHA-256 of pack file for verification
+  size: number;           // File size in bytes
+  imageCount: number;     // Number of images in this pack
+  required: boolean;      // Whether this pack is required to join (currently always true)
+}
+
+// 🔥 NEW: Track which packs each guest has loaded
+export interface GuestPackStatus {
+  playerId: string;           // Guest player ID
+  playerName: string;         // Guest player name
+  loadedPacks: Record<string, {
+    name: string;             // Pack name
+    hash: string;             // Pack hash (for verification)
+    imageCount: number;       // Number of images loaded
+    loadedAt: number;         // Timestamp when pack was loaded
+  }>;
+  connectedAt: number;        // When guest connected
+  lastUpdate: number;         // Last update timestamp
+}
+
 export type PilePosition = 'left' | 'right' | 'top' | 'bottom' | 'free';
 export type PileSize = 0.5 | 1;
 

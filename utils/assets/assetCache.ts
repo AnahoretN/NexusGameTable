@@ -392,8 +392,26 @@ export const assetCache = new AssetCache();
 
 /**
  * Get ObjectURL for asset hash
+ * 🔥 FIX: Added retry mechanism for P2P transfers where assets might not be immediately available
  */
-export async function getAssetURL(hash: string): Promise<string> {
+export async function getAssetURL(hash: string, retries = 3): Promise<string> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await assetCache.getObjectURL(hash);
+    } catch (error) {
+      const isAssetNotFound = error instanceof Error && error.message.includes('Asset not found');
+      if (isAssetNotFound && i < retries - 1) {
+        // Asset might still be saving to IndexedDB - wait and retry
+        const delay = 100 * Math.pow(2, i); // 100ms, 200ms, 400ms
+        console.log(`[AssetCache] Asset ${hash.substring(0, 20)}... not found, retry ${i + 1}/${retries} after ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        // Final retry failed or different error
+        throw error;
+      }
+    }
+  }
+  // Should never reach here, but TypeScript needs it
   return assetCache.getObjectURL(hash);
 }
 

@@ -214,8 +214,9 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     // ALWAYS prefer playerPanelSettings for size if available, even during drag
     // This prevents size jumping when drag starts
     const result = playerPanelSettings ? {
-        x: uiObject.x,
-        y: uiObject.y,
+        // FIX: Use playerPanelSettings for position if available (guests move panels locally)
+        x: playerPanelSettings.x !== undefined ? playerPanelSettings.x : uiObject.x,
+        y: playerPanelSettings.y !== undefined ? playerPanelSettings.y : uiObject.y,
         width: playerPanelSettings.width !== undefined ? playerPanelSettings.width : uiObject.width,
         height: playerPanelSettings.height !== undefined ? playerPanelSettings.height : uiObject.height,
         minimized: playerPanelSettings.minimized !== undefined ? playerPanelSettings.minimized : (uiObject as any).minimized || false,

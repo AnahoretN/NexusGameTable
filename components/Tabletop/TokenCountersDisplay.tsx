@@ -67,13 +67,19 @@ export const TokenCountersDisplay = memo(({
       c.id === slider.id ? { ...c, value: clampedValue } : c
     );
 
-    dispatch({
+    // Update token locally AND sync to panel characterData (but skip network sync)
+    // This ensures panel sliders update even when panel is closed or different tab is active
+    const action: any = {
       type: 'UPDATE_OBJECT',
       payload: {
         id: tokenId,
         updates: { counters: updatedCounters }
-      }
-    });
+      },
+      syncToPanel: true,      // Update panel.characterData (checked in reducer)
+      skipNetworkSync: true   // Don't send to host (checked in middleware)
+    };
+
+    dispatch(action);
   }, [counters, tokenId, dispatch]);
 
   // Start continuous change on button hold

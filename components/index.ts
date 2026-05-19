@@ -20,6 +20,13 @@ export {
 // Lazy loading images
 export { LazyImage, LazyBackgroundImage, useImagePreloader } from './LazyImage';
 
+// 🔥 NEW: Missing asset placeholder
+export { MissingAssetPlaceholder, loadImageFromUrl } from './MissingAssetPlaceholder';
+export type { MissingAssetPlaceholderProps } from './MissingAssetPlaceholder';
+
+// 🔥 NEW: Guest Connection Modal (unified connection UI for guests)
+export { GuestConnectionModal } from './GuestConnectionModal';
+
 // Memoized components
 export { ObjectRendererMemo } from './ObjectRenderer';
 export { default as CardMemo } from './Card';
