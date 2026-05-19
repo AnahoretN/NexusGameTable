@@ -174,6 +174,30 @@ class DifferentialSyncManager {
     return this.pendingChanges.length > WEBRTC_OPTIMIZATION_CONFIG.MAX_CHANGES_FOR_FULL_SYNC;
   }
 
+  // Filter out changes for objects that don't exist in current state
+  // (e.g., individual objects that were filtered from broadcast)
+  filterInvalidChanges(currentState: any): void {
+    const validChanges: ChangeSet[] = [];
+    for (const change of this.pendingChanges) {
+      if (change.type === 'object' && change.action.payload?.id) {
+        const objId = change.action.payload.id;
+        if (currentState.objects[objId]) {
+          validChanges.push(change);
+        }
+      } else {
+        validChanges.push(change);
+      }
+    }
+    const removedCount = this.pendingChanges.length - validChanges.length;
+    if (removedCount > 0) {
+      console.log('[DifferentialSyncManager] 🧹 Filtered out invalid changes:', {
+        removedCount,
+        remainingCount: validChanges.length
+      });
+    }
+    this.pendingChanges = validChanges;
+  }
+
   getPartialState(currentState: any, currentStateTime: number): any {
     const changedObjectIds = new Set<string>();
 
@@ -198,23 +222,36 @@ class DifferentialSyncManager {
 
     // Create partial state with only changed objects
     const partialObjects: Record<string, any> = {};
+    const validObjectIds: string[] = [];
     objectIds.forEach(id => {
       if (currentState.objects[id]) {
         const obj = currentState.objects[id];
         partialObjects[id] = obj;
+        validObjectIds.push(id);
         console.log('[DifferentialSyncManager] Including object', {
           id,
           type: obj.type,
           hasCharacterData: !!(obj as any).characterData
         });
+      } else {
+        console.warn('[DifferentialSyncManager] ⚠️ Object not found in currentState.objects (skipping):', {
+          id,
+          availableIds: Object.keys(currentState.objects).slice(0, 10)
+        });
       }
     });
+
+    // If no objects found, return null to signal "no partial sync available"
+    if (validObjectIds.length === 0) {
+      console.log('[DifferentialSyncManager] ❌ No valid objects found for partial sync');
+      return null;
+    }
 
     const result = {
       ...currentState,
       objects: partialObjects,
       _isPartial: true,
-      _changeCount: objectIds.length,
+      _changeCount: validObjectIds.length,
       _timestamp: currentStateTime,
     };
 

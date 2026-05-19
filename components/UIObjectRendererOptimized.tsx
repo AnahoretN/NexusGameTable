@@ -100,6 +100,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   const playerPermissions = usePlayerPermissions();
   const language = useLanguage();
   const { setLanguage } = useLanguageActions();
+  const hyperscaleLayers = useHyperscaleLayers();
 
   const { isDragging: isDraggingOverPoolState, targetPoolPanelId } = useDragOverStore();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -226,6 +227,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         collapsedState: playerPanelSettings.collapsedState !== undefined ? playerPanelSettings.collapsedState : (uiObject as any).collapsedState,
         expandedPinnedPosition: playerPanelSettings.expandedPinnedPosition !== undefined ? playerPanelSettings.expandedPinnedPosition : (uiObject as any).expandedPinnedPosition,
         collapsedPinnedPosition: playerPanelSettings.collapsedPinnedPosition !== undefined ? playerPanelSettings.collapsedPinnedPosition : (uiObject as any).collapsedPinnedPosition,
+        visible: playerPanelSettings.visible !== undefined ? playerPanelSettings.visible : (uiObject.visible !== false),
       } : {
         // No player settings - use panel properties directly
         x: uiObject.x,
@@ -239,6 +241,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         collapsedState: (uiObject as any).collapsedState,
         expandedPinnedPosition: (uiObject as any).expandedPinnedPosition,
         collapsedPinnedPosition: (uiObject as any).collapsedPinnedPosition,
+        visible: uiObject.visible !== false,
       };
 
     return result;
@@ -256,6 +259,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     uiObject.collapsedState,
     uiObject.expandedPinnedPosition,
     uiObject.collapsedPinnedPosition,
+    uiObject.visible,
     playerPanelSettings?.x,
     playerPanelSettings?.y,
     playerPanelSettings?.width,
@@ -266,6 +270,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     playerPanelSettings?.collapsedState,
     playerPanelSettings?.expandedPinnedPosition,
     playerPanelSettings?.collapsedPinnedPosition,
+    playerPanelSettings?.visible,
   ]);
 
   // Get pixelsPerVU for converting vu to pixels (for pinned panels)
@@ -273,7 +278,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
   // Memoize minimized check - always use effectiveProps (playerPanelSettings or uiObject)
   const minimized = effectiveProps.minimized;
-  const visible = uiObject.visible !== false;
+  const visible = effectiveProps.visible;
 
   // Preload translations for current language
   useEffect(() => {
@@ -287,8 +292,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
       setConnectionSettings(getConnectionSettings());
     }
   }, [showGameSettings]);
-
-  if (!visible) return null;
 
   // Memoize canResize check - use actual minimized state during drag
   // Main menu panel can now be resized (using bottom-left corner)
@@ -532,7 +535,11 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
 
   const handleHide = useCallback(() => {
     // Hide panel instead of closing it
-    dispatch({ type: 'UPDATE_OBJECT', payload: { id: uiObject.id, updates: { visible: false } } });
+    // For panels on individual objects layers, visibility is handled per-player in GameContext
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: uiObject.id, updates: { visible: false } }
+    });
   }, [dispatch, uiObject.id]);
 
   const handleOpenSettings = useCallback(() => {
@@ -934,6 +941,11 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
     : isDragOverPool
     ? 'border-purple-400'
     : 'border-slate-600';
+
+  // Early return after all hooks - if not visible, don't render
+  if (!visible) {
+    return null;
+  }
 
   // Special handling for modal windows that render via portal - don't render window frame
   const isModalWindow = uiObject.type === ItemType.WINDOW &&

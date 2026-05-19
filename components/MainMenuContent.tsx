@@ -2748,7 +2748,14 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                     )}
                     {canHideObjects && (
                       <button
-                        onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { ['visible' in obj ? 'visible' : 'isOnTable']: !isVisible } } })}
+                        onClick={() => {
+                          const propToUpdate = 'visible' in obj ? 'visible' : 'isOnTable';
+                          // For panels on individual objects layers, visibility is handled per-player in GameContext
+                          dispatch({
+                            type: 'UPDATE_OBJECT',
+                            payload: { id: obj.id, updates: { [propToUpdate]: !isVisible } }
+                          });
+                        }}
                         className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 text-xs"
                         title={isVisible ? 'Hide' : 'Show'}
                       >

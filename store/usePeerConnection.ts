@@ -4,6 +4,7 @@ import { Action } from './gameActions';
 import { Player } from '../types';
 import { logger } from '../utils/logger';
 import { filterLocalPanelProperties } from '../utils/panelSync';
+import { filterObjectsForBroadcast } from '../utils/individualPositions';
 import { getPlayerId } from './gameConstants';
 import {
   throttle,
@@ -408,6 +409,11 @@ export function usePeerConnection(
   // 🔥 NEW: Track if we received empty PACKS_NEEDED (for warning)
   const receivedEmptyPacksRef = useRef(false);
 
+  // 🔥 NEW: Buffer SYNC_STATE until packs are loaded (fixes race condition)
+  const bufferedStateRef = useRef<any>(null);
+  const hasReceivedPacksNeededRef = useRef(false);
+  const expectedPacksCountRef = useRef(0); // Track expected pack count (synchronous)
+
   // Log initial role detection for debugging
   useEffect(() => {
     console.log(`[P2P Init] 🔍 Role determined from URL: isHost=${isHost}, URL=${window.location.href}`);
@@ -483,6 +489,13 @@ export function usePeerConnection(
     ]);
     setP2pLoadingProgress(0);
     setIsP2PLoadingModalOpen(false);
+    // 🔥 FIX: Reset refs for new connection
+    loadedPacksRef.current.clear();
+    bufferedStateRef.current = null;
+    hasReceivedPacksNeededRef.current = false;
+    expectedPacksCountRef.current = 0;
+    receivedEmptyPacksRef.current = false;
+    setRequiredPacks([]);
   }, []);
 
   // Signalling server timeout - disconnect after this time of inactivity
@@ -516,6 +529,7 @@ export function usePeerConnection(
         // Set required packs and show modal
         console.log(`[P2P Guest] 🔄 Setting requiredPacks:`, packs);
         setRequiredPacks(packs);
+        expectedPacksCountRef.current = packs.length; // Track expected count
         console.log(`[P2P Guest] ✅ Pack loading step activated!`);
       } else {
         // No packs needed - mark as complete
@@ -523,6 +537,16 @@ export function usePeerConnection(
         // 🔥 NEW: Track that we received empty packs list
         receivedEmptyPacksRef.current = true;
         console.log(`[P2P Network] ⚠️ Host sent empty PACKS_NEEDED - will check if game has images after SYNC_STATE`);
+
+        // 🔥 FIX: Apply buffered SYNC_STATE immediately if no packs needed
+        if (bufferedStateRef.current) {
+          console.log(`[P2P Guest] 📦 No packs needed, applying buffered SYNC_STATE immediately`);
+          updateP2PLoadingStep('state', 'loading', 'Synchronizing game state...');
+          localDispatch({ type: 'SYNC_STATE', payload: bufferedStateRef.current });
+          console.log(`[P2P Guest] ✅ Buffered SYNC_STATE dispatched to game state`);
+          bufferedStateRef.current = null;
+          updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+        }
       }
 
       // 🔥 NEW: Show modal for player name input NOW (after receiving PACKS_NEEDED)
@@ -531,6 +555,9 @@ export function usePeerConnection(
       const hostId = params.get('hostId') || senderConn.peer;
       console.log(`[P2P Guest] 📋 Showing player name modal...`);
       setWaitingForPlayerName({ hostId });
+
+      // 🔥 NEW: Mark that we received PACKS_NEEDED (for SYNC_STATE buffering)
+      hasReceivedPacksNeededRef.current = true;
     } else if (data.type === 'PACK_LOADED') {
       // 🔥 NEW: Host received notification that guest loaded a pack
       const { packName, hashes } = data.payload;
@@ -622,6 +649,18 @@ export function usePeerConnection(
         y: obj.y,
         keys: Object.keys(obj)
       })));
+
+      // 🔥 FIX: Buffer SYNC_STATE until packs are loaded (prevents race condition)
+      // Check if we need to wait for pack loading
+      const needsPacks = expectedPacksCountRef.current > 0 && loadedPacksRef.current.size < expectedPacksCountRef.current;
+      const waitingForPacksNeeded = !hasReceivedPacksNeededRef.current;
+
+      if (needsPacks || waitingForPacksNeeded) {
+        console.log(`[P2P Guest] ⏸️ Buffering SYNC_STATE until packs load (needsPacks=${needsPacks}, waitingForPacksNeeded=${waitingForPacksNeeded})`);
+        bufferedStateRef.current = payload;
+        updateP2PLoadingStep('state', 'loading', 'Waiting for asset packs...');
+        return; // Don't dispatch yet
+      }
 
       // 🔥 NEW: Update progress - state synchronized
       updateP2PLoadingStep('state', 'loading', 'Synchronizing game state...');
@@ -1588,10 +1627,13 @@ export function usePeerConnection(
             });
           }
 
-          // Filter out local panel properties before syncing
+          // Filter out local panel properties and individual objects before syncing
           const stateToSend = { ...stateRef.current };
           if (stateToSend.objects) {
-            stateToSend.objects = filterLocalPanelProperties(stateToSend.objects);
+            let filteredObjects = filterLocalPanelProperties(stateToSend.objects);
+	            // Also filter out individual objects (on layers with individualObjects enabled)
+	            filteredObjects = filterObjectsForBroadcast(filteredObjects, stateToSend.hyperscaleLayers);
+	            stateToSend.objects = filteredObjects;
           }
 
           // Send state (now contains only hashes, not base64)
@@ -1855,14 +1897,26 @@ export function usePeerConnection(
     }
 
     // Check if all required packs are loaded
-    const allLoaded = requiredPacks.every(p => loadedPacksRef.current.has(p.name));
+    const allLoaded = expectedPacksCountRef.current > 0 && loadedPacksRef.current.size >= expectedPacksCountRef.current;
     if (allLoaded) {
       console.log(`[P2P Guest] ✅ All packs loaded!`);
 
       // Update loading step to success - modal stays open, managed by GameContext
-      updateP2PLoadingStep('packs', 'success', `Loaded ${requiredPacks.length} asset pack(s)`);
+      updateP2PLoadingStep('packs', 'success', `Loaded ${expectedPacksCountRef.current} asset pack(s)`);
+
+      // 🔥 FIX: Apply buffered SYNC_STATE after all packs are loaded
+      if (bufferedStateRef.current) {
+        console.log(`[P2P Guest] 📦 Applying buffered SYNC_STATE after pack loading`);
+        updateP2PLoadingStep('state', 'loading', 'Synchronizing game state...');
+
+        localDispatch({ type: 'SYNC_STATE', payload: bufferedStateRef.current });
+        console.log(`[P2P Guest] ✅ Buffered SYNC_STATE dispatched to game state`);
+
+        bufferedStateRef.current = null; // Clear buffer
+        updateP2PLoadingStep('state', 'success', 'Game synchronized!');
+      }
     }
-  }, [requiredPacks, updateP2PLoadingStep]);
+  }, [updateP2PLoadingStep]);
 
   return {
     peerId,

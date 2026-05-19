@@ -10,7 +10,7 @@ import { generateUUID } from '../utils/uuid';
 import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo, initializeImageCache } from '../utils/gameStorage';
 import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from '../utils/localSettings';
 import { createStandardDeck } from './gameConstants';
-import { GameState, ViewTransform, initialState } from './gameState';
+import { GameState, ViewTransform, initialState, PlayerPanelSettings } from './gameState';
 import { Action } from './gameActions';
 import { createAuditLogEntry } from './auditLogger';
 import { useAutoSave } from './useAutoSave';
@@ -68,16 +68,62 @@ const gameReducer = (state: GameState, action: Action): GameState => {
   // Exclude SYNC_STATE to avoid loops
   // Exclude UPDATE_OBJECT with inCursorSlot=true to prevent local cursor slot state from syncing to host
   // Also exclude objects at -999999 position (cursor slot hidden position)
-  const shouldExcludeFromSync =
+  // Exclude objects on individual position/objects layers (local-only changes)
+  let shouldExcludeFromSync =
     action.type === 'SYNC_STATE' ||
     (action.type === 'UPDATE_OBJECT' && action.payload?.updates?.inCursorSlot === true) ||
     (action.type === 'UPDATE_OBJECT' && (action.payload?.updates?.x < -900000 || action.payload?.updates?.y < -900000));
 
+  // For UPDATE_OBJECT actions, check if object is on individual position/objects layer
+  if (action.type === 'UPDATE_OBJECT' && action.payload?.id && !shouldExcludeFromSync) {
+    const obj = state.objects[action.payload.id];
+    if (obj) {
+      const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+      // console.log('[gameReducer] 🔍 Checking UPDATE_OBJECT:', {
+      //   objectId: action.payload.id,
+      //   hyperscaleLayerId: obj.hyperscaleLayerId,
+      //   layerFound: !!layer,
+      //   layerName: layer?.name,
+      //   individualPosition: layer?.individualPosition,
+      //   individualObjects: layer?.individualObjects,
+      //   updates: action.payload?.updates
+      // });
+      if (layer && (layer.individualPosition || layer.individualObjects)) {
+        // Don't sync individual position/objects changes to other players
+        console.log('[gameReducer] 🚫 Excluding individual object from sync:', {
+          actionType: action.type,
+          objectId: action.payload.id,
+          layerId: obj.hyperscaleLayerId,
+          layerName: layer.name,
+          individualPosition: layer.individualPosition,
+          individualObjects: layer.individualObjects
+        });
+        shouldExcludeFromSync = true;
+      }
+    } else {
+      // console.log('[gameReducer] ⚠️ UPDATE_OBJECT but object not found in state:', {
+      //   objectId: action.payload.id,
+      //   availableIds: Object.keys(state.objects).slice(0, 5)
+      // });
+    }
+  }
+
   if (!shouldExcludeFromSync) {
+    // console.log('[gameReducer] ➕ Adding to differentialSyncManager:', {
+    //   actionType: action.type,
+    //   objectId: action.payload?.id,
+    //   payloadKeys: action.payload ? Object.keys(action.payload) : []
+    // });
     differentialSyncManager.addChange({
       type: 'object',
       action: action,
       timestamp: Date.now()
+    });
+  } else {
+    console.log('[gameReducer] ⏭️ Skipping sync for action:', {
+      type: action.type,
+      objectId: action.payload?.id,
+      reason: shouldExcludeFromSync
     });
   }
 
@@ -901,8 +947,69 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           };
         }
 
-        // For individual objects layers, skip all network updates entirely
+        // For individual objects layers, skip network updates EXCEPT for visibility on panels
+        // Panels on individual layers should have local visibility control
         if (isIndividualObjectsLayer) {
+          const isVisibilityUpdate = mergedUpdates.visible !== undefined;
+          const isPanelOrWindow = obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW;
+          const hasPlayerId = (action.payload as any).playerId !== undefined;
+
+          if (isVisibilityUpdate && isPanelOrWindow) {
+            if (hasPlayerId) {
+              // Network action from guest - store visibility in guest's playerPanelSettings
+              const playerId = (action.payload as any).playerId;
+              const newVisibility = mergedUpdates.visible;
+
+              return {
+                ...state,
+                playerPanelSettings: {
+                  ...state.playerPanelSettings,
+                  [playerId]: {
+                    ...(state.playerPanelSettings[playerId] || {}),
+                    [obj.id]: {
+                      ...(state.playerPanelSettings[playerId]?.[obj.id] || {}),
+                      visible: newVisibility
+                    }
+                  }
+                }
+              };
+            } else {
+              // Local action from host - mark as local-only to prevent sync
+              // Host's visibility changes should be local-only for individual objects layers
+              action._localOnly = true;
+              // Continue processing below - the object will be updated but not synced
+            }
+          } else if (hasPositionUpdate) {
+            // Position update on individual objects layer
+            if (hasPlayerId) {
+              // Network action from guest - store position in guest's playerPanelSettings
+              const playerId = (action.payload as any).playerId;
+              const currentPosition = state.playerPanelSettings[playerId]?.[obj.id] || {};
+
+              const newSettings = {
+                ...currentPosition,
+                x: mergedUpdates.x !== undefined ? mergedUpdates.x : currentPosition.x,
+                y: mergedUpdates.y !== undefined ? mergedUpdates.y : currentPosition.y
+              };
+
+              return {
+                ...state,
+                playerPanelSettings: {
+                  ...state.playerPanelSettings,
+                  [playerId]: {
+                    ...(state.playerPanelSettings[playerId] || {}),
+                    [obj.id]: newSettings
+                  }
+                }
+              };
+            } else {
+              // Local action from host - mark as local-only to prevent sync
+              action._localOnly = true;
+              // Continue processing below - the object will be updated but not synced
+            }
+          }
+
+          // For all other updates on individual objects layers, skip
           return state;
         }
 
@@ -6830,7 +6937,40 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             filteredObjects[id] = obj;
           }
         });
-        const broadcastState = { ...currentState, objects: filteredObjects };
+
+        // Filter playerPanelSettings to exclude settings for panels on individual objects layers
+        // These settings are individual per player and should not be synced
+        const filteredPlayerPanelSettings: PlayerPanelSettings = {};
+        Object.entries(currentState.playerPanelSettings).forEach(([playerId, playerSettings]) => {
+          const filteredSettings: Record<string, any> = {};
+          Object.entries(playerSettings).forEach(([panelId, settings]) => {
+            const panel = currentState.objects[panelId];
+            if (!panel) return;
+
+            // Check if panel is on an individual objects layer
+            const layerId = panel.hyperscaleLayerId || 'tokens';
+            const layer = currentState.hyperscaleLayers.find(l => l.id === layerId);
+
+            // Skip settings for panels on individual objects layers - they are fully local
+            if (layer?.individualObjects) {
+              return;
+            }
+
+            // Keep settings for panels on regular layers
+            filteredSettings[panelId] = settings;
+          });
+
+          // Only add player entry if they have any settings left
+          if (Object.keys(filteredSettings).length > 0) {
+            filteredPlayerPanelSettings[playerId] = filteredSettings;
+          }
+        });
+
+        const broadcastState = {
+          ...currentState,
+          objects: filteredObjects,
+          playerPanelSettings: filteredPlayerPanelSettings
+        };
         return broadcastState;
       })();
 
@@ -6838,14 +6978,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       connectionsRef.current.forEach(conn => {
         if (conn.open) {
           // 🔥 NEW: Check if we can use differential sync
-          const shouldSendFullState = differentialSyncManager.shouldSendFullState();
+          // Filter out invalid changes (e.g., individual objects) before checking
+	          differentialSyncManager.filterInvalidChanges(stateForBroadcast);
+
+	          const shouldSendFullState = differentialSyncManager.shouldSendFullState();
           let stateToSend = stateForBroadcast;
           let isPartialSync = false;
           let changeCount = 0;
 
           if (!shouldSendFullState) {
             const partialState = differentialSyncManager.getPartialState(stateForBroadcast, Date.now());
-            isPartialSync = partialState._isPartial || false;
+            // If partialState is null (no valid objects for sync), skip this sync entirely
+	            if (!partialState) {
+	              console.log('[GameContext] ⏭️ Skipping sync - no valid objects for partial sync');
+	              differentialSyncManager.clearChanges();
+	              return;
+	            }
+
+	            isPartialSync = partialState._isPartial || false;
             changeCount = partialState._changeCount || 0;
 
             // 🔥 OPTIMIZATION: If only 1-2 objects changed and they're just position updates,

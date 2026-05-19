@@ -136,7 +136,7 @@ export const Tabletop: React.FC = () => {
     pinnedDecks,
     unpinnedDecks,
     pinnedGameObjects,
-  } = useObjectFilters(state, hyperscaleLayers);
+  } = useObjectFilters({ ...state, activePlayerId }, hyperscaleLayers);
 
   // === State Management ===
   // Tool state - use ToolSettingsContext instead of local state

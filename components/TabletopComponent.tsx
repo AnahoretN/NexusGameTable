@@ -122,7 +122,7 @@ export const Tabletop: React.FC = () => {
     unpinnedUIObjects,
     pinnedDecks,
     unpinnedDecks,
-  } = useObjectFilters(state, hyperscaleLayers);
+  } = useObjectFilters({ ...state, activePlayerId }, hyperscaleLayers);
 
   const worldBoundsVU = useWorldBounds();
   // Convert VU to pixels for rendering

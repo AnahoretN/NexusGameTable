@@ -22,9 +22,11 @@ import { intersectsPlayableArea } from '../../utils/viewportConstraints';
  * Filter objects by various criteria for rendering optimization
  */
 export const useObjectFilters = (
-  state: { objects?: Record<string, TableObject> },
+  state: { objects?: Record<string, TableObject>; activePlayerId?: string },
   hyperscaleLayers: Array<{ id: string; maxZIndex?: number }>
 ) => {
+  const activePlayerId = state.activePlayerId;
+
   // All table objects (convert from object record to array)
   const tableObjects = useMemo(() => {
     const PLAYABLE_AREA_SIZE = 5000;
@@ -164,10 +166,19 @@ export const useObjectFilters = (
           const panelObj = obj as PanelObject;
           return panelObj.visible !== false;
         }
-        return obj.type === ItemType.WINDOW;
+        if (obj.type === ItemType.WINDOW) {
+          // Filter out windows with ownerId that belongs to another player
+          // Settings windows (OBJECT_SETTINGS, HYPERSCALE_LAYER_SETTINGS) are local to their owner
+          const windowObj = obj as any;
+          if (windowObj.ownerId && windowObj.ownerId !== activePlayerId) {
+            return false;
+          }
+          return true;
+        }
+        return false;
       })
       .sort((a, b) => (a.zIndex || 1000) - (b.zIndex || 1000));
-  }, [state.objects]);
+  }, [state.objects, activePlayerId]);
 
   // Separate pinned and unpinned UI objects
   // NOTE: All panels and windows are UI elements and should always be pinned to viewport

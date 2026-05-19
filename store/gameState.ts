@@ -24,6 +24,7 @@ export interface PlayerPanelSettings {
       collapsedState?: { x: number; y: number; width: number; height: number };
       expandedPinnedPosition?: { x: number; y: number };
       collapsedPinnedPosition?: { x: number; y: number };
+      visible?: boolean; // Individual visibility for panels on individual objects layers
     };
   };
 }
