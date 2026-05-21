@@ -199,7 +199,7 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
         clearTimeout(cleanupTimeoutRef.current);
       }
     };
-  }, [cursorSlot, pixelsPerVU, getCardSettings]);
+  }, [cursorSlot, cursorPosition, pixelsPerVU, getCardSettings]);
 
   // Check if items from heldItems are now visible on table (not in cursor slot anymore)
   // If so, remove them from heldItems with a small delay to prevent flicker
@@ -365,7 +365,8 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
       })()}
 
       {/* Render held items (transition after drop) - separate container with absolute positioning */}
-      {cursorSlot.length === 0 && heldItems.map((heldItem, index) => {
+      {/* 🔥 FIX: Render heldItems that are no longer in cursorSlot (not all heldItems) */}
+      {heldItems.filter(heldItem => !cursorSlot.some(slotItem => slotItem.id === heldItem.id)).map((heldItem, index) => {
         const { item, width, height, x, y } = heldItem;
         const isCard = item.type === ItemType.CARD;
         const zIndex = isCard ? index + 2000 : index + 3000;

@@ -36,6 +36,8 @@ export interface CustomSignalingServer {
   name: string;
 }
 
+export type ConnectionMethod = 'peerjs' | 'iroh' | 'trystero';
+
 export interface LocalSettings {
   // Main menu position (local for each player)
   mainMenuPosition: {
@@ -67,10 +69,10 @@ export interface LocalSettings {
   };
   // Connection settings
   connection: {
+    // Primary connection method
+    connectionMethod: ConnectionMethod;
     // Custom signaling servers added by user (tried after PeerJS Cloud, before Trystero)
     customSignalingServers: CustomSignalingServer[];
-    // Whether to use Trystero Torrent Trackers as fallback
-    enableTrysteroTrackers: boolean;
   };
 }
 
@@ -92,8 +94,8 @@ const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   zoom: 100, // Default 100%
   panelSettings: {}, // Empty by default - panels will use global settings until customized
   connection: {
+    connectionMethod: 'peerjs' as ConnectionMethod, // Default connection method
     customSignalingServers: [], // No custom servers by default
-    enableTrysteroTrackers: false, // Disabled by default
   },
 };
 
@@ -263,7 +265,10 @@ export const clearAllLocalPanelSettings = (): void => {
  */
 export const getConnectionSettings = (): LocalSettings['connection'] => {
   const settings = loadLocalSettings();
-  return settings.connection || { customSignalingServers: [], enableTrysteroTrackers: false };
+  return settings.connection || {
+    connectionMethod: 'peerjs' as ConnectionMethod,
+    customSignalingServers: []
+  };
 };
 
 /**
@@ -276,6 +281,9 @@ export const updateConnectionSettings = (updates: Partial<LocalSettings['connect
     ...updates,
   };
   saveLocalSettings(settings);
+
+  // Dispatch custom event for same-tab listeners
+  window.dispatchEvent(new Event('nexus-settings-changed'));
 };
 
 /**

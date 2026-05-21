@@ -78,6 +78,22 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
     }
   }, [initialPlayerName, isOpen, nameSubmitted]);
 
+  // 🔥 NEW: Auto-close modal when ready to join (after sync is complete)
+  const canJoinRef = useRef(false);
+  useEffect(() => {
+    console.log('[GuestConnectionModal] 🔍 Checking canJoin:', { canJoin, nameSubmitted, wasPreviouslyReady: canJoinRef.current });
+    if (canJoin && !canJoinRef.current && nameSubmitted) {
+      console.log('[GuestConnectionModal] ✅ Ready to join, auto-closing modal in 1s...');
+      canJoinRef.current = true;
+      // Auto-close after 1 second delay
+      setTimeout(() => {
+        onJoin();
+      }, 1000);
+    } else if (!canJoin) {
+      canJoinRef.current = false;
+    }
+  }, [canJoin, nameSubmitted, onJoin]);
+
   // 🔥 DEBUG: Log when requiredPacks changes
   useEffect(() => {
     console.log('[GuestConnectionModal] 📦 requiredPacks changed:', {

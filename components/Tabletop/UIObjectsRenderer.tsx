@@ -208,6 +208,11 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     if (prevPinnedPositions !== nextPinnedPositions) return false;
   }
 
+  // 🔥 FIX: Check deck positions - prevents flickering when decks are dropped
+  const prevDeckPositions = [...prevProps.pinnedDecks, ...prevProps.unpinnedDecks].map(d => `${d.id}:${d.x}:${d.y}`).join('|');
+  const nextDeckPositions = [...nextProps.pinnedDecks, ...nextProps.unpinnedDecks].map(d => `${d.id}:${d.x}:${d.y}`).join('|');
+  if (prevDeckPositions !== nextDeckPositions) return false;
+
   // Default shallow comparison for other props
   return (
     prevProps.pinnedUIObjects === nextProps.pinnedUIObjects &&
@@ -254,6 +259,11 @@ export const UIObjectsRendererMemo = memo(UIObjectsRenderer, (prevProps, nextPro
     const nextPinnedPositions = nextProps.pinnedUIObjects.map(o => `${o.id}:${o.x}:${o.y}`).join('|');
     if (prevPinnedPositions !== nextPinnedPositions) return false;
   }
+
+  // 🔥 FIX: Check deck positions - prevents flickering when decks are dropped
+  const prevDeckPositions = [...prevProps.pinnedDecks, ...prevProps.unpinnedDecks].map(d => `${d.id}:${d.x}:${d.y}`).join('|');
+  const nextDeckPositions = [...nextProps.pinnedDecks, ...nextProps.unpinnedDecks].map(d => `${d.id}:${d.x}:${d.y}`).join('|');
+  if (prevDeckPositions !== nextDeckPositions) return false;
 
   // Default shallow comparison for other props
   return (

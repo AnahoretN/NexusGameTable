@@ -136,8 +136,22 @@ const addToCursorSlotLocal = (
   // Check if item is locked - locked objects can't be added to cursor slot
   const obj = state.objects[id];
   if (obj.locked) {
+    console.warn(`[addToCursorSlotLocal] ⚠️ Object "${obj.name || id}" is LOCKED - cannot be picked up`);
     return; // Locked objects can't be picked up
   }
+
+  // 🔥 DEBUG: Log object state before adding to cursor slot
+  console.log('[addToCursorSlotLocal] Adding object to cursor slot:', {
+    id,
+    name: obj.name,
+    type: obj.type,
+    locked: obj.locked,
+    inCursorSlot: (obj as any).inCursorSlot,
+    isOnTable: obj.isOnTable,
+    x: obj.x,
+    y: obj.y,
+    source,
+  });
 
   // Set source based on how the item was added (only if slot was empty before)
   if (cursorSlot.length === 0) {
@@ -513,7 +527,17 @@ const dropCursorSlot = (
     hyperscaleLayers
   } = props;
 
+  // 🔥 DEBUG: Log drop cursor slot call
+  console.log('[dropCursorSlot] Called with:', {
+    cursorSlotLength: cursorSlot.length,
+    cursorSlotIds: cursorSlot.map(i => i.id),
+    clientX,
+    clientY,
+    skipPoolCheck,
+  });
+
   if (cursorSlot.length === 0) {
+    console.warn('[dropCursorSlot] ⚠️ Cursor slot is empty, returning');
     return;
   }
 
@@ -554,6 +578,12 @@ const dropCursorSlot = (
   const archetypeCard = elementAtCursor?.closest('[data-archetype-card]');
 
   if (archetypeCard) {
+    // Clear cursor slot immediately to prevent stale items
+    cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+    setCursorSlot([]);
+    setCursorPosition(null);
+    cursorPositionRef.current = null;
+    setCursorSlotSource(null);
     return;
   }
 
@@ -587,6 +617,12 @@ const dropCursorSlot = (
   if (hasBoardInSlot) {
     // Check if dropping to pool panel - allow it
     if (isOverPoolPanel) {
+      // Clear cursor slot immediately to prevent stale items
+      cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+      setCursorSlot([]);
+      setCursorPosition(null);
+      cursorPositionRef.current = null;
+      setCursorSlotSource(null);
       return; // Let pool panel handle the drop
     }
 
@@ -606,9 +642,7 @@ const dropCursorSlot = (
         const originalY = (board as any).originalY;
 
         if (originalX !== undefined && originalY !== undefined) {
-          // 🔥 FIX: Remove from tracker before dispatch
-          removeFromCursorSlot(board.id);
-
+          // 🔥 FIX: Dispatch FIRST with new coordinates, THEN remove from cursor slot
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -621,12 +655,17 @@ const dropCursorSlot = (
               }
             }
           });
+
+          // Remove from tracker AFTER dispatch
+          removeFromCursorSlot(board.id);
         }
       });
 
       // Keep non-board items in cursor slot for normal drop processing
       if (nonBoardItems.length > 0) {
-        itemsToDrop = nonBoardItems;
+        // Update cursor slot to only contain non-board items
+        setCursorSlot(nonBoardItems);
+        // Boards are already removed from tracker above
       } else {
         // Only boards were in slot, clear everything
         setCursorSlot([]);
@@ -640,6 +679,12 @@ const dropCursorSlot = (
   }
 
   if (poolPanel && itemsToDrop.length > 0) {
+    // Clear cursor slot immediately to prevent stale items
+    cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+    setCursorSlot([]);
+    setCursorPosition(null);
+    cursorPositionRef.current = null;
+    setCursorSlotSource(null);
     // Let pool panel handle the drop (for non-board items or if boards were filtered out above)
     return;
   }
@@ -665,8 +710,13 @@ const dropCursorSlot = (
     // If there are non-card items, keep them in slot and drop them normally
     // Otherwise clear the slot
     if (nonCardItems.length > 0) {
+      // Remove card items from tracker (they were dropped to hand)
+      items.forEach(item => removeFromCursorSlot(item.id));
+      // Keep non-card items in cursor slot
       setCursorSlot(nonCardItems);
     } else {
+      // Clear cursor slot immediately
+      cursorSlot.forEach(item => removeFromCursorSlot(item.id));
       setCursorSlot([]);
       setCursorPosition(null);
       cursorPositionRef.current = null;
@@ -710,11 +760,16 @@ const dropCursorSlot = (
       // For non-card items (tokens), drop them on the table at deck position
       const nonCards = itemsToDrop.filter(item => item.type !== ItemType.CARD);
       if (nonCards.length > 0) {
+        // Remove card items from tracker (they were added to deck)
+        cards.forEach(card => removeFromCursorSlot(card.id));
+        // Update cursor slot to only contain non-card items
+        setCursorSlot(nonCards);
         // These will be handled by the normal drop logic below
         // Update itemsToDrop to only include non-card items
         itemsToDrop = nonCards;
       } else {
-        // Clear cursor slot after successful deck drop
+        // Clear cursor slot immediately after successful deck drop
+        cursorSlot.forEach(item => removeFromCursorSlot(item.id));
         setCursorSlot([]);
         setCursorPosition(null);
         cursorPositionRef.current = null;
@@ -1112,9 +1167,7 @@ const dropCursorSlot = (
       rotationMarkerDistance: (item as EffectTemplate).rotationMarkerDistance,
     } : {};
 
-    // 🔥 FIX: Remove from tracker before dispatch
-    removeFromCursorSlot(item.id);
-
+    // Standard dispatch for all clients - synchronizes via P2P
     dispatch({
       type: 'UPDATE_OBJECT',
       payload: {
@@ -1132,6 +1185,11 @@ const dropCursorSlot = (
         }
       }
     });
+
+    // 🔥 FIX: DON'T remove from cursor slot immediately
+    // Let SYNC_STATE from host confirm the new position first
+    // The object will stay hidden (in cursor slot) until it has correct coordinates
+    // removeFromCursorSlot(item.id); // REMOVED - causes flickering for guests
 
     // If object was unpinned during drag, repin it at new position
     if (unpinnedDuringDragRef.current.has(item.id)) {
@@ -1192,11 +1250,16 @@ const dropCursorSlot = (
     });
   }
 
-  // Clear cursor slot
-  setCursorSlot([]);
-  setCursorPosition(null);
-  cursorPositionRef.current = null;
-  setCursorSlotSource(null);
+  // Clear cursor slot after dispatch is applied (using RAF to ensure state updates first)
+  // This prevents the gap where object disappears from both cursorSlot and table
+  // Also clear the cursor slot tracker
+  itemsToDrop.forEach(item => removeFromCursorSlot(item.id));
+  requestAnimationFrame(() => {
+    setCursorSlot([]);
+    setCursorPosition(null);
+    cursorPositionRef.current = null;
+    setCursorSlotSource(null);
+  });
 
 };
 
@@ -1210,6 +1273,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     setScroll,
     cursorPositionRef,
     cursorSlotSource,
+    setCursorSlotSource,
+    setCursorSlot,
     currentTool,
     isShiftPressed,
     setIsShiftPressed,
@@ -1453,12 +1518,30 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     );
     const actuallyHasItems = objectsInCursorSlot.length > 0;
 
+    // 🔥 DEBUG: Log cursor slot state
+    console.log('[handleMouseDown] Cursor slot check:', {
+      objId,
+      objName: obj?.name,
+      actuallyHasItems,
+      cursorSlotLength: cursorSlot.length,
+      cursorSlotIds: cursorSlot.map(i => i.id),
+      objectsInCursorSlotIds: objectsInCursorSlot.map(o => o.id),
+      isShiftKey: e.shiftKey,
+    });
+
     // REGULAR CLICK (no shift): if slot has items, drop them
     if (!e.shiftKey && actuallyHasItems) {
       e.preventDefault();
       e.stopPropagation();
       dropCursorSlot(e.clientX, e.clientY, props);
       cursorSlotLastAddedRef.current = Date.now();
+      // Clear drag threshold to prevent blocking future drags
+      dragThresholdRef.current = {
+        initialX: 0,
+        initialY: 0,
+        targetId: null,
+        addedToSlot: false
+      };
       return;
     }
 
@@ -1527,6 +1610,22 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       // Don't set up drag threshold when Ctrl is held (used for panning)
       if (e.ctrlKey || e.metaKey) {
         return;
+      }
+
+      // Clear stale drag threshold if it references a different object
+      // This prevents stale references from blocking future drags
+      if (dragThresholdRef.current.targetId &&
+          dragThresholdRef.current.targetId !== objId) {
+        const staleObj = state.objects[dragThresholdRef.current.targetId];
+        if (!staleObj || staleObj.locked || (staleObj as any).inCursorSlot === false) {
+          // Clear stale reference
+          dragThresholdRef.current = {
+            initialX: 0,
+            initialY: 0,
+            targetId: null,
+            addedToSlot: false
+          };
+        }
       }
 
       // Set up drag threshold to distinguish clicks from drags
@@ -1730,11 +1829,26 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         const deltaY = e.clientY - dragThresholdRef.current.initialY;
         const hasExceededThreshold = Math.abs(deltaX) > thresholdPixels || Math.abs(deltaY) > thresholdPixels;
 
+        // 🔥 DEBUG: Log drag threshold check
+        if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+          console.log('[handleMouseMove] Drag threshold check:', {
+            targetId,
+            objName: obj.name,
+            deltaX,
+            deltaY,
+            thresholdPixels,
+            hasExceededThreshold,
+            isShiftPressed,
+            isCtrlPressed,
+          });
+        }
+
         if (hasExceededThreshold) {
           // Mark as added to prevent duplicate adds
           dragThresholdRef.current.addedToSlot = true;
 
           // Add object to cursor slot (same as shift+click)
+          console.log('[handleMouseMove] ✓ Drag threshold exceeded, adding to cursor slot:', targetId);
           addToCursorSlotLocal(targetId, obj, { x: e.clientX, y: e.clientY }, props, 'hold');
         }
       }
@@ -2193,6 +2307,16 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       const wasAddedToSlot = dragThresholdRef.current.addedToSlot;
       const wasClickNotDrag = !wasAddedToSlot;
       const hadCursorSlot = cursorSlot.length > 0;
+      const targetId = dragThresholdRef.current.targetId; // 🔥 FIX: Save targetId BEFORE clearing
+
+      // 🔥 DEBUG: Log drag threshold state
+      console.log('[handleMouseUp] Drag threshold check:', {
+        targetId,
+        wasAddedToSlot,
+        wasClickNotDrag,
+        hadCursorSlot,
+        cursorSlotIds: cursorSlot.map(i => i.id),
+      });
 
       dragThresholdRef.current = {
         initialX: 0,
@@ -2203,14 +2327,25 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       // Only drop cursor slot if this was truly a click (not drag threshold exceeded)
       // IMPORTANT: Don't drop if Shift is held - user wants to keep item in slot
+      // 🔥 FIX: Don't drop if clicking on the SAME object that's in the slot (avoid race condition)
       const isShiftHeld = e?.shiftKey === true;
+      const clickedOnSlotObject = cursorSlot.some(item => item.id === targetId);
 
-      if (wasClickNotDrag && hadCursorSlot && e && !isShiftHeld) {
+      if (wasClickNotDrag && hadCursorSlot && e && !isShiftHeld && !clickedOnSlotObject) {
         dropCursorSlot(e.clientX, e.clientY, props);
         cursorSlotLastAddedRef.current = Date.now();
 
         // Don't continue to the normal drop logic below
         return;
+      }
+
+      // 🔥 FIX: If clicked on slot object, clear the stale cursorSlot to prevent future issues
+      if (clickedOnSlotObject) {
+        console.log('[handleMouseUp] Clicked on object in cursor slot, clearing stale state');
+        setCursorSlot([]);
+        setCursorPosition(null);
+        cursorPositionRef.current = null;
+        setCursorSlotSource(null);
       }
     }
 
@@ -2225,6 +2360,17 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
     if (shouldDropOnMouseUp) {
       dropCursorSlot(e.clientX, e.clientY, props);
+    }
+
+    // 🔥 SAFETY: Always clear dragThresholdRef at the end of handleMouseUp
+    // This prevents stale references from blocking future drags
+    if (dragThresholdRef.current.targetId) {
+      dragThresholdRef.current = {
+        initialX: 0,
+        initialY: 0,
+        targetId: null,
+        addedToSlot: false
+      };
     }
   }, [
     isPanning,
@@ -2244,6 +2390,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     cursorSlotLastAddedRef,
     setDraggingId,
     cursorSlot,
+    setCursorSlot,
+    setCursorSlotSource,
     cursorSlotSource,
     props,
     resizingId,

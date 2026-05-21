@@ -116,6 +116,7 @@ export const WEBRTC_OPTIMIZATION_CONFIG = {
     { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:global.stun.twilio.com:3478' },
     { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
   ],
 
   // Additional fallback STUN servers for countries with restricted internet
@@ -126,6 +127,23 @@ export const WEBRTC_OPTIMIZATION_CONFIG = {
     { urls: 'stun:stun.voip.blackberry.com:3478' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Microsoft STUN servers
+    { urls: 'stun:stun.services.mozilla.com:3478' },
+  ],
+
+  // 🔥 NEW: TURN servers for relay when direct connection fails
+  // Using public TURN servers (for production, use your own or commercial service)
+  TURN_SERVERS: [
+    // OpenRelay (free public TURN) - most reliable
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
 
   // Increase polling intervals for better performance
@@ -135,6 +153,10 @@ export const WEBRTC_OPTIMIZATION_CONFIG = {
   // Differential sync thresholds
   MAX_CHANGES_FOR_FULL_SYNC: 50, // If >50 changes, send full state
   MAX_PARTIAL_OBJECTS: 20,       // Max objects in partial sync
+
+  // 🔥 NEW: Connection timeouts
+  CONNECTION_TIMEOUT: 30000,      // 30 seconds for P2P connection
+  ICE_GATHERING_TIMEOUT: 15000,   // 15 seconds for ICE gathering
 };
 
 // Throttle function creator
@@ -369,27 +391,42 @@ class DifferentialSyncManager {
 
 export const differentialSyncManager = new DifferentialSyncManager();
 
-// Optimized ICE servers configuration (with fallbacks for restricted internet regions)
-export function getOptimizedIceServers(): { urls: string }[] {
+// Optimized ICE servers configuration with STUN + TURN
+// STUN: Helps peers discover their public IP
+// TURN: Relays traffic when direct connection fails (symmetric NAT, firewall)
+export function getOptimizedIceServers(): any[] {
   return [
     ...WEBRTC_OPTIMIZATION_CONFIG.OPTIMIZED_ICE_SERVERS,
-    ...WEBRTC_OPTIMIZATION_CONFIG.FALLBACK_ICE_SERVERS
+    ...WEBRTC_OPTIMIZATION_CONFIG.FALLBACK_ICE_SERVERS,
+    ...WEBRTC_OPTIMIZATION_CONFIG.TURN_SERVERS,
   ];
 }
 
 // Create optimized PeerJS configuration with global accessibility
 export function createOptimizedPeerJSConfig() {
   return {
-    host: '0.peerjs.com',  // Default signalling server
+    // Try multiple PeerJS cloud servers for redundancy
+    host: '0.peerjs.com',
     port: 443,
     secure: true,
     config: {
       iceServers: getOptimizedIceServers(),
+      // Try direct connection first, fallback to relay if needed
+      iceTransportPolicy: 'all',
     },
+    // Increase timeouts for slower networks
     pollingInterval: WEBRTC_OPTIMIZATION_CONFIG.POLLING_INTERVAL,
     pingInterval: WEBRTC_OPTIMIZATION_CONFIG.PING_INTERVAL,
+    // Retry settings
+    retryWhen: true, // Auto-retry on connection failure
+    // 🔥 NEW: Debug mode for WebRTC
+    debug: 1, // 0=none, 1=errors, 2=warnings, 3=all
   };
 }
+
+// Export timeout constants for use in components
+export const CONNECTION_TIMEOUT = WEBRTC_OPTIMIZATION_CONFIG.CONNECTION_TIMEOUT;
+export const ICE_GATHERING_TIMEOUT = WEBRTC_OPTIMIZATION_CONFIG.ICE_GATHERING_TIMEOUT;
 
 // Statistics for monitoring WebRTC performance
 interface WebRTCStats {

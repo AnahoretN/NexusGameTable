@@ -18,6 +18,36 @@ const cursorSlotObjects = new Set<string>();
 // Track original positions for cursor slot objects (for restoration)
 const cursorSlotOriginalPositions = new Map<string, { x: number; y: number }>();
 
+// Version counter for change detection
+let cursorSlotVersion = 0;
+
+// Callbacks for change notification
+const changeCallbacks = new Set<() => void>();
+
+/**
+ * Subscribe to cursor slot changes
+ * Returns unsubscribe function
+ */
+export function subscribeToCursorSlotChanges(callback: () => void): () => void {
+  changeCallbacks.add(callback);
+  return () => changeCallbacks.delete(callback);
+}
+
+/**
+ * Notify all subscribers of changes
+ */
+function notifyChange() {
+  cursorSlotVersion++;
+  changeCallbacks.forEach(cb => cb());
+}
+
+/**
+ * Get current version (for React dependencies)
+ */
+export function getCursorSlotVersion(): number {
+  return cursorSlotVersion;
+}
+
 /**
  * Add an object to cursor slot (called immediately when drag starts)
  */
@@ -25,15 +55,19 @@ export function addToCursorSlot(objectId: string, originalX: number, originalY: 
   cursorSlotObjects.add(objectId);
   cursorSlotOriginalPositions.set(objectId, { x: originalX, y: originalY });
   console.log(`[CursorSlotTracker] Added ${objectId}, total: ${cursorSlotObjects.size}`);
+  notifyChange();
 }
 
 /**
  * Remove an object from cursor slot (called when drag ends)
  */
 export function removeFromCursorSlot(objectId: string): void {
-  cursorSlotObjects.delete(objectId);
+  const wasRemoved = cursorSlotObjects.delete(objectId);
   cursorSlotOriginalPositions.delete(objectId);
-  console.log(`[CursorSlotTracker] Removed ${objectId}, total: ${cursorSlotObjects.size}`);
+  if (wasRemoved) {
+    console.log(`[CursorSlotTracker] Removed ${objectId}, total: ${cursorSlotObjects.size}`);
+    notifyChange();
+  }
 }
 
 /**
@@ -64,6 +98,7 @@ export function clearCursorSlot(): void {
   console.log(`[CursorSlotTracker] Clearing all, was: ${cursorSlotObjects.size} objects`);
   cursorSlotObjects.clear();
   cursorSlotOriginalPositions.clear();
+  notifyChange();
 }
 
 /**

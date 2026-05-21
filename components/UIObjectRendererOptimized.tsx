@@ -142,6 +142,8 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   const [showGameSettings, setShowGameSettings] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showStyleSelector, setShowStyleSelector] = useState(false);
+  const [isIrohUnlocked, setIsIrohUnlocked] = useState(false);
+  const [isTrysteroUnlocked, setIsTrysteroUnlocked] = useState(false);
 
   // Connection settings state
   const [showAddServerForm, setShowAddServerForm] = useState(false);
@@ -171,6 +173,58 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         if (sPresses.length >= REQUIRED_PRESSES) {
           setShowStyleSelector(prev => !prev); // Toggle visibility
           sPresses.length = 0; // Reset to prevent immediate re-trigger
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Secret Iroh unlock: press 'I' 3 times within 2 seconds (works on any keyboard layout)
+  useEffect(() => {
+    const iPresses: number[] = [];
+    const REQUIRED_PRESSES = 3;
+    const TIME_WINDOW = 2000; // 2 seconds
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'KeyI') {
+        const now = Date.now();
+        // Remove presses outside the time window
+        while (iPresses.length > 0 && iPresses[0] < now - TIME_WINDOW) {
+          iPresses.shift();
+        }
+        iPresses.push(now);
+
+        if (iPresses.length >= REQUIRED_PRESSES) {
+          setIsIrohUnlocked(prev => !prev); // Toggle visibility
+          iPresses.length = 0; // Reset to prevent immediate re-trigger
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Secret Trystero unlock: press 'T' 3 times within 2 seconds (works on any keyboard layout)
+  useEffect(() => {
+    const tPresses: number[] = [];
+    const REQUIRED_PRESSES = 3;
+    const TIME_WINDOW = 2000; // 2 seconds
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'KeyT') {
+        const now = Date.now();
+        // Remove presses outside the time window
+        while (tPresses.length > 0 && tPresses[0] < now - TIME_WINDOW) {
+          tPresses.shift();
+        }
+        tPresses.push(now);
+
+        if (tPresses.length >= REQUIRED_PRESSES) {
+          setIsTrysteroUnlocked(prev => !prev); // Toggle visibility
+          tPresses.length = 0; // Reset to prevent immediate re-trigger
         }
       }
     };
@@ -1517,29 +1571,23 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                   {translate('Connection Settings', language as Locale)}
                 </h4>
 
-                {/* Trystero Toggle */}
-                <label className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer mb-3">
-                  <div className="flex items-center gap-2">
-                    <Server size={14} className="text-gray-400" />
-                    <span className="text-xs text-gray-300">{translate('Use Trystero Torrent Trackers', language as Locale)}</span>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const newValue = !connectionSettings.enableTrysteroTrackers;
-                      updateConnectionSettings({ enableTrysteroTrackers: newValue });
+                {/* Connection Method Selector */}
+                <div className="bg-slate-900 rounded px-3 py-2 mb-3">
+                  <label className="text-xs text-gray-300 block mb-2">{translate('Connection Method', language as Locale)}</label>
+                  <select
+                    value={connectionSettings.connectionMethod || 'peerjs'}
+                    onChange={(e) => {
+                      const method = e.target.value as 'peerjs' | 'iroh' | 'trystero';
+                      updateConnectionSettings({ connectionMethod: method });
                       setConnectionSettings(getConnectionSettings());
                     }}
-                    className={`w-10 h-5 rounded-full transition-colors ${
-                      connectionSettings.enableTrysteroTrackers ? 'bg-green-600' : 'bg-slate-700'
-                    }`}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500"
                   >
-                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                      connectionSettings.enableTrysteroTrackers ? 'translate-x-5' : 'translate-x-0.5'
-                    }`} />
-                  </button>
-                </label>
+                    <option value="peerjs">{translate('PeerJS (WebRTC)', language as Locale)}</option>
+                    <option value="iroh" disabled={!isIrohUnlocked}>{translate('Iroh (P2P)', language as Locale)}</option>
+                    <option value="trystero" disabled={!isTrysteroUnlocked}>{translate('Trystero (Torrent)', language as Locale)}</option>
+                  </select>
+                </div>
 
                 {/* Custom Signaling Servers */}
                 <div className="bg-slate-900 rounded px-3 py-2">

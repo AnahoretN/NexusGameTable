@@ -3,7 +3,7 @@
  * Extracted from Tabletop.tsx for better modularity and performance
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   TableObject,
   ItemType,
@@ -17,6 +17,7 @@ import {
 } from '../../types';
 import { filterVisibleObjects, calculateViewportBounds } from '../../utils/viewportCulling';
 import { intersectsPlayableArea } from '../../utils/viewportConstraints';
+import { isInCursorSlot, subscribeToCursorSlotChanges } from '../../utils/cursorSlotTracker';
 
 /**
  * Filter objects by various criteria for rendering optimization
@@ -27,6 +28,14 @@ export const useObjectFilters = (
 ) => {
   const activePlayerId = state.activePlayerId;
 
+  // Subscribe to cursor slot changes to force re-render when objects are added/removed
+  const [cursorSlotVersion, setCursorSlotVersion] = useState(0);
+  useEffect(() => {
+    return subscribeToCursorSlotChanges(() => {
+      setCursorSlotVersion(v => v + 1);
+    });
+  }, []);
+
   // All table objects (convert from object record to array)
   const tableObjects = useMemo(() => {
     const PLAYABLE_AREA_SIZE = 5000;
@@ -34,6 +43,12 @@ export const useObjectFilters = (
     return (Object.values(state.objects || {}) as TableObject[]).filter((obj) => {
       // Exclude objects with isOnTable: false (hidden objects)
       if ((obj as any).isOnTable === false) {
+        return false;
+      }
+
+      // Exclude objects at cursor slot holding position (-999999, -999999)
+      // These are objects being dragged but not yet dropped
+      if (obj.x < -90000 || obj.y < -90000) {
         return false;
       }
 
@@ -57,12 +72,11 @@ export const useObjectFilters = (
         }
       }
 
-      // 🔥 FIX: Don't filter out local cursor slot objects
-      // They should remain visible on table during drag
-      // Remote cursor slot objects (with cursorSlotOwnerId) are filtered separately
-      // if ((obj as any).inCursorSlot && !(obj as any).cursorSlotOwnerId) {
-      //   return false;
-      // }
+      // Exclude local cursor slot objects (being dragged by local player)
+      // They are rendered in the cursor slot visualization, not on the table
+      if (isInCursorSlot(obj.id)) {
+        return false;
+      }
 
       // Effect Templates can extend far beyond playable area when stretched
       // Skip coordinate filtering for them to allow proper rendering
@@ -78,7 +92,7 @@ export const useObjectFilters = (
 
       return true;
     });
-  }, [state.objects]);
+  }, [state.objects, cursorSlotVersion]);
 
   // Visible table objects (viewport culling would be applied here with viewport bounds)
   const visibleTableObjects = useMemo(() => {
@@ -200,15 +214,33 @@ export const useObjectFilters = (
   // Separate pinned and unpinned decks
   const pinnedDecks = useMemo(() => {
     return (Object.values(state.objects) as TableObject[])
-      .filter((obj) => obj.type === ItemType.DECK && (obj as any).isPinnedToViewport && (obj as any).isOnTable !== false)
+      .filter((obj) => {
+        if (obj.type !== ItemType.DECK) return false;
+        if (!(obj as any).isPinnedToViewport) return false;
+        if ((obj as any).isOnTable !== true) return false;
+        // Exclude decks at cursor slot holding position (-999999, -999999)
+        if (obj.x < -90000 || obj.y < -90000) return false;
+        // Exclude decks in cursor slot (being dragged)
+        if (isInCursorSlot(obj.id)) return false;
+        return true;
+      })
       .map((obj) => obj as DeckType);
-  }, [state.objects]);
+  }, [state.objects, cursorSlotVersion]);
 
   const unpinnedDecks = useMemo(() => {
     return (Object.values(state.objects) as TableObject[])
-      .filter((obj) => obj.type === ItemType.DECK && !(obj as any).isPinnedToViewport && (obj as any).isOnTable !== false)
+      .filter((obj) => {
+        if (obj.type !== ItemType.DECK) return false;
+        if ((obj as any).isPinnedToViewport) return false;
+        if ((obj as any).isOnTable !== true) return false;
+        // Exclude decks at cursor slot holding position (-999999, -999999)
+        if (obj.x < -90000 || obj.y < -90000) return false;
+        // Exclude decks in cursor slot (being dragged)
+        if (isInCursorSlot(obj.id)) return false;
+        return true;
+      })
       .map((obj) => obj as DeckType);
-  }, [state.objects]);
+  }, [state.objects, cursorSlotVersion]);
 
   // Pinned game objects (tokens, cards, effects, etc. - but NOT decks, panels, or windows)
   // These are rendered in viewport coordinates, not world coordinates
@@ -221,11 +253,15 @@ export const useObjectFilters = (
         if ((obj as any).isOnTable === false) return false;
         // Exclude UI objects and decks (they have their own pinned lists)
         if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) return false;
+        // Exclude objects at cursor slot holding position (-999999, -999999)
+        if (obj.x < -90000 || obj.y < -90000) return false;
+        // Exclude objects in cursor slot (being dragged)
+        if (isInCursorSlot(obj.id)) return false;
         return true;
       })
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
     return result;
-  }, [state.objects]);
+  }, [state.objects, cursorSlotVersion]);
 
   return {
     tableObjects,

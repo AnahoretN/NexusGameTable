@@ -12,7 +12,7 @@ import { findLocalFilePaths } from '../utils/imageCompat';
 import { saveSession, loadSession } from '../utils/sessionStorage';
 import { saveGameState } from '../utils/gameStorage';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection, ContextAction } from '../types';
-import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target, AlertCircle } from 'lucide-react';
+import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target, AlertCircle, Shuffle, RefreshCw } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -69,7 +69,7 @@ interface MainMenuContentProps {
 }
 
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
-  const { state, dispatch, peerId, initializeHost } = useGame();
+  const { state, dispatch, peerId, initializeHost, connectionMethod, ticket, roomId } = useGame();
   const { viewTransform } = useViewTransform();
   const { settings: localSettings, updateSetting } = useLocalSettings();
 
@@ -502,7 +502,12 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   };
 
   const handleInvite = useCallback(() => {
-    if (!peerId) {
+    // Determine identifier based on connection method
+    const identifier = connectionMethod === 'iroh' ? ticket
+      : connectionMethod === 'trystero' ? roomId
+      : peerId;
+
+    if (!identifier) {
       // Initialize host peer on first invite click
       setWaitingForPeerId(true);
       initializeHost();
@@ -514,17 +519,32 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     const nextPlayerNumber = nonGMCount + 1;
 
     const baseUrl = window.location.href.split('?')[0];
-    const inviteLink = `${baseUrl}?hostId=${peerId}&playerNum=${nextPlayerNumber}`;
+    let inviteLink: string;
+
+    if (connectionMethod === 'iroh') {
+      // Use ticket-based invite
+      inviteLink = `${baseUrl}?ticket=${identifier}&playerNum=${nextPlayerNumber}`;
+    } else if (connectionMethod === 'trystero') {
+      // Use roomId-based invite
+      inviteLink = `${baseUrl}?roomId=${identifier}&playerNum=${nextPlayerNumber}`;
+    } else {
+      // Use PeerJS hostId
+      inviteLink = `${baseUrl}?hostId=${identifier}&playerNum=${nextPlayerNumber}`;
+    }
 
     navigator.clipboard.writeText(inviteLink).then(() => {
       setInviteCopied(true);
       setTimeout(() => setInviteCopied(false), 2000);
     });
-  }, [peerId, initializeHost, players]);
+  }, [peerId, ticket, roomId, connectionMethod, initializeHost, players]);
 
-  // Auto-generate invite link when peerId becomes available
+  // Auto-generate invite link when identifier becomes available
   useEffect(() => {
-    if (waitingForPeerId && peerId) {
+    const identifier = connectionMethod === 'iroh' ? ticket
+      : connectionMethod === 'trystero' ? roomId
+      : peerId;
+
+    if (waitingForPeerId && identifier) {
       setWaitingForPeerId(false);
 
       // Calculate next player number (non-GM players only)
@@ -532,14 +552,25 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       const nextPlayerNumber = nonGMCount + 1;
 
       const baseUrl = window.location.href.split('?')[0];
-      const inviteLink = `${baseUrl}?hostId=${peerId}&playerNum=${nextPlayerNumber}`;
+      let inviteLink: string;
+
+      if (connectionMethod === 'iroh') {
+        // Use ticket-based invite
+        inviteLink = `${baseUrl}?ticket=${identifier}&playerNum=${nextPlayerNumber}`;
+      } else if (connectionMethod === 'trystero') {
+        // Use roomId-based invite
+        inviteLink = `${baseUrl}?roomId=${identifier}&playerNum=${nextPlayerNumber}`;
+      } else {
+        // Use PeerJS hostId
+        inviteLink = `${baseUrl}?hostId=${identifier}&playerNum=${nextPlayerNumber}`;
+      }
 
       navigator.clipboard.writeText(inviteLink).then(() => {
         setInviteCopied(true);
         setTimeout(() => setInviteCopied(false), 2000);
       });
     }
-  }, [waitingForPeerId, peerId, players]);
+  }, [waitingForPeerId, peerId, ticket, roomId, connectionMethod, players]);
 
   const handleSaveGame = async () => {
     // Use simplified save system - saves everything as JSON
@@ -2506,6 +2537,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           baseValue: isLifeCounter ? 30 : 0,
           maxValue: isLifeCounter ? undefined : 30,
           allowNegative: !isLifeCounter,
+          actionButtons: ['lock', 'delete'],
         };
         dispatch({ type: 'ADD_OBJECT', payload: counter });
         break;
@@ -2885,6 +2917,34 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                         title="Properties"
                       >
                         <Settings size={10} />
+                      </button>
+                    )}
+                    {/* Type-specific action buttons */}
+                    {obj.type === ItemType.DICE_OBJECT && isActionButtonShown(obj, 'roll') && (
+                      <button
+                        onClick={() => dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id, rollGroup: false } })}
+                        className="p-1 hover:bg-purple-600 rounded text-purple-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
+                        title="Roll"
+                      >
+                        <RefreshCw size={10} />
+                      </button>
+                    )}
+                    {obj.type === ItemType.DECK && isActionButtonShown(obj, 'shuffleDeck') && (
+                      <button
+                        onClick={() => dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id } })}
+                        className="p-1 hover:bg-purple-600 rounded text-purple-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
+                        title="Shuffle"
+                      >
+                        <Shuffle size={10} />
+                      </button>
+                    )}
+                    {obj.type === ItemType.DECK && isActionButtonShown(obj, 'draw') && (
+                      <button
+                        onClick={() => dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: activePlayerId } })}
+                        className="p-1 hover:bg-blue-600 rounded text-blue-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
+                        title="Draw"
+                      >
+                        <Hand size={10} />
                       </button>
                     )}
                     {isActionButtonShown(obj, 'delete') && (

@@ -10,6 +10,7 @@
     "start": "vite"
   },
   "dependencies": {
+    "@number0/iroh": "^0.35.0",
     "@tanstack/react-virtual": "^3.13.23",
     "fflate": "^0.8.3",
     "file-saver": "^2.0.5",

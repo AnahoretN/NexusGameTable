@@ -14,8 +14,11 @@ import { GameState, ViewTransform, initialState, PlayerPanelSettings } from './g
 import { Action } from './gameActions';
 import { createAuditLogEntry } from './auditLogger';
 import { useAutoSave } from './useAutoSave';
-import { usePeerConnection } from './usePeerConnection';
-import { isInCursorSlot, getOriginalPosition } from '../utils/cursorSlotTracker';
+import { usePeerConnection, resetP2PSingleton } from './usePeerConnection';
+import { useIrohConnection, resetIrohSingleton } from './useIrohConnection';
+import { useTrysteroConnection } from './useTrysteroConnection';
+import { getConnectionSettings, ConnectionMethod } from '../utils/localSettings';
+import { isInCursorSlot, getOriginalPosition, removeFromCursorSlot } from '../utils/cursorSlotTracker';
 import {
   initAssetDB,
   autoMigrate,
@@ -61,6 +64,10 @@ const GameContext = createContext<{
   setPlayerName: (name: string) => void;
   initializeHost: () => void;
   stateRef: React.RefObject<GameState>;
+  connectionMethod?: 'peerjs' | 'iroh' | 'trystero';
+  ticket?: string | null;
+  nodeId?: string | null;
+  roomId?: string | null; // For Trystero
 } | null>(null);
 
 const gameReducer = (state: GameState, action: Action): GameState => {
@@ -221,14 +228,25 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     return;
                   }
 
-                  // 🔥 FIX: Use global cursorSlot tracker instead of state.objects
-                  // This prevents race condition where Redux hasn't updated yet
+                  // 🔥 FIX: Check if object is in cursor slot and host sent valid coordinates
+                  // If host sent coordinates other than -999999, it means the drop was confirmed
+                  // Remove from cursor slot so object becomes visible at new position
                   if (isInCursorSlot(id)) {
-                    // Object is currently being dragged locally - preserve drag state
-
                     const localObj = state.objects[id] as any;
                     const originalPos = getOriginalPosition(id);
 
+                    // Check if host confirmed the drop (coordinates are not -999999)
+                    const hostConfirmedDrop = obj.x > -90000 && obj.y > -90000 && obj.inCursorSlot === false;
+
+                    if (hostConfirmedDrop) {
+                      // Host confirmed the drop - remove from cursor slot
+                      // Object will be visible at new position from host
+                      removeFromCursorSlot(id);
+                      finalObjects[id] = obj; // Use host's coordinates
+                      return;
+                    }
+
+                    // Still dragging - preserve drag state
                     finalObjects[id] = {
                       ...obj,  // Take other updates from host
                       inCursorSlot: true,  // Preserve drag state
@@ -264,13 +282,21 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               // This prevents race condition where Redux hasn't updated yet
               Object.keys(incomingObjects).forEach(id => {
                 if (isInCursorSlot(id)) {
-                  // Object is currently being dragged locally - preserve drag state
-                  // SYNC_STATE: Object in cursor slot, preserving drag state
-
                   const incomingObj = incomingObjects[id];
                   const localObj = state.objects[id] as any;
                   const originalPos = getOriginalPosition(id);
 
+                  // Check if host confirmed the drop (coordinates are not -999999)
+                  const hostConfirmedDrop = incomingObj.x > -90000 && incomingObj.y > -90000 && incomingObj.inCursorSlot === false;
+
+                  if (hostConfirmedDrop) {
+                    // Host confirmed the drop - remove from cursor slot
+                    removeFromCursorSlot(id);
+                    // Don't modify incomingObj - use host's coordinates as-is
+                    return; // Keep incomingObj unchanged
+                  }
+
+                  // Still dragging - preserve drag state
                   incomingObjects[id] = {
                     ...incomingObj,  // Take other updates from host
                     inCursorSlot: true,  // Preserve drag state
@@ -820,8 +846,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // Set hyperscaleLayerId if not already set
       if (!newObj.hyperscaleLayerId) {
-        // Counters, randomizers, dice, and panels go to 'interface' layer if it exists
-        const preferInterface = isCounter || isRandomizer || isDice || isPanel;
+        // Panels and windows go to 'interface' layer if it exists (for UI objects)
+        const preferInterface = isPanel;
+        // Counters, randomizers, dice go to 'tokens' layer (they are game objects, not UI)
+        const preferTokensForGameObjects = isCounter || isRandomizer || isDice || isToken || isCard;
         // Decks go to 'cards' layer if it exists
         const preferCards = isDeck;
         // Tokens and cards being created: use 'tokens' layer if it exists
@@ -831,7 +859,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           newObj.hyperscaleLayerId = 'interface';
         } else if (preferCards && state.hyperscaleLayers.some(l => l.id === 'cards')) {
           newObj.hyperscaleLayerId = 'cards';
-        } else if (preferTokens && state.hyperscaleLayers.some(l => l.id === 'tokens')) {
+        } else if (preferTokensForGameObjects && state.hyperscaleLayers.some(l => l.id === 'tokens')) {
           newObj.hyperscaleLayerId = 'tokens';
         } else if (state.selectedHyperscaleLayerIds.length > 0) {
           const selectedLayers = state.hyperscaleLayers.filter(l =>
@@ -6067,6 +6095,33 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'CLEAR_SAVED_STATE': {
+      // 🔥 NEW: Disconnect from all P2P servers before clearing cache
+      logger.log('[GAME] Disconnecting from all P2P servers before cache clear...');
+
+      // Disconnect from PeerJS connection
+      try {
+        resetP2PSingleton();
+        logger.log('[GAME] Disconnected from PeerJS P2P connection');
+      } catch (e) {
+        logger.warn('[GAME] Failed to disconnect from PeerJS:', e);
+      }
+
+      // Disconnect from Iroh connection
+      try {
+        resetIrohSingleton();
+        logger.log('[GAME] Disconnected from Iroh P2P connection');
+      } catch (e) {
+        logger.warn('[GAME] Failed to disconnect from Iroh:', e);
+      }
+
+      // Disconnect from Trystero connection (clear localStorage data)
+      try {
+        localStorage.removeItem('trystero-peer-id');
+        logger.log('[GAME] Disconnected from Trystero P2P connection');
+      } catch (e) {
+        logger.warn('[GAME] Failed to disconnect from Trystero:', e);
+      }
+
       // Clear ALL saved data from browser storage
       clearAllData().catch(error => {
         logger.error('[GAME] Failed to clear all data:', error);
@@ -6517,8 +6572,140 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
   }, [state]);
 
-  // Peer.js connection management
-  const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, p2pLoadingSteps, p2pLoadingProgress, isP2PLoadingModalOpen, requiredPacks, onPackLoaded, suggestedPlayerName } = usePeerConnection(localDispatch, stateRef);
+  // Connection management - uses connection method from settings
+  // Get connection method from settings, but auto-detect from URL params
+  const [connectionMethod, setConnectionMethodState] = useState<ConnectionMethod>(() => {
+    const settings = getConnectionSettings();
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+
+    // Auto-detect from URL: ticket -> iroh, roomId -> trystero, hostId -> peerjs
+    if (urlParams?.has('ticket')) return 'iroh';
+    if (urlParams?.has('roomId')) return 'trystero';
+    if (urlParams?.has('hostId')) return 'peerjs';
+
+    return settings.connectionMethod || 'peerjs';
+  });
+
+  // Listen for settings changes
+  useEffect(() => {
+    const checkSettings = () => {
+      const settings = getConnectionSettings();
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+
+      // Auto-detect from URL: ticket -> iroh, roomId -> trystero, hostId -> peerjs
+      let method: ConnectionMethod;
+      if (urlParams?.has('ticket')) method = 'iroh';
+      else if (urlParams?.has('roomId')) method = 'trystero';
+      else if (urlParams?.has('hostId')) method = 'peerjs';
+      else method = settings.connectionMethod || 'peerjs';
+
+      console.log('[GameContext] Connection method determined:', method, '(from URL:', urlParams?.toString(), ')');
+      setConnectionMethodState(method);
+    };
+
+    checkSettings();
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'nexus-local-settings') {
+        checkSettings();
+      }
+    };
+
+    // Listen for custom event (same-tab updates)
+    const handleSettingsChange = () => {
+      console.log('[GameContext] Settings changed event');
+      checkSettings();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('nexus-settings-changed', handleSettingsChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('nexus-settings-changed', handleSettingsChange);
+    };
+  }, []);
+
+  // Call all connection hooks (React requires hooks to be called unconditionally)
+  // Only the active one will actually initialize
+  const peerJsConn = usePeerConnection(localDispatch, stateRef, connectionMethod);
+  const irohConn = useIrohConnection(localDispatch, stateRef);
+  const trysteroConn = useTrysteroConnection(localDispatch, stateRef);
+
+  // Log which connection method is active
+  useEffect(() => {
+    console.log('[GameContext] Active connection method:', connectionMethod);
+  }, [connectionMethod]);
+
+  // Select the active connection based on method
+  const activeConnection = connectionMethod === 'iroh' ? irohConn
+    : connectionMethod === 'trystero' ? trysteroConn
+    : peerJsConn;
+
+  // Extract values with proper mapping for Iroh/Trystero compatibility
+  const peerId = connectionMethod === 'iroh' ? irohConn.peerId
+    : connectionMethod === 'trystero' ? trysteroConn.peerId
+    : peerJsConn.peerId;
+
+  const isHost = connectionMethod === 'iroh' ? irohConn.isHost
+    : connectionMethod === 'trystero' ? trysteroConn.isHost
+    : peerJsConn.isHost;
+
+  const connectionStatus = connectionMethod === 'iroh' ? irohConn.connectionStatus
+    : connectionMethod === 'trystero' ? trysteroConn.connectionStatus
+    : peerJsConn.connectionStatus;
+
+  const waitingForPlayerName = connectionMethod === 'iroh'
+    ? (irohConn.waitingForPlayerName ? { hostId: irohConn.waitingForPlayerName.nodeId || irohConn.waitingForPlayerName.ticket || '' } : null)
+    : connectionMethod === 'trystero'
+    ? (trysteroConn.waitingForPlayerName ? { hostId: trysteroConn.waitingForPlayerName.roomId } : null)
+    : peerJsConn.waitingForPlayerName;
+
+  const setPlayerName = connectionMethod === 'iroh' ? irohConn.setPlayerName
+    : connectionMethod === 'trystero' ? trysteroConn.setPlayerName
+    : peerJsConn.setPlayerName;
+
+  const initializeHost = connectionMethod === 'iroh' ? irohConn.initializeHost
+    : connectionMethod === 'trystero' ? trysteroConn.initializeHost
+    : peerJsConn.initializeHost;
+
+  const hostConnectionRef = connectionMethod === 'iroh' ? irohConn.hostConnectionRef
+    : connectionMethod === 'trystero' ? trysteroConn.hostConnectionRef
+    : peerJsConn.hostConnectionRef;
+
+  const connectionsRef = connectionMethod === 'iroh' ? irohConn.connectionsRef
+    : connectionMethod === 'trystero' ? trysteroConn.connectionsRef
+    : peerJsConn.connectionsRef;
+
+  const roomRef = connectionMethod === 'iroh' ? irohConn.roomRef
+    : connectionMethod === 'trystero' ? trysteroConn.roomRef
+    : peerJsConn.roomRef;
+
+  const p2pLoadingSteps = connectionMethod === 'iroh' ? irohConn.p2pLoadingSteps
+    : connectionMethod === 'trystero' ? trysteroConn.p2pLoadingSteps
+    : peerJsConn.p2pLoadingSteps;
+
+  const p2pLoadingProgress = connectionMethod === 'iroh' ? irohConn.p2pLoadingProgress
+    : connectionMethod === 'trystero' ? trysteroConn.p2pLoadingProgress
+    : peerJsConn.p2pLoadingProgress;
+
+  const isP2PLoadingModalOpen = connectionMethod === 'iroh' ? irohConn.isP2PLoadingModalOpen
+    : connectionMethod === 'trystero' ? trysteroConn.isP2PLoadingModalOpen
+    : peerJsConn.isP2PLoadingModalOpen;
+
+  const requiredPacks = connectionMethod === 'iroh' ? irohConn.requiredPacks
+    : connectionMethod === 'trystero' ? trysteroConn.requiredPacks
+    : peerJsConn.requiredPacks;
+
+  const onPackLoaded = connectionMethod === 'iroh' ? irohConn.onPackLoaded
+    : connectionMethod === 'trystero' ? trysteroConn.onPackLoaded
+    : peerJsConn.onPackLoaded;
+
+  const suggestedPlayerName = connectionMethod === 'iroh' ? irohConn.suggestedPlayerName
+    : connectionMethod === 'trystero' ? trysteroConn.suggestedPlayerName
+    : peerJsConn.suggestedPlayerName;
+
+  const nodeId = connectionMethod === 'iroh' ? irohConn.nodeId : null;
+  const ticket = connectionMethod === 'iroh' ? irohConn.ticket : null;
 
   // 🔥 NEW: Guest connection modal state
   const [guestReadyToJoin, setGuestReadyToJoin] = useState(false);
@@ -6529,11 +6716,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const prevIsHostRef = useRef(isHost);
   const prevIsModalClosedRef = useRef(isModalClosed);
 
-  // 🔥 FIX: Modal is open if we have hostId in URL AND user hasn't closed it
+  // 🔥 FIX: Modal is open if we have hostId/ticket/roomId in URL AND user hasn't closed it
   // This prevents the modal from reopening unexpectedly
   const guestConnectionModalOpen = useMemo(() => {
-    const hasHostId = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('hostId');
-    const shouldShow = hasHostId && !isHost && !isModalClosed;
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const hasHostId = urlParams?.has('hostId') || false;
+    const hasTicket = urlParams?.has('ticket') || false;
+    const hasRoomId = urlParams?.has('roomId') || false;
+    const shouldShow = (hasHostId || hasTicket || hasRoomId) && !isHost && !isModalClosed;
 
     // 🔥 DEBUG: Log when dependencies change
     const isHostChanged = prevIsHostRef.current !== isHost;
@@ -6541,6 +6731,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isHostChanged || isModalClosedChanged) {
       console.log('[GameContext] 🔍 Modal visibility check:', {
         hasHostId,
+        hasTicket,
+        hasRoomId,
         isHost,
         isHostChanged,
         modalClosed: isModalClosed,
@@ -6559,9 +6751,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Check if guest is ready to join
   useEffect(() => {
     if (!isHost && guestConnectionModalOpen) {
-      // Check if all connection steps are complete (except packs which are handled separately)
+      // Check if all connection steps are complete
       const connectionStepsComplete = p2pLoadingSteps.every(
-        step => step.status === 'success' || step.id === 'packs'
+        step => step.status === 'success'
       );
       // Check if all required packs are loaded
       const allPacksLoaded = requiredPacks.length === 0 || requiredPacks.every(
@@ -6573,7 +6765,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         connectionStepsComplete,
         allPacksLoaded,
         ready,
-        p2pLoadingSteps
+        p2pLoadingSteps: p2pLoadingSteps.map(s => ({ id: s.id, status: s.status }))
       });
       setGuestReadyToJoin(ready);
     }
@@ -7521,7 +7713,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, stateRef }}>
+    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, stateRef, connectionMethod, ticket, nodeId, roomId: trysteroConn.roomId }}>
       {children}
       <InitialLoadModal
         steps={initialLoadSteps}
