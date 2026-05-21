@@ -1,6 +1,8 @@
 import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import { TokenSlider, TokenSliderDisplay } from '../../types';
+import { broadcastTokenCounters } from '../../utils/directP2PSync';
+import { useActivePlayerId } from '../../store/contexts';
 
 interface TokenCountersDisplayProps {
   counters: TokenSlider[];
@@ -25,20 +27,21 @@ export const TokenCountersDisplay = memo(({
   tokenId,
   dispatch
 }: TokenCountersDisplayProps) => {
-  // Don't show if not GM and showForPlayers is false
+  // ALL hooks must be called before any conditional returns (Rules of Hooks)
+  const activePlayerId = useActivePlayerId();
+  const position = counterDisplay?.position || 'above';
+  const [hoveredCounterId, setHoveredCounterId] = useState<string | null>(null);
+  const [draggingCounterId, setDraggingCounterId] = useState<string | null>(null);
+  const intervalRef = useRef<number | null>(null);
+
+  // Early returns AFTER all hooks
   if (!isGM && counterDisplay?.showForPlayers === false) {
     return null;
   }
 
-  // Don't show if no counters
   if (!counters || counters.length === 0) {
     return null;
   }
-
-  const position = counterDisplay?.position || 'above';
-  const [hoveredCounterId, setHoveredCounterId] = useState<string | null>(null);
-  const [draggingCounterId, setDraggingCounterId] = useState<string | null>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Cleanup interval on unmount
   useEffect(() => {
@@ -67,6 +70,9 @@ export const TokenCountersDisplay = memo(({
       c.id === slider.id ? { ...c, value: clampedValue } : c
     );
 
+    // 🔥 NEW: Broadcast counter changes via direct P2P
+    broadcastTokenCounters(tokenId, updatedCounters, activePlayerId);
+
     // Update token locally AND sync to panel characterData (but skip network sync)
     // This ensures panel sliders update even when panel is closed or different tab is active
     const action: any = {
@@ -80,7 +86,7 @@ export const TokenCountersDisplay = memo(({
     };
 
     dispatch(action);
-  }, [counters, tokenId, dispatch]);
+  }, [counters, tokenId, dispatch, activePlayerId]);
 
   // Start continuous change on button hold
   const startContinuousChange = useCallback((slider: TokenSlider, delta: number) => {

@@ -30,7 +30,7 @@ export { GuestConnectionModal } from './GuestConnectionModal';
 // Memoized components
 export { ObjectRendererMemo } from './ObjectRenderer';
 export { default as CardMemo } from './Card';
-export { SvgTokenShapeMemo } from './SvgTokenShape';
+// SvgTokenShapeMemo export removed - component does not exist in SvgTokenShape.tsx
 
 // 🔥 NEW: Optimized HandPanel with Zustand
 export { HandPanelOptimized, HandPanelOptimizedMemo } from './HandPanelOptimized';

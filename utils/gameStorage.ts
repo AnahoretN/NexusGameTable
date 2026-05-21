@@ -603,7 +603,6 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
       color: '#ec4899',
       playerCanSelect: true,
       playerCanView: true,
-      individualPosition: true,
       individualObjects: false,
       zoomEnabled: true,
       order: 3
@@ -711,7 +710,6 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         color: '#3b82f6',
         playerCanSelect: true,
         playerCanView: true,
-        individualPosition: false,
         individualObjects: false,
         zoomEnabled: true,
         order: 0
@@ -724,7 +722,6 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         color: '#f59e0b',
         playerCanSelect: true,
         playerCanView: true,
-        individualPosition: false,
         individualObjects: false,
         zoomEnabled: true,
         order: 1
@@ -737,7 +734,6 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         color: '#10b981',
         playerCanSelect: true,
         playerCanView: true,
-        individualPosition: false,
         individualObjects: false,
         zoomEnabled: true,
         order: 2
@@ -750,7 +746,6 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         color: '#8b5cf6',
         playerCanSelect: true,
         playerCanView: false,
-        individualPosition: false,
         individualObjects: false,
         zoomEnabled: false,
         order: 3

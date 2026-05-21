@@ -213,7 +213,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
   // Custom grid unlock state (triple 'i' press within 2 seconds to unlock)
   const [customGridUnlocked, setCustomGridUnlocked] = useState(false);
   const [iPressCount, setIPressCount] = useState(0);
-  const iPressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const iPressTimeoutRef = useRef<number | null>(null);
 
   // Translation helper for inline translation objects
   const t = (key: { en: string; ru?: string; be?: string; uk?: string; sr?: string }): string => {
@@ -2118,6 +2118,22 @@ setGridDebugInfo(null);
                           className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).proportionalScaling ?? false ? 'bg-green-600' : 'bg-slate-700'}`}
                         >
                           <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).proportionalScaling ?? false ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </button>
+                      </div>
+
+                      {/* Player Control Toggle */}
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 col-span-2">
+                        <label className="text-xs text-gray-400 flex items-center gap-1">
+                          <Shield size={12} />
+                          {t({ en: 'Control is available to the player', ru: 'Управление доступно игроку' })}
+                        </label>
+                        <button
+                          onClick={() => {
+                            update('playerControlEnabled', !((data as EffectTemplate).playerControlEnabled ?? false));
+                          }}
+                          className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).playerControlEnabled ?? false ? 'bg-green-600' : 'bg-slate-700'}`}
+                        >
+                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).playerControlEnabled ?? false ? 'translate-x-5' : 'translate-x-0.5'}`} />
                         </button>
                       </div>
                     </div>
@@ -4687,7 +4703,7 @@ setGridDebugInfo(null);
           {activeTab === 'values' && (
             <DiceValuesSettings
               dice={data as DiceObject}
-              onChange={(updates) => setData(prev => ({ ...prev, ...updates }))}
+              onChange={(updates) => setData(prev => ({ ...prev, ...updates }) as TableObject)}
               language={language as Locale}
             />
           )}

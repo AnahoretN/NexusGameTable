@@ -14,6 +14,7 @@ import { CharacterSettingsModal } from './CharacterSettingsModal';
 import { logger } from '../utils/logger';
 import { isHashRef, isImageRef } from '../utils/imageCompat';
 import { getAssetURL } from '../utils/assets';
+import { broadcastCharacterSliders, broadcastCharacterBlock } from '../utils/directP2PSync';
 
 interface CharacterPanelProps {
   isCollapsed?: boolean;
@@ -69,10 +70,10 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
 
     // Additional protection: don't overwrite local data with undefined/empty server data
     // Only sync if server has valid data
-    if (serverJson !== localJson && serverCharacterData?.characters?.length > 0) {
+    if (serverJson !== localJson && (serverCharacterData?.characters?.length ?? 0) > 0) {
       console.log('[CharacterPanel] Syncing local state from server');
       setLocalCharacterData(serverCharacterData);
-    } else if (serverJson !== localJson && !serverCharacterData && localCharacterData?.characters?.length > 0) {
+    } else if (serverJson !== localJson && !serverCharacterData && (localCharacterData?.characters?.length ?? 0) > 0) {
       // Server data is empty but we have local data - keep local data
       console.log('[CharacterPanel] Server data empty, preserving local data');
     }
@@ -89,10 +90,14 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const [avatarUrlCache, setAvatarUrlCache] = useState<Record<string, string>>({});
 
   // Debounced dispatch for character panel changes (reduces P2P traffic)
-  // Changes are accumulated locally and sent to host after 500ms of inactivity
+  // Changes are accumulated locally and sent to host after 250ms of inactivity
   const pendingCharacterUpdateRef = useRef<any>(null);
   const debouncedDispatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isUpdatingFromServerRef = useRef(false);
+  // 🔥 FIX: Keep a ref to current localCharacterData for use in debounced dispatch
+  // This ensures we always send the latest data, not stale data from when dispatch was scheduled
+  const localCharacterDataRef = useRef(localCharacterData);
+  localCharacterDataRef.current = localCharacterData;
 
   /**
    * Dispatch character update with debouncing (500ms delay)
@@ -120,7 +125,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     }
 
     // If immediate is true, dispatch right away (for important changes)
-    // Otherwise, dispatch after 500ms of no further changes
+    // Otherwise, dispatch after 250ms of no further changes
     if (immediate) {
       console.log('[CharacterPanel] Dispatching UPDATE_OBJECT immediately', { panelId: panel.id });
       dispatch({
@@ -134,23 +139,33 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       });
       pendingCharacterUpdateRef.current = null;
     } else {
-      console.log('[CharacterPanel] Scheduling debounced UPDATE_OBJECT (500ms)', { panelId: panel.id });
+      console.log('[CharacterPanel] Scheduling debounced UPDATE_OBJECT (250ms)', { panelId: panel.id });
       debouncedDispatchTimerRef.current = setTimeout(() => {
-        if (pendingCharacterUpdateRef.current) {
-          console.log('[CharacterPanel] Dispatching debounced UPDATE_OBJECT', { panelId: panel.id });
+        // 🔥 FIX: Use current localCharacterDataRef instead of pendingCharacterUpdateRef
+        // This ensures we send the latest data, incorporating any server updates received
+        const currentData = localCharacterDataRef.current;
+        if (currentData) {
+          console.log('[CharacterPanel] ⚠️ Dispatching debounced UPDATE_OBJECT', {
+            panelId: panel.id,
+            panelType: (state.objects[panel.id] as any)?.panelType,
+            charactersCount: currentData.characters?.length,
+            hasPendingChanges: pendingCharacterUpdateRef.current !== null
+          });
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
               id: panel.id,
               updates: {
-                characterData: pendingCharacterUpdateRef.current
+                characterData: currentData
               }
             }
           });
-          pendingCharacterUpdateRef.current = null;
+        } else {
+          console.warn('[CharacterPanel] ⚠️ No currentData to dispatch!');
         }
+        pendingCharacterUpdateRef.current = null;
         debouncedDispatchTimerRef.current = null;
-      }, 500);
+      }, 250);
     }
   }, [panel.id, dispatch]);
 
@@ -1135,6 +1150,21 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         sliders: newData.sliders.map((s: any) => ({ name: s.label, value: s.value }))
       });
 
+      // 🔥 NEW: Broadcast slider changes via direct P2P
+      broadcastCharacterSliders(
+        panel.id,
+        activeCharacter.id,
+        newData.sliders.map((s: any) => ({
+          id: s.id,
+          label: s.label,
+          value: s.value,
+          maxValue: s.maxValue,
+          minValue: s.minValue,
+          color: s.color
+        })),
+        activePlayerId
+      );
+
       // Find all tokens for this character and update them immediately
       let tokensUpdated = 0;
       for (const obj of Object.values(state.objects) as TableObject[]) {
@@ -1176,6 +1206,17 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         }
       }
       console.log('[CharacterPanel] Updated', tokensUpdated, 'tokens for character', activeCharacter.id);
+    } else if (updatedBlock) {
+      // 🔥 NEW: Broadcast other block changes via direct P2P
+      broadcastCharacterBlock(
+        panel.id,
+        activeCharacter.id,
+        activeSubTab.id,
+        blockId,
+        updatedBlock.type,
+        newData,
+        activePlayerId
+      );
     }
 
     // Use debounced dispatch for slider changes (reduces P2P traffic)
@@ -1184,7 +1225,7 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       ...characterData,
       characters: updatedCharacters
     });
-  }, [characterData, activeCharacter, activeSubTab, dispatchCharacterUpdate, state.objects, panel.id, dispatch]);
+  }, [characterData, activeCharacter, activeSubTab, dispatchCharacterUpdate, state.objects, panel.id, dispatch, activePlayerId]);
 
   // Handler: Remove block
   const handleRemoveBlock = useCallback((blockId: string) => {

@@ -54,13 +54,38 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
   const [packStatuses, setPackStatuses] = useState<Record<string, PackLoadStatus>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // Reset name when modal opens
+  // 🔥 FIX: Only reset when modal opens from closed state, not on every render
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
+      // Modal just opened - reset state
+      console.log('[GuestConnectionModal] 📖 Modal opened, resetting state');
       setPlayerName(initialPlayerName);
       setNameSubmitted(false);
+      wasOpenRef.current = true;
+    } else if (!isOpen && wasOpenRef.current) {
+      // Modal closed - reset ref for next time
+      console.log('[GuestConnectionModal] 📕 Modal closed');
+      wasOpenRef.current = false;
     }
   }, [isOpen, initialPlayerName]);
+
+  // 🔥 NEW: Sync playerName when initialPlayerName changes (e.g., when PACKS_NEEDED arrives)
+  useEffect(() => {
+    if (isOpen && !nameSubmitted && initialPlayerName) {
+      console.log('[GuestConnectionModal] 📝 Updating suggested name to:', initialPlayerName);
+      setPlayerName(initialPlayerName);
+    }
+  }, [initialPlayerName, isOpen, nameSubmitted]);
+
+  // 🔥 DEBUG: Log when requiredPacks changes
+  useEffect(() => {
+    console.log('[GuestConnectionModal] 📦 requiredPacks changed:', {
+      count: requiredPacks.length,
+      packs: requiredPacks.map(p => p.name),
+      nameSubmitted
+    });
+  }, [requiredPacks, nameSubmitted]);
 
   // Update pack statuses when requiredPacks changes
   useEffect(() => {
@@ -206,7 +231,7 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-purple-500/50 rounded-xl shadow-2xl w-[550px] max-h-[90vh] overflow-hidden flex flex-col relative">
+      <div className="bg-slate-900 border border-purple-500/50 rounded-lg shadow-2xl w-[550px] max-h-[90vh] overflow-hidden flex flex-col relative">
         {/* Header */}
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -269,14 +294,6 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
                 {allPacksLoaded && <Check className="text-green-500" size={18} />}
               </div>
 
-              {!allPacksLoaded && (
-                <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                  <Info className="text-blue-500 mt-0.5 flex-shrink-0" size={16} />
-                  <p className="text-sm text-blue-200">
-                    This game requires asset pack(s). Please select the matching file(s) below.
-                  </p>
-                </div>
-              )}
 
               <div className="space-y-3">
                 {requiredPacks.map((pack) => {
@@ -399,7 +416,7 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
               </div>
 
               {/* Steps list */}
-              <div className="space-y-2">
+              <div className="space-y-[0.33rem]">
                 {connectionSteps.map((step) => (
                   <div
                     key={step.id}

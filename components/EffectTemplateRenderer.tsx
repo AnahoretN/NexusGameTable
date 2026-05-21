@@ -323,7 +323,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const handlePivotMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!isGM) {
+    if (!isGM && !(obj.playerControlEnabled ?? false)) {
       return;
     }
 
@@ -482,7 +482,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const handleRotationMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!isGM) {
+    if (!isGM && !(obj.playerControlEnabled ?? false)) {
       return;
     }
 
@@ -532,7 +532,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     setIsDraggingRotation(true);
     initialWidthRef.current = currentWidth;
     initialRotationRef.current = rotation;
-  }, [isGM, obj.width, obj.height, obj.rotation, obj.pivot, obj.x, obj.y, obj.rotationMarkerDistance, pixelsPerVU]);
+  }, [isGM, obj.width, obj.height, obj.rotation, obj.pivot, obj.x, obj.y, obj.rotationMarkerDistance, obj.playerControlEnabled, pixelsPerVU]);
 
   // Handle rotation marker dragging
   useEffect(() => {
@@ -655,7 +655,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const handleWidthMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!isGM) {
+    if (!isGM && !(obj.playerControlEnabled ?? false)) {
       return;
     }
 
@@ -704,7 +704,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
     setIsDraggingWidth(true);
     initialWidthRef.current = currentWidth;
-  }, [isGM, obj.width, obj.height, obj.pivot, obj.x, obj.y, obj.rotation, pixelsPerVU]);
+  }, [isGM, obj.width, obj.height, obj.pivot, obj.x, obj.y, obj.rotation, obj.playerControlEnabled, pixelsPerVU]);
 
   // Handle width marker dragging
   useEffect(() => {
@@ -907,10 +907,12 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   };
 
   // Hide pivot marker when dragging the object (but not when dragging the pivot itself)
-  const shouldShowPivotMarker = !isDragging && isGM && !(obj as any).inCursorSlot;
+  // Show to GM always, or to players when playerControlEnabled is true
+  const canControlEffect = isGM || (obj.playerControlEnabled ?? false);
+  const shouldShowPivotMarker = !isDragging && canControlEffect && !(obj as any).inCursorSlot;
 
-  // Show rotation marker and ruler whenever pivot marker is shown for GM
-  const shouldShowRotationControls = shouldShowPivotMarker && isGM;
+  // Show rotation marker and ruler whenever pivot marker is shown and user can control
+  const shouldShowRotationControls = shouldShowPivotMarker && canControlEffect;
 
   // Show width marker only if showWidthMarker is enabled (and not when proportionalScaling is on)
   const shouldShowWidthMarker = shouldShowRotationControls && (obj.showWidthMarker ?? true) && !(obj.proportionalScaling ?? false);
@@ -1046,9 +1048,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
           onMouseDown={handlePivotMouseDown}
           style={{
             ...pivotMarkerBaseStyle,
-            cursor: isGM ? 'move' : 'default',
+            cursor: canControlEffect ? 'move' : 'default',
           }}
-          title={isGM ? "Drag to move pivot point" : "Pivot point (GM only)"}
+          title={canControlEffect ? "Drag to move pivot point" : "Pivot point (GM only)"}
         />
       )}
 
@@ -1114,9 +1116,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
               pointerEvents: 'auto',
               zIndex: 10,
               transition: isDraggingRotation ? 'none' : 'transform 0.1s, background-color 0.2s',
-              cursor: isGM ? 'crosshair' : 'default',
+              cursor: canControlEffect ? 'crosshair' : 'default',
             }}
-            title={isGM ? "Drag to rotate and resize" : "Rotation control (GM only)"}
+            title={canControlEffect ? "Drag to rotate and resize" : "Rotation control (GM only)"}
           >
             {/* Small dot in center to show it's a control point */}
             <div
@@ -1197,9 +1199,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
               pointerEvents: 'auto',
               zIndex: 10,
               transition: isDraggingWidth ? 'none' : 'transform 0.1s, background-color 0.2s',
-              cursor: isGM ? 'ew-resize' : 'default',
+              cursor: canControlEffect ? 'ew-resize' : 'default',
             }}
-            title={isGM ? "Drag to resize width" : "Width control (GM only)"}
+            title={canControlEffect ? "Drag to resize width" : "Width control (GM only)"}
           >
             {/* Small dot in center to show it's a control point */}
             <div

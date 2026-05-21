@@ -70,6 +70,7 @@ export {
   getAssetURL,
   preloadAssets,
   releaseAsset,
+  acquireAsset,
   isAssetCached,
   getCacheStats,
   clearAssetCache,

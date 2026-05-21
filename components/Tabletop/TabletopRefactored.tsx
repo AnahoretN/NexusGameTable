@@ -1014,6 +1014,7 @@ export const Tabletop: React.FC = () => {
         v2p={v2p}
         cursorSlotLength={cursorSlot.length}
         rulerStep={rulerStep}
+        language={language}
       />
 
       {/* Remote Objects Layer */}
@@ -1021,6 +1022,7 @@ export const Tabletop: React.FC = () => {
         remoteCursorSlotObjects={remoteCursorSlotObjects}
         remoteDraggingObjects={remoteDraggingObjects}
         v2p={v2p}
+        pixelsPerVU={pixelsPerVU}
         state={state}
       />
 

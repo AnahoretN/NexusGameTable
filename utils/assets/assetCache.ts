@@ -30,6 +30,7 @@ export interface CacheEntry {
   createdAt: number;        // When ObjectURL was created
   lastAccess: number;       // Last time this entry was accessed
   accessCount: number;      // Number of times accessed (for LRU)
+  refCount: number;         // 🔥 FIX: Reference count - don't revoke while in use
 }
 
 export interface CacheStats {
@@ -83,6 +84,7 @@ class AssetCache {
       this.hits++;
       cached.lastAccess = Date.now();
       cached.accessCount++;
+      cached.refCount++; // 🔥 FIX: Increment ref count when URL is returned
       return cached.url;
     }
 
@@ -135,7 +137,7 @@ class AssetCache {
       const url = URL.createObjectURL(entry.blob);
 
       // Add to cache
-      this.addToCache(hash, url, entry.size);
+      this.addToCache(hash, url, entry.size, 1); // 🔥 FIX: Initial refCount = 1 (caller is using it)
 
       // Resolve all pending requests
       let pending = this.pending.get(hash);
@@ -171,7 +173,7 @@ class AssetCache {
   /**
    * Add entry to cache with eviction if needed
    */
-  private addToCache(hash: string, url: string, size: number): void {
+  private addToCache(hash: string, url: string, size: number, initialRefCount = 0): void {
     // Check if we need to evict
     const newTotalSize = this.getCurrentSize() + size;
     const needsEviction =
@@ -190,12 +192,14 @@ class AssetCache {
       size,
       createdAt: now,
       lastAccess: now,
-      accessCount: 1
+      accessCount: 1,
+      refCount: initialRefCount // 🔥 FIX: Initialize ref count
     });
   }
 
   /**
    * Evict least recently used entries to free space
+   * 🔥 FIX: Don't revoke URLs that are currently in use (refCount > 0)
    */
   private evictLRU(neededSpace: number): void {
     // Sort by last access (oldest first)
@@ -217,6 +221,12 @@ class AssetCache {
       const idleTime = now - entry.lastAccess;
       if (freedSpace >= neededSpace && idleTime < MAX_IDLE_TIME_MS) {
         break;
+      }
+
+      // 🔥 FIX: Don't revoke URLs that are currently in use
+      if (entry.refCount > 0) {
+        console.log(`[AssetCache] Skipping eviction for ${hash.substring(0, 20)}... - refCount=${entry.refCount}`);
+        continue;
       }
 
       // Revoke ObjectURL and remove from cache
@@ -263,8 +273,7 @@ class AssetCache {
   /**
    * Release an ObjectURL (explicit cleanup)
    *
-   * Usually not needed - LRU eviction handles this automatically.
-   * Use only for assets you know won't be needed again.
+   * Decrements ref count. URL is revoked when refCount reaches 0.
    *
    * @param hash - Asset hash to release
    */
@@ -273,8 +282,27 @@ class AssetCache {
     const entry = this.cache.get(normalizedHash);
 
     if (entry) {
-      URL.revokeObjectURL(entry.url);
-      this.cache.delete(normalizedHash);
+      entry.refCount--;
+      if (entry.refCount <= 0) {
+        // Ref count reached 0, safe to revoke
+        URL.revokeObjectURL(entry.url);
+        this.cache.delete(normalizedHash);
+      }
+    }
+  }
+
+  /**
+   * Acquire a reference to an asset (increment ref count)
+   * Call this when you start using an ObjectURL
+   *
+   * @param hash - Asset hash to acquire
+   */
+  acquire(hash: string): void {
+    const normalizedHash = normalizeHash(hash);
+    const entry = this.cache.get(normalizedHash);
+
+    if (entry) {
+      entry.refCount++;
     }
   }
 
@@ -427,6 +455,14 @@ export async function preloadAssets(hashes: string[]): Promise<Map<string, strin
  */
 export function releaseAsset(hash: string): void {
   assetCache.release(hash);
+}
+
+/**
+ * Acquire a reference to a cached asset
+ * Call this when you start using an ObjectURL
+ */
+export function acquireAsset(hash: string): void {
+  assetCache.acquire(hash);
 }
 
 /**

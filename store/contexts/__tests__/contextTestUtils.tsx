@@ -97,7 +97,6 @@ export function generateMockLayers(count: number = 3): HyperscaleLayer[] {
     color: colors[i % colors.length],
     playerCanSelect: true,
     playerCanView: true,
-    individualPosition: false,
     individualObjects: false,
     zoomEnabled: true,
     order: i,

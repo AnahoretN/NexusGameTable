@@ -99,13 +99,37 @@ export function handlePlayTopCard(
   if (obj.type !== ItemType.DECK) return;
 
   const deck = obj as DeckType;
-  if (!deck.cardIds || deck.cardIds.length === 0) return;
 
-  const topCardId = deck.cardIds[0];
+  // 🔥 FIX: Get deck from context.state to ensure we have the latest state
+  // This prevents playing the same card multiple times when guest clicks rapidly
+  const currentDeck = context.state.objects[obj.id] as DeckType;
+  if (!currentDeck || !currentDeck.cardIds || currentDeck.cardIds.length === 0) {
+    console.log('[handlePlayTopCard] Deck is empty or not found');
+    return;
+  }
+
+  const topCardId = currentDeck.cardIds[0];
   const card = context.state.objects[topCardId] as CardType;
-  if (!card) return;
+  if (!card) {
+    console.warn('[handlePlayTopCard] Top card not found in state:', topCardId);
+    return;
+  }
 
-  const faceUp = deck.playTopFaceUp ?? true;
+  // 🔥 FIX: Check if top card is already in cursor slot (prevents duplicate plays)
+  // This can happen when guest clicks rapidly before SYNC_STATE arrives
+  if (card.inCursorSlot) {
+    console.log('[handlePlayTopCard] Top card already in cursor slot, skipping:', topCardId);
+    return;
+  }
+
+  console.log('[handlePlayTopCard] Playing top card:', {
+    deckId: deck.id,
+    topCardId,
+    cardName: card.name,
+    remainingCards: currentDeck.cardIds.length - 1
+  });
+
+  const faceUp = currentDeck.playTopFaceUp ?? true;
 
   // Get mouse position
   const mousePos = event
@@ -113,9 +137,9 @@ export function handlePlayTopCard(
     : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 
   // Prepare card for cursor slot
-  const isHorizontal = deck.cardOrientation === CardOrientation.HORIZONTAL;
-  const cardWidth = deck.cardWidth ?? card.width ?? 63;
-  const cardHeight = deck.cardHeight ?? card.height ?? 88;
+  const isHorizontal = currentDeck.cardOrientation === CardOrientation.HORIZONTAL;
+  const cardWidth = currentDeck.cardWidth ?? card.width ?? 63;
+  const cardHeight = currentDeck.cardHeight ?? card.height ?? 88;
 
   // Calculate click offset to center the card on cursor
   // This ensures the card is displayed with cursor at center, not at top-left
@@ -348,17 +372,35 @@ export function handleLock(obj: TableObject, dispatch: Dispatch<Action>) {
 }
 
 export function handleShow(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({
-    type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, updates: { isOnTable: true } }
-  });
+  // For UI objects (panels, windows) use 'visible' property
+  // For game objects use 'isOnTable' property
+  if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: obj.id, updates: { visible: true } }
+    });
+  } else {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: obj.id, updates: { isOnTable: true } }
+    });
+  }
 }
 
 export function handleHide(obj: TableObject, dispatch: Dispatch<Action>) {
-  dispatch({
-    type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, updates: { isOnTable: false } }
-  });
+  // For UI objects (panels, windows) use 'visible' property
+  // For game objects use 'isOnTable' property
+  if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: obj.id, updates: { visible: false } }
+    });
+  } else {
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: { id: obj.id, updates: { isOnTable: false } }
+    });
+  }
 }
 
 export function handlePinToViewport(obj: TableObject, dispatch: Dispatch<Action>) {

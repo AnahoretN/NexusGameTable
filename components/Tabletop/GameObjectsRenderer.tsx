@@ -7,7 +7,7 @@ import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenSlider, TokenSliderPosition, TokenSliderDisplay } from '../../types';
+import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenSlider, TokenSliderPosition, TokenSliderDisplay, TokenShape } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 import { TokenCountersDisplay } from './TokenCountersDisplay';
@@ -147,7 +147,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
   const [explosiveScales, setExplosiveScales] = useState<Record<string, number>>({});
   const [explosivePhases, setExplosivePhases] = useState<Record<string, 'phase1' | 'phase2' | 'done'>>({});
   const prevDiceRollRef = useRef<Record<string, number | undefined>>({});
-  const animationTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const animationTimeoutsRef = useRef<Record<string, number>>({});
   const animatingDiceRef = useRef<Set<string>>(new Set());
 
   // Cleanup effect for explosive dice animations
@@ -250,10 +250,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
     return (
       <Tooltip
-        text={obj.tooltipText}
-        showImage={obj.showTooltipImage}
-        imageSrc={obj.content}
-        scale={obj.tooltipScale}
+        text={undefined}
+        showImage={false}
+        imageSrc={undefined}
+        scale={undefined}
       >
         <div
           className={isPermeable ? '' : 'pointer-events-auto'}
@@ -306,10 +306,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
     return (
       <Tooltip
-        text={obj.tooltipText}
-        showImage={obj.showTooltipImage}
-        imageSrc={obj.content}
-        scale={obj.tooltipScale}
+        text={undefined}
+        showImage={false}
+        imageSrc={undefined}
+        scale={undefined}
       >
         <div
           data-object-id={obj.id}
@@ -409,10 +409,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
     return (
       <Tooltip
-        text={obj.tooltipText}
-        showImage={obj.showTooltipImage}
-        imageSrc={obj.content}
-        scale={obj.tooltipScale}
+        text={undefined}
+        showImage={false}
+        imageSrc={undefined}
+        scale={undefined}
       >
         <div
           data-object-id={obj.id}
@@ -493,8 +493,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     // Calculate position (no adjustment needed since we use transform)
     const diceX = v2p(obj.x);
     const diceY = v2p(obj.y);
-    const diceWidth = v2p(obj.width);
-    const diceHeight = v2p(obj.height);
+    const diceWidth = v2p(obj.width ?? 50);
+    const diceHeight = v2p(obj.height ?? 50);
 
     // Font size based on base VU size converted to pixels
     // Use the same approach as tokens: base size in VU, then convert to pixels
@@ -504,7 +504,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     // Use explosive colors when triggered, otherwise use defaults
     const diceColor = isExplosiveTriggered
       ? (dice.explosiveColor || '#ffff00')
-      : (obj.color || '#6366f1');
+      : ((obj as any).color || '#6366f1');
     const fontColor = isExplosiveTriggered
       ? (dice.explosiveTextColor || '#ff0000')
       : ((obj as any).fontColor || '#ffffff');
@@ -514,10 +514,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
     return (
       <Tooltip
-        text={obj.tooltipText}
-        showImage={obj.showTooltipImage}
-        imageSrc={obj.content}
-        scale={obj.tooltipScale}
+        text={undefined}
+        showImage={false}
+        imageSrc={undefined}
+        scale={undefined}
       >
         <div
           data-object-id={obj.id}
@@ -545,16 +545,16 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
           )}
         >
           <SvgTokenShape
-            shape={dice.shape}
+            shape={(dice.shape ?? 'SQUARE') as TokenShape}
             width={diceWidth}
             height={diceHeight}
             color={diceColor}
             content={undefined}
             rotation={0}
-            borderWidth={obj.borderWidth ?? 2}
+            borderWidth={(obj as any).borderWidth ?? 2}
             borderColor={(obj as any).borderColor || '#ffffff'}
-            opacity={obj.opacity ?? 100}
-            borderOpacity={obj.borderOpacity ?? 100}
+            opacity={(obj as any).opacity ?? 100}
+            borderOpacity={(obj as any).borderOpacity ?? 100}
             showThickness={true}
             tokenName={undefined}
             fontColor={fontColor}
@@ -657,7 +657,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             style={{ transform: `translateX(-50%) scale(${zoomMultiplier})` }}
           >
             {(() => {
-              const actionButtons = obj.actionButtons || [];
+              const actionButtons = (obj as any).actionButtons || [];
               const dice = obj as DiceObject;
               const isInGroup = !!dice.diceGroupId;
 
@@ -861,7 +861,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
     return (
       <EffectTemplateRendererMemo
-        obj={obj}
+        obj={obj as EffectTemplate}
         pixelsPerVU={pixelsPerVU}
         isDragging={styleData.isDragging}
         onMouseDown={handlers.onMouseDown}

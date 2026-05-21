@@ -98,7 +98,7 @@ async function countOldEntries(): Promise<number> {
 
       // Check if the store exists
       if (!db.objectStoreNames.contains(OLD_STORE_NAME)) {
-        console.warn('[Migration] Old database exists but has different structure');
+        // Migration: Old database exists but has different structure
         db.close();
         resolve(0); // No entries to migrate
         return;
@@ -117,24 +117,24 @@ async function countOldEntries(): Promise<number> {
 
         countRequest.onerror = () => {
           db.close();
-          console.warn('[Migration] Failed to count old entries:', countRequest.error);
+          // Migration: Failed to count old entries
           resolve(0); // Assume no entries on error
         };
 
         transaction.onerror = () => {
           db.close();
-          console.warn('[Migration] Transaction error:', transaction.error);
+          // Migration: Transaction error
           resolve(0); // Assume no entries on error
         };
       } catch (error) {
         db.close();
-        console.warn('[Migration] Error creating transaction:', error);
+        // Migration: Error creating transaction
         resolve(0); // Assume no entries on error
       }
     };
 
     request.onerror = () => {
-      console.warn('[Migration] Failed to open old database:', request.error);
+      // Migration: Failed to open old database
       resolve(0); // Assume no entries on error
     };
 
@@ -278,7 +278,7 @@ async function readOldDatabase(
 
       // Check if the store exists
       if (!db.objectStoreNames.contains(OLD_STORE_NAME)) {
-        console.warn('[Migration] Old database exists but has different structure');
+        // Migration: Old database exists but has different structure
         db.close();
         resolve([]); // No entries to migrate
         return;
@@ -304,7 +304,7 @@ async function readOldDatabase(
 
         transaction.onerror = () => {
           db.close();
-          console.warn('[Migration] Transaction error:', transaction.error);
+          // Migration: Transaction error
           resolve([]); // Return empty array on error
         };
       } catch (error) {

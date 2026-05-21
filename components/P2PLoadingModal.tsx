@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Wifi, Download, Check, AlertCircle, Upload, Package, Info } from 'lucide-react';
+import { Wifi, Download, Check, AlertCircle, Upload, Package } from 'lucide-react';
 import { P2PLoadingStep } from '../store/usePeerConnection';
 import { loadPackFromFile } from '../utils/assets/sources/packLoader';
 import { Action } from '../store/gameActions';
@@ -193,7 +193,7 @@ export const P2PLoadingModal: React.FC<P2PLoadingModalProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-purple-500/50 rounded-xl shadow-2xl p-6 w-[500px] max-h-[80vh] overflow-hidden relative">
+      <div className="bg-slate-900 border border-purple-500/50 rounded-lg shadow-2xl p-6 w-[500px] max-h-[80vh] overflow-hidden relative">
         {/* Background glow effect */}
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent opacity-50" />
 
@@ -241,13 +241,6 @@ export const P2PLoadingModal: React.FC<P2PLoadingModalProps> = ({
           {/* 🔥 NEW: Pack loading UI */}
           {showPackLoadingUI && (
             <div className="flex flex-col gap-3">
-              {/* Info message */}
-              <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <Info className="text-blue-500 mt-0.5 flex-shrink-0" size={16} />
-                <p className="text-sm text-blue-200">
-                  This game requires asset pack(s). Please select the matching file(s) below.
-                </p>
-              </div>
 
               {/* Pack list */}
               {requiredPacks.map((pack) => {
@@ -359,7 +352,7 @@ export const P2PLoadingModal: React.FC<P2PLoadingModalProps> = ({
 
           {/* Steps list (hide during pack loading) */}
           {!showPackLoadingUI && (
-            <div className="flex flex-col gap-2 mt-2 max-h-[200px] overflow-y-auto">
+            <div className="flex flex-col gap-[0.33rem] mt-2 max-h-[200px] overflow-y-auto">
               {steps.map((step) => (
                 <div
                   key={step.id}

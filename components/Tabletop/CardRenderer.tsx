@@ -234,10 +234,10 @@ export const CardRenderer = memo(({
 
   return (
     <Tooltip
-      text={obj.tooltipText}
-      showImage={obj.showTooltipImage}
-      imageSrc={obj.content}
-      scale={obj.tooltipScale}
+      text={card.tooltipText}
+      showImage={card.showTooltipImage}
+      imageSrc={card.content}
+      scale={card.tooltipScale}
     >
       <div
         data-object-id={obj.id}

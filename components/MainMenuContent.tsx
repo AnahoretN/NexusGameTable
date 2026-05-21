@@ -10,8 +10,8 @@ import { logger } from '../utils/logger';
 import { findGM } from '../utils/playerUtils';
 import { findLocalFilePaths } from '../utils/imageCompat';
 import { saveSession, loadSession } from '../utils/sessionStorage';
-import { preloadImageUrl } from '../components/SvgTokenShape';
-import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection } from '../types';
+import { saveGameState } from '../utils/gameStorage';
+import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection, ContextAction } from '../types';
 import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target, AlertCircle } from 'lucide-react';
 import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
@@ -509,28 +509,37 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       return;
     }
 
+    // Calculate next player number (non-GM players only)
+    const nonGMCount = players.filter(p => !p.isGM).length;
+    const nextPlayerNumber = nonGMCount + 1;
+
     const baseUrl = window.location.href.split('?')[0];
-    const inviteLink = `${baseUrl}?hostId=${peerId}`;
+    const inviteLink = `${baseUrl}?hostId=${peerId}&playerNum=${nextPlayerNumber}`;
 
     navigator.clipboard.writeText(inviteLink).then(() => {
       setInviteCopied(true);
       setTimeout(() => setInviteCopied(false), 2000);
     });
-  }, [peerId, initializeHost]);
+  }, [peerId, initializeHost, players]);
 
   // Auto-generate invite link when peerId becomes available
   useEffect(() => {
     if (waitingForPeerId && peerId) {
       setWaitingForPeerId(false);
+
+      // Calculate next player number (non-GM players only)
+      const nonGMCount = players.filter(p => !p.isGM).length;
+      const nextPlayerNumber = nonGMCount + 1;
+
       const baseUrl = window.location.href.split('?')[0];
-      const inviteLink = `${baseUrl}?hostId=${peerId}`;
+      const inviteLink = `${baseUrl}?hostId=${peerId}&playerNum=${nextPlayerNumber}`;
 
       navigator.clipboard.writeText(inviteLink).then(() => {
         setInviteCopied(true);
         setTimeout(() => setInviteCopied(false), 2000);
       });
     }
-  }, [waitingForPeerId, peerId]);
+  }, [waitingForPeerId, peerId, players]);
 
   const handleSaveGame = async () => {
     // Use simplified save system - saves everything as JSON
@@ -705,6 +714,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       const objectCount = Object.keys(packData.objects || {}).length;
       const playerCount = packData.players?.length || 0;
 
+      // 🔥 NEW: Auto-save after pack is fully loaded
+      try {
+        await saveGameState({ ...packData, version: state.version } as GameState);
+        logger.log('[AUTOSAVE] Saved after pack load');
+      } catch (error) {
+        logger.warn('[AUTOSAVE] Failed to save after pack load:', error);
+      }
+
       // Add final success step
       addPackLoadingStep(`Pack loaded successfully! (${objectCount} objects, ${playerCount} players)`, 'success');
 
@@ -768,7 +785,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
 
       const {
         getImageUrlFromRef
-      } = await import('../utils/imageCompat');
+      } = await import('../utils/packManager');
       const {
         hashDataURL,
         storeAssetFromDataURL
@@ -906,6 +923,14 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       await preloadAllPackImages(packData.objects || {});
 
       const objectCount = Object.keys(packData.objects || {}).length;
+
+      // 🔥 NEW: Auto-save after pack is added
+      try {
+        await saveGameState(state);
+        logger.log('[AUTOSAVE] Saved after adding pack');
+      } catch (error) {
+        logger.warn('[AUTOSAVE] Failed to save after adding pack:', error);
+      }
 
       // Add final success step
       addPackLoadingStep(`Pack added successfully! (${objectCount} objects merged into current game)`, 'success');
@@ -1337,10 +1362,19 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 <div className="flex gap-2">
                   <button
                     onClick={handleInvite}
-                    className={`flex-1 py-2 px-3 rounded flex items-center justify-center gap-2 font-bold transition-all ${inviteCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+                    disabled={waitingForPeerId}
+                    className={`flex-1 py-2 px-3 rounded flex items-center justify-center gap-2 font-bold transition-all ${
+                      inviteCopied ? 'bg-green-600 text-white' :
+                      waitingForPeerId ? 'bg-yellow-600 text-white cursor-wait' :
+                      'bg-purple-600 hover:bg-purple-500 text-white'
+                    }`}
                   >
-                    {inviteCopied ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
-                    {inviteCopied ? translate('Link Copied!', language as Locale) : translate('Invite Player', language as Locale)}
+                    {inviteCopied ? <CheckCircle size={16}/> :
+                     waitingForPeerId ? <Loader2 size={16} className="animate-spin" /> :
+                     <LinkIcon size={16}/>}
+                    {inviteCopied ? translate('Link Copied!', language as Locale) :
+                     waitingForPeerId ? translate('Generating ID...', language as Locale) :
+                     translate('Invite Player', language as Locale)}
                   </button>
                   <button
                     onClick={() => directConnectionUnlocked && setShowManualConnection(true)}
@@ -2181,6 +2215,54 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     [state.objects, category.matcher]
   );
 
+  // Helper function to check if an action button should be shown for an object
+  // Based on both actionButtons setting and user permissions
+  const isActionButtonShown = useCallback((obj: TableObject, action: ContextAction): boolean => {
+    // For panels:
+    // - Non-GM players (host or guest): only show lock and hide/show buttons
+    // - GM host: show all buttons like normal objects
+    if (obj.type === ItemType.PANEL && !currentUserIsGM) {
+      // For non-GM players, panels only show lock and hide/show buttons
+      return action === 'lock' || action === 'hide' || action === 'show';
+    }
+
+    // Get actionButtons for this object
+    let actionButtons: ContextAction[] | undefined;
+    let allowedActions: ContextAction[] | undefined;
+    let allowedActionsForGM: ContextAction[] | undefined;
+
+    if (obj.type === ItemType.CARD) {
+      // Cards inherit from deck
+      const deck = state.objects[(obj as any).deckId] as Deck;
+      actionButtons = deck?.cardActionButtons;
+      allowedActions = deck?.cardAllowedActions;
+      allowedActionsForGM = deck?.cardAllowedActionsForGM;
+    } else {
+      actionButtons = (obj as any).actionButtons;
+      allowedActions = obj.allowedActions;
+      allowedActionsForGM = obj.allowedActionsForGM;
+    }
+
+    // First check if action is in actionButtons
+    // If actionButtons is not set or empty, default to showing the button (backward compatibility)
+    const isInActionButtons = !actionButtons || actionButtons.length === 0 || actionButtons.includes(action);
+    if (!isInActionButtons) {
+      return false;
+    }
+
+    // Then check if user has permission to perform this action
+    // For GM: check allowedActionsForGM, for players: check allowedActions
+    const permissionsToCheck = currentUserIsGM ? allowedActionsForGM : allowedActions;
+
+    // undefined or null = all actions allowed (default behavior)
+    if (!permissionsToCheck || permissionsToCheck.length === 0) {
+      return true;
+    }
+
+    // Check if this specific action is allowed
+    return permissionsToCheck.includes(action);
+  }, [state.objects, currentUserIsGM]);
+
   const handleCreateItem = (item: typeof category.items[number]) => {
     // Screen coordinates (center of viewport)
     const screenX = window.innerWidth / 2;
@@ -2737,23 +2819,37 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                       style={{ backgroundColor: obj.type === ItemType.TOKEN_TYPE ? objColor : (isVisible ? objColor : '#4a5568') }}
                     />
                     <span className="flex-1 truncate font-normal">{getDisplayName()}</span>
-                    {canHideObjects && (
+                    {isActionButtonShown(obj, 'lock') && (
                       <button
-                        onClick={() => dispatch({ type: 'UPDATE_OBJECT', payload: { id: obj.id, updates: { locked: !isLocked } } })}
+                        onClick={() => {
+                          // Check if object is on an individualObjects layer
+                          const individualLayer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+                          const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
+                          // For individualObjects layers, lock state is local-only (not synced)
+                          dispatch({
+                            type: 'UPDATE_OBJECT',
+                            payload: { id: obj.id, updates: { locked: !isLocked } },
+                            _localOnly: isIndividualObjectsLayer
+                          });
+                        }}
                         className={`p-1 rounded text-xs ${isLocked ? 'text-red-400 hover:text-white' : 'hover:bg-slate-700'} opacity-0 group-hover:opacity-100`}
                         title={isLocked ? 'Unlock' : 'Lock'}
                       >
                         {isLocked ? <Lock size={10} /> : <Unlock size={10} />}
                       </button>
                     )}
-                    {canHideObjects && (
+                    {isActionButtonShown(obj, 'hide') && (
                       <button
                         onClick={() => {
                           const propToUpdate = 'visible' in obj ? 'visible' : 'isOnTable';
-                          // For panels on individual objects layers, visibility is handled per-player in GameContext
+                          // Check if object is on an individualObjects layer
+                          const individualLayer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+                          const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
+                          // For individualObjects layers, visibility is local-only (not synced)
                           dispatch({
                             type: 'UPDATE_OBJECT',
-                            payload: { id: obj.id, updates: { [propToUpdate]: !isVisible } }
+                            payload: { id: obj.id, updates: { [propToUpdate]: !isVisible } },
+                            _localOnly: isIndividualObjectsLayer
                           });
                         }}
                         className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 text-xs"
@@ -2762,7 +2858,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                         {isVisible ? <EyeOff size={10} /> : <Eye size={10} />}
                       </button>
                     )}
-                    {canCreateObjects && (
+                    {isActionButtonShown(obj, 'clone') && (
                       <button
                         onClick={() => {
                           // Clone the object - for Token Types this creates a copy of the type itself,
@@ -2791,7 +2887,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                         <Settings size={10} />
                       </button>
                     )}
-                    {canDeleteObjects && (
+                    {isActionButtonShown(obj, 'delete') && (
                       <button
                         onMouseDown={(e) => {
                           // Prevent default behavior to avoid interference

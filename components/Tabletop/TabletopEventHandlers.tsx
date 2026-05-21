@@ -1808,8 +1808,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
         for (const [id, otherObj] of Object.entries(state.objects)) {
           if (id === currentDraggingId) continue;
-          if (otherObj.type !== ItemType.PANEL && otherObj.type !== ItemType.WINDOW) continue;
-          if (!otherObj.visible) continue;
+          if ((otherObj as TableObject).type !== ItemType.PANEL && (otherObj as TableObject).type !== ItemType.WINDOW) continue;
+          if (!((otherObj as any).visible)) continue;
 
           // Get panel bounds in screen coordinates
           let px, py, pwidth, pheight;
@@ -1819,7 +1819,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
           if ((otherObj as any).isPinnedToViewport) {
             // Pinned panels: use pinnedScreenPosition (stored screen coords)
             // obj.x/y may be in world coords after repinning, so we use pinnedScreenPosition
-            const pinnedPos = (otherObj as any).pinnedScreenPosition || { x: otherObj.x, y: otherObj.y };
+            const pinnedPos = (otherObj as any).pinnedScreenPosition || { x: (otherObj as TableObject).x, y: (otherObj as TableObject).y };
             px = pinnedPos.x;
             py = pinnedPos.y;
             // For pinned panels, width/height are already in pixels (from DOM resize)
@@ -1921,10 +1921,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       if (!obj.isDragging) {
         // Check if this is a UI object (panel/window) - these are per-player and should never sync
         const isUIObject = obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW;
-        // Check if object is on a hyperscale layer with individualPosition enabled
+        // Check if object is on a hyperscale layer with individualObjects enabled
         const individualLayerId = obj.hyperscaleLayerId || 'tokens';
         const individualLayer = hyperscaleLayers.find(l => l.id === individualLayerId);
-        const isIndividualPositionLayer = individualLayer?.individualPosition === true;
+        const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
 
         dispatch({
           type: 'SET_DRAGGING',
@@ -1934,7 +1934,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
             dragOwnerId: activePlayerId
           },
           // Don't sync SET_DRAGGING for UI objects or objects on individual position layers
-          _localOnly: isUIObject || isIndividualPositionLayer
+          _localOnly: isUIObject || isIndividualObjectsLayer
         });
       }
     }
@@ -2023,10 +2023,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     if (currentDraggingId) {
       const obj = state.objects[currentDraggingId];
       if (obj && obj.isDragging) {
-        // Check if object is on a hyperscale layer with individualPosition enabled
+        // Check if object is on a hyperscale layer with individualObjects enabled
         const individualLayerId = obj.hyperscaleLayerId || 'tokens';
         const individualLayer = hyperscaleLayers.find(l => l.id === individualLayerId);
-        const isIndividualPositionLayer = individualLayer?.individualPosition === true;
+        const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
 
         dispatch({
           type: 'SET_DRAGGING',
@@ -2036,7 +2036,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
             dragOwnerId: null
           },
           // Don't sync SET_DRAGGING for objects on individual position layers
-          _localOnly: isIndividualPositionLayer
+          _localOnly: isIndividualObjectsLayer
         });
       }
 
@@ -2416,10 +2416,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     if (draggingId) {
       const obj = state.objects[draggingId];
       if (obj && obj.isDragging) {
-        // Check if object is on a hyperscale layer with individualPosition enabled
+        // Check if object is on a hyperscale layer with individualObjects enabled
         const individualLayerId = obj.hyperscaleLayerId || 'tokens';
         const individualLayer = hyperscaleLayers.find(l => l.id === individualLayerId);
-        const isIndividualPositionLayer = individualLayer?.individualPosition === true;
+        const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
 
         dispatch({
           type: 'SET_DRAGGING',
@@ -2429,7 +2429,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
             dragOwnerId: null
           },
           // Don't sync SET_DRAGGING for objects on individual position layers
-          _localOnly: isIndividualPositionLayer
+          _localOnly: isIndividualObjectsLayer
         });
       }
 

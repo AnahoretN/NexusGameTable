@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { TokenShape } from '../types';
 import { generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
-import { getAssetURL } from '../utils/assets';
+import { getAssetURL, acquireAsset, releaseAsset, clearAssetCache } from '../utils/assets';
 import { assetEvents } from '../utils/assets/assetCache';
 
-// Global ObjectURL cache to prevent re-loading during drag operations
-const objectURLCache = new Map<string, string>();
-const pendingLoads = new Map<string, Promise<string | null>>();
+// 🔥 FIX: Remove local cache - it gets out of sync with assetCache.evictLRU()
+// assetCache already manages ObjectURLs with proper LRU eviction
+// Local cache was storing revoked URLs causing ERR_FILE_NOT_FOUND
+// const objectURLCache = new Map<string, string>();
+// const pendingLoads = new Map<string, Promise<string | null>>();
 
 // Global version counter - incrementing forces all SvgTokenShape components to reload
 let globalCacheVersion = 0;
@@ -17,31 +19,12 @@ const versionCallbacks = new Set<() => void>;
 // Subscribe to asset update events and increment version to trigger reloads
 assetEvents.subscribe(() => {
   globalCacheVersion++;
-  console.log(`[SvgTokenShape] Asset update event received, incrementing cache version to ${globalCacheVersion}`);
-  // 🔥 FIX: Don't clear objectURLCache here - AssetCache already manages ObjectURLs properly
-  // The objectURLCache is just a local cache for performance, not the source of truth
-  // Clearing it causes unnecessary re-renders and transparency issues
-  // objectURLCache.clear(); // REMOVED: Don't clear local cache
   // Notify all mounted components
   versionCallbacks.forEach(cb => cb());
 });
 
 // Padding around the border (in virtual units)
 const PADDING = 1;
-
-/**
- * Initialize the global ObjectURL cache
- */
-export function initResolvedImageCache(): void {
-  // Assets are pre-loaded into the asset cache during app initialization
-}
-
-/**
- * Preload an image ObjectURL into the global cache
- */
-export function preloadImageUrl(imageId: string, objectUrl: string): void {
-  objectURLCache.set(imageId, objectUrl);
-}
 
 /**
  * Get the current global cache version
@@ -51,16 +34,12 @@ export function getGlobalCacheVersion(): number {
 }
 
 /**
- * Clear the global ObjectURL cache
+ * Clear the asset cache - delegates to assetCache
  * Call this when loading a pack to force re-loading of all images
  */
 export function clearResolvedImageCache(): void {
-  // Revoke all ObjectURLs to free memory
-  for (const [, url] of objectURLCache.entries()) {
-    URL.revokeObjectURL(url);
-  }
-  objectURLCache.clear();
-  pendingLoads.clear();
+  // Delegate to assetCache which manages ObjectURLs properly
+  clearAssetCache();
   globalCacheVersion++;
 }
 
@@ -200,16 +179,9 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   fontColor = '#ffffff',
   preserveAspectRatio = "xMidYMid meet",
 }) => {
-  // 🔥 FIX: Use a key to force re-mount when content changes
-  // 🔥 CRITICAL FIX: Initialize from cache immediately to prevent NULL/UNDEF during re-renders
-  const getInitialContent = (): string | undefined => {
-    if (content && isAssetHash(content)) {
-      return objectURLCache.get(content);
-    }
-    return undefined;
-  };
-
-  const [resolvedContent, setResolvedContent] = useState<string | undefined>(() => getInitialContent());
+  // 🔥 FIX: Don't initialize from local cache - it can be stale after assetCache.evictLRU()
+  // Always load fresh from assetCache which manages ObjectURLs properly
+  const [resolvedContent, setResolvedContent] = useState<string | undefined>(undefined);
   const [isLoaded, setIsLoaded] = useState(() => content ? !isAssetHash(content) : false);
 
   // 🔥 FIX: Local state that triggers re-render when global version changes
@@ -217,9 +189,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
 
   // Subscribe to global version changes
   useEffect(() => {
-    console.log(`[SvgTokenShape] 📌 Component MOUNTED for content=${content?.substring(0, 20)}...`);
     const callback = () => {
-      console.log(`[SvgTokenShape] Component received version update, forcing re-render`);
       setForceUpdate(prev => prev + 1);
       setIsLoaded(false); // Force reload
       // 🔥 FIX: Don't clear resolvedContent immediately - keep it visible until new content loads
@@ -230,15 +200,12 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
     versionCallbacks.add(callback);
 
     return () => {
-      console.log(`[SvgTokenShape] 📌 Component UNMOUNTED for content=${content?.substring(0, 20)}...`);
       versionCallbacks.delete(callback);
     };
   }, []);
 
   // Load asset when content changes or when forceUpdate changes
   useEffect(() => {
-    console.log(`[SvgTokenShape] useEffect triggered: content=${content?.substring(0, 30)}..., forceUpdate=${forceUpdate}, isLoaded=${isLoaded}, resolvedContent=${resolvedContent?.substring(0, 30)}...`);
-
     if (!content) {
       setResolvedContent(undefined);
       setIsLoaded(true);
@@ -252,55 +219,30 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
       return;
     }
 
-    // 🔥 FIX: Check local cache first
-    // If we have a cached URL and forceUpdate hasn't changed, use it
-    if (objectURLCache.has(content) && forceUpdate === 0) {
-      const cached = objectURLCache.get(content);
-      console.log(`[SvgTokenShape] Cache hit for ${content?.substring(0, 30)}...: ${cached ? 'YES' : 'NULL'}`);
-      if (cached && resolvedContent !== cached) {
-        setResolvedContent(cached);
-        setIsLoaded(true);
-      }
-      return;
-    }
+    // 🔥 FIX: Always load from assetCache - no local cache to avoid stale URLs
+    // assetCache manages ObjectURLs with proper LRU eviction and revocation
 
-    // If forceUpdate changed, we need to reload from AssetCache
-    // This ensures we get the latest ObjectURL after P2P transfer
-    console.log(`[SvgTokenShape] Cache miss or force reload (${forceUpdate}), loading asset: ${content?.substring(0, 30)}...`);
+    let cancelled = false;
 
-    // Check if already loading
-    if (pendingLoads.has(content)) {
-      console.log(`[SvgTokenShape] Already loading, waiting...`);
-      pendingLoads.get(content)!.then(url => {
-        if (url) {
-          console.log(`[SvgTokenShape] Pending load complete: ${url?.substring(0, 50)}...`);
-          setResolvedContent(url);
-        }
-        setIsLoaded(true);
-      });
-      return;
-    }
-
-    // Load from new asset system with retry mechanism
+    // Load from asset system with retry mechanism
     const loadWithRetry = async (retries = 3): Promise<string | null> => {
       for (let i = 0; i < retries; i++) {
         try {
           const objectUrl = await getAssetURL(content);
-          console.log(`[SvgTokenShape] Asset loaded: ${content?.substring(0, 30)}... -> ${objectUrl?.substring(0, 50)}...`);
+          if (cancelled) {
+            // 🔥 FIX: Release reference if cancelled during load
+            releaseAsset(content);
+            return null;
+          }
           return objectUrl;
         } catch (error) {
           const isAssetNotFound = (error as Error).message.includes('Asset not found');
           if (isAssetNotFound && i < retries - 1) {
             // Asset might still be saving to IndexedDB - wait and retry
             const delay = 100 * Math.pow(2, i); // 100ms, 200ms, 400ms
-            console.log(`[SvgTokenShape] Asset not found, retry ${i + 1}/${retries} after ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
           } else {
             // Final retry failed or different error
-            if (isAssetNotFound) {
-              objectURLCache.delete(content);
-            }
-            console.error(`[SvgTokenShape] Failed to load asset ${content?.substring(0, 30)}...:`, error);
             throw error;
           }
         }
@@ -308,39 +250,30 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
       return null;
     };
 
-    const loadPromise = loadWithRetry()
+    loadWithRetry()
       .then((objectUrl) => {
+        if (cancelled) return;
         if (!objectUrl) {
           setResolvedContent(undefined);
           setIsLoaded(true);
-          return null;
+          return;
         }
-
-        // 🔥 FIX: Revoke old ObjectURL before setting new one to prevent memory leaks
-        // Use previous value from state (captured in closure)
-        setResolvedContent(prevUrl => {
-          if (prevUrl && prevUrl.startsWith('blob:') && prevUrl !== objectUrl) {
-            URL.revokeObjectURL(prevUrl);
-          }
-          return objectUrl;
-        });
+        setResolvedContent(objectUrl);
         setIsLoaded(true);
-        // Cache the ObjectURL for future use
-        objectURLCache.set(content, objectUrl);
-        return objectUrl;
       })
       .catch((error) => {
-        console.error(`[SvgTokenShape] Failed to load asset ${content?.substring(0, 30)}... after retries:`, error);
+        if (cancelled) return;
         setResolvedContent(undefined);
         setIsLoaded(true);
-        return null;
       });
 
-    pendingLoads.set(content, loadPromise);
-
-    loadPromise.finally(() => {
-      pendingLoads.delete(content);
-    });
+    return () => {
+      cancelled = true;
+      // 🔥 FIX: Release reference when content changes or component unmounts
+      if (isAssetHash(content)) {
+        releaseAsset(content);
+      }
+    };
   }, [content, forceUpdate]); // Include forceUpdate to trigger reload when assets are updated
 
   // All tokens use the same border radius
@@ -391,19 +324,6 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
         {tokenName}
       </text>
     );
-  }
-
-  // 🔥 DEBUG: Log render state for debugging
-  console.log(`[SvgTokenShape] RENDER: content=${content?.substring(0, 20)}..., resolvedContent=${resolvedContent ? 'SET' : 'NULL/UNDEF'}, shape=${shape}, width=${width}, height=${height}, opacity=${opacity}`);
-
-  // 🔥 DEBUG: Warn if opacity is 0 (token would be invisible)
-  if (opacity === 0) {
-    console.warn(`[SvgTokenShape] ⚠️ Token has opacity=0, will be INVISIBLE! content=${content?.substring(0, 20)}...`);
-  }
-
-  // 🔥 DEBUG: Warn if resolvedContent is NULL and content is set (token might appear transparent during reload)
-  if (content && !resolvedContent && isLoaded) {
-    console.warn(`[SvgTokenShape] ⚠️ Token has content but no resolvedContent (may appear transparent)! content=${content?.substring(0, 20)}..., isLoaded=${isLoaded}, forceUpdate=${forceUpdate}`);
   }
 
   return (

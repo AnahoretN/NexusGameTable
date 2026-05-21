@@ -519,8 +519,8 @@ export const BoardWithResizeMemo = React.memo(BoardWithResize, (prevProps, nextP
     }
 
     // IMPORTANT: Check board properties that affect rendering
-    const prevBoard = prevProps.token;
-    const nextBoard = nextProps.token;
+    const prevBoard = prevProps.token as BoardType;
+    const nextBoard = nextProps.token as BoardType;
 
     // Check rotation changes
     if ((prevBoard.rotation || 0) !== (nextBoard.rotation || 0)) {

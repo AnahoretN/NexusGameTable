@@ -689,6 +689,18 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
           type: 'RETURN_CARD_TO_DECK_TOP',
           payload: { cardId: object.id, deckId: card.deckId }
         });
+
+        // 🔥 FIX: Remove from handCardOrder if card was in hand
+        if (card.ownerId && state.players && Array.isArray(state.players)) {
+          const player = state.players.find((p: any) => p.id === card.ownerId);
+          if (player && (player.handCardOrder || []).includes(card.id)) {
+            const updatedHandOrder = player.handCardOrder.filter((id: string) => id !== card.id);
+            dispatch({
+              type: 'UPDATE_PLAYER',
+              payload: { id: card.ownerId, updates: { handCardOrder: updatedHandOrder } }
+            });
+          }
+        }
       }
       break;
 
@@ -702,6 +714,18 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
           type: action,
           payload: { deckId: cardBottom.deckId, cardId: object.id }
         });
+
+        // 🔥 FIX: Remove from handCardOrder if card was in hand
+        if (cardBottom.ownerId && state.players && Array.isArray(state.players)) {
+          const player = state.players.find((p: any) => p.id === cardBottom.ownerId);
+          if (player && (player.handCardOrder || []).includes(cardBottom.id)) {
+            const updatedHandOrder = player.handCardOrder.filter((id: string) => id !== cardBottom.id);
+            dispatch({
+              type: 'UPDATE_PLAYER',
+              payload: { id: cardBottom.ownerId, updates: { handCardOrder: updatedHandOrder } }
+            });
+          }
+        }
       }
       break;
 
@@ -716,6 +740,18 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
             payload: { cardId: object.id, deckId: cardDiscard.deckId, pileId: millPileDiscard.id }
           });
         }
+
+        // 🔥 FIX: Remove from handCardOrder if card was in hand
+        if (cardDiscard.ownerId && state.players && Array.isArray(state.players)) {
+          const player = state.players.find((p: any) => p.id === cardDiscard.ownerId);
+          if (player && (player.handCardOrder || []).includes(cardDiscard.id)) {
+            const updatedHandOrder = player.handCardOrder.filter((id: string) => id !== cardDiscard.id);
+            dispatch({
+              type: 'UPDATE_PLAYER',
+              payload: { id: cardDiscard.ownerId, updates: { handCardOrder: updatedHandOrder } }
+            });
+          }
+        }
       }
       break;
   }
@@ -729,6 +765,18 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     const card = object as Card;
     if (card.deckId) {
       dispatch({ type: 'ADD_CARD_TO_PILE', payload: { cardId: card.id, pileId, deckId: card.deckId }});
+
+      // 🔥 FIX: Remove from handCardOrder if card was in hand
+      if (card.ownerId && state.players && Array.isArray(state.players)) {
+        const player = state.players.find((p: any) => p.id === card.ownerId);
+        if (player && (player.handCardOrder || []).includes(card.id)) {
+          const updatedHandOrder = player.handCardOrder.filter((id: string) => id !== card.id);
+          dispatch({
+            type: 'UPDATE_PLAYER',
+            payload: { id: card.ownerId, updates: { handCardOrder: updatedHandOrder } }
+          });
+        }
+      }
     }
     // Menu closing is handled by the component
     return;

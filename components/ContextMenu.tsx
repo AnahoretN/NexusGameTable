@@ -916,9 +916,30 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
     },
     // VISIBILITY STATE GROUP: Show/Hide, Lock/Unlock, Pin/Unpin
     {
-      label: (object as any).isOnTable === false ? translate('Show', language as Locale) : translate('Hide', language as Locale),
-      action: (object as any).isOnTable === false ? 'show' : 'hide',
-      icon: (object as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />,
+      label: (() => {
+        // For UI objects (panels, windows) check 'visible' property
+        if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+          return (object as any).visible === false ? translate('Show', language as Locale) : translate('Hide', language as Locale);
+        }
+        // For game objects check 'isOnTable' property
+        return (object as any).isOnTable === false ? translate('Show', language as Locale) : translate('Hide', language as Locale);
+      })(),
+      action: (() => {
+        // For UI objects (panels, windows) check 'visible' property
+        if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+          return (object as any).visible === false ? 'show' : 'hide';
+        }
+        // For game objects check 'isOnTable' property
+        return (object as any).isOnTable === false ? 'show' : 'hide';
+      })(),
+      icon: (() => {
+        // For UI objects (panels, windows) check 'visible' property
+        if (object.type === ItemType.PANEL || object.type === ItemType.WINDOW) {
+          return (object as any).visible === false ? <Eye size={14} /> : <EyeOff size={14} />;
+        }
+        // For game objects check 'isOnTable' property
+        return (object as any).isOnTable === false ? <Eye size={14} /> : <EyeOff size={14} />;
+      })(),
       // Hide for token-copies (tokens with archetypeId) and in search window
       visible: !isSearchWindow && can('hide') && !(object.type === ItemType.TOKEN && (object as any).archetypeId),
       group: 'visibilityState',

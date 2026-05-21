@@ -2685,6 +2685,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                     isResizing={false}
                     canResize={false} // Disable resize in pool panels
                     zoom={1} // No additional zoom - already scaled by wrapper
+                    pixelsPerVU={pixelsPerVU}
                     onMouseDown={(e) => handleObjectMouseDown(e, obj)}
                     onContextMenu={(e) => handleContextMenu(e, obj)}
                     onResizeStart={() => {}}

@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Card } from '../types';
+import { Card } from '../../types';
 
 interface ClickTooltipProps {
   card: Card;
@@ -25,9 +25,9 @@ export const ClickTooltip: React.FC<ClickTooltipProps> = ({ card, x, y }) => {
       }}
     >
       <div className="bg-white rounded-lg shadow-xl border border-gray-300 p-4">
-        {card.faceUp && card.imageSrc && (
+        {card.faceUp && card.content && (
           <img
-            src={card.imageSrc}
+            src={card.content}
             alt={card.name || 'Card'}
             className="w-full h-auto rounded"
             style={{ maxWidth: '200px' }}

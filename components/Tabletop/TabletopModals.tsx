@@ -17,8 +17,8 @@ import { DeleteConfirmModal } from '../DeleteConfirmModal';
 import { SearchDeckModal } from '../SearchDeckModal';
 import { TopDeckModal } from '../TopDeckModal';
 import { executeContextMenuAction } from '../../utils/contextMenuActions';
-import { TableObject, DeckType, CardPile } from '../types';
-import { ItemType } from '../../types';
+import { TableObject, Deck, CardPile } from '../../types';
+import { ItemType, AppLanguage } from '../../types';
 
 /**
  * Props for TabletopModals component
@@ -28,19 +28,19 @@ export interface TabletopModalsProps {
   contextMenu: { x: number; y: number; object: TableObject; shiftKey?: boolean } | null;
   settingsModalObj: TableObject | null;
   deleteCandidateId: string | null;
-  pileContextMenu: { x: number; y: number; pile: CardPile; deck: DeckType } | null;
-  searchModalDeck: DeckType | null;
+  pileContextMenu: { x: number; y: number; pile: CardPile; deck: Deck } | null;
+  searchModalDeck: Deck | null;
   searchModalPile?: CardPile;
-  topDeckModalDeck: DeckType | null;
+  topDeckModalDeck: Deck | null;
 
   // Setters for modal states
   setContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; object: TableObject; shiftKey?: boolean } | null>>;
   setSettingsModalObj: React.Dispatch<React.SetStateAction<TableObject | null>>;
   setDeleteCandidateId: React.Dispatch<React.SetStateAction<string | null>>;
-  setPileContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; pile: CardPile; deck: DeckType } | null>>;
-  setSearchModalDeck: React.Dispatch<React.SetStateAction<DeckType | null>>;
+  setPileContextMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number; pile: CardPile; deck: Deck } | null>>;
+  setSearchModalDeck: React.Dispatch<React.SetStateAction<Deck | null>>;
   setSearchModalPile: React.Dispatch<React.SetStateAction<CardPile | undefined>>;
-  setTopDeckModalDeck: React.Dispatch<React.SetStateAction<DeckType | null>>;
+  setTopDeckModalDeck: React.Dispatch<React.SetStateAction<Deck | null>>;
 
   // Additional context for modals
   state: any;
@@ -93,7 +93,6 @@ export const TabletopModals = memo(({
       dispatch,
       activePlayerId,
       isGM,
-      shiftKey: contextMenu.shiftKey,
       setSettingsModalObj,
       setDeleteCandidateId,
       setSearchModalDeck,
@@ -246,8 +245,8 @@ export const TabletopModals = memo(({
 
     // Handle deck-specific logic
     if (settingsModalObj.type === ItemType.DECK && updatedObj.type === ItemType.DECK) {
-      const oldDeck = settingsModalObj as DeckType;
-      const newDeck = updatedObj as DeckType;
+      const oldDeck = settingsModalObj as Deck;
+      const newDeck = updatedObj as Deck;
 
       // Clear search modal if deck properties changed significantly
       if (
@@ -327,7 +326,7 @@ export const TabletopModals = memo(({
           object={contextMenu.object}
           allObjects={state.objects}
           isGM={isGM}
-          language={language}
+          language={language as AppLanguage}
           onAction={handleContextMenuAction}
           onClose={handleCloseContextMenu}
         />
@@ -342,7 +341,7 @@ export const TabletopModals = memo(({
           dispatch={dispatch}
           activePlayerId={activePlayerId}
           isGM={isGM}
-          language={language}
+          language={language as AppLanguage}
           diceGroups={state.diceGroups}
           onSave={handleObjectSettingsUpdate}
           onClose={handleCloseSettingsModal}
@@ -352,11 +351,10 @@ export const TabletopModals = memo(({
       {/* Delete Confirmation Modal */}
       {deleteCandidateId && (
         <DeleteConfirmModal
-          objectId={deleteCandidateId}
-          state={state}
-          dispatch={dispatch}
+          objectName={state.objects[deleteCandidateId]?.name || 'Object'}
           onConfirm={handleDeleteConfirm}
-          onClose={handleCloseDeleteModal}
+          onCancel={handleCloseDeleteModal}
+          language={language as AppLanguage}
         />
       )}
 
@@ -367,7 +365,7 @@ export const TabletopModals = memo(({
           y={pileContextMenu.y}
           pile={pileContextMenu.pile}
           deck={pileContextMenu.deck}
-          language={language}
+          language={language as AppLanguage}
           onAction={handlePileContextMenuAction}
           onClose={handleClosePileContextMenu}
         />
@@ -382,7 +380,7 @@ export const TabletopModals = memo(({
           dispatch={dispatch}
           activePlayerId={activePlayerId}
           isGM={isGM}
-          language={language}
+          language={language as AppLanguage}
           onClose={handleCloseSearchModal}
         />
       )}
@@ -395,7 +393,7 @@ export const TabletopModals = memo(({
           dispatch={dispatch}
           activePlayerId={activePlayerId}
           isGM={isGM}
-          language={language}
+          language={language as AppLanguage}
           onClose={handleCloseTopDeckModal}
         />
       )}

@@ -6,7 +6,7 @@ import { t } from '../utils/translations';
 import { useImageUrl } from '../hooks/useImageUrl';
 
 export interface AvatarSettingsModalRef {
-  getValues: () => CharacterTab;
+  getValues: () => Pick<CharacterTab, 'id' | 'avatarUrl' | 'avatarBorderColor' | 'avatarBorderWidth'>;
 }
 
 interface AvatarSettingsModalProps {

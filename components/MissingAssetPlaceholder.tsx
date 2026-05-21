@@ -161,11 +161,9 @@ export async function loadImageFromUrl(
     onProgress?.(80);
 
     // Hash and store in IndexedDB
-    const { hashAsset } = await import('../utils/assets/hashing');
-    const { assetCache } = await import('../utils/assets/assetCache');
+    const { storeAsset } = await import('../utils/assets');
 
-    const { hash } = await hashAsset(blob);
-    await assetCache.store(hash, blob);
+    const hash = await storeAsset(blob, blob.type || 'image/png', 'url');
 
     onProgress?.(100);
 

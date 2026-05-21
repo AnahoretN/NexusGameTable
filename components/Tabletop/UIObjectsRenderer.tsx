@@ -23,8 +23,8 @@ interface UIObjectsRendererProps {
   handleContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   handlePileContextMenu?: (e: React.MouseEvent, pile: any, deck: any) => void;
   dispatch: React.Dispatch<any>;
-  setSearchModalDeck: (deck: DeckType) => void;
-  setTopDeckModalDeck: (deck: DeckType) => void;
+  setSearchModalDeck: (deck: DeckType | null) => void;
+  setTopDeckModalDeck: (deck: DeckType | null) => void;
   setDeleteCandidateId: (id: string | null) => void;
   offset?: { x: number; y: number };
   zoom?: number;

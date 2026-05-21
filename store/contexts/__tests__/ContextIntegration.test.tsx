@@ -233,7 +233,6 @@ describe('Context Integration Tests - Phase 6', () => {
           color: '#CCCCCC',
           playerCanSelect: true,
           playerCanView: true,
-          individualPosition: false,
           individualObjects: false,
           zoomEnabled: true,
           order: 10,

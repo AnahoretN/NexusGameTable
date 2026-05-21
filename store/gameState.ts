@@ -29,7 +29,7 @@ export interface PlayerPanelSettings {
   };
 }
 
-// Individual object positions for each player on layers with individualPosition enabled
+// Individual object positions for each player on layers with individualObjects enabled
 export interface PlayerObjectPositions {
   [playerId: string]: {
     [objectId: string]: {
@@ -59,7 +59,7 @@ export interface GameState {
   diceGroups: DiceGroup[]; // Dice groups for rolling multiple dice together
   lastModifiedBy?: string; // ID of player who last modified the game state
   playerPanelSettings: PlayerPanelSettings; // Individual panel settings for each player
-  playerObjectPositions: PlayerObjectPositions; // Individual object positions for each player on layers with individualPosition
+  playerObjectPositions: PlayerObjectPositions; // Individual object positions for each player on layers with individualObjects
   auditLog: AuditLogState; // Session audit log
   usedPacks: Record<string, import('../types').PackInfo>; // Asset packs used in this game (for P2P sync)
   guestPackStatus: Record<string, import('../types').GuestPackStatus>; // 🔥 NEW: Track guest pack loading status (host only)
@@ -105,7 +105,7 @@ export const initialState: GameState = {
   lastModifiedBy: 'gm',
   // Individual panel settings for each player (stored on host)
   playerPanelSettings: {},
-  // Individual object positions for each player on layers with individualPosition (stored on host)
+  // Individual object positions for each player on layers with individualObjects (stored on host)
   playerObjectPositions: {},
   // Session audit log
   auditLog: {
@@ -127,7 +127,6 @@ export const initialState: GameState = {
       color: '#3b82f6',
       playerCanSelect: true,
       playerCanView: true,
-      individualPosition: false,
       individualObjects: false,
       zoomEnabled: true,
       order: 0
@@ -140,7 +139,6 @@ export const initialState: GameState = {
       color: '#f59e0b',
       playerCanSelect: true,
       playerCanView: true,
-      individualPosition: false,
       individualObjects: false,
       zoomEnabled: true,
       order: 1
@@ -153,7 +151,6 @@ export const initialState: GameState = {
       color: '#10b981',
       playerCanSelect: true,
       playerCanView: true,
-      individualPosition: false,
       individualObjects: false,
       zoomEnabled: true,
       order: 2
@@ -166,7 +163,6 @@ export const initialState: GameState = {
       color: '#ec4899',
       playerCanSelect: true,
       playerCanView: true,
-      individualPosition: true,
       individualObjects: false,
       zoomEnabled: true,
       order: 3
@@ -179,7 +175,6 @@ export const initialState: GameState = {
       color: '#8b5cf6',
       playerCanSelect: true,
       playerCanView: false,
-      individualPosition: true,
       individualObjects: true, // Each player has their own interface objects (panels, windows, etc.)
       zoomEnabled: false, // Interface layer NOT affected by zoom
       order: 4

@@ -71,7 +71,7 @@ export const TokenRenderer = memo(({
     canDrag: canDrag,
     isDragging: isDragging,
     currentTool: currentTool,
-    content: obj.content?.substring(0, 30) + '...',
+    content: (obj as any).content?.substring(0, 30) + '...',
     hasOwnerId: !!(obj as any).ownerId,
     x: obj.x,
     y: obj.y
@@ -385,12 +385,12 @@ export const TokenRenderer = memo(({
 
   // Memoize rendered buttons
   const actionButtons = useMemo(() => {
-    const buttons = (obj.actionButtons || [])
-      .map(action => buttonConfigs[action])
+    const buttons = ((obj as any).actionButtons || [])
+      .map((action: any) => buttonConfigs[action])
       .filter(Boolean)
       .slice(0, 4);
 
-    return buttons.map(btn => (
+    return buttons.map((btn: any) => (
       <button
         key={btn.key}
         onClick={(e) => { e.stopPropagation(); btn.action(); }}
@@ -400,14 +400,14 @@ export const TokenRenderer = memo(({
         {btn.icon}
       </button>
     ));
-  }, [obj.actionButtons, buttonConfigs]);
+  }, [(obj as any).actionButtons, buttonConfigs]);
 
   return (
     <Tooltip
-      text={obj.tooltipText}
-      showImage={obj.showTooltipImage}
-      imageSrc={obj.content}
-      scale={obj.tooltipScale}
+      text={undefined}
+      showImage={false}
+      imageSrc={undefined}
+      scale={undefined}
     >
       <div
         data-object-id={obj.id}

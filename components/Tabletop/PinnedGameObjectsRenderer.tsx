@@ -3,7 +3,7 @@ import { SvgTokenShape } from '../SvgTokenShape';
 import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Pin, RotateCw, RefreshCw, Trash2, Copy, Lock, Unlock, Eye, EyeOff, ChevronsUpDown, SkipForward, SkipBack, Rewind, Plus, Minus } from 'lucide-react';
-import { TableObject, Token as TokenType, ItemType, TokenSlider, TokenSliderDisplay, Counter, DiceObject } from '../../types';
+import { TableObject, Token as TokenType, ItemType, TokenSlider, TokenSliderDisplay, Counter, DiceObject, EffectTemplate, TokenShape } from '../../types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 
 interface PinnedGameObjectsRendererProps {
@@ -57,10 +57,10 @@ const TokenCountersDisplay = memo(({
 
   // Memoize render function for each slider
   const renderBar = useCallback((slider: TokenSlider, index: number) => {
-    if (counterDisplay?.displayType === 'bars') {
+    if ((counterDisplay as any)?.displayType === 'bars') {
       const maxValue = slider.maxValue || 100;
       const currentValue = slider.value || 0;
-      const barSize = slider.width || 60;
+      const barSize = (slider as any).width || 60;
       const barWidth = Math.max(barSize * pixelsPerVU, tokenWidth);
       const fillPercentage = Math.min(100, Math.max(0, (currentValue / maxValue) * 100));
       const color = slider.color || '#e74c3c';
@@ -202,7 +202,7 @@ const PinnedCounterRenderer = memo(({
   }, [obj, dispatch, pixelsPerVU]);
 
   const actionButtons = useMemo(() => {
-    const buttons = (obj.actionButtons || [])
+    const buttons = ((obj as any).actionButtons || [])
       .map(action => buttonConfigs[action])
       .filter(Boolean)
       .slice(0, 4);
@@ -217,7 +217,7 @@ const PinnedCounterRenderer = memo(({
         {btn.icon}
       </button>
     ));
-  }, [obj.actionButtons, buttonConfigs]);
+  }, [(obj as any).actionButtons, buttonConfigs]);
 
   return (
     <div
@@ -316,7 +316,7 @@ const PinnedDiceRenderer = memo(({
   const valueFontSize = 25 * pixelsPerVU;
   const sidesFontSize = 15 * pixelsPerVU;
 
-  const diceColor = obj.color || '#6366f1';
+  const diceColor = (obj as any).color || '#6366f1';
   const fontColor = (obj as any).fontColor || '#ffffff';
 
   // Memoize button configurations
@@ -379,7 +379,7 @@ const PinnedDiceRenderer = memo(({
   }, [obj, dispatch, pixelsPerVU]);
 
   const actionButtons = useMemo(() => {
-    const buttons = (obj.actionButtons || [])
+    const buttons = ((obj as any).actionButtons || [])
       .map(action => buttonConfigs[action])
       .filter(Boolean)
       .slice(0, 4);
@@ -394,7 +394,7 @@ const PinnedDiceRenderer = memo(({
         {btn.icon}
       </button>
     ));
-  }, [obj.actionButtons, buttonConfigs]);
+  }, [(obj as any).actionButtons, buttonConfigs]);
 
   return (
     <div
@@ -414,16 +414,16 @@ const PinnedDiceRenderer = memo(({
       onContextMenu={(e) => onContextMenu(e, obj)}
     >
       <SvgTokenShape
-        shape={dice.shape}
+        shape={(dice.shape ?? 'SQUARE') as TokenShape}
         width={diceWidth}
         height={diceHeight}
         color={diceColor}
         content={undefined}
         rotation={0}
-        borderWidth={obj.borderWidth ?? 2}
+        borderWidth={(obj as any).borderWidth ?? 2}
         borderColor={(obj as any).borderColor || '#ffffff'}
-        opacity={obj.opacity ?? 100}
-        borderOpacity={obj.borderOpacity ?? 100}
+        opacity={(obj as any).opacity ?? 100}
+        borderOpacity={(obj as any).borderOpacity ?? 100}
         showThickness={true}
         tokenName={undefined}
         fontColor={fontColor}
@@ -583,7 +583,7 @@ const PinnedTokenRenderer = memo(({
 
   // Memoize rendered buttons
   const actionButtons = useMemo(() => {
-    const buttons = (obj.actionButtons || [])
+    const buttons = ((obj as any).actionButtons || [])
       .map(action => buttonConfigs[action])
       .filter(Boolean)
       .slice(0, 4);
@@ -598,7 +598,7 @@ const PinnedTokenRenderer = memo(({
         {btn.icon}
       </button>
     ));
-  }, [obj.actionButtons, buttonConfigs]);
+  }, [(obj as any).actionButtons, buttonConfigs]);
 
   return (
     <div
@@ -613,7 +613,7 @@ const PinnedTokenRenderer = memo(({
         transform: `rotate(${obj.rotation || 0}deg)`,
         overflow: 'visible',
       }}
-      onMouseDown={(e) => isOwner && onMouseDown(e, obj.id)}
+      onMouseDown={(e) => onMouseDown(e, obj.id)}
       onContextMenu={(e) => onContextMenu(e, obj)}
     >
       <SvgTokenShape
@@ -714,7 +714,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
         onContextMenu={(e) => onContextMenu(e, obj)}
       >
         <EffectTemplateRendererMemo
-          obj={obj}
+          obj={obj as EffectTemplate}
           pixelsPerVU={pixelsPerVU}
           isGM={isGM}
           dispatch={dispatch}

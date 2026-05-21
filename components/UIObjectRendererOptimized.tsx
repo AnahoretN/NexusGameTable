@@ -534,11 +534,11 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   }, [dispatch, uiObject.id]);
 
   const handleHide = useCallback(() => {
-    // Hide panel instead of closing it
-    // For panels on individual objects layers, visibility is handled per-player in GameContext
+    // Hide panel - for individualObjects layers this is local-only (not synced)
     dispatch({
       type: 'UPDATE_OBJECT',
-      payload: { id: uiObject.id, updates: { visible: false } }
+      payload: { id: uiObject.id, updates: { visible: false } },
+      _localOnly: true // Local-only: visibility is not synced
     });
   }, [dispatch, uiObject.id]);
 

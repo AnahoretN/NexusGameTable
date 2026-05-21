@@ -121,7 +121,7 @@ export type Action =
   | BaseAction<'APPLY_PLAYER_PANEL_SETTINGS', { settings: Record<string, any> }> // Apply individual settings to panels
   | BaseAction<'APPLY_SAVED_PANEL_SETTINGS', { playerPanelSettings: Record<string, any> }> // Apply saved settings from file
   | BaseAction<'REQUEST_PLAYER_PANEL_SETTINGS', { playerId: string }> // Guest requests their panel settings from host
-  // Player object positions actions (for layers with individualPosition)
+  // Player object positions actions (for layers with individualObjects)
   | BaseAction<'UPDATE_PLAYER_OBJECT_POSITION', { playerId: string; objectId: string; x: number; y: number; rotation?: number; zIndex?: number }>
   | BaseAction<'APPLY_PLAYER_OBJECT_POSITIONS', { playerObjectPositions: Record<string, Record<string, { x: number; y: number; rotation?: number; zIndex?: number }>> }> // Apply saved positions from file
   // Undo actions
@@ -129,5 +129,6 @@ export type Action =
   | ActionWithoutPayload<'UNDO_GENERAL'>
   // Local storage actions
   | ActionWithoutPayload<'CLEAR_SAVED_STATE'>
+  | ActionWithoutPayload<'CLEAR_FORCE_FULL_SYNC'>
   // Audit log actions
   | BaseAction<'ADD_AUDIT_LOG_ENTRY', any>;  // AuditLogEntry (to avoid circular dependency)

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
 import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
@@ -69,61 +69,89 @@ const gameReducer = (state: GameState, action: Action): GameState => {
   // Exclude UPDATE_OBJECT with inCursorSlot=true to prevent local cursor slot state from syncing to host
   // Also exclude objects at -999999 position (cursor slot hidden position)
   // Exclude objects on individual position/objects layers (local-only changes)
+  // Exclude UPDATE_PLAYER_OBJECT_POSITION (host-only action, should not broadcast)
   let shouldExcludeFromSync =
     action.type === 'SYNC_STATE' ||
+    action.type === 'UPDATE_PLAYER_OBJECT_POSITION' || // Host-only: stores individual position, don't broadcast
     (action.type === 'UPDATE_OBJECT' && action.payload?.updates?.inCursorSlot === true) ||
     (action.type === 'UPDATE_OBJECT' && (action.payload?.updates?.x < -900000 || action.payload?.updates?.y < -900000));
 
-  // For UPDATE_OBJECT actions, check if object is on individual position/objects layer
-  if (action.type === 'UPDATE_OBJECT' && action.payload?.id && !shouldExcludeFromSync) {
+  // SIMPLIFIED: For individualObjects layers, exclude local-only properties from P2P sync
+  if (action.type === 'UPDATE_OBJECT' && action.payload?.id) {
     const obj = state.objects[action.payload.id];
     if (obj) {
       const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
-      // console.log('[gameReducer] 🔍 Checking UPDATE_OBJECT:', {
-      //   objectId: action.payload.id,
-      //   hyperscaleLayerId: obj.hyperscaleLayerId,
-      //   layerFound: !!layer,
-      //   layerName: layer?.name,
-      //   individualPosition: layer?.individualPosition,
-      //   individualObjects: layer?.individualObjects,
-      //   updates: action.payload?.updates
-      // });
-      if (layer && (layer.individualPosition || layer.individualObjects)) {
-        // Don't sync individual position/objects changes to other players
-        console.log('[gameReducer] 🚫 Excluding individual object from sync:', {
-          actionType: action.type,
-          objectId: action.payload.id,
-          layerId: obj.hyperscaleLayerId,
-          layerName: layer.name,
-          individualPosition: layer.individualPosition,
-          individualObjects: layer.individualObjects
-        });
+      if (layer?.individualObjects) {
+        const updates = action.payload.updates || action.payload;
+        const updateKeys = Object.keys(updates).filter(k => k !== 'id');
+
+        // Local-only properties (NOT synced via P2P)
+        const localOnlyKeys = [
+          'x', 'y', 'rotation', 'zIndex',  // Position
+          'width', 'height',               // Size
+          'visible', 'minimized',          // Visibility state
+          'locked',                        // Lock state (individual per player)
+          'isPinnedToViewport', 'pinnedScreenPosition',  // Pin state
+          'expandedState', 'collapsedState',  // Minimize states
+          'expandedPinnedPosition', 'collapsedPinnedPosition'
+        ];
+
+        // Check if update contains ONLY local-only properties
+        const hasOnlyLocalProps = updateKeys.every(k => localOnlyKeys.includes(k));
+
+        if (hasOnlyLocalProps && updateKeys.length > 0) {
+          shouldExcludeFromSync = true;
+        }
+      }
+    }
+  }
+
+  // SIMPLIFIED: For individualObjects layers, exclude UI actions from P2P sync
+  if ((action.type === 'CLOSE_UI_OBJECT' || action.type === 'TOGGLE_MINIMIZE' || action.type === 'RESIZE_UI_OBJECT') && action.payload?.id) {
+    const obj = state.objects[action.payload.id];
+    if (obj) {
+      const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+      if (layer?.individualObjects) {
         shouldExcludeFromSync = true;
       }
-    } else {
-      // console.log('[gameReducer] ⚠️ UPDATE_OBJECT but object not found in state:', {
-      //   objectId: action.payload.id,
-      //   availableIds: Object.keys(state.objects).slice(0, 5)
-      // });
+    }
+  }
+
+  // For individualObjects layers, exclude lock/pin state changes from P2P sync
+  // These are individual per player (each player has their own lock/pin state)
+  if ((action.type === 'TOGGLE_LOCK' || action.type === 'PIN_TO_VIEWPORT' || action.type === 'UNPIN_FROM_VIEWPORT') && action.payload?.id) {
+    const obj = state.objects[action.payload.id];
+    if (obj && obj.hyperscaleLayerId) {
+      // Only check for individualObjects if the object is explicitly on a hyperscale layer
+      const layer = state.hyperscaleLayers.find(l => l.id === obj.hyperscaleLayerId);
+      if (layer?.individualObjects) {
+        shouldExcludeFromSync = true;
+      }
     }
   }
 
   if (!shouldExcludeFromSync) {
-    // console.log('[gameReducer] ➕ Adding to differentialSyncManager:', {
-    //   actionType: action.type,
-    //   objectId: action.payload?.id,
-    //   payloadKeys: action.payload ? Object.keys(action.payload) : []
-    // });
+    // Determine change type based on action
+    let changeType: 'object' | 'player' | 'ui' = 'object';
+
+    // Actions that modify player state (not objects)
+    const playerActions = [
+      // 'DRAW_CARD',         // 🔥 FIX: DRAW_CARD also modifies deck+card objects, so it needs 'object' type
+      'UPDATE_PLAYER',       // Updates player data
+      'ADD_PLAYER',          // Adds player to list
+      'REMOVE_PLAYER',       // Removes player from list
+      'UPDATE_PLAYER_NAME',  // Updates player name
+      'UPDATE_PLAYER_PERMISSIONS', // Updates player permissions
+    ];
+
+    if (playerActions.includes(action.type)) {
+      changeType = 'player';
+    }
+
     differentialSyncManager.addChange({
-      type: 'object',
+      type: changeType,
       action: action,
       timestamp: Date.now()
-    });
-  } else {
-    console.log('[gameReducer] ⏭️ Skipping sync for action:', {
-      type: action.type,
-      objectId: action.payload?.id,
-      reason: shouldExcludeFromSync
     });
   }
 
@@ -133,6 +161,19 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // ensuring we don't accidentally become someone else visually
         const currentActiveId = state.activePlayerId;
         const currentViewTransform = state.viewTransform;
+
+        // 🔥 FIX: Preserve local player in players array
+        // When guest receives SYNC_STATE before HELO is processed by host,
+        // the incoming players array doesn't contain the guest. We need to
+        // ensure the local player (with currentActiveId) is not removed.
+        const incomingPlayers = action.payload.players || [];
+        const localPlayer = state.players.find(p => p.id === currentActiveId);
+
+        let finalPlayers = incomingPlayers;
+        if (localPlayer && !incomingPlayers.some(p => p.id === currentActiveId)) {
+          // Local player not in incoming players - preserve them
+          finalPlayers = [...incomingPlayers, localPlayer];
+        }
 
         // Check if this is a reconnection to the same session
         // If session ID matches, restore local panel settings; otherwise use host's settings
@@ -161,8 +202,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
                 // Replace content with hash
                 obj.content = hash;
-
-                console.log(`[SYNC_STATE] Converted board "${obj.name || id}" content to sha256:... (${Math.round(obj.content.length/1024)}KB)`);
               }
             }
 
@@ -177,25 +216,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
                 // Update or add each incoming object
                 Object.entries(incomingObjects).forEach(([id, obj]) => {
-                  // 🔥 DEBUG: Log incoming object properties
-                  const existingObj = state.objects[id];
-                  const isPanel = obj.type === ItemType.PANEL;
-                  const hasCharacterData = isPanel && (obj as PanelObject).characterData;
-
-                  console.log(`[SYNC_STATE Partial] Object ${id}:`, {
-                    name: obj.name,
-                    type: obj.type,
-                    isPanel,
-                    hasCharacterData,
-                    characterDataKeys: hasCharacterData ? Object.keys((obj as PanelObject).characterData || {}) : [],
-                    hasContent: !!obj.content,
-                    contentPreview: obj.content?.substring(0, 20) || 'none',
-                    hadContentBefore: !!existingObj?.content,
-                    keysIn: Object.keys(obj),
-                    keysExisting: existingObj ? Object.keys(existingObj) : [],
-                    inCursorSlotTracker: isInCursorSlot(id)
-                  });
-
                   // Skip individual objects - they are per-player and should not be synced from host
                   if (isObjectIndividual(obj, state.hyperscaleLayers)) {
                     return;
@@ -205,7 +225,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   // This prevents race condition where Redux hasn't updated yet
                   if (isInCursorSlot(id)) {
                     // Object is currently being dragged locally - preserve drag state
-                    console.log(`[SYNC_STATE Partial] Object ${id} is in cursor slot (tracker), preserving drag state`);
 
                     const localObj = state.objects[id] as any;
                     const originalPos = getOriginalPosition(id);
@@ -225,7 +244,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   finalObjects[id] = obj;
                 });
 
-              console.log('[SYNC_STATE] Partial sync: merged objects', {
+              // SYNC_STATE: Partial sync merged
+              console.log('SYNC_STATE: Partial sync merged', {
                 incoming: Object.keys(incomingObjects).length,
                 total: Object.keys(finalObjects).length
               });
@@ -245,7 +265,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               Object.keys(incomingObjects).forEach(id => {
                 if (isInCursorSlot(id)) {
                   // Object is currently being dragged locally - preserve drag state
-                  console.log(`[SYNC_STATE Full] Object ${id} is in cursor slot (tracker), preserving drag state`);
+                  // SYNC_STATE: Object in cursor slot, preserving drag state
 
                   const incomingObj = incomingObjects[id];
                   const localObj = state.objects[id] as any;
@@ -277,10 +297,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 ...incomingObjects,
                 ...localIndividualObjects
               };
-
-              console.log('[SYNC_STATE] Full sync: replaced all objects', {
-                total: Object.keys(finalObjects).length
-              });
             }
 
             // Don't restore local panel settings - all settings come from host's playerPanelSettings
@@ -325,15 +341,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
         };
 
-        // Apply current player's panel settings to objects
+        // SIMPLIFIED: Apply current player's panel settings to objects
+        // For individualObjects layers, objects are already fully local (no need to apply settings)
         const currentPanelSettings = mergedPlayerPanelSettings[currentPlayerId] || {};
 
         const updatedObjects = { ...finalObjects };
         Object.entries(currentPanelSettings).forEach(([panelId, panelSettings]: [string, any]) => {
           if (updatedObjects[panelId] && (updatedObjects[panelId].type === ItemType.PANEL || updatedObjects[panelId].type === ItemType.WINDOW)) {
             const existingPanel = updatedObjects[panelId];
+
+            // SIMPLIFIED: Skip individualObjects layers - they are fully local
+            const layerId = existingPanel.hyperscaleLayerId || 'tokens';
+            const layer = action.payload.hyperscaleLayers?.find((l: HyperscaleLayer) => l.id === layerId);
+            if (layer?.individualObjects) {
+              return; // Skip - individual objects are fully local
+            }
+
             // Only apply properties that are defined in panelSettings
-            // This prevents accidentally overwriting important properties like characterData with undefined
             const filteredSettings: any = {};
             Object.entries(panelSettings).forEach(([key, value]) => {
               if (value !== undefined) {
@@ -347,30 +371,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
         });
 
-        // Apply current player's individual object positions for objects on individual position layers
-        const currentPlayerObjectPositions = mergedPlayerObjectPositions[currentPlayerId] || {};
-        Object.entries(currentPlayerObjectPositions).forEach(([objectId, position]: [string, any]) => {
-          if (updatedObjects[objectId]) {
-            const obj = updatedObjects[objectId];
-            const layerId = obj.hyperscaleLayerId || 'tokens';
-            const layer = action.payload.hyperscaleLayers?.find((l: HyperscaleLayer) => l.id === layerId);
-
-            // Only apply individual position if layer has individualPosition enabled
-            if (layer?.individualPosition) {
-              updatedObjects[objectId] = {
-                ...obj,
-                x: position.x,
-                y: position.y,
-                ...(position.rotation !== undefined && { rotation: position.rotation }),
-                ...(position.zIndex !== undefined && { zIndex: position.zIndex })
-              };
-            }
-          }
-        });
-
         return {
             ...state, // Keep existing state as base
             ...payloadWithoutViewTransform, // Merge with payload (excluding viewTransform and internal fields)
+            players: finalPlayers, // 🔥 FIX: Use players array with local player preserved
             objects: updatedObjects, // Use objects with applied panel settings and individual positions
             activePlayerId: currentActiveId,
             // CRITICAL: Never use viewTransform from remote state - always keep local
@@ -391,7 +395,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const payloadJson = JSON.stringify(action.payload);
         const payloadSizeMB = Math.round(payloadJson.length / 1024 / 1024 * 100) / 100;
         if (payloadSizeMB > 1) {
-          console.warn(`[LOAD_GAME] Large payload detected: ${payloadSizeMB}MB`);
+          // LOAD_GAME: Large payload detected
         }
 
         // Deep clone objects to avoid mutating the original payload
@@ -688,7 +692,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     }
     case 'REMOVE_PLAYER': {
         // 🔥 NEW: Also remove guest pack status when player disconnects
-        const { [action.payload.id]: removedStatus, ...remainingStatus } = state.guestPackStatus;
+        const guestPackStatus = state.guestPackStatus ?? {};
+        const { [action.payload.id]: removedStatus, ...remainingStatus } = guestPackStatus;
         return {
             ...state,
             players: state.players.filter(p => p.id !== action.payload.id),
@@ -698,10 +703,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     // 🔥 NEW: Initialize guest pack status when guest connects
     case 'INITIALIZE_GUEST_PACK_STATUS': {
         const { guestId, guestName, connectedAt } = action.payload;
+        const guestPackStatus = state.guestPackStatus ?? {};
         return {
             ...state,
             guestPackStatus: {
-                ...state.guestPackStatus,
+                ...guestPackStatus,
                 [guestId]: {
                     playerId: guestId,
                     playerName: guestName,
@@ -715,15 +721,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     // 🔥 NEW: Update guest pack status when guest loads a pack
     case 'UPDATE_GUEST_PACK_STATUS': {
         const { guestId, packName, packHash, imageCount } = action.payload;
-        const guestStatus = state.guestPackStatus[guestId];
+        const guestPackStatus = state.guestPackStatus ?? {};
+        const guestStatus = guestPackStatus[guestId];
         if (!guestStatus) {
-            console.warn(`[GameContext] Guest ${guestId} not found in guestPackStatus`);
+            // GameContext: Guest not found in guestPackStatus
             return state;
         }
         return {
             ...state,
             guestPackStatus: {
-                ...state.guestPackStatus,
+                ...guestPackStatus,
                 [guestId]: {
                     ...guestStatus,
                     loadedPacks: {
@@ -741,7 +748,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'REMOVE_GUEST_PACK_STATUS': {
-        const { [action.payload.guestId]: removed, ...remaining } = state.guestPackStatus;
+        const guestPackStatus = state.guestPackStatus ?? {};
+        const { [action.payload.guestId]: removed, ...remaining } = guestPackStatus;
         return {
             ...state,
             guestPackStatus: remaining,
@@ -892,7 +900,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updates = action.payload.updates || action.payload;
         const hasCharacterData = updates.characterData !== undefined;
         if (hasCharacterData) {
-          console.log('[UPDATE_OBJECT] Panel characterData update', {
+          // UPDATE_OBJECT: Panel characterData update
+          console.log('UPDATE_OBJECT: Panel characterData update', {
             panelId: action.payload.id,
             panelType: (obj as PanelObject).panelType,
             hasCharacterData: true,
@@ -902,131 +911,64 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       }
 
-      // Check if object is on a hyperscale layer with individualPosition enabled
+      // Check if object is on a hyperscale layer with individualObjects enabled
       const individualLayerId = obj.hyperscaleLayerId || 'tokens';
       const individualLayer = state.hyperscaleLayers.find(l => l.id === individualLayerId);
-      const isIndividualPositionLayer = individualLayer?.individualPosition === true;
       const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
 
-      // For individual position/objects layers coming from network, save position but don't sync to other guests
-      // This allows host to store guest positions without broadcasting them
-      if ((isIndividualPositionLayer || isIndividualObjectsLayer) && !action._localOnly) {
+      // 🔥 SIMPLIFIED: For individualObjects layers, local properties are NOT synced
+      // Local properties: position (x, y, rotation, zIndex), visibility, size, minimized state
+      // Other properties (characterData, content, etc.) are synced normally
+      if (isIndividualObjectsLayer && !action._localOnly) {
         const updates = action.payload.updates || {};
         const { id, updates: _updates, ...restOfPayload } = action.payload;
         const mergedUpdates = Object.keys(updates).length > 0 ? updates : restOfPayload;
 
-        // Check if this is a position update
-        const hasPositionUpdate =
-          mergedUpdates.x !== undefined ||
-          mergedUpdates.y !== undefined ||
-          mergedUpdates.rotation !== undefined ||
-          mergedUpdates.zIndex !== undefined;
+        // Local-only properties (NOT synced)
+        const localOnlyKeys = [
+          'x', 'y', 'rotation', 'zIndex',  // Position
+          'width', 'height',               // Size
+          'visible', 'minimized',          // Visibility state
+          'isPinnedToViewport', 'pinnedScreenPosition',  // Pin state
+          'expandedState', 'collapsedState',  // Minimize states
+          'expandedPinnedPosition', 'collapsedPinnedPosition'
+        ];
 
-        if (hasPositionUpdate && (action.payload as any).playerId) {
-          // Store the individual position for this player (host only)
-          const playerId = (action.payload as any).playerId;
-          const currentPosition = state.playerObjectPositions[playerId]?.[obj.id] || {};
+        // Check if update contains ONLY local-only properties
+        const hasOnlyLocalProps = Object.keys(mergedUpdates).every(k => localOnlyKeys.includes(k));
 
-          const newPosition = {
-            x: mergedUpdates.x !== undefined ? mergedUpdates.x : currentPosition.x,
-            y: mergedUpdates.y !== undefined ? mergedUpdates.y : currentPosition.y,
-            rotation: mergedUpdates.rotation !== undefined ? mergedUpdates.rotation : currentPosition.rotation,
-            zIndex: mergedUpdates.zIndex !== undefined ? mergedUpdates.zIndex : currentPosition.zIndex
-          };
-
-          // Return state with updated individual position
+        if (hasOnlyLocalProps) {
+          // This is a local-only update - just apply it locally, don't sync to other players
+          // Update the object directly with local changes
           return {
             ...state,
-            playerObjectPositions: {
-              ...state.playerObjectPositions,
-              [playerId]: {
-                ...(state.playerObjectPositions[playerId] || {}),
-                [obj.id]: newPosition
-              }
+            objects: {
+              ...state.objects,
+              [obj.id]: { ...obj, ...mergedUpdates }
             }
           };
         }
 
-        // For individual objects layers, skip network updates EXCEPT for visibility on panels
-        // Panels on individual layers should have local visibility control
-        if (isIndividualObjectsLayer) {
-          const isVisibilityUpdate = mergedUpdates.visible !== undefined;
-          const isPanelOrWindow = obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW;
-          const hasPlayerId = (action.payload as any).playerId !== undefined;
-
-          if (isVisibilityUpdate && isPanelOrWindow) {
-            if (hasPlayerId) {
-              // Network action from guest - store visibility in guest's playerPanelSettings
-              const playerId = (action.payload as any).playerId;
-              const newVisibility = mergedUpdates.visible;
-
-              return {
-                ...state,
-                playerPanelSettings: {
-                  ...state.playerPanelSettings,
-                  [playerId]: {
-                    ...(state.playerPanelSettings[playerId] || {}),
-                    [obj.id]: {
-                      ...(state.playerPanelSettings[playerId]?.[obj.id] || {}),
-                      visible: newVisibility
-                    }
-                  }
-                }
-              };
-            } else {
-              // Local action from host - mark as local-only to prevent sync
-              // Host's visibility changes should be local-only for individual objects layers
-              action._localOnly = true;
-              // Continue processing below - the object will be updated but not synced
-            }
-          } else if (hasPositionUpdate) {
-            // Position update on individual objects layer
-            if (hasPlayerId) {
-              // Network action from guest - store position in guest's playerPanelSettings
-              const playerId = (action.payload as any).playerId;
-              const currentPosition = state.playerPanelSettings[playerId]?.[obj.id] || {};
-
-              const newSettings = {
-                ...currentPosition,
-                x: mergedUpdates.x !== undefined ? mergedUpdates.x : currentPosition.x,
-                y: mergedUpdates.y !== undefined ? mergedUpdates.y : currentPosition.y
-              };
-
-              return {
-                ...state,
-                playerPanelSettings: {
-                  ...state.playerPanelSettings,
-                  [playerId]: {
-                    ...(state.playerPanelSettings[playerId] || {}),
-                    [obj.id]: newSettings
-                  }
-                }
-              };
-            } else {
-              // Local action from host - mark as local-only to prevent sync
-              action._localOnly = true;
-              // Continue processing below - the object will be updated but not synced
-            }
-          }
-
-          // For all other updates on individual objects layers, skip
-          return state;
-        }
-
-        // For individual position layers, filter out position properties
+        // Filter out local-only properties from network sync
         const filteredUpdates: any = {};
         Object.entries(mergedUpdates).forEach(([key, value]) => {
-          if (key !== 'x' && key !== 'y' && key !== 'rotation' && key !== 'zIndex') {
+          if (!localOnlyKeys.includes(key)) {
             filteredUpdates[key] = value;
           }
         });
 
-        // If all properties were filtered out, skip this action
+        // If all properties were local-only, we already handled it above
         if (Object.keys(filteredUpdates).length === 0) {
-          return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [obj.id]: { ...obj, ...mergedUpdates }
+            }
+          };
         }
 
-        // Continue with filtered updates
+        // Continue with non-local updates
         action.payload.updates = filteredUpdates;
       }
 
@@ -1038,6 +980,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           'width', 'height',           // Size is local
           'zIndex',                   // Layer position is local
           'minimized',                 // Minimized state is local
+          'visible',                   // Visibility is local
           'isPinnedToViewport',        // Pinning is local
           'pinnedScreenPosition',      // Pinned position is local
           'expandedState',             // Expanded state is local
@@ -1051,26 +994,55 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const updateKeys = Object.keys(updates);
         const hasOnlyLocalProps = updateKeys.every(key => localOnlyProps.includes(key));
 
-        // If only local properties are being updated, skip this action for panels/windows
+        // If only local properties are being updated, apply them locally and skip network sync
         if (hasOnlyLocalProps && updateKeys.length > 0) {
-          return state;
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [obj.id]: { ...obj, ...updates }
+            }
+          };
         }
 
-        // Filter out local properties from the updates
+        // Filter out local properties from the updates, but keep non-local ones
         const filteredUpdates: any = {};
+        const localUpdates: any = {};
         Object.entries(updates).forEach(([key, value]) => {
           if (!localOnlyProps.includes(key)) {
             filteredUpdates[key] = value;
+          } else {
+            localUpdates[key] = value;
           }
         });
 
-        // If all properties were filtered out, skip this action
-        if (Object.keys(filteredUpdates).length === 0) {
-          return state;
-        }
+        // If there are local updates mixed with non-local ones, apply both:
+        // - Local updates are applied to the object directly
+        // - Non-local updates continue to be processed (and will be synced)
+        if (Object.keys(localUpdates).length > 0) {
+          // Update the base object with local changes
+          obj = { ...obj, ...localUpdates };
 
-        // Use filtered updates instead of original
-        action.payload.updates = filteredUpdates;
+          // If there are no non-local updates, we're done
+          if (Object.keys(filteredUpdates).length === 0) {
+            return {
+              ...state,
+              objects: {
+                ...state.objects,
+                [obj.id]: obj
+              }
+            };
+          }
+
+          // Otherwise, continue with non-local updates
+          action.payload.updates = filteredUpdates;
+        } else if (Object.keys(filteredUpdates).length === 0) {
+          // All properties were filtered out and there were no local updates
+          return state;
+        } else {
+          // Use filtered updates instead of original
+          action.payload.updates = filteredUpdates;
+        }
       }
 
       // Support both formats: { id, updates: {...} } and { id, ...updates }
@@ -1299,32 +1271,46 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const newCharacterData = panel.characterData;
         const oldCharacterData = oldPanel.characterData;
 
-        if (oldCharacterData && newCharacterData) {
+        // UPDATE_OBJECT: Panel characterData update detected
+        console.log('UPDATE_OBJECT: Panel characterData update detected', {
+          panelId: panel.id,
+          hasOldCharacterData: !!oldCharacterData,
+          hasNewCharacterData: !!newCharacterData,
+          oldCharactersCount: oldCharacterData?.characters?.length || 0,
+          newCharactersCount: newCharacterData?.characters?.length || 0
+        });
+
+        // 🔥 FIX: Handle case where oldCharacterData doesn't exist
+        // This can happen when panel is first created or when guest sends update before host has data
+        // In this case, we should still sync sliders to tokens using the new data
+        if (newCharacterData) {
           // Check each character for slider changes
           for (const newChar of newCharacterData.characters) {
-            const oldChar = oldCharacterData.characters.find((c: any) => c.id === newChar.id);
-            if (!oldChar) continue;
+            // If we have old data, check if sliders changed
+            // If we don't have old data, always sync (first time setup)
+            let shouldSync = !oldCharacterData; // Always sync if no old data
 
-            // Check for slider changes in subTabs
-            if (oldChar.subTabs && newChar.subTabs) {
-              for (let i = 0; i < newChar.subTabs.length; i++) {
-                const oldSubTab = oldChar.subTabs[i];
-                const newSubTab = newChar.subTabs[i];
-                if (!oldSubTab || !newSubTab) continue;
+            if (oldCharacterData) {
+              const oldChar = oldCharacterData.characters.find((c: any) => c.id === newChar.id);
+              if (oldChar && oldChar.subTabs && newChar.subTabs) {
+                // Check for slider changes
+                for (let i = 0; i < newChar.subTabs.length; i++) {
+                  const oldSubTab = oldChar.subTabs[i];
+                  const newSubTab = newChar.subTabs[i];
+                  if (!oldSubTab || !newSubTab) continue;
 
-                for (const newBlock of newSubTab.blocks || []) {
-                  if (newBlock.type === 'SLIDER' && newBlock.data?.sliders) {
-                    const oldBlock = oldSubTab.blocks?.find((b: any) => b.id === newBlock.id);
-                    if (!oldBlock || !oldBlock.data?.sliders) continue;
+                  for (const newBlock of newSubTab.blocks || []) {
+                    if (newBlock.type === 'SLIDER' && newBlock.data?.sliders) {
+                      const oldBlock = oldSubTab.blocks?.find((b: any) => b.id === newBlock.id);
+                      if (!oldBlock || !oldBlock.data?.sliders) {
+                        shouldSync = true;
+                        break;
+                      }
 
-                    // Check if sliders changed
-                    const oldSliders = oldBlock.data.sliders;
-                    const newSliders = newBlock.data.sliders;
+                      // Check if sliders changed
+                      const oldSliders = oldBlock.data.sliders;
+                      const newSliders = newBlock.data.sliders;
 
-                    let slidersChanged = false;
-                    if (oldSliders.length !== newSliders.length) {
-                      slidersChanged = true;
-                    } else {
                       for (const newSlider of newSliders) {
                         const oldSlider = oldSliders.find((s: any) => s.id === newSlider.id);
                         if (!oldSlider ||
@@ -1333,30 +1319,36 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                             oldSlider.minValue !== newSlider.minValue ||
                             oldSlider.color !== newSlider.color ||
                             oldSlider.label !== newSlider.label) {
-                          slidersChanged = true;
+                          shouldSync = true;
                           break;
                         }
                       }
-                    }
-
-                    if (slidersChanged) {
-                      console.log('[UPDATE_OBJECT] Syncing sliders to tokens', {
-                        characterId: newChar.id,
-                        panelId: panel.id,
-                        sliders: newSliders.map((s: any) => ({ name: s.label, value: s.value }))
-                      });
-
-                      // Sync sliders to all tokens for this character
-                      syncSlidersToTokens(
-                        { ...state, objects: newObjects },
-                        panel,
-                        newChar,
-                        newObjects
-                      );
+                      if (shouldSync) break;
                     }
                   }
                 }
+              } else {
+                // Old character not found - sync new character's sliders
+                shouldSync = true;
               }
+            }
+
+            if (shouldSync) {
+              // UPDATE_OBJECT: Syncing sliders to tokens
+              console.log('UPDATE_OBJECT: Syncing sliders to tokens', {
+                characterId: newChar.id,
+                panelId: panel.id,
+                reason: oldCharacterData ? 'sliders changed' : 'first time sync',
+                hasOldCharacterData: !!oldCharacterData
+              });
+
+              // Sync sliders to all tokens for this character
+              syncSlidersToTokens(
+                { ...state, objects: newObjects },
+                panel,
+                newChar,
+                newObjects
+              );
             }
           }
         }
@@ -2314,6 +2306,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (!drawnCardId) return state;
       const card = state.objects[drawnCardId] as Card;
 
+      // 🔥 DEBUG: Log DRAW_CARD
+      // DRAW_CARD: Drawing card
+      console.log('DRAW_CARD: Drawing card', {
+        deckId: action.payload.deckId,
+        playerId: action.payload.playerId,
+        drawnCardId,
+        cardName: card.name,
+        remainingCards: newCardIds.length
+      });
+
       // Add to general history (max 25)
       const historyEntry: GeneralHistoryEntry = {
         type: 'card-drawn',
@@ -2362,6 +2364,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const card = state.objects[action.payload.cardId] as Card;
         if (!card) return state;
 
+        // Store previous owner for handCardOrder update
+        const previousOwnerId = card.ownerId;
+
         // For cards played to table: use 'cards' layer if it exists
         let hyperscaleLayerId = 'cards';
         if (!state.hyperscaleLayers.some(l => l.id === 'cards')) {
@@ -2395,6 +2400,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const maxZInLayer = layerZ.length ? Math.max(...layerZ) : layerMinZ;
         const cardZ = Math.min(maxZInLayer + 1, layerMaxZ);
 
+        // 🔥 FIX: Update players array to remove card from previous owner's handCardOrder
+        let updatedPlayers = state.players;
+        if (previousOwnerId) {
+          const player = state.players.find(p => p.id === previousOwnerId);
+          if (player && player.handCardOrder?.includes(card.id)) {
+            const updatedHandOrder = player.handCardOrder.filter(id => id !== card.id);
+            updatedPlayers = state.players.map(p =>
+              p.id === previousOwnerId
+                ? { ...p, handCardOrder: updatedHandOrder }
+                : p
+            );
+          }
+        }
+
         return {
             ...state,
             objects: {
@@ -2410,6 +2429,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     ...(hyperscaleLayerId && { hyperscaleLayerId }),
                 }
             },
+            players: updatedPlayers,
             undo: { ...state.undo, generalHistory: newGeneralHistory },
         };
     }
@@ -2746,9 +2766,24 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ? state.selectedHyperscaleLayerIds
             : [...state.selectedHyperscaleLayerIds, objLayer];
 
+        // 🔥 FIX: Update players array to remove card from previous owner's handCardOrder
+        let updatedPlayers = state.players;
+        if (previousState === 'hand' && previousOwnerId && obj.type === ItemType.CARD) {
+          const player = state.players.find(p => p.id === previousOwnerId);
+          if (player && player.handCardOrder?.includes(obj.id)) {
+            const updatedHandOrder = player.handCardOrder.filter(id => id !== obj.id);
+            updatedPlayers = state.players.map(p =>
+              p.id === previousOwnerId
+                ? { ...p, handCardOrder: updatedHandOrder }
+                : p
+            );
+          }
+        }
+
         return {
             ...state,
             objects: { ...state.objects, [obj.id]: updatedObj },
+            players: updatedPlayers,
             undo: { ...state.undo, generalHistory: newGeneralHistory },
             selectedHyperscaleLayerIds: newSelectedLayers,
         };
@@ -5991,7 +6026,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'UPDATE_PLAYER_OBJECT_POSITION': {
-      // Store individual object position for a player on layers with individualPosition (host only)
+      // Store individual object position for a player on layers with individualObjects (host only)
       const { playerId, objectId, x, y, rotation, zIndex } = action.payload;
 
       // Initialize player positions if not exists
@@ -6044,6 +6079,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
       return resetState;
     }
+    case 'CLEAR_FORCE_FULL_SYNC': {
+      // Clear the force full sync flag after it's been used
+      const { _forceFullSync, ...stateWithoutFlag } = state;
+      return stateWithoutFlag;
+    }
     // Audit log actions
     case 'ADD_AUDIT_LOG_ENTRY': {
       const entry = action.payload;
@@ -6070,11 +6110,82 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'UPDATE_HYPERSCALE_LAYER': {
+      const layer = state.hyperscaleLayers.find(l => l.id === action.payload.layerId);
+      if (!layer) return state;
+
+      const updates = action.payload.updates;
+      const newLayer = { ...layer, ...updates };
+
+      // Check if individualObjects setting is being changed
+      const wasIndividualObjects = layer.individualObjects === true;
+      const isIndividualObjects = newLayer.individualObjects === true;
+      const objectsDisabled = wasIndividualObjects && !isIndividualObjects;
+      const objectsEnabled = !wasIndividualObjects && isIndividualObjects;
+
+      // If individualObjects setting is changing, we need to clear individual settings
+      // and trigger a full sync to propagate host state to all guests
+      if (objectsDisabled || objectsEnabled) {
+        console.log('UPDATE_HYPERSCALE_LAYER: Individual Objects setting changed, clearing and syncing', {
+          layerId: action.payload.layerId,
+          objectsDisabled,
+          objectsEnabled
+        });
+
+        // Clear individual positions for this layer
+        let clearedPlayerObjectPositions = state.playerObjectPositions;
+        clearedPlayerObjectPositions = {};
+        Object.entries(state.playerObjectPositions).forEach(([playerId, positions]) => {
+          const filteredPositions: Record<string, any> = {};
+          Object.entries(positions).forEach(([objectId, pos]) => {
+            const obj = state.objects[objectId];
+            if (obj?.hyperscaleLayerId !== action.payload.layerId) {
+              // Keep positions for objects on other layers
+              filteredPositions[objectId] = pos;
+            }
+          });
+          if (Object.keys(filteredPositions).length > 0) {
+            clearedPlayerObjectPositions[playerId] = filteredPositions;
+          }
+        });
+
+        // Clear individual visibility settings for this layer
+        let clearedPlayerPanelSettings = state.playerPanelSettings;
+        clearedPlayerPanelSettings = {};
+        Object.entries(state.playerPanelSettings).forEach(([playerId, settings]) => {
+          const filteredSettings: Record<string, any> = {};
+          Object.entries(settings).forEach(([panelId, panelSettings]) => {
+            const obj = state.objects[panelId];
+            if (obj?.hyperscaleLayerId !== action.payload.layerId) {
+              // Keep settings for objects on other layers
+              filteredSettings[panelId] = panelSettings;
+            }
+          });
+          if (Object.keys(filteredSettings).length > 0) {
+            clearedPlayerPanelSettings[playerId] = filteredSettings;
+          }
+        });
+
+        // Return updated state with cleared settings
+        // This will trigger a broadcast via useEffect to sync host state to guests
+        return {
+          ...state,
+          hyperscaleLayers: state.hyperscaleLayers.map(l =>
+            l.id === action.payload.layerId
+              ? newLayer
+              : l
+          ),
+          playerObjectPositions: clearedPlayerObjectPositions,
+          playerPanelSettings: clearedPlayerPanelSettings,
+          // Force full sync on next broadcast
+          _forceFullSync: true
+        };
+      }
+
       return {
         ...state,
         hyperscaleLayers: state.hyperscaleLayers.map(l =>
           l.id === action.payload.layerId
-            ? { ...l, ...action.payload.updates }
+            ? newLayer
             : l
         )
       };
@@ -6410,16 +6521,40 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { peerId, isHost, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, hostConnectionRef, connectionsRef, p2pLoadingSteps, p2pLoadingProgress, isP2PLoadingModalOpen, requiredPacks, onPackLoaded, suggestedPlayerName } = usePeerConnection(localDispatch, stateRef);
 
   // 🔥 NEW: Guest connection modal state
-  const [guestConnectionModalOpen, setGuestConnectionModalOpen] = useState(false);
   const [guestReadyToJoin, setGuestReadyToJoin] = useState(false);
+  const [isModalClosed, setIsModalClosed] = useState(false); // 🔥 FIX: State to trigger re-renders when modal closes
   const loadedPacksRef = useRef<Set<string>>(new Set());
 
-  // Show guest connection modal when waiting for player name
-  useEffect(() => {
-    if (waitingForPlayerName && !isHost) {
-      setGuestConnectionModalOpen(true);
+  // 🔥 DEBUG: Track previous values to detect changes
+  const prevIsHostRef = useRef(isHost);
+  const prevIsModalClosedRef = useRef(isModalClosed);
+
+  // 🔥 FIX: Modal is open if we have hostId in URL AND user hasn't closed it
+  // This prevents the modal from reopening unexpectedly
+  const guestConnectionModalOpen = useMemo(() => {
+    const hasHostId = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('hostId');
+    const shouldShow = hasHostId && !isHost && !isModalClosed;
+
+    // 🔥 DEBUG: Log when dependencies change
+    const isHostChanged = prevIsHostRef.current !== isHost;
+    const isModalClosedChanged = prevIsModalClosedRef.current !== isModalClosed;
+    if (isHostChanged || isModalClosedChanged) {
+      console.log('[GameContext] 🔍 Modal visibility check:', {
+        hasHostId,
+        isHost,
+        isHostChanged,
+        modalClosed: isModalClosed,
+        isModalClosedChanged,
+        shouldShow,
+        prevIsHost: prevIsHostRef.current,
+        prevIsModalClosed: prevIsModalClosedRef.current
+      });
+      prevIsHostRef.current = isHost;
+      prevIsModalClosedRef.current = isModalClosed;
     }
-  }, [waitingForPlayerName, isHost]);
+
+    return shouldShow;
+  }, [isHost, isModalClosed]); // 🔥 FIX: Now depends on isModalClosed so it updates when modal closes
 
   // Check if guest is ready to join
   useEffect(() => {
@@ -6433,7 +6568,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         pack => loadedPacksRef.current.has(pack.name)
       );
       // Connection is complete when steps are done and packs are loaded
-      setGuestReadyToJoin(connectionStepsComplete && allPacksLoaded);
+      const ready = connectionStepsComplete && allPacksLoaded;
+      console.log('[GameContext] Guest ready to join:', {
+        connectionStepsComplete,
+        allPacksLoaded,
+        ready,
+        p2pLoadingSteps
+      });
+      setGuestReadyToJoin(ready);
     }
   }, [isHost, guestConnectionModalOpen, p2pLoadingSteps, requiredPacks]);
 
@@ -6445,11 +6587,50 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Handle joining the game
   const handleJoinGame = () => {
-    setGuestConnectionModalOpen(false);
+    console.log('[GameContext] User clicked Join Game, closing modal');
+    setIsModalClosed(true); // 🔥 FIX: This triggers re-render and updates guestConnectionModalOpen
   };
 
-  // Auto-save game state to localStorage (debounced)
-  useAutoSave(state, isHost, initializedRef.current);
+  // Auto-save game state to localStorage
+  const { saveNow } = useAutoSave(state, initializedRef.current);
+
+  // Store saveNow function in ref for access in reducer
+  const saveNowRef = useRef(saveNow);
+  saveNowRef.current = saveNow;
+
+  // Track previous state to detect when to trigger saves
+  const prevLoadedPacksRef = useRef<Set<string>>(new Set());
+  const prevObjectsCountRef = useRef<number>(0);
+
+  // Auto-save after key events:
+  // 1. After pack is fully loaded (for guests)
+  // 2. After SYNC_STATE completes (guest fully connected to host)
+  useEffect(() => {
+    if (!initializedRef.current) return;
+
+    const currentLoadedPacks = loadedPacksRef.current;
+    const prevLoadedPacks = prevLoadedPacksRef.current;
+
+    // Check if a new pack was just loaded
+    const justLoadedPack = [...currentLoadedPacks].find(pack => !prevLoadedPacks.has(pack));
+
+    // Check if objects count increased significantly (indicates SYNC_STATE)
+    const objectsCount = Object.keys(state.objects).length;
+    const objectsIncreased = objectsCount > prevObjectsCountRef.current + 10;
+
+    if (justLoadedPack) {
+      // AUTOSAVE: Pack loaded, saving
+      saveNow();
+    } else if (objectsIncreased && !isHost) {
+      // Guest received state from host (SYNC_STATE)
+      // AUTOSAVE: State synchronized from host, saving
+      saveNow();
+    }
+
+    // Update refs
+    prevLoadedPacksRef.current = new Set(currentLoadedPacks);
+    prevObjectsCountRef.current = objectsCount;
+  }, [state, isHost, saveNow]);
 
   // Update pixelsPerVU when window size changes
   useEffect(() => {
@@ -6810,9 +6991,50 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const localOnlyActions = [
               'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
               'SET_PIXELS_PER_VU',       // Pixels per VU is screen-specific
-              'MOVE_OBJECT_COMMIT',      // Panel/window position is local (handled separately)
               'RESIZE_UI_OBJECT'         // Panel/window size is local (handled separately)
           ];
+
+          // 🔥 FIX: MOVE_OBJECT_COMMIT needs special handling for individualObjects layers
+          if (action.type === 'MOVE_OBJECT_COMMIT') {
+            const { id, x, y, rotation, zIndex } = action.payload;
+            const obj = state.objects[id];
+
+            if (obj) {
+              const layerId = obj.hyperscaleLayerId || 'tokens';
+              const layer = state.hyperscaleLayers.find(l => l.id === layerId);
+              const isIndividualObjectsLayer = layer?.individualObjects === true;
+
+              if (isIndividualObjectsLayer) {
+                // For individualObjects layers, send position to host to store in playerObjectPositions
+                hostConnectionRef.current?.send({
+                  type: 'ACTION',
+                  payload: {
+                    type: 'UPDATE_PLAYER_OBJECT_POSITION',
+                    payload: {
+                      playerId: state.activePlayerId,
+                      objectId: id,
+                      x: Math.round(x),
+                      y: Math.round(y),
+                      rotation: rotation !== undefined ? rotation : obj.rotation,
+                      zIndex: zIndex !== undefined ? zIndex : obj.zIndex
+                    }
+                  }
+                });
+                // Execute locally for immediate feedback
+                localDispatch(action);
+                return;
+              }
+
+              // For panels/windows, position is local (stored in playerPanelSettings)
+              if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) {
+                localDispatch(action);
+                return;
+              }
+            }
+
+            // For regular objects, send MOVE_OBJECT_COMMIT to host
+            // (falls through to normal send logic below)
+          }
 
           if (localOnlyActions.includes(action.type)) {
               // Local-only actions - execute locally only, don't send to host
@@ -6827,17 +7049,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const isPositionUpdate = keys.every(k =>
               k === 'id' || k === 'x' || k === 'y' || k === 'rotation' || k === 'zIndex'
             );
+            const isVisibilityUpdate = keys.every(k =>
+              k === 'id' || k === 'hidden' || k === 'visible' || k === 'visibleToOthers'
+            );
 
-            if (isPositionUpdate && payload.id) {
-              // Check if object is on a hyperscale layer with individualPosition enabled
-              // If so, skip batching for this object (don't send to host)
+            if (payload.id) {
               const obj = state.objects[payload.id];
               const individualLayerId = obj?.hyperscaleLayerId || 'tokens';
               const individualLayer = state.hyperscaleLayers.find(l => l.id === individualLayerId);
-              const isIndividualPositionLayer = individualLayer?.individualPosition === true;
+              const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
 
-              if (!isIndividualPositionLayer) {
-                // Add to pending updates (only for non-individual position layers)
+              if ((isPositionUpdate || isVisibilityUpdate) && isIndividualObjectsLayer) {
+                // Position and visibility updates on individual objects layers - execute locally only
+                localDispatch(action);
+                return; // Skip sending to host
+              }
+
+              if (isPositionUpdate && !isIndividualObjectsLayer) {
+                // Add to pending updates (only for non-individual objects layers)
                 pendingPositionUpdatesRef.current.set(payload.id, payload);
 
                 // Reset batch timeout
@@ -6848,11 +7077,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 positionBatchTimeoutRef.current = setTimeout(() => {
                   flushPositionUpdates();
                 }, POSITION_BATCH_WINDOW);
-              }
 
-              // Execute locally immediately for responsiveness
-              localDispatch(action);
-              return; // Skip sending to host individually
+                // Execute locally immediately for responsiveness
+                localDispatch(action);
+                return; // Skip sending to host individually
+              }
             }
           }
 
@@ -6878,6 +7107,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
                   // Wait for sync to avoid desync
               } else {
+                  // GameContext.dispatch: Guest sending ACTION to host
+                  console.log('GameContext.dispatch: Guest sending ACTION to host', {
+                    objectId: action.payload?.id,
+                    hasCharacterData: !!action.payload?.updates?.characterData
+                  });
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
                   // Wait for sync to avoid desync
               }
@@ -6912,19 +7146,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
           }
 
-          // Check if object is on a hyperscale layer with individualObjects or individualPosition
+          // Check if object is on a hyperscale layer with individualObjects
           const layerId = obj.hyperscaleLayerId || 'tokens';
           const layer = currentState.hyperscaleLayers.find(l => l.id === layerId);
 
-          // Skip individual objects entirely - they don't exist for other players
+          // 🔥 FIX: Individual Objects - filter out position, visibility, locked, and pinned properties
+          // Character data, counters, and all other properties MUST sync
           if (layer?.individualObjects) {
-            return;
-          }
-
-          // For individual position layers, keep the object but positions will be filtered per guest
-          // Guests will use their own individual positions from playerObjectPositions
-          if (layer?.individualPosition) {
-            filteredObjects[id] = obj;
+            const {
+              x, y, rotation, zIndex,
+              hidden, visible, visibleToOthers,
+              locked,
+              isPinnedToViewport, pinnedScreenPosition,
+              expandedPinnedPosition, collapsedPinnedPosition,
+              ...objWithoutIndividualProps
+            } = obj as any;
+            filteredObjects[id] = objWithoutIndividualProps;
             return;
           }
 
@@ -6971,6 +7208,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           objects: filteredObjects,
           playerPanelSettings: filteredPlayerPanelSettings
         };
+
+        // 🔥 DEBUG: Log players in broadcastState
+        // Broadcast State: Broadcasting state with players
+        console.log('Broadcast State: Broadcasting state with players', {
+          playersCount: broadcastState.players?.length || 0,
+          players: broadcastState.players?.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            handCardOrder: p.handCardOrder?.length || 0
+          }))
+        });
+
         return broadcastState;
       })();
 
@@ -6981,16 +7230,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Filter out invalid changes (e.g., individual objects) before checking
 	          differentialSyncManager.filterInvalidChanges(stateForBroadcast);
 
-	          const shouldSendFullState = differentialSyncManager.shouldSendFullState();
+	          // 🔥 NEW: Check if we need to force full sync (e.g., when disabling individual settings)
+          const forceFullSync = (currentState as any)._forceFullSync === true;
+          const shouldSendFullState = forceFullSync || differentialSyncManager.shouldSendFullState();
           let stateToSend = stateForBroadcast;
           let isPartialSync = false;
           let changeCount = 0;
 
-          if (!shouldSendFullState) {
+          if (forceFullSync) {
+            // GameContext: Force full sync triggered
+            // Clear the force flag after use
+            localDispatch({ type: 'CLEAR_FORCE_FULL_SYNC' });
+            differentialSyncManager.clearChanges();
+          }
+
+          if (!shouldSendFullState && !forceFullSync) {
             const partialState = differentialSyncManager.getPartialState(stateForBroadcast, Date.now());
             // If partialState is null (no valid objects for sync), skip this sync entirely
 	            if (!partialState) {
-	              console.log('[GameContext] ⏭️ Skipping sync - no valid objects for partial sync');
+	              // GameContext: Skipping sync - no valid objects for partial sync
 	              differentialSyncManager.clearChanges();
 	              return;
 	            }
@@ -7008,20 +7266,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (!existingObj) return false;
                 // Check if only x, y changed
                 const keys = Object.keys(obj);
+                // Allowed keys for position updates - extended for effect templates
+                const allowedKeys = new Set(['id', 'type', 'x', 'y', 'rotation', 'width', 'height', 'pivot', 'rotationMarkerDistance', 'zIndex']);
                 return keys.length === Object.keys(existingObj).length &&
-                  keys.every(key => key === 'x' || key === 'y' || key === 'id' || key === 'type');
+                  keys.every(key => allowedKeys.has(key));
               });
 
               if (isOnlyPositionUpdates && changedObjects.length <= 2) {
-                // Filter out position updates for objects on individual position layers
+                // Filter out position updates for objects on individual objects layers
                 const filteredPositions = changedObjects.filter(([id, obj]: [string, any]) => {
                   const existingObj = stateForBroadcast.objects[id];
                   if (!existingObj || !existingObj.hyperscaleLayerId) return true;
 
                   const layerId = existingObj.hyperscaleLayerId;
                   const layer = currentState.hyperscaleLayers.find(l => l.id === layerId);
-                  // Don't send position updates for individual position layers
-                  return !layer?.individualPosition;
+                  // Don't send position updates for individual objects layers
+                  return !layer?.individualObjects;
                 });
 
                 if (filteredPositions.length === 0) {
@@ -7030,18 +7290,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
 
                 // Send lightweight position updates
-                const positions = filteredPositions.map(([id, obj]: [string, any]) => ({
-                  id,
-                  x: obj.x,
-                  y: obj.y
-                }));
+                const positions = filteredPositions.map(([id, obj]: [string, any]) => {
+                  const update: any = { id, x: obj.x, y: obj.y };
+                  // Include effect-specific properties if present (for smooth effect template sync)
+                  if (obj.rotation !== undefined) update.rotation = obj.rotation;
+                  if (obj.width !== undefined) update.width = obj.width;
+                  if (obj.height !== undefined) update.height = obj.height;
+                  if (obj.pivot !== undefined) update.pivot = obj.pivot;
+                  if (obj.rotationMarkerDistance !== undefined) update.rotationMarkerDistance = obj.rotationMarkerDistance;
+                  if (obj.zIndex !== undefined) update.zIndex = obj.zIndex;
+                  return update;
+                });
 
                 conn.send({
                   type: 'POSITION_UPDATE',
                   payload: positions
                 });
 
-                console.log('[P2P Broadcast] Sent POSITION_UPDATE for', positions.length, 'objects');
+                // P2P Broadcast: Sent POSITION_UPDATE
                 return; // Skip full SYNC_STATE
               }
             }
@@ -7105,7 +7371,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // We use a composite key to detect both connection changes and dependency changes
       if (manualConnectionSetupRef.current && manualConnectionSetupRef.current.startsWith(conn.peer)) {
           // Same connection, but dependencies changed - remove old handlers first
-          console.log('[Manual P2P] Re-setting up handlers for connection due to dependency change:', conn.peer);
+          // Manual P2P: Re-setting up handlers for connection
       }
 
       const handleData = (data: any) => {
@@ -7115,28 +7381,84 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else if (data.type === 'HELO') {
               // Host received HELO from guest - add player and send current state
               const newPlayer = data.payload;
-              console.log('[Manual P2P] Received HELO from player:', newPlayer.name);
+              // Manual P2P: Received HELO from player
               localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
 
               // Send current state to new player (with safety checks)
               setTimeout(() => {
-                  console.log('[Manual P2P] Sending data to guest, conn:', conn?.peer, 'conn.open:', conn?.open, 'conn.dataChannel.readyState:', conn?.dataChannel?.readyState);
+                  // Manual P2P: Sending data to guest
                   if (conn && conn.open && conn.dataChannel && conn.dataChannel.readyState === 'open') {
                       try {
                           // State now contains sha256 hashes directly
-                          const stateToSend = stateRef.current;
+                          // Apply filtering for individual objects layers
+                          const stateToSend = (() => {
+                            const filteredObjects: Record<string, any> = {};
+                            Object.entries(stateRef.current.objects).forEach(([id, obj]) => {
+                              const layerId = obj.hyperscaleLayerId || 'tokens';
+                              const layer = stateRef.current.hyperscaleLayers.find(l => l.id === layerId);
 
-                          console.log('[Manual P2P] Sending SYNC_STATE, state size:', JSON.stringify(stateToSend).length);
+                              if (layer?.individualObjects) {
+                                // Filter out position, visibility, locked, and pinned properties
+                                const {
+                                  x, y, rotation, zIndex,
+                                  hidden, visible, visibleToOthers,
+                                  locked,
+                                  isPinnedToViewport, pinnedScreenPosition,
+                                  expandedPinnedPosition, collapsedPinnedPosition,
+                                  ...objWithoutIndividualProps
+                                } = obj as any;
+                                filteredObjects[id] = objWithoutIndividualProps;
+                              } else {
+                                filteredObjects[id] = obj;
+                              }
+                            });
+
+                            return {
+                              ...stateRef.current,
+                              objects: filteredObjects
+                            };
+                          })();
+
+                          // Manual P2P: Sending SYNC_STATE
                           conn.send({ type: 'SYNC_STATE', payload: stateToSend });
 
-                          console.log('[Manual P2P] Successfully sent state to guest');
+                          // Manual P2P: Successfully sent state to guest
                       } catch (e) {
                           console.error('[Manual P2P] Error sending state:', e);
                       }
                   } else {
-                      console.warn('[Manual P2P] Cannot send state - conn is closed or null. conn:', conn, 'open:', conn?.open, 'readyState:', conn?.dataChannel?.readyState);
+                      // Manual P2P: Cannot send state - conn is closed or null
                   }
               }, 100);
+          } else if (data.type === 'POSITION_UPDATE') {
+              // Lightweight position update for smooth dragging (includes effect properties)
+              const positions = data.payload;
+              // Manual P2P: Received POSITION_UPDATE
+
+              // Update each object's position (skipNetworkSync prevents re-broadcasting)
+              positions.forEach((pos: {
+                id: string;
+                x?: number;
+                y?: number;
+                rotation?: number;
+                width?: number;
+                height?: number;
+                pivot?: { x: number; y: number };
+                rotationMarkerDistance?: number;
+                zIndex?: number;
+              }) => {
+                const existingObj = stateRef.current.objects[pos.id];
+                if (existingObj) {
+                  localDispatch({
+                    type: 'UPDATE_OBJECT',
+                    payload: {
+                      id: pos.id,
+                      ...pos,
+                      skipNetworkSync: true // Prevent re-broadcasting to host
+                    }
+                  });
+                }
+              });
           } else if (data.type === 'UPDATE_PLAYER_NAME') {
               localDispatch(data.payload);
           } else if (data.type === 'ACTION') {
@@ -7145,12 +7467,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       const handleOpen = () => {
-          console.log('[Manual P2P] Connection opened');
+          // Manual P2P: Connection opened
           // HELO is now handled by useManualConnection with proper guest name
       };
 
       const handleClose = () => {
-          console.log('[Manual P2P] Connection closed');
+          // Manual P2P: Connection closed
           // Reset the setup ref when connection closes so we can re-connect if needed
           manualConnectionSetupRef.current = null;
       };
@@ -7176,7 +7498,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // IMPORTANT: Clean up handlers when effect re-runs or unmounts
       return () => {
-          console.log('[Manual P2P] Cleaning up connection handlers for:', conn.peer);
+          // Manual P2P: Cleaning up connection handlers
           conn.off('data', handleData);
           conn.off('open', handleOpen);
           conn.off('close', handleClose);

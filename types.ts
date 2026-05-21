@@ -628,6 +628,8 @@ export interface EffectTemplate extends GameItem {
   showWidthMarker?: boolean;
   // When scaling height via rotation marker, also scale width proportionally (default: false)
   proportionalScaling?: boolean;
+  // Allow all players (including guests) to control the effect's dimensions and rotation
+  playerControlEnabled?: boolean;
 }
 
 export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell | NexusBoard | NexusCellObject | EffectTemplate;
@@ -654,8 +656,7 @@ export interface HyperscaleLayer {
   // GM-only settings
   playerCanSelect: boolean;  // Can players select this layer in Layers panel
   playerCanView: boolean;    // Can players see this layer in context menu
-  individualPosition: boolean;  // Objects shared, but position is local per player (host knows for saving)
-  individualObjects: boolean;    // Layer is completely local - objects and positions individual per player (host knows for saving)
+  individualObjects: boolean;  // Layer is completely local - objects, positions, and visibility are individual per player (host knows for saving)
   zoomEnabled: boolean;  // Whether local zoom affects objects in this layer
   order: number;       // Display order (lower = higher priority in list)
 }

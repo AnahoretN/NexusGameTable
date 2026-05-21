@@ -200,18 +200,92 @@ class DifferentialSyncManager {
 
   getPartialState(currentState: any, currentStateTime: number): any {
     const changedObjectIds = new Set<string>();
+    const hasPlayerChanges = this.pendingChanges.some(c => c.type === 'player');
 
     // Collect IDs of changed objects
     this.pendingChanges.forEach(change => {
-      if (change.type === 'object' && change.action.payload?.id) {
-        changedObjectIds.add(change.action.payload.id);
+      if (change.type !== 'object') return;
+
+      const action = change.action;
+
+      // Most actions use payload.id
+      if (action.payload?.id) {
+        changedObjectIds.add(action.payload.id);
+        return;
+      }
+
+      // 🔥 FIX: Handle actions that modify objects but use different payload fields
+      // DRAW_CARD: modifies deck (deckId) and card (drawnCardId from reducer)
+      if (action.type === 'DRAW_CARD' && action.payload?.deckId) {
+        const deckId = action.payload.deckId;
+        const playerId = action.payload.playerId;
+        changedObjectIds.add(deckId);
+
+        // 🔥 FIX: Only include the deck and the drawn card (not all cards in deck)
+        // Find the card that was just drawn (location: HAND, ownerId: playerId, deckId: deckId)
+        Object.entries(currentState.objects).forEach(([id, obj]) => {
+          if (obj.type === 'CARD' && (obj as any).deckId === deckId) {
+            const card = obj as any;
+            // Include card if it's the one just drawn (in HAND, owned by player)
+            // If playerId is undefined, include all cards in HAND from this deck (fallback)
+            if (card.location === 'HAND' && (!playerId || card.ownerId === playerId)) {
+              changedObjectIds.add(id);
+            }
+          }
+        });
+        return;
+      }
+
+      // PLAY_TOP_CARD: modifies deck (deckId) and card (top card from deck)
+      if (action.type === 'PLAY_TOP_CARD' && action.payload?.deckId) {
+        changedObjectIds.add(action.payload.deckId);
+        // Also include the top card that will be moved to cursor slot
+        const deck = currentState.objects[action.payload.deckId];
+        if (deck?.cardIds?.[0]) {
+          changedObjectIds.add(deck.cardIds[0]);
+        }
+        return;
+      }
+
+      // DROP_FROM_CURSOR_SLOT: modifies object being dropped
+      if (action.type === 'DROP_FROM_CURSOR_SLOT' && action.payload?.objectId) {
+        changedObjectIds.add(action.payload.objectId);
+        return;
+      }
+
+      // ADD_CARD_TO_PILE: modifies deck (deckId) and card (cardId)
+      if (action.type === 'ADD_CARD_TO_PILE' && action.payload?.deckId) {
+        changedObjectIds.add(action.payload.deckId);
+        if (action.payload?.cardId) {
+          changedObjectIds.add(action.payload.cardId);
+        }
+        return;
+      }
+
+      // SHUFFLE_DECK: modifies deck
+      if (action.type === 'SHUFFLE_DECK' && action.payload?.deckId) {
+        changedObjectIds.add(action.payload.deckId);
+        return;
+      }
+
+      // RETURN_ALL_CARDS_TO_DECK: modifies deck
+      if (action.type === 'RETURN_ALL_CARDS_TO_DECK' && action.payload?.deckId) {
+        changedObjectIds.add(action.payload.deckId);
+        return;
+      }
+
+      // ADD_OBJECT: payload is the object itself
+      if (action.type === 'ADD_OBJECT' && action.payload?.id) {
+        changedObjectIds.add(action.payload.id);
+        return;
       }
     });
 
     console.log('[DifferentialSyncManager] getPartialState', {
       pendingChangesCount: this.pendingChanges.length,
+      hasPlayerChanges,
       changedObjectIds: Array.from(changedObjectIds),
-      pendingActions: this.pendingChanges.map(c => ({ type: c.action.type, payloadId: c.action.payload?.id }))
+      pendingActions: this.pendingChanges.map(c => ({ type: c.action.type, changeType: c.type, payloadId: c.action.payload?.id || c.action.payload?.deckId }))
     });
 
     // Limit number of objects in partial sync
@@ -241,9 +315,10 @@ class DifferentialSyncManager {
       }
     });
 
-    // If no objects found, return null to signal "no partial sync available"
-    if (validObjectIds.length === 0) {
-      console.log('[DifferentialSyncManager] ❌ No valid objects found for partial sync');
+    // 🔥 FIX: If no objects found but there are player changes, still send state with players
+    // This ensures player state (like handCardOrder) is synced even when no objects changed
+    if (validObjectIds.length === 0 && !hasPlayerChanges) {
+      console.log('[DifferentialSyncManager] ❌ No valid objects or player changes found for partial sync');
       return null;
     }
 
@@ -253,10 +328,21 @@ class DifferentialSyncManager {
       _isPartial: true,
       _changeCount: validObjectIds.length,
       _timestamp: currentStateTime,
+      // 🔥 FIX: Always include current players in partial state
+      // This ensures handCardOrder and other player state is synced
+      players: currentState.players || [],
     };
 
+    // 🔥 DEBUG: Log players in partial state
     console.log('[DifferentialSyncManager] Partial state result', {
       objectCount: Object.keys(partialObjects).length,
+      hasPlayerChanges,
+      playersCount: result.players?.length || 0,
+      players: result.players?.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        handCardOrder: p.handCardOrder?.length || 0
+      })),
       _changeCount: result._changeCount
     });
 
@@ -294,6 +380,9 @@ export function getOptimizedIceServers(): { urls: string }[] {
 // Create optimized PeerJS configuration with global accessibility
 export function createOptimizedPeerJSConfig() {
   return {
+    host: '0.peerjs.com',  // Default signalling server
+    port: 443,
+    secure: true,
     config: {
       iceServers: getOptimizedIceServers(),
     },

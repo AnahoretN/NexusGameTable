@@ -64,7 +64,7 @@ async function resolveHashToBase64(hash: string): Promise<string | null> {
  * Resolve an img_ref:// URL to base64 data URL
  * NOTE: img_ref:// is deprecated, but we keep this for backward compatibility
  */
-async function getImageUrlFromRef(ref: string): Promise<string | null> {
+export async function getImageUrlFromRef(ref: string): Promise<string | null> {
   // img_ref:// URLs are no longer supported in the new system
   // They should have been migrated to sha256: hashes
   logger.warn(`[PACK] img_ref:// URL found (deprecated): ${ref}`);

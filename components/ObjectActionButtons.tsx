@@ -7,12 +7,13 @@ interface ObjectActionButtonsProps {
   dispatch: (action: any) => void;
   currentTool: string;
   executeClickAction?: (obj: any, action: string) => void;
+  activePlayerId?: string;
 }
 
 /**
  * Action button configuration factory
  */
-const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj: any, action: string) => void) => ({
+const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj: any, action: string) => void, activePlayerId?: string) => ({
   flip: {
     key: 'flip',
     action: () => executeClickAction ? executeClickAction(obj, 'flip') : dispatch({ type: 'FLIP_CARD', payload: { cardId: obj.id } }),
@@ -135,7 +136,7 @@ const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj:
   // Deck actions
   draw: {
     key: 'draw',
-    action: () => executeClickAction ? executeClickAction(obj, 'draw') : dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id } }),
+    action: () => executeClickAction ? executeClickAction(obj, 'draw') : dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: activePlayerId } }),
     className: 'bg-blue-600 hover:bg-blue-500',
     title: 'Draw',
     icon: <Hand size={14} />
@@ -260,9 +261,9 @@ const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj:
  * ObjectActionButtons - renders action buttons for game objects
  * Used by cards, tokens, dice, counters, etc.
  */
-export const ObjectActionButtons: React.FC<ObjectActionButtonsProps> = ({ obj, dispatch, currentTool, executeClickAction }) => {
+export const ObjectActionButtons: React.FC<ObjectActionButtonsProps> = ({ obj, dispatch, currentTool, executeClickAction, activePlayerId }) => {
   const actionButtons = obj.actionButtons || [];
-  const buttonConfigs = createButtonConfigs(obj, dispatch, executeClickAction);
+  const buttonConfigs = createButtonConfigs(obj, dispatch, executeClickAction, activePlayerId);
 
   const buttons = actionButtons
     .map((action: ContextAction) => buttonConfigs[action as keyof typeof buttonConfigs])
