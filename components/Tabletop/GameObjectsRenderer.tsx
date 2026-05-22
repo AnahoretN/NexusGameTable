@@ -545,7 +545,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
           )}
         >
           <SvgTokenShape
-            shape={(dice.shape ?? 'SQUARE') as TokenShape}
+            shape={(dice.shape ?? TokenShape.SQUARE) as TokenShape}
             width={diceWidth}
             height={diceHeight}
             color={diceColor}
@@ -558,95 +558,117 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             showThickness={true}
             tokenName={undefined}
             fontColor={fontColor}
-            preserveAspectRatio="none"
+            preserveAspectRatio="xMidYMid meet"
           >
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.1em',
-            }}>
-              {(() => {
-                const currentValue = dice.currentValue ?? 1;
-                const explosiveRoll = dice.explosiveRollValue;
-                const valueOverride = dice.valueOverrides?.[currentValue];
+            {(() => {
+              // SvgTokenShape adds PADDING (1) + borderWidth around the content
+              // We need to position foreignObject at the content area offset
+              const PADDING = 1;
+              const borderWidth = (obj as any).borderWidth ?? 2;
+              const contentOffset = PADDING + borderWidth;
+              const svgWidth = diceWidth + borderWidth * 2 + PADDING * 2;
+              const svgHeight = diceHeight + borderWidth * 2 + PADDING * 2;
 
-                // For explosive dice with explosive roll, show the sum (max sides + explosive roll)
-                if (explosiveRoll !== undefined) {
-                  const sum = (dice.sides ?? 6) + explosiveRoll;
-                  return (
-                    <span
-                      className="fallback-number"
-                      style={{
-                        fontSize: `${valueFontSize}px`,
-                        fontWeight: 'bold',
-                        color: fontColor,
-                        lineHeight: 1,
-                      }}
-                    >
-                      {sum}
-                    </span>
-                  );
-                }
+              return (
+                <foreignObject
+                  x={contentOffset}
+                  y={contentOffset}
+                  width={diceWidth}
+                  height={diceHeight}
+                >
+                  <div xmlns="http://www.w3.org/1999/xhtml" style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.1em',
+                    width: '100%',
+                    height: '100%',
+                  }}>
+                {(() => {
+                  const currentValue = dice.currentValue ?? 1;
+                  const explosiveRoll = dice.explosiveRollValue;
+                  const valueOverride = dice.valueOverrides?.[currentValue];
 
-                // Show override if available
-                if (valueOverride) {
-                  if (valueOverride.type === 'image') {
+                  // For explosive dice with explosive roll, show the sum (max sides + explosive roll)
+                  if (explosiveRoll !== undefined) {
+                    const sum = (dice.sides ?? 6) + explosiveRoll;
                     return (
-                      <img
-                        src={valueOverride.value}
-                        alt={`Value ${currentValue}`}
+                      <span
+                        className="fallback-number"
                         style={{
-                          width: `${valueFontSize * 1.5}px`,
-                          height: `${valueFontSize * 1.5}px`,
-                          objectFit: 'contain',
+                          fontSize: `${valueFontSize}px`,
+                          fontWeight: 'bold',
+                          color: fontColor,
+                          lineHeight: 1,
                         }}
-                        onError={(e) => {
-                          // Fallback to number if image fails to load
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          ((e.target as HTMLImageElement).parentElement as HTMLElement).querySelector('.fallback-number')?.classList.remove('hidden');
-                        }}
-                      />
-                    );
-                  } else if (valueOverride.type === 'emoji') {
-                    return (
-                      <span style={{
-                        fontSize: `${valueFontSize * 1.2}px`,
-                        lineHeight: 1,
-                      }}>
-                        {valueOverride.value}
+                      >
+                        {sum}
                       </span>
                     );
                   }
-                }
 
-                // Default: show number
-                return (
-                  <>
-                    <span
-                      className="fallback-number"
-                      style={{
-                        fontSize: `${valueFontSize}px`,
-                        fontWeight: 'bold',
-                        color: fontColor,
-                        lineHeight: 1,
-                      }}
-                    >
-                      {currentValue}
+                  // Show override if available
+                  if (valueOverride) {
+                    if (valueOverride.type === 'image') {
+                      return (
+                        <img
+                          src={valueOverride.value}
+                          alt={`Value ${currentValue}`}
+                          style={{
+                            width: `${valueFontSize * 1.5}px`,
+                            height: `${valueFontSize * 1.5}px`,
+                            objectFit: 'contain',
+                          }}
+                          onError={(e) => {
+                            // Fallback to number if image fails to load
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            ((e.target as HTMLImageElement).parentElement as HTMLElement).querySelector('.fallback-number')?.classList.remove('hidden');
+                          }}
+                        />
+                      );
+                    } else if (valueOverride.type === 'emoji' || valueOverride.type === 'icon') {
+                      // Both emoji and icon types display text/emoji
+                      return (
+                        <span style={{
+                          fontSize: `${valueFontSize * 1.2}px`,
+                          lineHeight: 1,
+                        }}>
+                          {valueOverride.value}
+                        </span>
+                      );
+                    }
+                  }
+
+                  // Default: show number
+                  return (
+                    <>
+                      <span
+                        className="fallback-number"
+                        style={{
+                          fontSize: `${valueFontSize}px`,
+                          fontWeight: 'bold',
+                          color: fontColor,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {currentValue}
+                      </span>
+                    </>
+                  );
+                })()}
+                    <span style={{
+                      fontSize: `${sidesFontSize}px`,
+                      fontWeight: 'normal',
+                      color: fontColor,
+                      lineHeight: 1,
+                    }}>
+                      d{dice.sides ?? 6}
                     </span>
-                  </>
-                );
-              })()}
-              <span style={{
-                fontSize: `${sidesFontSize}px`,
-                fontWeight: 'normal',
-                color: fontColor,
-                lineHeight: 1,
-              }}>
-                d{dice.sides ?? 6}
-              </span>
-            </div>
+                  </div>
+                </foreignObject>
+              );
+            })()}
           </SvgTokenShape>
 
           {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}

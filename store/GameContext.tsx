@@ -545,6 +545,35 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 const dice = cloned as DiceObject;
                 if (dice.sides === undefined) dice.sides = 6;
                 if (dice.currentValue === undefined) dice.currentValue = 1;
+                // Set shape and dimensions if not present
+                if (dice.shape === undefined) {
+                    const sides = dice.sides || 6;
+                    if (sides < 5) {
+                        dice.shape = TokenShape.TRIANGLE;
+                    } else if (sides <= 12) {
+                        dice.shape = TokenShape.SQUARE;
+                    } else {
+                        dice.shape = TokenShape.HEX;
+                    }
+                }
+                // Set default dimensions if not present
+                if (dice.width === undefined || dice.height === undefined) {
+                    const DEFAULT_DICE_SIZE = 60;
+                    const sides = dice.sides || 6;
+                    if (sides < 5) {
+                        // Triangle
+                        dice.width = DEFAULT_DICE_SIZE;
+                        dice.height = Math.round(DEFAULT_DICE_SIZE / 1.155);
+                    } else if (sides <= 12) {
+                        // Square
+                        dice.width = DEFAULT_DICE_SIZE;
+                        dice.height = DEFAULT_DICE_SIZE;
+                    } else {
+                        // Hex
+                        dice.width = Math.round(DEFAULT_DICE_SIZE / 1.155);
+                        dice.height = DEFAULT_DICE_SIZE;
+                    }
+                }
             }
 
             // === COUNTER specific migrations ===

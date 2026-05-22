@@ -356,6 +356,14 @@ const CursorSlotCounter: React.FC<CursorSlotItemProps & { item: Counter }> = ({ 
  */
 const CursorSlotDice: React.FC<CursorSlotItemProps & { item: DiceObject }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
   const diceShape = item.shape || TokenShape.SQUARE;
+  const currentValue = item.currentValue ?? 1;
+  const valueFontSize = Math.min(width, height) * 0.4;
+  const sidesFontSize = Math.min(width, height) * 0.25;
+
+  // Calculate content offset for proper centering
+  const PADDING = 1;
+  const borderWidth = item.borderWidth ?? 2;
+  const contentOffset = PADDING + borderWidth;
 
   return (
     <div
@@ -377,16 +385,50 @@ const CursorSlotDice: React.FC<CursorSlotItemProps & { item: DiceObject }> = ({ 
         shape={diceShape}
         width={width}
         height={height}
-        color={item.color || '#e74c3c'}
-        content={String(item.currentValue || 1)}
+        color={item.color || '#6366f1'}
+        content={undefined}
         rotation={0}
-        borderWidth={item.borderWidth ?? 2}
+        borderWidth={borderWidth}
         borderColor={item.borderColor || '#ffffff'}
         opacity={item.opacity ?? 100}
         borderOpacity={item.borderOpacity ?? 100}
         showThickness={true}
         fontColor={item.fontColor || '#ffffff'}
-      />
+      >
+        <foreignObject
+          x={contentOffset}
+          y={contentOffset}
+          width={width}
+          height={height}
+        >
+          <div xmlns="http://www.w3.org/1999/xhtml" style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.1em',
+            width: '100%',
+            height: '100%',
+          }}>
+            <span style={{
+              fontSize: `${valueFontSize}px`,
+              fontWeight: 'bold',
+              color: item.fontColor || '#ffffff',
+              lineHeight: 1,
+            }}>
+              {currentValue}
+            </span>
+            <span style={{
+              fontSize: `${sidesFontSize}px`,
+              fontWeight: 'normal',
+              color: item.fontColor || '#ffffff',
+              lineHeight: 1,
+            }}>
+              d{item.sides ?? 6}
+            </span>
+          </div>
+        </foreignObject>
+      </SvgTokenShape>
     </div>
   );
 };
