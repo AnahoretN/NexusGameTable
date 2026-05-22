@@ -136,22 +136,8 @@ const addToCursorSlotLocal = (
   // Check if item is locked - locked objects can't be added to cursor slot
   const obj = state.objects[id];
   if (obj.locked) {
-    console.warn(`[addToCursorSlotLocal] ⚠️ Object "${obj.name || id}" is LOCKED - cannot be picked up`);
     return; // Locked objects can't be picked up
   }
-
-  // 🔥 DEBUG: Log object state before adding to cursor slot
-  console.log('[addToCursorSlotLocal] Adding object to cursor slot:', {
-    id,
-    name: obj.name,
-    type: obj.type,
-    locked: obj.locked,
-    inCursorSlot: (obj as any).inCursorSlot,
-    isOnTable: obj.isOnTable,
-    x: obj.x,
-    y: obj.y,
-    source,
-  });
 
   // Set source based on how the item was added (only if slot was empty before)
   if (cursorSlot.length === 0) {
@@ -527,17 +513,7 @@ const dropCursorSlot = (
     hyperscaleLayers
   } = props;
 
-  // 🔥 DEBUG: Log drop cursor slot call
-  console.log('[dropCursorSlot] Called with:', {
-    cursorSlotLength: cursorSlot.length,
-    cursorSlotIds: cursorSlot.map(i => i.id),
-    clientX,
-    clientY,
-    skipPoolCheck,
-  });
-
   if (cursorSlot.length === 0) {
-    console.warn('[dropCursorSlot] ⚠️ Cursor slot is empty, returning');
     return;
   }
 
@@ -1518,17 +1494,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     );
     const actuallyHasItems = objectsInCursorSlot.length > 0;
 
-    // 🔥 DEBUG: Log cursor slot state
-    console.log('[handleMouseDown] Cursor slot check:', {
-      objId,
-      objName: obj?.name,
-      actuallyHasItems,
-      cursorSlotLength: cursorSlot.length,
-      cursorSlotIds: cursorSlot.map(i => i.id),
-      objectsInCursorSlotIds: objectsInCursorSlot.map(o => o.id),
-      isShiftKey: e.shiftKey,
-    });
-
     // REGULAR CLICK (no shift): if slot has items, drop them
     if (!e.shiftKey && actuallyHasItems) {
       e.preventDefault();
@@ -1829,26 +1794,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         const deltaY = e.clientY - dragThresholdRef.current.initialY;
         const hasExceededThreshold = Math.abs(deltaX) > thresholdPixels || Math.abs(deltaY) > thresholdPixels;
 
-        // 🔥 DEBUG: Log drag threshold check
-        if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
-          console.log('[handleMouseMove] Drag threshold check:', {
-            targetId,
-            objName: obj.name,
-            deltaX,
-            deltaY,
-            thresholdPixels,
-            hasExceededThreshold,
-            isShiftPressed,
-            isCtrlPressed,
-          });
-        }
-
         if (hasExceededThreshold) {
           // Mark as added to prevent duplicate adds
           dragThresholdRef.current.addedToSlot = true;
 
           // Add object to cursor slot (same as shift+click)
-          console.log('[handleMouseMove] ✓ Drag threshold exceeded, adding to cursor slot:', targetId);
           addToCursorSlotLocal(targetId, obj, { x: e.clientX, y: e.clientY }, props, 'hold');
         }
       }
@@ -2309,15 +2259,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       const hadCursorSlot = cursorSlot.length > 0;
       const targetId = dragThresholdRef.current.targetId; // 🔥 FIX: Save targetId BEFORE clearing
 
-      // 🔥 DEBUG: Log drag threshold state
-      console.log('[handleMouseUp] Drag threshold check:', {
-        targetId,
-        wasAddedToSlot,
-        wasClickNotDrag,
-        hadCursorSlot,
-        cursorSlotIds: cursorSlot.map(i => i.id),
-      });
-
       dragThresholdRef.current = {
         initialX: 0,
         initialY: 0,
@@ -2341,7 +2282,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       // 🔥 FIX: If clicked on slot object, clear the stale cursorSlot to prevent future issues
       if (clickedOnSlotObject) {
-        console.log('[handleMouseUp] Clicked on object in cursor slot, clearing stale state');
         setCursorSlot([]);
         setCursorPosition(null);
         cursorPositionRef.current = null;

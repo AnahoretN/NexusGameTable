@@ -54,7 +54,6 @@ export function getCursorSlotVersion(): number {
 export function addToCursorSlot(objectId: string, originalX: number, originalY: number): void {
   cursorSlotObjects.add(objectId);
   cursorSlotOriginalPositions.set(objectId, { x: originalX, y: originalY });
-  console.log(`[CursorSlotTracker] Added ${objectId}, total: ${cursorSlotObjects.size}`);
   notifyChange();
 }
 
@@ -65,7 +64,6 @@ export function removeFromCursorSlot(objectId: string): void {
   const wasRemoved = cursorSlotObjects.delete(objectId);
   cursorSlotOriginalPositions.delete(objectId);
   if (wasRemoved) {
-    console.log(`[CursorSlotTracker] Removed ${objectId}, total: ${cursorSlotObjects.size}`);
     notifyChange();
   }
 }
@@ -95,7 +93,6 @@ export function getOriginalPosition(objectId: string): { x: number; y: number } 
  * Clear all cursor slot objects (emergency cleanup)
  */
 export function clearCursorSlot(): void {
-  console.log(`[CursorSlotTracker] Clearing all, was: ${cursorSlotObjects.size} objects`);
   cursorSlotObjects.clear();
   cursorSlotOriginalPositions.clear();
   notifyChange();

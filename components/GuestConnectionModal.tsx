@@ -59,13 +59,11 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
   useEffect(() => {
     if (isOpen && !wasOpenRef.current) {
       // Modal just opened - reset state
-      console.log('[GuestConnectionModal] 📖 Modal opened, resetting state');
       setPlayerName(initialPlayerName);
       setNameSubmitted(false);
       wasOpenRef.current = true;
     } else if (!isOpen && wasOpenRef.current) {
       // Modal closed - reset ref for next time
-      console.log('[GuestConnectionModal] 📕 Modal closed');
       wasOpenRef.current = false;
     }
   }, [isOpen, initialPlayerName]);
@@ -73,7 +71,6 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
   // 🔥 NEW: Sync playerName when initialPlayerName changes (e.g., when PACKS_NEEDED arrives)
   useEffect(() => {
     if (isOpen && !nameSubmitted && initialPlayerName) {
-      console.log('[GuestConnectionModal] 📝 Updating suggested name to:', initialPlayerName);
       setPlayerName(initialPlayerName);
     }
   }, [initialPlayerName, isOpen, nameSubmitted]);
@@ -81,9 +78,7 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
   // 🔥 NEW: Auto-close modal when ready to join (after sync is complete)
   const canJoinRef = useRef(false);
   useEffect(() => {
-    console.log('[GuestConnectionModal] 🔍 Checking canJoin:', { canJoin, nameSubmitted, wasPreviouslyReady: canJoinRef.current });
     if (canJoin && !canJoinRef.current && nameSubmitted) {
-      console.log('[GuestConnectionModal] ✅ Ready to join, auto-closing modal in 1s...');
       canJoinRef.current = true;
       // Auto-close after 1 second delay
       setTimeout(() => {
@@ -93,15 +88,6 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
       canJoinRef.current = false;
     }
   }, [canJoin, nameSubmitted, onJoin]);
-
-  // 🔥 DEBUG: Log when requiredPacks changes
-  useEffect(() => {
-    console.log('[GuestConnectionModal] 📦 requiredPacks changed:', {
-      count: requiredPacks.length,
-      packs: requiredPacks.map(p => p.name),
-      nameSubmitted
-    });
-  }, [requiredPacks, nameSubmitted]);
 
   // Update pack statuses when requiredPacks changes
   useEffect(() => {
@@ -197,7 +183,6 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
 
       // 🔥 NEW: Notify all components that assets have been updated
       // This forces SvgTokenShape and other components to reload images
-      console.log(`[GuestConnectionModal] 📢 Emitting asset event to refresh ${result.successfulHashes.length} images`);
       assetEvents.emit();
 
       // Notify parent
