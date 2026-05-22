@@ -63,28 +63,6 @@ export const TokenRenderer = memo(({
   const isDragging = draggingId === obj.id;
   const objLayer = obj.hyperscaleLayerId || 'none';
 
-  // 🔥 DEBUG: Log token state for ALL tokens to identify issues
-  console.log(`[TokenRenderer] Token "${obj.name || obj.id}" state:`, {
-    id: obj.id,
-    name: obj.name,
-    locked: obj.locked,
-    canDrag: canDrag,
-    isDragging: isDragging,
-    currentTool: currentTool,
-    content: (obj as any).content?.substring(0, 30) + '...',
-    hasOwnerId: !!(obj as any).ownerId,
-    x: obj.x,
-    y: obj.y
-  });
-
-  // 🔥 DEBUG: Log why token cannot be dragged
-  if (obj.locked) {
-    console.warn(`[TokenRenderer] ⚠️ Token "${obj.name || obj.id}" is LOCKED - cannot be moved`);
-  }
-  if (currentTool !== 'none' && currentTool !== 'zoom') {
-    console.warn(`[TokenRenderer] ⚠️ Token "${obj.name || obj.id}" cannot be dragged - current tool is "${currentTool}"`);
-  }
-
   // Calculate zoom multiplier for UI elements compensation
   const zoomMultiplier = pixelsPerVU / basePixelsPerVU;
 
@@ -412,23 +390,11 @@ export const TokenRenderer = memo(({
       <div
         data-object-id={obj.id}
         onMouseDown={(e) => {
-          console.log(`[TokenRenderer] onMouseDown for "${obj.name || obj.id}":`, {
-            canDrag: canDrag,
-            objLocked: obj.locked,
-            currentTool: currentTool,
-            button: e.button,
-            target: (e.target as HTMLElement).className,
-            dataObjectId: (e.target as HTMLElement).getAttribute('data-object-id')
-          });
           if (canDrag) {
             onMouseDown(e, obj.id);
-          } else {
-            console.warn(`[TokenRenderer] ⚠️ onMouseDown blocked for "${obj.name || obj.id}" - canDrag=${canDrag}, locked=${obj.locked}`);
           }
         }}
-        onClick={(e) => {
-          console.log(`[TokenRenderer] onClick for "${obj.name || obj.id}" - click events work!`);
-        }}
+        onClick={undefined}
         onContextMenu={(e) => onContextMenu(e, obj)}
         className={`absolute flex items-center justify-center text-white font-bold select-none group ${cursorClass}`}
         style={positionStyle}

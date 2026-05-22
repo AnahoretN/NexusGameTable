@@ -9,7 +9,7 @@ import { logger } from '../utils/logger';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { getTokenWithAppliedState } from '../hooks/useTokenWithState';
 import { useImageUrl } from '../hooks';
-import { getAssetURL } from '../utils/assets';
+import { getAssetURL, assetCache } from '../utils/assets';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -667,10 +667,21 @@ const CursorSlotDrawing: React.FC<CursorSlotItemProps & { item: Drawing }> = ({ 
 const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTemplate }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
   const pivot = item.pivot || { x: 50, y: 50 };
   const rotation = item.rotation || 0;
-  const [isImageReady, setIsImageReady] = useState(false);
 
   // Convert img_ref:// URLs to displayable URLs for effect image
   const effectImageUrl = useImageUrl(item.content || '');
+
+  // 🔥 FIX: Initialize isImageReady from cache to prevent flicker
+  // When effect templates are moved between cursor slot and tabletop,
+  // component remounts. By checking cache first, we avoid the "flash".
+  const [isImageReady, setIsImageReady] = useState(() => {
+    if (effectImageUrl) {
+      // Check if already in memory cache or local cache
+      return effectImageCache.has(effectImageUrl) ||
+             (effectImageUrl.startsWith('sha256:') && assetCache.hasInMemory(effectImageUrl));
+    }
+    return false;
+  });
 
   // Ensure width/height are never zero to prevent black square flicker
   const safeWidth = Math.max(width, 1);

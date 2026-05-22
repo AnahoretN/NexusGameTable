@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TokenShape } from '../types';
 import { generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
 import { getAssetURL, acquireAsset, releaseAsset, clearAssetCache } from '../utils/assets';
-import { assetEvents } from '../utils/assets/assetCache';
+import { assetEvents, assetCache } from '../utils/assets/assetCache';
 
 // 🔥 FIX: Remove local cache - it gets out of sync with assetCache.evictLRU()
 // assetCache already manages ObjectURLs with proper LRU eviction
@@ -179,10 +179,31 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   fontColor = '#ffffff',
   preserveAspectRatio = "xMidYMid meet",
 }) => {
-  // 🔥 FIX: Don't initialize from local cache - it can be stale after assetCache.evictLRU()
-  // Always load fresh from assetCache which manages ObjectURLs properly
-  const [resolvedContent, setResolvedContent] = useState<string | undefined>(undefined);
-  const [isLoaded, setIsLoaded] = useState(() => content ? !isAssetHash(content) : false);
+  // 🔥 FIX: Initialize resolvedContent from cache if available to prevent flicker
+  // When tokens are moved between cursor slot and tabletop, component remounts.
+  // By initializing from cache, we avoid the "flash" of fallback color.
+  const [resolvedContent, setResolvedContent] = useState<string | undefined>(() => {
+    if (!content) return undefined;
+    if (!isAssetHash(content)) return content;
+
+    // Check if asset is already cached in memory
+    const cachedEntry = assetCache.getEntryInfo(content);
+    if (cachedEntry) {
+      // Asset is in memory cache - use it immediately to prevent flicker
+      // Acquire reference to prevent it from being evicted while in use
+      assetCache.acquire(content);
+      return cachedEntry.url;
+    }
+
+    return undefined;
+  });
+
+  const [isLoaded, setIsLoaded] = useState(() => {
+    if (!content) return true;
+    if (!isAssetHash(content)) return true;
+    // Check if already in cache
+    return assetCache.hasInMemory(content);
+  });
 
   // 🔥 FIX: Local state that triggers re-render when global version changes
   const [forceUpdate, setForceUpdate] = useState(0);
@@ -219,8 +240,16 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
       return;
     }
 
-    // 🔥 FIX: Always load from assetCache - no local cache to avoid stale URLs
-    // assetCache manages ObjectURLs with proper LRU eviction and revocation
+    // 🔥 FIX: Check if already cached from initial state or previous load
+    // This prevents unnecessary re-loading when component remounts
+    if (resolvedContent && assetCache.hasInMemory(content)) {
+      // Verify the cached URL is still valid
+      const cachedEntry = assetCache.getEntryInfo(content);
+      if (cachedEntry && cachedEntry.url === resolvedContent) {
+        setIsLoaded(true);
+        return;
+      }
+    }
 
     let cancelled = false;
 
