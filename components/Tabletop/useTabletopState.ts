@@ -3,7 +3,7 @@
  * Manages all UI state that doesn't need to be in global state
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Card as CardType,
   Token as TokenType,
@@ -56,8 +56,14 @@ export const useCursorSlotState = () => {
   const [cursorSlotSource, setCursorSlotSource] = useState<'hold' | 'shift' | 'archetype' | null>(null);
 
   // Ref for immediate access in event handlers
+  // 🔥 FIX: Use useEffect to sync ref with state instead of setting on every render
+  // This prevents race conditions where the ref overrides values set by event handlers
   const cursorSlotRef = useRef<(CardType | TokenType | BoardType)[]>([]);
-  cursorSlotRef.current = cursorSlot;
+
+  // Sync ref with state only when cursorSlot actually changes
+  useEffect(() => {
+    cursorSlotRef.current = cursorSlot;
+  }, [cursorSlot]);
 
   return {
     cursorSlot,

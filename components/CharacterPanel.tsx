@@ -37,17 +37,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   const stateCharacterData = (state.objects[panel.id] as PanelObject)?.characterData;
   const serverCharacterData = stateCharacterData || panel.characterData;
 
-  // DEBUG: Log when serverCharacterData changes
-  useEffect(() => {
-    console.log('[CharacterPanel] serverCharacterData reference changed', {
-      panelId: panel.id,
-      hasData: !!serverCharacterData,
-      hasStateData: !!stateCharacterData,
-      hasPanelData: !!panel.characterData,
-      charactersCount: serverCharacterData?.characters?.length || 0
-    });
-  }, [serverCharacterData, stateCharacterData, panel.characterData]);
-
   // Local shadow state for character data (optimistic updates)
   // This allows immediate UI updates while debouncing P2P sync
   const [localCharacterData, setLocalCharacterData] = useState(serverCharacterData);
@@ -60,22 +49,10 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     const serverJson = JSON.stringify(serverCharacterData);
     const localJson = JSON.stringify(localCharacterData);
 
-    console.log('[CharacterPanel] Server state sync check', {
-      serverChanged: serverJson !== localJson,
-      hasServerData: !!serverCharacterData,
-      hasLocalData: !!localCharacterData,
-      hasServerCharacters: !!serverCharacterData?.characters?.length,
-      hasLocalCharacters: !!localCharacterData?.characters?.length
-    });
-
     // Additional protection: don't overwrite local data with undefined/empty server data
     // Only sync if server has valid data
     if (serverJson !== localJson && (serverCharacterData?.characters?.length ?? 0) > 0) {
-      console.log('[CharacterPanel] Syncing local state from server');
       setLocalCharacterData(serverCharacterData);
-    } else if (serverJson !== localJson && !serverCharacterData && (localCharacterData?.characters?.length ?? 0) > 0) {
-      // Server data is empty but we have local data - keep local data
-      console.log('[CharacterPanel] Server data empty, preserving local data');
     }
   }, [serverCharacterData]);
 
@@ -105,14 +82,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
    * Local state is updated immediately for responsive UI
    */
   const dispatchCharacterUpdate = useCallback((updatedCharacterData: any, immediate = false) => {
-    console.log('[CharacterPanel] dispatchCharacterUpdate called', { panelId: panel.id, immediate });
-
     // Update local state immediately (optimistic update)
     setLocalCharacterData(updatedCharacterData);
 
     // Skip debounced dispatch if this is from server sync
     if (isUpdatingFromServerRef.current) {
-      console.log('[CharacterPanel] dispatchCharacterUpdate skipped (from server sync)');
       return;
     }
 
@@ -127,7 +101,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     // If immediate is true, dispatch right away (for important changes)
     // Otherwise, dispatch after 250ms of no further changes
     if (immediate) {
-      console.log('[CharacterPanel] Dispatching UPDATE_OBJECT immediately', { panelId: panel.id });
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
@@ -139,18 +112,11 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
       });
       pendingCharacterUpdateRef.current = null;
     } else {
-      console.log('[CharacterPanel] Scheduling debounced UPDATE_OBJECT (250ms)', { panelId: panel.id });
       debouncedDispatchTimerRef.current = setTimeout(() => {
         // 🔥 FIX: Use current localCharacterDataRef instead of pendingCharacterUpdateRef
         // This ensures we send the latest data, incorporating any server updates received
         const currentData = localCharacterDataRef.current;
         if (currentData) {
-          console.log('[CharacterPanel] ⚠️ Dispatching debounced UPDATE_OBJECT', {
-            panelId: panel.id,
-            panelType: (state.objects[panel.id] as any)?.panelType,
-            charactersCount: currentData.characters?.length,
-            hasPendingChanges: pendingCharacterUpdateRef.current !== null
-          });
           dispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -160,8 +126,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
               }
             }
           });
-        } else {
-          console.warn('[CharacterPanel] ⚠️ No currentData to dispatch!');
         }
         pendingCharacterUpdateRef.current = null;
         debouncedDispatchTimerRef.current = null;
@@ -220,7 +184,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             newCache[character.id] = url;
           } else if (isImageRef(character.avatarUrl)) {
             // Old img_ref:// system - not supported
-            console.warn('[CharacterPanel] img_ref:// URLs are no longer supported for avatars');
           } else {
             // Regular URL (data:image/, http://, etc.)
             newCache[character.id] = character.avatarUrl;
@@ -478,7 +441,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   // Handler: Add new character
   const handleAddCharacter = useCallback(() => {
     if (!isGM) {
-      logger.warn('[CharacterPanel] Cannot add character: not a GM');
       return;
     }
 
@@ -1144,12 +1106,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     // We do this BEFORE the debounced dispatch so tokens update right away
     const updatedBlock = activeSubTab.blocks.find((b: any) => b.id === blockId);
     if (updatedBlock?.type === 'SLIDER' && newData?.sliders) {
-      console.log('[CharacterPanel] Slider block updated, syncing to tokens immediately', {
-        characterId: activeCharacter.id,
-        panelId: panel.id,
-        sliders: newData.sliders.map((s: any) => ({ name: s.label, value: s.value }))
-      });
-
       // 🔥 NEW: Broadcast slider changes via direct P2P
       broadcastCharacterSliders(
         panel.id,
@@ -1190,8 +1146,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
             };
           });
 
-          console.log('[CharacterPanel] Updating token', token.id, 'with counters', counters);
-
           // Immediate token update with network sync disabled
           // This prevents duplicate sync when the character update is processed
           dispatch({
@@ -1205,7 +1159,6 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
           tokensUpdated++;
         }
       }
-      console.log('[CharacterPanel] Updated', tokensUpdated, 'tokens for character', activeCharacter.id);
     } else if (updatedBlock) {
       // 🔥 NEW: Broadcast other block changes via direct P2P
       broadcastCharacterBlock(

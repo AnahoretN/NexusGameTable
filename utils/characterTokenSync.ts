@@ -111,14 +111,12 @@ export function syncCountersToCharacter(
 ): Record<string, TableObject> {
   const result = findCharacterForToken(state, token);
   if (!result) {
-    console.log('[syncCountersToCharacter] No character found for token', token.id);
     return newObjects;
   }
 
   const { panel, character } = result;
   const sliderBlockInfo = findSliderBlock(character);
   if (!sliderBlockInfo) {
-    console.log('[syncCountersToCharacter] No slider block found for character', character.id);
     return newObjects;
   }
 
@@ -137,13 +135,6 @@ export function syncCountersToCharacter(
       };
     }
     return slider;
-  });
-
-  console.log('[syncCountersToCharacter] Syncing counters to character', {
-    tokenId: token.id,
-    characterId: character.id,
-    panelId: panel.id,
-    updatedSliders: updatedSliders.map(s => ({ name: s.label, value: s.value }))
   });
 
   // Update the panel with new slider values

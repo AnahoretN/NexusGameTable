@@ -124,6 +124,14 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
   const cleanupTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const rafRef = useRef<number>();
 
+  // 📋 LOG: Track cursor slot changes
+  console.log('👁️ [CURSOR_SLOT_VISUALIZATION] Rendering:', {
+    cursorSlotLength: cursorSlot.length,
+    cursorPosition,
+    cursorSlotItems: cursorSlot.map(i => ({ id: i.id, type: i.type, name: i.name })),
+    heldItemsLength: heldItems.length
+  });
+
   // IMPORTANT: Simply use cursorSlot directly - no filtering needed
   // The cursorSlot state is the source of truth
   const sortedSlot = useMemo(() => {
@@ -143,8 +151,27 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
   useEffect(() => {
     // Capture items BEFORE they're removed from cursorSlot for transition animation
     // When cursorSlot goes from having items to being empty, preserve the last state
-    if (cursorSlot.length > 0 && cursorPositionRef.current) {
-      const position = cursorPositionRef.current;
+    // Use either the ref or the prop - whichever is available
+    const position = cursorPositionRef.current || cursorPosition;
+    // Validate position has valid x and y coordinates
+    const hasValidPosition = position &&
+      typeof position.x === 'number' &&
+      typeof position.y === 'number' &&
+      !isNaN(position.x) &&
+      !isNaN(position.y);
+
+    // 🔍 DEBUG: Log why heldItems might not be created
+    if (cursorSlot.length > 0 && !hasValidPosition) {
+      console.warn('⚠️ [CURSOR_SLOT_VIS] Cannot create heldItems - invalid position:', {
+        cursorSlotLength: cursorSlot.length,
+        cursorPosition,
+        cursorPositionRefCurrent: cursorPositionRef.current,
+        position,
+        hasValidPosition
+      });
+    }
+
+    if (cursorSlot.length > 0 && hasValidPosition) {
 
       const newHeldItems: HeldItem[] = cursorSlot.map((item, index) => {
         const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU, state.objects as Record<string, TableObject>);

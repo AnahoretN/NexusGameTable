@@ -60,11 +60,6 @@ export const CardRenderer = memo(({
   const isDragging = draggingId === obj.id;
   const objLayer = obj.hyperscaleLayerId || 'none';
 
-  // 🔥 DEBUG: Log locked cards
-  if (obj.locked) {
-    console.warn(`[CardRenderer] ⚠️ Card "${obj.name || obj.id}" is LOCKED - cannot be moved`);
-  }
-
   // Memoize cursor class
   const cursorClass = useMemo(() => {
     if (currentTool !== 'none' && currentTool !== 'zoom') return 'cursor-default';
@@ -241,7 +236,11 @@ export const CardRenderer = memo(({
     >
       <div
         data-object-id={obj.id}
-        onMouseDown={(e) => canDrag && onMouseDown(e, obj.id)}
+        onMouseDown={(e) => {
+          if (canDrag) {
+            onMouseDown(e, obj.id);
+          }
+        }}
         onContextMenu={(e) => onContextMenu(e, obj)}
         className={`absolute group ${cursorClass}`}
         style={positionStyle}

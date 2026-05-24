@@ -637,7 +637,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const [pickingUpCardIds, setPickingUpCardIds] = useState<Set<string>>(new Set());
 
   // Track cards that were just dropped to hand
-  const recentlyDroppedToHandRef = useRef<Set<string>>(new Set());
+  // NOTE: recentlyDroppedToHandRef removed - no longer needed with simplified logic
+  // HAND cards don't use cooldowns, only TABLE cards use pickingUpCardIds
 
   // Local state for cursor slot hover
   const [isCursorOverHand, setIsCursorOverHand] = useState(false);
@@ -674,14 +675,30 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     );
     if (itemsInCursorSlot.length === 0) return;
 
+    // 🔥 FIX: Clear inCursorSlot flag immediately to prevent stale state
+    // This ensures items can be picked up again immediately after drop
+    itemsInCursorSlot.forEach(item => {
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: item.id,
+          updates: { inCursorSlot: false }
+        }
+      });
+    });
+
     setIsCursorOverHand(false);
+    console.log('📤 [HAND_DROP_1] Dispatching cursor-slot-drop-to-hand from dropCursorSlotToHand:', {
+      itemsCount: itemsInCursorSlot.length,
+      itemIds: itemsInCursorSlot.map(i => i.id)
+    });
     window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
       detail: { items: itemsInCursorSlot }
     }));
     window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
       detail: { cardIds: itemsInCursorSlot.map(i => i.id) }
     }));
-  }, [objects, setIsCursorOverHand]);
+  }, [objects, setIsCursorOverHand, dispatch]);
 
   // Use shared hook for cursor slot hover detection
   const { isCursorOver: isCursorOverFromHook } = useCursorSlotHover(containerRef, {
@@ -718,12 +735,26 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const customEvent = e as CustomEvent<{ items: any[] }>;
       const { items } = customEvent.detail;
 
+      // 📋 LOG: Drop to hand event received
+      console.log('📥 [DROP_TO_HAND_EVENT] Received cursor-slot-drop-to-hand event:', {
+        itemsCount: items?.length,
+        items: items?.map(i => ({ id: i.id, type: i.type, name: i.name })),
+        selectedPlayerId,
+        listenerSource: 'HandPanelOptimized useEffect'
+      });
+
       // IMPORTANT: Clear purple outline IMMEDIATELY to prevent it from getting stuck
       // Do this before any other processing to ensure fast UI response
       setIsCursorOverHand(false);
 
       // Allow both CARDS and TOKENS in hand panel
       const itemsToAdd = items.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN);
+
+      console.log('🔍 [DROP_TO_HAND_FILTER] Filtered items for hand:', {
+        originalCount: items?.length,
+        filteredCount: itemsToAdd.length,
+        itemsToAdd: itemsToAdd.map(i => ({ id: i.id, type: i.type, name: i.name }))
+      });
 
       if (itemsToAdd.length > 0) {
         const player = players.find(p => p.id === selectedPlayerId);
@@ -775,6 +806,15 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
               updates
             }
           });
+
+          // 📋 LOG: Item dropped to hand
+          console.log('✅ [DROP_TO_HAND_SUCCESS] Item dropped to hand:', {
+            id: item.id,
+            type: item.type,
+            name: item.name,
+            location: updates.location,
+            ownerId: selectedPlayerId
+          });
         });
 
         setPickingUpCardIds(prev => {
@@ -783,19 +823,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
           return newSet;
         });
 
-        recentlyDroppedToHandRef.current = new Set([
-          ...recentlyDroppedToHandRef.current,
-          ...itemsToAdd.map(item => item.id)
-        ]);
-
-        // Reduced timeout from 2000ms to 500ms to allow quicker re-pickup
-        setTimeout(() => {
-          recentlyDroppedToHandRef.current = new Set(
-            Array.from(recentlyDroppedToHandRef.current).filter(id =>
-              !itemsToAdd.some(item => item.id === id)
-            )
-          );
-        }, 500);
+        // 🔥 SIMPLIFIED: No cooldown for HAND cards - they can be picked up immediately
+        // TABLE cards use pickingUpCardIds to prevent duplicate drags
       }
 
       // Also dispatch cursor-slot-dropped to notify useCursorSlotHover hook
@@ -832,15 +861,35 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     return () => window.removeEventListener('cursor-slot-dropped', handleCursorSlotDropped);
   }, []);
 
-  // Cleanup
+  // 🔥 SIMPLIFIED: Listen for cursor slot item added event to clear pickingUpCardIds
+  // Only needed for TABLE cards (HAND cards don't use pickingUpCardIds tracking)
   useEffect(() => {
-    return () => {
-      recentlyDroppedToHandRef.current.clear();
+    const handleCursorSlotItemAdded = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        cardId: string;
+      }>;
+
+      const { cardId } = customEvent.detail;
+
+      // Clear from pickingUpCardIds since the card is now in cursor slot
+      // This is only for TABLE cards - HAND cards don't add to pickingUpCardIds
+      setPickingUpCardIds(prev => {
+        if (prev.has(cardId)) {
+          const newSet = new Set(prev);
+          newSet.delete(cardId);
+          return newSet;
+        }
+        return prev;
+      });
     };
+
+    window.addEventListener('cursor-slot-item-added', handleCursorSlotItemAdded);
+    return () => window.removeEventListener('cursor-slot-item-added', handleCursorSlotItemAdded);
   }, []);
 
   // Listen for add-to-cursor-slot events
-  // This handler ONLY updates local state, doesn't block the event
+  // 🔥 SIMPLIFIED: This handler ONLY updates local state, doesn't block the event
+  // For HAND cards, we don't track pickingUpCardIds at all
   useEffect(() => {
     const handleAddToCursorSlot = (e: Event) => {
       const customEvent = e as CustomEvent<{
@@ -852,6 +901,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
       const { cardId } = customEvent.detail;
 
+      // Only track pickingUpCardIds for TABLE cards
+      // HAND cards are allowed to be picked up multiple times without tracking
       setPickingUpCardIds(prev => {
         // Check if already picking up this card to avoid duplicates
         if (prev.has(cardId)) {
@@ -866,20 +917,20 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     return () => {
       window.removeEventListener('add-to-cursor-slot', handleAddToCursorSlot);
     };
-  }, []); // Remove pickingUpCardIds dependency to avoid infinite loop
+  }, []);
 
   // Filter cards and tokens for selected player
   const player = players.find(p => p.id === selectedPlayerId);
   const handCardOrder = player?.handCardOrder || [];
 
   // Get both cards and tokens in hand
-  // Note: pickingUpCardIds filter is only for TABLE items, not HAND items
-  // HAND items should always be shown regardless of pickingUpCardIds
+  // 🔥 SIMPLIFIED: Don't use inCursorSlot as filter for HAND cards
+  // inCursorSlot is only used for TABLE cards (to hide them during drag)
+  // HAND cards are always shown if location === HAND and ownerId matches
   const handItems = allHandObjects.filter((item): item is Card | Token => {
-    if (item.inCursorSlot) return false;
     if (item.ownerId !== selectedPlayerId) return false;
 
-    // For cards, check location
+    // For cards, check location - HAND cards always visible
     if (item.type === ItemType.CARD) {
       return (item as Card).location === CardLocation.HAND;
     }
@@ -1139,10 +1190,26 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       return;
     }
 
+    // 🔥 FIX: Clear inCursorSlot flag immediately to prevent stale state
+    // This ensures items can be picked up again immediately after drop
+    itemsInCursorSlot.forEach(item => {
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: item.id,
+          updates: { inCursorSlot: false }
+        }
+      });
+    });
+
     // Dispatch event to drop items to hand
     // IMPORTANT: Clear purple outline immediately when dropping to hand
     // This prevents the outline from getting stuck due to timing issues
     setIsCursorOverHand(false);
+    console.log('📤 [HAND_DROP_2] Dispatching cursor-slot-drop-to-hand from handlePanelClick:', {
+      itemsCount: itemsInCursorSlot.length,
+      itemIds: itemsInCursorSlot.map(i => i.id)
+    });
     window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
       detail: { items: itemsInCursorSlot }
     }));
@@ -1151,7 +1218,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
       detail: { cardIds: itemsInCursorSlot.map(i => i.id) }
     }));
-  }, [objects, selectedPlayerId, setIsCursorOverHand]);
+  }, [objects, selectedPlayerId, setIsCursorOverHand, dispatch]);
 
   const handleTabContextMenu = useCallback((e: React.MouseEvent, playerId: string) => {
     e.preventDefault();
@@ -1419,55 +1486,58 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     // Handle Shift+click: immediately add to cursor slot without drag
     if (e.shiftKey) {
       const card = objects[cardId] as Card | Token;
-      if (card && !card.inCursorSlot && !pickingUpCardIds.has(cardId)) {
-        if (!recentlyDroppedToHandRef.current.has(cardId)) {
-          // Check if we need to drop existing cursor slot items first
-          let shouldDropFirst = false;
+      // 🔥 SIMPLIFIED: For HAND cards, don't block pickup based on pickingUpCardIds
+      // Only check for TABLE cards to prevent duplicate drags
+      const isHandCard = card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND;
+      if (card && (isHandCard || !pickingUpCardIds.has(cardId))) {
+        // Check if we need to drop existing cursor slot items first
+        let shouldDropFirst = false;
 
-          if (card.type === ItemType.TOKEN) {
-            const token = card as Token;
-            if (cursorSlotHasCards() || !isCursorSlotSameTokenType(token)) {
-              shouldDropFirst = true;
-            }
-          } else {
-            const tokensInSlot = getTokensInCursorSlot();
-            const cardsInSlot = Object.values(objects).filter(obj =>
-              obj.type === ItemType.CARD && (obj as any).inCursorSlot === true
-            );
-            if (tokensInSlot.length > 0 || cardsInSlot.length > 0) {
-              shouldDropFirst = true;
-            }
+        if (card.type === ItemType.TOKEN) {
+          const token = card as Token;
+          if (cursorSlotHasCards() || !isCursorSlotSameTokenType(token)) {
+            shouldDropFirst = true;
           }
-
-          if (shouldDropFirst) {
-            dropCursorSlotToHand();
+        } else {
+          const tokensInSlot = getTokensInCursorSlot();
+          const cardsInSlot = Object.values(objects).filter(obj =>
+            obj.type === ItemType.CARD && (obj as any).inCursorSlot === true
+          );
+          if (tokensInSlot.length > 0 || cardsInSlot.length > 0) {
+            shouldDropFirst = true;
           }
-
-          recentlyDroppedToHandRef.current.delete(cardId);
-          setPickingUpCardIds(prev => new Set([...prev, cardId]));
-
-          const cardOverride: any = { ...card };
-          if (card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND) {
-            delete cardOverride.x;
-            delete cardOverride.y;
-          }
-
-          window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-            detail: {
-              cardId,
-              clientX: e.clientX,
-              clientY: e.clientY,
-              source: 'shift', // Use 'shift' for Shift+click behavior
-              cardOverride,
-              clickOffsetX_PX,
-              clickOffsetY_PX,
-              isFromHand: true
-            }
-          }));
-
-          // Don't set up drag refs for Shift+click
-          return;
         }
+
+        if (shouldDropFirst) {
+          dropCursorSlotToHand();
+        }
+
+        // Only track pickingUpCardIds for TABLE cards
+        if (!isHandCard) {
+          setPickingUpCardIds(prev => new Set([...prev, cardId]));
+        }
+
+        const cardOverride: any = { ...card };
+        if (card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND) {
+          delete cardOverride.x;
+          delete cardOverride.y;
+        }
+
+        window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+          detail: {
+            cardId,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            source: 'shift', // Use 'shift' for Shift+click behavior
+            cardOverride,
+            clickOffsetX_PX,
+            clickOffsetY_PX,
+            isFromHand: true
+          }
+        }));
+
+        // Don't set up drag refs for Shift+click
+        return;
       }
     }
 
@@ -1498,31 +1568,36 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       if (distance_VU >= 2) {
         // Card picked up after moving 2vu
         const card = objects[longPressCardRef.current.cardId] as Card;
-
-        // For cards in HAND, allow picking up even if in pickingUpCardIds
-        // (pickingUpCardIds is only for TABLE items)
-        const isCardInHand = card.location === CardLocation.HAND;
-        if (!isCardInHand && (card.inCursorSlot || pickingUpCardIds.has(longPressCardRef.current.cardId))) {
-          longPressCardRef.current = null;
-          setDragIndex(null);
-          return;
-        }
-
         const cardId = longPressCardRef.current.cardId;
 
-        // IMPORTANT: Check recentlyDroppedToHandRef BEFORE dispatching event
-        if (recentlyDroppedToHandRef.current.has(cardId)) {
+        // 🔥 SIMPLIFIED: For HAND cards, always allow pickup
+        // Don't check inCursorSlot or pickingUpCardIds - they cause race conditions
+        // The cursorSlotRef is the source of truth for what's in the slot
+        const isCardInHand = card.location === CardLocation.HAND;
+        if (isCardInHand) {
+          // Clear any stale inCursorSlot flag and continue
+          if (card.inCursorSlot) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: card.id,
+                updates: { inCursorSlot: false }
+              }
+            });
+          }
+        } else if (card.inCursorSlot || pickingUpCardIds.has(cardId)) {
+          // TABLE cards: check if already being dragged
           longPressCardRef.current = null;
           setDragIndex(null);
           return;
         }
 
-        // Clear from recentlyDroppedToHandRef when picking up from hand
-        recentlyDroppedToHandRef.current.delete(cardId);
-
-        setPickingUpCardIds(prev => new Set([...prev, cardId]));
+        // 🔥 SIMPLIFIED: For HAND cards, don't track pickingUpCardIds
+        // Only track for TABLE cards to prevent duplicate drags
+        if (!isCardInHand) {
+          setPickingUpCardIds(prev => new Set([...prev, cardId]));
+        }
         cardPickedUpRef.current = true;
-
 
         // Pass card data directly to ensure handler has access to it
         // IMPORTANT: For cards in HAND, don't pass x,y coordinates in cardOverride
@@ -1600,43 +1675,64 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
         const cardId = longPressCardRef.current.cardId;
         const card = objects[cardId] as Card | Token;
 
-        if (card && !card.inCursorSlot && !pickingUpCardIds.has(cardId)) {
-          // Check recentlyDroppedToHandRef
-          if (!recentlyDroppedToHandRef.current.has(cardId)) {
-            // Clear from recentlyDroppedToHandRef when picking up from hand
-            recentlyDroppedToHandRef.current.delete(cardId);
-
-            setPickingUpCardIds(prev => new Set([...prev, cardId]));
-            cardPickedUpRef.current = true;
-
-            // Pass card data directly to ensure handler has access to it
-            const cardOverride: any = { ...card };
-            if (card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND) {
-              delete cardOverride.x;
-              delete cardOverride.y;
+        // 🔥 SIMPLIFIED: For HAND cards, always allow pickup
+        // Clear stale inCursorSlot if present, don't check pickingUpCardIds
+        const isHandCard = card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND;
+        if (isHandCard && (card as any).inCursorSlot) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: cardId,
+              updates: { inCursorSlot: false }
             }
+          });
+        }
 
-            window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-              detail: {
-                cardId,
-                clientX: e.clientX,
-                clientY: e.clientY,
-                source: 'hold',
-                cardOverride,
-                clickOffsetX_PX: longPressCardRef.current.clickOffsetX_PX,
-                clickOffsetY_PX: longPressCardRef.current.clickOffsetY_PX,
-                isFromHand: true
-              }
-            }));
-
-            // Clear refs and return early (don't process drag reordering)
-            longPressCardRef.current = null;
-            setDragIndex(null);
-            dragStartPosRef.current = null;
-            return;
+        if (card && (isHandCard || !pickingUpCardIds.has(cardId))) {
+          // Only track pickingUpCardIds for TABLE cards
+          if (!isHandCard) {
+            setPickingUpCardIds(prev => new Set([...prev, cardId]));
           }
+          cardPickedUpRef.current = true;
+
+          // Pass card data directly to ensure handler has access to it
+          const cardOverride: any = { ...card };
+          if (card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND) {
+            delete cardOverride.x;
+            delete cardOverride.y;
+          }
+
+          window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
+            detail: {
+              cardId,
+              clientX: e.clientX,
+              clientY: e.clientY,
+              source: 'hold',
+              cardOverride,
+              clickOffsetX_PX: longPressCardRef.current.clickOffsetX_PX,
+              clickOffsetY_PX: longPressCardRef.current.clickOffsetY_PX,
+              isFromHand: true
+            }
+          }));
+
+          // Clear refs and return early (don't process drag reordering)
+          longPressCardRef.current = null;
+          setDragIndex(null);
+          dragStartPosRef.current = null;
+          return;
         }
       }
+    }
+
+    // 🔥 FIX: Clear from pickingUpCardIds when pickup is cancelled
+    // This prevents the card from being blocked on next pickup attempt
+    const cardIdToClear = longPressCardRef.current?.cardId;
+    if (cardIdToClear) {
+      setPickingUpCardIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(cardIdToClear);
+        return newSet;
+      });
     }
 
     longPressCardRef.current = null;
@@ -1727,9 +1823,10 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   }, [contextMenu, scaleMenu]);
 
   // Helper function to count items (cards + tokens) for a player
+  // 🔥 SIMPLIFIED: Don't use inCursorSlot or pickingUpCardIds for counting
+  // Just count by location and ownership
   const countCardsForPlayer = useCallback((playerId: string) => {
     return allHandObjects.filter(item => {
-      if (item.inCursorSlot || pickingUpCardIds.has(item.id)) return false;
       if (item.ownerId !== playerId) return false;
 
       // For cards, check location
@@ -1742,7 +1839,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       }
       return false;
     }).length;
-  }, [allHandObjects, pickingUpCardIds]);
+  }, [allHandObjects]);
 
   return (
     <div

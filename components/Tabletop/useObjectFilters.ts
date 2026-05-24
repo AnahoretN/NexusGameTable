@@ -74,7 +74,9 @@ export const useObjectFilters = (
 
       // Exclude local cursor slot objects (being dragged by local player)
       // They are rendered in the cursor slot visualization, not on the table
-      if (isInCursorSlot(obj.id)) {
+      // 🔥 FIX: Check obj.inCursorSlot instead of tracker to prevent race condition
+      // where object is removed from tracker but still has hidden coordinates (-999999)
+      if ((obj as any).inCursorSlot === true) {
         return false;
       }
 
@@ -221,7 +223,8 @@ export const useObjectFilters = (
         // Exclude decks at cursor slot holding position (-999999, -999999)
         if (obj.x < -90000 || obj.y < -90000) return false;
         // Exclude decks in cursor slot (being dragged)
-        if (isInCursorSlot(obj.id)) return false;
+        // 🔥 FIX: Check obj.inCursorSlot instead of tracker to prevent race condition
+        if ((obj as any).inCursorSlot === true) return false;
         return true;
       })
       .map((obj) => obj as DeckType);
@@ -236,7 +239,8 @@ export const useObjectFilters = (
         // Exclude decks at cursor slot holding position (-999999, -999999)
         if (obj.x < -90000 || obj.y < -90000) return false;
         // Exclude decks in cursor slot (being dragged)
-        if (isInCursorSlot(obj.id)) return false;
+        // 🔥 FIX: Check obj.inCursorSlot instead of tracker to prevent race condition
+        if ((obj as any).inCursorSlot === true) return false;
         return true;
       })
       .map((obj) => obj as DeckType);
@@ -256,7 +260,8 @@ export const useObjectFilters = (
         // Exclude objects at cursor slot holding position (-999999, -999999)
         if (obj.x < -90000 || obj.y < -90000) return false;
         // Exclude objects in cursor slot (being dragged)
-        if (isInCursorSlot(obj.id)) return false;
+        // 🔥 FIX: Check obj.inCursorSlot instead of tracker to prevent race condition
+        if ((obj as any).inCursorSlot === true) return false;
         return true;
       })
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));

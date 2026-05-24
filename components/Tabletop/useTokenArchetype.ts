@@ -219,6 +219,7 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
         }
         // 🔥 FIX: Clear global tracker
         cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+        cursorSlotRef.current = [];
         setCursorSlot([]);
         setCursorPosition(null);
         cursorPositionRef.current = null;
@@ -300,6 +301,7 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       // Clear cursor slot
       // 🔥 FIX: Any remaining items in tracker should be cleared
       cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+      cursorSlotRef.current = [];
       setCursorSlot([]);
       setCursorPosition(null);
       cursorPositionRef.current = null;

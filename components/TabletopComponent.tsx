@@ -203,10 +203,12 @@ export const Tabletop: React.FC = () => {
     initialY: number;
     targetId: string | null;
     addedToSlot: boolean;
-  }>({ initialX: 0, initialY: 0, targetId: null, addedToSlot: false });
+    skipThreshold: boolean; // Item already in cursor slot, no threshold check needed
+  }>({ initialX: 0, initialY: 0, targetId: null, addedToSlot: false, skipThreshold: false });
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const cursorSlotLastAddedRef = useRef<number>(0);
+  const cursorSlotLastDroppedRef = useRef<number>(0);
 
   // Track pinned objects that were unpinned during drag
   const unpinnedDuringDragRef = useRef<Map<string, { x: number; y: number }>>(new Map());
@@ -260,6 +262,7 @@ export const Tabletop: React.FC = () => {
     dragThresholdRef,
     dragOffsetRef,
     cursorSlotLastAddedRef,
+    cursorSlotLastDroppedRef,
     unpinnedDuringDragRef,
     setClickTooltip,
     setNexusBoardAddingCell,
