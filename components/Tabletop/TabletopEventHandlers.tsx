@@ -172,9 +172,15 @@ const addToCursorSlotLocal = (
     return; // Locked objects can't be picked up
   }
 
-  // 🔥 FIX: Check if object is already in cursor slot using global tracker
-  // IMPORTANT: For HAND cards, skip this check because inCursorSlot may be stale
-  // The cursorSlotRef is the source of truth for what's actually in the slot
+  // 🔥 FIX: Check if object is already in cursor slot using BOTH global tracker AND cursorSlot
+  // IMPORTANT: Check cursorSlotRef.current directly to catch duplicates even when tracker is stale
+  // This prevents shift+click from adding the same item multiple times
+  if (cursorSlotRef.current.some(item => item.id === id)) {
+    console.log('⚠️ [CURSOR_SLOT_DUPLICATE] Item already in cursor slot, skipping:', id);
+    return;
+  }
+
+  // Check global tracker as well
   if (isInCursorSlot(id)) {
     const obj = state.objects[id];
     const isHandCard = obj?.type === ItemType.CARD && obj?.location === CardLocation.HAND;
@@ -191,6 +197,10 @@ const addToCursorSlotLocal = (
       }
     });
   }
+
+  // 🔥 FIX: Add to global tracker IMMEDIATELY to prevent race conditions
+  // This must happen BEFORE any async operations to prevent duplicate adds
+  addToCursorSlot(id, obj?.x ?? 0, obj?.y ?? 0);
 
   // Set source based on how the item was added (only if slot was empty before)
   if (cursorSlot.length === 0) {
@@ -551,10 +561,6 @@ const addToCursorSlotLocal = (
       _localOnly: true // Don't sync this temporary state clear
     });
   }
-
-  // 🔥 FIX: Add to global cursor slot tracker IMMEDIATELY before dispatch
-  // This prevents SYNC_STATE from overwriting the cursor slot state
-  addToCursorSlot(id, (itemClone as any).originalX, (itemClone as any).originalY);
 
   // 🔥 FIX: Dispatch event to clear pickingUpCardIds in HandPanelOptimized
   // This prevents stale entries from accumulating when cards are successfully added to cursor slot
