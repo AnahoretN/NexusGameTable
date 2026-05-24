@@ -6628,7 +6628,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       else if (urlParams?.has('hostId')) method = 'peerjs';
       else method = settings.connectionMethod || 'peerjs';
 
-      console.log('[GameContext] Connection method determined:', method, '(from URL:', urlParams?.toString(), ')');
       setConnectionMethodState(method);
     };
 
@@ -6642,7 +6641,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Listen for custom event (same-tab updates)
     const handleSettingsChange = () => {
-      console.log('[GameContext] Settings changed event');
       checkSettings();
     };
 
@@ -6660,9 +6658,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const irohConn = useIrohConnection(localDispatch, stateRef);
   const trysteroConn = useTrysteroConnection(localDispatch, stateRef);
 
-  // Log which connection method is active
+  // Track which connection method is active
   useEffect(() => {
-    console.log('[GameContext] Active connection method:', connectionMethod);
+    // Connection method changed
   }, [connectionMethod]);
 
   // Select the active connection based on method
@@ -6754,22 +6752,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const hasRoomId = urlParams?.has('roomId') || false;
     const shouldShow = (hasHostId || hasTicket || hasRoomId) && !isHost && !isModalClosed;
 
-    // 🔥 DEBUG: Log when dependencies change
+    // Track when dependencies change
     const isHostChanged = prevIsHostRef.current !== isHost;
     const isModalClosedChanged = prevIsModalClosedRef.current !== isModalClosed;
     if (isHostChanged || isModalClosedChanged) {
-      console.log('[GameContext] 🔍 Modal visibility check:', {
-        hasHostId,
-        hasTicket,
-        hasRoomId,
-        isHost,
-        isHostChanged,
-        modalClosed: isModalClosed,
-        isModalClosedChanged,
-        shouldShow,
-        prevIsHost: prevIsHostRef.current,
-        prevIsModalClosed: prevIsModalClosedRef.current
-      });
       prevIsHostRef.current = isHost;
       prevIsModalClosedRef.current = isModalClosed;
     }
@@ -6790,12 +6776,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
       // Connection is complete when steps are done and packs are loaded
       const ready = connectionStepsComplete && allPacksLoaded;
-      console.log('[GameContext] Guest ready to join:', {
-        connectionStepsComplete,
-        allPacksLoaded,
-        ready,
-        p2pLoadingSteps: p2pLoadingSteps.map(s => ({ id: s.id, status: s.status }))
-      });
       setGuestReadyToJoin(ready);
     }
   }, [isHost, guestConnectionModalOpen, p2pLoadingSteps, requiredPacks]);
@@ -6808,7 +6788,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Handle joining the game
   const handleJoinGame = () => {
-    console.log('[GameContext] User clicked Join Game, closing modal');
     setIsModalClosed(true); // 🔥 FIX: This triggers re-render and updates guestConnectionModalOpen
   };
 

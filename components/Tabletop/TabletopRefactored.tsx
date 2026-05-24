@@ -411,22 +411,7 @@ export const Tabletop: React.FC = () => {
 
       const obj = state.objects[cardId];
 
-      // 📋 LOG: Add to cursor slot event received
-      console.log('📥 [ADD_TO_SLOT_EVENT] Received add-to-cursor-slot event:', {
-        cardId,
-        type: obj?.type,
-        name: obj?.name,
-        source,
-        isFromHand,
-        fromPoolPanel,
-        clientX,
-        clientY,
-        currentSlotSize: cursorSlotRef.current.length,
-        objExists: !!obj
-      });
-
       if (!obj) {
-        console.log('❌ [ADD_TO_SLOT_CANCEL] Object not found in state');
         return;
       }
 
@@ -436,29 +421,12 @@ export const Tabletop: React.FC = () => {
 
       // Force cleanup any stale global tracker entry for this cardId
       if (isInCursorSlot(cardId)) {
-        console.log('🧹 [ADD_TO_SLOT_FORCE_CLEANUP] Force removing from global tracker:', {
-          cardId,
-          isInSlot,
-          reason: 'Global tracker has stale entry, clearing it before pickup'
-        });
         removeFromCursorSlot(cardId);
       }
-
-      console.log('🔍 [ADD_TO_SLOT_CHECK] Checking if already in slot:', {
-        cardId,
-        isInSlot,
-        stateLength: cursorSlot.length,
-        refLength: cursorSlotRef.current.length,
-        stateItems: cursorSlot.map(i => i.id)
-      });
 
       // Only check state slot - global tracker is now always cleaned before this check
       if (isInSlot) {
         // Object is already in cursor slot, skip duplicate addition
-        console.log('⚠️ [ADD_TO_SLOT_SKIP] Already in cursor slot, skipping:', {
-          cardId,
-          reason: 'in state slot'
-        });
         return;
       }
 
@@ -805,22 +773,9 @@ export const Tabletop: React.FC = () => {
       setCursorSlot(newSlot);
       cursorSlotLastAddedRef.current = Date.now();
 
-      console.log('📝 [ADD_TO_SLOT_DETAILS_T] After adding in TabletopRefactored:', {
-        cardId,
-        cursorSlotRefLength: cursorSlotRef.current.length,
-        cursorSlotRefItems: cursorSlotRef.current.map(i => i.id),
-        cursorSlotStateLength: cursorSlot.length,
-        lastAddedTime: cursorSlotLastAddedRef.current,
-        isFromHand
-      });
-
       // 🔥 FIX: For cards from hand, clear inCursorSlot BEFORE adding to slot
       // This prevents race condition where card is filtered out during transition
       if (isFromHand && (obj as any).inCursorSlot) {
-        console.log('🧹 [ADD_TO_SLOT_CLEANUP] Clearing stale inCursorSlot for hand card:', {
-          cardId,
-          wasInCursorSlot: (obj as any).inCursorSlot
-        });
         dispatch({
           type: 'UPDATE_OBJECT',
           payload: {
@@ -840,19 +795,6 @@ export const Tabletop: React.FC = () => {
       window.dispatchEvent(new CustomEvent('cursor-slot-item-added', {
         detail: { cardId }
       }));
-
-      // 📋 LOG: Successfully added to cursor slot
-      console.log('✅ [ADD_TO_SLOT_SUCCESS] Object added to cursor slot:', {
-        cardId,
-        type: obj.type,
-        name: obj.name,
-        source,
-        isFromHand,
-        newSlotSize: newSlot.length,
-        originalX,
-        originalY,
-        location: (obj as any).location
-      });
 
       // IMPORTANT: Hide object from table while in cursor slot (same as in addToCursorSlot)
       dispatch({
@@ -893,27 +835,15 @@ export const Tabletop: React.FC = () => {
       const customEvent = e as CustomEvent<{ reason?: string; objectIds?: string[] }>;
       const { objectIds } = customEvent.detail || {};
 
-      console.log('[🗑️ CLEAR_CURSOR_SLOT] Event received', {
-        objectIds,
-        currentSlotLength: cursorSlot.length,
-        currentSlotIds: cursorSlot.map(i => i.id)
-      });
-
       // If specific object IDs are provided, only clear those from cursor slot
       // This is used when dropping objects to pool panels - we want to clear
       // only the dropped objects, not the entire slot
       if (objectIds && objectIds.length > 0) {
-        console.log('[🗑️ CLEAR_CURSOR_SLOT] Filtering specific objects', { objectIds });
         // Filter out the dropped objects from cursor slot
         setCursorSlot(prev => {
           const filtered = prev.filter(item => !objectIds.includes(item.id));
           // 🔥 FIX: Update ref immediately to prevent race conditions
           cursorSlotRef.current = filtered;
-          console.log('[🗑️ CLEAR_CURSOR_SLOT] Filtered result', {
-            beforeLength: prev.length,
-            afterLength: filtered.length,
-            filteredIds: filtered.map(i => i.id)
-          });
           return filtered;
         });
 
@@ -924,7 +854,6 @@ export const Tabletop: React.FC = () => {
         return;
       }
 
-      console.log('[🗑️ CLEAR_CURSOR_SLOT] Clearing entire cursor slot');
       // 🔥 FIX: Clear global tracker for all cursor slot objects
       cursorSlot.forEach(item => removeFromCursorSlot(item.id));
 
@@ -942,10 +871,6 @@ export const Tabletop: React.FC = () => {
         }
       });
 
-      console.log('[🗑️ CLEAR_CURSOR_SLOT] Clearing entire slot', {
-        beforeLength: cursorSlot.length,
-        beforeIds: cursorSlot.map(i => i.id)
-      });
       cursorSlotRef.current = [];
       // 🔥 FIX: Update ref immediately before state update
       cursorSlotRef.current = [];

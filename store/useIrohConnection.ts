@@ -579,10 +579,6 @@ export function useIrohConnection(
         ticket: ticketParam,
         nodeId: '' // Will be parsed from ticket
       });
-
-      console.log('[Iroh] Guest mode - waiting for player name');
-    } else {
-      console.log('[Iroh] Host mode - waiting for initialization');
     }
   }, []);
 

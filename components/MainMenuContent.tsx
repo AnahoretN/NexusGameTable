@@ -748,7 +748,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       // 🔥 NEW: Auto-save after pack is fully loaded
       try {
         await saveGameState({ ...packData, version: state.version } as GameState);
-        logger.log('[AUTOSAVE] Saved after pack load');
       } catch (error) {
         logger.warn('[AUTOSAVE] Failed to save after pack load:', error);
       }
@@ -958,7 +957,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       // 🔥 NEW: Auto-save after pack is added
       try {
         await saveGameState(state);
-        logger.log('[AUTOSAVE] Saved after adding pack');
       } catch (error) {
         logger.warn('[AUTOSAVE] Failed to save after adding pack:', error);
       }

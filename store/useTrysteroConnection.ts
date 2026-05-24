@@ -344,10 +344,6 @@ export function useTrysteroConnection(
       setWaitingForName({
         roomId: roomIdParam
       });
-
-      console.log('[Trystero] Guest mode - room:', roomIdParam);
-    } else {
-      console.log('[Trystero] Host mode');
     }
   }, []);
 

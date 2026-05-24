@@ -155,11 +155,6 @@ const countTurnServers = (servers: any[]) => {
   }
   return count;
 };
-console.log('[P2P Config] 🔧 ICE Servers configuration:', {
-  stunCount: countStunServers(PEERJS_CONFIG.config.iceServers),
-  turnCount: countTurnServers(PEERJS_CONFIG.config.iceServers),
-  allServers: PEERJS_CONFIG.config.iceServers.map(s => s.urls),
-});
 
 // ============================================================================
 // FALLBACK SIGNALING CONFIGURATION

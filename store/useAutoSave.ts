@@ -23,7 +23,6 @@ export function useAutoSave(
   const saveNow = useCallback(async () => {
     if (!isInitialized) return;
     await saveGameState(stateRef.current);
-    logger.log('[AUTOSAVE] Immediate save completed');
   }, [isInitialized]);
 
   useEffect(() => {
@@ -31,7 +30,6 @@ export function useAutoSave(
 
     const timer = setInterval(async () => {
       await saveGameState(state);
-      logger.log('[AUTOSAVE] Scheduled save completed');
     }, 60000);
 
     return () => clearInterval(timer);

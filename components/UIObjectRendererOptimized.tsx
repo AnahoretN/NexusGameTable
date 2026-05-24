@@ -719,12 +719,25 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         }
       });
 
-      // Game space bounds (visible area with scrollbars)
+      // Get actual scrollbar width from game container
+      let actualScrollbarWidth = 0;
+      let gameSpaceBottom = window.innerHeight;
+      let gameSpaceRight = window.innerWidth;
+
+      const tabletopContainer = document.querySelector('[data-tabletop="true"]') as HTMLElement;
+      if (tabletopContainer) {
+        actualScrollbarWidth = tabletopContainer.offsetWidth - tabletopContainer.clientWidth;
+        const rect = tabletopContainer.getBoundingClientRect();
+        gameSpaceBottom = rect.bottom - actualScrollbarWidth;
+        gameSpaceRight = rect.right - actualScrollbarWidth;
+      }
+
+      // Game space bounds (visible area)
       const gameSpaceBounds: GameSpaceBounds = {
         left: 0,
         top: 0,
-        right: window.innerWidth - SCROLLBAR_WIDTH_THICK,
-        bottom: window.innerHeight - SCROLLBAR_WIDTH_THICK
+        right: gameSpaceRight,
+        bottom: gameSpaceBottom
       };
 
       // Magnetism config
@@ -733,7 +746,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         snapThreshold: 15,
         snapToRight: true,
         snapToBottom: true,
-        scrollbarWidth: SCROLLBAR_WIDTH_THICK,
+        scrollbarWidth: actualScrollbarWidth,
       };
 
       // Apply full magnetism (viewport edges + panel-to-panel snapping)
