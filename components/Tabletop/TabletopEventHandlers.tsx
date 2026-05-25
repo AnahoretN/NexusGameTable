@@ -612,7 +612,15 @@ const dropCursorSlot = (
   let itemsToDrop = cursorSlotRef.current.filter(item => {
     // Check if object exists in state (may have been deleted)
     const obj = state.objects[item.id];
-    return obj != null;
+    if (obj != null) return true;
+
+    // 🔥 FIX: Also keep items from pool panel that don't exist in state.objects yet
+    // These items need to be spawned into the game state on drop
+    // Check if item has the minimal required properties to be spawned
+    return item.type === ItemType.DICE_OBJECT ||
+           item.type === ItemType.TOKEN ||
+           item.type === ItemType.COUNTER ||
+           item.type === ItemType.CARD;
   });
 
   if (itemsToDrop.length === 0) {
@@ -1269,17 +1277,55 @@ const dropCursorSlot = (
         }
       });
     } else {
+      // 🔥 FIX: Check if object exists in state.objects (pool panel objects might not)
+      const objExists = !!state.objects[item.id];
+
       // Standard dispatch for all other objects - synchronizes via P2P
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
           id: item.id,
           updates: {
+            // For pool panel objects that don't exist, include type and name for creation
+            ...(!objExists && {
+              type: item.type,
+              name: item.name || `${item.type} from pool`,
+              // Copy type-specific properties needed for object creation
+              ...(item.type === ItemType.DICE_OBJECT && {
+                sides: (item as any).sides ?? 6,
+                currentValue: (item as any).currentValue ?? 1,
+                shape: (item as any).shape ?? 'square',
+                color: (item as any).color ?? '#ffffff',
+                borderWidth: (item as any).borderWidth ?? 2,
+                borderColor: (item as any).borderColor ?? '#000000',
+                opacity: (item as any).opacity ?? 1,
+                borderOpacity: (item as any).borderOpacity ?? 1,
+                fontColor: (item as any).fontColor ?? '#000000',
+              }),
+              ...(item.type === ItemType.TOKEN && {
+                content: (item as any).content ?? '',
+                frontFaceUrl: (item as any).frontFaceUrl ?? '',
+                emoji: (item as any).emoji ?? '',
+              }),
+              ...(item.type === ItemType.CARD && {
+                content: (item as any).content ?? '',
+                frontFaceUrl: (item as any).frontFaceUrl ?? '',
+                backFaceUrl: (item as any).backFaceUrl ?? '',
+                deckId: (item as any).deckId,
+                faceUp: (item as any).faceUp ?? false,
+                location: (item as any).location ?? CardLocation.TABLE,
+              }),
+            }),
+            // Standard drop properties
             inCursorSlot: false,
             isOnTable: true,
             x: finalX,
             y: finalY,
             zIndex: finalZIndex,
+            width: item.width ?? 50,
+            height: item.height ?? 50,
+            hyperscaleLayerId: item.hyperscaleLayerId ?? 'tokens',
+            rotation: item.rotation ?? 0,
             ...effectTemplateUpdates,
             ...(isCard && currentCard?.location === CardLocation.HAND && {
               location: CardLocation.TABLE

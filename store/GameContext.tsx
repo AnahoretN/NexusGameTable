@@ -942,7 +942,41 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'UPDATE_OBJECT': {
       const obj = state.objects[action.payload.id];
       if (!obj) {
-        logger.warn('[UPDATE_OBJECT] Object not found', {
+        // 🔥 FIX: Create object if it doesn't exist (e.g., pool panel objects being dropped)
+        // This allows pool panel objects to be spawned into the game state
+        const updates = action.payload.updates || action.payload;
+        const { id, ...rest } = action.payload;
+
+        // Only create if we have meaningful data (at least type and name)
+        if (updates.type && updates.name) {
+          logger.info('[UPDATE_OBJECT] Creating new object', {
+            id: action.payload.id,
+            type: updates.type,
+            name: updates.name
+          });
+
+          // Create the object with provided properties
+          const newObj: TableObject = {
+            id: action.payload.id,
+            ...updates,
+            // Ensure required properties have defaults
+            width: updates.width ?? 50,
+            height: updates.height ?? 50,
+            zIndex: updates.zIndex ?? 0,
+            rotation: updates.rotation ?? 0,
+          } as TableObject;
+
+          return {
+            ...state,
+            objects: {
+              ...state.objects,
+              [action.payload.id]: newObj
+            },
+            lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+          };
+        }
+
+        logger.warn('[UPDATE_OBJECT] Object not found and insufficient data to create', {
           id: action.payload.id,
           payloadKeys: Object.keys(action.payload),
           hasUpdates: !!action.payload.updates,

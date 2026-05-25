@@ -2260,6 +2260,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     let allowedActions: ContextAction[] | undefined;
     let allowedActionsForGM: ContextAction[] | undefined;
 
+    // Special case: don't show roll button for GM on dice objects
+    if (obj.type === ItemType.DICE_OBJECT && action === 'roll' && currentUserIsGM) {
+      return false;
+    }
+
     if (obj.type === ItemType.CARD) {
       // Cards inherit from deck
       const deck = state.objects[(obj as any).deckId] as Deck;
@@ -2270,6 +2275,22 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       actionButtons = (obj as any).actionButtons;
       allowedActions = obj.allowedActions;
       allowedActionsForGM = obj.allowedActionsForGM;
+
+      // For dice objects, ensure basic actions are available for backward compatibility
+      if (obj.type === ItemType.DICE_OBJECT) {
+        const defaultDiceActions: ContextAction[] = ['lock', 'hide', 'clone', 'delete'];
+        // Merge default dice actions with existing actionButtons
+        if (!actionButtons || actionButtons.length === 0) {
+          actionButtons = defaultDiceActions;
+        } else {
+          // Ensure all default actions are included (union of existing + default)
+          actionButtons = [...new Set([...actionButtons, ...defaultDiceActions])];
+        }
+        // For GM, ensure all actions are allowed by default if not explicitly set
+        if (currentUserIsGM && !allowedActionsForGM) {
+          allowedActionsForGM = undefined; // undefined = all actions allowed
+        }
+      }
     }
 
     // First check if action is in actionButtons
@@ -2511,7 +2532,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           sides,
           currentValue: 1,
           shape,
-          actionButtons: ['roll'],
+          actionButtons: ['lock', 'hide', 'clone', 'delete'],
+          allowedActions: ['roll'], // Only roll for players
+          allowedActionsForGM: undefined, // GM has access to all actions except roll
         };
         dispatch({ type: 'ADD_OBJECT', payload: dice });
         break;

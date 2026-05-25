@@ -28,6 +28,7 @@ import { useGame } from '../store/GameContext';
 import { Card, Token, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player, TokenShape } from '../types';
 import { Card as CardComponent } from './Card';
 import { ObjectRenderer } from './ObjectRenderer';
+import { SvgTokenShape } from './SvgTokenShape';
 import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
 import { useCursorSlotHover } from '../hooks';
@@ -461,25 +462,39 @@ const TokenStackItem = memo(({
 }: TokenStackItemProps) => {
   const actualIndex = groupOffset + stackIndex;
   const tokenIds = stack.tokens.map(t => t.id);
+  const token = stack.representativeToken;
 
-  // Use actual token dimensions from the representative token
-  const tokenWidth = (stack.representativeToken.width || 50) * cardScale;
-  const tokenHeight = (stack.representativeToken.height || 50) * cardScale;
+  // Get token content dimensions (in virtual units)
+  // These are the actual content sizes, NOT including border and padding
+  const contentWidth = token.width || 50;
+  const contentHeight = token.height || 50;
+  const borderWidth = token.borderWidth ?? 2;
+  const PADDING = 1; // Constant from SvgTokenShape.tsx
+
+  // Calculate total SVG size in virtual units (SvgTokenShape adds border + padding)
+  // Layout: [PADDING][BORDER][CONTENT][BORDER][PADDING]
+  const svgWidth_VU = contentWidth + borderWidth * 2 + PADDING * 2;
+  const svgHeight_VU = contentHeight + borderWidth * 2 + PADDING * 2;
+
+  // Base container size (without scale)
+  const containerSize = Math.max(svgWidth_VU, svgHeight_VU);
+
+  // Scale factors for bottom token offsets
+  const offsetScale = 2 * cardScale;
+  const scaledContainerSize = containerSize * cardScale;
 
   return (
     <div
       data-card-index={actualIndex}
       data-token-stack="true"
       data-token-ids={JSON.stringify(tokenIds)}
-      className="relative flex-shrink-0 group"
+      className="relative inline-block group"
       style={{
-        width: tokenWidth,
-        height: tokenHeight,
+        width: scaledContainerSize,
+        height: scaledContainerSize,
+        overflow: 'visible', // Allow badge to extend outside
         zIndex: isDragging ? 100 : isDragOver ? 50 : 'auto',
-        transform: isDragOver ? 'scale(1.05)' : undefined,
-        overflow: 'visible',
-        outline: '2px solid cyan',
-        outlineOffset: '-2px',
+        transform: isDragOver ? `scale(1.05)` : undefined,
       }}
       onMouseDown={(e) => onMouseDown(e, tokenIds, actualIndex, e.currentTarget as HTMLDivElement)}
       onContextMenu={(e) => onContextMenu(e, stack.representativeToken)}
@@ -493,41 +508,86 @@ const TokenStackItem = memo(({
               key={i}
               className="absolute pointer-events-none"
               style={{
-                top: -i * 2,
-                left: -i * 2,
-                width: tokenWidth,
-                height: tokenHeight,
-                opacity: 0.7,
+                top: -i * offsetScale,
+                left: -i * offsetScale,
+                width: scaledContainerSize,
+                height: scaledContainerSize,
               }}
             >
-              <ObjectRenderer
-                obj={stack.representativeToken}
-                pixelsPerVU={cardScale}
-                isGM={isGM}
-                activePlayerId={activePlayerId}
-                onMouseDown={() => {}}
-                onContextMenu={() => {}}
-              />
+              <div
+                className="token-svg-scaled"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  '--token-width': `${scaledContainerSize}px`,
+                  '--token-height': `${scaledContainerSize}px`,
+                } as React.CSSProperties}
+              >
+                <SvgTokenShape
+                  shape={token.shape || TokenShape.CIRCLE}
+                  width={contentWidth}
+                  height={contentHeight}
+                  color={token.color || '#34495e'}
+                  content={token.content}
+                  borderWidth={borderWidth}
+                  borderColor={token.borderColor || '#ffffff'}
+                  opacity={token.opacity ?? 100}
+                  borderOpacity={token.borderOpacity ?? 100}
+                  showThickness={true}
+                  tokenName={token.showNameOnToken ? token.name : undefined}
+                  fontColor={token.fontColor || '#ffffff'}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'block',
+                  }}
+                />
+              </div>
             </div>
           ))}
         </>
       )}
 
       {/* Top token */}
-      <div className="relative">
-        <ObjectRenderer
-          obj={stack.representativeToken}
-          pixelsPerVU={cardScale}
-          isGM={isGM}
-          activePlayerId={activePlayerId}
-          onMouseDown={(e) => e.preventDefault()}
-          onContextMenu={(e) => onContextMenu(e, stack.representativeToken)}
+      <div
+        className="token-svg-scaled"
+        style={{
+          width: '100%',
+          height: '100%',
+          '--token-width': `${scaledContainerSize}px`,
+          '--token-height': `${scaledContainerSize}px`,
+        } as React.CSSProperties}
+      >
+        <SvgTokenShape
+          shape={token.shape || TokenShape.CIRCLE}
+          width={contentWidth}
+          height={contentHeight}
+          color={token.color || '#34495e'}
+          content={token.content}
+          borderWidth={borderWidth}
+          borderColor={token.borderColor || '#ffffff'}
+          opacity={token.opacity ?? 100}
+          borderOpacity={token.borderOpacity ?? 100}
+          showThickness={true}
+          tokenName={token.showNameOnToken ? token.name : undefined}
+          fontColor={token.fontColor || '#ffffff'}
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'block',
+          }}
         />
       </div>
 
-      {/* Count badge */}
+      {/* Count badge - top edge touches container top edge */}
       {stack.count > 1 && (
-        <div className="absolute -top-2 -right-2 bg-purple-600 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center border-2 border-slate-800 shadow-lg pointer-events-none">
+        <div
+          className="absolute bg-purple-600 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center border-2 border-slate-800 shadow-lg pointer-events-none"
+          style={{
+            top: 0,
+            right: 0,
+          }}
+        >
           {stack.count}
         </div>
       )}
@@ -539,7 +599,8 @@ const TokenStackItem = memo(({
     prevProps.stack.representativeToken.id === nextProps.stack.representativeToken.id &&
     prevProps.isDragging === nextProps.isDragging &&
     prevProps.isDragOver === nextProps.isDragOver &&
-    prevProps.stackIndex === nextProps.stackIndex
+    prevProps.stackIndex === nextProps.stackIndex &&
+    prevProps.cardScale === nextProps.cardScale
   );
 });
 
@@ -592,6 +653,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const scaleMenuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isProcessingDropRef = useRef(false);
 
   // State for selected player hand tab - MUST be declared before useMemo
   const [selectedPlayerId, setSelectedPlayerId] = useState(activePlayerId);
@@ -669,11 +731,20 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   // Helper function to drop all items from cursor slot to hand
   const dropCursorSlotToHand = useCallback(() => {
+    // Prevent infinite loop - if we're already processing a drop, don't process again
+    if (isProcessingDropRef.current) {
+      console.log('⚠️ [DROP_TO_HAND] Already processing drop, skipping...');
+      return;
+    }
+
     const itemsInCursorSlot = Object.values(objects).filter(obj =>
       (obj.type === ItemType.CARD || obj.type === ItemType.TOKEN) &&
       (obj as any).inCursorSlot === true
     );
     if (itemsInCursorSlot.length === 0) return;
+
+    // Mark as processing to prevent infinite loop
+    isProcessingDropRef.current = true;
 
     // 🔥 FIX: Clear inCursorSlot flag immediately to prevent stale state
     // This ensures items can be picked up again immediately after drop
@@ -695,14 +766,18 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
       detail: { items: itemsInCursorSlot }
     }));
-    window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
-      detail: { cardIds: itemsInCursorSlot.map(i => i.id) }
-    }));
+
+    // Reset the processing flag after a short delay
+    // This allows the function to be called again after the current drop completes
+    setTimeout(() => {
+      isProcessingDropRef.current = false;
+    }, 100);
   }, [objects, setIsCursorOverHand, dispatch]);
 
   // Use shared hook for cursor slot hover detection
   const { isCursorOver: isCursorOverFromHook } = useCursorSlotHover(containerRef, {
     requireDraggingCard: true,
+    onDrop: dropCursorSlotToHand,
   });
 
   // Sync settings modal state with UI context
@@ -928,15 +1003,20 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   // inCursorSlot is only used for TABLE cards (to hide them during drag)
   // HAND cards are always shown if location === HAND and ownerId matches
   const handItems = allHandObjects.filter((item): item is Card | Token => {
-    if (item.ownerId !== selectedPlayerId) return false;
+    // IMPORTANT: Allow cards without ownerId (e.g., from pool panel) to be shown
+    // They will get ownerId when dropped to hand panel
+    if (item.ownerId && item.ownerId !== selectedPlayerId) {
+      return false;
+    }
 
     // For cards, check location - HAND cards always visible
     if (item.type === ItemType.CARD) {
       return (item as Card).location === CardLocation.HAND;
     }
-    // For tokens, check if not on table (in hand)
+    // For tokens, check if not on table (in hand) AND not in cursor slot
+    // Tokens in cursor slot should NOT appear in hand panel
     if (item.type === ItemType.TOKEN) {
-      return !item.isOnTable;
+      return !item.isOnTable && !(item as any).inCursorSlot;
     }
     return false;
   });
@@ -1833,9 +1913,10 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       if (item.type === ItemType.CARD) {
         return (item as Card).location === CardLocation.HAND;
       }
-      // For tokens, check if not on table (in hand)
+      // For tokens, check if not on table (in hand) AND not in cursor slot
+      // Tokens in cursor slot should NOT be counted in hand
       if (item.type === ItemType.TOKEN) {
-        return !item.isOnTable;
+        return !item.isOnTable && !(item as any).inCursorSlot;
       }
       return false;
     }).length;
@@ -1917,7 +1998,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
           {(isDragTarget || isCursorOverHand) && (
             <div className="absolute inset-0 pointer-events-none rounded ring-4 ring-purple-500 ring-inset z-[200]" />
           )}
-          <div ref={scrollContainerRef} className="scrollbar-thin h-full pt-1 pb-1 px-1 overflow-x-auto overflow-y-hidden min-w-0 w-full box-border" data-scrollable="true">
+          <div ref={scrollContainerRef} className="scrollbar-thin h-full pt-1 pb-1 px-1 overflow-x-auto min-w-0 w-full box-border" style={{ overflowY: 'visible' }} data-scrollable="true">
           {cards.length === 0 ? (
             <div className="flex flex-col items-center justify-center min-h-[200px] text-slate-500 px-1">
               <p className="text-sm">
@@ -2021,7 +2102,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
                         }}
                       />
                     ) : (
-                      <div className="flex flex-wrap gap-[2px] min-w-0 overflow-hidden box-border hand-cards-container px-1">
+                      <div className="flex flex-wrap gap-[2px] min-w-0 box-border hand-cards-container px-1" style={{ overflow: 'visible' }}>
                         {/* Render token stacks if this is a token group */}
                         {hasTokenStacks && tokenStacks.map((stack, stackIndex) => {
                           const actualIndex = groupOffset + stackIndex;

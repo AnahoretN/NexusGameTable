@@ -235,137 +235,6 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
 });
 DiceActionButtonsMemo.displayName = 'DiceActionButtonsMemo';
 
-// ============================================
-// MEMOIZED COUNTER ACTION BUTTONS COMPONENT
-// ============================================
-interface CounterActionButtonsProps {
-  obj: TableObject;
-  dispatch: (action: any) => void;
-  state: any;
-  activePlayerId: string;
-  isGM: boolean;
-  setDeleteCandidateId?: (id: string | null) => void;
-  className?: string;
-  players?: any[];
-}
-
-const CounterActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, setDeleteCandidateId, players, className = '' }: CounterActionButtonsProps) => {
-  const actionButtons = 'actionButtons' in obj ? (obj.actionButtons || []) : [];
-
-  const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
-    rotateClockwise: {
-      key: 'rotateClockwise',
-      action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
-      className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: 'Rotate CW',
-      icon: <RefreshCw size={14} />
-    },
-    rotateCounterClockwise: {
-      key: 'rotateCounterClockwise',
-      action: () => dispatch({ type: 'ROTATE_OBJECT', payload: { id: obj.id } }),
-      className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: 'Rotate CCW',
-      icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
-    },
-    swingClockwise: {
-      key: 'swingClockwise',
-      action: () => executeActionButtonUniversal(obj, 'swingClockwise', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
-      }),
-      className: 'bg-orange-600 hover:bg-orange-500',
-      title: 'Swing CW',
-      icon: <RefreshCw size={14} />
-    },
-    swingCounterClockwise: {
-      key: 'swingCounterClockwise',
-      action: () => executeActionButtonUniversal(obj, 'swingCounterClockwise', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
-      }),
-      className: 'bg-orange-600 hover:bg-orange-500',
-      title: 'Swing CCW',
-      icon: <RefreshCw size={14} style={{ transform: 'scaleX(-1)' }} />
-    },
-    delete: {
-      key: 'delete',
-      action: () => setDeleteCandidateId ? setDeleteCandidateId(obj.id) : dispatch({ type: 'DELETE_OBJECT', payload: { id: obj.id } }),
-      className: 'bg-red-600 hover:bg-red-500',
-      title: 'Delete',
-      icon: <Trash2 size={14} />
-    },
-    clone: {
-      key: 'clone',
-      action: () => dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } }),
-      className: 'bg-cyan-600 hover:bg-cyan-500',
-      title: 'Clone',
-      icon: <Copy size={14} />
-    },
-    lock: {
-      key: 'lock',
-      action: () => dispatch({ type: 'TOGGLE_LOCK', payload: { id: obj.id } }),
-      className: 'bg-yellow-600 hover:bg-yellow-500',
-      title: obj.locked ? 'Unlock' : 'Lock',
-      icon: obj.locked ? <Unlock size={14} /> : <Lock size={14} />
-    },
-    layer: {
-      key: 'layer',
-      action: () => dispatch({ type: 'MOVE_LAYER_UP', payload: { id: obj.id } }),
-      className: 'bg-indigo-600 hover:bg-indigo-500',
-      title: 'Layer Up',
-      icon: <Layers size={14} />
-    },
-    layerUp: {
-      key: 'layerUp',
-      action: () => executeActionButtonUniversal(obj, 'layerUp', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
-      }),
-      className: 'bg-blue-600 hover:bg-blue-500',
-      title: 'Layer Up',
-      icon: <ArrowUp size={14} />
-    },
-    layerDown: {
-      key: 'layerDown',
-      action: () => executeActionButtonUniversal(obj, 'layerDown', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
-      }),
-      className: 'bg-blue-600 hover:bg-blue-500',
-      title: 'Layer Down',
-      icon: <ArrowDown size={14} />
-    },
-    hide: {
-      key: 'hide',
-      action: () => executeActionButtonUniversal(obj, 'hide', {
-        dispatch, activePlayerId, objects: state.objects, state: { objects: state.objects, activePlayerId, players }, isGM
-      }),
-      className: 'bg-slate-600 hover:bg-slate-500',
-      title: 'Hide',
-      icon: <EyeOff size={14} />
-    }
-  };
-
-  const buttons = actionButtons
-    .map((action: ContextAction) => buttonConfigs[action])
-    .filter(Boolean)
-    .slice(0, 4);
-
-  if (buttons.length === 0) return null;
-
-  return (
-    <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-20 opacity-0 group-hover:opacity-100 pointer-events-none ${className}`}>
-      {buttons.map((btn: { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }) => (
-        <button
-          key={btn.key}
-          onClick={(e) => { e.stopPropagation(); btn.action(); }}
-          className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
-          title={btn.title}
-        >
-          {btn.icon}
-        </button>
-      ))}
-    </div>
-  );
-});
-CounterActionButtonsMemo.displayName = 'CounterActionButtonsMemo';
-
 export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, zoom = 1.02 }) => {
   const { state, dispatch } = useGame();
   const pixelsPerVU = usePixelsPerVU();
@@ -672,6 +541,69 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     };
   }, []);
 
+  // 🔥 FIX: Listen for cursor-slot-item-adding event to clear locallyDraggingIdsRef IMMEDIATELY
+  // This event is dispatched BEFORE the object is added to cursor slot, helping with timing
+  // The cursor-slot-item-added event is dispatched AFTER, but this early event prevents
+  // the object from being hidden during the transition
+  useEffect(() => {
+    const handleCursorSlotItemAdding = (e: Event) => {
+      const customEvent = e as CustomEvent<{ cardId: string }>;
+      const { cardId } = customEvent.detail;
+
+      // Clear from locallyDraggingIdsRef immediately - object is about to be added to cursor slot
+      if (cardId && locallyDraggingIdsRef.current.has(cardId)) {
+        console.log('🚀 [CURSOR_SLOT_ITEM_ADDING] Clearing from locallyDraggingIdsRef:', cardId);
+        locallyDraggingIdsRef.current.delete(cardId);
+        setLocallyDraggingTrigger(prev => prev + 1);
+      }
+    };
+
+    window.addEventListener('cursor-slot-item-adding', handleCursorSlotItemAdding);
+    return () => {
+      window.removeEventListener('cursor-slot-item-adding', handleCursorSlotItemAdding);
+    };
+  }, []);
+
+  // 🔥 FIX: Listen for cursor-slot-item-added event to clear locallyDraggingIdsRef
+  // When object is successfully added to cursor slot, remove it from locallyDraggingIdsRef
+  // This prevents object from disappearing (it's hidden by locallyDraggingIdsRef during drag,
+  // but should stay hidden because inCursorSlot=true after successful add)
+  //
+  // IMPORTANT: We must check cursorSlot state directly, not state.objects.inCursorSlot,
+  // because cursorSlot is updated BEFORE the UPDATE_OBJECT dispatch that sets inCursorSlot=true.
+  // This prevents a race condition where the object briefly reappears.
+  useEffect(() => {
+    const handleCursorSlotItemAdded = (e: Event) => {
+      const customEvent = e as CustomEvent<{ cardId: string }>;
+      const { cardId } = customEvent.detail;
+
+      // Check if object was in locallyDraggingIdsRef
+      if (cardId && locallyDraggingIdsRef.current.has(cardId)) {
+        // Also verify that the object is actually in the cursor slot now
+        // We need to access cursorSlot from GameContext since we can't use hooks here
+        // For now, we'll trust that if cursor-slot-item-added was dispatched,
+        // the object will be in cursorSlot momentarily
+        console.log('✅ [CURSOR_SLOT_ITEM_ADDED] Removing from locallyDraggingIdsRef:', cardId);
+        locallyDraggingIdsRef.current.delete(cardId);
+        setLocallyDraggingTrigger(prev => prev + 1);
+
+        // Schedule a verification to ensure object stays hidden
+        // If inCursorSlot is not set after a short delay, force it
+        setTimeout(() => {
+          const obj = state.objects[cardId];
+          if (obj && (obj as any).inCursorSlot !== true) {
+            console.log('⚠️ [CURSOR_SLOT_ITEM_ADDED] Object not in cursor slot after delay:', cardId);
+          }
+        }, 50);
+      }
+    };
+
+    window.addEventListener('cursor-slot-item-added', handleCursorSlotItemAdded);
+    return () => {
+      window.removeEventListener('cursor-slot-item-added', handleCursorSlotItemAdded);
+    };
+  }, [state.objects]);
+
   // Dice animation state
   const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
   const initiatedRollsRef = useRef<Set<string>>(new Set());
@@ -726,6 +658,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Also exclude objects that are currently being dragged from this pool panel
       // This prevents visual duplication while the object is being picked up
       if (locallyDraggingIdsRef.current.has(obj.id)) {
+        console.log('🚫 [POOL_FILTER] Excluded by locallyDraggingIdsRef:', obj.id, 'Set size:', locallyDraggingIdsRef.current.size);
         return false;
       }
 
@@ -1176,6 +1109,14 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
         // Calculate click offset using centralized utility
         const obj = state.objects[diceDragRef.current.objectId];
+
+        console.log('🔍 [DICE_OBJ_LOOKUP] Looking up dice object:', {
+          diceId: diceDragRef.current.objectId,
+          objFound: !!obj,
+          objType: obj?.type,
+          totalStateObjects: Object.keys(state.objects).length
+        });
+
         let clickOffsetX, clickOffsetY;
         let offsetXPX = 0, offsetYPX = 0;
 
@@ -1199,6 +1140,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // Add to cursor slot immediately when drag threshold is exceeded
         // First, mark as locally dragging to prevent visual duplication
         if (diceDragRef.current.objectId) {
+          console.log('🎯 [POOL_DRAG_START] Adding to locallyDraggingIdsRef:', diceDragRef.current.objectId);
           locallyDraggingIdsRef.current.add(diceDragRef.current.objectId);
           setLocallyDraggingTrigger(prev => prev + 1);
         }
@@ -1230,6 +1172,24 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           return;
         }
 
+        // 🔥 FIX: Send cardOverride with actual object data from pool panel
+        // This ensures correct dice data is used instead of stale data from state.objects
+        // Note: obj is already declared above in this scope
+
+        // If not in state.objects, it's a pool panel object - create minimal cardOverride
+        // Include type so TabletopRefactored knows how to handle it
+        const cardOverride: any = obj ? { ...obj } : {
+          id: diceDragRef.current.objectId,
+          type: ItemType.DICE_OBJECT
+        };
+
+        console.log('📤 [ADD_TO_CURSOR_SLOT] Dispatching add-to-cursor-slot for dice:', diceDragRef.current.objectId, {
+          hasObj: !!obj,
+          hasCardOverride: !!cardOverride,
+          overrideType: cardOverride?.type,
+          fromPoolPanel: poolZone.panelId
+        });
+
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: diceDragRef.current.objectId,
@@ -1241,7 +1201,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             clickOffsetX,
             clickOffsetY,
             clickOffsetX_PX: offsetXPX,
-            clickOffsetY_PX: offsetYPX
+            clickOffsetY_PX: offsetYPX,
+            cardOverride
           }
         }));
 
@@ -1290,6 +1251,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // Add to cursor slot immediately when drag threshold is exceeded
         // First, mark as locally dragging to prevent visual duplication
         if (genericDragRef.current.objectId) {
+          console.log('🎯 [POOL_DRAG_START] Adding to locallyDraggingIdsRef:', genericDragRef.current.objectId);
           locallyDraggingIdsRef.current.add(genericDragRef.current.objectId);
           setLocallyDraggingTrigger(prev => prev + 1);
         }
@@ -1310,6 +1272,23 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           return;
         }
 
+        // 🔥 FIX: Send cardOverride with actual object data from pool panel
+        // This ensures correct faceUp and location are used instead of stale data from state.objects
+        const cardOverride: any = obj ? { ...obj } : undefined;
+        // IMPORTANT: Explicitly preserve faceUp and location from the visible object
+        if (cardOverride) {
+          cardOverride.faceUp = (obj as any).faceUp;
+          cardOverride.location = (obj as any).location;
+          // Don't override x/y - let cursor slot handle positioning
+        }
+
+        console.log('📤 [ADD_TO_CURSOR_SLOT] Dispatching add-to-cursor-slot for generic:', genericDragRef.current.objectId, {
+          type: obj?.type,
+          faceUp: (obj as any)?.faceUp,
+          location: (obj as any)?.location,
+          fromPoolPanel: poolZone.panelId,
+          sendingCardOverride: !!cardOverride
+        });
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: genericDragRef.current.objectId,
@@ -1321,7 +1300,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
             clickOffsetX,
             clickOffsetY,
             clickOffsetX_PX: offsetXPX,
-            clickOffsetY_PX: offsetYPX
+            clickOffsetY_PX: offsetYPX,
+            cardOverride
           }
         }));
 
@@ -1389,8 +1369,40 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       };
       setIsDraggingDice(false);
 
-      // Remove from locally dragging set
-      if (objectId) {
+      // 🔥 FIX: Don't clear locallyDraggingIdsRef immediately on mouse up
+      // Instead, wait for cursor-slot-item-added event to confirm object was added to cursor slot
+      // If object wasn't added (drag cancelled), clear it after a timeout
+      if (objectId && wasDrag) {
+        console.log('🧹 [DICE_MOUSEUP] Scheduling cleanup for:', objectId, 'wasDrag:', wasDrag);
+
+        // Schedule cleanup in case cursor slot add didn't happen
+        setTimeout(() => {
+          // Check if object is still in locallyDraggingIdsRef (meaning cursor-slot-item-added didn't clear it)
+          if (locallyDraggingIdsRef.current.has(objectId)) {
+            const obj = state.objects[objectId];
+            console.log('🔄 [DICE_MOUSEUP_TIMEOUT] Cursor slot add not confirmed, checking for:', objectId, {
+              objFound: !!obj,
+              inCursorSlot: obj ? (obj as any).inCursorSlot : 'obj not found',
+              stillInDraggingRef: true
+            });
+
+            // If object is in cursor slot now, it was successfully added - clear from dragging ref
+            if (obj && (obj as any).inCursorSlot === true) {
+              console.log('✅ [DICE_MOUSEUP_TIMEOUT] Object in cursor slot, clearing from locallyDraggingIdsRef:', objectId);
+              locallyDraggingIdsRef.current.delete(objectId);
+              setLocallyDraggingTrigger(prev => prev + 1);
+            } else if (obj && (obj as any).inCursorSlot === false) {
+              // Object not in cursor slot - drag was cancelled or failed
+              // Clear from dragging ref so it reappears in pool panel
+              console.log('⚠️ [DICE_MOUSEUP_TIMEOUT] Drag cancelled, clearing locallyDraggingIdsRef:', objectId);
+              locallyDraggingIdsRef.current.delete(objectId);
+              setLocallyDraggingTrigger(prev => prev + 1);
+            }
+          }
+        }, 150);
+      } else if (objectId && !wasDrag) {
+        // For clicks (not drags), clear immediately
+        console.log('🧹 [DICE_MOUSEUP] Clearing from click (not drag):', objectId);
         locallyDraggingIdsRef.current.delete(objectId);
         setLocallyDraggingTrigger(prev => prev + 1);
       }
@@ -1460,8 +1472,40 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       };
       setIsDraggingGeneric(false);
 
-      // Remove from locally dragging set
-      if (objectId) {
+      // 🔥 FIX: Don't clear locallyDraggingIdsRef immediately on mouse up
+      // Instead, wait for cursor-slot-item-added event to confirm object was added to cursor slot
+      // If object wasn't added (drag cancelled), clear it after a timeout
+      if (objectId && wasDrag) {
+        console.log('🧹 [OBJECT_MOUSEUP] Scheduling cleanup for:', objectId, 'wasDrag:', wasDrag);
+
+        // Schedule cleanup in case cursor slot add didn't happen
+        setTimeout(() => {
+          // Check if object is still in locallyDraggingIdsRef (meaning cursor-slot-item-added didn't clear it)
+          if (locallyDraggingIdsRef.current.has(objectId)) {
+            const obj = state.objects[objectId];
+            console.log('🔄 [OBJECT_MOUSEUP_TIMEOUT] Cursor slot add not confirmed, checking for:', objectId, {
+              objFound: !!obj,
+              inCursorSlot: obj ? (obj as any).inCursorSlot : 'obj not found',
+              stillInDraggingRef: true
+            });
+
+            // If object is in cursor slot now, it was successfully added - clear from dragging ref
+            if (obj && (obj as any).inCursorSlot === true) {
+              console.log('✅ [OBJECT_MOUSEUP_TIMEOUT] Object in cursor slot, clearing from locallyDraggingIdsRef:', objectId);
+              locallyDraggingIdsRef.current.delete(objectId);
+              setLocallyDraggingTrigger(prev => prev + 1);
+            } else if (obj && (obj as any).inCursorSlot === false) {
+              // Object not in cursor slot - drag was cancelled or failed
+              // Clear from dragging ref so it reappears in pool panel
+              console.log('⚠️ [OBJECT_MOUSEUP_TIMEOUT] Drag cancelled, clearing locallyDraggingIdsRef:', objectId);
+              locallyDraggingIdsRef.current.delete(objectId);
+              setLocallyDraggingTrigger(prev => prev + 1);
+            }
+          }
+        }, 150);
+      } else if (objectId && !wasDrag) {
+        // For clicks (not drags), clear immediately
+        console.log('🧹 [OBJECT_MOUSEUP] Clearing from click (not drag):', objectId);
         locallyDraggingIdsRef.current.delete(objectId);
         setLocallyDraggingTrigger(prev => prev + 1);
       }
@@ -1979,6 +2023,10 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       if (isOverHandPanel) {
         // Let hand panel handle the drop via its cursor-slot-drop-to-hand event
         logger.log('[PoolTabletop] Skipping drop - cursor over hand panel');
+        // 🔥 FIX: Dispatch cursor-slot-dropped event so hand panel's onDrop callback gets triggered
+        window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+          detail: { cardIds: cursorSlotObjects.map(o => o.id) }
+        }));
         return;
       }
 
@@ -2139,6 +2187,19 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Only handle if cursor slot has objects
       if (cursorSlotObjects.length === 0) return;
 
+      // 🔥 FIX: Always clear locallyDraggingIdsRef for objects from this panel
+      // This ensures objects reappear in pool panel even if dropped elsewhere
+      const objectsFromThisPanel = cursorSlotObjects.filter(obj =>
+        (obj as any).cursorSlotSourcePanel === poolZone.panelId
+      );
+      if (objectsFromThisPanel.length > 0) {
+        console.log('🧹 [POOL_MOUSEUP] Clearing locallyDraggingIdsRef:', objectsFromThisPanel.map(o => o.id));
+        objectsFromThisPanel.forEach(obj => {
+          locallyDraggingIdsRef.current.delete(obj.id);
+        });
+        setLocallyDraggingTrigger(prev => prev + 1);
+      }
+
       // IMPORTANT: Don't drop if objects were just picked up from this pool panel
       // Check if any cursor slot object was just picked up from this panel
       const justPickedUpFromThisPanel = cursorSlotObjects.some(obj =>
@@ -2181,6 +2242,10 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // If cursor is over hand panel, don't handle drop in pool panel
       if (isOverHandPanel) {
         // Let hand panel handle the drop via its cursor-slot-drop-to-hand event
+        // 🔥 FIX: Dispatch cursor-slot-dropped event so hand panel's onDrop callback gets triggered
+        window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+          detail: { cardIds: cursorSlotObjects.map(o => o.id) }
+        }));
         return;
       }
 
@@ -2787,17 +2852,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                       <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 } })}><Plus size={14}/></button>
                     </div>
                   </Tooltip>
-
-                  {/* Action buttons for counters - using memoized component */}
-                  <CounterActionButtonsMemo
-                    obj={obj}
-                    dispatch={dispatch}
-                    state={state}
-                    activePlayerId={activePlayerId}
-                    isGM={isGM}
-                    setDeleteCandidateId={setDeleteCandidateId}
-                    players={players}
-                  />
                 </div>
               );
             }
@@ -2847,7 +2901,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                         width={diceWidth}
                         height={diceHeight}
                         color={dice.color || '#e74c3c'}
-                        content={String(displayValue)}
+                        content={undefined}
                         rotation={0}
                         borderWidth={dice.borderWidth ?? 2}
                         borderColor={dice.borderColor || '#ffffff'}
@@ -2855,39 +2909,90 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                         borderOpacity={dice.borderOpacity ?? 100}
                         showThickness={true}
                         fontColor={dice.fontColor || '#ffffff'}
-                      />
-                      {/* Dice value - always centered */}
-                      <div
-                        className="absolute flex items-center justify-center pointer-events-none"
-                        style={{
-                          top: diceShape === TokenShape.TRIANGLE ? '56%' : '45%',
-                          left: '50%',
-                          transform: 'translate(-50%, -50%)'
-                        }}
                       >
-                        <span
-                          className="font-bold text-white drop-shadow-md"
-                          style={{
-                            fontSize: `${25 * pixelsPerVU}px`
-                          }}
-                        >{displayValue}</span>
-                      </div>
-                      {/* Dice sides indicator - midpoint between value center and bottom */}
-                      <div
-                        className="absolute flex items-center justify-center pointer-events-none"
-                        style={{
-                          top: diceShape === TokenShape.TRIANGLE ? '78%' : '72.5%',
-                          left: '50%',
-                          transform: 'translate(-50%, -50%)'
-                        }}
-                      >
-                        <span
-                          className="opacity-75 text-white drop-shadow-md"
-                          style={{
-                            fontSize: `${15 * pixelsPerVU}px`
-                          }}
-                        >d{dice.sides}</span>
-                      </div>
+                        {/* SvgTokenShape adds PADDING (1) + borderWidth around the content */}
+                        <foreignObject
+                          x={3}
+                          y={3}
+                          width={diceWidth}
+                          height={diceHeight}
+                        >
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.1em',
+                            width: '100%',
+                            height: '100%',
+                          }}>
+                            {(() => {
+                              const currentValue = dice.currentValue ?? 1;
+                              const valueOverride = dice.valueOverrides?.[currentValue];
+                              const valueFontSize = 25 * pixelsPerVU;
+
+                              // Show override if available
+                              if (valueOverride) {
+                                if (valueOverride.type === 'image') {
+                                  return (
+                                    <img
+                                      src={valueOverride.value}
+                                      alt={`Value ${currentValue}`}
+                                      style={{
+                                        width: `${valueFontSize * 1.5}px`,
+                                        height: `${valueFontSize * 1.5}px`,
+                                        objectFit: 'contain',
+                                      }}
+                                      onError={(e) => {
+                                        // Fallback to number if image fails to load
+                                        const target = e.target as HTMLImageElement;
+                                        target.style.display = 'none';
+                                        const fallback = target.parentElement?.querySelector('.fallback-number') as HTMLElement;
+                                        if (fallback) fallback.style.display = 'block';
+                                      }}
+                                    />
+                                  );
+                                } else if (valueOverride.type === 'emoji' || valueOverride.type === 'icon') {
+                                  // Both emoji and icon types display text/emoji
+                                  return (
+                                    <span style={{
+                                      fontSize: `${valueFontSize * 1.2}px`,
+                                      lineHeight: 1,
+                                    }}>
+                                      {valueOverride.value}
+                                    </span>
+                                  );
+                                }
+                              }
+
+                              // Default: show number
+                              return (
+                                <>
+                                  <span
+                                    className="fallback-number"
+                                    style={{
+                                      fontSize: `${valueFontSize}px`,
+                                      fontWeight: 'bold',
+                                      color: dice.fontColor || '#ffffff',
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    {displayValue}
+                                  </span>
+                                </>
+                              );
+                            })()}
+                            <span style={{
+                              fontSize: `${15 * pixelsPerVU}px`,
+                              fontWeight: 'normal',
+                              color: dice.fontColor || '#ffffff',
+                              lineHeight: 1,
+                            }}>
+                              d{dice.sides}
+                            </span>
+                          </div>
+                        </foreignObject>
+                      </SvgTokenShape>
                     </div>
                   </Tooltip>
 

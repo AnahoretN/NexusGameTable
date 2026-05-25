@@ -392,6 +392,7 @@ export const Tabletop: React.FC = () => {
   // Handle add-to-cursor-slot events from HandPanel and other sources
   useEffect(() => {
     const handleAddToCursorSlot = (e: Event) => {
+      console.log('🔔 [TABLETOP] add-to-cursor-slot event received!');
       const customEvent = e as CustomEvent<{
         cardId: string;
         clientX: number;
@@ -409,24 +410,50 @@ export const Tabletop: React.FC = () => {
 
       const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, sourceZoom, fromPoolPanel, isFromHand } = customEvent.detail;
 
-      const obj = state.objects[cardId];
+      console.log('🎯 [TABLETOP] Event detail:', { cardId, source, fromPoolPanel, isFromHand, clientX, clientY });
 
+      let obj = state.objects[cardId];
+
+      console.log('🔍 [OBJECT_LOOKUP] Looking up object:', {
+        cardId,
+        objFound: !!obj,
+        objType: obj?.type,
+        hasCardOverride: !!cardOverride,
+        totalObjects: Object.keys(state.objects).length
+      });
+
+      // 🔥 FIX: If object not found in state.objects but cardOverride is provided,
+      // use cardOverride directly. This handles objects from pool panels that aren't in state.objects
       if (!obj) {
-        return;
+        if (!cardOverride) {
+          console.log('❌ [OBJECT_NOT_FOUND] Object not found and no cardOverride:', cardId);
+          return;
+        }
+        console.log('✅ [USING_OVERRIDE] Using cardOverride for object not in state.objects:', cardId);
+        obj = cardOverride;
       }
 
-      // 🔥 FIX: Use cursorSlot (state) as source of truth, not cursorSlotRef
-      // State is authoritative - ref is always kept in sync now
-      const isInSlot = cursorSlot.some(item => item.id === cardId);
+      // 🔥 FIX: Use cursorSlotRef instead of cursorSlot state to avoid stale closure issues
+      // The ref is always updated before state, so it's more reliable for duplicate checking
+      const isInSlot = cursorSlotRef.current.some(item => item.id === cardId);
+
+      console.log('🔍 [CURSOR_SLOT_CHECK] Checking if object is already in slot:', {
+        cardId,
+        objType: obj.type,
+        isInSlot,
+        cursorSlotLength: cursorSlotRef.current.length,
+        cursorSlotIds: cursorSlotRef.current.map(i => i.id)
+      });
 
       // Force cleanup any stale global tracker entry for this cardId
       if (isInCursorSlot(cardId)) {
         removeFromCursorSlot(cardId);
       }
 
-      // Only check state slot - global tracker is now always cleaned before this check
+      // Only check ref slot - more reliable than state for duplicate detection
       if (isInSlot) {
         // Object is already in cursor slot, skip duplicate addition
+        console.log('⚠️ [CURSOR_SLOT_DUPLICATE] Object already in slot, skipping:', cardId);
         return;
       }
 
@@ -437,6 +464,17 @@ export const Tabletop: React.FC = () => {
       // Since we can't directly call it here, we'll dispatch an action or use a different approach
       // For now, let's use the approach of setting the slot directly
       const card = (cardOverride || obj) as Card;
+
+      console.log('🔍 [CARD_SOURCE] Using card from:', {
+        hasCardOverride: !!cardOverride,
+        cardOverrideLocation: cardOverride?.location,
+        cardOverrideFaceUp: cardOverride?.faceUp,
+        objLocation: (obj as any).location,
+        objFaceUp: (obj as any).faceUp,
+        finalCardLocation: card.location,
+        finalCardFaceUp: card.faceUp
+      });
+
       const deck = card.deckId ? state.objects[card.deckId] as Deck | undefined : undefined;
       const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
 
@@ -699,6 +737,7 @@ export const Tabletop: React.FC = () => {
         };
       } else {
         // For CARD and other types, use the original logic
+        console.log('🃏 [CARD_CLONE] Creating card clone:', { cardId: card.id, faceUp: card.faceUp, location: card.location, fromPoolPanel });
         itemClone = {
           id: card.id,
           type: obj.type, // Use the actual object type, not hardcoded CARD
@@ -764,6 +803,13 @@ export const Tabletop: React.FC = () => {
         (itemClone as any).isFromHand = true;
       }
 
+      // 🔥 FIX: Dispatch event BEFORE adding to cursor slot to notify PoolTabletopOptimized
+      // This helps with timing - PoolTabletopOptimized can clear from locallyDraggingIdsRef immediately
+      // preventing the object from being hidden during the transition
+      window.dispatchEvent(new CustomEvent('cursor-slot-item-adding', {
+        detail: { cardId }
+      }));
+
       // Add to cursor slot
       const newSlot = [...cursorSlotRef.current, itemClone];
       // IMPORTANT: Update ref IMMEDIATELY to prevent duplicate additions from rapid events
@@ -772,6 +818,15 @@ export const Tabletop: React.FC = () => {
       cursorSlotRef.current = newSlot;
       setCursorSlot(newSlot);
       cursorSlotLastAddedRef.current = Date.now();
+
+      console.log('✅ [CURSOR_SLOT_ADD] Added to cursorSlot:', {
+        cardId,
+        objType: obj.type,
+        faceUp: (itemClone as any).faceUp,
+        location: (itemClone as any).location,
+        fromPoolPanel,
+        slotLength: newSlot.length
+      });
 
       // 🔥 FIX: For cards from hand, clear inCursorSlot BEFORE adding to slot
       // This prevents race condition where card is filtered out during transition
@@ -821,9 +876,9 @@ export const Tabletop: React.FC = () => {
 
     window.addEventListener('add-to-cursor-slot', handleAddToCursorSlot);
     return () => window.removeEventListener('add-to-cursor-slot', handleAddToCursorSlot);
-    // NOTE: cursorSlot and setCursorSlot are intentionally excluded from dependencies
-    // to prevent effect recreation on every slot change which could miss events
-  }, [state.objects, setCursorPosition, cursorPositionRef, cursorSlotLastAddedRef, pixelsPerVU, p2v, scrollContainerRef, viewTransform, setCursorSlotSource, dispatch]);
+    // NOTE: cursorSlot, setCursorSlot, and state.objects are intentionally excluded from dependencies
+    // to prevent effect recreation on every slot/object change which could miss events
+  }, [setCursorPosition, cursorPositionRef, cursorSlotLastAddedRef, pixelsPerVU, p2v, scrollContainerRef, viewTransform, setCursorSlotSource, dispatch]);
 
   // Auto-add newly drawn cards to cursor slot
   // DISABLED: This effect was causing cards to disappear from hand when count > 15
@@ -883,6 +938,28 @@ export const Tabletop: React.FC = () => {
     window.addEventListener('clear-cursor-slot', handleClearCursorSlot);
     return () => window.removeEventListener('clear-cursor-slot', handleClearCursorSlot);
   }, [setCursorSlot, setCursorPosition, setCursorSlotSource, state.objects, dispatch]);
+
+  // Listen for cursor-slot-drop-to-hand event (dispatched by HandPanel when cards are dropped to hand)
+  useEffect(() => {
+    const handleDropToHand = (e: Event) => {
+      const customEvent = e as CustomEvent<{ items: any[] }>;
+      const { items } = customEvent.detail;
+
+      if (!items || items.length === 0) return;
+
+      console.log('📥 [DROP_TO_HAND] Clearing cursor slot for items:', items.map(i => i.id));
+
+      // Clear cursor slot when items are dropped to hand
+      cursorSlotRef.current = [];
+      setCursorSlot([]);
+      setCursorPosition(null);
+      cursorPositionRef.current = null;
+      setCursorSlotSource(null);
+    };
+
+    window.addEventListener('cursor-slot-drop-to-hand', handleDropToHand);
+    return () => window.removeEventListener('cursor-slot-drop-to-hand', handleDropToHand);
+  }, [setCursorSlot, setCursorPosition, setCursorSlotSource]);
 
   return (
     <div

@@ -599,3 +599,9 @@ input[type="range"]::-ms-thumb:hover {
 .hand-cards-container {
   width: calc(100% - 10vu) !important;
 }
+
+/* Token SVG size override for hand panel scaling */
+div.token-svg-scaled > svg {
+  width: var(--token-width) !important;
+  height: var(--token-height) !important;
+}
