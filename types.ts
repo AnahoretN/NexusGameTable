@@ -228,6 +228,8 @@ export interface GameItem {
   isOnTable: boolean; // Controls visibility on the battlefield vs just in the list
   inCursorSlot?: boolean; // Object is currently in the cursor slot (hidden from tabletop, locked from editing)
   draggingPlayerId?: string | null; // ID of player currently dragging this object (if any, object appears as shadow/locked to others)
+  isDragging?: boolean; // Whether this object is currently being dragged (for P2P sync)
+  dragOwnerId?: string | null; // ID of player who owns the current drag operation (prevents others from dragging)
   broadcastX?: number; // X coordinate to broadcast while dragging (prevents showing drag path to other players)
   broadcastY?: number; // Y coordinate to broadcast while dragging (prevents showing drag path to other players)
   allowedActions?: ContextAction[]; // Actions players are allowed to perform in context menu (undefined = all allowed)

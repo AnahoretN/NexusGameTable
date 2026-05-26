@@ -301,6 +301,7 @@ export const Tabletop: React.FC = () => {
   // === Token Archetype Handler ===
   useTokenArchetype({
     cursorSlot,
+    cursorSlotRef,
     setCursorSlot,
     setCursorPosition,
     cursorPositionRef,
@@ -782,7 +783,8 @@ export const Tabletop: React.FC = () => {
         };
       }
 
-      // Set cursor position FIRST
+      // Set cursor position to actual click position
+      // Don't force center-screen positioning as it causes visual offset bugs
       const pos = { x: clientX, y: clientY };
       cursorPositionRef.current = pos;
       setCursorPosition(pos);
@@ -795,11 +797,13 @@ export const Tabletop: React.FC = () => {
       }
 
       // 🔥 FIX: For items picked up from hand, prevent immediate drop on mouse up
-      // This is needed because long-press pickup can take longer than 200ms
+      // This is needed because Shift+click pickup happens instantly
       // IMPORTANT: Set flag BEFORE adding to slot so it's included in the slot array
       if (isFromHand) {
         // Set a flag on the ref to indicate this item was just picked up from hand
         (itemClone as any).justPickedUpFromHand = true;
+        // 🔥 FIX: Store pickup position to prevent accidental drop on small cursor movements
+        (itemClone as any).pickupPosition = { x: clientX, y: clientY };
         // 🔥 FIX: Also set isFromHand so click handler knows not to block the drop
         (itemClone as any).isFromHand = true;
       }

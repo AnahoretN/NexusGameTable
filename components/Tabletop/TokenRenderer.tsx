@@ -58,9 +58,10 @@ export const TokenRenderer = memo(({
   const token = useTokenWithState(obj as TokenType, allObjects);
 
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
-  // Only check if explicitly locked
-  const canDrag = !obj.locked;
+  // Only check if explicitly locked or being dragged by another player
+  const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
   const isDragging = draggingId === obj.id;
+  const isDraggingByOther = obj.isDragging && obj.dragOwnerId && obj.dragOwnerId !== activePlayerId;
   const objLayer = obj.hyperscaleLayerId || 'none';
 
   // Calculate zoom multiplier for UI elements compensation
@@ -70,9 +71,10 @@ export const TokenRenderer = memo(({
   const cursorClass = useMemo(() => {
     if (currentTool !== 'none' && currentTool !== 'zoom') return 'cursor-default';
     if (isDragging) return 'cursor-grabbing z-[100000]';
+    if (isDraggingByOther) return 'cursor-not-allowed opacity-50';
     if (canDrag) return 'cursor-grab';
     return 'cursor-default';
-  }, [currentTool, isDragging, canDrag]);
+  }, [currentTool, isDragging, isDraggingByOther, canDrag]);
 
   // Memoize position style
   const positionStyle = useMemo(() => {
@@ -90,9 +92,12 @@ export const TokenRenderer = memo(({
         overflow: 'visible',
         // Optimize for smooth dragging
         willChange: isDragging ? 'transform, left, top' : undefined,
+        // Visual feedback when dragged by another player
+        opacity: isDraggingByOther ? 0.5 : undefined,
+        pointerEvents: isDraggingByOther ? 'none' : undefined,
       }
     );
-  }, [obj.x, obj.y, obj.rotation, token.width, token.height, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging]);
+  }, [obj.x, obj.y, obj.rotation, token.width, token.height, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging, isDraggingByOther]);
 
   // Memoize token name display
   const tokenName = useMemo(() => {
@@ -464,7 +469,10 @@ export const TokenRenderer = memo(({
     prevToken.locked === nextToken.locked &&
     prevToken.opacity === nextToken.opacity &&
     prevToken.rotation === nextToken.rotation &&
-    prevToken.zIndex === nextToken.zIndex
+    prevToken.zIndex === nextToken.zIndex &&
+    (prevToken as any).showNameOnToken === (nextToken as any).showNameOnToken &&
+    prevToken.name === nextToken.name &&
+    (prevToken as any).fontColor === (nextToken as any).fontColor
   );
 
   // Compare counters deeply (important for character token sync)

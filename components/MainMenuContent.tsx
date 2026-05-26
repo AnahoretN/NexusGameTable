@@ -436,12 +436,19 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
           const dx = x - cursorSlotStartPosRef.current.x;
           const dy = y - cursorSlotStartPosRef.current.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
-          // Threshold: 30px (about 2x the standard UI interaction distance)
-          const SWITCH_THRESHOLD = 30;
+          // 🔥 FIX: Use 60vu threshold for tab switching (converted to pixels)
+          // This prevents accidental tab switching when moving cursor slightly
+          const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
+          const SWITCH_THRESHOLD = 60 * pixelsPerVU; // 60vu converted to pixels
           shouldSwitch = distance >= SWITCH_THRESHOLD;
         }
 
-        if (shouldSwitch && activeTab !== 'hand') {
+        // 🔥 FIX: Don't switch to hand tab if cursor slot contains tokens from archetype
+        // Check if first item has source='archetype' or 'shift' (from token panel clicks)
+        const firstItemSource = items?.[0]?.source;
+        const isFromArchetypePanel = firstItemSource === 'archetype' || firstItemSource === 'shift';
+
+        if (shouldSwitch && activeTab !== 'hand' && !isFromArchetypePanel) {
           setPreviousTab(activeTab);
           setActiveTab('hand');
         }

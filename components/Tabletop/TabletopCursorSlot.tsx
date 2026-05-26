@@ -51,9 +51,13 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
   );
 }, (prevProps, nextProps) => {
   // Custom comparison for TabletopCursorSlot
+  // 🔥 FIX: Compare array length instead of reference to catch updates
+  const slotLengthSame = prevProps.cursorSlot.length === nextProps.cursorSlot.length;
+  const positionSame = prevProps.cursorPosition === nextProps.cursorPosition;
+
   return (
-    prevProps.cursorSlot === nextProps.cursorSlot &&
-    prevProps.cursorPosition === nextProps.cursorPosition &&
+    slotLengthSame &&
+    positionSame &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
     prevProps.zoom === nextProps.zoom &&
     prevProps.state === nextProps.state

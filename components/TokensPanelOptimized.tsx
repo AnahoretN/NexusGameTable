@@ -80,10 +80,6 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
     return (archetype as any).maxCopies ?? 0;
   };
 
-  // Track drag state to distinguish click from drag
-  const dragStartTimeRef = useRef<number>(0);
-  const dragStartPositionRef = useRef<{ x: number; y: number } | null>(null);
-
   // Handle archetype click - add to cursor slot
   const handleArchetypeClick = useCallback((archetype: TokenType, clientX: number, clientY: number) => {
     // Dispatch event to Tabletop to handle adding token to cursor slot
@@ -92,12 +88,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
     }));
   }, []);
 
-  // Track if we're currently dragging a token type to place it
-  const isDraggingTokenRef = useRef<boolean>(false);
-  const dragArchetypeIdRef = useRef<string | null>(null);
-  const dragArchetypeCardRef = useRef<HTMLElement | null>(null);
-
-  // Set up capture phase listener for mousedown to set flag BEFORE Tabletop's handleGlobalClick
+  // Set up capture phase listener for mousedown to handle archetype clicks
   useEffect(() => {
     const handleMouseDownCapture = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -105,108 +96,24 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
       const archetypeCard = target.closest('[data-archetype-card]') as HTMLElement;
       // Check if clicking on settings button - don't add token in that case
       const settingsButton = target.closest('[data-archetype-settings]') as HTMLElement;
+
       if (archetypeCard && !settingsButton) {
-        archetypeCard.dataset.isAddingToken = 'true';
-        dragStartTimeRef.current = Date.now();
-        dragStartPositionRef.current = { x: e.clientX, y: e.clientY };
-        // Store reference to the card that was clicked
-        dragArchetypeCardRef.current = archetypeCard;
-      }
-    };
-
-    const handleMouseMoveCapture = (e: MouseEvent) => {
-      // Check if we're dragging (moved more than 3px)
-      if (dragStartTimeRef.current > 0 && dragStartPositionRef.current && !isDraggingTokenRef.current) {
-        const dragDistance = Math.sqrt(
-          Math.pow(e.clientX - dragStartPositionRef.current.x, 2) +
-          Math.pow(e.clientY - dragStartPositionRef.current.y, 2)
-        );
-        // If moved more than 3px, consider it a drag and add token to cursor slot
-        if (dragDistance > 3) {
-          // Use the stored card reference instead of looking it up again
-          const archetypeCard = dragArchetypeCardRef.current;
-          if (archetypeCard) {
-            const archetypeId = archetypeCard.dataset.archetypeId;
-            if (archetypeId) {
-              // 🔥 OPTIMIZED: Use memoized archetype map instead of objects lookup
-              const archetype = archetypeMap.get(archetypeId);
-              if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
-                isDraggingTokenRef.current = true;
-                dragArchetypeIdRef.current = archetypeId;
-                // Add token to cursor slot immediately
-                handleArchetypeClick(archetype, e.clientX, e.clientY);
-              }
-            }
+        const archetypeId = archetypeCard.dataset.archetypeId;
+        if (archetypeId) {
+          const archetype = archetypeMap.get(archetypeId);
+          if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
+            // Simply add token to slot on click - no drag-and-drop logic
+            handleArchetypeClick(archetype, e.clientX, e.clientY);
           }
         }
       }
-    };
-
-    const handleMouseUpCapture = (e: MouseEvent) => {
-      // Check if we were dragging a token
-      if (isDraggingTokenRef.current) {
-        // Drop the token at current position
-        isDraggingTokenRef.current = false;
-        const archetypeId = dragArchetypeIdRef.current;
-        dragArchetypeIdRef.current = null;
-        // Dispatch event to drop cursor slot at this position
-        window.dispatchEvent(new CustomEvent('drop-cursor-slot-at-position', {
-          detail: { clientX: e.clientX, clientY: e.clientY }
-        }));
-        // Clear any adding token flags
-        const card = dragArchetypeCardRef.current;
-        if (card) {
-          delete card.dataset.isAddingToken;
-        }
-        dragStartTimeRef.current = 0;
-        dragStartPositionRef.current = null;
-        dragArchetypeCardRef.current = null;
-        return;
-      }
-
-      // Normal click handling (not a drag)
-      const archetypeCard = dragArchetypeCardRef.current;
-
-      if (archetypeCard && archetypeCard.dataset.isAddingToken) {
-        const dragDuration = Date.now() - dragStartTimeRef.current;
-        const dragDistance = dragStartPositionRef.current
-          ? Math.sqrt(
-              Math.pow(e.clientX - dragStartPositionRef.current.x, 2) +
-              Math.pow(e.clientY - dragStartPositionRef.current.y, 2)
-            )
-          : 0;
-
-        // Clear the adding token flag
-        delete archetypeCard.dataset.isAddingToken;
-
-        // If it was a quick click with minimal movement, treat as click (add to slot without dropping)
-        if (dragDuration < 200 && dragDistance < 3) {
-          const archetypeId = archetypeCard.dataset.archetypeId;
-          if (archetypeId) {
-            // 🔥 OPTIMIZED: Use memoized archetype map instead of objects lookup
-            const archetype = archetypeMap.get(archetypeId);
-            if (archetype && archetype.type === ItemType.TOKEN_TYPE) {
-              handleArchetypeClick(archetype, e.clientX, e.clientY);
-            }
-          }
-        }
-      }
-
-      // Reset drag tracking
-      dragStartTimeRef.current = 0;
-      dragStartPositionRef.current = null;
-      dragArchetypeCardRef.current = null;
     };
 
     // Use capture phase to ensure this runs before Tabletop's handleGlobalClick
     document.addEventListener('mousedown', handleMouseDownCapture, { capture: true });
-    document.addEventListener('mousemove', handleMouseMoveCapture, { capture: true });
-    document.addEventListener('mouseup', handleMouseUpCapture, { capture: true });
 
     return () => {
       document.removeEventListener('mousedown', handleMouseDownCapture, { capture: true } as any);
-      document.removeEventListener('mousemove', handleMouseMoveCapture, { capture: true } as any);
-      document.removeEventListener('mouseup', handleMouseUpCapture, { capture: true } as any);
     };
   }, [archetypeMap, handleArchetypeClick]);
 

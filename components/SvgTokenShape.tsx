@@ -67,6 +67,19 @@ interface SvgTokenShapeProps {
 }
 
 /**
+ * Calculate font size to fit text within available width with padding
+ * @param textLength - Length of text to fit
+ * @param availableWidth - Width available for text (token width minus padding)
+ * @returns Font size in virtual units
+ */
+function calculateFontSizeForWidth(textLength: number, availableWidth: number): number {
+  // Average character width is approximately 0.6 of font size for most fonts
+  // Formula: fontSize = availableWidth / (textLength * 0.6)
+  const avgCharWidthRatio = 0.6;
+  return availableWidth / (textLength * avgCharWidthRatio);
+}
+
+/**
  * Calculate dynamic font size based on text length and token dimensions
  */
 function calculateFontSize(textLength: number, tokenWidth: number, tokenHeight: number, longestWordLength: number): number {
@@ -83,6 +96,70 @@ function calculateFontSize(textLength: number, tokenWidth: number, tokenHeight: 
   else if (longestWordLength > 15) size = size * 0.5;
 
   return size;
+}
+
+/**
+ * Split token name into lines for better display on tokens
+ * If text is > 12 chars and contains spaces, split into 2-3 roughly equal lines by word count
+ */
+function splitTokenNameIntoLines(text: string): string[] {
+  // If text is short or has no spaces, keep as single line
+  if (text.length <= 12 || !text.includes(' ')) {
+    return [text];
+  }
+
+  const words = text.trim().split(/\s+/);
+  const wordCount = words.length;
+
+  // Single word but long - keep as one line
+  if (wordCount === 1) {
+    return [text];
+  }
+
+  // Two words - split evenly
+  if (wordCount === 2) {
+    return words;
+  }
+
+  // Three words - either all on separate lines or 2+1
+  if (wordCount === 3) {
+    // If total length is short, 2+1 split is better
+    if (text.length <= 18) {
+      return [words[0], words.slice(1).join(' ')];
+    }
+    return words;
+  }
+
+  // Four words - split 2+2
+  if (wordCount === 4) {
+    return [words.slice(0, 2).join(' '), words.slice(2).join(' ')];
+  }
+
+  // Five words - split 2+3 or 2+2+1
+  if (wordCount === 5) {
+    return [words.slice(0, 2).join(' '), words.slice(2).join(' ')];
+  }
+
+  // Six words - split 2+2+2
+  if (wordCount === 6) {
+    return [
+      words.slice(0, 2).join(' '),
+      words.slice(2, 4).join(' '),
+      words.slice(4).join(' ')
+    ];
+  }
+
+  // For 7+ words, distribute into 3 lines roughly equal by word count
+  const linesCount = 3;
+  const wordsPerLine = Math.ceil(wordCount / linesCount);
+  const lines: string[] = [];
+
+  for (let i = 0; i < wordCount; i += wordsPerLine) {
+    lines.push(words.slice(i, i + wordsPerLine).join(' '));
+  }
+
+  // Limit to max 3 lines
+  return lines.slice(0, 3);
 }
 
 /**
@@ -327,31 +404,49 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   const svgWidth = width + borderWidth * 2 + PADDING * 2;
   const svgHeight = height + borderWidth * 2 + PADDING * 2;
 
-  // Calculate token name font size
+  // Calculate token name display with line wrapping
   let tokenNameElement = null;
-  if (tokenName && !resolvedContent) {
-    const words = tokenName.split(' ');
-    const textLength = tokenName.length;
-    const longestWordLength = Math.max(...words.map(w => w.length));
-    const fontSize = calculateFontSize(textLength, width, height, longestWordLength);
+  if (tokenName) {
+    // Available width for text (token width minus 2 VU padding on each side)
+    const availableWidth = width - 4; // 2 VU padding on left and right
+    const paddingX = 2; // 2 VU padding from each edge
+
+    // Split name into lines for better display
+    const lines = splitTokenNameIntoLines(tokenName);
+    const lineCount = lines.length;
+
+    // Find the longest line to determine font size (all lines use same size)
+    const longestLineLength = Math.max(...lines.map(line => line.length));
+    const fontSize = Math.min(calculateFontSizeForWidth(longestLineLength, availableWidth), 25);
+
+    // Calculate vertical positioning to center the entire text block
+    const lineHeight = fontSize * 1.1;
+    const totalTextHeight = lineCount * lineHeight;
+    // Start Y positions the first line so the entire block is centered, then shift down by 1 VU
+    const startY = contentY + height / 2 - totalTextHeight / 2 + lineHeight / 2 + 1;
 
     tokenNameElement = (
-      <text
-        x={contentX + width / 2}
-        y={contentY + height / 2}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fill={fontColor}
-        fontSize={fontSize}
-        fontWeight="bold"
-        style={{
-          pointerEvents: 'none',
-          textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-          userSelect: 'none'
-        }}
-      >
-        {tokenName}
-      </text>
+      <>
+        {lines.map((line, index) => (
+          <text
+            key={index}
+            x={contentX + paddingX + availableWidth / 2}
+            y={startY + index * lineHeight}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fill={fontColor}
+            fontSize={fontSize}
+            fontWeight="bold"
+            style={{
+              pointerEvents: 'none',
+              textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+              userSelect: 'none'
+            }}
+          >
+            {line}
+          </text>
+        ))}
+      </>
     );
   }
 

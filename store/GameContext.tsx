@@ -9,6 +9,7 @@ import { LocalFileRestoreDialog } from '../components/LocalFileRestoreDialog';
 import { generateUUID } from '../utils/uuid';
 import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo, initializeImageCache } from '../utils/gameStorage';
 import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from '../utils/localSettings';
+import { viewportToWorld, viewportToUIWorld } from '../utils/coordinateUtils';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState, PlayerPanelSettings } from './gameState';
 import { Action } from './gameActions';
@@ -1770,6 +1771,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         ...state,
         objects: newObjects,
         lastModifiedBy: (action.payload as any).playerId || state.activePlayerId
+      };
+    }
+    case 'SET_DRAGGING': {
+      const { id, isDragging, dragOwnerId } = action.payload;
+      const obj = state.objects[id];
+      if (!obj) return state;
+
+      return {
+        ...state,
+        objects: {
+          ...state.objects,
+          [id]: {
+            ...obj,
+            isDragging,
+            dragOwnerId
+          }
+        }
       };
     }
     case 'MOVE_OBJECT': {
@@ -6531,6 +6549,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Function to add objects to state
     const addObjects = (objects: Record<string, TableObject>) => {
+      // Update demo deck position to be 20 vu left of main menu
+      const menuPosition = calculateMainMenuPosition();
+      const pixelsPerVU = state.viewTransform?.pixelsPerVU || calculatePixelsPerVU(window.innerWidth, window.innerHeight);
+
+      // Convert menu left edge from pixels to vu, then subtract deck width and spacing
+      const menuLeftVU = menuPosition.x / pixelsPerVU;
+      const deckWidth = DEFAULT_DECK_WIDTH; // 120 vu
+      const spacing = 150; // Spacing between deck right edge and menu left edge
+      const targetDeckX = menuLeftVU - deckWidth - spacing;
+      const targetDeckY = 30; // Fixed Y position in vu (30 vu from top)
+
+      // Find the Standard Deck and update its position along with its cards
+      Object.values(objects).forEach(obj => {
+        if (obj.type === ItemType.DECK && obj.name === 'Standard Deck') {
+          const deck = obj as Deck;
+          deck.x = targetDeckX;
+          deck.y = targetDeckY;
+          // Update positions of all cards in this deck
+          deck.cardIds.forEach(cardId => {
+            const card = objects[cardId];
+            if (card && card.type === ItemType.CARD) {
+              card.x = targetDeckX;
+              card.y = targetDeckY;
+            }
+          });
+        }
+      });
+
       const objectValues = Object.values(objects);
 
       const cards = objectValues.filter(obj => obj.type === ItemType.CARD);
@@ -6545,8 +6591,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       decks.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
       otherObjects.forEach(obj => localDispatch({ type: 'ADD_OBJECT', payload: obj }));
     };
-
-    addObjects(loadedState.objects);
 
     // Migrate pool panels
     runPoolMigrationIfNeeded(loadedState.objects);
@@ -6949,8 +6993,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                id: boardId,
                type: ItemType.BOARD,
                shape: TokenShape.SQUARE,
-               x: 100,    // VU: centered position
-               y: 100,    // VU: centered position
+               x: 50,    // VU: 50 vu from left edge
+               y: 50,    // VU: 50 vu from top edge
                width: 1200,  // VU: 120% of screen width
                height: 800, // VU: 80% of screen height
                rotation: 0,
@@ -6969,26 +7013,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localDispatch({ type: 'ADD_OBJECT', payload: board });
 
           // Create Standard Deck on 'cards' layer
-          // Position: 10 vu from top, 15 vu left of main panel
+          // Position: 20 vu spacing between deck right edge and menu left edge
+          // Note: menu is UI object (pinned to viewport), deck is world object
+          // We calculate deck position so it visually appears 20 vu left of menu on initial screen
           const menuPosition = calculateMainMenuPosition(); // Returns pixels
           const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
-          // Convert menu X from pixels to vu, then subtract 15 vu and deck width
-          const menuX_vu = menuPosition.x / pixelsPerVU;
-          const deckWidth = 120; // Standard deck width in vu (cardWidth * 2 for stacked effect)
-          const worldX = menuX_vu - deckWidth - 15; // 15 vu left of menu
-          const worldY = 10; // 10 vu from top
+
+
+          // For visual positioning: convert pixels to vu for deck world position
+          // Menu left edge (px) -> vu, then subtract deck width and spacing
+          const menuLeftVU = menuPosition.x / pixelsPerVU;
+          const deckWidth = DEFAULT_DECK_WIDTH; // 120 vu
+          const spacing = 150; // Spacing between deck right edge and menu left edge
+          const deckX = menuLeftVU - deckWidth - spacing; // Left edge of deck
+          const deckY = 30; // Fixed Y position in vu (30 vu from top)
+
+
           const { deck, cards } = createStandardDeck();
 
 
           // Update deck position
-          deck.x = worldX;
-          deck.y = worldY;
+          deck.x = deckX;
+          deck.y = deckY;
           deck.hyperscaleLayerId = 'cards';
 
           // Update card positions directly in the cards array before dispatch
           cards.forEach(card => {
-            card.x = worldX;
-            card.y = worldY;
+            card.x = deckX;
+            card.y = deckY;
           });
 
           // Add all cards first

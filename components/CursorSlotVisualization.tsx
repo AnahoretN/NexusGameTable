@@ -126,15 +126,27 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
 
   // IMPORTANT: Simply use cursorSlot directly - no filtering needed
   // The cursorSlot state is the source of truth
+  // 🔥 FIX: Deduplicate items by ID to prevent duplicate key warnings
   const sortedSlot = useMemo(() => {
     if (cursorSlot.length === 0) return [];
+    // Deduplicate by ID (keep first occurrence)
+    const seenIds = new Set<string>();
+    const deduplicated = cursorSlot.filter(item => {
+      if (seenIds.has(item.id)) {
+        console.warn('[CursorSlotVisualization] Duplicate item ID detected:', item.id);
+        return false;
+      }
+      seenIds.add(item.id);
+      return true;
+    });
     // Sort by originalZIndex in DESCENDING order to preserve layer relationships
-    return [...cursorSlot].sort((a, b) => {
+    const sorted = deduplicated.sort((a, b) => {
       const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
       const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
       return zB - zA; // Descending order - higher Z first
     });
-  }, [cursorSlot]);
+    return sorted;
+  }, [cursorSlot, cursorPosition]);
 
   // Remove cursorSlot - not needed anymore
   // const cursorSlot = useMemo(() => { ... }, [cursorSlot, state.objects]);

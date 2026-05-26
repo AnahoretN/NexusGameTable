@@ -55,18 +55,20 @@ export const CardRenderer = memo(({
   const card = obj as CardType;
   const deck = card.deckId ? allObjects[card.deckId] as DeckType | undefined : undefined;
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
-  // Only check if explicitly locked
-  const canDrag = !obj.locked;
+  // Only check if explicitly locked or being dragged by another player
+  const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
   const isDragging = draggingId === obj.id;
+  const isDraggingByOther = obj.isDragging && obj.dragOwnerId && obj.dragOwnerId !== activePlayerId;
   const objLayer = obj.hyperscaleLayerId || 'none';
 
   // Memoize cursor class
   const cursorClass = useMemo(() => {
     if (currentTool !== 'none' && currentTool !== 'zoom') return 'cursor-default';
     if (isDragging) return 'cursor-grabbing z-[100000]';
+    if (isDraggingByOther) return 'cursor-not-allowed opacity-50';
     if (canDrag) return 'cursor-grab';
     return 'cursor-default';
-  }, [currentTool, isDragging, canDrag]);
+  }, [currentTool, isDragging, isDraggingByOther, canDrag]);
 
   // Memoize position style
   const positionStyle = useMemo(() => {
@@ -85,9 +87,12 @@ export const CardRenderer = memo(({
         transform,
         overflow: 'visible',
         willChange: isDragging ? 'transform, left, top' : undefined,
+        // Visual feedback when dragged by another player
+        opacity: isDraggingByOther ? 0.5 : undefined,
+        pointerEvents: isDraggingByOther ? 'none' : undefined,
       }
     );
-  }, [obj.x, obj.y, obj.rotation, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging, card.width, card.height, deck?.cardWidth, deck?.cardHeight]);
+  }, [obj.x, obj.y, obj.rotation, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging, isDraggingByOther, card.width, card.height, deck?.cardWidth, deck?.cardHeight]);
 
   // Memoize dimensions
   const dimensions = useMemo(() => {

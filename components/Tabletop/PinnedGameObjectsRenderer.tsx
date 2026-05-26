@@ -150,7 +150,8 @@ const PinnedCounterRenderer = memo(({
   if (!pinnedPosition) return null;
 
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
-  const canDrag = !obj.locked;
+  // Only check if explicitly locked or being dragged by another player
+  const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
   const isDragging = draggingId === obj.id;
 
   const counterWidth = Math.max(counter.width || 60, 100) / pixelsPerVU;
@@ -307,7 +308,8 @@ const PinnedDiceRenderer = memo(({
   if (!pinnedPosition) return null;
 
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
-  const canDrag = !obj.locked;
+  // Only check if explicitly locked or being dragged by another player
+  const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
   const isDragging = draggingId === obj.id;
 
   const diceWidth = dice.width * pixelsPerVU;
@@ -510,7 +512,8 @@ const PinnedTokenRenderer = memo(({
   if (!pinnedPosition) return null;
 
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
-  const canDrag = !obj.locked;
+  // Only check if explicitly locked or being dragged by another player
+  const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
   const isDragging = draggingId === obj.id;
 
   // Memoize counters

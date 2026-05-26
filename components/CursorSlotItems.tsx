@@ -130,7 +130,7 @@ const CursorSlotCard = React.memo<CursorSlotItemProps & { item: CardType }>(({
 /**
  * Renders a token in the cursor slot
  */
-const CursorSlotToken = React.memo<CursorSlotItemProps & { item: TokenType }>(({
+const CursorSlotToken = ({
   item,
   width,
   height,
@@ -139,9 +139,23 @@ const CursorSlotToken = React.memo<CursorSlotItemProps & { item: TokenType }>(({
   zIndex,
   state,
   pixelsPerVU
-}) => {
+}: CursorSlotItemProps & { item: TokenType }) => {
   // Apply token state to get correct visual properties
   const tokenWithState = getTokenWithAppliedState(item, state.objects as Record<string, TableObject>);
+
+  // Get the object from state to compare
+  const stateObject = (state.objects as Record<string, TableObject>)[item.id];
+
+  // Check if we should show the token name
+  // For tokens, check showNameOnToken (from token itself, archetype, or applied state)
+  const archetypeId = (item as any).archetypeId;
+  const archetype = archetypeId ? (state.objects as Record<string, TableObject>)[archetypeId] : null;
+  const showNameOnTokenFromArchetype = archetype ? (archetype as any).showName : false;
+
+  const showName = (item as any).showNameOnToken ||
+                   (tokenWithState as any).showNameOnToken ||
+                   (stateObject as any)?.showNameOnToken ||
+                   showNameOnTokenFromArchetype;
 
   return (
     <div
@@ -171,23 +185,12 @@ const CursorSlotToken = React.memo<CursorSlotItemProps & { item: TokenType }>(({
         opacity={tokenWithState.opacity ?? 100}
         borderOpacity={(tokenWithState as any).borderOpacity ?? 100}
         showThickness={true}
-        tokenName={(tokenWithState as any).showNameOnToken || ((tokenWithState as any).archetypeId && (state.objects[(tokenWithState as any).archetypeId] as any)?.showName) ? item.name : undefined}
-        fontColor={(tokenWithState as any).fontColor || '#ffffff'}
+        tokenName={showName ? item.name : undefined}
+        fontColor={(item as any).fontColor || (tokenWithState as any).fontColor || '#ffffff'}
       />
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Only re-render if critical props change
-  return (
-    prevProps.item === nextProps.item &&
-    prevProps.width === nextProps.width &&
-    prevProps.height === nextProps.height &&
-    prevProps.offsetX === nextProps.offsetX &&
-    prevProps.offsetY === nextProps.offsetY &&
-    prevProps.zIndex === nextProps.zIndex &&
-    prevProps.pixelsPerVU === nextProps.pixelsPerVU
-  );
-});
+};
 
 /**
  * Renders a deck in the cursor slot

@@ -12,6 +12,7 @@
  * @since 2026-04-22
  */
 
+import { flushSync } from 'react-dom';
 import { useEffect, useRef } from 'react';
 import { useGame } from '../../store/GameContext';
 import { useViewTransform } from '../../store/contexts';
@@ -21,6 +22,7 @@ import { addToCursorSlot, removeFromCursorSlot } from '../../utils/cursorSlotTra
 
 interface UseTokenArchetypeProps {
   cursorSlot: any[];
+  cursorSlotRef: React.MutableRefObject<any[]>;
   setCursorSlot: React.Dispatch<React.SetStateAction<any[]>>;
   setCursorPosition: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
   cursorPositionRef: React.MutableRefObject<{ x: number; y: number } | null>;
@@ -38,6 +40,7 @@ interface UseTokenArchetypeProps {
 export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
   const {
     cursorSlot,
+    cursorSlotRef,
     setCursorSlot,
     setCursorPosition,
     cursorPositionRef,
@@ -51,36 +54,54 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
 
   const { state, dispatch } = useGame();
   const viewTransform = useViewTransform();
-  const cursorSlotRef = useRef<any[]>(cursorSlot);
 
-  // Sync cursorSlotRef
+  // 🔥 DEBUG: Track when cursorSlotRef.current is reset
   useEffect(() => {
-    cursorSlotRef.current = cursorSlot;
-  }, [cursorSlot]);
+    // Override cursorSlotRef.current setter to track changes
+    const originalRef = cursorSlotRef;
+    let resetCount = 0;
+
+    // Create a proxy to track when the ref is modified
+    const checkInterval = setInterval(() => {
+      const currentLength = cursorSlotRef.current.length;
+
+      if (currentLength === 0 && resetCount === 0) {
+        resetCount++;
+      }
+    }, 2000);
+
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [cursorSlotRef]);
+
+  // 🔥 FIX: Don't sync cursorSlotRef with cursorSlot state via useEffect
+  // cursorSlotRef is the source of truth, updated directly in event handlers
+  // cursorSlot state is only for triggering re-renders
 
   // Handle add-token-to-cursor-slot events from TokensPanel
   // This adds a new token copy from archetype to cursor slot on each click
   useEffect(() => {
     const handleAddTokenToSlot = (e: Event) => {
-      // Set flag to prevent slot from being dropped during this operation
-      isAddingTokenRef.current = true;
-
-      // Prevent event from propagating to avoid clearing the slot
-      e.preventDefault();
-      e.stopPropagation();
-
       const customEvent = e as CustomEvent<{ archetypeId: string; clientX?: number; clientY?: number }>;
       const { archetypeId, clientX, clientY } = customEvent.detail;
       const archetype = state.objects[archetypeId] as TokenType;
 
+      // Validate BEFORE preventing default or stopping propagation
       if (!archetype || archetype.type !== ItemType.TOKEN_TYPE) {
-        isAddingTokenRef.current = false;
-        return;
+        return; // Don't handle this event - let it propagate
       }
-      if (cursorSlot.length >= 100) {
-        isAddingTokenRef.current = false;
-        return;
+      // 🔥 FIX: Check cursorSlotRef.current (source of truth) for limit
+      if (cursorSlotRef.current.length >= 100) {
+        return; // Don't handle this event - let it propagate
       }
+
+      // Set flag to prevent slot from being dropped during this operation
+      isAddingTokenRef.current = true;
+
+      // Only prevent default/stopPropagation if we're actually handling this event
+      e.preventDefault();
+      e.stopPropagation();
 
       // Get current spawn count for naming
       const currentCount = archetype.spawnCount || 0;
@@ -145,31 +166,41 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
 
       // Add to cursor slot
       const tokenClone: TokenType = { ...newToken };
-      (tokenClone as any).cursorSlotIndex = cursorSlot.length;
+      (tokenClone as any).cursorSlotIndex = cursorSlotRef.current.length;
       (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
       (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
 
-      setCursorSlot(prev => {
-        return [...prev, tokenClone];
+      // 🔥 FIX: Use cursorSlotRef.current (source of truth) for reading
+      // Update ref first (source of truth), then state (for re-render)
+      const newCursorSlot = [...cursorSlotRef.current, tokenClone];
+      cursorSlotRef.current = newCursorSlot;
+
+      // 🔥 FIX: Use flushSync to ensure state updates are applied synchronously
+      // This prevents race conditions where components render with stale state
+      flushSync(() => {
+        setCursorSlot(newCursorSlot);
+
+        // Set cursor position to show tokens immediately (use provided coords or current mouse position)
+        if (clientX !== undefined && clientY !== undefined) {
+          const pos = { x: clientX, y: clientY };
+          setCursorPosition(pos);
+          cursorPositionRef.current = pos;
+        }
+
+        // Set source to 'shift' to behave like Ctrl+click (drop on click, not on mouseup)
+        setCursorSlotSource('shift');
       });
-      cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
 
-      // Set cursor position to show tokens immediately (use provided coords or current mouse position)
-      if (clientX !== undefined && clientY !== undefined) {
-        const pos = { x: clientX, y: clientY };
-        setCursorPosition(pos);
-        cursorPositionRef.current = pos;
-      }
-
-      // Set source to 'shift' to behave like Ctrl+click (drop on click, not on mouseup)
-      setCursorSlotSource('shift');
-
-      isAddingTokenRef.current = false;
+      // 🔥 FIX: Keep isAddingTokenRef true for a short time to prevent immediate drop
+      // This prevents race conditions where handleMouseDown might be called immediately after
+      setTimeout(() => {
+        isAddingTokenRef.current = false;
+      }, 100);
     };
 
     window.addEventListener('add-token-to-cursor-slot', handleAddTokenToSlot, { passive: false } as any);
     return () => window.removeEventListener('add-token-to-cursor-slot', handleAddTokenToSlot);
-  }, [cursorSlot.length, dispatch, state.objects, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource, isAddingTokenRef]);
+  }, [cursorSlotRef, dispatch, state.objects, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource, isAddingTokenRef]);
 
   // Handle drop-cursor-slot-at-position events from TokensPanel
   // This drops all tokens from cursor slot at the specified position
@@ -184,8 +215,12 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
 
       // Only drop if we have items in cursor slot
       if (cursorSlotRef.current.length === 0) {
-        return;
+        return; // Don't handle this event - let it propagate
       }
+
+      // Prevent event from propagating only if we're actually handling the drop
+      e.preventDefault();
+      e.stopPropagation();
 
       // Drop all items from cursor slot at the specified position
       const itemsToDrop = cursorSlotRef.current;
@@ -217,8 +252,8 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
             detail: { cardIds: items.map(i => i.id) }
           }));
         }
-        // 🔥 FIX: Clear global tracker
-        cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+        // 🔥 FIX: Clear global tracker - use cursorSlotRef.current instead of cursorSlot
+        cursorSlotRef.current.forEach(item => removeFromCursorSlot(item.id));
         cursorSlotRef.current = [];
         setCursorSlot([]);
         setCursorPosition(null);
@@ -299,8 +334,8 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       });
 
       // Clear cursor slot
-      // 🔥 FIX: Any remaining items in tracker should be cleared
-      cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+      // 🔥 FIX: Any remaining items in tracker should be cleared - use cursorSlotRef.current
+      cursorSlotRef.current.forEach(item => removeFromCursorSlot(item.id));
       cursorSlotRef.current = [];
       setCursorSlot([]);
       setCursorPosition(null);
@@ -320,7 +355,8 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       const { token, mousePosition } = customEvent.detail;
 
       if (!token) return;
-      if (cursorSlot.length >= 100) return;
+      // 🔥 FIX: Check cursorSlotRef.current (source of truth) for limit
+      if (cursorSlotRef.current.length >= 100) return;
 
       // Add token to objects list (already done in CharacterPanel, but double-check)
       if (!state.objects[token.id]) {
@@ -329,7 +365,7 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
 
       // Add to cursor slot
       const tokenClone: Token = { ...token };
-      (tokenClone as any).cursorSlotIndex = cursorSlot.length;
+      (tokenClone as any).cursorSlotIndex = cursorSlotRef.current.length;
       (tokenClone as any).originalZIndex = token.zIndex ?? 0;
       (tokenClone as any).source = 'character'; // Source: character panel
 
@@ -341,8 +377,10 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       (tokenClone as any).clickOffsetX_PX = (tokenWidth * pixelsPerVU) / 2;
       (tokenClone as any).clickOffsetY_PX = (tokenHeight * pixelsPerVU) / 2;
 
-      setCursorSlot(prev => [...prev, tokenClone]);
-      cursorSlotRef.current = [...cursorSlotRef.current, tokenClone];
+      // 🔥 FIX: Use cursorSlotRef.current (source of truth) for reading
+      const newCursorSlot = [...cursorSlotRef.current, tokenClone];
+      cursorSlotRef.current = newCursorSlot;
+      setCursorSlot(newCursorSlot);
 
       // Set cursor position to mouse position from event, or center of screen if not provided
       const pos = mousePosition || {
@@ -358,7 +396,7 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
 
     window.addEventListener('add-character-token-to-cursor-slot', handleAddCharacterTokenToSlot);
     return () => window.removeEventListener('add-character-token-to-cursor-slot', handleAddCharacterTokenToSlot);
-  }, [cursorSlot.length, dispatch, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource, state.objects]);
+  }, [cursorSlotRef, dispatch, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource, state.objects, pixelsPerVU]);
 
   // Handle update-token-copy-from-archetype events from ObjectSettingsModal
   // This updates token copies when archetype settings change

@@ -101,7 +101,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const effects = visibleTableObjects.filter(obj => obj.type === ItemType.EFFECT_TEMPLATE);
 
     effects.forEach(obj => {
-      const canDrag = !obj.locked;
+      const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
       const isDraggingEffect = draggingId === obj.id;
       const draggingClass = isDraggingEffect ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
       const objLayer = obj.hyperscaleLayerId || 'tokens';

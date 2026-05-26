@@ -153,7 +153,8 @@ const addToCursorSlotLocal = (
   // Note: Other items (CARD/TOKEN) can coexist in slot, no special handling needed
 
   // Check cursorSlot for the 100 item limit
-  if (cursorSlot.length >= 100) {
+  // 🔥 FIX: Use cursorSlotRef.current (source of truth) for limit check
+  if (cursorSlotRef.current.length >= 100) {
     return; // Max 100 items in slot
   }
 
@@ -192,7 +193,8 @@ const addToCursorSlotLocal = (
   addToCursorSlot(id, obj?.x ?? 0, obj?.y ?? 0);
 
   // Set source based on how the item was added (only if slot was empty before)
-  if (cursorSlot.length === 0) {
+  // 🔥 FIX: Use cursorSlotRef.current (source of truth) for consistency
+  if (cursorSlotRef.current.length === 0) {
     setCursorSlotSource(source);
   }
   const gridCellKey = (obj as Token)?.gridCellKey || (obj as CardType)?.gridCellKey;
@@ -394,7 +396,8 @@ const addToCursorSlotLocal = (
   // Store metadata for cursor slot
   (itemClone as any).originalZIndex = item.zIndex ?? 0;
   (itemClone as any).source = source;
-  (itemClone as any).cursorSlotIndex = cursorSlot.length;
+  // 🔥 FIX: Use cursorSlotRef.current.length for cursorSlotIndex (source of truth)
+  (itemClone as any).cursorSlotIndex = cursorSlotRef.current.length;
   (itemClone as any).timestamp = Date.now();
   // Store if item came from hand panel (to avoid self-click drop blocking)
   (itemClone as any).isFromHand = (obj as any).location === CardLocation.HAND;
@@ -480,7 +483,9 @@ const addToCursorSlotLocal = (
   }
 
   // Add to cursor slot
-  const newSlot = [...cursorSlot, itemClone as CardType | TokenType | BoardType | DeckType];
+  // 🔥 FIX: Use cursorSlotRef.current (source of truth) to prevent duplicates
+  // The duplicate check uses cursorSlotRef.current, so we must use it here too
+  const newSlot = [...cursorSlotRef.current, itemClone as CardType | TokenType | BoardType | DeckType];
 
   // 🔥 FIX: Update ref immediately before state update to prevent race conditions
   cursorSlotRef.current = newSlot;
@@ -625,8 +630,8 @@ const dropCursorSlot = (
 
   if (itemsToDrop.length === 0) {
     // All items were already dropped elsewhere, just clear the slot
-    // 🔥 FIX: Clear cursor slot tracker for all items
-    cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+    // 🔥 FIX: Clear cursor slot tracker for all items - use cursorSlotRef.current (source of truth)
+    cursorSlotRef.current.forEach(item => removeFromCursorSlot(item.id));
     // 🔥 FIX: Update ref immediately before state update
     cursorSlotRef.current = [];
     setCursorSlot([]);
@@ -649,7 +654,8 @@ const dropCursorSlot = (
 
   if (archetypeCard) {
     // Clear cursor slot immediately to prevent stale items
-    cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+    // 🔥 FIX: Use cursorSlotRef.current (source of truth)
+    cursorSlotRef.current.forEach(item => removeFromCursorSlot(item.id));
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
@@ -689,7 +695,8 @@ const dropCursorSlot = (
     // Check if dropping to pool panel - allow it
     if (isOverPoolPanel) {
       // Clear cursor slot immediately to prevent stale items
-      cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+      // 🔥 FIX: Use cursorSlotRef.current (source of truth)
+      cursorSlotRef.current.forEach(item => removeFromCursorSlot(item.id));
       cursorSlotRef.current = [];
       setCursorSlot([]);
       setCursorPosition(null);
@@ -754,7 +761,8 @@ const dropCursorSlot = (
 
   if (poolPanel && itemsToDrop.length > 0) {
     // Clear cursor slot immediately to prevent stale items
-    cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+    // 🔥 FIX: Use cursorSlotRef.current (source of truth)
+    cursorSlotRef.current.forEach(item => removeFromCursorSlot(item.id));
     cursorSlotRef.current = [];
     setCursorSlot([]);
     setCursorPosition(null);
@@ -805,7 +813,8 @@ const dropCursorSlot = (
       setCursorSlot(nonCardItems);
     } else {
       // Clear cursor slot immediately
-      cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+      // 🔥 FIX: Use cursorSlotRef.current (source of truth)
+      cursorSlotRef.current.forEach(item => removeFromCursorSlot(item.id));
       setCursorSlot([]);
       setCursorPosition(null);
       cursorPositionRef.current = null;
@@ -861,7 +870,8 @@ const dropCursorSlot = (
         itemsToDrop = nonCards;
       } else {
         // Clear cursor slot immediately after successful deck drop
-        cursorSlot.forEach(item => removeFromCursorSlot(item.id));
+        // 🔥 FIX: Use cursorSlotRef.current (source of truth)
+        cursorSlotRef.current.forEach(item => removeFromCursorSlot(item.id));
         cursorSlotRef.current = [];
         setCursorSlot([]);
         setCursorPosition(null);
@@ -1407,7 +1417,8 @@ const dropCursorSlot = (
   // This ensures that handleMouseDown will see an empty cursor slot immediately
   // IMPORTANT: Only clear items that were actually dropped, keep the rest
   const slotIdsDropped = itemsToDrop.map(item => item.id);
-  const remainingItems = cursorSlot.filter(item => !slotIdsDropped.includes(item.id));
+  // 🔥 FIX: Use cursorSlotRef.current (source of truth) for filtering
+  const remainingItems = cursorSlotRef.current.filter(item => !slotIdsDropped.includes(item.id));
 
   // Update cursorSlotRef to only contain remaining items (not dropped ones)
   cursorSlotRef.current = remainingItems;
@@ -1504,6 +1515,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     updateSetting,
     liveResizeSizeRef,
     setLiveResizeSize,
+    isAddingTokenRef,
     longPressTimerRef,
     clickTooltipTimerRef,
     dragThresholdRef,
@@ -1603,6 +1615,52 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
     // Handle clicking on empty space (clear context menus, rulers, etc.)
     if (!objId) {
+      // 🔥 FIX: Check if cursor is over a token archetype button
+      // If so, don't drop the cursor slot - the button click handler will add tokens
+      const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
+
+      // Check for archetype button using multiple selectors
+      const archetypeButton = elementUnderCursor?.closest('[data-archetype-card]') as HTMLElement;
+      const archetypeSettings = elementUnderCursor?.closest('[data-archetype-settings]') as HTMLElement;
+
+      // Also check if clicking inside tokens panel
+      const tokensPanel = elementUnderCursor?.closest('[data-tokens-panel]');
+
+      // Check if clicking on a hand token
+      const handToken = elementUnderCursor?.closest('[data-hand-token]') as HTMLElement;
+
+      if (archetypeButton || archetypeSettings || tokensPanel || handToken) {
+        return; // Let the archetype button handle the click
+      }
+
+      // 🔥 FIX: Check if we're currently adding a token from archetype
+      // If so, don't drop the cursor slot immediately
+      if (isAddingTokenRef.current) {
+        return;
+      }
+
+      // 🔥 FIX: Check if cursor slot has items and drop them on click (not Shift)
+      // This handles the second system (Shift+click, token archetype clicks, character token)
+      // Use cursorSlotRef.current instead of state.objects for immediate consistency
+      const actuallyHasItems = cursorSlotRef.current.length > 0;
+
+      // Drop cursor slot on click (without Shift) - works for both objects and empty space
+      if (!e.shiftKey && actuallyHasItems) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropCursorSlot(e.clientX, e.clientY, props);
+        cursorSlotLastAddedRef.current = Date.now();
+        // Clear drag threshold to prevent blocking future drags
+        dragThresholdRef.current = {
+          initialX: 0,
+          initialY: 0,
+          targetId: null,
+          addedToSlot: false,
+          skipThreshold: false
+        };
+        return;
+      }
+
       // Pan view: Ctrl + left mouse drag on empty space
       // Special handling for marker tool: check if cursor is over a drawing
       if ((e.ctrlKey || e.metaKey) && e.button === 0 && scrollContainerRef.current) {
@@ -1686,8 +1744,12 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     }
 
     // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
-    // Only check if explicitly locked
+    // Only check if explicitly locked or being dragged by another player
     if (obj.locked) {
+      return;
+    }
+    // Check if object is being dragged by another player
+    if (obj.isDragging && obj.dragOwnerId && obj.dragOwnerId !== activePlayerId) {
       return;
     }
 
@@ -1707,14 +1769,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     }
 
     // Check if cursor slot has items
-    // IMPORTANT: Only check state.objects.inCursorSlot, NOT cursorSlot.length
-    // cursorSlot may contain stale items after dropObjectsToPool set inCursorSlot: false
-    // but setCursorSlot hasn't been applied yet (batched React update)
-    const objectsInCursorSlot = (Object.values(state.objects) as TableObject[]).filter(o =>
-      (o.type === ItemType.CARD || o.type === ItemType.TOKEN || o.type === ItemType.COUNTER || o.type === ItemType.EFFECT_TEMPLATE) &&
-      (o as any).inCursorSlot === true
-    );
-    const actuallyHasItems = objectsInCursorSlot.length > 0;
+    // 🔥 FIX: Use cursorSlotRef.current for immediate consistency
+    // This works for BOTH systems: first (drag threshold) and second (Shift+click, token archetype clicks)
+    // cursorSlotRef is updated synchronously in all event handlers
+    const actuallyHasItems = cursorSlotRef.current.length > 0;
 
     // REGULAR CLICK (no shift): if slot has items, drop them
     if (!e.shiftKey && actuallyHasItems) {
@@ -1927,14 +1985,22 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     }
 
     // Update cursor slot position
-    if (cursorSlot.length > 0) {
-      // 🔥 FIX: Clear justPickedUpFromHand flag when user starts dragging
-      // This allows the card to be dropped on subsequent mouse up
+    // 🔥 FIX: Use cursorSlotRef.current (source of truth)
+    if (cursorSlotRef.current.length > 0) {
+      // 🔥 FIX: Clear justPickedUpFromHand flag only after cursor moves sufficient distance
+      // This prevents accidental drop when cursor jitters after Shift+click pickup
+      const DRAG_THRESHOLD_PX = 20; // Minimum distance to clear the flag
       let clearedFlag = false;
       cursorSlotRef.current.forEach(item => {
-        if ((item as any).justPickedUpFromHand) {
-          (item as any).justPickedUpFromHand = false;
-          clearedFlag = true;
+        if ((item as any).justPickedUpFromHand && (item as any).pickupPosition) {
+          const pickupPos = (item as any).pickupPosition;
+          const dx = e.clientX - pickupPos.x;
+          const dy = e.clientY - pickupPos.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance >= DRAG_THRESHOLD_PX) {
+            (item as any).justPickedUpFromHand = false;
+            clearedFlag = true;
+          }
         }
       });
 
@@ -1952,12 +2018,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
             rafRef.current = undefined;
 
             // Dispatch events for HandPanel and MainMenu to detect hover
+            // 🔥 FIX: Use cursorSlotRef.current (source of truth)
             const eventData = {
               x: newX,
               y: newY,
               isOverMainMenu: false,
-              hasCards: cursorSlot.length > 0,
-              items: cursorSlot.map(item => ({ type: item.type }))
+              hasCards: cursorSlotRef.current.length > 0,
+              items: cursorSlotRef.current.map(item => ({ type: item.type }))
             };
 
             // Event for HandPanel to detect hover
@@ -2541,16 +2608,12 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       setResizeStart(null);
     }
 
-    if (dragThresholdRef.current.targetId) {
-      // No drag occurred (threshold not exceeded) - this was a click
-      // IMPORTANT: If item was added to slot via drag threshold, this is NOT a click!
-      const wasAddedToSlot = dragThresholdRef.current.addedToSlot;
-      const wasClickNotDrag = !wasAddedToSlot;
-      // 🔥 FIX: Use cursorSlotRef.current instead of cursorSlot state
-      // For hand cards, the state might not be updated yet due to React batching
-      const hadCursorSlot = cursorSlotRef.current.length > 0;
-      const targetId = dragThresholdRef.current.targetId; // 🔥 FIX: Save targetId BEFORE clearing
+    // 🔥 FIX: Save these values BEFORE clearing dragThresholdRef
+    // This preserves the information about how the item was added to the slot
+    const wasAddedViaDragThreshold = dragThresholdRef.current.addedToSlot === true;
+    const targetIdFromThreshold = dragThresholdRef.current.targetId;
 
+    if (dragThresholdRef.current.targetId) {
       dragThresholdRef.current = {
         initialX: 0,
         initialY: 0,
@@ -2558,62 +2621,52 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         addedToSlot: false,
         skipThreshold: false
       };
-
-      // Only drop cursor slot if this was truly a click (not drag threshold exceeded)
-      // IMPORTANT: Don't drop if Shift is held - user wants to keep item in slot
-      // 🔥 FIX: Don't drop if clicking on the SAME object that's in the slot (avoid race condition)
-      // 🔥 FIX: Use cursorSlotRef.current for latest value
-      // 🔥 SIMPLIFIED: For HAND cards, don't treat self-click as clickedOnSlotObject
-      // This prevents slot from being cleared before drag completes
-      const isShiftHeld = e?.shiftKey === true;
-
-      const clickedOnSlotObject = cursorSlotRef.current.some(item => {
-        if (item.id === targetId) {
-          // For HAND cards, self-click is normal (drag from hand), don't block
-          const isFromHand = (item as any).isFromHand;
-          if (isFromHand) {
-            return false;
-          }
-          return true;
-        }
-        return false;
-      });
-
-      if (wasClickNotDrag && hadCursorSlot && e && !isShiftHeld && !clickedOnSlotObject) {
-        dropCursorSlot(e.clientX, e.clientY, props);
-        cursorSlotLastAddedRef.current = Date.now();
-
-        // Don't continue to the normal drop logic below
-        return;
-      }
-
-      // 🔥 FIX: If clicked on slot object, clear the stale cursorSlot to prevent future issues
-      // IMPORTANT: Only clear if this was a CLICK, not a DRAG
-      // If it was a drag, the main drop logic below will handle it
-      if (clickedOnSlotObject && wasClickNotDrag) {
-        cursorSlotRef.current = [];
-        setCursorSlot([]);
-        setCursorPosition(null);
-        cursorPositionRef.current = null;
-        setCursorSlotSource(null);
-      }
     }
 
-    // Handle cursor slot dropping
-    // Drop if: slot has items AND there's a mouse event AND Shift is NOT held
-    // dropCursorSlot will handle the logic for hand panel, deck, or table
+    // 🔥 FIX: Handle cursor slot dropping when clicking on an object that's in the slot
+    // This clears stale cursorSlot to prevent future issues
     const isShiftHeld = e?.shiftKey === true;
+    const clickedOnSlotObject = targetIdFromThreshold && cursorSlotRef.current.some(item => item.id === targetIdFromThreshold);
+    const isFromHand = clickedOnSlotObject && cursorSlotRef.current.find(item => item.id === targetIdFromThreshold && (item as any).isFromHand);
 
-    // 🔥 FIX: Check if any item was just picked up from hand (using long press)
-    // The flag is cleared when user starts dragging (in handleMouseMove)
-    // So if flag is still set here, user hasn't moved yet, so don't drop
+    // 🔥 FIX: Check if cursorSlotSource indicates archetype tokens
+    // If source is 'shift' or 'archetype', don't clear the slot
+    const isFromArchetypeSource = cursorSlotSource === 'shift' || cursorSlotSource === 'archetype';
+
+    // 🔥 FIX: Only clear cursorSlot WITHOUT dropping if:
+    // 1. Object was NOT added via drag threshold (i.e., it was added via Shift+click or archetype click)
+    // 2. Object is from hand (should not be dropped immediately)
+    // 3. NOT from archetype source (don't clear when adding from archetype panel)
+    if (clickedOnSlotObject && !isFromHand && !wasAddedViaDragThreshold && !isFromArchetypeSource) {
+      cursorSlotRef.current = [];
+      setCursorSlot([]);
+      setCursorPosition(null);
+      cursorPositionRef.current = null;
+      setCursorSlotSource(null);
+      // Don't continue to drop logic below
+      return;
+    }
+
+    // 🔥 FIX: Handle cursor slot dropping for items in slot
+    // This works for BOTH systems - if slot has items on mouseup, drop them
+    // (unless Shift is held or item was just picked up from hand)
     const hasJustPickedUpFromHand = cursorSlotRef.current.some(item => (item as any).justPickedUpFromHand === true);
+    const hasItemsInSlot = cursorSlotRef.current.length > 0;
 
-    // Drop if: slot has items AND there's a mouse event AND Shift is NOT held AND not just picked up from hand
-    const shouldDropOnMouseUp = cursorSlotRef.current.length > 0 && e && !isShiftHeld && !hasJustPickedUpFromHand;
+    // 🔥 FIX: Don't drop if we're currently adding a token from archetype
+    // Check if cursor is over an archetype button, tokens panel
+    // 🔥 REMOVED: handToken check - was preventing drop of items from cursor slot when picked up from hand
+    const elementUnderCursor = e ? document.elementFromPoint(e.clientX, e.clientY) : null;
+    const archetypeButton = elementUnderCursor?.closest('[data-archetype-card]') as HTMLElement;
+    const tokensPanel = elementUnderCursor?.closest('[data-tokens-panel]') as HTMLElement;
+
+    const isAddingFromArchetype = isAddingTokenRef.current || archetypeButton || tokensPanel;
+
+    const shouldDropOnMouseUp = hasItemsInSlot && !isShiftHeld && !hasJustPickedUpFromHand && !isAddingFromArchetype && !isFromArchetypeSource && e;
 
     if (shouldDropOnMouseUp) {
       dropCursorSlot(e.clientX, e.clientY, props);
+      cursorSlotLastAddedRef.current = Date.now();
     }
 
     // 🔥 SAFETY: Always clear dragThresholdRef at the end of handleMouseUp

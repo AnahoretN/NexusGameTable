@@ -488,6 +488,7 @@ const TokenStackItem = memo(({
       data-card-index={actualIndex}
       data-token-stack="true"
       data-token-ids={JSON.stringify(tokenIds)}
+      data-hand-token="true"
       className="relative inline-block group"
       style={{
         width: scaledContainerSize,
@@ -973,9 +974,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const handCardOrder = player?.handCardOrder || [];
 
   // Get both cards and tokens in hand
-  // 🔥 SIMPLIFIED: Don't use inCursorSlot as filter for HAND cards
-  // inCursorSlot is only used for TABLE cards (to hide them during drag)
-  // HAND cards are always shown if location === HAND and ownerId matches
+  // Items in cursor slot should NOT appear in hand panel
   const handItems = allHandObjects.filter((item): item is Card | Token => {
     // IMPORTANT: Allow cards without ownerId (e.g., from pool panel) to be shown
     // They will get ownerId when dropped to hand panel
@@ -983,14 +982,18 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       return false;
     }
 
+    // Filter out items in cursor slot (they should disappear from hand)
+    if ((item as any).inCursorSlot) {
+      return false;
+    }
+
     // For cards, check location - HAND cards always visible
     if (item.type === ItemType.CARD) {
       return (item as Card).location === CardLocation.HAND;
     }
-    // For tokens, check if not on table (in hand) AND not in cursor slot
-    // Tokens in cursor slot should NOT appear in hand panel
+    // For tokens, check if not on table (in hand)
     if (item.type === ItemType.TOKEN) {
-      return !item.isOnTable && !(item as any).inCursorSlot;
+      return !item.isOnTable;
     }
     return false;
   });
@@ -1540,27 +1543,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       // Only check for TABLE cards to prevent duplicate drags
       const isHandCard = card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND;
       if (card && (isHandCard || !pickingUpCardIds.has(cardId))) {
-        // Check if we need to drop existing cursor slot items first
-        let shouldDropFirst = false;
-
-        if (card.type === ItemType.TOKEN) {
-          const token = card as Token;
-          if (cursorSlotHasCards() || !isCursorSlotSameTokenType(token)) {
-            shouldDropFirst = true;
-          }
-        } else {
-          const tokensInSlot = getTokensInCursorSlot();
-          const cardsInSlot = Object.values(objects).filter(obj =>
-            obj.type === ItemType.CARD && (obj as any).inCursorSlot === true
-          );
-          if (tokensInSlot.length > 0 || cardsInSlot.length > 0) {
-            shouldDropFirst = true;
-          }
-        }
-
-        if (shouldDropFirst) {
-          dropCursorSlotToHand();
-        }
+        // 🔥 REMOVED: shouldDropFirst logic - we want to allow multiple items in cursor slot
+        // Items should accumulate in the slot and be dropped together when user clicks
 
         // Only track pickingUpCardIds for TABLE cards
         if (!isHandCard) {
@@ -1712,67 +1696,8 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   // Handle mouse up
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
-    // Check if this was a quick click on a card/token (not a drag)
-    if (longPressCardRef.current && !cardPickedUpRef.current) {
-      const dragDuration = Date.now() - longPressCardRef.current.startTime;
-      const dragDistance = Math.sqrt(
-        Math.pow(e.clientX - longPressCardRef.current.startX, 2) +
-        Math.pow(e.clientY - longPressCardRef.current.startY, 2)
-      );
-
-      // If it was a quick click with minimal movement, add to cursor slot (like TokensPanel)
-      if (dragDuration < 200 && dragDistance < 10) {
-        const cardId = longPressCardRef.current.cardId;
-        const card = objects[cardId] as Card | Token;
-
-        // 🔥 SIMPLIFIED: For HAND cards, always allow pickup
-        // Clear stale inCursorSlot if present, don't check pickingUpCardIds
-        const isHandCard = card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND;
-        if (isHandCard && (card as any).inCursorSlot) {
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: cardId,
-              updates: { inCursorSlot: false }
-            }
-          });
-        }
-
-        if (card && (isHandCard || !pickingUpCardIds.has(cardId))) {
-          // Only track pickingUpCardIds for TABLE cards
-          if (!isHandCard) {
-            setPickingUpCardIds(prev => new Set([...prev, cardId]));
-          }
-          cardPickedUpRef.current = true;
-
-          // Pass card data directly to ensure handler has access to it
-          const cardOverride: any = { ...card };
-          if (card.type === ItemType.CARD && (card as Card).location === CardLocation.HAND) {
-            delete cardOverride.x;
-            delete cardOverride.y;
-          }
-
-          window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
-            detail: {
-              cardId,
-              clientX: e.clientX,
-              clientY: e.clientY,
-              source: 'hold',
-              cardOverride,
-              clickOffsetX_PX: longPressCardRef.current.clickOffsetX_PX,
-              clickOffsetY_PX: longPressCardRef.current.clickOffsetY_PX,
-              isFromHand: true
-            }
-          }));
-
-          // Clear refs and return early (don't process drag reordering)
-          longPressCardRef.current = null;
-          setDragIndex(null);
-          dragStartPosRef.current = null;
-          return;
-        }
-      }
-    }
+    // 🔥 REMOVED: Single-click pickup from hand panel
+    // Now only Shift+click or drag (2vu distance) will add to cursor slot
 
     // 🔥 FIX: Clear from pickingUpCardIds when pickup is cancelled
     // This prevents the card from being blocked on next pickup attempt
@@ -1872,21 +1797,59 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     return undefined;
   }, [contextMenu, scaleMenu]);
 
+  // 🔥 NEW: Handle mousedown on hand tokens to set isAddingToken flag
+  // This prevents cursor slot from being dropped when clicking on tokens in hand
+  useEffect(() => {
+    const handleMouseDownCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Find if we're clicking on a hand token
+      const handToken = target.closest('[data-hand-token]') as HTMLElement;
+      // Check if clicking on context menu or settings button - don't set flag in that case
+      const contextMenu = target.closest('[data-context-menu]') as HTMLElement;
+      if (handToken && !contextMenu) {
+        handToken.dataset.isAddingToken = 'true';
+      }
+    };
+
+    const handleMouseUpCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const handToken = target.closest('[data-hand-token]') as HTMLElement;
+      if (handToken) {
+        // Clear the flag after a short delay
+        setTimeout(() => {
+          delete handToken.dataset.isAddingToken;
+        }, 100);
+      }
+    };
+
+    // Add capture phase listeners
+    document.addEventListener('mousedown', handleMouseDownCapture, { capture: true } as any);
+    document.addEventListener('mouseup', handleMouseUpCapture, { capture: true } as any);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDownCapture, { capture: true } as any);
+      document.removeEventListener('mouseup', handleMouseUpCapture, { capture: true } as any);
+    };
+  }, []);
+
   // Helper function to count items (cards + tokens) for a player
-  // 🔥 SIMPLIFIED: Don't use inCursorSlot or pickingUpCardIds for counting
-  // Just count by location and ownership
+  // Items in cursor slot should NOT be counted in hand
   const countCardsForPlayer = useCallback((playerId: string) => {
     return allHandObjects.filter(item => {
       if (item.ownerId !== playerId) return false;
+
+      // Filter out items in cursor slot
+      if ((item as any).inCursorSlot) {
+        return false;
+      }
 
       // For cards, check location
       if (item.type === ItemType.CARD) {
         return (item as Card).location === CardLocation.HAND;
       }
-      // For tokens, check if not on table (in hand) AND not in cursor slot
-      // Tokens in cursor slot should NOT be counted in hand
+      // For tokens, check if not on table (in hand)
       if (item.type === ItemType.TOKEN) {
-        return !item.isOnTable && !(item as any).inCursorSlot;
+        return !item.isOnTable;
       }
       return false;
     }).length;
