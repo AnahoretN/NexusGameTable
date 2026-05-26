@@ -1,6 +1,8 @@
 import React, { memo, useMemo, useCallback } from 'react';
-import { Card, Token, Counter, ItemType, TableObject, TokenShape, ContextAction } from '../types';
+import { Card, Token, Counter, ItemType, TableObject, TokenShape, ContextAction, CardShape, CardOrientation } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
+import { SvgDeckShape } from './SvgDeckShape';
+import { isGeometricCardShape } from '../utils/shapeUtils';
 import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp, ArrowDown, Lock, Unlock, Shuffle, Search, Hand, Pin, Undo } from 'lucide-react';
 import { getCardSettings } from '../utils/cardUtils';
 import { executeActionButtonUniversal } from '../utils/actionButtonsHandler';
@@ -177,6 +179,11 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
 
     const backgroundStyles = getBackgroundStyles();
 
+    // Get card shape from card or deck
+    const cardShape = card.shape || deck?.cardShape || CardShape.POKER;
+    const cardOrientation = deck?.cardOrientation || CardOrientation.VERTICAL;
+    const isGeometric = isGeometricCardShape(cardShape);
+
     return (
       <div className="group relative">
         <div
@@ -191,57 +198,112 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
             cursor: isDragging ? 'grabbing' : 'grab',
             ...style
           }}
-          className={`bg-slate-700 border border-slate-600 rounded shadow-lg relative ${className}`}
+          className={`relative ${className}`}
           onMouseDown={handleObjectMouseDown}
           onContextMenu={onContextMenu}
         >
-          {card.faceUp ? (
-            <div className="w-full h-full rounded overflow-hidden">
-              {card.spriteUrl && card.spriteColumns && card.spriteRows && card.spriteIndex !== undefined ? (
-                <LazyBackgroundImage
-                  src={card.spriteUrl}
-                  className="w-full h-full"
-                  style={{
-                    backgroundSize: `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`,
-                    backgroundPosition: `${((card.spriteIndex % card.spriteColumns) / (card.spriteColumns - 1)) * 100}% ${(Math.floor(card.spriteIndex / card.spriteColumns) / (card.spriteRows - 1)) * 100}%`,
-                    backgroundRepeat: 'no-repeat',
-                    imageRendering: 'pixelated'
-                  }}
-                  rootMargin="100px"
-                  threshold={0.01}
-                />
-              ) : card.content ? (
-                <LazyBackgroundImage
-                  src={card.content}
-                  className="w-full h-full"
-                  style={{
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center'
-                  }}
-                  rootMargin="100px"
-                  threshold={0.01}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-white text-xs p-1">
-                  {card.name}
+          {isGeometric ? (
+            <SvgDeckShape
+              shape={cardShape}
+              width={cardWidth}
+              height={cardHeight}
+              backgroundColor={card.faceUp ? 'white' : '#1e293b'}
+              borderColor="#374151"
+              borderWidth={2}
+              orientation={cardOrientation}
+            >
+              <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                {card.faceUp ? (
+                  card.spriteUrl && card.spriteColumns && card.spriteRows && card.spriteIndex !== undefined ? (
+                    <LazyBackgroundImage
+                      src={card.spriteUrl}
+                      className="w-full h-full"
+                      style={{
+                        backgroundSize: `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`,
+                        backgroundPosition: `${((card.spriteIndex % card.spriteColumns) / (card.spriteColumns - 1)) * 100}% ${(Math.floor(card.spriteIndex / card.spriteColumns) / (card.spriteRows - 1)) * 100}%`,
+                        backgroundRepeat: 'no-repeat',
+                        imageRendering: 'pixelated'
+                      }}
+                      rootMargin="100px"
+                      threshold={0.01}
+                    />
+                  ) : card.content ? (
+                    <LazyBackgroundImage
+                      src={card.content}
+                      className="w-full h-full"
+                      style={{
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }}
+                      rootMargin="100px"
+                      threshold={0.01}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-900 text-xs p-1">
+                      {card.name}
+                    </div>
+                  )
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-full border-2 border-slate-600 opacity-50"></div>
+                  </div>
+                )}
+              </div>
+            </SvgDeckShape>
+          ) : (
+            <div
+              className={`bg-slate-700 border border-slate-600 rounded shadow-lg relative`}
+              style={{ width: '100%', height: '100%' }}
+            >
+              {card.faceUp ? (
+                <div className="w-full h-full rounded overflow-hidden">
+                  {card.spriteUrl && card.spriteColumns && card.spriteRows && card.spriteIndex !== undefined ? (
+                    <LazyBackgroundImage
+                      src={card.spriteUrl}
+                      className="w-full h-full"
+                      style={{
+                        backgroundSize: `${card.spriteColumns * 100}% ${card.spriteRows * 100}%`,
+                        backgroundPosition: `${((card.spriteIndex % card.spriteColumns) / (card.spriteColumns - 1)) * 100}% ${(Math.floor(card.spriteIndex / card.spriteColumns) / (card.spriteRows - 1)) * 100}%`,
+                        backgroundRepeat: 'no-repeat',
+                        imageRendering: 'pixelated'
+                      }}
+                      rootMargin="100px"
+                      threshold={0.01}
+                    />
+                  ) : card.content ? (
+                    <LazyBackgroundImage
+                      src={card.content}
+                      className="w-full h-full"
+                      style={{
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }}
+                      rootMargin="100px"
+                      threshold={0.01}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white text-xs p-1">
+                      {card.name}
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <LazyBackgroundImage
+                  src={backgroundStyles.backgroundImage?.replace(/url\(['"]?([^'"]+)['"]?\)/, '$1') || ''}
+                  className="w-full h-full rounded flex items-center justify-center"
+                  style={{
+                    backgroundSize: backgroundStyles.backgroundSize,
+                    backgroundPosition: backgroundStyles.backgroundPosition,
+                    backgroundRepeat: backgroundStyles.backgroundRepeat
+                  }}
+                  rootMargin="100px"
+                  threshold={0.01}
+                >
+                  {/* Decorative element for card back */}
+                  <div className="w-8 h-8 rounded-full border-2 border-slate-600 opacity-50"></div>
+                </LazyBackgroundImage>
               )}
             </div>
-          ) : (
-            <LazyBackgroundImage
-              src={backgroundStyles.backgroundImage?.replace(/url\(['"]?([^'"]+)['"]?\)/, '$1') || ''}
-              className="w-full h-full rounded flex items-center justify-center"
-              style={{
-                backgroundSize: backgroundStyles.backgroundSize,
-                backgroundPosition: backgroundStyles.backgroundPosition,
-                backgroundRepeat: backgroundStyles.backgroundRepeat
-              }}
-              rootMargin="100px"
-              threshold={0.01}
-            >
-              {/* Decorative element for card back */}
-              <div className="w-8 h-8 rounded-full border-2 border-slate-600 opacity-50"></div>
-            </LazyBackgroundImage>
           )}
 
           {/* Action buttons for cards - positioned relative to card */}

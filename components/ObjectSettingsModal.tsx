@@ -952,7 +952,17 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
 
       // Check if cardShape changed
       if (shapeChanged) {
-        // Dispatch event to update all cards in this deck with new shape
+        // Dispatch action to update all cards in this deck with new shape
+        if (dispatch) {
+          dispatch({
+            type: 'UPDATE_DECK_CARDS_SHAPE',
+            payload: {
+              deckId,
+              cardShape: newCardShape
+            }
+          });
+        }
+        // Also dispatch event for any components that might be listening
         window.dispatchEvent(new CustomEvent('update-deck-cards-shape', {
           detail: {
             deckId,

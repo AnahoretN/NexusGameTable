@@ -2547,6 +2547,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             x: deck.x, // Position card at deck location
             y: deck.y, // Position card at deck location
             inCursorSlot: true, // Mark as in cursor slot
+            shape: deck.cardShape || CardShape.POKER, // Inherit shape from deck
             // Store pending data for when card is dropped
             __pendingPlayTop: pendingPlayTop as any,
         };
@@ -4324,6 +4325,45 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       });
 
       // Clear card dimensions cache to force recalculation with new dimensions
+      clearCardDimensionsCache();
+
+      return {
+        ...state,
+        objects: newObjects,
+      };
+    }
+    case 'UPDATE_DECK_CARDS_SHAPE': {
+      const deck = state.objects[action.payload.deckId] as Deck;
+      if (!deck || deck.type !== ItemType.DECK) return state;
+
+      const { cardShape } = action.payload;
+
+      // Update deck settings
+      const updatedDeck: Deck = {
+        ...deck,
+        cardShape,
+      };
+
+      // Update all cards in this deck - set their individual shape
+      // to match the deck's card shape
+      const newObjects = { ...state.objects };
+      newObjects[deck.id] = updatedDeck;
+
+      // Find all cards belonging to this deck and set their shape
+      Object.values(state.objects).forEach(obj => {
+        if (obj.type === ItemType.CARD) {
+          const card = obj as Card;
+          if (card.deckId === deck.id) {
+            // Set individual shape on the card itself
+            newObjects[card.id] = {
+              ...card,
+              shape: cardShape,
+            };
+          }
+        }
+      });
+
+      // Clear card dimensions cache to force recalculation with new shape
       clearCardDimensionsCache();
 
       return {

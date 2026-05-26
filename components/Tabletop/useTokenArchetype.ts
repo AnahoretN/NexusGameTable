@@ -240,7 +240,16 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       }
 
       // Check if cursor is over hand panel - drop cards/tokens to hand
-      const handPanel = elementAtCursor?.closest('[data-hand-panel="true"]');
+      // Use precise coordinate check like pool panel, not closest()
+      let handPanel = false;
+      const handPanelElements = document.querySelectorAll('[data-hand-panel="true"]');
+      for (const element of handPanelElements) {
+        const rect = element.getBoundingClientRect();
+        if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+          handPanel = true;
+          break;
+        }
+      }
       if (handPanel) {
         const items = itemsToDrop.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN);
         if (items.length > 0) {

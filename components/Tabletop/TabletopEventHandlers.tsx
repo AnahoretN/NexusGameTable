@@ -706,7 +706,16 @@ const dropCursorSlot = (
     }
 
     // Check if dropping to other panels (Character, Hand, etc.) - disallow
-    const handPanel = elementAtCursor?.closest('[data-hand-panel="true"]');
+    // Use precise coordinate check like pool panel, not closest()
+    let handPanel = false;
+    const handPanelElements = document.querySelectorAll('[data-hand-panel="true"]');
+    for (const element of handPanelElements) {
+      const rect = element.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        handPanel = true;
+        break;
+      }
+    }
     const characterPanel = elementAtCursor?.closest('[data-character-panel]');
     const otherPanel = handPanel || characterPanel;
 
@@ -773,7 +782,16 @@ const dropCursorSlot = (
   }
 
   // Check if cursor is over hand panel - drop cards to hand instead of table
-  const handPanel = elementAtCursor?.closest('[data-hand-panel="true"]');
+  // Use precise coordinate check like pool panel, not closest()
+  let handPanel = false;
+  const handPanelElements = document.querySelectorAll('[data-hand-panel="true"]');
+  for (const element of handPanelElements) {
+    const rect = element.getBoundingClientRect();
+    if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+      handPanel = true;
+      break;
+    }
+  }
   if (handPanel) {
 
     // Filter only CARDS, TOKENS and COUNTERS from cursor slot (allow all in hand panel)

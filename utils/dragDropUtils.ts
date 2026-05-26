@@ -287,9 +287,11 @@ export function analyzeDropTarget(
     };
   }
 
-  // Check for hand panel
-  for (const element of document.elementsFromPoint(x, y)) {
-    if (element.closest('[data-hand-panel]')) {
+  // Check for hand panel - use precise coordinate check
+  const handPanelElements = document.querySelectorAll('[data-hand-panel="true"]');
+  for (const element of handPanelElements) {
+    const rect = element.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
       return { type: 'hand' };
     }
   }

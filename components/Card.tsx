@@ -29,6 +29,7 @@ interface CardProps {
   cardHeight?: number;
   cardNamePosition?: CardNamePosition;
   cardOrientation?: CardOrientation;
+  cardShape?: CardShape; // Shape from deck (overrides card.shape if card.shape is undefined)
   // When true, orientation affects dimensions but does NOT rotate the card content
   disableRotationTransform?: boolean;
   // When true, all pointer events are disabled (for cursor slot drag preview)
@@ -46,8 +47,8 @@ interface CardProps {
   language?: AppLanguage;
 }
 
-export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig, deckShowTooltipImage, deckTooltipScale, shouldSeeCardFace = true, language = 'en' }) => {
-  const shape = card.shape || CardShape.POKER;
+export const Card: React.FC<CardProps> = ({ card, onClick, onFlip, isHovered, canFlip, showActionButtons, onToHand, onReturnToDeck, actionButtons, onActionButtonClick, overrideWidth, overrideHeight, cardWidth, cardHeight, cardNamePosition, cardOrientation, cardShape, disableRotationTransform, disablePointerEvents, skipTooltip, deckSpriteConfig, deckShowTooltipImage, deckTooltipScale, shouldSeeCardFace = true, language = 'en' }) => {
+  const shape = card.shape || cardShape || CardShape.POKER;
   const orientation = cardOrientation ?? CardOrientation.VERTICAL;
 
   // Convert img_ref:// URLs to displayable URLs

@@ -30,6 +30,7 @@ export function useCursorSlotHover(
   const [isCursorOver, setIsCursorOver] = useState(false);
   const onDropRef = useRef(onDrop);
   const justDroppedRef = useRef(false);
+  const lastKnownPositionRef = useRef<{ x: number; y: number } | null>(null);
 
   // Keep callback ref in sync
   useEffect(() => {
@@ -45,6 +46,9 @@ export function useCursorSlotHover(
 
       const customEvent = e as CustomEvent<CursorSlotMoveEvent>;
       const { x, y, hasCards, isDraggingCard, items } = customEvent.detail;
+
+      // Store last known position for use in handleCursorSlotDropped
+      lastKnownPositionRef.current = { x, y };
 
       // Check if we should show hover based on options
       if (requireCards || requireDraggingCard) {
@@ -80,8 +84,33 @@ export function useCursorSlotHover(
     };
 
     const handleCursorSlotDropped = () => {
+      // Only call onDrop if cursor was actually over the element when drop happened
+      // Use the last known position from cursor-slot-move event
+      const lastPos = lastKnownPositionRef.current;
+
       setIsCursorOver(false);
-      onDropRef.current?.();
+
+      if (!lastPos) {
+        // No position data, don't call onDrop
+        return;
+      }
+
+      const element = elementRef.current;
+      if (!element) {
+        return;
+      }
+
+      // Check if the last known position was over the element
+      const rect = element.getBoundingClientRect();
+      const wasOver = lastPos.x >= rect.left && lastPos.x <= rect.right &&
+                     lastPos.y >= rect.top && lastPos.y <= rect.bottom;
+
+      if (wasOver) {
+        onDropRef.current?.();
+      }
+
+      // Clear the stored position
+      lastKnownPositionRef.current = null;
 
       // Set flag to ignore move events for a longer time to prevent race conditions
       // This prevents the purple outline from reappearing after drop

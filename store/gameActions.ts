@@ -73,6 +73,7 @@ export type Action =
   | BaseAction<'SET_PIXELS_PER_VU', { pixelsPerVU: number }>
   | BaseAction<'UPDATE_HAND_CARD_ORDER', { playerId: string; cardOrder: string[] }>
   | BaseAction<'UPDATE_DECK_CARD_DIMENSIONS', { deckId: string; cardWidth?: number; cardHeight?: number }>
+  | BaseAction<'UPDATE_DECK_CARDS_SHAPE', { deckId: string; cardShape: import('../types').CardShape }>
   | BaseAction<'MILL_CARD_TO_BOTTOM', { cardId: string; deckId: string }>
   | BaseAction<'MILL_CARD_TO_PILE', { cardId: string; deckId: string; pileId: string }>
   | BaseAction<'TOGGLE_SHOW_TOP_CARD', { deckId: string; pileId?: string }>
