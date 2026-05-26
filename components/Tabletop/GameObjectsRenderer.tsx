@@ -125,22 +125,63 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
   }, [visibleTableObjects, draggingId, selectedHyperscaleLayerIds]);
 
   // DEBUG: Check for duplicate DOM elements for effects
+  // Use timeout to avoid catching transient React render states during drag operations
   useEffect(() => {
-    const effectElements = document.querySelectorAll('[data-object-type="EFFECT_TEMPLATE"]');
-    const effectIdCounts: Record<string, number> = {};
+    // First check if there are duplicates in the visibleTableObjects array itself
+    const effectIds = visibleTableObjects
+      .filter(obj => obj.type === ItemType.EFFECT_TEMPLATE)
+      .map(obj => obj.id);
 
-    effectElements.forEach(el => {
-      const objectId = el.getAttribute('data-object-id');
-      if (objectId) {
-        effectIdCounts[objectId] = (effectIdCounts[objectId] || 0) + 1;
-      }
+    const idCounts: Record<string, number> = {};
+    effectIds.forEach(id => {
+      idCounts[id] = (idCounts[id] || 0) + 1;
     });
 
-    Object.entries(effectIdCounts).forEach(([id, count]) => {
-      if (count > 1) {
-        console.error(`[GameObjectsRenderer] DUPLICATE DOM ELEMENTS for effect ${id}! Found ${count} elements.`);
-      }
-    });
+    const duplicateIds = Object.entries(idCounts).filter(([_, count]) => count > 1);
+    if (duplicateIds.length > 0) {
+      // Duplicate IDs found
+    }
+
+    const timeoutId = setTimeout(() => {
+      // Exclude cursor slot effects AND pool panel effects from duplicate check
+      const effectElements = Array.from(document.querySelectorAll('[data-object-type="EFFECT_TEMPLATE"]'))
+        .filter(el => {
+          // Exclude cursor slot effects (have the attribute directly)
+          if (el.hasAttribute('data-cursor-slot-effect')) {
+            return false;
+          }
+          // Exclude pool panel effects (inside absolute overflow-hidden container)
+          const parent = el.parentElement;
+          if (parent && parent.classList.contains('overflow-hidden') &&
+              parent.classList.contains('absolute')) {
+            // This is likely a pool panel effect
+            return false;
+          }
+          return true;
+        });
+
+      const effectIdCounts: Record<string, number> = {};
+      const effectElementsById: Record<string, Element[]> = {};
+
+      effectElements.forEach(el => {
+        const objectId = el.getAttribute('data-object-id');
+        if (objectId) {
+          effectIdCounts[objectId] = (effectIdCounts[objectId] || 0) + 1;
+          if (!effectElementsById[objectId]) {
+            effectElementsById[objectId] = [];
+          }
+          effectElementsById[objectId].push(el);
+        }
+      });
+
+      Object.entries(effectIdCounts).forEach(([id, count]) => {
+        if (count > 1) {
+          // Duplicate DOM elements for effect found
+        }
+      });
+    }, 100); // Wait 100ms for React to stabilize
+
+    return () => clearTimeout(timeoutId);
   }, [visibleTableObjects]);
 
   // State for explosive dice animation (scale value and phase for each dice)
@@ -850,11 +891,6 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
                 .map(action => buttonConfigs[action])
                 .filter(Boolean);
 
-              // Add rollGroup button if dice is in a group and not already in buttons
-              if (isInGroup && !actionButtons.includes('rollGroup')) {
-                buttons.push(buttonConfigs.rollGroup);
-              }
-
               // Limit to 4 buttons
               buttons = buttons.slice(0, 4);
 
@@ -932,6 +968,11 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     }
 
     if (obj.type === ItemType.EFFECT_TEMPLATE) {
+      // 🔥 FIX: Don't render effect templates that are in cursor slot
+      // They are rendered by CursorSlotVisualization instead
+      if ((obj as any).inCursorSlot === true) {
+        return null;
+      }
       return renderEffectTemplate(obj, globalZIndex);
     }
 

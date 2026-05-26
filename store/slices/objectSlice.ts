@@ -162,11 +162,8 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
     case 'SET_PIVOT_POINT': {
       const { objectId, pivot } = action.payload;
       if (!state.objects[objectId]) {
-        console.warn('[SET_PIVOT_POINT] Object not found:', objectId);
         return state;
       }
-
-      console.log('[SET_PIVOT_POINT] Updating pivot for', objectId, 'to', pivot);
 
       return {
         ...state,

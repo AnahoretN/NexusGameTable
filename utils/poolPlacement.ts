@@ -428,7 +428,7 @@ export function dropObjectsToPool(
 
 /**
  * Get cursor slot objects (all draggable objects in cursor slot)
- * Supports: CARD, TOKEN, DECK, DICE_OBJECT, RANDOMIZER, DRAWING, BATTLEFIELD_CELL, BOARD, NEXUS_BOARD, NEXUS_CELL, COUNTER
+ * Supports: CARD, TOKEN, DECK, DICE_OBJECT, RANDOMIZER, DRAWING, BATTLEFIELD_CELL, BOARD, NEXUS_BOARD, NEXUS_CELL, COUNTER, EFFECT_TEMPLATE
  * Excludes: PANEL, WINDOW (UI objects), cards in DECK location
  */
 export function getCursorSlotObjects(objects: Record<string, TableObject>): TableObject[] {
@@ -457,7 +457,8 @@ export function getCursorSlotObjects(objects: Record<string, TableObject>): Tabl
       ItemType.BOARD,
       ItemType.NEXUS_BOARD,
       ItemType.NEXUS_CELL,
-      ItemType.COUNTER
+      ItemType.COUNTER,
+      ItemType.EFFECT_TEMPLATE
     ].includes(obj.type);
   });
 

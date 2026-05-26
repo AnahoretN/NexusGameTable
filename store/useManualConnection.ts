@@ -116,7 +116,6 @@ class DataChannelAdapter {
     };
 
     this.dc.onerror = (error: any) => {
-      console.error('[DataChannelAdapter] Data channel ERROR', 'peer:', this.peer);
       this.emit('error', error);
     };
 
@@ -325,13 +324,11 @@ export function useManualConnection() {
   const setupConnection = useCallback((adapter: DataChannelAdapter) => {
     // Check if we're already tracking this exact adapter
     if (connectionRef.current === adapter) {
-      console.log('[Manual P2P] setupConnection: Adapter already set up, skipping');
       return;
     }
 
     // Clean up old adapter if exists
     if (connectionRef.current && connectionRef.current !== adapter) {
-      console.log('[Manual P2P] setupConnection: Cleaning up old adapter');
       // Remove our handlers from old adapter by removing all listeners
       // (we can't selectively remove only our handlers since on() uses anonymous functions)
       connectionRef.current._handlers = {};
@@ -382,9 +379,6 @@ export function useManualConnection() {
 
       // Check for TURN servers
       const hasTurnServers = rtcConfig.iceServers?.some(s => s.urls?.includes('turn'));
-      if (hasTurnServers) {
-        console.log('[Manual P2P Host] 🔒 Using TURN servers for connection');
-      }
 
       const pc = new RTCPeerConnection(rtcConfig);
 
@@ -452,10 +446,8 @@ export function useManualConnection() {
 
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
-          console.log('[Manual P2P Host] ✅ Connection established!');
           setState(prev => ({ ...prev, noCandidates: false }));
         } else if (pc.connectionState === 'failed') {
-          console.error('[Manual P2P Host] ❌ ICE connection failed!');
           // Set noCandidates flag and error when connection fails
           setState(prev => ({
             ...prev,
@@ -486,14 +478,13 @@ export function useManualConnection() {
           if (type.includes('relay')) relayCandidateCount++;
         } else {
           if (candidatesGathered === 0) {
-            console.error('[Manual P2P] ❌ No ICE candidates gathered!');
+            // No ICE candidates gathered
           } else if (relayCandidateCount === 0 && srflxCandidateCount === 0) {
-            console.warn('[Manual P2P] ⚠️ Only local candidates - TURN servers not responding!');
+            // Only local candidates - TURN servers not responding
           }
         }
       };
     } catch (error) {
-      console.error('[Manual P2P] Error creating offer:', error);
       setState(prev => ({ ...prev, step: 'failed', error: String(error) }));
     }
   }, []);
@@ -501,8 +492,6 @@ export function useManualConnection() {
   // Guest: Connect to Host
   const connectToHost = useCallback(async (offerCode: string, guestName: string = 'Guest Player', localDispatch?: React.Dispatch<Action>) => {
     try {
-      console.log('[Manual P2P Guest] 🔵 Starting connection to host...');
-
       // Check WebRTC support first
       const supportCheck = checkWebRTCSupport();
       if (!supportCheck.supported) {
@@ -532,9 +521,6 @@ export function useManualConnection() {
 
       // Check for TURN servers
       const hasTurnServers = rtcConfig.iceServers?.some(s => s.urls?.includes('turn'));
-      if (hasTurnServers) {
-        console.log('[Manual P2P Guest] 🔒 Using TURN servers for connection');
-      }
 
       const pc = new RTCPeerConnection(rtcConfig);
 
@@ -562,8 +548,6 @@ export function useManualConnection() {
 
         // When data channel opens, register the guest player with the host
         adapter.on('open', () => {
-          console.log('[Manual P2P Guest] 🎉 Connection to host SUCCESSFUL!');
-
           // Add ourselves locally (only once)
           if (dispatch) {
             dispatch({ type: 'ADD_PLAYER', payload: myPlayer });
@@ -592,8 +576,6 @@ export function useManualConnection() {
         let resolved = false;
         const timeout = setTimeout(() => {
           if (!resolved) {
-            console.warn('[Manual P2P] Guest: ICE gathering timeout (10s) - using candidates gathered so far');
-            console.warn('[Manual P2P] This may indicate network issues - check firewall/VPN');
             resolved = true;
             resolve();
           }
@@ -605,7 +587,6 @@ export function useManualConnection() {
           return;
         }
         pc.onicegatheringstatechange = () => {
-          console.log('[Manual P2P] Guest ICE gathering state:', pc.iceGatheringState);
           if (pc.iceGatheringState === 'complete' && !resolved) {
             clearTimeout(timeout);
             resolved = true;
@@ -660,11 +641,9 @@ export function useManualConnection() {
       // Set up connection state change handler BEFORE checking current state
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
-          console.log('[Manual P2P Guest] ✅ Connection established!');
           // Only now set step to 'connected'
           setState(prev => ({ ...prev, step: 'connected', noCandidates: false }));
         } else if (pc.connectionState === 'failed') {
-          console.error('[Manual P2P Guest] ❌ ICE connection failed!');
           // Set noCandidates flag when connection fails
           setState(prev => ({ ...prev, noCandidates: true }));
         }
@@ -690,14 +669,13 @@ export function useManualConnection() {
           if (type.includes('relay')) relayCandidateCount++;
         } else {
           if (candidatesGathered === 0) {
-            console.error('[Manual P2P] ❌ No ICE candidates gathered!');
+            // No ICE candidates gathered
           } else if (relayCandidateCount === 0 && srflxCandidateCount === 0) {
-            console.warn('[Manual P2P] ⚠️ Only local candidates - TURN servers not responding!');
+            // Only local candidates - TURN servers not responding
           }
         }
       };
     } catch (error) {
-      console.error('[Manual P2P] Error connecting:', error);
       setState(prev => ({ ...prev, step: 'failed', error: String(error) }));
     }
   }, []);
@@ -718,10 +696,8 @@ export function useManualConnection() {
         sdp: answerMessage.sdp
       }));
 
-      console.log('[Manual P2P Host] ✅ Connection established!');
       setState(prev => ({ ...prev, step: 'connected', noCandidates: false }));
     } catch (error) {
-      console.error('[Manual P2P] Error processing answer:', error);
       setState(prev => ({ ...prev, step: 'failed', error: String(error) }));
     }
   }, []);

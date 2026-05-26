@@ -107,7 +107,6 @@ async function preloadEffectImage(src: string): Promise<void> {
     try {
       resolvedSrc = await getAssetURL(src);
     } catch (error) {
-      console.error('[EffectTemplateRenderer] Failed to resolve asset:', src, error);
       return; // Skip preload if we can't resolve
     }
   }

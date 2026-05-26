@@ -216,7 +216,6 @@ export function useIrohConnection(
 
         if (packList.length > 0) {
           // Send PACKS_NEEDED first, guest will request SYNC_STATE after loading packs
-          console.log('[Iroh] Host has packs, sending PACKS_NEEDED after HELO');
           setTimeout(() => {
             if (conn?.open) {
               conn.send({
@@ -234,7 +233,6 @@ export function useIrohConnection(
           }, 50);
         } else {
           // No packs needed, send SYNC_STATE immediately
-          console.log('[Iroh] Host has no packs, sending SYNC_STATE immediately');
           setTimeout(() => {
             if (conn?.open) {
               const state = stateRef.current;
@@ -281,7 +279,6 @@ export function useIrohConnection(
         const packList = Object.values(usedPacks);
 
         if (guestLoadedPacksRef.current.size >= packList.length && packList.length > 0) {
-          console.log('[Iroh] All packs loaded, sending SYNC_STATE');
           setTimeout(() => {
             if (conn?.open) {
               const state = stateRef.current;
@@ -325,10 +322,7 @@ export function useIrohConnection(
   // ============================================================================
 
   const initializeHost = useCallback(async () => {
-    console.log('[Iroh] Initializing host node...');
-
     if (irohSingleton.node?.isInitialized) {
-      console.log('[Iroh] Already initialized, reusing existing node');
       return;
     }
 
@@ -346,7 +340,6 @@ export function useIrohConnection(
       peerRef.current = peer;
 
       peer.on('open', (id: string) => {
-        console.log('[Iroh] Node ID:', id);
         setNodeId(id);
 
         // Create a simple ticket (just the nodeId for now, in real Iroh this would be a proper ticket)
@@ -371,7 +364,6 @@ export function useIrohConnection(
       });
 
       peer.on('connection', (conn: any) => {
-        console.log('[Iroh] Incoming connection from:', conn.peer);
         connectionsRef.current.push(conn);
         hostConnectionRef.current = conn;
 
@@ -380,30 +372,28 @@ export function useIrohConnection(
         });
 
         conn.on('open', () => {
-          console.log('[Iroh] Connection opened for:', conn.peer);
           updateP2PLoadingStep('p2p', 'success', 'P2P connection established');
           // Reset guest packs tracking for new connection
           guestLoadedPacksRef.current.clear();
         });
 
         conn.on('close', () => {
-          console.log('[Iroh] Connection closed:', conn.peer);
           connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
         });
 
         conn.on('error', (err: any) => {
-          console.error('[Iroh] Connection error:', err);
+          logger.error('[Iroh] Connection error:', err);
         });
       });
 
       peer.on('error', (err: any) => {
-        console.error('[Iroh] Peer error:', err);
+        logger.error('[Iroh] Peer error:', err);
         setConnectionStatus('disconnected');
         updateP2PLoadingStep('connect', 'error', 'Connection failed');
       });
 
     } catch (error) {
-      console.error('[Iroh] Failed to initialize:', error);
+      logger.error('[Iroh] Failed to initialize:', error);
       setConnectionStatus('disconnected');
       updateP2PLoadingStep('connect', 'error', 'Initialization failed');
     }
@@ -414,8 +404,6 @@ export function useIrohConnection(
   // ============================================================================
 
   const connectToHost = useCallback(async (ticketString: string, playerName: string) => {
-    console.log('[Iroh] Connecting to host with ticket...');
-
     resetP2PLoading();
     updateP2PLoadingStep('connect', 'loading', 'Parsing ticket...');
     setConnectionStatus('connecting');
@@ -431,7 +419,6 @@ export function useIrohConnection(
       }
 
       const hostNodeId = ticketData.nodeId || ticketString;
-      console.log('[Iroh] Host node ID:', hostNodeId);
 
       updateP2PLoadingStep('connect', 'success', 'Ticket parsed, creating node...');
       updateP2PLoadingStep('p2p', 'loading', 'Connecting to host node...');
@@ -443,14 +430,12 @@ export function useIrohConnection(
       // Set connection timeout
       const connectionTimeout = setTimeout(() => {
         if (connectionStatusRef.current !== 'connected') {
-          console.error('[Iroh] Connection timeout');
           updateP2PLoadingStep('connect', 'error', 'Connection timeout');
           setConnectionStatus('disconnected');
         }
       }, 15000); // 15 second timeout
 
       peer.on('open', (id: string) => {
-        console.log('[Iroh] Guest node ID:', id);
         setNodeId(id);
 
         updateP2PLoadingStep('p2p', 'loading', 'Establishing P2P connection...');
@@ -460,7 +445,6 @@ export function useIrohConnection(
 
         conn.on('open', () => {
           clearTimeout(connectionTimeout);
-          console.log('[Iroh] Connection to host opened!');
           setConnectionStatus('connected');
           updateP2PLoadingStep('p2p', 'success', 'Connected to host');
 
@@ -485,13 +469,12 @@ export function useIrohConnection(
 
         conn.on('close', () => {
           clearTimeout(connectionTimeout);
-          console.log('[Iroh] Connection to host closed');
           setConnectionStatus('disconnected');
         });
 
         conn.on('error', (err: any) => {
           clearTimeout(connectionTimeout);
-          console.error('[Iroh] Connection error:', err);
+          logger.error('[Iroh] Connection error:', err);
           setConnectionStatus('disconnected');
           updateP2PLoadingStep('p2p', 'error', 'Connection failed: ' + err.message);
         });
@@ -499,13 +482,13 @@ export function useIrohConnection(
 
       peer.on('error', (err: any) => {
         clearTimeout(connectionTimeout);
-        console.error('[Iroh] Peer error:', err);
+        logger.error('[Iroh] Peer error:', err);
         setConnectionStatus('disconnected');
         updateP2PLoadingStep('connect', 'error', 'Failed to create node: ' + err.message);
       });
 
     } catch (error) {
-      console.error('[Iroh] Failed to connect:', error);
+      logger.error('[Iroh] Failed to connect:', error);
       setConnectionStatus('disconnected');
       updateP2PLoadingStep('connect', 'error', 'Connection failed');
     }

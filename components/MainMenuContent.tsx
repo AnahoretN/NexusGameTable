@@ -2255,15 +2255,19 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       return action === 'lock' || action === 'hide' || action === 'show';
     }
 
+    // GM always sees core management buttons: lock, hide, clone, delete
+    // These buttons are always visible to GM regardless of object settings
+    if (currentUserIsGM) {
+      const coreManagementButtons: ContextAction[] = ['lock', 'hide', 'clone', 'delete'];
+      if (coreManagementButtons.includes(action)) {
+        return true;
+      }
+    }
+
     // Get actionButtons for this object
     let actionButtons: ContextAction[] | undefined;
     let allowedActions: ContextAction[] | undefined;
     let allowedActionsForGM: ContextAction[] | undefined;
-
-    // Special case: don't show roll button for GM on dice objects
-    if (obj.type === ItemType.DICE_OBJECT && action === 'roll' && currentUserIsGM) {
-      return false;
-    }
 
     if (obj.type === ItemType.CARD) {
       // Cards inherit from deck
@@ -2275,22 +2279,6 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       actionButtons = (obj as any).actionButtons;
       allowedActions = obj.allowedActions;
       allowedActionsForGM = obj.allowedActionsForGM;
-
-      // For dice objects, ensure basic actions are available for backward compatibility
-      if (obj.type === ItemType.DICE_OBJECT) {
-        const defaultDiceActions: ContextAction[] = ['lock', 'hide', 'clone', 'delete'];
-        // Merge default dice actions with existing actionButtons
-        if (!actionButtons || actionButtons.length === 0) {
-          actionButtons = defaultDiceActions;
-        } else {
-          // Ensure all default actions are included (union of existing + default)
-          actionButtons = [...new Set([...actionButtons, ...defaultDiceActions])];
-        }
-        // For GM, ensure all actions are allowed by default if not explicitly set
-        if (currentUserIsGM && !allowedActionsForGM) {
-          allowedActionsForGM = undefined; // undefined = all actions allowed
-        }
-      }
     }
 
     // First check if action is in actionButtons
@@ -2298,6 +2286,13 @@ const CategorySection: React.FC<CategorySectionProps> = ({
     const isInActionButtons = !actionButtons || actionButtons.length === 0 || actionButtons.includes(action);
     if (!isInActionButtons) {
       return false;
+    }
+
+    // For non-GM players, check both object settings and global permissions
+    if (!currentUserIsGM) {
+      // Check global permissions first
+      if (action === 'hide' && !canHideObjects) return false;
+      if (action === 'delete' && !canDeleteObjects) return false;
     }
 
     // Then check if user has permission to perform this action
@@ -2311,7 +2306,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
     // Check if this specific action is allowed
     return permissionsToCheck.includes(action);
-  }, [state.objects, currentUserIsGM]);
+  }, [state.objects, currentUserIsGM, canHideObjects, canDeleteObjects]);
 
   const handleCreateItem = (item: typeof category.items[number]) => {
     // Screen coordinates (center of viewport)
@@ -2532,9 +2527,9 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           sides,
           currentValue: 1,
           shape,
-          actionButtons: ['lock', 'hide', 'clone', 'delete'],
-          allowedActions: ['roll'], // Only roll for players
-          allowedActionsForGM: undefined, // GM has access to all actions except roll
+          actionButtons: ['roll'],
+          allowedActions: ['roll'],
+          allowedActionsForGM: ['roll'],
         };
         dispatch({ type: 'ADD_OBJECT', payload: dice });
         break;
@@ -2924,7 +2919,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                         <Copy size={10} />
                       </button>
                     )}
-                    {canConfigureObjects && (
+                    {(currentUserIsGM || canConfigureObjects) && (
                       <button
                         onClick={() => dispatch({
                           type: 'CREATE_WINDOW',
@@ -2938,34 +2933,6 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                         title="Properties"
                       >
                         <Settings size={10} />
-                      </button>
-                    )}
-                    {/* Type-specific action buttons */}
-                    {obj.type === ItemType.DICE_OBJECT && isActionButtonShown(obj, 'roll') && (
-                      <button
-                        onClick={() => dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id, rollGroup: false } })}
-                        className="p-1 hover:bg-purple-600 rounded text-purple-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
-                        title="Roll"
-                      >
-                        <RefreshCw size={10} />
-                      </button>
-                    )}
-                    {obj.type === ItemType.DECK && isActionButtonShown(obj, 'shuffleDeck') && (
-                      <button
-                        onClick={() => dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id } })}
-                        className="p-1 hover:bg-purple-600 rounded text-purple-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
-                        title="Shuffle"
-                      >
-                        <Shuffle size={10} />
-                      </button>
-                    )}
-                    {obj.type === ItemType.DECK && isActionButtonShown(obj, 'draw') && (
-                      <button
-                        onClick={() => dispatch({ type: 'DRAW_CARD', payload: { deckId: obj.id, playerId: activePlayerId } })}
-                        className="p-1 hover:bg-blue-600 rounded text-blue-400 hover:text-white opacity-0 group-hover:opacity-100 text-xs"
-                        title="Draw"
-                      >
-                        <Hand size={10} />
                       </button>
                     )}
                     {isActionButtonShown(obj, 'delete') && (

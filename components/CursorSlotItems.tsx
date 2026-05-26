@@ -25,7 +25,6 @@ async function preloadEffectImage(src: string): Promise<void> {
     try {
       resolvedSrc = await getAssetURL(src);
     } catch (error) {
-      console.error('[CursorSlotItems] Failed to resolve asset:', src, error);
       return; // Skip preload if we can't resolve
     }
   }
@@ -705,6 +704,9 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
 
   return (
     <div
+      data-cursor-slot-effect="true"
+      data-object-id={item.id}
+      data-object-type={item.type}
       style={{
         position: 'absolute',
         left: 0,

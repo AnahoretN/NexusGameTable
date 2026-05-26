@@ -13,7 +13,8 @@ import {
   PanelObject,
   Deck as DeckType,
   Counter,
-  CardLocation
+  CardLocation,
+  EffectTemplate
 } from '../../types';
 import { filterVisibleObjects, calculateViewportBounds } from '../../utils/viewportCulling';
 import { intersectsPlayableArea } from '../../utils/viewportConstraints';
@@ -143,6 +144,14 @@ export const useObjectFilters = (
             counter.cursorSlotOwnerId !== 'local-player'
           );
         }
+        if (obj.type === ItemType.EFFECT_TEMPLATE) {
+          const effect = obj as EffectTemplate;
+          return (
+            effect.inCursorSlot &&
+            effect.cursorSlotOwnerId &&
+            effect.cursorSlotOwnerId !== 'local-player'
+          );
+        }
         return false;
       })
       .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
@@ -168,6 +177,10 @@ export const useObjectFilters = (
         if (obj.type === ItemType.COUNTER) {
           const counter = obj as Counter;
           return counter.isDragging && counter.dragOwnerId && counter.dragOwnerId !== 'local-player';
+        }
+        if (obj.type === ItemType.EFFECT_TEMPLATE) {
+          const effect = obj as EffectTemplate;
+          return effect.isDragging && effect.dragOwnerId && effect.dragOwnerId !== 'local-player';
         }
         return false;
       })

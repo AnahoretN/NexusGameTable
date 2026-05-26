@@ -87,7 +87,6 @@ class AssetDatabase {
   async init(): Promise<IDBDatabase> {
     // If database is closed, reset and reinitialize
     if (this.db && this.db.readyState === 'closed') {
-      console.warn('[AssetDB] Database was closed, reinitializing...');
       this.db = null;
       this.initPromise = null;
     }
@@ -151,7 +150,6 @@ class AssetDatabase {
         return db.transaction(storeNames, mode);
       } catch (error) {
         attempts++;
-        console.warn(`[AssetDB] Transaction attempt ${attempts} failed:`, error);
 
         if (attempts >= maxAttempts) {
           throw error;

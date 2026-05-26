@@ -16,7 +16,6 @@ let globalAssetVersion = 0;
 // Subscribe to asset update events
 assetEvents.subscribe(() => {
   globalAssetVersion++;
-  console.log(`[BoardWithResize] Asset update event received, version: ${globalAssetVersion}`);
 });
 
 /**
@@ -61,14 +60,12 @@ const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, op
           setImageUrl(url);
         } else if (isImageRef(content)) {
           // Old img_ref:// system - not supported, show placeholder
-          console.warn('[BoardBackgroundImage] img_ref:// URLs are no longer supported');
           setImageUrl(null);
         } else {
           // Regular URL (data:image/, http://, etc.)
           setImageUrl(content);
         }
       } catch (error) {
-        console.error('[BoardBackgroundImage] Failed to load image:', error);
         // If asset not found, it might be loading via P2P - clear to retry
         if ((error as Error).message.includes('Asset not found')) {
           setImageUrl(null); // Clear to force retry

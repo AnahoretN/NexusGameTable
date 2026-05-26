@@ -226,7 +226,6 @@ async function tryPeerJSServer(
   abortSignal?: AbortSignal
 ): Promise<{ peer: Peer } | null> {
   const serverName = `${serverConfig.host}:${serverConfig.port}`;
-  console.log(`[tryPeerJSServer] 🔌 Attempting connection to ${serverName} (timeout: ${timeout}ms)`);
 
   return new Promise((resolve) => {
     const peerConfig = {
@@ -241,7 +240,7 @@ async function tryPeerJSServer(
     // 🔥 OPTIMIZED: Handle abort signal to cancel remaining attempts
     const onAbort = () => {
       if (!resolved) {
-        console.log(`[tryPeerJSServer] ❌ Aborted ${serverName}`);
+
         resolved = true;
         try {
           peer.destroy();
@@ -262,7 +261,7 @@ async function tryPeerJSServer(
 
     const timeoutId = setTimeout(() => {
       if (!resolved) {
-        console.log(`[tryPeerJSServer] ⏰ Timeout connecting to ${serverName}`);
+
         resolved = true;
         if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
         try {
@@ -276,7 +275,7 @@ async function tryPeerJSServer(
 
     peer.on('open', (id) => {
       if (!resolved) {
-        console.log(`[tryPeerJSServer] ✅ Connected to ${serverName}, ID: ${id}`);
+
         resolved = true;
         clearTimeout(timeoutId);
         if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
@@ -286,7 +285,7 @@ async function tryPeerJSServer(
 
     peer.on('error', (err) => {
       if (!resolved) {
-        console.log(`[tryPeerJSServer] ❌ Error from ${serverName}:`, err?.type || err);
+
         resolved = true;
         clearTimeout(timeoutId);
         if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
@@ -731,7 +730,7 @@ export function usePeerConnection(
               try {
                 conn.send(data);
               } catch (e) {
-                console.error('[P2P Host] Failed to relay DIRECT_SYNC:', e);
+                // Direct sync relay failed
               }
             }
           });
@@ -759,9 +758,8 @@ export function usePeerConnection(
       }
       try {
         peer.disconnect();
-        console.log(`[P2P Signalling] ✅ Disconnected from signalling - P2P connections remain active`);
       } catch (e) {
-        console.error(`[P2P Signalling] Error disconnecting from signalling:`, e);
+        logger.error('[P2P Signalling] Error disconnecting from signalling:', e);
       }
     }
 
@@ -772,7 +770,7 @@ export function usePeerConnection(
         room.leave();
         roomRef.current = null;
       } catch (e) {
-        console.error(`[Trystero] Error leaving room:`, e);
+        logger.error('[Trystero] Error leaving room:', e);
       }
     }
   }, []);
@@ -831,7 +829,7 @@ export function usePeerConnection(
       };
 
       const onError = (err: any) => {
-        console.error(`[P2P Signalling] ❌ Failed to reconnect to signalling:`, err);
+        logger.error('[P2P Signalling] Failed to reconnect to signalling:', err);
         peer.off('open', onOpen);
         peer.off('error', onError);
         reject(err);
@@ -852,12 +850,9 @@ export function usePeerConnection(
 
   // Connect to Host Logic (Guest Side)
   const connectToHost = useCallback(async (hostId: string, playerName: string) => {
-    console.log(`[P2P Guest] 🔵 Starting connection to host: ${hostId}, player: ${playerName}`);
-
     // 🔥 NEW: Reset and start loading progress
     resetP2PLoading();
     updateP2PLoadingStep('connect', 'loading', 'Connecting to signaling server...');
-    console.log(`[P2P Guest] ⏳ Step 1/5: Connecting to signaling...`);
 
     // ============================================================================
     // NO FALLBACK - Use only the selected connection method
@@ -865,7 +860,6 @@ export function usePeerConnection(
 
     // Get connection method from parameter or settings
     const method = connectionMethod || getConnectionSettings().connectionMethod || 'peerjs';
-    console.log(`[P2P Guest] 🔧 Using connection method: ${method}`);
 
     const communityServers = getCommunityServers();
     const PARALLEL_TIMEOUT = 8000;
@@ -904,7 +898,6 @@ export function usePeerConnection(
       }
 
       // Trystero failed
-      console.error(`[P2P Guest] ❌ Trystero connection failed`);
       alert("Failed to connect via BitTorrent trackers. Check your network settings.");
       setConnectionStatus('disconnected');
       setWaitingForPlayerName(null);
@@ -934,7 +927,6 @@ export function usePeerConnection(
     let connectedServerName: string | null = null;
 
     for (const server of serversToTry) {
-      console.log(`[P2P Guest] 🔌 Trying ${server.name}...`);
       const result = await tryPeerJSServer(server, PARALLEL_TIMEOUT);
 
       if (result) {
@@ -950,7 +942,6 @@ export function usePeerConnection(
     }
 
     // All servers for selected method failed
-    console.error(`[P2P Guest] ❌ All servers failed for method: ${method}`);
     alert(`Failed to connect using ${method.toUpperCase()}. Please check your network settings or try a different connection method.`);
     setConnectionStatus('disconnected');
     setWaitingForPlayerName(null);
@@ -963,21 +954,17 @@ export function usePeerConnection(
      * Настроить PeerJS соединение после успешного подключения
      */
     function setupPeerConnection(peer: Peer, hostId: string, playerName: string) {
-      console.log(`[P2P Guest] ⏳ Step 2/5: Setting up P2P connection to ${hostId}...`);
       peerRef.current = peer;
       (window as any).__nexusPeer = peer;
       syncSingleton(); // Sync to singleton after peer is set
 
       // 🔥 NEW: Update progress - establishing P2P connection
       updateP2PLoadingStep('p2p', 'loading', 'Establishing P2P connection...');
-      console.log(`[P2P Guest] ⏳ Step 3/5: Calling peer.connect(${hostId})...`);
 
       const conn = peer.connect(hostId);
       hostConnectionRef.current = conn;
       (window as any).__nexusHostConnection = conn;
       syncSingleton(); // Sync to singleton after connection is set
-
-      console.log(`[P2P Guest] ⏳ Waiting for connection.open event...`);
 
       // 🔥 NEW: Retry connection if it doesn't open (signaling may be delayed)
       let retryCount = 0;
@@ -990,7 +977,6 @@ export function usePeerConnection(
         }
 
         retryCount++;
-        console.log(`[P2P Guest] 🔄 Retry ${retryCount}/${maxRetries} - Reconnecting to ${hostId}...`);
 
         // Close old connection and try again
         if (conn && !conn.open) {
@@ -1004,7 +990,6 @@ export function usePeerConnection(
               clearTimeout(connectionTimeoutId);
             }
             connectionCompleted = true;
-            console.log(`[P2P Guest] 🎉 Connection to host SUCCESSFUL! (retry ${retryCount})`);
             setConnectionStatus('connected');
             syncSingleton();
             updateP2PLoadingStep('p2p', 'success', 'P2P connection established');
@@ -1012,7 +997,7 @@ export function usePeerConnection(
           });
 
           newConn.on('error', (err) => {
-            console.error(`[P2P Guest] ❌ Retry ${retryCount} failed:`, err);
+            // Retry connection failed
           });
         }
       };
@@ -1030,14 +1015,6 @@ export function usePeerConnection(
       connectionTimeoutId = setTimeout(async () => {
         if (!connectionCompleted) {
           connectionCompleted = true;
-          console.error(`[P2P Guest] ❌ Connection TIMEOUT after ${CONNECTION_TIMEOUT}ms`);
-          console.error(`[P2P Guest] 📊 Diagnostics:`, {
-            peerId: peer.id,
-            hostId,
-            connectionState: (conn as any)._pc?.signalingState,
-            iceState: (conn as any)._pc?.iceConnectionState,
-            iceGatheringState: (conn as any)._pc?.iceGatheringState,
-          });
           updateP2PLoadingStep('p2p', 'error', 'Connection timeout - NAT/firewall blocking?');
 
           // Show helpful error message
@@ -1063,7 +1040,6 @@ export function usePeerConnection(
         }
         connectionCompleted = true;
 
-        console.log(`[P2P Guest] 🎉 Connection to host SUCCESSFUL!`);
         setConnectionStatus('connected');
         syncSingleton(); // Sync to singleton after connection is open
 
@@ -1082,8 +1058,6 @@ export function usePeerConnection(
             color: '#' + Math.floor(Math.random() * 16777215).toString(16),
             isGM: false
           };
-
-          console.log(`[P2P Guest] 📤 Sending HELO with player: ${myPlayer.name} (${myPlayer.id})`);
 
           // Add ourselves locally
           localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
@@ -1131,7 +1105,6 @@ export function usePeerConnection(
         }
         connectionCompleted = true;
 
-        console.error(`[P2P Guest] ❌ Connection ERROR:`, err);
         logger.error("Connection error to host:", err);
         isIntentionalDisconnectRef.current = true;
         if (peer && !peer.destroyed) {
@@ -1153,36 +1126,12 @@ export function usePeerConnection(
       const checkIceState = () => {
         const pc = (conn as any)._pc;
         if (pc) {
-          console.log(`[P2P Guest] 🔍 RTCPeerConnection found! Current state:`, {
-            iceConnectionState: pc.iceConnectionState,
-            iceGatheringState: pc.iceGatheringState,
-            signalingState: pc.signalingState,
-          });
-
           pc.addEventListener('iceconnectionstatechange', () => {
             const state = pc.iceConnectionState;
-            console.log(`[P2P Guest] 🧊 ICE Connection State: ${state}`);
-
             if (state === 'failed' || state === 'disconnected') {
-              console.error(`[P2P Guest] ❌ ICE connection ${state} - NAT traversal failed`);
-              console.error(`[P2P Guest] 💡 Try: Both devices on same network, or check firewall`);
               updateP2PLoadingStep('p2p', 'error', `ICE ${state} - NAT blocked`);
-            } else if (state === 'connected') {
-              console.log(`[P2P Guest] ✅ ICE connected - direct connection established!`);
-            } else if (state === 'checking') {
-              console.log(`[P2P Guest] 🔍 ICE checking - trying to reach host...`);
             }
           });
-
-          pc.addEventListener('icegatheringstatechange', () => {
-            console.log(`[P2P Guest] 🧊 ICE Gathering State: ${pc.iceGatheringState}`);
-          });
-
-          pc.addEventListener('signalingstatechange', () => {
-            console.log(`[P2P Guest] 📡 Signaling State: ${pc.signalingState}`);
-          });
-        } else {
-          console.log(`[P2P Guest] ⏳ RTCPeerConnection not ready yet, will retry...`);
         }
       };
 
@@ -1198,8 +1147,6 @@ export function usePeerConnection(
       });
 
       peer.on('error', (err) => {
-        console.error(`[P2P Guest] ❌ PeerJS ERROR:`, err);
-
         // 🔥 FIX: Handle all network-related errors, not just 'network' type
         const isNetworkError = err?.type === 'network' ||
           err?.type === 'socket-error' ||
@@ -1208,7 +1155,6 @@ export function usePeerConnection(
           (err?.message && err.message.includes('Lost connection to server'));
 
         if (isNetworkError && peer && !peer.destroyed && !isIntentionalDisconnectRef.current) {
-          console.log(`[P2P Guest] 🔄 Network error detected, attempting reconnect...`);
           peer.reconnect();
         } else if (!isNetworkError) {
           setConnectionStatus('disconnected');
@@ -1254,10 +1200,8 @@ export function usePeerConnection(
 
   // Initialize host peer on demand (when user clicks Invite button)
   const initializeHost = useCallback(async () => {
-    console.log(`[P2P Host] 🎮 initializeHost called`);
     // 🔥 SINGLETON: Restore from singleton if available (HMR remount)
     if (p2pSingleton.peer && !p2pSingleton.peer.destroyed) {
-      console.log(`[P2P Host] ♻️ Restoring from singleton`);
       peerRef.current = p2pSingleton.peer;
       connectionsRef.current = p2pSingleton.connections;
 
@@ -1273,27 +1217,23 @@ export function usePeerConnection(
 
     // Check if we have a peer that's just disconnected from signalling (optimization)
     if (peerRef.current && peerRef.current.disconnected && !peerRef.current.destroyed) {
-      console.log(`[P2P Host] 🔄 Attempting to reconnect disconnected peer`);
       try {
         await reconnectToSignalling('New player needs to join');
-        console.log(`[P2P Host] ✅ Reconnected to signalling - ready for new players`);
         // Reset timer to allow time for new players to connect
         resetSignallingTimer();
         syncSingleton(); // Sync to singleton
         return;
       } catch (e) {
-        console.error(`[P2P Host] ❌ Failed to reconnect to signalling:`, e);
+        logger.error('[P2P Host] Failed to reconnect to signalling:', e);
         // Fall through to create new peer
       }
     }
 
     // Already initialized or initializing
     if (peerRef.current) {
-      console.log(`[P2P Host] ⚠️ Peer already exists, skipping initialization`);
       return;
     }
 
-    console.log(`[P2P Host] 🔨 Creating new Peer...`);
     const peer = new Peer(PEERJS_CONFIG);
     peerRef.current = peer;
     // Store for diagnostic access
@@ -1301,15 +1241,12 @@ export function usePeerConnection(
     syncSingleton(); // Sync to singleton after creating peer
 
     peer.on('open', async (id) => {
-      console.log(`[P2P Host] ✅ Peer.open event fired, ID: ${id}`);
       // Check if this is a reconnect (peerId was already set)
       const isReconnect = peerRef.current?.id === id;
       if (isReconnect) {
         // Reset reconnect state on successful reconnect
         hostReconnectStateRef.current = { attempts: 0, startTime: null };
         signallingDisconnectedRef.current = false; // Reset signalling disconnect flag
-      } else {
-        console.log(`[P2P Host] ✅ Host ID assigned: ${id}`);
       }
 
       setPeerId(id);
@@ -1320,35 +1257,17 @@ export function usePeerConnection(
     // Handle incoming connections (If we are Host)
     peer.on('connection', (conn) => {
       const guestPeerId = conn.peer;
-      console.log(`[P2P Host] 📨 Incoming connection from: ${guestPeerId}`);
-      console.log(`[P2P Host] 📊 Current peer state:`, {
-        disconnected: peer.disconnected,
-        destroyed: peer.destroyed,
-        connectionsCount: connectionsRef.current.length
-      });
 
       // 🔥 NEW: Monitor ICE state for incoming connections
       const checkHostIceState = () => {
         const pc = (conn as any)._pc;
         if (pc) {
-          console.log(`[P2P Host] 🔍 RTCPeerConnection found for guest ${guestPeerId}:`, {
-            iceConnectionState: pc.iceConnectionState,
-            iceGatheringState: pc.iceGatheringState,
-            signalingState: pc.signalingState,
-          });
-
           pc.addEventListener('iceconnectionstatechange', () => {
             const state = pc.iceConnectionState;
-            console.log(`[P2P Host] 🧊 ICE Connection State for ${guestPeerId}: ${state}`);
-
             if (state === 'failed' || state === 'disconnected') {
-              console.error(`[P2P Host] ❌ ICE connection ${state} - guest connection failed`);
-            } else if (state === 'connected') {
-              console.log(`[P2P Host] ✅ ICE connected - direct connection to ${guestPeerId}!`);
+              logger.error(`[P2P Host] ICE connection ${state} - guest connection failed`);
             }
           });
-        } else {
-          console.log(`[P2P Host] ⏳ RTCPeerConnection not ready for guest ${guestPeerId}`);
         }
       };
 
@@ -1357,8 +1276,6 @@ export function usePeerConnection(
       setTimeout(() => checkHostIceState(), 3000);
 
       conn.on('open', () => {
-        console.log(`[P2P Host] 🎉 Connection opened for guest: ${guestPeerId}`);
-
         // Check if connections are locked
         if (stateRef.current?.connectionsLocked) {
           conn.send({ type: 'CONNECTION_LOCKED' });
@@ -1437,7 +1354,7 @@ export function usePeerConnection(
         });
 
         conn.on('error', (err) => {
-          console.error(`[P2P Host] ❌ Connection error with guest ${guestPeerId}:`, err);
+          logger.error(`[P2P Host] Connection error with guest ${guestPeerId}:`, err);
           connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
           syncSingleton(); // Sync to singleton after connection removed
           localDispatch({ type: 'REMOVE_PLAYER', payload: { id: conn.peer } });
@@ -1449,7 +1366,7 @@ export function usePeerConnection(
           if (args[0] === 'iceStateChange') {
             const state = args[1] as string;
             if (state === 'failed' || state === 'disconnected') {
-              console.warn(`[P2P Host] ⚠️ ICE connection ${state} for guest ${guestPeerId} - may indicate NAT/Firewall issues`);
+              logger.warn(`[P2P Host] ICE connection ${state} for guest ${guestPeerId} - may indicate NAT/Firewall issues`);
             }
           }
           return originalEmit.apply(this, args as any);
@@ -1458,7 +1375,7 @@ export function usePeerConnection(
         // Connection timeout
         setTimeout(() => {
           if (!conn.open) {
-            console.warn(`[P2P Host] ⏰ Connection timeout for guest ${guestPeerId}`);
+            logger.warn(`[P2P Host] Connection timeout for guest ${guestPeerId}`);
           }
         }, 30000);
       });
@@ -1483,7 +1400,6 @@ export function usePeerConnection(
       hostReconnectStateRef.current.attempts++;
 
       if (elapsed >= MAX_RECONNECT_TIME) {
-        console.error(`[P2P Host] ❌ Reconnect timeout after ${elapsed}ms - giving up`);
         // Clean up peer to stop server requests
         isIntentionalDisconnectRef.current = true;
         if (peer && !peer.destroyed) {
@@ -1503,7 +1419,7 @@ export function usePeerConnection(
           try {
             peer.reconnect();
           } catch (e) {
-            console.error(`[P2P Host] ❌ Reconnect failed:`, e);
+            logger.error('[P2P Host] Reconnect failed:', e);
             // Continue trying
             scheduleHostReconnect();
           }
@@ -1518,7 +1434,6 @@ export function usePeerConnection(
     });
 
     peer.on('error', (err) => {
-      console.error(`[P2P Host] ❌ PeerJS ERROR:`, err);
       logger.error('Peer error:', err);
 
       // 🔥 FIX: Handle all network-related errors, not just 'network' type
@@ -1534,7 +1449,6 @@ export function usePeerConnection(
         (err?.message && err.message.includes('Lost connection to server'));
 
       if (isNetworkError && peer && !peer.destroyed) {
-        console.log(`[P2P Host] 🔄 Network error detected, attempting reconnect...`);
         scheduleHostReconnect();
       } else if (!isNetworkError) {
         // Critical error - clean up peer to stop server requests
@@ -1556,7 +1470,6 @@ export function usePeerConnection(
     // 🔥 FIX: Skip if ticket is present but connection method is not peerjs
     // Let Iroh/Trystero handle their own connection methods
     if (ticketParam && connectionMethod !== 'peerjs') {
-      console.log('[usePeerConnection] Skipping - ticket present but connection method is:', connectionMethod);
       return;
     }
 
@@ -1574,7 +1487,6 @@ export function usePeerConnection(
           const simpleTicket = JSON.parse(atob(ticketParam));
           if (simpleTicket.nodeId) {
             parsedPeerId = simpleTicket.nodeId;
-            console.log('[usePeerConnection] Parsed simple ticket format, got peerId:', parsedPeerId);
           }
         } catch {
           // If simple format fails, try IrohConnectionManager format
@@ -1587,10 +1499,8 @@ export function usePeerConnection(
               const parsed = IrohConnectionManager.parseTicket(ticketParam);
               if (parsed && parsed.peerJsId) {
                 parsedPeerId = parsed.peerJsId;
-                console.log('[usePeerConnection] Parsed Iroh ticket, got peerId:', parsedPeerId);
               } else if (parsed?.nodeId?.relayUrl === 'peerjs') {
                 parsedPeerId = parsed.nodeId.publicKey;
-                console.log('[usePeerConnection] Parsed relay ticket, got peerId:', parsedPeerId);
               }
             });
           });
@@ -1617,10 +1527,9 @@ export function usePeerConnection(
         }
 
         // If we get here, parsing failed
-        console.error('[usePeerConnection] Invalid ticket format');
         alert('Invalid invite link. Please check the link and try again.');
       } catch (e) {
-        console.error('[usePeerConnection] Error parsing ticket:', e);
+        logger.error('[usePeerConnection] Error parsing ticket:', e);
         alert('Invalid invite link. Please check the link and try again.');
       }
       return;
@@ -1628,12 +1537,6 @@ export function usePeerConnection(
 
     // If we have a hostId in URL, show modal FIRST for player name
     if (hostIdentifier) {
-      console.log('[usePeerConnection] Guest mode detected', {
-        hostId: hostIdentifier,
-        waitingForPlayerName,
-        willSetWaiting: !waitingForPlayerName
-      });
-
       // 🔥 FIX: Only set waitingForPlayerName if not already set
       // This prevents the modal from reopening when connectToHost changes
       if (!waitingForPlayerName) {
@@ -1646,16 +1549,12 @@ export function usePeerConnection(
 
         // Show modal immediately - don't start connection yet
         // Connection will start after user enters name in modal
-        console.log('[usePeerConnection] Setting waitingForPlayerName');
         setWaitingForPlayerName({ hostId: hostIdentifier });
-      } else {
-        console.log('[usePeerConnection] Skipping setWaitingForPlayerName - already set');
       }
       return;
     }
 
     // No hostId/ticket = host mode - peer will be initialized when user clicks Invite
-    console.log('[usePeerConnection] Host mode - no hostId/ticket in URL');
   }, [connectToHost, waitingForPlayerName]);
 
   // ============================================================================
@@ -1678,7 +1577,7 @@ export function usePeerConnection(
           try {
             conn.close();
           } catch (e) {
-            console.error(`[P2P Cleanup] Error closing connection:`, e);
+            // Error closing connection
           }
         });
         connectionsRef.current = [];
@@ -1689,7 +1588,7 @@ export function usePeerConnection(
         try {
           hostConnectionRef.current.close();
         } catch (e) {
-          console.error(`[P2P Cleanup] Error closing host connection:`, e);
+          // Error closing host connection
         }
         hostConnectionRef.current = null;
       }
@@ -1699,7 +1598,7 @@ export function usePeerConnection(
         try {
           peerRef.current.destroy();
         } catch (e) {
-          console.error(`[P2P Cleanup] Error destroying peer:`, e);
+          // Error destroying peer
         }
         peerRef.current = null;
       }
@@ -1797,62 +1696,17 @@ if (typeof window !== 'undefined') {
   (window as any).nexusP2PDebug = {
     ...((window as any).nexusP2PDebug || {}),
     getCompressionStats: () => {
-      const stats = dataCompressionManager.getStats();
-      console.log('[P2P Compression] 📊 Compression Statistics:');
-      console.log(`[P2P Compression] 📦 Operations: ${stats.entries}`);
-      console.log(`[P2P Compression] 📏 Original: ${(stats.totalOriginalSize / 1024).toFixed(2)} KB`);
-      console.log(`[P2P Compression] 🗜️ Compressed: ${(stats.totalCompressedSize / 1024).toFixed(2)} KB`);
-      console.log(`[P2P Compression] 💾 Saved: ${((1 - stats.averageCompressionRatio) * 100).toFixed(1)}%`);
-      console.log(`[P2P Compression] ⚡ Avg Time: ${(stats.totalCompressionTime / stats.entries).toFixed(2)}ms`);
-      return stats;
+      return dataCompressionManager.getStats();
     },
     printCompressionReport: () => {
       printCompressionReport();
     },
     setCompressionEnabled: (enabled: boolean) => {
       dataCompressionManager.setEnabled(enabled);
-      console.log(`[P2P Compression] Compression ${enabled ? 'ENABLED' : 'DISABLED'}`);
     },
     getDiagnostics: () => {
       const peer = (window as any).__nexusPeer;
       const conn = (window as any).__nexusHostConnection;
-
-      console.log(`[P2P Diagnostic] ════════════════════════════════════════════`);
-      console.log(`[P2P Diagnostic] 📊 NEXUS GAME TABLE P2P DIAGNOSTIC REPORT`);
-      console.log(`[P2P Diagnostic] ════════════════════════════════════════════`);
-      console.log(`[P2P Diagnostic] 🌐 Browser Info:`, {
-        userAgent: navigator.userAgent,
-        platform: navigator.platform,
-        language: navigator.language,
-        cookieEnabled: navigator.cookieEnabled,
-        onLine: navigator.onLine,
-      });
-      console.log(`[P2P Diagnostic] 🔍 WebRTC Support:`, {
-        RTCPeerConnection: !!(window as any).RTCPeerConnection,
-        RTCDataChannel: !!(window as any).RTCDataChannel,
-        getUserMedia: !!(navigator.mediaDevices?.getUserMedia),
-      });
-      console.log(`[P2P Diagnostic] 📡 PeerJS Status:`, peer ? {
-        id: peer.id,
-        destroyed: peer.destroyed,
-        disconnected: peer.disconnected,
-        connections: Object.keys(peer.connections || {}).length,
-        signallingOptimized: peer.disconnected ? 'Yes - disconnected from signalling (P2P active)' : 'No - still connected to signalling',
-      } : 'Not initialized');
-      console.log(`[P2P Diagnostic] 🔗 Host Connection:`, conn ? {
-        open: conn.open,
-        peer: conn.peer,
-        label: conn.label,
-        dataChannel: conn.dataChannel ? 'exists' : 'none',
-      } : 'Not connected (guest only)');
-      console.log(`[P2P Diagnostic] 📍 Current URL:`, window.location.href);
-      console.log(`[P2P Diagnostic] ════════════════════════════════════════════`);
-      console.log(`[P2P Diagnostic] 💡 TIP: If connection fails, check:`);
-      console.log(`[P2P Diagnostic]    1. Both users have different public IPs`);
-      console.log(`[P2P Diagnostic]    2. Firewall allows WebRTC (UDP ports)`);
-      console.log(`[P2P Diagnostic]    3. Not behind symmetric NAT`);
-      console.log(`[P2P Diagnostic]    4. Browser supports WebRTC`);
-      console.log(`[P2P Diagnostic] ════════════════════════════════════════════`);
 
       return {
         peer: peer,
@@ -1861,18 +1715,15 @@ if (typeof window !== 'undefined') {
       };
     },
     testConnection: async (hostId: string) => {
-      console.log(`[P2P Diagnostic] 🧪 Testing connection to host: ${hostId}`);
       const testPeer = new Peer(PEERJS_CONFIG);
       return new Promise((resolve) => {
         testPeer.on('open', (id: string) => {
-          console.log(`[P2P Diagnostic] ✅ Test peer ID: ${id}`);
           const testConn = testPeer.connect(hostId);
 
           let resolved = false;
           testConn.on('open', () => {
             if (!resolved) {
               resolved = true;
-              console.log(`[P2P Diagnostic] 🎉 Test connection SUCCESS!`);
               testConn.close();
               testPeer.destroy();
               resolve({ success: true });
@@ -1882,7 +1733,6 @@ if (typeof window !== 'undefined') {
           testConn.on('error', (err: any) => {
             if (!resolved) {
               resolved = true;
-              console.error(`[P2P Diagnostic] ❌ Test connection FAILED:`, err);
               testPeer.destroy();
               resolve({ success: false, error: err });
             }
@@ -1891,7 +1741,6 @@ if (typeof window !== 'undefined') {
           setTimeout(() => {
             if (!resolved) {
               resolved = true;
-              console.warn(`[P2P Diagnostic] ⏰ Test connection TIMEOUT (10s)`);
               testConn.close();
               testPeer.destroy();
               resolve({ success: false, error: 'timeout' });
@@ -1900,7 +1749,6 @@ if (typeof window !== 'undefined') {
         });
 
         testPeer.on('error', (err: any) => {
-          console.error(`[P2P Diagnostic] ❌ Test peer error:`, err);
           resolve({ success: false, error: err });
         });
       });
@@ -1909,29 +1757,9 @@ if (typeof window !== 'undefined') {
     checkUsedPacks: () => {
       const state = (window as any).__gameState;
       if (!state) {
-        console.error('[P2P Debug] Game state not found. Make sure game is loaded.');
         return;
       }
-      const usedPacks = state.usedPacks || {};
-      const packCount = Object.keys(usedPacks).length;
-      console.log('[P2P Debug] ════════════════════════════════════════════');
-      console.log('[P2P Debug] 📦 USED PACKS STATUS');
-      console.log('[P2P Debug] ════════════════════════════════════════════');
-      console.log(`[P2P Debug] Pack count: ${packCount}`);
-      if (packCount > 0) {
-        console.log('[P2P Debug] Packs:');
-        Object.entries(usedPacks).forEach(([name, info]: [string, any]) => {
-          console.log(`[P2P Debug]   - ${name}:`);
-          console.log(`[P2P Debug]     Hash: ${info.hash?.substring(0, 16)}...`);
-          console.log(`[P2P Debug]     Size: ${(info.size / 1024 / 1024).toFixed(2)} MB`);
-          console.log(`[P2P Debug]     Images: ${info.imageCount}`);
-        });
-      } else {
-        console.warn('[P2P Debug] ⚠️ No packs registered!');
-        console.warn('[P2P Debug] 💡 Load a pack via menu to register it for P2P sync');
-      }
-      console.log('[P2P Debug] ════════════════════════════════════════════');
-      return usedPacks;
+      return state.usedPacks || {};
     }
   };
 }

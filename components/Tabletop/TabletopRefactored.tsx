@@ -43,7 +43,7 @@ import { ClickTooltip } from './ClickTooltip';
 
 // Import types
 import type { TabletopRenderContext } from './types';
-import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, Counter, DiceObject, TokenShape, CardOrientation } from '../../types';
+import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, Counter, DiceObject, EffectTemplate, TokenShape, CardOrientation } from '../../types';
 
 /**
  * Tabletop Component (Refactored)
@@ -392,7 +392,6 @@ export const Tabletop: React.FC = () => {
   // Handle add-to-cursor-slot events from HandPanel and other sources
   useEffect(() => {
     const handleAddToCursorSlot = (e: Event) => {
-      console.log('🔔 [TABLETOP] add-to-cursor-slot event received!');
       const customEvent = e as CustomEvent<{
         cardId: string;
         clientX: number;
@@ -410,40 +409,20 @@ export const Tabletop: React.FC = () => {
 
       const { cardId, clientX, clientY, source, cardOverride, clickOffsetX, clickOffsetY, clickOffsetX_PX, clickOffsetY_PX, sourceZoom, fromPoolPanel, isFromHand } = customEvent.detail;
 
-      console.log('🎯 [TABLETOP] Event detail:', { cardId, source, fromPoolPanel, isFromHand, clientX, clientY });
-
       let obj = state.objects[cardId];
-
-      console.log('🔍 [OBJECT_LOOKUP] Looking up object:', {
-        cardId,
-        objFound: !!obj,
-        objType: obj?.type,
-        hasCardOverride: !!cardOverride,
-        totalObjects: Object.keys(state.objects).length
-      });
 
       // 🔥 FIX: If object not found in state.objects but cardOverride is provided,
       // use cardOverride directly. This handles objects from pool panels that aren't in state.objects
       if (!obj) {
         if (!cardOverride) {
-          console.log('❌ [OBJECT_NOT_FOUND] Object not found and no cardOverride:', cardId);
           return;
         }
-        console.log('✅ [USING_OVERRIDE] Using cardOverride for object not in state.objects:', cardId);
         obj = cardOverride;
       }
 
       // 🔥 FIX: Use cursorSlotRef instead of cursorSlot state to avoid stale closure issues
       // The ref is always updated before state, so it's more reliable for duplicate checking
       const isInSlot = cursorSlotRef.current.some(item => item.id === cardId);
-
-      console.log('🔍 [CURSOR_SLOT_CHECK] Checking if object is already in slot:', {
-        cardId,
-        objType: obj.type,
-        isInSlot,
-        cursorSlotLength: cursorSlotRef.current.length,
-        cursorSlotIds: cursorSlotRef.current.map(i => i.id)
-      });
 
       // Force cleanup any stale global tracker entry for this cardId
       if (isInCursorSlot(cardId)) {
@@ -453,7 +432,6 @@ export const Tabletop: React.FC = () => {
       // Only check ref slot - more reliable than state for duplicate detection
       if (isInSlot) {
         // Object is already in cursor slot, skip duplicate addition
-        console.log('⚠️ [CURSOR_SLOT_DUPLICATE] Object already in slot, skipping:', cardId);
         return;
       }
 
@@ -464,16 +442,6 @@ export const Tabletop: React.FC = () => {
       // Since we can't directly call it here, we'll dispatch an action or use a different approach
       // For now, let's use the approach of setting the slot directly
       const card = (cardOverride || obj) as Card;
-
-      console.log('🔍 [CARD_SOURCE] Using card from:', {
-        hasCardOverride: !!cardOverride,
-        cardOverrideLocation: cardOverride?.location,
-        cardOverrideFaceUp: cardOverride?.faceUp,
-        objLocation: (obj as any).location,
-        objFaceUp: (obj as any).faceUp,
-        finalCardLocation: card.location,
-        finalCardFaceUp: card.faceUp
-      });
 
       const deck = card.deckId ? state.objects[card.deckId] as Deck | undefined : undefined;
       const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
@@ -735,9 +703,42 @@ export const Tabletop: React.FC = () => {
           originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
           originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
         };
+      } else if (obj.type === ItemType.EFFECT_TEMPLATE) {
+        // For EFFECT_TEMPLATE, copy effect-specific fields
+        const effect = (cardOverride || obj) as EffectTemplate;
+        itemClone = {
+          id: effect.id,
+          type: ItemType.EFFECT_TEMPLATE,
+          name: effect.name,
+          content: effect.content,
+          width: effect.width,
+          height: effect.height,
+          pivot: effect.pivot ? { ...effect.pivot } : { x: 50, y: 50 },
+          rotationMarkerDistance: effect.rotationMarkerDistance,
+          hitboxPolygon: effect.hitboxPolygon ? [...effect.hitboxPolygon] : undefined,
+          baseImageHeight: effect.baseImageHeight,
+          showWidthMarker: effect.showWidthMarker ?? true,
+          proportionalScaling: effect.proportionalScaling ?? false,
+          x: 0,
+          y: 0,
+          rotation: effect.rotation || 0,
+          zIndex: effect.zIndex ?? 0,
+          hyperscaleLayerId: effect.hyperscaleLayerId ?? 'effects',
+          source: source || 'hold',
+          originalZIndex: effect.zIndex ?? 0,
+          cursorSlotIndex: cursorSlotRef.current.length,
+          timestamp: Date.now(),
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          sourceZoom: sourceZoom,
+          fromPoolPanel: fromPoolPanel, // Track if from pool panel for proper cursor visualization
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+        };
       } else {
         // For CARD and other types, use the original logic
-        console.log('🃏 [CARD_CLONE] Creating card clone:', { cardId: card.id, faceUp: card.faceUp, location: card.location, fromPoolPanel });
         itemClone = {
           id: card.id,
           type: obj.type, // Use the actual object type, not hardcoded CARD
@@ -818,15 +819,6 @@ export const Tabletop: React.FC = () => {
       cursorSlotRef.current = newSlot;
       setCursorSlot(newSlot);
       cursorSlotLastAddedRef.current = Date.now();
-
-      console.log('✅ [CURSOR_SLOT_ADD] Added to cursorSlot:', {
-        cardId,
-        objType: obj.type,
-        faceUp: (itemClone as any).faceUp,
-        location: (itemClone as any).location,
-        fromPoolPanel,
-        slotLength: newSlot.length
-      });
 
       // 🔥 FIX: For cards from hand, clear inCursorSlot BEFORE adding to slot
       // This prevents race condition where card is filtered out during transition
@@ -946,8 +938,6 @@ export const Tabletop: React.FC = () => {
       const { items } = customEvent.detail;
 
       if (!items || items.length === 0) return;
-
-      console.log('📥 [DROP_TO_HAND] Clearing cursor slot for items:', items.map(i => i.id));
 
       // Clear cursor slot when items are dropped to hand
       cursorSlotRef.current = [];

@@ -1,9 +1,9 @@
 import React, { memo, useCallback } from 'react';
 import { CursorSlotVisualization } from '../CursorSlotVisualization';
-import { Card as CardType, Token as TokenType, Board as BoardType, Deck as DeckType, CardOrientation } from '../../types';
+import { Card as CardType, Token as TokenType, Board as BoardType, Deck as DeckType, Counter, DiceObject, EffectTemplate, CardOrientation } from '../../types';
 
 interface TabletopCursorSlotProps {
-  cursorSlot: (CardType | TokenType | BoardType | DeckType)[];
+  cursorSlot: (CardType | TokenType | BoardType | DeckType | Counter | DiceObject | EffectTemplate)[];
   cursorPosition: { x: number; y: number } | null;
   cursorPositionRef: React.RefObject<{ x: number; y: number } | null>;
   pixelsPerVU: number;

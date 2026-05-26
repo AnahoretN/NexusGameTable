@@ -733,7 +733,6 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   const dropCursorSlotToHand = useCallback(() => {
     // Prevent infinite loop - if we're already processing a drop, don't process again
     if (isProcessingDropRef.current) {
-      console.log('⚠️ [DROP_TO_HAND] Already processing drop, skipping...');
       return;
     }
 
@@ -759,10 +758,6 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     });
 
     setIsCursorOverHand(false);
-    console.log('📤 [HAND_DROP_1] Dispatching cursor-slot-drop-to-hand from dropCursorSlotToHand:', {
-      itemsCount: itemsInCursorSlot.length,
-      itemIds: itemsInCursorSlot.map(i => i.id)
-    });
     window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
       detail: { items: itemsInCursorSlot }
     }));
@@ -810,26 +805,12 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
       const customEvent = e as CustomEvent<{ items: any[] }>;
       const { items } = customEvent.detail;
 
-      // 📋 LOG: Drop to hand event received
-      console.log('📥 [DROP_TO_HAND_EVENT] Received cursor-slot-drop-to-hand event:', {
-        itemsCount: items?.length,
-        items: items?.map(i => ({ id: i.id, type: i.type, name: i.name })),
-        selectedPlayerId,
-        listenerSource: 'HandPanelOptimized useEffect'
-      });
-
       // IMPORTANT: Clear purple outline IMMEDIATELY to prevent it from getting stuck
       // Do this before any other processing to ensure fast UI response
       setIsCursorOverHand(false);
 
       // Allow both CARDS and TOKENS in hand panel
       const itemsToAdd = items.filter(item => item.type === ItemType.CARD || item.type === ItemType.TOKEN);
-
-      console.log('🔍 [DROP_TO_HAND_FILTER] Filtered items for hand:', {
-        originalCount: items?.length,
-        filteredCount: itemsToAdd.length,
-        itemsToAdd: itemsToAdd.map(i => ({ id: i.id, type: i.type, name: i.name }))
-      });
 
       if (itemsToAdd.length > 0) {
         const player = players.find(p => p.id === selectedPlayerId);
@@ -882,14 +863,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
             }
           });
 
-          // 📋 LOG: Item dropped to hand
-          console.log('✅ [DROP_TO_HAND_SUCCESS] Item dropped to hand:', {
-            id: item.id,
-            type: item.type,
-            name: item.name,
-            location: updates.location,
-            ownerId: selectedPlayerId
-          });
+          // Item dropped to hand
         });
 
         setPickingUpCardIds(prev => {
@@ -1286,10 +1260,6 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     // IMPORTANT: Clear purple outline immediately when dropping to hand
     // This prevents the outline from getting stuck due to timing issues
     setIsCursorOverHand(false);
-    console.log('📤 [HAND_DROP_2] Dispatching cursor-slot-drop-to-hand from handlePanelClick:', {
-      itemsCount: itemsInCursorSlot.length,
-      itemIds: itemsInCursorSlot.map(i => i.id)
-    });
     window.dispatchEvent(new CustomEvent('cursor-slot-drop-to-hand', {
       detail: { items: itemsInCursorSlot }
     }));

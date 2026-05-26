@@ -1033,7 +1033,6 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
         });
       }
     } catch (error) {
-      console.error('Failed to analyze image:', error);
       alert(t({ en: 'Failed to analyze image. Please try a clearer image.', ru: 'Не удалось проанализировать изображение. Попробуйте более четкое изображение.' }));
     } finally {
       setIsAnalyzingImage(false);

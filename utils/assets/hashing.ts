@@ -214,7 +214,7 @@ export async function hashDataURLs(dataURLs: string[]): Promise<Map<number, Hash
         const result = await hashDataURL(dataURL);
         results.set(index, result);
       } catch (error) {
-        console.error(`Failed to hash data URL at index ${index}:`, error);
+        // Silently skip hash errors
       }
     })
   );

@@ -129,7 +129,6 @@ class AssetCache {
 
       // 🔥 NEW: Check if blob is valid
       if (!entry.blob || entry.blob.size === 0) {
-        console.error(`[AssetCache] Invalid blob for ${hash}: size=${entry.blob?.size}, type=${entry.blob?.type}`);
         throw new Error(`Asset has empty or invalid blob: ${hash}`);
       }
 
@@ -225,7 +224,6 @@ class AssetCache {
 
       // 🔥 FIX: Don't revoke URLs that are currently in use
       if (entry.refCount > 0) {
-        console.log(`[AssetCache] Skipping eviction for ${hash.substring(0, 20)}... - refCount=${entry.refCount}`);
         continue;
       }
 
@@ -262,7 +260,7 @@ class AssetCache {
           const url = await this.getObjectURL(hash);
           results.set(hash, url);
         } catch (error) {
-          console.error(`Failed to preload asset ${hash}:`, error);
+          // Silently skip preload errors
         }
       })
     );
@@ -431,7 +429,6 @@ export async function getAssetURL(hash: string, retries = 3): Promise<string> {
       if (isAssetNotFound && i < retries - 1) {
         // Asset might still be saving to IndexedDB - wait and retry
         const delay = 100 * Math.pow(2, i); // 100ms, 200ms, 400ms
-        console.log(`[AssetCache] Asset ${hash.substring(0, 20)}... not found, retry ${i + 1}/${retries} after ${delay}ms`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
         // Final retry failed or different error
@@ -539,7 +536,6 @@ export function useAssetURL(hash: string | null): string | null {
           setUrl(loadedUrl);
         }
       } catch (error) {
-        console.error(`Failed to load asset ${hash}:`, error);
         if (!cancelled) {
           setUrl(null);
           // Retry after 1 second if asset not found (might be loading via P2P)
@@ -559,7 +555,6 @@ export function useAssetURL(hash: string | null): string | null {
     // Subscribe to asset update events
     const unsubscribe = assetEvents.subscribe(() => {
       if (!cancelled && hash) {
-        console.log(`[useAssetURL] Reloading asset ${hash} after update event`);
         loadAsset();
       }
     });

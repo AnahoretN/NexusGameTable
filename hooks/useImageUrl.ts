@@ -69,7 +69,6 @@ export function useImageUrl(url: string): string {
       pendingResolves.delete(url);
       return resolvedUrl;
     }).catch((error) => {
-      console.error(`Failed to resolve URL ${url}:`, error);
       if (!cancelled) {
         setDisplayUrl(url); // Fallback to original URL
       }

@@ -169,7 +169,6 @@ export async function loadFromURLs(
         });
       }
     } catch (error) {
-      console.error(`Failed to load ${url}:`, error);
       // Continue with other URLs
     }
   }
@@ -229,7 +228,6 @@ export async function loadFromURLsConcurrent(
         return result;
       })
       .catch(error => {
-        console.error(`Failed to load ${url}:`, error);
         completed++;
 
         if (onProgress) {

@@ -204,7 +204,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
                 // Store in asset database asynchronously (don't await)
                 storeAssetFromDataURL(obj.content, 'p2p-sync').catch(err => {
-                  console.error(`[SYNC_STATE] Failed to store board image:`, err);
+                  logger.error(`[SYNC_STATE] Failed to store board image:`, err);
                 });
 
                 // Replace content with hash
@@ -263,10 +263,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 });
 
               // SYNC_STATE: Partial sync merged
-              console.log('SYNC_STATE: Partial sync merged', {
-                incoming: Object.keys(incomingObjects).length,
-                total: Object.keys(finalObjects).length
-              });
             } else {
               // For full sync, REPLACE all objects (except local main menu and cursor slot items)
               const incomingObjects = { ...action.payload.objects };
@@ -545,6 +541,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 const dice = cloned as DiceObject;
                 if (dice.sides === undefined) dice.sides = 6;
                 if (dice.currentValue === undefined) dice.currentValue = 1;
+                // Set actionButtons to only show 'roll' button
+                if (dice.actionButtons === undefined || !Array.isArray(dice.actionButtons) || dice.actionButtons.length !== 1 || dice.actionButtons[0] !== 'roll') {
+                    dice.actionButtons = ['roll'];
+                }
+                // Set allowedActions to only allow 'roll' for both GM and players
+                if (dice.allowedActions === undefined || !Array.isArray(dice.allowedActions) || dice.allowedActions.length !== 1 || dice.allowedActions[0] !== 'roll') {
+                    dice.allowedActions = ['roll'];
+                }
+                if (dice.allowedActionsForGM === undefined || !Array.isArray(dice.allowedActionsForGM) || dice.allowedActionsForGM.length !== 1 || dice.allowedActionsForGM[0] !== 'roll') {
+                    dice.allowedActionsForGM = ['roll'];
+                }
                 // Set shape and dimensions if not present
                 if (dice.shape === undefined) {
                     const sides = dice.sides || 6;
@@ -992,13 +999,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const hasCharacterData = updates.characterData !== undefined;
         if (hasCharacterData) {
           // UPDATE_OBJECT: Panel characterData update
-          console.log('UPDATE_OBJECT: Panel characterData update', {
-            panelId: action.payload.id,
-            panelType: (obj as PanelObject).panelType,
-            hasCharacterData: true,
-            characterDataKeys: Object.keys(updates.characterData || {}),
-            charactersCount: updates.characterData?.characters?.length || 0
-          });
         }
       }
 
@@ -1362,15 +1362,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const newCharacterData = panel.characterData;
         const oldCharacterData = oldPanel.characterData;
 
-        // UPDATE_OBJECT: Panel characterData update detected
-        console.log('UPDATE_OBJECT: Panel characterData update detected', {
-          panelId: panel.id,
-          hasOldCharacterData: !!oldCharacterData,
-          hasNewCharacterData: !!newCharacterData,
-          oldCharactersCount: oldCharacterData?.characters?.length || 0,
-          newCharactersCount: newCharacterData?.characters?.length || 0
-        });
-
         // 🔥 FIX: Handle case where oldCharacterData doesn't exist
         // This can happen when panel is first created or when guest sends update before host has data
         // In this case, we should still sync sliders to tokens using the new data
@@ -1425,14 +1416,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             }
 
             if (shouldSync) {
-              // UPDATE_OBJECT: Syncing sliders to tokens
-              console.log('UPDATE_OBJECT: Syncing sliders to tokens', {
-                characterId: newChar.id,
-                panelId: panel.id,
-                reason: oldCharacterData ? 'sliders changed' : 'first time sync',
-                hasOldCharacterData: !!oldCharacterData
-              });
-
               // Sync sliders to all tokens for this character
               syncSlidersToTokens(
                 { ...state, objects: newObjects },
@@ -2397,16 +2380,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (!drawnCardId) return state;
       const card = state.objects[drawnCardId] as Card;
 
-      // 🔥 DEBUG: Log DRAW_CARD
-      // DRAW_CARD: Drawing card
-      console.log('DRAW_CARD: Drawing card', {
-        deckId: action.payload.deckId,
-        playerId: action.payload.playerId,
-        drawnCardId,
-        cardName: card.name,
-        remainingCards: newCardIds.length
-      });
-
       // Add to general history (max 25)
       const historyEntry: GeneralHistoryEntry = {
         type: 'card-drawn',
@@ -2574,7 +2547,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         if (!obj) return state;
 
         // All draggable objects can be in cursor slot
-        if (obj.type !== ItemType.CARD && obj.type !== ItemType.TOKEN && obj.type !== ItemType.DICE_OBJECT && obj.type !== ItemType.COUNTER && obj.type !== ItemType.DECK && obj.type !== ItemType.RANDOMIZER && obj.type !== ItemType.BOARD) return state;
+        if (obj.type !== ItemType.CARD && obj.type !== ItemType.TOKEN && obj.type !== ItemType.DICE_OBJECT && obj.type !== ItemType.COUNTER && obj.type !== ItemType.DECK && obj.type !== ItemType.RANDOMIZER && obj.type !== ItemType.BOARD && obj.type !== ItemType.EFFECT_TEMPLATE) return state;
 
         // Check if this card was played via "Play Top" action
         const pendingPlayTop = (obj as Card).__pendingPlayTop;
@@ -2723,6 +2696,50 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             const newSelectedLayers = state.selectedHyperscaleLayerIds.includes(boardLayer)
                 ? state.selectedHyperscaleLayerIds
                 : [...state.selectedHyperscaleLayerIds, boardLayer];
+
+            return {
+                ...state,
+                objects: { ...state.objects, [obj.id]: updatedObj },
+                selectedHyperscaleLayerIds: newSelectedLayers,
+            };
+        }
+
+        // Handle effect template drop (similar to tokens/boards - no location/deck tracking)
+        if (obj.type === ItemType.EFFECT_TEMPLATE) {
+            const effectLayer = obj.hyperscaleLayerId || 'effects';
+            const layer = state.hyperscaleLayers.find(l => l.id === effectLayer);
+            const minZ = layer?.minZIndex ?? 3001;
+            const maxZ = layer?.maxZIndex ?? 6000;
+
+            // Clamp zIndex to layer bounds
+            let effectZ = obj.zIndex ?? minZ;
+            if (action.payload.zIndex !== undefined) {
+              effectZ = Math.max(minZ, Math.min(action.payload.zIndex, maxZ));
+            }
+
+            const updatedObj: TableObject = {
+                ...obj,
+                x: action.payload.x,
+                y: action.payload.y,
+                zIndex: effectZ,
+                inCursorSlot: false,
+                fromPoolPanel: undefined,
+                isOnTable: true,
+                // Re-pin object if it was pinned before being picked up
+                ...((obj as any).wasPinnedToViewport && {
+                    isPinnedToViewport: true,
+                    pinnedScreenPosition: {
+                        x: action.payload.x * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.x || 0) - (state.viewTransform?.scroll?.x || 0)),
+                        y: action.payload.y * (state.viewTransform?.pixelsPerVU || 1) + ((state.viewTransform?.offset?.y || 0) - (state.viewTransform?.scroll?.y || 0))
+                    },
+                    wasPinnedToViewport: undefined // Clear the flag
+                }),
+            };
+
+            // Auto-select the effect's hyperscale layer if not already selected
+            const newSelectedLayers = state.selectedHyperscaleLayerIds.includes(effectLayer)
+                ? state.selectedHyperscaleLayerIds
+                : [...state.selectedHyperscaleLayerIds, effectLayer];
 
             return {
                 ...state,
@@ -6243,12 +6260,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // If individualObjects setting is changing, we need to clear individual settings
       // and trigger a full sync to propagate host state to all guests
       if (objectsDisabled || objectsEnabled) {
-        console.log('UPDATE_HYPERSCALE_LAYER: Individual Objects setting changed, clearing and syncing', {
-          layerId: action.payload.layerId,
-          objectsDisabled,
-          objectsEnabled
-        });
-
         // Clear individual positions for this layer
         let clearedPlayerObjectPositions = state.playerObjectPositions;
         clearedPlayerObjectPositions = {};
@@ -7009,7 +7020,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Start automatic cleanup of ObjectURL cache
         stopCleanup = startAssetCacheCleanup(60000); // Cleanup every minute
       } catch (error) {
-        console.error('[Asset System] Failed to initialize:', error);
+        logger.error('[Asset System] Failed to initialize:', error);
       }
     };
 
@@ -7341,11 +7352,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
                   // Wait for sync to avoid desync
               } else {
-                  // GameContext.dispatch: Guest sending ACTION to host
-                  console.log('GameContext.dispatch: Guest sending ACTION to host', {
-                    objectId: action.payload?.id,
-                    hasCharacterData: !!action.payload?.updates?.characterData
-                  });
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
                   // Wait for sync to avoid desync
               }
@@ -7442,17 +7448,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           objects: filteredObjects,
           playerPanelSettings: filteredPlayerPanelSettings
         };
-
-        // 🔥 DEBUG: Log players in broadcastState
-        // Broadcast State: Broadcasting state with players
-        console.log('Broadcast State: Broadcasting state with players', {
-          playersCount: broadcastState.players?.length || 0,
-          players: broadcastState.players?.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            handCardOrder: p.handCardOrder?.length || 0
-          }))
-        });
 
         return broadcastState;
       })();
@@ -7658,7 +7653,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                           // Manual P2P: Successfully sent state to guest
                       } catch (e) {
-                          console.error('[Manual P2P] Error sending state:', e);
+                          logger.error('[Manual P2P] Error sending state:', e);
                       }
                   } else {
                       // Manual P2P: Cannot send state - conn is closed or null
@@ -7712,7 +7707,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       const handleError = (error: any) => {
-          console.error('[Manual P2P] Connection error:', error);
+          logger.error('[Manual P2P] Connection error:', error);
       };
 
       // Register event handlers

@@ -104,30 +104,20 @@ export function handlePlayTopCard(
   // This prevents playing the same card multiple times when guest clicks rapidly
   const currentDeck = context.state.objects[obj.id] as DeckType;
   if (!currentDeck || !currentDeck.cardIds || currentDeck.cardIds.length === 0) {
-    console.log('[handlePlayTopCard] Deck is empty or not found');
     return;
   }
 
   const topCardId = currentDeck.cardIds[0];
   const card = context.state.objects[topCardId] as CardType;
   if (!card) {
-    console.warn('[handlePlayTopCard] Top card not found in state:', topCardId);
     return;
   }
 
   // 🔥 FIX: Check if top card is already in cursor slot (prevents duplicate plays)
   // This can happen when guest clicks rapidly before SYNC_STATE arrives
   if (card.inCursorSlot) {
-    console.log('[handlePlayTopCard] Top card already in cursor slot, skipping:', topCardId);
     return;
   }
-
-  console.log('[handlePlayTopCard] Playing top card:', {
-    deckId: deck.id,
-    topCardId,
-    cardName: card.name,
-    remainingCards: currentDeck.cardIds.length - 1
-  });
 
   const faceUp = currentDeck.playTopFaceUp ?? true;
 
@@ -621,7 +611,6 @@ export function executeClickAction(
     case 'moveToDiscard': {
       // Delegate to executeContextMenuAction to share logic with context menu
       const playerId = context.state.activePlayerId;
-      console.log('[executeClickAction] action:', action, 'playerId:', playerId, 'obj.id:', obj.id);
       const params = {
         object: obj,
         dispatch: context.dispatch,
@@ -635,7 +624,6 @@ export function executeClickAction(
         isShiftPressed: (context as any).isShiftPressed,
         isPoolPanel: context.poolZone?.panelId !== undefined
       };
-      console.log('[executeClickAction] params.activePlayerId:', params.activePlayerId);
       executeContextMenuAction(action, params);
       break;
     }

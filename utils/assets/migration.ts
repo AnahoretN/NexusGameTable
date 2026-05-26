@@ -7,6 +7,7 @@
 
 import { hashDataURL } from './hashing';
 import { assetDB } from './indexeddb';
+import { logger } from '../logger';
 
 // ============================================================================
 // TYPES
@@ -237,7 +238,7 @@ export async function migrateFromOldSystem(
       totalSize += blob.size;
 
     } catch (error) {
-      console.error(`Failed to migrate ${entry.id}:`, error);
+      logger.error(`Failed to migrate ${entry.id}:`, error);
       errors++;
     }
   }
@@ -298,7 +299,7 @@ async function readOldDatabase(
 
         getAllRequest.onerror = () => {
           db.close();
-          console.warn('[Migration] Failed to read old entries:', getAllRequest.error);
+          logger.warn('[Migration] Failed to read old entries:', getAllRequest.error);
           resolve([]); // Return empty array on error
         };
 
@@ -309,13 +310,13 @@ async function readOldDatabase(
         };
       } catch (error) {
         db.close();
-        console.warn('[Migration] Error reading old database:', error);
+        logger.warn('[Migration] Error reading old database:', error);
         resolve([]); // Return empty array on error
       }
     };
 
     request.onerror = () => {
-      console.warn('[Migration] Failed to open old database for reading:', request.error);
+      logger.warn('[Migration] Failed to open old database for reading:', request.error);
       resolve([]); // Return empty array on error
     };
   });
@@ -331,7 +332,7 @@ export async function deleteOldDatabase(): Promise<void> {
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
     request.onblocked = () => {
-      console.warn('Database deletion blocked. Close all tabs and try again.');
+      logger.warn('Database deletion blocked. Close all tabs and try again.');
       reject(new Error('Database deletion blocked'));
     };
   });
@@ -385,12 +386,10 @@ export async function autoMigrate(
     return null;
   }
 
-  console.log('[Asset Migration] Old image cache detected. Starting migration...');
-
   const result = await migrateFromOldSystem(onProgress);
 
   if (result.success) {
-    console.log(
+    logger.log(
       `[Asset Migration] Completed: ${result.totalMigrated} migrated, ` +
       `${result.duplicatesSkipped} duplicates skipped, ` +
       `${result.errors} errors, ` +
@@ -401,7 +400,7 @@ export async function autoMigrate(
     // Uncomment when confident:
     // await deleteOldDatabase();
   } else {
-    console.error('[Asset Migration] Failed with errors:', result.errors);
+    logger.error('[Asset Migration] Failed with errors:', result.errors);
   }
 
   return result;
@@ -420,5 +419,5 @@ export async function rollbackMigration(): Promise<void> {
     request.onerror = () => reject(request.error);
   });
 
-  console.log('[Asset Migration] Rolled back. Old database is preserved.');
+  logger.log('[Asset Migration] Rolled back. Old database is preserved.');
 }

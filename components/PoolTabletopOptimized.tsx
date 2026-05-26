@@ -208,11 +208,6 @@ const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId
     .map((action: ContextAction) => buttonConfigs[action])
     .filter(Boolean);
 
-  // Add rollGroup button if dice is in a group and not already in buttons
-  if (isInGroup && !actionButtons.includes('rollGroup' as any)) {
-    buttons.push(buttonConfigs.rollGroup);
-  }
-
   // Limit to 4 buttons
   buttons = buttons.slice(0, 4);
 
@@ -552,7 +547,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
       // Clear from locallyDraggingIdsRef immediately - object is about to be added to cursor slot
       if (cardId && locallyDraggingIdsRef.current.has(cardId)) {
-        console.log('🚀 [CURSOR_SLOT_ITEM_ADDING] Clearing from locallyDraggingIdsRef:', cardId);
         locallyDraggingIdsRef.current.delete(cardId);
         setLocallyDraggingTrigger(prev => prev + 1);
       }
@@ -583,7 +577,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // We need to access cursorSlot from GameContext since we can't use hooks here
         // For now, we'll trust that if cursor-slot-item-added was dispatched,
         // the object will be in cursorSlot momentarily
-        console.log('✅ [CURSOR_SLOT_ITEM_ADDED] Removing from locallyDraggingIdsRef:', cardId);
         locallyDraggingIdsRef.current.delete(cardId);
         setLocallyDraggingTrigger(prev => prev + 1);
 
@@ -592,7 +585,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         setTimeout(() => {
           const obj = state.objects[cardId];
           if (obj && (obj as any).inCursorSlot !== true) {
-            console.log('⚠️ [CURSOR_SLOT_ITEM_ADDED] Object not in cursor slot after delay:', cardId);
+            // Object not in cursor slot after delay
           }
         }, 50);
       }
@@ -658,7 +651,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Also exclude objects that are currently being dragged from this pool panel
       // This prevents visual duplication while the object is being picked up
       if (locallyDraggingIdsRef.current.has(obj.id)) {
-        console.log('🚫 [POOL_FILTER] Excluded by locallyDraggingIdsRef:', obj.id, 'Set size:', locallyDraggingIdsRef.current.size);
         return false;
       }
 
@@ -673,9 +665,9 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       const objWidth = obj.width || 100;
       const objHeight = obj.height || 100;
 
-      // For cards, tokens, decks, dice, counters, and other draggable objects: use partial overlap for smoother UX
+      // For cards, tokens, decks, dice, counters, effects, and other draggable objects: use partial overlap for smoother UX
       if (obj.type === ItemType.CARD || obj.type === ItemType.TOKEN || obj.type === ItemType.DECK ||
-          obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER) {
+          obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER || obj.type === ItemType.EFFECT_TEMPLATE) {
         const isInPool = objX < poolMaxX && objX + objWidth > poolMinX &&
                          objY < poolMaxY && objY + objHeight > poolMinY;
         if (!isInPool && (obj as any).inCursorSlot === false) {
@@ -805,11 +797,10 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       e.preventDefault();
       e.stopPropagation();
 
-      console.log('[PoolTabletop] Cursor slot has items - not picking up new object');
       return;
     }
 
-    // For draggable objects (cards, tokens, boards, etc.), add to cursor slot IMMEDIATELY
+    // For draggable objects (cards, tokens, boards, effects, etc.), add to cursor slot IMMEDIATELY
     // NOTE: Boards ARE draggable in pool panels - use same logic as tokens
     const isDraggableType = [
       ItemType.CARD,
@@ -818,7 +809,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       ItemType.DICE_OBJECT,
       ItemType.RANDOMIZER,
       ItemType.COUNTER,
-      ItemType.BOARD // Now boards use same drag logic as tokens
+      ItemType.BOARD, // Now boards use same drag logic as tokens
+      ItemType.EFFECT_TEMPLATE // Effects are draggable too
     ].includes(obj.type);
 
     if (isDraggableType) {
@@ -1110,13 +1102,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // Calculate click offset using centralized utility
         const obj = state.objects[diceDragRef.current.objectId];
 
-        console.log('🔍 [DICE_OBJ_LOOKUP] Looking up dice object:', {
-          diceId: diceDragRef.current.objectId,
-          objFound: !!obj,
-          objType: obj?.type,
-          totalStateObjects: Object.keys(state.objects).length
-        });
-
         let clickOffsetX, clickOffsetY;
         let offsetXPX = 0, offsetYPX = 0;
 
@@ -1140,7 +1125,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // Add to cursor slot immediately when drag threshold is exceeded
         // First, mark as locally dragging to prevent visual duplication
         if (diceDragRef.current.objectId) {
-          console.log('🎯 [POOL_DRAG_START] Adding to locallyDraggingIdsRef:', diceDragRef.current.objectId);
           locallyDraggingIdsRef.current.add(diceDragRef.current.objectId);
           setLocallyDraggingTrigger(prev => prev + 1);
         }
@@ -1182,13 +1166,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           id: diceDragRef.current.objectId,
           type: ItemType.DICE_OBJECT
         };
-
-        console.log('📤 [ADD_TO_CURSOR_SLOT] Dispatching add-to-cursor-slot for dice:', diceDragRef.current.objectId, {
-          hasObj: !!obj,
-          hasCardOverride: !!cardOverride,
-          overrideType: cardOverride?.type,
-          fromPoolPanel: poolZone.panelId
-        });
 
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
@@ -1251,7 +1228,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         // Add to cursor slot immediately when drag threshold is exceeded
         // First, mark as locally dragging to prevent visual duplication
         if (genericDragRef.current.objectId) {
-          console.log('🎯 [POOL_DRAG_START] Adding to locallyDraggingIdsRef:', genericDragRef.current.objectId);
           locallyDraggingIdsRef.current.add(genericDragRef.current.objectId);
           setLocallyDraggingTrigger(prev => prev + 1);
         }
@@ -1282,13 +1258,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
           // Don't override x/y - let cursor slot handle positioning
         }
 
-        console.log('📤 [ADD_TO_CURSOR_SLOT] Dispatching add-to-cursor-slot for generic:', genericDragRef.current.objectId, {
-          type: obj?.type,
-          faceUp: (obj as any)?.faceUp,
-          location: (obj as any)?.location,
-          fromPoolPanel: poolZone.panelId,
-          sendingCardOverride: !!cardOverride
-        });
         window.dispatchEvent(new CustomEvent('add-to-cursor-slot', {
           detail: {
             cardId: genericDragRef.current.objectId,
@@ -1324,7 +1293,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       ItemType.DICE_OBJECT,
       ItemType.RANDOMIZER,
       ItemType.COUNTER,
-      ItemType.BOARD
+      ItemType.BOARD,
+      ItemType.EFFECT_TEMPLATE // Effects are handled by cursor slot system
     ].includes(draggingObject.type)) {
       return;
     }
@@ -1373,28 +1343,19 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Instead, wait for cursor-slot-item-added event to confirm object was added to cursor slot
       // If object wasn't added (drag cancelled), clear it after a timeout
       if (objectId && wasDrag) {
-        console.log('🧹 [DICE_MOUSEUP] Scheduling cleanup for:', objectId, 'wasDrag:', wasDrag);
-
         // Schedule cleanup in case cursor slot add didn't happen
         setTimeout(() => {
           // Check if object is still in locallyDraggingIdsRef (meaning cursor-slot-item-added didn't clear it)
           if (locallyDraggingIdsRef.current.has(objectId)) {
             const obj = state.objects[objectId];
-            console.log('🔄 [DICE_MOUSEUP_TIMEOUT] Cursor slot add not confirmed, checking for:', objectId, {
-              objFound: !!obj,
-              inCursorSlot: obj ? (obj as any).inCursorSlot : 'obj not found',
-              stillInDraggingRef: true
-            });
 
             // If object is in cursor slot now, it was successfully added - clear from dragging ref
             if (obj && (obj as any).inCursorSlot === true) {
-              console.log('✅ [DICE_MOUSEUP_TIMEOUT] Object in cursor slot, clearing from locallyDraggingIdsRef:', objectId);
               locallyDraggingIdsRef.current.delete(objectId);
               setLocallyDraggingTrigger(prev => prev + 1);
             } else if (obj && (obj as any).inCursorSlot === false) {
               // Object not in cursor slot - drag was cancelled or failed
               // Clear from dragging ref so it reappears in pool panel
-              console.log('⚠️ [DICE_MOUSEUP_TIMEOUT] Drag cancelled, clearing locallyDraggingIdsRef:', objectId);
               locallyDraggingIdsRef.current.delete(objectId);
               setLocallyDraggingTrigger(prev => prev + 1);
             }
@@ -1402,7 +1363,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         }, 150);
       } else if (objectId && !wasDrag) {
         // For clicks (not drags), clear immediately
-        console.log('🧹 [DICE_MOUSEUP] Clearing from click (not drag):', objectId);
         locallyDraggingIdsRef.current.delete(objectId);
         setLocallyDraggingTrigger(prev => prev + 1);
       }
@@ -1476,28 +1436,19 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // Instead, wait for cursor-slot-item-added event to confirm object was added to cursor slot
       // If object wasn't added (drag cancelled), clear it after a timeout
       if (objectId && wasDrag) {
-        console.log('🧹 [OBJECT_MOUSEUP] Scheduling cleanup for:', objectId, 'wasDrag:', wasDrag);
-
         // Schedule cleanup in case cursor slot add didn't happen
         setTimeout(() => {
           // Check if object is still in locallyDraggingIdsRef (meaning cursor-slot-item-added didn't clear it)
           if (locallyDraggingIdsRef.current.has(objectId)) {
             const obj = state.objects[objectId];
-            console.log('🔄 [OBJECT_MOUSEUP_TIMEOUT] Cursor slot add not confirmed, checking for:', objectId, {
-              objFound: !!obj,
-              inCursorSlot: obj ? (obj as any).inCursorSlot : 'obj not found',
-              stillInDraggingRef: true
-            });
 
             // If object is in cursor slot now, it was successfully added - clear from dragging ref
             if (obj && (obj as any).inCursorSlot === true) {
-              console.log('✅ [OBJECT_MOUSEUP_TIMEOUT] Object in cursor slot, clearing from locallyDraggingIdsRef:', objectId);
               locallyDraggingIdsRef.current.delete(objectId);
               setLocallyDraggingTrigger(prev => prev + 1);
             } else if (obj && (obj as any).inCursorSlot === false) {
               // Object not in cursor slot - drag was cancelled or failed
               // Clear from dragging ref so it reappears in pool panel
-              console.log('⚠️ [OBJECT_MOUSEUP_TIMEOUT] Drag cancelled, clearing locallyDraggingIdsRef:', objectId);
               locallyDraggingIdsRef.current.delete(objectId);
               setLocallyDraggingTrigger(prev => prev + 1);
             }
@@ -1505,7 +1456,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         }, 150);
       } else if (objectId && !wasDrag) {
         // For clicks (not drags), clear immediately
-        console.log('🧹 [OBJECT_MOUSEUP] Clearing from click (not drag):', objectId);
         locallyDraggingIdsRef.current.delete(objectId);
         setLocallyDraggingTrigger(prev => prev + 1);
       }
@@ -1531,7 +1481,8 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       ItemType.DICE_OBJECT,
       ItemType.RANDOMIZER,
       ItemType.COUNTER,
-      ItemType.BOARD
+      ItemType.BOARD,
+      ItemType.EFFECT_TEMPLATE // Effects are handled by cursor slot system
     ].includes(draggingObject.type)) {
       setDraggingObject(null);
       return;
@@ -2193,7 +2144,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         (obj as any).cursorSlotSourcePanel === poolZone.panelId
       );
       if (objectsFromThisPanel.length > 0) {
-        console.log('🧹 [POOL_MOUSEUP] Clearing locallyDraggingIdsRef:', objectsFromThisPanel.map(o => o.id));
         objectsFromThisPanel.forEach(obj => {
           locallyDraggingIdsRef.current.delete(obj.id);
         });
