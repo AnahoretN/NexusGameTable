@@ -1,5 +1,6 @@
 import { TableObject, CardLocation, Deck as DeckType, Card, CardPile, TokenShape, ItemType, DiceObject, Counter, NexusCellObject, TokenState, TokenType } from '../types';
 import { handlePlayTopCard, handleShow, handleHide, handleSwingClockwise, handleSwingCounterClockwise } from './objectActionHandlers';
+import { handleCloneCardInDeck, handleShuffleDeckAction, handleReturnAllAndShuffleAction } from './objectFactories';
 
 /**
  * Common context menu action handlers
@@ -317,36 +318,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
         const card = object as Card;
         const deck = state.objects[card.deckId] as DeckType;
         if (deck && deck.type === ItemType.DECK) {
-          // Create a copy of the card in the same deck
-          const newCardId = `card-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-          // Create exact copy of the card with new ID
-          const newCard: Card = {
-            ...card,
-            id: newCardId,
-            name: `${card.name} (copy)`,
-            deckId: card.deckId, // Explicitly preserve deckId
-            location: card.location, // Preserve location
-          };
-
-          // Add new card to deck's cardIds AND baseCardIds
-          // baseCardIds defines the max cards in deck - cloned cards should persist
-          const updatedCardIds = [...deck.cardIds, newCardId];
-          const updatedBaseCardIds = [...(deck.baseCardIds || []), newCardId];
-
-          dispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              id: deck.id,
-              updates: { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds }
-            }
-          });
-
-          // Add the cloned card to objects (payload should be the object itself)
-          dispatch({
-            type: 'ADD_OBJECT',
-            payload: newCard
-          });
+          handleCloneCardInDeck(card, deck, state.objects, dispatch);
         } else {
           // Fallback to regular object clone
           dispatch({ type: 'CLONE_OBJECT', payload: { id: object.id } });
@@ -436,11 +408,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       break;
 
     case 'shuffleDeck':
-      // Dispatch event for shuffle animation (same as Tabletop.tsx)
-      window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
-        detail: { deckId: object.id }
-      }));
-      dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: object.id } });
+      handleShuffleDeckAction(object.id, dispatch);
       break;
 
     case 'draw':
@@ -507,11 +475,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       break;
 
     case 'returnAllAndShuffle':
-      // Dispatch event for shuffle animation before returning cards
-      window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
-        detail: { deckId: object.id }
-      }));
-      dispatch({ type: 'RETURN_ALL_CARDS_TO_DECK', payload: { deckId: object.id, shuffleAfter: true } });
+      handleReturnAllAndShuffleAction(object.id, dispatch);
       break;
 
     case 'returnAllExceptHands':

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
-import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT } from '../constants';
+import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, SCROLLBAR_WIDTH_THICK } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { P2PLoadingModal } from '../components/P2PLoadingModal';
 import { GuestConnectionModal } from '../components/GuestConnectionModal';
@@ -948,7 +948,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       return result;
     }
     case 'UPDATE_OBJECT': {
-      const obj = state.objects[action.payload.id];
+      let obj = state.objects[action.payload.id];
       if (!obj) {
         // 🔥 FIX: Create object if it doesn't exist (e.g., pool panel objects being dropped)
         // This allows pool panel objects to be spawned into the game state
@@ -5124,6 +5124,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Generate new token based on archetype settings
       const tokenId = generateUUID();
 
+      const tokenWidth = archetype.defaultSize?.width ?? archetype.width;
+      const tokenHeight = archetype.defaultSize?.height ?? archetype.height;
+
       const newToken: Token = {
         id: tokenId,
         type: ItemType.TOKEN,
@@ -5131,10 +5134,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         name: archetype.autoName && archetype.namePrefix
           ? `${archetype.namePrefix} ${currentCount + 1}`
           : archetype.name,
-        x: action.payload.x,
-        y: action.payload.y,
-        width: archetype.defaultSize?.width ?? archetype.width,
-        height: archetype.defaultSize?.height ?? archetype.height,
+        x: action.payload.x - tokenWidth / 2,   // Center to top-left
+        y: action.payload.y - tokenHeight / 2,  // Center to top-left
+        width: tokenWidth,
+        height: tokenHeight,
         rotation: 0,
         content: archetype.content,
         color: archetype.color,
@@ -6589,34 +6592,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Function to add objects to state
     const addObjects = (objects: Record<string, TableObject>) => {
-      // Update demo deck position to be 20 vu left of main menu
-      const menuPosition = calculateMainMenuPosition();
-      const pixelsPerVU = state.viewTransform?.pixelsPerVU || calculatePixelsPerVU(window.innerWidth, window.innerHeight);
-
-      // Convert menu left edge from pixels to vu, then subtract deck width and spacing
-      const menuLeftVU = menuPosition.x / pixelsPerVU;
-      const deckWidth = DEFAULT_DECK_WIDTH; // 120 vu
-      const spacing = 150; // Spacing between deck right edge and menu left edge
-      const targetDeckX = menuLeftVU - deckWidth - spacing;
-      const targetDeckY = 30; // Fixed Y position in vu (30 vu from top)
-
-      // Find the Standard Deck and update its position along with its cards
-      Object.values(objects).forEach(obj => {
-        if (obj.type === ItemType.DECK && obj.name === 'Standard Deck') {
-          const deck = obj as Deck;
-          deck.x = targetDeckX;
-          deck.y = targetDeckY;
-          // Update positions of all cards in this deck
-          deck.cardIds.forEach(cardId => {
-            const card = objects[cardId];
-            if (card && card.type === ItemType.CARD) {
-              card.x = targetDeckX;
-              card.y = targetDeckY;
-            }
-          });
-        }
-      });
-
       const objectValues = Object.values(objects);
 
       const cards = objectValues.filter(obj => obj.type === ItemType.CARD);
@@ -7053,21 +7028,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localDispatch({ type: 'ADD_OBJECT', payload: board });
 
           // Create Standard Deck on 'cards' layer
-          // Position: 20 vu spacing between deck right edge and menu left edge
-          // Note: menu is UI object (pinned to viewport), deck is world object
-          // We calculate deck position so it visually appears 20 vu left of menu on initial screen
-          const menuPosition = calculateMainMenuPosition(); // Returns pixels
-          const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
+          // Position: relative to right edge of browser window viewport
+          // IMPORTANT: Must match rendering pixelsPerVU from viewTransform
+          const viewportWidth = document.documentElement.clientWidth;
+          const actualPixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.0;
+          const zoomMultiplier = state.viewTransform?.zoom ?? 1.0;
+          const pixelsPerVU = actualPixelsPerVU * zoomMultiplier;
+          const offsetX = state.viewTransform?.offset?.x || 0;
+          const scrollLeft = state.viewTransform?.scroll?.x || 0;
 
+          // Calculate position in viewport pixels first
+          // Menu left edge = viewportWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH_THICK
+          const menuLeftPx = viewportWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH_THICK;
+          const spacingPx = 20 * pixelsPerVU; // 20vu spacing between deck right edge and menu left edge
+          const deckRightPx = menuLeftPx - spacingPx; // Deck right edge in pixels
+          const deckLeftPx = deckRightPx - (DEFAULT_DECK_WIDTH * pixelsPerVU); // Deck left edge in pixels
 
-          // For visual positioning: convert pixels to vu for deck world position
-          // Menu left edge (px) -> vu, then subtract deck width and spacing
-          const menuLeftVU = menuPosition.x / pixelsPerVU;
-          const deckWidth = DEFAULT_DECK_WIDTH; // 120 vu
-          const spacing = 150; // Spacing between deck right edge and menu left edge
-          const deckX = menuLeftVU - deckWidth - spacing; // Left edge of deck
-          const deckY = 30; // Fixed Y position in vu (30 vu from top)
-
+          // Convert viewport pixels to world coordinates using viewportToWorld formula
+          const deckX = (deckLeftPx + scrollLeft - offsetX) / pixelsPerVU;
+          const deckY = 20; // 20vu from top
 
           const { deck, cards } = createStandardDeck();
 

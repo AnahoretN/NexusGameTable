@@ -1,6 +1,7 @@
 import React from 'react';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown, EyeOff, Eye, Hand, Shuffle, Undo, Search, ArrowUp, ArrowDown, CornerDownRight, Pin, SkipForward, SkipBack, Rewind } from 'lucide-react';
 import { ContextAction } from '../types';
+import { handleShuffleDeckAction } from '../utils/objectFactories';
 
 interface ObjectActionButtonsProps {
   obj: any;
@@ -154,8 +155,7 @@ const createButtonConfigs = (obj: any, dispatch: any, executeClickAction?: (obj:
       if (executeClickAction) {
         executeClickAction(obj, 'shuffleDeck');
       } else {
-        window.dispatchEvent(new CustomEvent('deck-shuffle-start', { detail: { deckId: obj.id } }));
-        dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id } });
+        handleShuffleDeckAction(obj.id, dispatch);
       }
     },
     className: 'bg-purple-600 hover:bg-purple-500',

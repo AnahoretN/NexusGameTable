@@ -8,6 +8,7 @@ import { TableObject, ItemType, Deck as DeckType, Card as CardType, CardOrientat
 import { Dispatch } from 'react';
 import { Action } from '../store/GameContext';
 import { executeContextMenuAction } from './contextMenuActions';
+import { handleShuffleDeckAction, handleReturnAllAndShuffleAction, handleCloneCardInDeck } from './objectFactories';
 
 // ============================================
 // ACTION HANDLER CONFIGURATION
@@ -193,14 +194,7 @@ export function handleLayerDown(obj: TableObject, dispatch: Dispatch<Action>) {
 
 export function handleShuffleDeck(obj: TableObject, context: ActionHandlerContext) {
   if (obj.type === ItemType.DECK) {
-    // Dispatch event for shuffle animation
-    window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
-      detail: { deckId: obj.id }
-    }));
-    context.dispatch({
-      type: 'SHUFFLE_DECK',
-      payload: { deckId: obj.id }
-    });
+    handleShuffleDeckAction(obj.id, context.dispatch);
   }
 }
 
@@ -271,13 +265,7 @@ export function handleReturnAll(obj: TableObject, context: ActionHandlerContext)
 
 export function handleReturnAllAndShuffle(obj: TableObject, context: ActionHandlerContext) {
   if (obj.type === ItemType.DECK) {
-    window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
-      detail: { deckId: obj.id }
-    }));
-    context.dispatch({
-      type: 'RETURN_ALL_CARDS_TO_DECK',
-      payload: { deckId: obj.id, shuffleAfter: true }
-    });
+    handleReturnAllAndShuffleAction(obj.id, context.dispatch);
   }
 }
 
@@ -319,34 +307,7 @@ export function handleClone(obj: TableObject, context: ActionHandlerContext) {
     const card = obj as any;
     const deck = context.state.objects[card.deckId];
     if (deck && deck.type === ItemType.DECK) {
-      // Create a copy of the card in the same deck
-      const newCardId = `card-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-      // Create exact copy of the card with new ID
-      const newCard = {
-        ...card,
-        id: newCardId,
-        name: `${card.name} (copy)`
-      };
-
-      // Add new card to deck's cardIds AND baseCardIds
-      // baseCardIds defines the max cards in deck - cloned cards should persist
-      const updatedCardIds = [...deck.cardIds, newCardId];
-      const updatedBaseCardIds = [...(deck.baseCardIds || []), newCardId];
-
-      context.dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: deck.id,
-          updates: { cardIds: updatedCardIds, baseCardIds: updatedBaseCardIds }
-        }
-      });
-
-      // Add the cloned card to objects
-      context.dispatch({
-        type: 'ADD_OBJECT',
-        payload: { object: newCard }
-      });
+      handleCloneCardInDeck(card, deck, context.state.objects, context.dispatch);
       return;
     }
   }

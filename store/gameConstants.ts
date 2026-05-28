@@ -1,5 +1,4 @@
-import { generateUUID } from '../utils/uuid';
-import { CARD_SHAPE_DIMS } from '../constants';
+import { createStandardDeckWithCards } from '../utils/objectFactories';
 import { Card, Deck, ItemType, CardLocation, CardShape, CardOrientation } from '../types';
 
 // ============================================
@@ -116,111 +115,8 @@ export function getPlayerId(): string {
 
 /**
  * Helper function to create a Standard Deck with 54 cards using sprite sheet
- * Sprite sheet: 13 columns x 5 rows = 65 cards, last 10 removed, 55th card is the back
+ * Delegates to objectFactories for unified implementation
  */
 export function createStandardDeck(): { deck: Deck; cards: Card[] } {
-  const deckId = generateUUID();
-  const cardIds: string[] = [];
-  const cards: Card[] = [];
-  const defaultShape = CardShape.POKER;
-  const defaultDims = CARD_SHAPE_DIMS[defaultShape];
-
-  // Sprite sheet configuration
-  const spriteUrl = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1768356401/%D0%9C%D0%BE%D0%BD%D1%82%D0%B0%D0%B6%D0%BD%D0%B0%D1%8F_%D0%BE%D0%B1%D0%BB%D0%B0%D1%81%D1%82%D1%8C_1Poker_fdvt8z.png';
-  const columns = 13;
-  const rows = 5;
-  const totalCards = 55; // 65 - 10 (empty cards removed)
-  const cardBackSpriteIndex = 54; // 55th card (0-based index) is the card back
-
-  // Deck position (will be set by caller, but use 0,0 as default for cards in deck)
-  const deckX = 0;
-  const deckY = 0;
-
-  // Create 54 playing cards (standard deck)
-  for (let i = 0; i < 54; i++) {
-    const cid = generateUUID();
-    cardIds.push(cid);
-    const card: Card = {
-      id: cid,
-      type: ItemType.CARD,
-      x: deckX, // Use deck position (will be updated when deck is positioned)
-      y: deckY, // Use deck position (will be updated when deck is positioned)
-      width: defaultDims.width,
-      height: defaultDims.height,
-      rotation: 0,
-      name: `Card ${i + 1}`,
-      content: '', // Content determined by sprite sheet
-      location: CardLocation.DECK,
-      faceUp: false,
-      deckId: deckId,
-      locked: false,
-      isOnTable: true,
-      shape: defaultShape,
-      // Sprite sheet info
-      spriteIndex: i,
-      spriteUrl,
-      spriteColumns: columns,
-      spriteRows: rows,
-      hyperscaleLayerId: 'cards', // Cards in deck are on cards layer
-    };
-    cards.push(card);
-  }
-
-  const deck: Deck = {
-    id: deckId,
-    type: ItemType.DECK,
-    x: 0, y: 0, // Will be set by caller
-    width: defaultDims.width,
-    height: defaultDims.height,
-    rotation: 0,
-    name: 'Standard Deck',
-    content: '',
-    baseCardIds: [...cardIds], // Base list - starts same as cardIds
-    cardIds,
-    locked: false,
-    isOnTable: true,
-    allowedActions: ['topDeck', 'layer', 'piles', 'draw', 'shuffleDeck', 'playTopCard', 'searchDeck', 'millTopCard', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
-    actionButtons: ['draw', 'playTopCard', 'millTopCard', 'shuffleDeck'],
-    cardShape: defaultShape,
-    cardOrientation: CardOrientation.VERTICAL,
-    cardWidth: defaultDims.width,
-    cardHeight: defaultDims.height,
-    cardAllowedActions: ['moveTo', 'flip', 'layer', 'rotate', 'lock'],
-    cardAllowedActionsForGM: undefined, // undefined = all actions allowed for GM
-    cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
-    cardSingleClickAction: undefined,
-    cardDoubleClickAction: undefined,
-    cardNamePosition: 'none' as const,
-    initialCardCount: cardIds.length,
-    hyperscaleLayerId: 'cards', // Deck is on cards layer
-    // Sprite sheet configuration
-    spriteConfig: {
-      spriteUrl,
-      cardBackUrl: '', // Card back is in the sprite sheet
-      columns,
-      rows,
-      totalCards,
-      spriteIndex: 0,
-      // Card back from sprite sheet (55th card)
-      cardBackSpriteUrl: spriteUrl,
-      cardBackSpriteIndex: cardBackSpriteIndex,
-      cardBackSpriteColumns: columns,
-      cardBackSpriteRows: rows,
-    },
-    piles: [
-      {
-        id: `${deckId}-discard`,
-        name: 'Discard',
-        deckId: deckId,
-        position: 'right',
-        cardIds: [],
-        faceUp: false,
-        visible: false,
-        size: 1,
-        isMillPile: true
-      }
-    ]
-  };
-
-  return { deck, cards };
+  return createStandardDeckWithCards();
 }

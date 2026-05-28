@@ -4,7 +4,7 @@ import { useHandCardScale } from '../hooks/useHandCardScale';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { createPortal } from 'react-dom';
 import { useGame, GameState } from '../store/GameContext';
-import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerPermissions, useLanguage, useHyperscaleLayers, useSelectedLayers } from '../store/contexts';
+import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerPermissions, useLanguage, useHyperscaleLayers, useSelectedLayers, useCoordinateUtils } from '../store/contexts';
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM } from '../utils/playerUtils';
@@ -13,13 +13,12 @@ import { saveSession, loadSession } from '../utils/sessionStorage';
 import { saveGameState } from '../utils/gameStorage';
 import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection, ContextAction } from '../types';
 import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target, AlertCircle, Shuffle, RefreshCw } from 'lucide-react';
-import { TOKEN_SIZE, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, DEFAULT_DICE_SIZE, DEFAULT_COUNTER_WIDTH, DEFAULT_COUNTER_HEIGHT, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
+import { MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
 import { PlayerNameModal } from './PlayerNameModal';
-import { generateUUID } from '../utils/uuid';
 import { useToolSettings, useDrawingTool, DrawingTool } from '../contexts/ToolSettingsContext';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
@@ -31,6 +30,20 @@ import { PackLoadingModal, PackLoadingStep } from './PackLoadingModal';
 import LogViewer from './LogViewer';
 import { CharacterPanel } from './CharacterPanel';
 import { LocalFileRestoreDialog } from './LocalFileRestoreDialog';
+import {
+  createStandardDeck,
+  createHexDeck,
+  createToken,
+  createTokenType,
+  createDice,
+  createCounter,
+  createBoard,
+  createBattlefieldCell,
+  createNexusBoard,
+  createFireConeEffect,
+  createFireExplosionEffect,
+  createObject
+} from '../utils/objectFactories';
 
 // Get icon component for object type
 const getTypeIcon = (obj: TableObject): React.ReactElement => {
@@ -71,6 +84,7 @@ interface MainMenuContentProps {
 export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const { state, dispatch, peerId, initializeHost, connectionMethod, ticket, roomId } = useGame();
   const { viewTransform } = useViewTransform();
+  const { viewportToWorld, worldToViewport } = useCoordinateUtils();
   const { settings: localSettings, updateSetting } = useLocalSettings();
 
   // PlayerContext hooks - using new contexts
@@ -1131,6 +1145,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 viewTransform={viewTransform}
                 hyperscaleLayers={hyperscaleLayers}
                 selectedLayersFromContext={selectedLayersFromContext}
+                viewportToWorld={viewportToWorld}
+                worldToViewport={worldToViewport}
               />
             ))}
           </div>
@@ -2201,6 +2217,8 @@ interface CategorySectionProps {
   viewTransform: any;
   hyperscaleLayers: import('../types').HyperscaleLayer[];
   selectedLayersFromContext: import('../types').HyperscaleLayer[];
+  viewportToWorld: (vx: number, vy: number) => { x: number; y: number };
+  worldToViewport: (wx: number, wy: number) => { x: number; y: number };
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({
@@ -2219,6 +2237,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   viewTransform,
   hyperscaleLayers,
   selectedLayersFromContext,
+  viewportToWorld,
+  worldToViewport,
 }) => {
   // Load expanded state from localStorage, default to false (collapsed)
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -2316,413 +2336,91 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   }, [state.objects, currentUserIsGM, canHideObjects, canDeleteObjects]);
 
   const handleCreateItem = (item: typeof category.items[number]) => {
-    // Screen coordinates (center of viewport)
-    const screenX = window.innerWidth / 2;
-    const screenY = window.innerHeight / 2;
+    // Use center of visible browser viewport for spawn point
+    const viewportCenterX = window.innerWidth / 2;
+    const viewportCenterY = window.innerHeight / 2;
 
-    // Convert screen coordinates to world coordinates (in pixels first)
-    // Objects are rendered inside transform container with: translate(offset.x, offset.y) scale(zoom)
-    const zoom = viewTransform.zoom;
-    const offsetX = viewTransform.offset.x;
-    const offsetY = viewTransform.offset.y;
-    const scrollX = viewTransform.scroll?.x ?? 0;
-    const scrollY = viewTransform.scroll?.y ?? 0;
+    // Convert viewport coords to world coords
+    const worldCoords = viewportToWorld(viewportCenterX, viewportCenterY);
 
-    const worldX_px = (screenX - offsetX + scrollX) / zoom;
-    const worldY_px = (screenY - offsetY + scrollY) / zoom;
+    // Get pixelsPerVU for objects that need it (battlefield cells, effects)
+    const { pixelsPerVU } = viewTransform;
 
-    // Convert pixels to VU (Virtual Units) for consistent positioning across different screen sizes
-    const pixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
-    const worldX = pixelsToVu(worldX_px, pixelsPerVU);
-    const worldY = pixelsToVu(worldY_px, pixelsPerVU);
+    // Determine target hyperscale layer for objects that need it
+    let targetLayerId: string | undefined;
+    const boardsLayer = hyperscaleLayers.find(l => l.id === 'boards');
+    if (boardsLayer) {
+      targetLayerId = 'boards';
+    } else if (selectedLayersFromContext.length > 0) {
+      const sortedSelectedLayers = [...selectedLayersFromContext].sort((a, b) => a.order - b.order);
+      if (sortedSelectedLayers.length > 0) {
+        targetLayerId = sortedSelectedLayers[0].id;
+      }
+    }
 
+    // Handle different item types using factory functions
     switch (item.type) {
       case 'DECK': {
-        const deckId = generateUUID();
-        const deck: Deck = {
-          id: deckId,
-          type: ItemType.DECK,
-          name: item.name,
-          x: worldX,
-          y: worldY,
-          width: DEFAULT_DECK_WIDTH,
-          height: DEFAULT_DECK_HEIGHT,
-          rotation: 0,
-          color: '#2c3e50',
-          borderColor: '#64748b',
-          borderWidth: 2,
-          content: '',
-          isOnTable: true,
-          locked: false,
-          baseCardIds: [],
-          cardIds: [],
-          showTopCard: false,
-          piles: [{
-            id: generateUUID(),
-            name: 'Discard',
-            deckId: deckId,
-            position: 'right',
-            cardIds: [],
-            faceUp: false,
-            visible: false,
-            size: 1,
-            isMillPile: true,
-          }],
-          // Deck-specific properties
-          cardShape: CardShape.POKER,
-          cardOrientation: CardOrientation.VERTICAL,
-          cardWidth: DEFAULT_DECK_WIDTH,
-          cardHeight: DEFAULT_DECK_HEIGHT,
-          cardAllowedActions: undefined, // undefined = all actions allowed for players
-          cardAllowedActionsForGM: undefined, // undefined = all actions allowed for GM
-          cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
-          cardSingleClickAction: undefined,
-          cardDoubleClickAction: undefined,
-          cardNamePosition: 'none' as const,
-          // Deck actions (for the deck itself, not cards)
-          actionButtons: ['draw', 'playTopCard', 'millTopCard', 'shuffleDeck'],
-          allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
-          allowedActionsForGM: undefined, // undefined = all actions allowed for GM
-        };
+        const deck = createStandardDeck({ x: worldCoords.x, y: worldCoords.y, name: item.name });
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;
       }
       case 'HEX_DECK': {
-        // Hex card dimensions for pointy-top orientation (vertices at top/bottom)
-        // Width = sqrt(3) * height / 2, Height = 2 * radius
-        // Using similar height to standard cards (168), width ≈ 145.5
-        const hexHeight = DEFAULT_DECK_HEIGHT;  // 168
-        const hexWidth = Math.sqrt(3) * hexHeight / 2;  // ≈ 145.5
-        const deckId = generateUUID();
-
-        const deck: Deck = {
-          id: deckId,
-          type: ItemType.DECK,
-          name: 'Hex Deck',
-          x: worldX,
-          y: worldY,
-          width: hexWidth,
-          height: hexHeight,
-          rotation: 0,
-          color: '#2c3e50',
-          borderColor: '#64748b',
-          borderWidth: 2,
-          content: '',
-          isOnTable: true,
-          locked: false,
-          baseCardIds: [],
-          cardIds: [],
-          showTopCard: false,
-          piles: [{
-            id: generateUUID(),
-            name: 'Discard',
-            deckId: deckId,
-            position: 'right',
-            cardIds: [],
-            faceUp: false,
-            visible: false,
-            size: 1,
-            isMillPile: true,
-          }],
-          cardShape: CardShape.HEX,
-          cardOrientation: CardOrientation.VERTICAL,
-          cardWidth: hexWidth,
-          cardHeight: hexHeight,
-          cardAllowedActions: undefined, // undefined = all actions allowed for players
-          cardAllowedActionsForGM: undefined, // undefined = all actions allowed for GM
-          cardActionButtons: ['moveToHand', 'swingClockwise', 'flip'],
-          cardSingleClickAction: undefined,
-          cardDoubleClickAction: undefined,
-          cardNamePosition: 'none' as const,
-          // Deck actions (for the deck itself, not cards)
-          actionButtons: ['draw', 'playTopCard', 'millTopCard', 'shuffleDeck'],
-          allowedActions: ['draw', 'playTopCard', 'millTopCard', 'toBottom', 'showTop', 'topDeck', 'searchDeck', 'shuffleDeck', 'piles', 'returnAll', 'rotateClockwise', 'rotateCounterClockwise', 'swingClockwise', 'swingCounterClockwise'],
-          allowedActionsForGM: undefined, // undefined = all actions allowed for GM
-        };
+        const deck = createHexDeck({ x: worldCoords.x, y: worldCoords.y });
         dispatch({ type: 'ADD_OBJECT', payload: deck });
         break;
       }
       case 'TOKEN': {
-        const token: Token = {
-          id: generateUUID(),
-          type: ItemType.TOKEN,
-          name: item.name,
-          x: worldX,
-          y: worldY,
-          width: TOKEN_SIZE,
-          height: TOKEN_SIZE,
-          rotation: 0,
-          color: '#e74c3c',
-          borderColor: '#ffffff',
-          borderWidth: 2,
-          isOnTable: true,
-          locked: false,
-          shape: item.shape || TokenShape.CIRCLE,
-          content: '',
-          snapToGrid: false,
-          gridType: GridType.NONE,
-          gridSize: 50,
-          zIndex: 10, // Tokens above cells by default
-        };
+        const token = createToken({ x: worldCoords.x, y: worldCoords.y, name: item.name, shape: item.shape });
         dispatch({ type: 'ADD_OBJECT', payload: token });
         break;
       }
       case 'TOKEN_TYPE': {
-        // Normalize dimensions for hexagon shape
-        const hexWidth = Math.round(TOKEN_SIZE / 1.155);
-        const tokenType: TokenType = {
-          id: generateUUID(),
-          type: ItemType.TOKEN_TYPE,
-          name: item.name,
-          x: 0,
-          y: 0,
-          width: hexWidth,
-          height: TOKEN_SIZE,
-          rotation: 0,
-          color: '#3498db',
-          borderColor: '#ffffff',
-          borderWidth: 2,
-          isOnTable: false,
-          locked: false,
-          shape: TokenShape.HEX,
-          content: '',
-          // Token type specific properties
-          defaultSize: { width: hexWidth, height: TOKEN_SIZE },
-          autoName: false,
-          namePrefix: '',
-          spawnCount: 0,
-        };
+        const tokenType = createTokenType({ x: 0, y: 0, name: item.name });
         dispatch({ type: 'ADD_OBJECT', payload: tokenType });
         break;
       }
       case 'DICE': {
-        const sides = item.sides || 6;
-        // Determine shape based on number of sides
-        let shape: TokenShape;
-        let width = DEFAULT_DICE_SIZE;
-        let height = DEFAULT_DICE_SIZE;
-
-        if (sides < 5) {
-          shape = TokenShape.TRIANGLE;
-          // Adjust dimensions for equilateral triangle
-          width = DEFAULT_DICE_SIZE;
-          height = Math.round(DEFAULT_DICE_SIZE / 1.155);
-        } else if (sides <= 12) {
-          shape = TokenShape.SQUARE;
-          width = DEFAULT_DICE_SIZE;
-          height = DEFAULT_DICE_SIZE;
-        } else {
-          shape = TokenShape.HEX;
-          // Adjust dimensions for hexagon - width becomes smaller
-          width = Math.round(DEFAULT_DICE_SIZE / 1.155);
-          height = DEFAULT_DICE_SIZE;
-        }
-
-        const dice: DiceObject = {
-          id: generateUUID(),
-          type: ItemType.DICE_OBJECT,
-          name: item.name,
-          x: worldX,
-          y: worldY,
-          width,
-          height,
-          rotation: 0,
-          color: '#6366f1',
-          content: '',
-          isOnTable: true,
-          locked: false,
-          sides,
-          currentValue: 1,
-          shape,
-          actionButtons: ['roll'],
-          allowedActions: ['roll'],
-          allowedActionsForGM: ['roll'],
-        };
+        const dice = createDice({ x: worldCoords.x, y: worldCoords.y, name: item.name, sides: item.sides });
         dispatch({ type: 'ADD_OBJECT', payload: dice });
         break;
       }
       case 'COUNTER': {
-        const isLifeCounter = item.name === 'Life Counter';
-        const counter: Counter = {
-          id: generateUUID(),
-          type: ItemType.COUNTER,
-          name: item.name,
-          x: worldX,
-          y: worldY,
-          width: DEFAULT_COUNTER_WIDTH,
-          height: DEFAULT_COUNTER_HEIGHT,
-          rotation: 0,
-          color: '#10b981',
-          content: '',
-          isOnTable: true,
-          locked: false,
-          value: isLifeCounter ? 30 : 0,
-          baseValue: isLifeCounter ? 30 : 0,
-          maxValue: isLifeCounter ? undefined : 30,
-          allowNegative: !isLifeCounter,
-          actionButtons: ['lock', 'delete'],
-        };
+        const counter = createCounter({ x: worldCoords.x, y: worldCoords.y, name: item.name });
         dispatch({ type: 'ADD_OBJECT', payload: counter });
         break;
       }
       case 'BOARD': {
-        const board: Board = {
-          id: generateUUID(),
-          type: ItemType.BOARD,
-          name: item.name,
-          x: worldX - 400,
-          y: worldY - 300,
-          width: 800,
-          height: 600,
-          rotation: 0,
-          color: '#34495e',
-          content: '',
-          isOnTable: true,
-          locked: false,
-          shape: TokenShape.HEX,
-          gridType: GridType.HEX,
-          gridSize: 65,
-          gridWidth: 100,  // Must match DEFAULT_HEX_WIDTH for HEX grids
-          gridHeight: 115, // Must match DEFAULT_HEX_WIDTH * 1.15 for HEX grids
-          snapToGrid: true,
-          hyperscaleLayerId: 'boards',  // Place on boards hyperscale layer
-        };
+        const board = createBoard({ x: worldCoords.x, y: worldCoords.y, name: item.name });
         dispatch({ type: 'ADD_OBJECT', payload: board });
         break;
       }
       case 'BATTLEFIELD_CELL': {
-        // Determine hyperscale layer: try 'boards' first, then use top selected layer
-        let targetLayerId: string | undefined;
-
-        // First priority: 'boards' layer if it exists
-        const boardsLayer = hyperscaleLayers.find(l => l.id === 'boards');
-        if (boardsLayer) {
-          targetLayerId = 'boards';
-        } else if (selectedLayersFromContext.length > 0) {
-          // Second priority: use the top-most selected layer
-          // Sort selected layers by order (lower = higher priority) and pick the first
-          const sortedSelectedLayers = [...selectedLayersFromContext].sort((a, b) => a.order - b.order);
-          if (sortedSelectedLayers.length > 0) {
-            targetLayerId = sortedSelectedLayers[0].id;
-          }
-        }
-
-        const cell: BattlefieldCell = {
-          id: generateUUID(),
-          type: ItemType.BATTLEFIELD_CELL,
-          shape: TokenShape.SQUARE, // Default shape, can be changed in settings
-          x: worldX - pixelsToVu(50, pixelsPerVU), // Center the cell on cursor (50 is half of default 100vu width)
-          y: worldY - pixelsToVu(50, pixelsPerVU), // Center the cell on cursor (50 is half of default 100vu height)
-          rotation: 0,
-          width: 100,
-          height: 100,
-          content: '',
+        const cell = createBattlefieldCell({
+          x: worldCoords.x,
+          y: worldCoords.y,
           name: item.name || 'Cell',
-          isOnTable: true,
-          locked: false,
-          color: '#496179',
-          borderColor: '#212f3c',
-          borderWidth: 3,
-          opacity: 100,
-          borderOpacity: 100,
-          snapToGrid: false,
-          gridSize: 50,
-          zIndex: 0, // Will be clamped to layer bounds
-          hyperscaleLayerId: targetLayerId, // Place on boards layer or top selected layer
-          actionButtons: ['pin', 'lock', 'delete'], // Add pin button for battlefield cells
-        };
+          hyperscaleLayerId: targetLayerId,
+          pixelsPerVU
+        });
         dispatch({ type: 'ADD_OBJECT', payload: cell });
         break;
       }
       case 'NEXUS_BOARD': {
-        // Find target hyperscale layer
-        let targetLayerId: string | undefined = undefined;
-        const sortedSelectedLayers = [...selectedLayersFromContext].sort((a, b) => a.order - b.order);
-        if (sortedSelectedLayers.length > 0) {
-          targetLayerId = sortedSelectedLayers[0].id;
-        }
-
-        const boardId = generateUUID();
-        const mainCellId = generateUUID();
-        const cellWidth = 100;
-        const cellHeight = 150;
-
-        // Create main cell as a separate NexusCellObject
-        const mainCell: NexusCellObject = {
-          id: mainCellId,
-          type: ItemType.NEXUS_CELL,
-          shape: TokenShape.HEX,
-          x: worldX - pixelsToVu(cellWidth / 2, pixelsPerVU), // Center the cell on cursor
-          y: worldY - pixelsToVu(cellHeight / 2, pixelsPerVU), // Center the cell on cursor
-          rotation: 0,
-          width: cellWidth,
-          height: cellHeight,
-          content: '',
-          name: 'Main Cell',
-          isOnTable: true,
-          locked: false,
-          color: '#496179',
-          borderColor: '#212f3c',
-          borderWidth: 3,
-          opacity: 100,
-          borderOpacity: 100,
-          snapToGrid: true,
-          gridSize: 50,
-          zIndex: 0,
-          hyperscaleLayerId: targetLayerId,
-          nexusBoardId: boardId,
-          direction: 'N' as HexDirection,
-          offset: { x: 0, y: 0 },
-          gridType: GridType.HEX,
-          magnetPointCount: 1,
-          magnetRotation: 0,
-        };
-
-        // Create the NexusBoard (smaller, just a container)
-        const nexusBoard: NexusBoard = {
-          id: boardId,
-          type: ItemType.NEXUS_BOARD,
-          shape: TokenShape.HEX,
-          x: worldX - pixelsToVu(50, pixelsPerVU),
-          y: worldY - pixelsToVu(75, pixelsPerVU),
-          rotation: 0,
-          width: 0,  // Board itself doesn't render, just a container
-          height: 0,
-          content: '',
+        const { board, mainCell } = createNexusBoard({
+          x: worldCoords.x,
+          y: worldCoords.y,
           name: item.name || 'Nexus Board',
-          isOnTable: true,
-          locked: false,
-          color: '#496179',
-          borderColor: '#212f3c',
-          borderWidth: 0,
-          opacity: 100,
-          borderOpacity: 100,
-          zIndex: 0,
           hyperscaleLayerId: targetLayerId,
-          gridType: GridType.HEX,
-          gridSize: 50,
-          cells: [
-            {
-              id: mainCellId,
-              direction: 'N' as HexDirection,
-            }
-          ],
-          cellWidth: cellWidth,
-          cellHeight: cellHeight,
-          snapToGrid: true, // Enable magnetism by default
-        };
-
-        // Add both objects - board first, then cell
-        dispatch({ type: 'ADD_OBJECT', payload: nexusBoard });
+          pixelsPerVU
+        });
+        dispatch({ type: 'ADD_OBJECT', payload: board });
         dispatch({ type: 'ADD_OBJECT', payload: mainCell });
         break;
       }
       case 'PANEL': {
-        // Panels use screen coordinates (pixels), not world coordinates
-        // Center the panel on screen
         const panelX = window.innerWidth / 2 - DEFAULT_PANEL_WIDTH / 2;
         const panelY = window.innerHeight / 2 - DEFAULT_PANEL_HEIGHT / 2;
-
         dispatch({
           type: 'CREATE_PANEL',
           payload: {
@@ -2737,49 +2435,13 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         break;
       }
       case 'FIRE_CONE_EFFECT': {
-        const effectTemplate: import('../types').EffectTemplate = {
-          id: generateUUID(),
-          type: ItemType.EFFECT_TEMPLATE,
-          name: item.name || 'Fire Cone Effect',
-          x: worldX - pixelsToVu(100, pixelsPerVU), // Center on cursor
-          y: worldY - pixelsToVu(175, pixelsPerVU), // Center vertically (height/2 = 350/2 = 175)
-          rotation: 0, // Will point upward due to calculation offset
-          width: 200,
-          height: 350,
-          content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777883916/FireConeEffect_npwe4x.png',
-          isOnTable: true,
-          locked: false,
-          pivot: { x: 50, y: 100 }, // Default pivot at bottom center
-          actionButtons: ['lock', 'delete'],
-          hyperscaleLayerId: 'boards', // Place on boards hyperscale layer (with game boards)
-          zIndex: 15, // Above tokens for visibility
-          opacity: 85, // 85% opacity by default
-        };
-        dispatch({ type: 'ADD_OBJECT', payload: effectTemplate });
+        const effect = createFireConeEffect({ x: worldCoords.x, y: worldCoords.y, name: item.name, pixelsPerVU });
+        dispatch({ type: 'ADD_OBJECT', payload: effect });
         break;
       }
       case 'FIRE_EXPLOSION_EFFECT': {
-        const effectTemplate: import('../types').EffectTemplate = {
-          id: generateUUID(),
-          type: ItemType.EFFECT_TEMPLATE,
-          name: item.name || 'Fire Explosion Effect',
-          x: worldX - pixelsToVu(150, pixelsPerVU), // Center on cursor (width/2 = 300/2 = 150)
-          y: worldY - pixelsToVu(150, pixelsPerVU), // Center on cursor (height/2 = 300/2 = 150)
-          rotation: 0,
-          width: 300,
-          height: 300,
-          content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777884706/FireExplosionEffect_bejprf.png',
-          isOnTable: true,
-          locked: false,
-          pivot: { x: 50, y: 50 }, // Default pivot at center
-          rotationMarkerDistance: 150, // Distance from pivot to rotation marker (radius of explosion)
-          proportionalScaling: true, // Scale width proportionally when resizing height
-          actionButtons: ['lock', 'delete'],
-          hyperscaleLayerId: 'boards', // Place on boards hyperscale layer (with game boards)
-          zIndex: 15, // Above tokens for visibility
-          opacity: 85, // 85% opacity by default
-        };
-        dispatch({ type: 'ADD_OBJECT', payload: effectTemplate });
+        const effect = createFireExplosionEffect({ x: worldCoords.x, y: worldCoords.y, name: item.name, pixelsPerVU });
+        dispatch({ type: 'ADD_OBJECT', payload: effect });
         break;
       }
     }

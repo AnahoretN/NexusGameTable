@@ -80,9 +80,13 @@ export const TokenRenderer = memo(({
   const positionStyle = useMemo(() => {
     const inverseScale = getLayerInverseScale(objLayer);
     const transform = `rotate(${obj.rotation}deg)${inverseScale !== 1 ? ` scale(${inverseScale})` : ''}`;
-    return createPositionedStyle(
-      v2p(obj.x),
-      v2p(obj.y),
+
+    const xPos = v2p(obj.x);
+    const yPos = v2p(obj.y);
+
+    const style = createPositionedStyle(
+      xPos,
+      yPos,
       v2p(token.width),
       v2p(token.height),
       globalZIndex,
@@ -97,7 +101,9 @@ export const TokenRenderer = memo(({
         pointerEvents: isDraggingByOther ? 'none' : undefined,
       }
     );
-  }, [obj.x, obj.y, obj.rotation, token.width, token.height, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging, isDraggingByOther]);
+
+    return style;
+  }, [obj.x, obj.y, obj.rotation, token.width, token.height, globalZIndex, objLayer, obj, v2p, createPositionedStyle, getLayerInverseScale, isDragging, isDraggingByOther, pixelsPerVU]);
 
   // Memoize token name display
   const tokenName = useMemo(() => {

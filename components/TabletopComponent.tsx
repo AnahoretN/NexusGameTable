@@ -20,6 +20,7 @@ import { useLocalSettings } from '../hooks/useLocalSettings';
 import { useDragOverStore } from '../store/dragOverState';
 import { clampScrollToPlayableArea } from '../utils/viewportConstraints';
 import { executeContextMenuAction } from '../utils/contextMenuActions';
+import { handleShuffleDeckAction } from '../utils/objectFactories';
 import { ClickTooltip } from './Tabletop/ClickTooltip';
 import { useToolSettings } from '../contexts/ToolSettingsContext';
 
@@ -107,6 +108,7 @@ export const Tabletop: React.FC = () => {
     v2p,
     p2v,
     zoomMultiplier,
+    basePixelsPerVU,
   } = useTabletopPositioning(viewTransform, localSettings);
 
   const { getLayerZoomScale, getLayerInverseScale } = useLayerZoom(zoomMultiplier, hyperscaleLayers);
@@ -287,6 +289,7 @@ export const Tabletop: React.FC = () => {
   // === Render Context ===
   const renderContext: TabletopRenderContext = {
     pixelsPerVU,
+    basePixelsPerVU,
     v2p,
     p2v,
     getLayerZoomScale,
@@ -349,8 +352,7 @@ export const Tabletop: React.FC = () => {
         break;
       case 'shuffleDeck':
         if (obj.type === ItemType.DECK) {
-          window.dispatchEvent(new CustomEvent('deck-shuffle-start', { detail: { deckId: obj.id } }));
-          dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id } });
+          handleShuffleDeckAction(obj.id, dispatch);
         }
         break;
       case 'searchDeck':

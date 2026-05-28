@@ -11,20 +11,20 @@ import { vuToPixels, pixelsToVu } from '../../utils/vuSystem';
  * Handles virtual units ↔ pixels conversion and zoom calculations
  */
 export const useTabletopPositioning = (
-  viewTransform: { pixelsPerVU?: number } | null | undefined,
+  viewTransform: { pixelsPerVU?: number; zoom?: number } | null | undefined,
   localSettings: { zoom?: number }
 ) => {
-  // Get the base pixelsPerVU conversion factor
-  // Normalize to make 1 VU = 1 px at zoom 100% (typical screen has pixelsPerVU ~1.08)
-  const basePixelsPerVU = 1.0;
+  // Use pixelsPerVU from viewTransform (calculated from actual viewport size)
+  // This ensures consistency with viewportToWorld/worldToViewport conversions
+  const actualPixelsPerVU = viewTransform?.pixelsPerVU ?? 1.0;
 
   // Local zoom multiplier (100 = default, 150 = 50% larger objects, etc.)
-  const zoomMultiplier = (localSettings.zoom ?? 100) / 100;
+  const zoomMultiplier = viewTransform?.zoom ?? (localSettings.zoom ?? 100) / 100;
 
   // Apply zoom multiplier to pixelsPerVU (affects all calculations)
   const pixelsPerVU = useMemo(
-    () => basePixelsPerVU * zoomMultiplier,
-    [basePixelsPerVU, zoomMultiplier]
+    () => actualPixelsPerVU * zoomMultiplier,
+    [actualPixelsPerVU, zoomMultiplier]
   );
 
   // Helper functions for vu ↔ pixel conversion (with zoom applied)
@@ -43,7 +43,7 @@ export const useTabletopPositioning = (
     v2p,
     p2v,
     zoomMultiplier,
-    basePixelsPerVU
+    basePixelsPerVU: actualPixelsPerVU  // Use actual pixelsPerVU as base
   };
 };
 

@@ -10,6 +10,14 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
   switch (action.type) {
     case 'ADD_OBJECT': {
       const newObject = action.payload;
+      // 🔍 DEBUG: Log object creation
+      console.log('[ADD_OBJECT] Creating object:', {
+        type: newObject.type,
+        name: newObject.name,
+        x: newObject.x,
+        y: newObject.y,
+        id: newObject.id
+      });
       return {
         ...state,
         objects: {

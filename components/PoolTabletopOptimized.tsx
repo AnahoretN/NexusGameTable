@@ -35,6 +35,7 @@ import {
   type CursorSlotObject
 } from '../utils/dragDropUtils';
 import { allocateZIndexWithDefrag } from '../utils/zIndexAllocator';
+import { handleShuffleDeckAction } from '../utils/objectFactories';
 
 interface PoolZone extends PoolZoneType {
   panelId: string;
@@ -428,10 +429,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         return;
       case 'shuffleDeck':
         if (obj.type === ItemType.DECK) {
-          window.dispatchEvent(new CustomEvent('deck-shuffle-start', {
-            detail: { deckId: obj.id }
-          }));
-          dispatch({ type: 'SHUFFLE_DECK', payload: { deckId: obj.id } });
+          handleShuffleDeckAction(obj.id, dispatch);
         }
         return;
       case 'searchDeck':
