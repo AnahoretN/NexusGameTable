@@ -1,84 +1,84 @@
 <div align="center">
   <h1>Nexus Game Table</h1>
-  <p>Виртуальный игровой стол для настольных игр с P2P мультиплеером</p>
+  <p>Virtual game table for board games with P2P multiplayer</p>
   <img width="1200" height="686" alt="Nexus Game Table" src="https://res.cloudinary.com/dxxh6meej/image/upload/v1772083073/NEXSUS_cfte8v.webp" />
 </div>
 
 ---
 
-## 📋 Содержание
+## 📋 Table of Contents
 
-- [О проекте](#о-проекте)
-- [Возможности](#возможности)
-- [Быстрый старт](#быстрый-старт)
-- [Как играть](#как-играть)
-- [Для разработчиков](#для-разработчиков)
-- [Архитектура](#архитектура)
-- [WebRTC мультиплеер](#webrtc-мультиплеер)
+- [About](#about)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [How to Play](#how-to-play)
+- [For Developers](#for-developers)
+- [Architecture](#architecture)
+- [WebRTC Multiplayer](#webrtc-multiplayer)
 
 ---
 
-## О проекте
+## About
 
-**Nexus Game Table** — бесплатный виртуальный игровой стол для настольных игр с поддержкой онлайн-мультиплеера. Приложение работает прямо в браузере и использует P2P-соединения — выделенный сервер не требуется.
+**Nexus Game Table** is a free virtual game table for board games with online multiplayer support. The application runs directly in the browser and uses P2P connections — no dedicated server required.
 
-**Текущая версия:** 0.2.5
-**Статус:** ✅ Production Ready
+**Current version:** 0.2.5
+**Status:** ✅ Production Ready
 
 ### Knowledge Graph
 
-Проект содержит интегрированную систему **graphify knowledge graph** для понимания архитектуры:
+The project contains an integrated **graphify knowledge graph** for understanding the architecture:
 
 ```bash
-# Граф содержит 498 узлов и 643 связей
+# The graph contains 498 nodes and 643 edges
 graphify-out/GRAPH_REPORT.md
 
-# Для запросов к графу:
-graphify query "ваш вопрос" --graph graphify-out/graph.json
+# For querying the graph:
+graphify query "your question" --graph graphify-out/graph.json
 ```
 
 ---
 
-## Возможности
+## Features
 
-| Возможность | Описание |
+| Feature | Description |
 |-------------|----------|
-| **Карты и колоды** | Создание колод, перетасовка, сдача карт, различные формы и размеры |
-| **Кубики** | d4, d6, d8, d10, d12, d20 с логированием бросков, альтернативные значения |
-| **Токены** | Произвольные токены с формами (круг, квадрат, шестиугольник), система состояний |
-| **Счётчики** | Цифровые счётчики для очков/ресурсов |
-| **Доски** | Игровые поля с квадратной/шестиугольной сеткой, Nexus boards |
-| **Рисование** | Маркер, ластик, линейка, циркуль для рисования на столе |
-| **Рулетки** | Случайный выбор из опций |
-| **Чат** | Внутриигровое общение между игроками |
-| **Автосохранение** | Автоматическое сохранение состояния игры |
-| **P2P мультиплеер** | Прямые соединения между игроками без сервера |
+| **Cards and Decks** | Create decks, shuffle, deal cards, various shapes and sizes |
+| **Dice** | d4, d6, d8, d10, d12, d20 with roll logging, alternative values |
+| **Tokens** | Custom tokens with shapes (circle, square, hexagon), state system |
+| **Counters** | Digital counters for points/resources |
+| **Boards** | Game boards with square/hexagonal grid, Nexus boards |
+| **Drawing** | Marker, eraser, ruler, compass for drawing on the table |
+| **Spinners** | Random selection from options |
+| **Chat** | In-game communication between players |
+| **Auto-save** | Automatic saving of game state |
+| **P2P multiplayer** | Direct connections between players without server |
 
 ---
 
-## Быстрый старт
+## Quick Start
 
-### Требования
+### Requirements
 
-- Node.js 18+ и npm
+- Node.js 18+ and npm
 
-### Установка
+### Installation
 
 ```bash
-# Клонирование репозитория
+# Clone the repository
 git clone https://github.com/your-repo/nexus-game-table.git
 cd nexus-game-table
 
-# Установка зависимостей
+# Install dependencies
 npm install
 
-# Запуск приложения
+# Run the application
 npm run dev
 ```
 
-Приложение откроется по адресу: **http://localhost:5173**
+The application will open at: **http://localhost:5173**
 
-### Сборка для продакшена
+### Production Build
 
 ```bash
 npm run build
@@ -87,149 +87,137 @@ npm run preview
 
 ---
 
-## Как играть
+## How to Play
 
-### Создание игры
+### Creating a Game
 
-1. Откройте приложение — локальная игра создаётся автоматически
-2. Нажмите кнопку **Share** в правом меню, чтобы получить ссылку
-3. Поделитесь ссылкой с друзьями
+1. Open the application — a local game is created automatically
+2. Click the **Share** button in the right menu to get a link
+3. Share the link with friends
 
-### Подключение к игре
+### Joining a Game
 
-1. Перейдите по ссылке вида: `https://example.com?hostId=...`
-2. Введите своё имя
-3. Нажмите **Join**
+1. Follow a link like: `https://example.com?hostId=...`
+2. Enter your name
+3. Click **Join**
 
-### Основное управление
+### Basic Controls
 
-| Действие | Управление |
+| Action | Controls |
 |----------|------------|
-| Перемещение объекта | Перетаскивание мышью |
-| Взять объект | Shift + клик |
-| Бросить объект | Shift + клик на цели |
-| Контекстное меню | Правый клик |
-| Масштаб | Колёсико мыши |
-| Панорама | Space + Drag или средняя кнопка мыши |
-| Отмена | Ctrl + Z |
+| Move object | Mouse drag |
+| Pick up object | Shift + click |
+| Drop object | Shift + click on target |
+| Context menu | Right click |
+| Zoom | Mouse wheel |
+| Pan | Space + Drag or middle mouse button |
+| Undo | Ctrl + Z |
 
-### Инструменты рисования
+## For Developers
 
-| Клавиша | Инструмент |
-|---------|------------|
-| M | Маркер |
-| E | Ластик |
-| R | Линейка |
-| C | Циркуль |
-| N | Нет инструмента |
-
----
-
-## Для разработчиков
-
-### Стек технологий
+### Tech Stack
 
 ```
 React 18.x + TypeScript
-├── Vite (сборка)
-├── PeerJS + Trystero (WebRTC мультиплеер с fallback)
+├── Vite (build)
+├── PeerJS + Trystero (WebRTC multiplayer with fallback)
 ├── Zustand (state management)
-├── Redux Toolkit (редьюсеры)
-├── Lucide React (иконки)
-└── Tailwind CSS + CSS Modules (стили)
+├── Redux Toolkit (reducers)
+├── Lucide React (icons)
+└── Tailwind CSS + CSS Modules (styles)
 ```
 
-### Структура проекта
+### Project Structure
 
 ```
 NexusGameTable/
 ├── components/
-│   ├── Tabletop/              # Основной игровой стол
-│   │   ├── TabletopBackground.tsx    # Рендеринг фона
-│   │   ├── TabletopEventHandlers.tsx # Обработка событий
-│   │   ├── TabletopRefactored.tsx   # Ядро с smart z-index
-│   │   ├── CardRenderer.tsx          # Рендеринг карт
-│   │   ├── TokenRenderer.tsx         # Рендеринг токенов
-│   │   └── index.tsx                 # Экспорт модуля
-│   ├── CharacterBlocks/       # Блоки персонажей
-│   ├── contextMenu/           # Контекстные меню
-│   ├── ObjectSettings/        # Настройки объектов
-│   ├── HandPanelOptimized.tsx # Панель руки
-│   ├── ToolsPanel.tsx         # Панель инструментов
-│   ├── PoolTabletopOptimized.tsx # Пул панелей
-│   └── UIObjectRendererOptimized.tsx # Рендеринг объектов
+│   ├── Tabletop/              # Main game table
+│   │   ├── TabletopBackground.tsx    # Background rendering
+│   │   ├── TabletopEventHandlers.tsx # Event handling
+│   │   ├── TabletopRefactored.tsx   # Core with smart z-index
+│   │   ├── CardRenderer.tsx          # Card rendering
+│   │   ├── TokenRenderer.tsx         # Token rendering
+│   │   └── index.tsx                 # Module export
+│   ├── CharacterBlocks/       # Character blocks
+│   ├── contextMenu/           # Context menus
+│   ├── ObjectSettings/        # Object settings
+│   ├── HandPanelOptimized.tsx # Hand panel
+│   ├── ToolsPanel.tsx         # Tools panel
+│   ├── PoolTabletopOptimized.tsx # Panel pool
+│   └── UIObjectRendererOptimized.tsx # Object rendering
 ├── store/
-│   ├── contexts/              # React Context провайдеры
-│   │   ├── PlayerContext.tsx         # Управление игроками
-│   │   ├── ViewTransformContext.tsx  # Камера и зум
-│   │   ├── UIContext.tsx             # Язык, слои
-│   │   └── GameContext.tsx           # Игровое состояние
-│   ├── slices/                 # Redux Toolkit слайсы
-│   │   ├── objectSlice.ts            # Операции с объектами
-│   │   └── playerSlice.ts            # Операции с игроками
-│   ├── objectStore.ts         # Zustand store для объектов
-│   ├── gameActions.ts         # Определение всех Actions
-│   ├── gameState.ts           # Типы состояния
-│   ├── usePeerConnection.ts   # WebRTC с fallback сигналингом
-│   ├── useAutoSave.ts         # Автосохранение
-│   └── reducers/               # Redux редьюсеры
+│   ├── contexts/              # React Context providers
+│   │   ├── PlayerContext.tsx         # Player management
+│   │   ├── ViewTransformContext.tsx  # Camera and zoom
+│   │   ├── UIContext.tsx             # Language, layers
+│   │   └── GameContext.tsx           # Game state
+│   ├── slices/                 # Redux Toolkit slices
+│   │   ├── objectSlice.ts            # Object operations
+│   │   └── playerSlice.ts            # Player operations
+│   ├── objectStore.ts         # Zustand store for objects
+│   ├── gameActions.ts         # Action definitions
+│   ├── gameState.ts           # State types
+│   ├── usePeerConnection.ts   # WebRTC with fallback signaling
+│   ├── useAutoSave.ts         # Auto-save
+│   └── reducers/               # Redux reducers
 ├── utils/
-│   ├── contextMenuActions.ts  # Обработчики контекстного меню
-│   ├── objectActionHandlers.ts # Обработчики действий объектов
-│   ├── objectFactories.ts     # Фабрики объектов
-│   ├── geometryUtils.ts       # Геометрические расчёты
-│   ├── coordinateUtils.ts     # Координатные преобразования
-│   ├── logger.ts              # Система логирования
-│   ├── memoryManager.ts       # Управление памятью
-│   ├── performanceMonitor.ts # Мониторинг производительности
-│   ├── webrtcOptimization.ts  # WebRTC оптимизация
-│   └── assets/                # Управление ассетами
+│   ├── contextMenuActions.ts  # Context menu handlers
+│   ├── objectActionHandlers.ts # Object action handlers
+│   ├── objectFactories.ts     # Object factories
+│   ├── geometryUtils.ts       # Geometric calculations
+│   ├── coordinateUtils.ts     # Coordinate transformations
+│   ├── logger.ts              # Logging system
+│   ├── memoryManager.ts       # Memory management
+│   ├── performanceMonitor.ts # Performance monitoring
+│   ├── webrtcOptimization.ts  # WebRTC optimization
+│   └── assets/                # Asset management
 ├── hooks/
 │   ├── useDragHandlers.ts     # Drag & Drop
-│   ├── useGridSnapping.ts     # Привязка к сетке
-│   └── useObjectPinning.ts    # Закрепление объектов
-├── locales/                   # Переводы
+│   ├── useGridSnapping.ts     # Grid snapping
+│   └── useObjectPinning.ts    # Object pinning
+├── locales/                   # Translations
 │   ├── en.json
 │   ├── ru.json
 │   ├── be.json
 │   ├── sr.json
 │   └── uk.json
-├── types.ts                   # TypeScript типы
-├── constants.ts               # Константы
+├── types.ts                   # TypeScript types
+├── constants.ts               # Constants
 └── graphify-out/              # Knowledge graph
-    ├── GRAPH_REPORT.md        # Отчёт графа
-    ├── graph.json             # Данные графа
-    └── graph.html             # Визуализация
+    ├── GRAPH_REPORT.md        # Graph report
+    ├── graph.json             # Graph data
+    └── graph.html             # Visualization
 ```
 
-### Ключевые сообщества (из графа)
+### Key Communities (from graph)
 
-| Сообщество | Описание |
+| Community | Description |
 |------------|----------|
-| **Object Actions Handlers** | Обработчики действий объектов (`executeClickAction()`, `handleFlip()`) |
-| **Object Settings & Translations** | Настройки объектов и переводы |
-| **Player Context & Hooks** | Управление игроками (`usePlayers()`, `useActivePlayer()`) |
-| **Game Context & State** | Игровое состояние (`useGame()`) |
-| **WebRTC & Networking** | P2P соединения и синхронизация |
-| **Tabletop Core** | Основной игровой стол |
-| **Drawing & Canvas** | Инструменты рисования |
-| **Performance Monitoring** | FPS и оптимизация |
+| **Object Actions Handlers** | Object action handlers (`executeClickAction()`, `handleFlip()`) |
+| **Object Settings & Translations** | Object settings and translations |
+| **Player Context & Hooks** | Player management (`usePlayers()`, `useActivePlayer()`) |
+| **Game Context & State** | Game state (`useGame()`) |
+| **WebRTC & Networking** | P2P connections and synchronization |
+| **Tabletop Core** | Main game table |
+| **Drawing & Canvas** | Drawing tools |
+| **Performance Monitoring** | FPS and optimization |
 
-### God Nodes (наиболее связанные узлы)
+### God Nodes (most connected nodes)
 
-1. `dispatch()` — 48 edges (центральный диспетчер)
-2. `executeClickAction()` — 34 edges (обработчик кликов)
-3. `MemoryManager` — 16 edges (оптимизация памяти)
-4. `useUI()` — 11 edges (UI контекст)
-5. `WebRTCSyncManager` — 11 edges (синхронизация P2P)
+1. `dispatch()` — 48 edges (central dispatcher)
+2. `executeClickAction()` — 34 edges (click handler)
+3. `MemoryManager` — 16 edges (memory optimization)
+4. `useUI()` — 11 edges (UI context)
+5. `WebRTCSyncManager` — 11 edges (P2P synchronization)
 
 ---
 
-## Архитектура
+## Architecture
 
 ### Context Architecture
 
-Иерархия провайдеров:
+Provider hierarchy:
 
 ```typescript
 <LocalSettingsProvider>
@@ -243,7 +231,7 @@ NexusGameTable/
 
 ### Zustand ObjectStore
 
-Оптимизированный доступ к объектам:
+Optimized object access:
 
 ```typescript
 import { useObjectsData, useObjectActions } from './store/objectStore';
@@ -252,12 +240,12 @@ const objects = useObjectsData();           // Read-only, stable
 const { updateObject, deleteObject } = useObjectActions(); // Actions, stable
 ```
 
-### Система Actions
+### Action System
 
-Основные типы действий:
+Main action types:
 
 ```typescript
-// Объекты
+// Objects
 ADD_OBJECT
 UPDATE_OBJECT
 DELETE_OBJECT
@@ -266,7 +254,7 @@ MOVE_OBJECT
 ROTATE_OBJECT
 TOGGLE_LOCK
 
-// Карты
+// Cards
 DRAW_CARD
 PLAY_CARD
 FLIP_CARD
@@ -278,31 +266,31 @@ CREATE_PANEL
 CREATE_WINDOW
 CLOSE_UI_OBJECT
 
-// Слои
+// Layers
 MOVE_OBJECT_TO_HYPERSCALE_LAYER
 ADD_HYPERSCALE_LAYER
 UPDATE_HYPERSCALE_LAYER
 
-// Отмена
+// Undo
 UNDO_MARKER
 UNDO_GENERAL
 ```
 
-### Игровые объекты
+### Game Objects
 
-#### Типы объектов
+#### Object Types
 
 ```typescript
 enum ItemType {
   TOKEN = 'TOKEN',
-  TOKEN_TYPE = 'TOKEN_TYPE',  // Архетип токена
+  TOKEN_TYPE = 'TOKEN_TYPE',  // Token archetype
   CARD = 'CARD',
   DECK = 'DECK',
   DICE_OBJECT = 'DICE_OBJECT',
   COUNTER = 'COUNTER',
   BOARD = 'BOARD',
-  NEXUS_BOARD = 'NEXUS_BOARD',  // Связные шестиугольные клетки
-  NEXUS_CELL = 'NEXUS_CELL',    // Отдельная клетка Nexus board
+  NEXUS_BOARD = 'NEXUS_BOARD',  // Connected hexagonal cells
+  NEXUS_CELL = 'NEXUS_CELL',    // Single Nexus board cell
   BATTLEFIELD_CELL = 'BATTLEFIELD_CELL',
   RANDOMIZER = 'RANDOMIZER',
   PANEL = 'PANEL',
@@ -312,29 +300,29 @@ enum ItemType {
 }
 ```
 
-#### Формы карт
+#### Card Shapes
 
-| Форма | Размер |
+| Shape | Size |
 |-------|--------|
 | POKER | 120×168 |
 | BRIDGE | 108×144 |
 | MINI_US | 74×106 |
 | SQUARE | 168×168 |
-| HEX | Переменный |
+| HEX | Variable |
 
-#### Локации карт
+#### Card Locations
 
 ```
-TABLE   → На столе
-DECK    → В колоде
-HAND    → В руке
-PILE    → В сбросе
-CURSOR_SLOT → В курсоре
+TABLE   → On table
+DECK    → In deck
+HAND    → In hand
+PILE    → In discard
+CURSOR_SLOT → In cursor
 ```
 
 ### Hyperscale Layers
 
-Система слоёв выше обычного z-index:
+Layer system above regular z-index:
 
 ```typescript
 interface HyperscaleLayer {
@@ -345,22 +333,22 @@ interface HyperscaleLayer {
   color: string;
   playerCanSelect: boolean;
   playerCanView: boolean;
-  individualObjects: boolean;  // Локальные позиции для каждого игрока
+  individualObjects: boolean;  // Local positions for each player
   zoomEnabled: boolean;
   order: number;
 }
 ```
 
-Предустановленные слои:
-- **Boards** (1-1000) — игровые поля
-- **Cards** (1001-3000) — карты
-- **Tokens** (3001-6000) — токены
-- **Drawings** (6001-7000) — рисунки
-- **Interface** (9001-10000) — интерфейс
+Preset layers:
+- **Boards** (1-1000) — game boards
+- **Cards** (1001-3000) — cards
+- **Tokens** (3001-6000) — tokens
+- **Drawings** (6001-7000) — drawings
+- **Interface** (9001-10000) — interface
 
-### Система состояний токенов
+### Token State System
 
-Токены могут иметь альтернативные состояния:
+Tokens can have alternative states:
 
 ```typescript
 interface TokenState {
@@ -369,13 +357,13 @@ interface TokenState {
   content?: string;
   color?: string;
   shape?: TokenShape;
-  // ... другие визуальные свойства
+  // ... other visual properties
 }
 ```
 
-### Система слайдеров токенов
+### Token Slider System
 
-Токены могут иметь числовые слайдеры (HP, MP и т.д.):
+Tokens can have numeric sliders (HP, MP, etc.):
 
 ```typescript
 interface TokenSlider {
@@ -391,13 +379,13 @@ interface TokenSlider {
 
 ---
 
-## WebRTC мультиплеер
+## WebRTC Multiplayer
 
 ### Fallback Signaling System
 
-Автоматическое переключение между методами сигналинга:
+Automatic switching between signaling methods:
 
-#### 1. PeerJS Cloud Servers (основной)
+#### 1. PeerJS Cloud Servers (primary)
 
 ```
 0.peerjs.com
@@ -407,7 +395,7 @@ interface TokenSlider {
 
 #### 2. Community Servers (self-hosted)
 
-Добавляются в `COMMUNITY_SERVERS` в `usePeerConnection.ts`
+Added to `COMMUNITY_SERVERS` in `usePeerConnection.ts`
 
 #### 3. Trystero Torrent Trackers (fallback)
 
@@ -418,10 +406,10 @@ wss://tracker.fastcast.nz
 wss://tracker.files.fm:443/announce
 ```
 
-### Добавление комьюнити сервера
+### Adding a Community Server
 
 ```typescript
-// В store/usePeerConnection.ts
+// In store/usePeerConnection.ts
 
 const COMMUNITY_SERVERS = [
   {
@@ -434,19 +422,19 @@ const COMMUNITY_SERVERS = [
 ];
 ```
 
-### Деплой своего PeerJS сервера
+### Deploying Your Own PeerJS Server
 
-**Быстрый старт (Heroku/Railway/Render):**
+**Quick start (Heroku/Railway/Render):**
 
 ```bash
-# 1. Создайте папку для сервера
+# 1. Create a folder for the server
 mkdir nexus-signaling && cd nexus-signaling
 
-# 2. Инициализируйте проект
+# 2. Initialize the project
 npm init -y
 npm install peer
 
-# 3. Создайте server.js
+# 3. Create server.js
 cat > server.js << 'EOF'
 const { PeerServer } = require('peer');
 
@@ -462,30 +450,30 @@ peerServer.on('connection', (client) => {
 console.log('PeerJS server running');
 EOF
 
-# 4. Задеплойте
+# 4. Deploy
 heroku create your-signaling-server
 git push heroku main
 ```
 
-### Модель Host/Guest
+### Host/Guest Model
 
-| Роль | Описание |
+| Role | Description |
 |-----|----------|
-| Host | Создаёт комнату, транслирует state |
-| Guest | Подключается, получает state |
+| Host | Creates room, broadcasts state |
+| Guest | Connects, receives state |
 
-### Диагностика
+### Diagnostics
 
 ```javascript
-// В консоли браузера
+// In browser console
 nexusP2PDebug.getDiagnostics();
 ```
 
 ---
 
-## Создание нового объекта
+## Creating a New Object
 
-### 1. Добавьте тип в types.ts
+### 1. Add type in types.ts
 
 ```typescript
 export enum ItemType {
@@ -500,7 +488,7 @@ export interface MyNewType extends GameItem {
 }
 ```
 
-### 2. Добавьте редьюсер
+### 2. Add reducer
 
 ```typescript
 // store/slices/objectSlice.ts
@@ -517,14 +505,14 @@ case 'CUSTOM_ACTION': {
 }
 ```
 
-### 3. Создайте компонент рендеринга
+### 3. Create rendering component
 
 ```typescript
 // components/MyNewTypeRenderer.tsx
 export const MyNewTypeRenderer: React.FC<{ obj: MyNewType }> = ({ obj }) => {
   return (
     <div style={{ position: 'absolute', left: obj.x, top: obj.y }}>
-      {/* Рендеринг */}
+      {/* Rendering */}
     </div>
   )
 }
@@ -532,9 +520,9 @@ export const MyNewTypeRenderer: React.FC<{ obj: MyNewType }> = ({ obj }) => {
 
 ---
 
-## Добавление действия в контекстное меню
+## Adding Action to Context Menu
 
-### 1. Определите действие
+### 1. Define action
 
 ```typescript
 export type ContextAction =
@@ -542,7 +530,7 @@ export type ContextAction =
   | 'my_custom_action'
 ```
 
-### 2. Обработайте в utils/contextMenuActions.ts
+### 2. Handle in utils/contextMenuActions.ts
 
 ```typescript
 case 'my_custom_action':
@@ -552,14 +540,14 @@ case 'my_custom_action':
 
 ---
 
-## Оптимизация производительности
+## Performance Optimization
 
 ### React.memo
 
 ```typescript
 export const MyComponent = React.memo<MyComponentProps>(
   ({ prop1, prop2 }) => {
-    // Рендеринг
+    // Rendering
   },
   (prevProps, nextProps) => {
     return prevProps.prop1 === nextProps.prop1
@@ -579,22 +567,22 @@ const sortedObjects = useMemo(() => {
 }, [objects])
 ```
 
-### Система логирования
+### Logging System
 
 ```typescript
 import { logger } from './utils/logger';
 
-logger.log('Сообщение', data);
-logger.error('Ошибка', error);
-logger.warn('Предупреждение');
-logger.debug('Отладочная информация');
+logger.log('Message', data);
+logger.error('Error', error);
+logger.warn('Warning');
+logger.debug('Debug information');
 ```
 
 ---
 
-## Константы
+## Constants
 
-### Размеры объектов
+### Object Sizes
 
 ```typescript
 CARD_WIDTH = 120
@@ -615,9 +603,9 @@ Z_INDEX_DRAGGING = 9999
 
 ---
 
-## Переводы
+## Translations
 
-### Добавление нового ключа
+### Adding a New Key
 
 ```json
 // locales/en.json
@@ -631,25 +619,25 @@ Z_INDEX_DRAGGING = 9999
 }
 ```
 
-### Поддерживаемые языки
+### Supported Languages
 
 - `en` - English
-- `ru` - Русский
-- `be` - Беларуская
-- `sr` - Српски
-- `uk` - Українська
+- `ru` - Russian
+- `be` - Belarusian
+- `sr` - Serbian
+- `uk` - Ukrainian
 
 ---
 
-## Соглашения по коду
+## Code Conventions
 
-### Именование
+### Naming
 
-- PascalCase для компонентов: `MyComponent`
-- camelCase для хуков: `useMyHook`
-- UPPER_CASE для констант: `MY_CONSTANT`
+- PascalCase for components: `MyComponent`
+- camelCase for hooks: `useMyHook`
+- UPPER_CASE for constants: `MY_CONSTANT`
 
-### Структура компонента
+### Component Structure
 
 ```typescript
 // 1. Imports
@@ -678,22 +666,22 @@ export const MyComponent: React.FC<MyComponentProps> = ({ prop1 }) => {
 
 ---
 
-## Работа с CHANGELOG.md
+## Working with CHANGELOG.md
 
-### ⚠️ Важные правила
+### ⚠️ Important Rules
 
-**КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО**:
-- ❌ Добавлять новые версии без явного запроса
-- ❌ Изменять номер текущей версии
+**STRICTLY FORBIDDEN**:
+- ❌ Adding new versions without explicit request
+- ❌ Changing the current version number
 
-**РАЗРЕШЕНО**:
-- ✅ Обновлять содержимое текущей версии
-- ✅ Добавлять описание новых функций
-- ✅ Исправлять опечатки
+**ALLOWED**:
+- ✅ Updating current version content
+- ✅ Adding descriptions of new features
+- ✅ Fixing typos
 
 ---
 
-## Полезные утилиты
+## Useful Utilities
 
 ### GeometryUtils
 
@@ -715,19 +703,19 @@ const styles = getCardShapeStyles(CardShape.HEX, CardOrientation.VERTICAL)
 
 ---
 
-## Работа с мультиплеером
+## Working with Multiplayer
 
-### Локальные действия
+### Local Actions
 
 ```typescript
 dispatch({
   type: 'UPDATE_VIEW_TRANSFORM',
   payload: { zoom: 1.5 },
-  _localOnly: true  // Не отправлять по сети
+  _localOnly: true  // Do not send over network
 })
 ```
 
-### Фильтрация при трансляции
+### Filtering During Broadcast
 
 ```typescript
 const stateForBroadcast = {
@@ -741,25 +729,25 @@ const stateForBroadcast = {
 
 ---
 
-## Документация
+## Documentation
 
-### Основная документация
+### Main Documentation
 
-- 📖 [README.md](./README.md) — этот файл
-- 🔒 [SECURITY.md](./SECURITY.md) — политика безопасности
-- 📋 [CHANGELOG.md](./CHANGELOG.md) — история версий
+- 📖 [README.md](./README.md) — this file
+- 🔒 [SECURITY.md](./SECURITY.md) — security policy
+- 📋 [CHANGELOG.md](./CHANGELOG.md) — version history
 
-### Устаревшие документы (объединены в этот README)
+### Deprecated Documents (merged into this README)
 
-- ~~DEVELOPER_GUIDE.md~~ — включено в раздел "Для разработчиков"
-- ~~DOCUMENTATION.md~~ — включено в раздел "Возможности" и "Как играть"
-- ~~FALLBACK_SIGNALING.md~~ — включено в раздел "WebRTC мультиплеер"
+- ~~DEVELOPER_GUIDE.md~~ — included in "For Developers" section
+- ~~DOCUMENTATION.md~~ — included in "Features" and "How to Play" sections
+- ~~FALLBACK_SIGNALING.md~~ — included in "WebRTC Multiplayer" section
 
 ---
 
-## Лицензия
+## License
 
-MIT License — см. файл [LICENSE](./LICENSE)
+MIT License — see [LICENSE](./LICENSE) file
 
 ---
 
