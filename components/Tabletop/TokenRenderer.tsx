@@ -478,7 +478,11 @@ export const TokenRenderer = memo(({
     prevToken.zIndex === nextToken.zIndex &&
     (prevToken as any).showNameOnToken === (nextToken as any).showNameOnToken &&
     prevToken.name === nextToken.name &&
-    (prevToken as any).fontColor === (nextToken as any).fontColor
+    (prevToken as any).fontColor === (nextToken as any).fontColor &&
+    // Border properties - important for visual updates
+    (prevToken as any).borderWidth === (nextToken as any).borderWidth &&
+    (prevToken as any).borderColor === (nextToken as any).borderColor &&
+    (prevToken as any).borderOpacity === (nextToken as any).borderOpacity
   );
 
   // Compare counters deeply (important for character token sync)
