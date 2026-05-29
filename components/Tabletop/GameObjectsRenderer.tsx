@@ -28,6 +28,7 @@ interface GameObjectsRendererProps {
   isGM: boolean;
   activePlayerId: string;
   liveResizeSizeRef: React.RefObject<{ width: number; height: number } | null>;
+  livePreviewSize: { width: number; height: number } | null; // Local preview state for smooth visual feedback
   nexusBoardAddingCell: string | null;
   onContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   onMouseDown: (e: React.MouseEvent, objId: string) => void;
@@ -51,6 +52,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     isGM,
     activePlayerId,
     liveResizeSizeRef,
+    livePreviewSize,
     nexusBoardAddingCell,
     onContextMenu,
     onMouseDown,
@@ -324,7 +326,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             gridHeight={gridH_px}
             showGrid={board.showGrid}
             currentTool={currentTool}
-            livePreviewSize={resizingId === obj.id ? liveResizeSizeRef.current : null}
+            livePreviewSize={resizingId === obj.id ? livePreviewSize : null}
             cacheVersion={getGlobalCacheVersion()}
           />
         </div>

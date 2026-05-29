@@ -67,7 +67,7 @@ interface TabletopEventHandlersProps {
   localSettings: any;
   updateSetting: (key: string | number | symbol, value: any) => void;
   liveResizeSizeRef: React.MutableRefObject<{ width: number; height: number } | null>;
-  setLiveResizeSize: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>;
+  setLivePreviewSize: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>;
   isAddingTokenRef: React.RefObject<boolean>;
   longPressTimerRef: React.RefObject<number | null>;
   clickTooltipTimerRef: React.RefObject<number | null>;
@@ -1532,7 +1532,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     localSettings,
     updateSetting,
     liveResizeSizeRef,
-    setLiveResizeSize,
+    setLivePreviewSize,
     isAddingTokenRef,
     longPressTimerRef,
     clickTooltipTimerRef,
@@ -1957,6 +1957,10 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
   // RAF ref for throttling mouse move updates
   const rafRef = useRef<number>();
 
+  // Refs to store latest mouse position for RAF callback (board resize needs this)
+  // This ensures RAF callback always has the most recent mouse position
+  const latestMouseEventRef = useRef<{ clientX: number; clientY: number } | null>(null);
+
   // Cleanup RAF on unmount
   useEffect(() => {
     return () => {
@@ -1968,6 +1972,8 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Mouse move handler (throttled)
   const handleMouseMove = useCallback((e: MouseEvent | React.MouseEvent) => {
+    // Store latest mouse position for RAF callback (board resize needs this)
+    latestMouseEventRef.current = { clientX: e.clientX, clientY: e.clientY };
     // Handle panning with Shift + drag
     if (isPanning && panStartRef.current && scrollContainerRef.current) {
       const deltaX = e.clientX - panStartRef.current.x;
@@ -2002,6 +2008,37 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       return;
     }
 
+    // 🔥 FIX: Handle board resizing SYNCHRONOUSLY for maximum responsiveness
+    // Update ref immediately on every mousemove (no throttle)
+    if (resizingId && resizeStart) {
+      const obj = state.objects[resizingId];
+      if (obj && obj.type === ItemType.BOARD) {
+        const rect = scrollContainerRef.current?.getBoundingClientRect();
+        if (rect) {
+          // Calculate delta in screen pixels
+          const deltaX = e.clientX - resizeStart.x;
+          const deltaY = e.clientY - resizeStart.y;
+
+          // Convert delta to virtual units
+          const zoom = viewTransform?.zoom || 1;
+          const deltaVU_X = deltaX / zoom;
+          const deltaVU_Y = deltaY / zoom;
+
+          // Calculate new size
+          const newWidth = Math.max(50, resizeStart.width + deltaVU_X);
+          const newHeight = Math.max(50, resizeStart.height + deltaVU_Y);
+
+          // Update ref and state immediately for smooth visual feedback
+          liveResizeSizeRef.current = { width: newWidth, height: newHeight };
+          setLivePreviewSize({ width: newWidth, height: newHeight });
+        }
+      }
+    }
+
+    // Store current mouse position for RAF callback
+    const currentMouseX = e.clientX;
+    const currentMouseY = e.clientY;
+
     // Update cursor slot position
     // 🔥 FIX: Use cursorSlotRef.current (source of truth)
     if (cursorSlotRef.current.length > 0) {
@@ -2022,24 +2059,25 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         }
       });
 
-      const newX = e.clientX;
-      const newY = e.clientY;
-
-      if (cursorPositionRef.current?.x !== newX || cursorPositionRef.current?.y !== newY) {
+      if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
         // Always update ref immediately for smooth dragging
-        cursorPositionRef.current = { x: newX, y: newY };
+        cursorPositionRef.current = { x: currentMouseX, y: currentMouseY };
+      }
+    }
 
-        // Throttle state updates using RAF to prevent excessive re-renders
-        if (rafRef.current === undefined) {
-          rafRef.current = requestAnimationFrame(() => {
-            setCursorPosition({ x: newX, y: newY });
-            rafRef.current = undefined;
+    // 🔥 FIX: Throttle cursor slot updates using RAF (not board resize)
+    // Board resize is now synchronous (above), cursor slot still throttled
+    if (rafRef.current === undefined) {
+      rafRef.current = requestAnimationFrame(() => {
+        // Update cursor position if changed
+        if (cursorSlotRef.current.length > 0) {
+          if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
+            setCursorPosition({ x: currentMouseX, y: currentMouseY });
 
             // Dispatch events for HandPanel and MainMenu to detect hover
-            // 🔥 FIX: Use cursorSlotRef.current (source of truth)
             const eventData = {
-              x: newX,
-              y: newY,
+              x: currentMouseX,
+              y: currentMouseY,
               isOverMainMenu: false,
               hasCards: cursorSlotRef.current.length > 0,
               items: cursorSlotRef.current.map(item => ({ type: item.type }))
@@ -2056,7 +2094,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
             }));
 
             // Check if cursor is over a deck for highlighting
-            const elementAtCursor = document.elementFromPoint(newX, newY);
+            const elementAtCursor = document.elementFromPoint(currentMouseX, currentMouseY);
             const deckElement = elementAtCursor?.closest('[data-object-id]');
 
             if (deckElement) {
@@ -2091,9 +2129,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
                 }));
               }
             }
-          });
+          }
         }
-      }
+
+        rafRef.current = undefined;
+      });
     }
 
     // Handle ruler tool: update current position while dragging
@@ -2394,32 +2434,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         });
       }
     }
-
-    // Handle board resizing
-    if (resizingId && resizeStart) {
-      const obj = state.objects[resizingId];
-      if (obj && obj.type === ItemType.BOARD) {
-        const rect = scrollContainerRef.current?.getBoundingClientRect();
-        if (rect) {
-          // Calculate delta in screen pixels
-          const deltaX = e.clientX - resizeStart.x;
-          const deltaY = e.clientY - resizeStart.y;
-
-          // Convert delta to virtual units
-          const zoom = viewTransform?.zoom || 1;
-          const deltaVU_X = deltaX / zoom;
-          const deltaVU_Y = deltaY / zoom;
-
-          // Calculate new size
-          const newWidth = Math.max(50, resizeStart.width + deltaVU_X);
-          const newHeight = Math.max(50, resizeStart.height + deltaVU_Y);
-
-          // Update live preview size
-          liveResizeSizeRef.current = { width: newWidth, height: newHeight };
-          setLiveResizeSize({ width: newWidth, height: newHeight });
-        }
-      }
-    }
   }, [
     cursorSlot.length,
     setCursorPosition,
@@ -2443,7 +2457,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     resizingId,
     resizeStart,
     liveResizeSizeRef,
-    setLiveResizeSize,
+    setLivePreviewSize,
     isShiftPressed,
     isCtrlPressed,
     props
@@ -2621,7 +2635,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
       // Clear resize state
       liveResizeSizeRef.current = null;
-      setLiveResizeSize(null);
+      setLivePreviewSize(null);
       setResizingId(null);
       setResizeStart(null);
     }
@@ -2723,7 +2737,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     resizingId,
     resizeStart,
     liveResizeSizeRef,
-    setLiveResizeSize,
+    setLivePreviewSize,
     setResizingId,
     setResizeStart
   ]);

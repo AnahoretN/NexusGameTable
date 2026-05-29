@@ -189,7 +189,8 @@ export const Tabletop: React.FC = () => {
   // Resizing state
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [, setLiveResizeSize] = useState<{ width: number; height: number } | null>(null);
+  // Local preview state for smooth visual feedback (no P2P sync during resize)
+  const [livePreviewSize, setLivePreviewSize] = useState<{ width: number; height: number } | null>(null);
   const liveResizeSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   // Additional UI state
@@ -265,7 +266,7 @@ export const Tabletop: React.FC = () => {
     localSettings,
     updateSetting: updateSetting as (key: string | number | symbol, value: unknown) => void,
     liveResizeSizeRef,
-    setLiveResizeSize,
+    setLivePreviewSize,
     isAddingTokenRef,
     longPressTimerRef,
     clickTooltipTimerRef,
@@ -1162,6 +1163,7 @@ export const Tabletop: React.FC = () => {
         isGM={isGM}
         activePlayerId={activePlayerId}
         liveResizeSizeRef={liveResizeSizeRef}
+        livePreviewSize={livePreviewSize}
         nexusBoardAddingCell={nexusBoardAddingCell}
         onContextMenu={handleContextMenu}
         onMouseDown={handleMouseDown}
