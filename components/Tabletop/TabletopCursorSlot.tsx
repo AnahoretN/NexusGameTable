@@ -35,6 +35,9 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
     return null;
   }
 
+  // 🔥 DEBUG: Log props in production
+  console.log('[TabletopCursorSlot] cursorSlot.length:', cursorSlot.length, 'cursorPosition:', cursorPosition, 'cursorPositionRef.current:', cursorPositionRef.current);
+
   return (
     <>
       {/* Cursor Slot Visualization - renders items following cursor */}

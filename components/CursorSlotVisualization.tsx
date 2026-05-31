@@ -249,7 +249,16 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
 
   const hasItems = cursorSlot.length > 0 || heldItems.length > 0;
   if (!hasItems) return null;
-  if (!cursorPosition && !cursorPositionRef.current && heldItems.length === 0) return null;
+
+  // 🔥 DEBUG: Log cursor position state in production
+  if (cursorSlot.length > 0) {
+    console.log('[CursorSlotVisualization] cursorSlot items:', cursorSlot.length, 'cursorPosition:', cursorPosition, 'cursorPositionRef.current:', cursorPositionRef.current);
+  }
+
+  if (!cursorPosition && !cursorPositionRef.current && heldItems.length === 0) {
+    console.warn('[CursorSlotVisualization] Returning null - cursorPosition:', cursorPosition, 'cursorPositionRef.current:', cursorPositionRef.current, 'heldItems.length:', heldItems.length);
+    return null;
+  }
 
   // If no active items after filtering, don't render
   if (cursorSlot.length === 0 && heldItems.length === 0) return null;

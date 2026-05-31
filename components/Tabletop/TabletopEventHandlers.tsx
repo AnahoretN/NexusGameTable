@@ -2075,6 +2075,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         // This ensures CursorSlotVisualization has the latest cursor position
         if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
           setCursorPosition({ x: currentMouseX, y: currentMouseY });
+          console.log('[handleMouseMove] setCursorPosition:', { x: currentMouseX, y: currentMouseY }, 'cursorSlotRef.current.length:', cursorSlotRef.current.length);
         }
 
         // Update cursor slot position
