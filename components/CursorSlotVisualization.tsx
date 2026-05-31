@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ItemType, Card as CardType, Token as TokenType, CardOrientation, Deck as DeckType, Randomizer, Counter, DiceObject, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate, TableObject } from '../types';
 import { renderCursorSlotItem } from './CursorSlotItems';
 import { getTokenWithAppliedState } from '../hooks/useTokenWithState';
@@ -17,15 +17,15 @@ interface CursorSlotVisualizationProps {
   };
 }
 
-interface HeldItem {
+interface ItemData {
   item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing | EffectTemplate;
-  x: number;
-  y: number;
   width: number;
   height: number;
-  isHorizontal: boolean;
-  id: string;
-  timestamp: number;
+  clickOffsetX: number;
+  clickOffsetY: number;
+  stackOffsetX: number;
+  stackOffsetY: number;
+  zIndex: number;
 }
 
 /**
@@ -54,7 +54,6 @@ const calculateItemDimensions = (
   const isDrawing = item.type === ItemType.DRAWING;
   const isEffectTemplate = item.type === ItemType.EFFECT_TEMPLATE;
 
-  // For tokens, apply state first to get correct dimensions
   let baseWidth = item.width ?? 50;
   let baseHeight = item.height ?? 50;
   if (isToken) {
@@ -80,19 +79,14 @@ const calculateItemDimensions = (
     baseWidth = item.width ?? 500;
     baseHeight = item.height ?? 500;
   } else if (isBattlefieldCell || isNexusBoard || isNexusCell) {
-    // Use default dimensions for board-related objects
     baseWidth = item.width ?? 100;
     baseHeight = item.height ?? 100;
   } else if (isDrawing) {
-    // Drawings have their own dimensions
     baseWidth = item.width ?? 200;
     baseHeight = item.height ?? 200;
   } else if (isEffectTemplate) {
-    // Effect templates use their actual dimensions with fallback
-    // Use larger defaults to prevent rendering issues
     baseWidth = item.width ?? 100;
     baseHeight = item.height ?? 100;
-    // Ensure minimum size to prevent black square flicker
     baseWidth = Math.max(baseWidth, 50);
     baseHeight = Math.max(baseHeight, 50);
   }
@@ -108,337 +102,195 @@ const calculateItemDimensions = (
 
 /**
  * CursorSlotVisualization - renders items following the cursor
- * Shows stacked items with newest in front, older items offset down-right
- * Keeps items visible briefly after drop to prevent flicker during sync
+ *
+ * PERFORMANCE OPTIMIZATION:
+ * - Uses RAF-based DOM updates instead of React re-renders
+ * - Only re-renders when cursorSlot changes, not on every mouse move
+ * - Direct DOM manipulation for smooth 60fps cursor following across all browsers
  */
-export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(({
+export const CursorSlotVisualization = (({
   cursorSlot,
-  cursorPosition,
   cursorPositionRef,
-  zoom: _zoom,
   pixelsPerVU,
   state,
   getCardSettings,
 }) => {
-  const [heldItems, setHeldItems] = useState<HeldItem[]>([]);
-  const cleanupTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const itemElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const rafRef = useRef<number>();
+  const itemDataRef = useRef<Map<string, ItemData>>(new Map());
+  const rootRefsRef = useRef<Map<string, any>>(new Map());
 
-  // IMPORTANT: Simply use cursorSlot directly - no filtering needed
-  // The cursorSlot state is the source of truth
-  // 🔥 FIX: Deduplicate items by ID to prevent duplicate key warnings
-  const sortedSlot = useMemo(() => {
-    if (cursorSlot.length === 0) return [];
-    // Deduplicate by ID (keep first occurrence)
-    const seenIds = new Set<string>();
-    const deduplicated = cursorSlot.filter(item => {
-      if (seenIds.has(item.id)) {
-        console.warn('[CursorSlotVisualization] Duplicate item ID detected:', item.id);
-        return false;
-      }
-      seenIds.add(item.id);
-      return true;
-    });
-    // Sort by originalZIndex in DESCENDING order to preserve layer relationships
-    const sorted = deduplicated.sort((a, b) => {
+  // Calculate item data once when cursorSlot changes
+  useEffect(() => {
+    const newItemData = new Map<string, ItemData>();
+
+    const sorted = [...cursorSlot].sort((a, b) => {
       const zA = (a as any).originalZIndex ?? a.zIndex ?? 0;
       const zB = (b as any).originalZIndex ?? b.zIndex ?? 0;
-      return zB - zA; // Descending order - higher Z first
+      return zB - zA;
     });
-    return sorted;
-  }, [cursorSlot, cursorPosition]);
 
-  // Remove cursorSlot - not needed anymore
-  // const cursorSlot = useMemo(() => { ... }, [cursorSlot, state.objects]);
+    sorted.forEach((item, sortedIndex) => {
+      const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU, state.objects as Record<string, TableObject>);
+      const width = Math.max(dimensions.width, 1);
+      const height = Math.max(dimensions.height, 1);
+      const isCard = item.type === ItemType.CARD;
 
-  // Track items currently being held/dragged
-  useEffect(() => {
-    // Capture items BEFORE they're removed from cursorSlot for transition animation
-    // When cursorSlot goes from having items to being empty, preserve the last state
-    // Use either the ref or the prop - whichever is available
-    const position = cursorPositionRef.current || cursorPosition;
-    // Validate position has valid x and y coordinates
-    const hasValidPosition = position &&
-      typeof position.x === 'number' &&
-      typeof position.y === 'number' &&
-      !isNaN(position.x) &&
-      !isNaN(position.y);
+      const clickOffsetX_PX = (item as any).clickOffsetX_PX;
+      const clickOffsetY_PX = (item as any).clickOffsetY_PX;
 
-    if (cursorSlot.length > 0 && hasValidPosition) {
+      let offsetX = 0;
+      let offsetY = 0;
 
-      const newHeldItems: HeldItem[] = cursorSlot.map((item, index) => {
-        const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU, state.objects as Record<string, TableObject>);
+      if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
+        offsetX = clickOffsetX_PX;
+        offsetY = clickOffsetY_PX;
+      } else {
+        const clickOffsetX = (item as any).clickOffsetX;
+        const clickOffsetY = (item as any).clickOffsetY;
 
-        // Use pixel offsets directly if available
-        const clickOffsetX_PX = (item as any).clickOffsetX_PX;
-        const clickOffsetY_PX = (item as any).clickOffsetY_PX;
-        const itemWidth = dimensions.width;
-        const itemHeight = dimensions.height;
-
-        // Calculate absolute screen position for held items
-        let finalX = position.x;
-        let finalY = position.y;
-
-        if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
-          // Use pixel offsets directly
-          finalX = position.x - clickOffsetX_PX;
-          finalY = position.y - clickOffsetY_PX;
+        if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
+          offsetX = clickOffsetX * pixelsPerVU;
+          offsetY = clickOffsetY * pixelsPerVU;
         } else {
-          // Fallback to old VU-based offsets
-          const clickOffsetX = (item as any).clickOffsetX;
-          const clickOffsetY = (item as any).clickOffsetY;
-
-          if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
-            const offsetXPx = clickOffsetX * pixelsPerVU;
-            const offsetYPx = clickOffsetY * pixelsPerVU;
-            finalX = position.x - offsetXPx;
-            finalY = position.y - offsetYPx;
-          } else {
-            finalX = position.x - (itemWidth / 2);
-            finalY = position.y - (itemHeight / 2);
-          }
+          offsetX = width / 2;
+          offsetY = height / 2;
         }
+      }
 
-        return {
-          item,
-          x: finalX,
-          y: finalY,
-          width: dimensions.width,
-          height: dimensions.height,
-          isHorizontal: dimensions.isHorizontal,
-          id: item.id,
-          timestamp: Date.now(),
-        };
+      const offsetAmount = Math.min(width, height) * 0.05;
+      const stackOffsetX = sortedIndex * offsetAmount;
+      const stackOffsetY = sortedIndex * offsetAmount;
+
+      const totalItems = sorted.length;
+      const zIndex = isCard ? (totalItems - sortedIndex) : (totalItems - sortedIndex) + 1000;
+
+      newItemData.set(item.id, {
+        item,
+        width,
+        height,
+        clickOffsetX: offsetX,
+        clickOffsetY: offsetY,
+        stackOffsetX,
+        stackOffsetY,
+        zIndex,
       });
+    });
 
-      setHeldItems(newHeldItems);
+    itemDataRef.current = newItemData;
+
+    // Cleanup unused elements
+    const currentIds = new Set(cursorSlot.map(item => item.id));
+    for (const [id, element] of itemElementsRef.current) {
+      if (!currentIds.has(id)) {
+        element.remove();
+        itemElementsRef.current.delete(id);
+        // Cleanup React root asynchronously to avoid render-time unmount warning
+        const root = rootRefsRef.current.get(id);
+        if (root) {
+          setTimeout(() => {
+            try {
+              root.unmount();
+            } catch (e) {
+              // Ignore unmount errors
+            }
+            rootRefsRef.current.delete(id);
+          }, 0);
+        }
+      }
     }
 
     return () => {
-      if (cleanupTimeoutRef.current) {
-        clearTimeout(cleanupTimeoutRef.current);
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
       }
-    };
-  }, [cursorSlot, cursorPosition, pixelsPerVU, getCardSettings]);
-
-  // Check if items from heldItems are now visible on table (not in cursor slot anymore)
-  // If so, remove them from heldItems with a small delay to prevent flicker
-  // Only trigger when cursorSlot changes (items were dropped)
-  useEffect(() => {
-    if (heldItems.length === 0) return;
-
-    // Check if any held item IDs are still in cursorSlot
-    // If an item is no longer in cursorSlot, it means it was dropped
-    const cursorSlotIds = new Set(cursorSlot.map(item => item.id));
-    const stillHeld = heldItems.filter(heldItem => cursorSlotIds.has(heldItem.id));
-
-    if (stillHeld.length !== heldItems.length) {
-      // Add a small delay before removing held items to allow the dropped
-      // object on the table to render properly, preventing flicker
-      cleanupTimeoutRef.current = setTimeout(() => {
-        setHeldItems(stillHeld);
-      }, 50); // 50ms delay - enough for one frame but not noticeable to user
-    }
-
-    return () => {
-      if (cleanupTimeoutRef.current) {
-        clearTimeout(cleanupTimeoutRef.current);
-      }
-    };
-  }, [cursorSlot]); // Only depend on cursorSlot changes
-
-  const hasItems = cursorSlot.length > 0 || heldItems.length > 0;
-  if (!hasItems) return null;
-
-  // 🔥 DEBUG: Log cursor position state in production
-  if (cursorSlot.length > 0) {
-    const isFirefox = navigator.userAgent.includes('Firefox');
-    const isOpera = navigator.userAgent.includes('OPR') || navigator.userAgent.includes('Opera');
-    console.log('[CursorSlotVisualization] cursorSlot items:', cursorSlot.length, 'cursorPosition:', cursorPosition, 'cursorPositionRef.current:', cursorPositionRef.current, 'browser:', isFirefox ? 'Firefox' : isOpera ? 'Opera' : 'Chrome/Other');
-  }
-
-  if (!cursorPosition && !cursorPositionRef.current && heldItems.length === 0) {
-    console.warn('[CursorSlotVisualization] Returning null - cursorPosition:', cursorPosition, 'cursorPositionRef.current:', cursorPositionRef.current, 'heldItems.length:', heldItems.length);
-    return null;
-  }
-
-  // If no active items after filtering, don't render
-  if (cursorSlot.length === 0 && heldItems.length === 0) return null;
-
-  // Use current position for active slot, last known position for dropped items
-  const position = cursorSlot.length > 0
-    ? (cursorPositionRef.current ?? cursorPosition)
-    : (heldItems[0]?.x ? { x: heldItems[0].x, y: heldItems[0].y } : null);
-
-  if (!position && heldItems.length === 0) return null;
-
-  const finalPosition = position || { x: 0, y: 0 };
-
-  // Render inline (not through portal) to maintain coordinate system compatibility
-  // The z-index is already very high (9999999999) which should be above most UI elements
-  return (
-    <>
-      {/* Active cursor slot items - render each item directly at absolute screen position */}
-      {cursorSlot.length > 0 && sortedSlot.map((item, sortedIndex) => {
-        const dimensions = calculateItemDimensions(item, getCardSettings, pixelsPerVU, state.objects as Record<string, TableObject>);
-        // Ensure minimum dimensions to prevent rendering issues
-        // Use larger minimum for Effect Templates to prevent flicker
-        const minWidth = item.type === ItemType.EFFECT_TEMPLATE ? 50 : 1;
-        const width = Math.max(dimensions.width, minWidth);
-        const height = Math.max(dimensions.height, minWidth);
-        const isCard = item.type === ItemType.CARD;
-
-        // Calculate absolute screen position for this item
-        let itemX = finalPosition.x;
-        let itemY = finalPosition.y;
-
-        // Use pixel offsets directly if available
-        const clickOffsetX_PX = (item as any).clickOffsetX_PX;
-        const clickOffsetY_PX = (item as any).clickOffsetY_PX;
-
-        if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
-          // clickOffsetX_PX is the distance from object's top-left to the clicked point
-          // We want the clicked point to be at the cursor
-          // So we subtract the offset from cursor position
-          itemX = finalPosition.x - clickOffsetX_PX;
-          itemY = finalPosition.y - clickOffsetY_PX;
-        } else {
-          // Fallback: try old VU-based offsets
-          const clickOffsetX = (item as any).clickOffsetX;
-          const clickOffsetY = (item as any).clickOffsetY;
-
-          if (clickOffsetX !== undefined && clickOffsetY !== undefined) {
-            // Convert offset from virtual units to pixels
-            itemX = finalPosition.x - (clickOffsetX * pixelsPerVU);
-            itemY = finalPosition.y - (clickOffsetY * pixelsPerVU);
-          } else {
-            // No offset - center on cursor
-            itemX = finalPosition.x - (width / 2);
-            itemY = finalPosition.y - (height / 2);
+      // Cleanup all elements
+      itemElementsRef.current.forEach(el => el.remove());
+      itemElementsRef.current.clear();
+      // Cleanup React roots asynchronously
+      setTimeout(() => {
+        rootRefsRef.current.forEach(root => {
+          try {
+            root.unmount();
+          } catch (e) {
+            // Ignore unmount errors
           }
+        });
+        rootRefsRef.current.clear();
+      }, 0);
+    };
+  }, [cursorSlot, pixelsPerVU, getCardSettings, state.objects]);
+
+  // RAF-based position updates
+  useEffect(() => {
+    if (cursorSlot.length === 0) return;
+
+    const updatePositions = () => {
+      const pos = cursorPositionRef.current;
+      if (!pos) return;
+
+      for (const [id, itemData] of itemDataRef.current) {
+        let element = itemElementsRef.current.get(id);
+
+        // Create element if it doesn't exist
+        if (!element) {
+          element = document.createElement('div');
+          element.style.cssText = `
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: ${itemData.width}px;
+            height: ${itemData.height}px;
+            z-index: ${999999999 + itemData.zIndex};
+            pointer-events: none;
+            user-select: none;
+            will-change: transform;
+            backface-visibility: hidden;
+          `;
+          element.dataset.cursorSlotItem = id;
+
+          // Create container for React content
+          const container = document.createElement('div');
+          container.style.cssText = 'width: 100%; height: 100%; position: absolute; left: 0; top: 0;';
+          element.appendChild(container);
+          document.body.appendChild(element);
+          itemElementsRef.current.set(id, element);
+
+          // Render React content into container
+          const renderedItem = renderCursorSlotItem(
+            { item: itemData.item, width: itemData.width, height: itemData.height, offsetX: 0, offsetY: 0, zIndex: itemData.zIndex, state, pixelsPerVU },
+            `cursor-slot-${id}`
+          );
+
+          // Use createRoot for React 18
+          import('react-dom/client').then(({ createRoot }) => {
+            const tempRoot = createRoot(container);
+            rootRefsRef.current.set(id, tempRoot);
+            tempRoot.render(renderedItem);
+          });
         }
 
-        // Calculate stack offset based on sorted position
-        const offsetFromFront = sortedIndex;
-        const offsetAmount = Math.min(width, height) * 0.05;
-        const stackOffsetX = offsetFromFront * offsetAmount;
-        const stackOffsetY = offsetFromFront * offsetAmount;
+        // Calculate position
+        const itemX = pos.x - itemData.clickOffsetX + itemData.stackOffsetX;
+        const itemY = pos.y - itemData.clickOffsetY + itemData.stackOffsetY;
 
-        // Apply stack offset
-        itemX += stackOffsetX;
-        itemY += stackOffsetY;
+        // Update transform directly (no React re-render needed)
+        element.style.transform = `translate3d(${itemX}px, ${itemY}px, 0)`;
+      }
 
-        // Use sequential zIndex for proper stacking in visualization
-        const totalItems = sortedSlot.length;
-        const zIndex = isCard ? (totalItems - sortedIndex) : (totalItems - sortedIndex) + 1000;
+      rafRef.current = requestAnimationFrame(updatePositions);
+    };
 
-        // Render item directly at absolute position (no container offset)
-        return (
-          <div
-            key={item.id}
-            className="fixed pointer-events-none"
-            style={{
-              position: 'fixed',
-              left: `${itemX}px`,
-              top: `${itemY}px`,
-              userSelect: 'none',
-              WebkitUserSelect: 'none',
-              MozUserSelect: 'none',
-              msUserSelect: 'none',
-              zIndex: 999999999 + zIndex,
-              // 🔥 FIX: Shorter transition for better cross-browser compatibility
-              transition: 'left 0.03s linear, top 0.03s linear',
-              willChange: 'left, top',
-              backfaceVisibility: 'hidden',
-              WebkitBackfaceVisibility: 'hidden',
-              // Ensure visibility in Firefox
-              opacity: 1,
-              pointerEvents: 'none',
-            }}
-          >
-            {renderCursorSlotItem(
-              { item, width, height, offsetX: 0, offsetY: 0, zIndex, state, pixelsPerVU },
-              item.id
-            )}
-          </div>
-        );
-      })}
+    rafRef.current = requestAnimationFrame(updatePositions);
 
-      {/* Stack counter badge - only show if more than 1 item */}
-      {cursorSlot.length > 1 && (() => {
-        const firstItem = cursorSlot[0];
-        // Card dimensions already reflect orientation, no swap needed
-        const badgeWidth = firstItem?.width ?? 63;
-        const badgeHeight = firstItem?.height ?? 88;
-        // Convert vu to pixels for badge positioning
-        const badgeWidthPx = badgeWidth * pixelsPerVU;
-        const badgeHeightPx = badgeHeight * pixelsPerVU;
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, [cursorSlot.length]);
 
-        // Calculate absolute position for badge
-        let badgeX = finalPosition.x;
-        let badgeY = finalPosition.y;
+  if (cursorSlot.length === 0) return null;
 
-        const clickOffsetX_PX = (firstItem as any).clickOffsetX_PX;
-        const clickOffsetY_PX = (firstItem as any).clickOffsetY_PX;
-
-        if (clickOffsetX_PX !== undefined && clickOffsetY_PX !== undefined) {
-          badgeX = finalPosition.x - clickOffsetX_PX;
-          badgeY = finalPosition.y - clickOffsetY_PX;
-        }
-
-        return (
-          <div
-            className="fixed pointer-events-none"
-            style={{
-              left: 0,
-              top: 0,
-              transform: `translate3d(${badgeX + badgeWidthPx / 2 + 4}px, ${badgeY - badgeHeightPx / 2 - 4}px, 0)`,
-              zIndex: 999999999 + 10000,
-            }}
-          >
-            <div className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full whitespace-nowrap">
-              {cursorSlot.length}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Render held items (transition after drop) - separate container with absolute positioning */}
-      {/* 🔥 FIX: Render heldItems that are no longer in cursorSlot (not all heldItems) */}
-      {heldItems.filter(heldItem => !cursorSlot.some(slotItem => slotItem.id === heldItem.id)).map((heldItem, index) => {
-        const { item, width, height, x, y } = heldItem;
-        const isCard = item.type === ItemType.CARD;
-        const zIndex = isCard ? index + 2000 : index + 3000;
-
-        // For held items, we need absolute positioning since cursorSlot is empty
-        // The stored x/y are already absolute screen positions
-        return (
-          <div
-            key={`held-${item.id}`}
-            className="fixed pointer-events-none"
-            style={{
-              position: 'fixed',
-              left: `${x}px`,
-              top: `${y}px`,
-              userSelect: 'none',
-              WebkitUserSelect: 'none',
-              MozUserSelect: 'none',
-              msUserSelect: 'none',
-              zIndex: 999999999, // MUCH higher than hand panel (999999)
-              willChange: 'left, top',
-              backfaceVisibility: 'hidden',
-              WebkitBackfaceVisibility: 'hidden',
-              opacity: 1,
-              pointerEvents: 'none',
-            }}
-          >
-            {renderCursorSlotItem(
-              { item, width, height, offsetX: 0, offsetY: 0, zIndex, state, pixelsPerVU },
-              `held-${item.id}`
-            )}
-          </div>
-        );
-      })}
-    </>
-  );
+  return null;
 });

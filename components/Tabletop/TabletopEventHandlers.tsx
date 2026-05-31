@@ -2039,6 +2039,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     const currentMouseX = e.clientX;
     const currentMouseY = e.clientY;
 
+    // 🔥 FIX: Store old position before updating ref for RAF comparison
+    const oldPosition = cursorPositionRef.current?.x !== undefined ? { x: cursorPositionRef.current.x, y: cursorPositionRef.current.y } : null;
+
     // 🔥 FIX: Always update cursor position ref, even when cursor slot is empty
     // This ensures cursorPosition is available when objects are added to cursor slot
     if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
@@ -2071,11 +2074,9 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     // Board resize is now synchronous (above), cursor slot still throttled
     if (rafRef.current === undefined) {
       rafRef.current = requestAnimationFrame(() => {
-        // 🔥 FIX: Always update cursor position state, even when cursor slot is empty
-        // This ensures CursorSlotVisualization has the latest cursor position
-        if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
+        // 🔥 FIX: Use oldPosition for comparison since cursorPositionRef.current was already updated
+        if (oldPosition?.x !== currentMouseX || oldPosition?.y !== currentMouseY) {
           setCursorPosition({ x: currentMouseX, y: currentMouseY });
-          console.log('[handleMouseMove] setCursorPosition:', { x: currentMouseX, y: currentMouseY }, 'cursorSlotRef.current.length:', cursorSlotRef.current.length);
         }
 
         // Update cursor slot position

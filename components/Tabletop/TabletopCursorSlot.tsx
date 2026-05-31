@@ -35,9 +35,6 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
     return null;
   }
 
-  // 🔥 DEBUG: Log props in production
-  console.log('[TabletopCursorSlot] cursorSlot.length:', cursorSlot.length, 'cursorPosition:', cursorPosition, 'cursorPositionRef.current:', cursorPositionRef.current);
-
   return (
     <>
       {/* Cursor Slot Visualization - renders items following cursor */}
@@ -53,18 +50,9 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
     </>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison for TabletopCursorSlot
-  // 🔥 FIX: Compare array length instead of reference to catch updates
-  const slotLengthSame = prevProps.cursorSlot.length === nextProps.cursorSlot.length;
-  const positionSame = prevProps.cursorPosition === nextProps.cursorPosition;
-
-  return (
-    slotLengthSame &&
-    positionSame &&
-    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
-    prevProps.zoom === nextProps.zoom &&
-    prevProps.state === nextProps.state
-  );
+  // 🔥 FIX: ALWAYS return false to prevent memo from blocking re-renders
+  // We need to re-render on every parent update because cursorPositionRef.current changes
+  return false;
 });
 
 TabletopCursorSlot.displayName = 'TabletopCursorSlot';
