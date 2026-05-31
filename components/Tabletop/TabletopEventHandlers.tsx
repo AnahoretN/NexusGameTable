@@ -2039,6 +2039,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     const currentMouseX = e.clientX;
     const currentMouseY = e.clientY;
 
+    // 🔥 FIX: Always update cursor position ref, even when cursor slot is empty
+    // This ensures cursorPosition is available when objects are added to cursor slot
+    if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
+      // Always update ref immediately for smooth dragging
+      cursorPositionRef.current = { x: currentMouseX, y: currentMouseY };
+    }
+
     // Update cursor slot position
     // 🔥 FIX: Use cursorSlotRef.current (source of truth)
     if (cursorSlotRef.current.length > 0) {
@@ -2058,76 +2065,74 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
           }
         }
       });
-
-      if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
-        // Always update ref immediately for smooth dragging
-        cursorPositionRef.current = { x: currentMouseX, y: currentMouseY };
-      }
     }
 
     // 🔥 FIX: Throttle cursor slot updates using RAF (not board resize)
     // Board resize is now synchronous (above), cursor slot still throttled
     if (rafRef.current === undefined) {
       rafRef.current = requestAnimationFrame(() => {
-        // Update cursor position if changed
+        // 🔥 FIX: Always update cursor position state, even when cursor slot is empty
+        // This ensures CursorSlotVisualization has the latest cursor position
+        if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
+          setCursorPosition({ x: currentMouseX, y: currentMouseY });
+        }
+
+        // Update cursor slot position
+        // 🔥 FIX: Use cursorSlotRef.current (source of truth)
         if (cursorSlotRef.current.length > 0) {
-          if (cursorPositionRef.current?.x !== currentMouseX || cursorPositionRef.current?.y !== currentMouseY) {
-            setCursorPosition({ x: currentMouseX, y: currentMouseY });
+          // Dispatch events for HandPanel and MainMenu to detect hover
+          const eventData = {
+            x: currentMouseX,
+            y: currentMouseY,
+            isOverMainMenu: false,
+            hasCards: cursorSlotRef.current.length > 0,
+            items: cursorSlotRef.current.map(item => ({ type: item.type }))
+          };
 
-            // Dispatch events for HandPanel and MainMenu to detect hover
-            const eventData = {
-              x: currentMouseX,
-              y: currentMouseY,
-              isOverMainMenu: false,
-              hasCards: cursorSlotRef.current.length > 0,
-              items: cursorSlotRef.current.map(item => ({ type: item.type }))
-            };
+          // Event for HandPanel to detect hover
+          window.dispatchEvent(new CustomEvent('cursor-slot-move', {
+            detail: eventData
+          }));
 
-            // Event for HandPanel to detect hover
-            window.dispatchEvent(new CustomEvent('cursor-slot-move', {
-              detail: eventData
-            }));
+          // Event for MainMenu to switch to hand tab
+          window.dispatchEvent(new CustomEvent('cursor-position-update', {
+            detail: eventData
+          }));
 
-            // Event for MainMenu to switch to hand tab
-            window.dispatchEvent(new CustomEvent('cursor-position-update', {
-              detail: eventData
-            }));
+          // Check if cursor is over a deck for highlighting
+          const elementAtCursor = document.elementFromPoint(currentMouseX, currentMouseY);
+          const deckElement = elementAtCursor?.closest('[data-object-id]');
 
-            // Check if cursor is over a deck for highlighting
-            const elementAtCursor = document.elementFromPoint(currentMouseX, currentMouseY);
-            const deckElement = elementAtCursor?.closest('[data-object-id]');
+          if (deckElement) {
+            const deckId = deckElement.getAttribute('data-object-id');
+            const deckObj = deckId ? state.objects[deckId] : null;
 
-            if (deckElement) {
-              const deckId = deckElement.getAttribute('data-object-id');
-              const deckObj = deckId ? state.objects[deckId] : null;
-
-              if (deckObj && deckObj.type === ItemType.DECK) {
-                // Track previous deck to detect when cursor leaves
-                const previousDeckId = previousDeckIdRef.current;
-
-                if (previousDeckId && previousDeckId !== deckId) {
-                  // Cursor left previous deck
-                  window.dispatchEvent(new CustomEvent('cursor-left-deck', {
-                    detail: { deckId: previousDeckId }
-                  }));
-                }
-
-                // Dispatch event for DeckComponent to highlight
-                window.dispatchEvent(new CustomEvent('cursor-over-deck', {
-                  detail: { deckId }
-                }));
-
-                // Store current deck for next comparison
-                previousDeckIdRef.current = deckId;
-              }
-            } else {
-              // Cursor not over any deck, clear previous deck
+            if (deckObj && deckObj.type === ItemType.DECK) {
+              // Track previous deck to detect when cursor leaves
               const previousDeckId = previousDeckIdRef.current;
-              if (previousDeckId) {
+
+              if (previousDeckId && previousDeckId !== deckId) {
+                // Cursor left previous deck
                 window.dispatchEvent(new CustomEvent('cursor-left-deck', {
                   detail: { deckId: previousDeckId }
                 }));
               }
+
+              // Dispatch event for DeckComponent to highlight
+              window.dispatchEvent(new CustomEvent('cursor-over-deck', {
+                detail: { deckId }
+              }));
+
+              // Store current deck for next comparison
+              previousDeckIdRef.current = deckId;
+            }
+          } else {
+            // Cursor not over any deck, clear previous deck
+            const previousDeckId = previousDeckIdRef.current;
+            if (previousDeckId) {
+              window.dispatchEvent(new CustomEvent('cursor-left-deck', {
+                detail: { deckId: previousDeckId }
+              }));
             }
           }
         }

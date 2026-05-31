@@ -333,6 +333,8 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
               userSelect: 'none',
               WebkitUserSelect: 'none',
               zIndex: 999999999 + zIndex,
+              // 🔥 FIX: Add smooth transition for animation
+              transition: 'transform 0.05s ease-out',
               willChange: 'transform',
               backfaceVisibility: 'hidden',
             }}
