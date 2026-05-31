@@ -252,7 +252,9 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
 
   // 🔥 DEBUG: Log cursor position state in production
   if (cursorSlot.length > 0) {
-    console.log('[CursorSlotVisualization] cursorSlot items:', cursorSlot.length, 'cursorPosition:', cursorPosition, 'cursorPositionRef.current:', cursorPositionRef.current);
+    const isFirefox = navigator.userAgent.includes('Firefox');
+    const isOpera = navigator.userAgent.includes('OPR') || navigator.userAgent.includes('Opera');
+    console.log('[CursorSlotVisualization] cursorSlot items:', cursorSlot.length, 'cursorPosition:', cursorPosition, 'cursorPositionRef.current:', cursorPositionRef.current, 'browser:', isFirefox ? 'Firefox' : isOpera ? 'Opera' : 'Chrome/Other');
   }
 
   if (!cursorPosition && !cursorPositionRef.current && heldItems.length === 0) {
@@ -336,16 +338,22 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
             key={item.id}
             className="fixed pointer-events-none"
             style={{
-              left: 0,
-              top: 0,
-              transform: `translate3d(${itemX}px, ${itemY}px, 0)`,
+              position: 'fixed',
+              left: `${itemX}px`,
+              top: `${itemY}px`,
               userSelect: 'none',
               WebkitUserSelect: 'none',
+              MozUserSelect: 'none',
+              msUserSelect: 'none',
               zIndex: 999999999 + zIndex,
-              // 🔥 FIX: Add smooth transition for animation
-              transition: 'transform 0.05s ease-out',
-              willChange: 'transform',
+              // 🔥 FIX: Shorter transition for better cross-browser compatibility
+              transition: 'left 0.03s linear, top 0.03s linear',
+              willChange: 'left, top',
               backfaceVisibility: 'hidden',
+              WebkitBackfaceVisibility: 'hidden',
+              // Ensure visibility in Firefox
+              opacity: 1,
+              pointerEvents: 'none',
             }}
           >
             {renderCursorSlotItem(
@@ -409,14 +417,19 @@ export const CursorSlotVisualization = React.memo<CursorSlotVisualizationProps>(
             key={`held-${item.id}`}
             className="fixed pointer-events-none"
             style={{
-              left: 0,
-              top: 0,
-              transform: `translate3d(${x}px, ${y}px, 0)`,
+              position: 'fixed',
+              left: `${x}px`,
+              top: `${y}px`,
               userSelect: 'none',
               WebkitUserSelect: 'none',
+              MozUserSelect: 'none',
+              msUserSelect: 'none',
               zIndex: 999999999, // MUCH higher than hand panel (999999)
-              willChange: 'transform',
+              willChange: 'left, top',
               backfaceVisibility: 'hidden',
+              WebkitBackfaceVisibility: 'hidden',
+              opacity: 1,
+              pointerEvents: 'none',
             }}
           >
             {renderCursorSlotItem(

@@ -6666,6 +6666,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const stateRef = useRef(state);
   const initializedRef = useRef(false);
   const creatingMenuRef = useRef(false); // Track if menu creation is in progress
+  const isLoadingSavedStateRef = useRef(false); // Track if async load is in progress (prevents race condition)
   // Manual P2P connection (PeerJS-compatible adapter for direct connection without PeerJS)
   const manualConnectionRef = useRef<any>(null);
   // Track which connection we've set up handlers for to prevent duplicates
@@ -6962,7 +6963,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
     // Only initialize once we're sure about host status and haven't initialized yet
-    if (!initializedRef.current && Object.keys(state.objects).length === 0) {
+    // 🔥 FIX: Also check if async load is NOT in progress to prevent race condition
+    if (!initializedRef.current && !isLoadingSavedStateRef.current && Object.keys(state.objects).length === 0) {
         const isGuest = !isHost;
 
         // Guests don't load from localStorage - they receive state from host
@@ -6976,103 +6978,113 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Try to load saved game state from localStorage (host only)
         // loadGameStateWithLocalFiles loads images from IDB and detects local file paths
         (async () => {
-          // Initialize new CAS asset system from IndexedDB
-          await initAssetDB();
+          // 🔥 FIX: Set loading flag to prevent race condition
+          // This ensures we don't create default objects while waiting for async load
+          isLoadingSavedStateRef.current = true;
 
-          // Run migration from old system if needed
-          await autoMigrate();
+          try {
+            // Initialize new CAS asset system from IndexedDB
+            await initAssetDB();
 
-          const { state: loadedState, localFiles } = await loadGameStateWithLocalFiles(false);
+            // Run migration from old system if needed
+            await autoMigrate();
 
-          if (loadedState && loadedState.objects && Object.keys(loadedState.objects).length > 0) {
-            // Check if there are local files that need restoration
-            if (localFiles.length > 0) {
-              // Show dialog for user to select local files
-              setPendingSavedState(loadedState);
-              setPendingLocalFiles(localFiles);
-              setIsInitialLoading(true);
-              addInitialLoadStep(`Found ${localFiles.length} local images requiring restoration`, 'warning');
-              return; // Wait for user to select files
+            const { state: loadedState, localFiles } = await loadGameStateWithLocalFiles(false);
+
+            if (loadedState && loadedState.objects && Object.keys(loadedState.objects).length > 0) {
+              // Check if there are local files that need restoration
+              if (localFiles.length > 0) {
+                // Show dialog for user to select local files
+                setPendingSavedState(loadedState);
+                setPendingLocalFiles(localFiles);
+                setIsInitialLoading(true);
+                addInitialLoadStep(`Found ${localFiles.length} local images requiring restoration`, 'warning');
+                return; // Wait for user to select files
+              }
+              // Load the state into game
+              loadSavedStateIntoGame(loadedState);
+
+              return; // IMPORTANT: Return after async operations complete
             }
-            // Load the state into game
-            loadSavedStateIntoGame(loadedState);
 
-            return; // IMPORTANT: Return after async operations complete
+            // No saved state or empty saved state, create default game board (only for host)
+            // 🔥 FIX: Only create default objects if we're definitely host AND no saved state was loaded
+            if (isHost) {
+              // Create game board on 'boards' layer - ALL VALUES IN VU
+              const boardId = 'demo-board';
+              const board: Board = {
+                   id: boardId,
+                   type: ItemType.BOARD,
+                   shape: TokenShape.SQUARE,
+                   x: 50,    // VU: 50 vu from left edge
+                   y: 50,    // VU: 50 vu from top edge
+                   width: 1200,  // VU: 120% of screen width
+                   height: 800, // VU: 80% of screen height
+                   rotation: 0,
+                   name: 'Game Board',
+                   content: '',
+                   color: '#34495e',
+                   locked: false,
+                   isOnTable: true,
+                   gridType: GridType.HEX,
+                   gridSize: 60,  // Grid cell size in VU
+                   gridWidth: 100,  // Hex width in VU
+                   gridHeight: 115, // Hex height in VU
+                   snapToGrid: true,
+                   hyperscaleLayerId: 'boards',
+              };
+              localDispatch({ type: 'ADD_OBJECT', payload: board });
+
+              // Create Standard Deck on 'cards' layer
+              // Position: relative to right edge of browser window viewport
+              // IMPORTANT: Must match rendering pixelsPerVU from viewTransform
+              const viewportWidth = document.documentElement.clientWidth;
+              const actualPixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.0;
+              const zoomMultiplier = state.viewTransform?.zoom ?? 1.0;
+              const pixelsPerVU = actualPixelsPerVU * zoomMultiplier;
+              const offsetX = state.viewTransform?.offset?.x || 0;
+              const scrollLeft = state.viewTransform?.scroll?.x || 0;
+
+              // Calculate position in viewport pixels first
+              // Menu left edge = viewportWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH_THICK
+              const menuLeftPx = viewportWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH_THICK;
+              const spacingPx = 20 * pixelsPerVU; // 20vu spacing between deck right edge and menu left edge
+              const deckRightPx = menuLeftPx - spacingPx; // Deck right edge in pixels
+              const deckLeftPx = deckRightPx - (DEFAULT_DECK_WIDTH * pixelsPerVU); // Deck left edge in pixels
+
+              // Convert viewport pixels to world coordinates using viewportToWorld formula
+              const deckX = (deckLeftPx + scrollLeft - offsetX) / pixelsPerVU;
+              const deckY = 20; // 20vu from top
+
+              const { deck, cards } = createStandardDeck();
+
+
+              // Update deck position
+              deck.x = deckX;
+              deck.y = deckY;
+              deck.hyperscaleLayerId = 'cards';
+
+              // Update card positions directly in the cards array before dispatch
+              cards.forEach(card => {
+                card.x = deckX;
+                card.y = deckY;
+              });
+
+              // Add all cards first
+              cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
+              // Then add the deck
+              localDispatch({ type: 'ADD_OBJECT', payload: deck });
+
+              // IMPORTANT: Mark as initialized AFTER default objects are created
+              initializedRef.current = true;
+            }
+
+            // Create main menu (for everyone)
+            createMainMenu(localDispatch);
+          } finally {
+            // 🔥 FIX: Always clear loading flag, even on error
+            isLoadingSavedStateRef.current = false;
           }
-
-        // No saved state or empty saved state, create default game board (only for host)
-        if (isHost) {
-          // Create game board on 'boards' layer - ALL VALUES IN VU
-          const boardId = 'demo-board';
-          const board: Board = {
-               id: boardId,
-               type: ItemType.BOARD,
-               shape: TokenShape.SQUARE,
-               x: 50,    // VU: 50 vu from left edge
-               y: 50,    // VU: 50 vu from top edge
-               width: 1200,  // VU: 120% of screen width
-               height: 800, // VU: 80% of screen height
-               rotation: 0,
-               name: 'Game Board',
-               content: '',
-               color: '#34495e',
-               locked: false,
-               isOnTable: true,
-               gridType: GridType.HEX,
-               gridSize: 60,  // Grid cell size in VU
-               gridWidth: 100,  // Hex width in VU
-               gridHeight: 115, // Hex height in VU
-               snapToGrid: true,
-               hyperscaleLayerId: 'boards',
-          };
-          localDispatch({ type: 'ADD_OBJECT', payload: board });
-
-          // Create Standard Deck on 'cards' layer
-          // Position: relative to right edge of browser window viewport
-          // IMPORTANT: Must match rendering pixelsPerVU from viewTransform
-          const viewportWidth = document.documentElement.clientWidth;
-          const actualPixelsPerVU = state.viewTransform?.pixelsPerVU ?? 1.0;
-          const zoomMultiplier = state.viewTransform?.zoom ?? 1.0;
-          const pixelsPerVU = actualPixelsPerVU * zoomMultiplier;
-          const offsetX = state.viewTransform?.offset?.x || 0;
-          const scrollLeft = state.viewTransform?.scroll?.x || 0;
-
-          // Calculate position in viewport pixels first
-          // Menu left edge = viewportWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH_THICK
-          const menuLeftPx = viewportWidth - MAIN_MENU_WIDTH - SCROLLBAR_WIDTH_THICK;
-          const spacingPx = 20 * pixelsPerVU; // 20vu spacing between deck right edge and menu left edge
-          const deckRightPx = menuLeftPx - spacingPx; // Deck right edge in pixels
-          const deckLeftPx = deckRightPx - (DEFAULT_DECK_WIDTH * pixelsPerVU); // Deck left edge in pixels
-
-          // Convert viewport pixels to world coordinates using viewportToWorld formula
-          const deckX = (deckLeftPx + scrollLeft - offsetX) / pixelsPerVU;
-          const deckY = 20; // 20vu from top
-
-          const { deck, cards } = createStandardDeck();
-
-
-          // Update deck position
-          deck.x = deckX;
-          deck.y = deckY;
-          deck.hyperscaleLayerId = 'cards';
-
-          // Update card positions directly in the cards array before dispatch
-          cards.forEach(card => {
-            card.x = deckX;
-            card.y = deckY;
-          });
-
-          // Add all cards first
-          cards.forEach(card => localDispatch({ type: 'ADD_OBJECT', payload: card }));
-          // Then add the deck
-          localDispatch({ type: 'ADD_OBJECT', payload: deck });
-
-          // IMPORTANT: Mark as initialized AFTER default objects are created
-          initializedRef.current = true;
-        }
-
-        // Create main menu (for everyone)
-        createMainMenu(localDispatch);
         })();
     }
   }, [isHost]); // Only depend on isHost - connectionStatus changes should NOT re-trigger initialization
@@ -7870,6 +7882,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setPendingSavedState(null);
             setIsInitialLoading(false);
             initializedRef.current = false; // Allow retry
+            isLoadingSavedStateRef.current = false; // Clear loading flag to allow retry
           }}
         />
       )}
