@@ -181,6 +181,15 @@ function safeSetItem(key: string, value: string): boolean {
 export const saveGameState = async (state: GameState): Promise<void> => {
   if (typeof window === 'undefined') return;
 
+  const objectsCount = Object.keys(state.objects).length;
+  const objectIds = Object.keys(state.objects);
+
+  console.log('[AUTOSAVE] Saving game state', {
+    objectsCount,
+    objectIds,
+    timestamp: new Date().toISOString()
+  });
+
   try {
     // Filter out main menu panel (each player has their own local position)
     const objectsToSave: Record<string, TableObject> = {};
@@ -284,10 +293,14 @@ export const loadGameState = async (
 ): Promise<Partial<GameState> | null> => {
   if (typeof window === 'undefined') return null;
 
+  console.log('[LOAD] Loading game state', { isGuest });
+
   try {
     // Try compressed version first
     let stored = localStorage.getItem(STORAGE_KEY_COMPRESSED);
     let isCompressed = !!stored;
+
+    console.log('[LOAD] Found compressed version:', isCompressed);
 
     // If no compressed version, try uncompressed
     if (!stored) {
@@ -295,8 +308,11 @@ export const loadGameState = async (
     }
 
     if (!stored) {
+      console.log('[LOAD] No saved state found');
       return null;
     }
+
+    console.log('[LOAD] Saved state found, size:', stored.length, 'bytes');
 
     // Check size before parsing
     const storedSize = stored.length;
@@ -354,7 +370,13 @@ export const loadGameState = async (
       const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
-      return migrateToVersion6(adaptedState);
+      const result = migrateToVersion6(adaptedState);
+      console.log('[LOAD] State loaded successfully', {
+        version: parsed.version,
+        objectsCount: result.objects ? Object.keys(result.objects).length : 0,
+        objectIds: result.objects ? Object.keys(result.objects) : []
+      });
+      return result;
     }
 
     if (parsed.version === 5) {
@@ -368,7 +390,13 @@ export const loadGameState = async (
       const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
-      return migrateToVersion6(adaptedState);
+      const result = migrateToVersion6(adaptedState);
+      console.log('[LOAD] State loaded successfully', {
+        version: parsed.version,
+        objectsCount: result.objects ? Object.keys(result.objects).length : 0,
+        objectIds: result.objects ? Object.keys(result.objects) : []
+      });
+      return result;
     }
 
     if (parsed.version === 7) {

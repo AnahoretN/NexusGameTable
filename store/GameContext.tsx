@@ -6610,6 +6610,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Migrate pool panels
     runPoolMigrationIfNeeded(loadedState.objects);
 
+    // Add objects to state
+    addObjects(loadedState.objects);
+
     // Restore other state
     const updates: any[] = [];
 
@@ -7015,14 +7018,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 addInitialLoadStep(`Found ${localFiles.length} local images requiring restoration`, 'warning');
                 return; // Wait for user to select files
               }
+
+              // 🔥 FIX: Check if demo objects exist in saved state
+              const hasDemoBoard = Object.values(loadedState.objects).some(
+                obj => obj.id === 'demo-board' && obj.type === ItemType.BOARD
+              );
+              const hasDemoDeck = Object.values(loadedState.objects).some(
+                obj => obj.type === ItemType.DECK && obj.name === 'Standard Deck'
+              );
+
+              console.log('[INIT] Checking for demo objects in saved state:', {
+                hasDemoBoard,
+                hasDemoDeck
+              });
+
               // Load the state into game
               loadSavedStateIntoGame(loadedState);
 
-              return; // IMPORTANT: Return after async operations complete
+              // 🔥 FIX: If demo objects are missing, create them even if saved state was loaded
+              if (isHost && (!hasDemoBoard || !hasDemoDeck)) {
+                console.log('[INIT] Demo objects missing from saved state, creating them');
+                // Create demo objects below (fall through to demo object creation)
+              } else {
+                return; // Demo objects exist or we're a guest, no need to create them
+              }
             }
 
-            // No saved state or empty saved state, create default game board (only for host)
-            // 🔥 FIX: Only create default objects if we're definitely host AND no saved state was loaded
+            // No saved state or empty saved state, or demo objects missing - create default game board (only for host)
+            // 🔥 FIX: Create default objects if we're host AND (no saved state OR demo objects missing)
             if (isHost) {
               console.log('[INIT] Creating default demo objects');
               // Create game board on 'boards' layer - ALL VALUES IN VU
