@@ -289,6 +289,7 @@ export interface Card extends Omit<GameItem, 'allowedActions' | 'allowedActionsF
   isHorizontal?: boolean; // Used internally for cursor slot rendering
   fromPoolPanel?: string; // ID of pool panel this card was picked up from (if any)
   gridCellKey?: string; // Format: "boardId:col,row" for grid cell magnetism
+  snappedToCellId?: string; // ID of battlefield cell this card is snapped to (for cell magnetism)
   __pendingPlayTop?: { // Internal: stores pending play-top data for undo when card is dropped
     deckId: string;
     previousCardIds: string[];
@@ -382,6 +383,7 @@ export interface Token extends GameItem {
   showName?: boolean;
   // Grid cell magnetism optimization - store direct reference to snapped cell
   gridCellKey?: string; // Format: "boardId:col,row" for quick lookup
+  snappedToCellId?: string; // ID of battlefield cell this token is snapped to (for cell magnetism)
   fromPoolPanel?: string; // ID of pool panel this token was picked up from (if any)
   // State system - current active state (for individual tokens)
   currentStateId?: string; // ID of the currently active state (from archetype states)
@@ -437,7 +439,8 @@ export interface GridCellMagnetPoints {
 export interface BattlefieldCell extends GameItem {
   type: ItemType.BATTLEFIELD_CELL;
   shape: TokenShape; // CIRCLE, SQUARE, HEX, or TRIANGLE
-  snapToGrid?: boolean; // When enabled, other objects snap to this cell's position
+  snapToGrid?: boolean; // When enabled, tokens snap to this cell's magnet points
+  snapCardsToGrid?: boolean; // When enabled, cards snap to this cell's magnet points
   gridSize?: number; // Grid size for snapping (default 50)
 
   // Magnetism system - controls where tokens snap to in this cell

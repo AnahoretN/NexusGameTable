@@ -147,12 +147,12 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     case 'moveToBottomDeck':
     case 'moveToDiscard':
       return [ItemType.CARD];
-    // Rotation and swing actions for tokens, cards, counters, dice objects, boards, and decks
+    // Rotation and swing actions for tokens, cards, counters, dice objects, boards, battlefield cells, and decks
     case 'rotateClockwise':
     case 'rotateCounterClockwise':
     case 'swingClockwise':
     case 'swingCounterClockwise':
-      return [ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.DECK];
+      return [ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL, ItemType.DECK];
     // Deck-specific actions for decks only
     case 'shuffleDeck':
     case 'searchDeck':
@@ -165,24 +165,24 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
     // Layer actions for all types except cards in card settings
     case 'layerUp':
     case 'layerDown':
-      return [ItemType.DECK, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+      return [ItemType.DECK, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
     case 'bringToFront':
     case 'sendToBack':
-      return [ItemType.DECK, ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
-    // Lock/Unlock for decks, tokens, counters, dice objects, and boards
+      return [ItemType.DECK, ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
+    // Lock/Unlock for decks, tokens, counters, dice objects, boards, and battlefield cells
     case 'lock':
-      return [ItemType.DECK, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+      return [ItemType.DECK, ItemType.TOKEN, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
     // Pin/Unpin for tokens, cards, and decks
     case 'pin':
     case 'pinToViewport':
       return [ItemType.TOKEN, ItemType.CARD, ItemType.DECK];
-    // Clone and delete actions for tokens, cards, counters, dice objects, and boards
+    // Clone and delete actions for tokens, cards, counters, dice objects, boards, and battlefield cells
     case 'clone':
     case 'delete':
-      return [ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD];
+      return [ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL];
     // Hide/Show action for all object types (except cards in card settings)
     case 'hide':
-      return [ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.DECK];
+      return [ItemType.TOKEN, ItemType.CARD, ItemType.COUNTER, ItemType.DICE_OBJECT, ItemType.BOARD, ItemType.BATTLEFIELD_CELL, ItemType.DECK];
     // Token State actions - only for tokens and token types
     case 'toggleState1':
     case 'nextState':
@@ -1750,7 +1750,7 @@ setGridDebugInfo(null);
                 </div>
 
                 {/* Rotation Step Settings - for objects that can be rotated */}
-                {(isDeck || isCard || isToken || isBoard || isDice || isCounter || isNexusCell || isArchetype) && (
+                {(isDeck || isCard || isToken || isBoard || isBattlefieldCell || isDice || isCounter || isNexusCell || isArchetype) && (
                   <div className="pt-2">
                     <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Rotation Step (°)', language as Locale)}</label>
                     <select
@@ -1967,32 +1967,12 @@ setGridDebugInfo(null);
                 </div>
               )}
 
-              {/* Snap to Grid setting (for battlefield cells) */}
-              {isBattlefieldCell && (
-                <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 mb-4">
-                  <label className="text-xs text-gray-400 flex items-center gap-2">
-                    <Grid3x3 size={12} />
-                    {translate('Snap Objects to Grid', language as Locale)}
-                  </label>
-                  <button
-                    onClick={() => update('snapToGrid', !(data as any).snapToGrid)}
-                    className={`w-10 h-5 rounded-full transition-colors ${
-                      (data as any).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                      (data as any).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
-                    }`} />
-                  </button>
-                </div>
-              )}
-
-              {/* Image URL (for tokens and token types) */}
-              {(isToken || isArchetype) && !isBoard && (
+              {/* Background Image URL (for tokens, token types, and battlefield cells) */}
+              {(isToken || isArchetype || isBattlefieldCell) && !isBoard && (
                 <FilePickerInput
                   value={data.content || ''}
                   onChange={value => update('content', value)}
-                  label={translate('Image URL', language as Locale)}
+                  label={translate('Background Image URL', language as Locale)}
                   className="w-full"
                 />
               )}
@@ -2208,7 +2188,7 @@ setGridDebugInfo(null);
                 </div>
               )}
 
-              {/* Color + Image URL (for boards) - side by side, Color is smaller */}
+              {/* Color + Image URL (for boards only) - side by side, Color is smaller */}
               {isBoard && (
                 <div className="grid grid-cols-[80px_1fr] gap-2">
                   <div>
@@ -2422,7 +2402,7 @@ setGridDebugInfo(null);
                 </div>
               )}
 
-              {/* Grid Settings (for boards) */}
+              {/* Grid Settings (for boards only) */}
               {isBoard && (
                 <div className="pt-4 space-y-3">
                   <h4 className="text-sm font-bold text-gray-300 flex items-center gap-2">
@@ -2637,40 +2617,49 @@ setGridDebugInfo(null);
                       </button>
                     </div>
                   </div>
-                  {/* Show Grid and Snap Objects to Grid on same line */}
+                </div>
+              )}
+
+              {/* Snap Settings (for boards and battlefield cells) */}
+              {(isBoard || isBattlefieldCell) && (
+                <div className="pt-4 space-y-3">
                   <div className="grid grid-cols-2 gap-2">
+                    {/* Snap Cards to Grid - for both boards and battlefield cells */}
                     <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                       <label className="text-xs text-gray-400 flex items-center gap-2">
                         <Grid3x3 size={12} />
                         {translate('Snap Cards to Grid', language as Locale)}
                       </label>
                       <button
-                        onClick={() => update('snapCardsToGrid', !(data as Board).snapCardsToGrid)}
+                        onClick={() => update('snapCardsToGrid', !(data as Board | BattlefieldCell).snapCardsToGrid)}
                         className={`w-10 h-5 rounded-full transition-colors ${
-                          (data as Board).snapCardsToGrid ? 'bg-green-600' : 'bg-slate-700'
+                          (data as Board | BattlefieldCell).snapCardsToGrid ? 'bg-green-600' : 'bg-slate-700'
                         }`}
                       >
                         <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          (data as Board).snapCardsToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                          (data as Board | BattlefieldCell).snapCardsToGrid ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </div>
+                    {/* Snap Tokens to Grid - for both boards and battlefield cells */}
                     <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                       <label className="text-xs text-gray-400 flex items-center gap-2">
                         <Grid3x3 size={12} />
                         {translate('Snap Tokens to Grid', language as Locale)}
                       </label>
                       <button
-                        onClick={() => update('snapToGrid', !(data as Board).snapToGrid)}
+                        onClick={() => update('snapToGrid', !(data as Board | BattlefieldCell).snapToGrid)}
                         className={`w-10 h-5 rounded-full transition-colors ${
-                          (data as Board).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
+                          (data as Board | BattlefieldCell).snapToGrid ? 'bg-green-600' : 'bg-slate-700'
                         }`}
                       >
                         <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                          (data as Board).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                          (data as Board | BattlefieldCell).snapToGrid ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </div>
+                    {/* Snap Rotation to Grid - only for boards */}
+                    {isBoard && (
                     <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                       <label className="text-xs text-gray-400 flex items-center gap-2">
                         <Grid3x3 size={12} />
@@ -2687,6 +2676,9 @@ setGridDebugInfo(null);
                         }`} />
                       </button>
                     </div>
+                    )}
+                    {/* Show Grid - only for boards */}
+                    {isBoard && (
                     <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                       <label className="text-xs text-gray-400 flex items-center gap-2">
                         <Eye size={12} />
@@ -2703,6 +2695,7 @@ setGridDebugInfo(null);
                         }`} />
                       </button>
                     </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -3064,6 +3057,10 @@ setGridDebugInfo(null);
                       }
                       // Tokens should not have flip action - they use States instead
                       if ((isToken || isArchetype) && action.id === 'flip') {
+                        return false;
+                      }
+                      // Boards should not have flip action - boards cannot be flipped
+                      if ((isBoard || isBattlefieldCell) && action.id === 'flip') {
                         return false;
                       }
                       // Only tokens should have states action

@@ -32,6 +32,7 @@ interface TokenRendererProps {
   viewTransform: { offset: { x: number; y: number }; zoom: number; scroll: { x: number; y: number } };
   onContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   onMouseDown: (e: React.MouseEvent, objId: string) => void;
+  onDoubleClick?: (e: React.MouseEvent, obj: TableObject) => void;
   dispatch: React.Dispatch<any>;
 }
 
@@ -52,6 +53,7 @@ export const TokenRenderer = memo(({
   viewTransform,
   onContextMenu,
   onMouseDown,
+  onDoubleClick,
   dispatch,
 }: TokenRendererProps) => {
   // Use memoized hook to get token with applied state
@@ -372,24 +374,36 @@ export const TokenRenderer = memo(({
     };
   }, [obj, allObjects, dispatch, viewTransform, pixelsPerVU]);
 
-  // Memoize rendered buttons
+  // Memoize rendered buttons - get actionButtons from token or archetype
   const actionButtons = useMemo(() => {
-    const buttons = ((obj as any).actionButtons || [])
+    const tokenButtons = (obj as any).actionButtons;
+    let buttons = tokenButtons;
+
+    // If no buttons on token, check archetype
+    if (!buttons || (Array.isArray(buttons) && buttons.length === 0)) {
+      const archetypeId = (obj as any).archetypeId;
+      if (archetypeId && allObjects[archetypeId]) {
+        buttons = (allObjects[archetypeId] as any).actionButtons;
+      }
+    }
+
+    const buttonArray = buttons || [];
+
+    return buttonArray
       .map((action: any) => buttonConfigs[action])
       .filter(Boolean)
-      .slice(0, 4);
-
-    return buttons.map((btn: any) => (
-      <button
-        key={btn.key}
-        onClick={(e) => { e.stopPropagation(); btn.action(); }}
-        className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
-        title={btn.title}
-      >
-        {btn.icon}
-      </button>
-    ));
-  }, [(obj as any).actionButtons, buttonConfigs]);
+      .slice(0, 4)
+      .map((btn: any) => (
+        <button
+          key={btn.key}
+          onClick={(e) => { e.stopPropagation(); btn.action(); }}
+          className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
+          title={btn.title}
+        >
+          {btn.icon}
+        </button>
+      ));
+  }, [obj, (obj as any).actionButtons, (obj as any).archetypeId, allObjects, buttonConfigs]);
 
   return (
     <Tooltip
@@ -406,6 +420,7 @@ export const TokenRenderer = memo(({
           }
         }}
         onClick={undefined}
+        onDoubleClick={(e) => onDoubleClick?.(e, obj)}
         onContextMenu={(e) => onContextMenu(e, obj)}
         className={`absolute flex items-center justify-center text-white font-bold select-none group ${cursorClass}`}
         style={positionStyle}
@@ -482,15 +497,42 @@ export const TokenRenderer = memo(({
     // Border properties - important for visual updates
     (prevToken as any).borderWidth === (nextToken as any).borderWidth &&
     (prevToken as any).borderColor === (nextToken as any).borderColor &&
-    (prevToken as any).borderOpacity === (nextToken as any).borderOpacity
+    (prevToken as any).borderOpacity === (nextToken as any).borderOpacity &&
+    // Token state - critical for state switching to trigger re-render
+    (prevToken as any).currentStateId === (nextToken as any).currentStateId &&
+    // Click actions - important for double-click functionality
+    (prevToken as any).singleClickAction === (nextToken as any).singleClickAction &&
+    (prevToken as any).doubleClickAction === (nextToken as any).doubleClickAction
   );
 
   // Compare counters deeply (important for character token sync)
   const countersEqual = JSON.stringify(prevToken.counters) === JSON.stringify(nextToken.counters);
 
+  // Compare actionButtons (important when buttons are added/removed in settings)
+  const prevActionButtons = (prevToken as any).actionButtons ||
+                            ((prevToken as any).archetypeId && prevProps.allObjects[(prevToken as any).archetypeId]?.actionButtons) ||
+                            [];
+  const nextActionButtons = (nextToken as any).actionButtons ||
+                            ((nextToken as any).archetypeId && nextProps.allObjects[(nextToken as any).archetypeId]?.actionButtons) ||
+                            [];
+  const actionButtonsEqual = JSON.stringify(prevActionButtons) === JSON.stringify(nextActionButtons);
+
+  // Compare archetype for tokens with archetypeId
+  // When archetype states are edited in settings, the archetype object reference changes
+  // and all tokens using this archetype must re-render to show updated states
+  const archetypeId = (prevToken as any).archetypeId;
+  let archetypesEqual = true;
+  if (archetypeId) {
+    const prevArchetype = prevProps.allObjects[archetypeId];
+    const nextArchetype = nextProps.allObjects[archetypeId];
+    archetypesEqual = prevArchetype === nextArchetype;
+  }
+
   return (
     tokensEqual &&
     countersEqual && // Important: re-render when counters change (character sync)
+    actionButtonsEqual && // Important: re-render when action buttons change in settings
+    archetypesEqual && // Important: re-render when archetype (states) changes
     prevIsDragging === nextIsDragging && // Only care if THIS token is being dragged
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.isCtrlPressed === nextProps.isCtrlPressed &&

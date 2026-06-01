@@ -808,6 +808,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       ItemType.RANDOMIZER,
       ItemType.COUNTER,
       ItemType.BOARD, // Now boards use same drag logic as tokens
+      ItemType.BATTLEFIELD_CELL, // Battlefield cells are draggable too
       ItemType.EFFECT_TEMPLATE // Effects are draggable too
     ].includes(obj.type);
 
@@ -1292,6 +1293,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       ItemType.RANDOMIZER,
       ItemType.COUNTER,
       ItemType.BOARD,
+      ItemType.BATTLEFIELD_CELL,
       ItemType.EFFECT_TEMPLATE // Effects are handled by cursor slot system
     ].includes(draggingObject.type)) {
       return;
@@ -1480,6 +1482,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       ItemType.RANDOMIZER,
       ItemType.COUNTER,
       ItemType.BOARD,
+      ItemType.BATTLEFIELD_CELL,
       ItemType.EFFECT_TEMPLATE // Effects are handled by cursor slot system
     ].includes(draggingObject.type)) {
       setDraggingObject(null);
@@ -2066,7 +2069,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
         // IMPORTANT: Allow boards to be dropped even if not fully visible
         // Boards are large and users should be able to position them partially outside
-        const isBoard = lastObj?.type === ItemType.BOARD || lastObj?.type === ItemType.NEXUS_BOARD;
+        const isBoard = lastObj?.type === ItemType.BOARD || lastObj?.type === ItemType.NEXUS_BOARD || lastObj?.type === ItemType.BATTLEFIELD_CELL;
 
         if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible && !isBoard) {
           // Object would be partially outside visible area - don't allow drop
@@ -2366,7 +2369,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
             // IMPORTANT: Allow boards to be dropped even if not fully visible
             // Boards are large and users should be able to position them partially outside
-            const isBoard = lastObj?.type === ItemType.BOARD || lastObj?.type === ItemType.NEXUS_BOARD;
+            const isBoard = lastObj?.type === ItemType.BOARD || lastObj?.type === ItemType.NEXUS_BOARD || lastObj?.type === ItemType.BATTLEFIELD_CELL;
 
             if (!isFullyVisible && !(isFromPlayTop && isCenterVisible) && !isHalfVisible && !isBoard) {
               // Object would be partially outside visible area - don't allow drop
@@ -2501,7 +2504,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
         const objBottom = y + objHeight / 2;
 
         // For boards, allow placement even if partially outside visible area
-        const isBoard = obj?.type === ItemType.BOARD || obj?.type === ItemType.NEXUS_BOARD;
+        const isBoard = obj?.type === ItemType.BOARD || obj?.type === ItemType.NEXUS_BOARD || obj?.type === ItemType.BATTLEFIELD_CELL;
 
         // Check if object is completely within visible content area (or if it's a board)
         const isFullyVisible = isBoard || (

@@ -99,7 +99,7 @@ const BoardBackgroundImage: React.FC<BoardBackgroundImageProps> = ({ content, op
   );
 };
 
-const BoardBackgroundImageMemo = React.memo(BoardBackgroundImage, (prevProps, nextProps) => {
+export const BoardBackgroundImageMemo = React.memo(BoardBackgroundImage, (prevProps, nextProps) => {
   // Re-render when cache version changes (pack loaded)
   if (prevProps.cacheVersion !== nextProps.cacheVersion) {
     return false;

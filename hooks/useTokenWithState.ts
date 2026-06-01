@@ -99,7 +99,11 @@ export const useTokenWithState = (
     token.height,
     (token as any).currentStateId,
     (token as any).archetypeId,
-    (allObjects[(token as any).archetypeId] as TokenType | Token | undefined)?.states,
+    // Track entire archetype object - when any archetype property changes, recompute
+    // This ensures tokens re-render when archetype base properties (color, content, etc.) change
+    (allObjects[(token as any).archetypeId] as TokenType | Token | undefined),
+    // Track token's own states for TOKEN_TYPE archetypes
+    (token as TokenType).states,
     allObjects[(token as any).currentStateId]
   ]);
 };

@@ -30,6 +30,7 @@ interface CardRendererProps {
   zoomMultiplier: number;
   onContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   onMouseDown: (e: React.MouseEvent, objId: string) => void;
+  onDoubleClick?: (e: React.MouseEvent, obj: TableObject) => void;
   dispatch: React.Dispatch<any>;
 }
 
@@ -50,6 +51,7 @@ export const CardRenderer = memo(({
   zoomMultiplier,
   onContextMenu,
   onMouseDown,
+  onDoubleClick,
   dispatch,
 }: CardRendererProps) => {
   const card = obj as CardType;
@@ -253,6 +255,7 @@ export const CardRenderer = memo(({
             onMouseDown(e, obj.id);
           }
         }}
+        onDoubleClick={(e) => onDoubleClick?.(e, obj)}
         onContextMenu={(e) => onContextMenu(e, obj)}
         className={`absolute group ${cursorClass}`}
         style={positionStyle}

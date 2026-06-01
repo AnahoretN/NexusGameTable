@@ -1,0 +1,1 @@
+console.log('localStorage before:', JSON.parse(localStorage.getItem('nexus-game-state-compressed') || localStorage.getItem('nexus-game-state') || 'null')); localStorage.clear(); console.log('localStorage after:', JSON.parse(localStorage.getItem('nexus-game-state-compressed') || localStorage.getItem('nexus-game-state') || 'null'));

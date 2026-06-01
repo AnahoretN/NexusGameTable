@@ -1,18 +1,19 @@
 import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Card } from '../Card';
 import { SvgTokenShape } from '../SvgTokenShape';
-import { BoardWithResizeMemo } from './BoardWithResize';
+import { BoardWithResizeMemo, BoardBackgroundImageMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
 import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenSlider, TokenSliderPosition, TokenSliderDisplay, TokenShape } from '../../types';
+import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenSlider, TokenSliderPosition, TokenSliderDisplay, TokenShape, BattlefieldCell as BattlefieldCellType } from '../../types';
 import { TabletopRenderContext, ObjectRenderProps } from './types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 import { TokenCountersDisplay } from './TokenCountersDisplay';
 import { TokenRenderer } from './TokenRenderer';
 import { CardRenderer } from './CardRenderer';
+import { CellRenderer } from './CellRenderer';
 import { getGlobalCacheVersion } from '../SvgTokenShape';
 
 interface GameObjectsRendererProps {
@@ -387,6 +388,28 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     );
   };
 
+  const renderBattlefieldCell = (obj: TableObject, globalZIndex: number) => {
+    return (
+      <CellRenderer
+        key={`cell-${obj.id}`}
+        obj={obj}
+        globalZIndex={globalZIndex}
+        v2p={v2p}
+        createPositionedStyle={createPositionedStyle}
+        getLayerInverseScale={getLayerInverseScale}
+        draggingId={draggingId}
+        currentTool={currentTool}
+        isGM={isGM}
+        activePlayerId={activePlayerId}
+        pixelsPerVU={pixelsPerVU}
+        state={state}
+        onContextMenu={onContextMenu}
+        onMouseDown={onMouseDown}
+        dispatch={dispatch}
+      />
+    );
+  };
+
   const renderToken = (obj: TableObject, globalZIndex: number) => {
     return (
       <TokenRenderer
@@ -406,6 +429,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
         viewTransform={state.viewTransform}
         onContextMenu={onContextMenu}
         onMouseDown={onMouseDown}
+        onDoubleClick={onDoubleClick}
         dispatch={dispatch}
       />
     );
@@ -431,6 +455,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
         zoomMultiplier={zoomMultiplier}
         onContextMenu={onContextMenu}
         onMouseDown={onMouseDown}
+        onDoubleClick={onDoubleClick}
         dispatch={dispatch}
       />
     );
@@ -465,6 +490,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             }
             if (canDrag) onMouseDown(e, obj.id);
           }}
+          onDoubleClick={(e) => onDoubleClick?.(e, obj)}
           onContextMenu={(e) => onContextMenu(e, obj)}
           className={`absolute bg-slate-900 border-2 border-slate-600 shadow-xl flex items-center justify-between p-2 gap-2 text-white select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           style={createPositionedStyle(
@@ -565,7 +591,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
         <div
           data-object-id={obj.id}
           onMouseDown={(e) => canDrag && onMouseDown(e, obj.id)}
-          onDoubleClick={(e) => canDrag && onDoubleClick?.(e, obj)}
+          onDoubleClick={(e) => onDoubleClick?.(e, obj)}
           onContextMenu={(e) => onContextMenu(e, obj)}
           className={`absolute flex items-center justify-center text-white font-bold select-none group ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           style={createPositionedStyle(
@@ -978,6 +1004,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
       return renderEffectTemplate(obj, globalZIndex);
     }
 
+    if (obj.type === ItemType.BATTLEFIELD_CELL) {
+      return renderBattlefieldCell(obj, globalZIndex);
+    }
+
     return null;
   };
 
@@ -1004,6 +1034,11 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     if (prevObjects[i] !== nextObjects[i]) return false;
   }
 
+  // Check if state.objects changed (archetypes may have been edited)
+  // When a token archetype is edited, state.objects reference changes but
+  // the token instance in visibleTableObjects doesn't, so we need to check this
+  const objectsChanged = prevProps.state.objects !== nextProps.state.objects;
+
   // All objects are the same references, check other props
   return (
     prevProps.hyperscaleLayers === nextProps.hyperscaleLayers &&
@@ -1024,7 +1059,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     prevProps.context.pixelsPerVU === nextProps.context.pixelsPerVU &&
     prevProps.context.basePixelsPerVU === nextProps.context.basePixelsPerVU &&
     prevProps.context.v2p === nextProps.context.v2p &&
-    prevProps.context.rulerStep === nextProps.context.rulerStep
+    prevProps.context.rulerStep === nextProps.context.rulerStep &&
+    !objectsChanged // Re-render when state.objects changes (archetype edits)
   );
 });
 
@@ -1041,6 +1077,9 @@ export const GameObjectsRendererMemo = memo(GameObjectsRenderer, (prevProps, nex
   for (let i = 0; i < prevObjects.length; i++) {
     if (prevObjects[i] !== nextObjects[i]) return false;
   }
+
+  // Check if state.objects changed (archetypes may have been edited)
+  const objectsChanged = prevProps.state.objects !== nextProps.state.objects;
 
   return (
     prevProps.hyperscaleLayers === nextProps.hyperscaleLayers &&
@@ -1061,7 +1100,8 @@ export const GameObjectsRendererMemo = memo(GameObjectsRenderer, (prevProps, nex
     prevProps.context.pixelsPerVU === nextProps.context.pixelsPerVU &&
     prevProps.context.basePixelsPerVU === nextProps.context.basePixelsPerVU &&
     prevProps.context.v2p === nextProps.context.v2p &&
-    prevProps.context.rulerStep === nextProps.context.rulerStep
+    prevProps.context.rulerStep === nextProps.context.rulerStep &&
+    !objectsChanged // Re-render when state.objects changes (archetype edits)
   );
 });
 

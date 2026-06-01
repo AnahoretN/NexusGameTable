@@ -3,6 +3,7 @@ import { ItemType, Card as CardType, Token as TokenType, CardOrientation, CardSh
 import { Card } from './Card';
 import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
+import { BoardBackgroundImageMemo } from './Tabletop/BoardWithResize';
 import { Layers, Pencil } from 'lucide-react';
 import { DECK_OFFSET } from '../constants';
 import { logger } from '../utils/logger';
@@ -500,19 +501,26 @@ const CursorSlotBattlefieldCell: React.FC<CursorSlotItemProps & { item: Battlefi
         justifyContent: 'center',
       }}
     >
+      {/* Background image */}
+      {item.content && (
+        <BoardBackgroundImageMemo
+          content={item.content}
+          opacity={(item as any).backgroundOpacity ?? 100}
+        />
+      )}
+
+      {/* Cell shape with border */}
       <SvgTokenShape
         shape={item.shape}
         width={width}
         height={height}
         color={item.color || '#2c3e50'}
-        content={item.content}
+        content="" // No text content for battlefield cells
         rotation={0}
         borderWidth={item.borderWidth ?? 2}
         borderColor={item.borderColor || '#3498db'}
         opacity={item.opacity ?? 100}
         borderOpacity={item.borderOpacity ?? 100}
-        showThickness={true}
-        tokenName={item.name}
       />
     </div>
   );

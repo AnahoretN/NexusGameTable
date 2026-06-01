@@ -377,15 +377,15 @@ export function createBattlefieldCell(params: BaseObjectParams & {
     pixelsPerVU = 1,
     ...rest
   } = params;
-  const cellWidth = 100;
-  const cellHeight = 100;
+  const cellWidth = 100;  // VU
+  const cellHeight = 100;  // VU
 
   return {
     id,
     type: ItemType.BATTLEFIELD_CELL,
     shape,
-    x: x - (cellWidth / 2 / pixelsPerVU), // Center to top-left
-    y: y - (cellHeight / 2 / pixelsPerVU), // Center to top-left
+    x: x - cellWidth / 2, // Center to top-left
+    y: y - cellHeight / 2, // Center to top-left
     rotation: rest.rotation ?? 0,
     width: cellWidth,
     height: cellHeight,
@@ -395,10 +395,11 @@ export function createBattlefieldCell(params: BaseObjectParams & {
     locked: rest.locked ?? false,
     color: '#496179',
     borderColor: '#212f3c',
-    borderWidth: 3,
+    borderWidth: 2,
     opacity: 100,
     borderOpacity: 100,
-    snapToGrid: false,
+    snapToGrid: true,
+    snapCardsToGrid: false,
     gridSize: 50,
     zIndex: 0,
     hyperscaleLayerId,
@@ -438,8 +439,8 @@ export function createNexusBoard(params: BaseObjectParams & {
     id: mainCellId,
     type: ItemType.NEXUS_CELL,
     shape: TokenShape.HEX,
-    x: x - (cellWidth / 2 / pixelsPerVU), // Center to top-left
-    y: y - (cellHeight / 2 / pixelsPerVU), // Center to top-left
+    x: x - cellWidth / 2, // Center to top-left
+    y: y - cellHeight / 2, // Center to top-left
     rotation: 0,
     width: cellWidth,
     height: cellHeight,
@@ -449,7 +450,7 @@ export function createNexusBoard(params: BaseObjectParams & {
     locked: false,
     color: '#496179',
     borderColor: '#212f3c',
-    borderWidth: 3,
+    borderWidth: 2,
     opacity: 100,
     borderOpacity: 100,
     snapToGrid: true,
@@ -470,8 +471,8 @@ export function createNexusBoard(params: BaseObjectParams & {
     id: boardId,
     type: ItemType.NEXUS_BOARD,
     shape: TokenShape.HEX,
-    x: x - (cellWidth / 2 / pixelsPerVU), // Center to top-left (same as main cell)
-    y: y - (cellHeight / 2 / pixelsPerVU), // Center to top-left (same as main cell)
+    x: x - cellWidth / 2, // Center to top-left (same as main cell)
+    y: y - cellHeight / 2, // Center to top-left (same as main cell)
     rotation: 0,
     width: 0,
     height: 0,

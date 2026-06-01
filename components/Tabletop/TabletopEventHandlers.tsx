@@ -9,7 +9,9 @@ import {
   calculateGridDimensions,
   removeObjectFromGridCellMagnet,
   addObjectToGridCellMagnet,
-  generateGridCellKey
+  generateGridCellKey,
+  addObjectToCellMagnet,
+  removeObjectFromCellMagnet
 } from '../../utils/gridUtils';
 import {
   applyClickOffset,
@@ -22,6 +24,7 @@ import { applyPanelToPanelMagnetism, type PanelBounds, type MagnetismConfig, typ
 import { getTokenWithAppliedState } from '../../hooks/useTokenWithState';
 import { findDrawingAtPosition } from '../../utils/drawingUtils';
 import { addToCursorSlot, removeFromCursorSlot, isInCursorSlot, getCursorSlotObjects } from '../../utils/cursorSlotTracker';
+import { executeClickAction, type ActionHandlerContext } from '../../utils/objectActionHandlers';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -259,6 +262,55 @@ const addToCursorSlotLocal = (
         id: id,
         updates: {
           gridCellKey: undefined
+        }
+      }
+    });
+  }
+
+  // Check if object is snapped to a battlefield cell
+  const snappedToCellId = (obj as any)?.snappedToCellId;
+  if (obj && snappedToCellId && (obj.type === ItemType.TOKEN || obj.type === ItemType.CARD)) {
+    const cell = state.objects[snappedToCellId] as any;
+
+    // Always clear snappedToCellId when picked up, but only update cell magnet points if cell exists
+    if (cell && cell.isOnTable !== false && cell.magnetPoints) {
+      const result = removeObjectFromCellMagnet(
+        cell,
+        id,
+        state.objects
+      );
+
+      if (result) {
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: cell.id,
+            updates: result.updatedCell
+          }
+        });
+
+        for (const movedObj of result.movedObjects) {
+          dispatch({
+            type: 'UPDATE_OBJECT',
+            payload: {
+              id: movedObj.objectId,
+              updates: {
+                x: movedObj.x,
+                y: movedObj.y
+              }
+            }
+          });
+        }
+      }
+    }
+
+    // Always clear snappedToCellId from object when picked up
+    dispatch({
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: id,
+        updates: {
+          snappedToCellId: undefined
         }
       }
     });
@@ -1272,6 +1324,81 @@ const dropCursorSlot = (
 
         break; // Only snap to first matching board
       }
+
+      // Check battlefield cells for magnetism
+      for (const cellId of Object.keys(state.objects)) {
+        const cell = state.objects[cellId] as any;
+        if (cell.type !== ItemType.BATTLEFIELD_CELL) continue;
+
+        // Skip hidden cells - magnetism should not work when cell is hidden
+        if (cell.isOnTable === false) continue;
+
+        // Check if object is over this cell
+        const cellWidth = cell.width ?? 100;
+        const cellHeight = cell.height ?? 100;
+        const cellLeft = cell.x;
+        const cellRight = cell.x + cellWidth;
+        const cellTop = cell.y;
+        const cellBottom = cell.y + cellHeight;
+
+        if (centerX < cellLeft || centerX > cellRight || centerY < cellTop || centerY > cellBottom) {
+          continue;
+        }
+
+        // Check if cell has snapToGrid enabled for this item type
+        const snapEnabled = isToken ? cell.snapToGrid : cell.snapCardsToGrid;
+        if (!snapEnabled) continue;
+
+        // Add object to battlefield cell's magnet points
+        const magnetResult = addObjectToCellMagnet(
+          cell,
+          item.id,
+          state.objects
+        );
+
+        // Update cell with new magnet points
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: cell.id,
+            updates: magnetResult.updatedCell
+          }
+        });
+
+        // Move other objects that were repositioned
+        for (const movedObj of magnetResult.movedObjects) {
+          if (movedObj.objectId !== item.id) {
+            dispatch({
+              type: 'UPDATE_OBJECT',
+              payload: {
+                id: movedObj.objectId,
+                updates: {
+                  x: movedObj.x,
+                  y: movedObj.y
+                }
+              }
+            });
+          }
+        }
+
+        // Update current object position to snap position
+        // magnetResult.snapPosition is center position, convert to top-left
+        finalX = magnetResult.snapPosition.x - (item.width ?? 50) / 2;
+        finalY = magnetResult.snapPosition.y - (item.height ?? 50) / 2;
+
+        // Store cell reference on the object (for future removal)
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: item.id,
+            updates: {
+              snappedToCellId: cell.id
+            }
+          }
+        });
+
+        break; // Only snap to first matching cell
+      }
     }
 
     // Restore object to table at new position
@@ -1541,9 +1668,13 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     cursorSlotLastAddedRef,
     cursorSlotLastDroppedRef,
     unpinnedDuringDragRef,
+    setClickTooltip,
     setNexusBoardAddingCell,
+    setSettingsModalObj,
     setPileContextMenu,
     setPilesButtonMenu,
+    setSearchModalDeck,
+    setTopDeckModalDeck,
   } = props;
 
   // Check if settings modal is open (to block context menus)
@@ -1935,24 +2066,72 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     props
   ]);
 
-  // Double click handler - rolls dice
+  // Double click handler - executes configured doubleClickAction or rolls dice
   const handleDoubleClick = useCallback((e: React.MouseEvent, obj: TableObject) => {
     if (!obj) return;
 
-    // 🔥 FIX: All objects are shared - anyone can interact with them
-    // Only check if explicitly locked
-    if (obj.locked) {
-      return;
-    }
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-
-    // Only handle dice objects - always roll only the clicked dice
+    // Handle dice objects - always roll only the clicked dice
     if (obj.type === ItemType.DICE_OBJECT) {
       e.stopPropagation();
-      // Roll single dice regardless of group membership
+      // Roll single dice regardless of group membership or locked state
       dispatch({ type: 'ROLL_PHYSICAL_DICE', payload: { id: obj.id, rollGroup: false } });
+      return;
     }
-  }, [state.objects, state.diceGroups, activePlayerId, isGM, dispatch]);
+
+    // Get doubleClickAction for the object
+    let doubleClickAction: string | undefined;
+
+    if (obj.type === ItemType.CARD) {
+      // Cards inherit from their deck
+      const card = obj as CardType;
+      if (card.deckId) {
+        const deck = state.objects[card.deckId] as DeckType | undefined;
+        doubleClickAction = deck?.cardDoubleClickAction;
+      }
+    } else {
+      // Other objects use their own doubleClickAction
+      doubleClickAction = (obj as any).doubleClickAction;
+    }
+
+    // 🔥 FIX: Allow double-click on locked objects for ALL players
+    // Double-click actions should work regardless of lock state (e.g., flip, show tooltip)
+    // Individual actions may have their own permission checks
+
+    if (doubleClickAction && doubleClickAction !== 'none') {
+      e.stopPropagation();
+
+      console.log('[handleDoubleClick] obj.id:', obj.id, 'action:', doubleClickAction, 'obj.locked:', obj.locked);
+
+      // 🔥 FIX: Make pin action toggle on double-click
+      // 'lock' action already toggles (handleLock uses !obj.locked)
+      // But pin needs special handling
+      let actionToExecute = doubleClickAction;
+      if ((doubleClickAction === 'pin' || doubleClickAction === 'pinToViewport') && (obj as any).isPinnedToViewport) {
+        // Already pinned - unpin it
+        actionToExecute = 'unpinFromViewport';
+      }
+
+      // Create action context for executeClickAction
+      const actionContext: ActionHandlerContext = {
+        dispatch,
+        state: {
+          objects: state.objects,
+          activePlayerId,
+          diceGroups: state.diceGroups,
+          viewTransform
+        },
+        additionalHandlers: {
+          onDeleteCandidate: setDeleteCandidateId,
+          onOpenSearchDeck: setSearchModalDeck,
+          onOpenTopDeckModal: setTopDeckModalDeck
+        },
+        isGM,
+        isShiftPressed
+      };
+
+      executeClickAction(obj, actionToExecute, actionContext, e);
+    }
+  }, [state.objects, state.diceGroups, activePlayerId, isGM, isShiftPressed, dispatch, viewTransform, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck]);
 
   // RAF ref for throttling mouse move updates
   const rafRef = useRef<number>();

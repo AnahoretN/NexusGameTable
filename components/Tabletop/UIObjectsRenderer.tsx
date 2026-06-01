@@ -19,6 +19,7 @@ interface UIObjectsRendererProps {
   currentTool: string;
   onContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   onMouseDown: (e: React.MouseEvent, objId: string) => void;
+  onDoubleClick?: (e: React.MouseEvent, obj: TableObject) => void;
   executeClickAction: (obj: any, action: string, event?: React.MouseEvent) => void;
   handleContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   handlePileContextMenu?: (e: React.MouseEvent, pile: any, deck: any) => void;
@@ -44,6 +45,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   currentTool,
   onContextMenu,
   onMouseDown,
+  onDoubleClick,
   executeClickAction,
   handleContextMenu,
   handlePileContextMenu,
@@ -85,6 +87,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
         <div
           className={`inline-block ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
           onMouseDown={(e) => onMouseDown(e, deckObj.id)}
+          onDoubleClick={(e) => onDoubleClick?.(e, deckObj)}
           onContextMenu={(e) => onContextMenu(e, deckObj)}
         >
           <DeckComponent
@@ -125,6 +128,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
           zIndex: globalZIndex,
         }}
         onMouseDown={(e) => onMouseDown(e, deckObj.id)}
+        onDoubleClick={(e) => onDoubleClick?.(e, deckObj)}
         onContextMenu={(e) => onContextMenu(e, deckObj)}
       >
         <DeckComponent

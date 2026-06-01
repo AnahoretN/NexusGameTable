@@ -315,10 +315,13 @@ export function handleClone(obj: TableObject, context: ActionHandlerContext) {
   context.dispatch({ type: 'CLONE_OBJECT', payload: { id: obj.id } });
 }
 
-export function handleLock(obj: TableObject, dispatch: Dispatch<Action>) {
+export function handleLock(obj: TableObject, dispatch: Dispatch<Action>, allObjects?: Record<string, TableObject>) {
+  // Get current locked state from fresh object to avoid stale closure
+  const currentObj = allObjects?.[obj.id] || obj;
+  console.log('[handleLock] obj.id:', obj.id, 'current locked:', currentObj.locked, 'setting to:', !currentObj.locked);
   dispatch({
     type: 'UPDATE_OBJECT',
-    payload: { id: obj.id, updates: { locked: !obj.locked } }
+    payload: { id: obj.id, updates: { locked: !currentObj.locked } }
   });
 }
 
@@ -611,7 +614,7 @@ export function executeClickAction(
       handleClone(obj, context);
       break;
     case 'lock':
-      handleLock(obj, context.dispatch);
+      handleLock(obj, context.dispatch, context.state.objects);
       break;
     case 'pin':
     case 'pinToViewport':

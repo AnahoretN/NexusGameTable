@@ -6962,6 +6962,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
+    console.log('[INIT] useEffect triggered', {
+      isHost,
+      initialized: initializedRef.current,
+      isLoading: isLoadingSavedStateRef.current,
+      objectsCount: Object.keys(state.objects).length,
+      condition: !initializedRef.current && !isLoadingSavedStateRef.current && Object.keys(state.objects).length === 0
+    });
     // Only initialize once we're sure about host status and haven't initialized yet
     // 🔥 FIX: Also check if async load is NOT in progress to prevent race condition
     if (!initializedRef.current && !isLoadingSavedStateRef.current && Object.keys(state.objects).length === 0) {
@@ -6991,6 +6998,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             const { state: loadedState, localFiles } = await loadGameStateWithLocalFiles(false);
 
+            console.log('[INIT] Loaded state:', {
+              hasState: !!loadedState,
+              objectsCount: loadedState?.objects ? Object.keys(loadedState.objects).length : 0,
+              localFilesCount: localFiles.length,
+              isHost
+            });
+
             if (loadedState && loadedState.objects && Object.keys(loadedState.objects).length > 0) {
               // Check if there are local files that need restoration
               if (localFiles.length > 0) {
@@ -7010,6 +7024,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // No saved state or empty saved state, create default game board (only for host)
             // 🔥 FIX: Only create default objects if we're definitely host AND no saved state was loaded
             if (isHost) {
+              console.log('[INIT] Creating default demo objects');
               // Create game board on 'boards' layer - ALL VALUES IN VU
               const boardId = 'demo-board';
               const board: Board = {
@@ -7080,6 +7095,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // Create main menu (for everyone)
+            console.log('[INIT] Creating main menu');
             createMainMenu(localDispatch);
           } finally {
             // 🔥 FIX: Always clear loading flag, even on error
@@ -7087,7 +7103,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         })();
     }
-  }, [isHost]); // Only depend on isHost - connectionStatus changes should NOT re-trigger initialization
+  }, [isHost, state.objects]); // Depend on isHost and state.objects to re-trigger when objects change
 
   // Initialize new CAS asset system with automatic cleanup
   useEffect(() => {

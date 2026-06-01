@@ -584,24 +584,36 @@ const PinnedTokenRenderer = memo(({
     };
   }, [obj, dispatch, viewTransform, pixelsPerVU]);
 
-  // Memoize rendered buttons
+  // Memoize rendered buttons - get actionButtons from token or archetype
   const actionButtons = useMemo(() => {
-    const buttons = ((obj as any).actionButtons || [])
+    const tokenButtons = (obj as any).actionButtons;
+    let buttons = tokenButtons;
+
+    // If no buttons on token, check archetype
+    if (!buttons || (Array.isArray(buttons) && buttons.length === 0)) {
+      const archetypeId = (obj as any).archetypeId;
+      if (archetypeId && allObjects[archetypeId]) {
+        buttons = (allObjects[archetypeId] as any).actionButtons;
+      }
+    }
+
+    const buttonArray = buttons || [];
+
+    return buttonArray
       .map(action => buttonConfigs[action])
       .filter(Boolean)
-      .slice(0, 4);
-
-    return buttons.map(btn => (
-      <button
-        key={btn.key}
-        onClick={(e) => { e.stopPropagation(); btn.action(); }}
-        className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
-        title={btn.title}
-      >
-        {btn.icon}
-      </button>
-    ));
-  }, [(obj as any).actionButtons, buttonConfigs]);
+      .slice(0, 4)
+      .map(btn => (
+        <button
+          key={btn.key}
+          onClick={(e) => { e.stopPropagation(); btn.action(); }}
+          className={`pointer-events-auto p-2 rounded-lg text-white shadow ${btn.className}`}
+          title={btn.title}
+        >
+          {btn.icon}
+        </button>
+      ));
+  }, [obj, (obj as any).actionButtons, (obj as any).archetypeId, allObjects, buttonConfigs]);
 
   return (
     <div
@@ -798,6 +810,29 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
         </React.Fragment>
       ))}
     </div>
+  );
+}, (prevProps, nextProps) => {
+  // Check if pinned objects changed
+  const prevPinned = prevProps.pinnedGameObjects;
+  const nextPinned = nextProps.pinnedGameObjects;
+
+  if (prevPinned.length !== nextPinned.length) return false;
+
+  for (let i = 0; i < prevPinned.length; i++) {
+    if (prevPinned[i] !== nextPinned[i]) return false;
+  }
+
+  // Check if state.objects changed (archetypes may have been edited)
+  const objectsChanged = prevProps.state.objects !== nextProps.state.objects;
+
+  return (
+    prevProps.draggingId === nextProps.draggingId &&
+    prevProps.currentTool === nextProps.currentTool &&
+    prevProps.isCtrlPressed === nextProps.isCtrlPressed &&
+    prevProps.isGM === nextProps.isGM &&
+    prevProps.activePlayerId === nextProps.activePlayerId &&
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    !objectsChanged // Re-render when state.objects changes (archetype edits)
   );
 });
 

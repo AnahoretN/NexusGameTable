@@ -1188,6 +1188,7 @@ export const Tabletop: React.FC = () => {
         currentTool={currentTool}
         onContextMenu={handleContextMenu}
         onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
         executeClickAction={(obj: any, action: string, event?: React.MouseEvent) => {
           // Create action context
           const actionContext = {
