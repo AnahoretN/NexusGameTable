@@ -541,6 +541,9 @@ const addToCursorSlotLocal = (
 
   // 🔥 FIX: Update ref immediately before state update to prevent race conditions
   cursorSlotRef.current = newSlot;
+
+  // 🔥 FIX: DON'T use flushSync - it blocks dispatch and causes objects to stay on table
+  // Instead, rely on ghost rendering and CSS transitions to prevent flickering
   updateCursorSlot(newSlot);
 
   // Track when item was added to prevent immediate drop on mouse up

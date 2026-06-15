@@ -349,8 +349,11 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
             transformOrigin: 'center center',
             zIndex,
             cursor: isDragging ? 'grabbing' : 'grab',
-            pointerEvents: isDragging ? 'none' : 'auto',
+            // 🔥 FIX: Don't change pointerEvents during drag - causes flicker
+            // pointerEvents: isDragging ? 'none' : 'auto',
             overflow: 'visible',
+            // 🔥 FIX: Add smooth transition for z-index changes
+            transition: isDragging ? 'z-index 0s' : 'z-index 0.1s ease-out',
             ...style
           }}
           className="relative"

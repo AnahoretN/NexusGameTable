@@ -57,7 +57,8 @@ export const CellRenderer = memo(({
 
   const cursorClass = useMemo(() => {
     if (currentTool !== 'none' && currentTool !== 'zoom') return 'cursor-default';
-    if (isDragging) return 'cursor-grabbing z-[100000]';
+    // 🔥 FIX: Don't add z-[100000] - z-index is already set via globalZIndex prop
+    if (isDragging) return 'cursor-grabbing';
     if (isDraggingByOther) return 'cursor-not-allowed opacity-50';
     if (canDrag) return 'cursor-grab';
     return 'cursor-default';

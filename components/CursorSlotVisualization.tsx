@@ -114,13 +114,13 @@ export const CursorSlotVisualization = (({
   pixelsPerVU,
   state,
   getCardSettings,
-}) => {
+}: CursorSlotVisualizationProps) => {
   const itemElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const rafRef = useRef<number>();
   const itemDataRef = useRef<Map<string, ItemData>>(new Map());
   const rootRefsRef = useRef<Map<string, any>>(new Map());
 
-  // Calculate item data once when cursorSlot changes
+  // Calculate item data once when cursorSlot changes AND create DOM elements synchronously
   useEffect(() => {
     const newItemData = new Map<string, ItemData>();
 
@@ -179,8 +179,61 @@ export const CursorSlotVisualization = (({
 
     itemDataRef.current = newItemData;
 
+    // 🔥 FIX: Create DOM elements synchronously IMMEDIATELY after itemData is populated
+    // This prevents race condition where elements are created before itemData is ready
+    for (const [id, itemData] of newItemData) {
+      let element = itemElementsRef.current.get(id);
+
+      // Create element if it doesn't exist - DO THIS SYNCHRONOUSLY
+      if (!element) {
+        element = document.createElement('div');
+        element.style.cssText = `
+          position: fixed;
+          left: 0;
+          top: 0;
+          width: ${itemData.width}px;
+          height: ${itemData.height}px;
+          z-index: ${999999999 + itemData.zIndex};
+          pointer-events: none;
+          user-select: none;
+          will-change: transform;
+          backface-visibility: hidden;
+        `;
+        element.dataset.cursorSlotItem = id;
+
+        // Create container for React content
+        const container = document.createElement('div');
+        container.style.cssText = 'width: 100%; height: 100%; position: absolute; left: 0; top: 0;';
+        element.appendChild(container);
+        document.body.appendChild(element);
+        itemElementsRef.current.set(id, element);
+
+        // 🔥 FIX: Set initial position immediately after element creation
+        // This prevents element from appearing at 0,0 before first RAF update
+        const initialPos = cursorPositionRef.current;
+        if (initialPos) {
+          const itemX = initialPos.x - itemData.clickOffsetX + itemData.stackOffsetX;
+          const itemY = initialPos.y - itemData.clickOffsetY + itemData.stackOffsetY;
+          element.style.transform = `translate3d(${itemX}px, ${itemY}px, 0)`;
+        }
+
+        // Render React content into container
+        const renderedItem = renderCursorSlotItem(
+          { item: itemData.item, width: itemData.width, height: itemData.height, offsetX: 0, offsetY: 0, zIndex: itemData.zIndex, state, pixelsPerVU },
+          `cursor-slot-${id}`
+        );
+
+        // Use createRoot for React 18 - still async but element is already in DOM
+        import('react-dom/client').then(({ createRoot }) => {
+          const tempRoot = createRoot(container);
+          rootRefsRef.current.set(id, tempRoot);
+          tempRoot.render(renderedItem);
+        });
+      }
+    }
+
     // Cleanup unused elements
-    const currentIds = new Set(cursorSlot.map(item => item.id));
+    const currentIds = new Set(cursorSlot.map((item: any) => item.id));
     for (const [id, element] of itemElementsRef.current) {
       if (!currentIds.has(id)) {
         element.remove();
@@ -221,7 +274,7 @@ export const CursorSlotVisualization = (({
     };
   }, [cursorSlot, pixelsPerVU, getCardSettings, state.objects]);
 
-  // RAF-based position updates
+  // RAF-based position updates - only for position, not creation
   useEffect(() => {
     if (cursorSlot.length === 0) return;
 
@@ -230,45 +283,8 @@ export const CursorSlotVisualization = (({
       if (!pos) return;
 
       for (const [id, itemData] of itemDataRef.current) {
-        let element = itemElementsRef.current.get(id);
-
-        // Create element if it doesn't exist
-        if (!element) {
-          element = document.createElement('div');
-          element.style.cssText = `
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: ${itemData.width}px;
-            height: ${itemData.height}px;
-            z-index: ${999999999 + itemData.zIndex};
-            pointer-events: none;
-            user-select: none;
-            will-change: transform;
-            backface-visibility: hidden;
-          `;
-          element.dataset.cursorSlotItem = id;
-
-          // Create container for React content
-          const container = document.createElement('div');
-          container.style.cssText = 'width: 100%; height: 100%; position: absolute; left: 0; top: 0;';
-          element.appendChild(container);
-          document.body.appendChild(element);
-          itemElementsRef.current.set(id, element);
-
-          // Render React content into container
-          const renderedItem = renderCursorSlotItem(
-            { item: itemData.item, width: itemData.width, height: itemData.height, offsetX: 0, offsetY: 0, zIndex: itemData.zIndex, state, pixelsPerVU },
-            `cursor-slot-${id}`
-          );
-
-          // Use createRoot for React 18
-          import('react-dom/client').then(({ createRoot }) => {
-            const tempRoot = createRoot(container);
-            rootRefsRef.current.set(id, tempRoot);
-            tempRoot.render(renderedItem);
-          });
-        }
+        const element = itemElementsRef.current.get(id);
+        if (!element) continue; // Skip if element doesn't exist (should be created by sync effect)
 
         // Calculate position
         const itemX = pos.x - itemData.clickOffsetX + itemData.stackOffsetX;

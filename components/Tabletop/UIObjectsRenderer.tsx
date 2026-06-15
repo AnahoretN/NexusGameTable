@@ -71,7 +71,8 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     if (!pinnedPosition) return null;
 
     const canDrag = !deckObj.locked;
-    const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    // 🔥 FIX: Don't add z-[100000] - z-index is already set via globalZIndex prop
+    const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
     return (
       <div
@@ -113,7 +114,8 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   const renderUnpinnedDeck = (deck: DeckType) => {
     const deckObj = deck as DeckType;
     const canDrag = !deckObj.locked;
-    const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    // 🔥 FIX: Don't add z-[100000] - z-index is already set via globalZIndex prop
+    const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
     // Calculate z-index based on the deck's hyperscale layer
     const globalZIndex = getDeckZIndex(deckObj);

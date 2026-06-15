@@ -106,7 +106,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     effects.forEach(obj => {
       const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
       const isDraggingEffect = draggingId === obj.id;
-      const draggingClass = isDraggingEffect ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+      // 🔥 FIX: Don't add z-[100000] class - z-index is already set via globalZIndex prop
+      const draggingClass = isDraggingEffect ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
       const objLayer = obj.hyperscaleLayerId || 'tokens';
 
       const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
@@ -464,7 +465,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
   const renderCounter = (obj: TableObject, globalZIndex: number) => {
     const counter = obj as Counter;
     const canDrag = !obj.locked; // 🔥 FIX: Only check locked, not ownership
-    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    // 🔥 FIX: Don't add z-[100000] class - z-index is already set via globalZIndex prop
+    const draggingClass = draggingId === obj.id ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
     const objLayer = obj.hyperscaleLayerId || 'none';
 
     const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
@@ -536,7 +538,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const dice = obj as DiceObject;
     const canDrag = !obj.locked; // 🔥 FIX: Only check locked, not ownership
     const isDragging = draggingId === obj.id;
-    const draggingClass = isDragging ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    // 🔥 FIX: Don't add z-[100000] class - z-index is already set via globalZIndex prop
+    const draggingClass = isDragging ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
     const objLayer = obj.hyperscaleLayerId || 'none';
 
     const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
@@ -964,12 +967,15 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
   const renderGameObject = (obj: TableObject) => {
     const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
     const canDrag = !obj.locked;
-    const draggingClass = draggingId === obj.id ? 'cursor-grabbing z-[100000]' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    // 🔥 FIX: Don't add z-[100000] class - z-index is already set via globalZIndex prop
+    const draggingClass = draggingId === obj.id ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
     const layer = hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
     const layerMinZ = layer?.minZIndex ?? 3001;
     const isDragging = draggingId === obj.id;
-    const globalZIndex = isDragging ? 999999 : layerMinZ + (obj.zIndex ?? 0);
+    // 🔥 FIX: Use smaller z-index jump to reduce visual impact
+    // Instead of jumping to 999999, use layerMinZ + 10000 which is still above normal objects
+    const globalZIndex = isDragging ? layerMinZ + 10000 : layerMinZ + (obj.zIndex ?? 0);
 
     if (obj.type === ItemType.BOARD) {
       return renderBoard(obj, globalZIndex);
@@ -996,12 +1002,36 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     }
 
     if (obj.type === ItemType.EFFECT_TEMPLATE) {
-      // 🔥 FIX: Don't render effect templates that are in cursor slot
-      // They are rendered by CursorSlotVisualization instead
+      // 🔥 FIX: Render ghost effect templates in cursor slot
       if ((obj as any).inCursorSlot === true) {
+        const ghostZIndex = globalZIndex - 1;
+        const ghostElement = renderEffectTemplate(obj, ghostZIndex);
+        if (ghostElement) {
+          return React.cloneElement(ghostElement, {
+            key: `ghost-${obj.id}`,
+            style: {
+              ...(ghostElement.props.style || {}),
+              opacity: 0.5,
+              transition: 'opacity 0.15s ease-out, transform 0.15s ease-out, left 0.15s ease-out, top 0.15s ease-out',
+              pointerEvents: 'none'
+            }
+          });
+        }
         return null;
       }
       return renderEffectTemplate(obj, globalZIndex);
+    }
+
+    // 🔥 FIX: Don't render objects in cursor slot on the table at all
+    // They are rendered in CursorSlotVisualization instead
+    if ((obj as any).inCursorSlot === true) {
+      return null;
+    }
+
+    // 🔥 FIX: Check if object is at cursor slot holding position (-999999, -999999)
+    // Don't render these objects on the table
+    if (obj.x < -90000 || obj.y < -90000) {
+      return null;
     }
 
     if (obj.type === ItemType.BATTLEFIELD_CELL) {

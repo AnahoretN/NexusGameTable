@@ -47,11 +47,11 @@ export const useObjectFilters = (
         return false;
       }
 
-      // Exclude objects at cursor slot holding position (-999999, -999999)
-      // These are objects being dragged but not yet dropped
-      if (obj.x < -90000 || obj.y < -90000) {
-        return false;
-      }
+      // 🔥 FIX: Don't exclude objects at cursor slot holding position (-999999, -999999)
+      // Instead, render them as ghost objects to prevent flickering
+      // if (obj.x < -90000 || obj.y < -90000) {
+      //   return false;
+      // }
 
       // Exclude panels, windows, decks (they are rendered separately)
       if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) {
@@ -73,13 +73,12 @@ export const useObjectFilters = (
         }
       }
 
-      // Exclude local cursor slot objects (being dragged by local player)
-      // They are rendered in the cursor slot visualization, not on the table
-      // 🔥 FIX: Check obj.inCursorSlot instead of tracker to prevent race condition
-      // where object is removed from tracker but still has hidden coordinates (-999999)
-      if ((obj as any).inCursorSlot === true) {
-        return false;
-      }
+      // 🔥 FIX: Don't exclude local cursor slot objects (being dragged by local player)
+      // Instead, render them as ghost objects to prevent flickering
+      // The cursor slot visualization will show the dragged version on top
+      // if ((obj as any).inCursorSlot === true) {
+      //   return false;
+      // }
 
       // Effect Templates can extend far beyond playable area when stretched
       // Skip coordinate filtering for them to allow proper rendering
@@ -233,11 +232,11 @@ export const useObjectFilters = (
         if (obj.type !== ItemType.DECK) return false;
         if (!(obj as any).isPinnedToViewport) return false;
         if ((obj as any).isOnTable !== true) return false;
-        // Exclude decks at cursor slot holding position (-999999, -999999)
-        if (obj.x < -90000 || obj.y < -90000) return false;
+        // 🔥 FIX: Don't filter out decks at cursor slot holding position - render as ghost
+        // if (obj.x < -90000 || obj.y < -90000) return false;
         // Exclude decks in cursor slot (being dragged)
-        // 🔥 FIX: Check obj.inCursorSlot instead of tracker to prevent race condition
-        if ((obj as any).inCursorSlot === true) return false;
+        // 🔥 FIX: Don't filter out - render as ghost instead
+        // if ((obj as any).inCursorSlot === true) return false;
         return true;
       })
       .map((obj) => obj as DeckType);
@@ -249,11 +248,11 @@ export const useObjectFilters = (
         if (obj.type !== ItemType.DECK) return false;
         if ((obj as any).isPinnedToViewport) return false;
         if ((obj as any).isOnTable !== true) return false;
-        // Exclude decks at cursor slot holding position (-999999, -999999)
-        if (obj.x < -90000 || obj.y < -90000) return false;
+        // 🔥 FIX: Don't filter out decks at cursor slot holding position - render as ghost
+        // if (obj.x < -90000 || obj.y < -90000) return false;
         // Exclude decks in cursor slot (being dragged)
-        // 🔥 FIX: Check obj.inCursorSlot instead of tracker to prevent race condition
-        if ((obj as any).inCursorSlot === true) return false;
+        // 🔥 FIX: Don't filter out - render as ghost instead
+        // if ((obj as any).inCursorSlot === true) return false;
         return true;
       })
       .map((obj) => obj as DeckType);
@@ -270,11 +269,10 @@ export const useObjectFilters = (
         if ((obj as any).isOnTable === false) return false;
         // Exclude UI objects and decks (they have their own pinned lists)
         if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) return false;
-        // Exclude objects at cursor slot holding position (-999999, -999999)
-        if (obj.x < -90000 || obj.y < -90000) return false;
-        // Exclude objects in cursor slot (being dragged)
-        // 🔥 FIX: Check obj.inCursorSlot instead of tracker to prevent race condition
-        if ((obj as any).inCursorSlot === true) return false;
+        // 🔥 FIX: Don't exclude objects at cursor slot holding position - render as ghost
+        // if (obj.x < -90000 || obj.y < -90000) return false;
+        // 🔥 FIX: Don't exclude objects in cursor slot - render as ghost
+        // if ((obj as any).inCursorSlot === true) return false;
         return true;
       })
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
