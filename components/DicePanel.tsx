@@ -36,10 +36,10 @@ const DEFAULT_PRESETS: DicePreset[] = [
 
 // Dice sizes in virtual units (vu)
 // 1 vu = 0.1% of screen height, so 1000 vu = 100% of screen height
-const DICE_SIZE_VU = 66; // Base size for dice preview (≈71px on 1080p screen, ~15% smaller)
-const DICE_CONTAINER_VU = 68; // Container size (≈73px on 1080p screen, ~15% smaller)
+const DICE_SIZE_VU = 65; // Base size for dice preview (≈70px on 1080p screen)
+const DICE_CONTAINER_VU = 68; // Container size (≈73px on 1080p screen)
 const DICE_PADDING_VU = 4; // Padding around dice
-const DICE_BADGE_SIZE_VU = 25; // Badge size for count (≈27px on 1080p screen, 25% larger)
+const DICE_BADGE_SIZE_VU = 25; // Badge size for count (≈27px on 1080p screen)
 
 // Convert DicePreset to temporary DiceObject for settings modal
 function presetToDiceObject(preset: DicePreset): DiceObject {

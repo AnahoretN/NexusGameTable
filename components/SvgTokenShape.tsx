@@ -195,11 +195,33 @@ function generateBorderPath(
     const ry = outerHeight / 2;
     return `M ${cx} ${cy - ry} A ${rx} ${ry} 0 1 1 ${cx} ${cy + ry} A ${rx} ${ry} 0 1 1 ${cx} ${cy - ry}`;
   } else if (shape === TokenShape.TRIANGLE) {
-    return `M ${outerWidth / 2} 0 L ${outerWidth} ${outerHeight} L 0 ${outerHeight} Z`;
+    return generateRoundedTrianglePath(outerWidth, outerHeight);
   } else {
     // For SQUARE, return empty path (will use rect with borderRadius)
     return '';
   }
+}
+
+/**
+ * Generate a rounded triangle path
+ * Triangle with small rounded corners for better visual appearance
+ * Top corner gets smaller radius to appear visually consistent with bottom corners
+ */
+function generateRoundedTrianglePath(width: number, height: number, baseRadius: number = 2): string {
+  const halfWidth = width / 2;
+  // Top corner gets smaller radius since it's sharper
+  const topRadius = baseRadius * 0.6;
+  const bottomRadius = baseRadius;
+
+  return `M ${halfWidth} ${topRadius}
+    Q ${halfWidth + topRadius} 0, ${halfWidth + topRadius} ${topRadius}
+    L ${width - bottomRadius} ${height - bottomRadius}
+    Q ${width} ${height}, ${width - bottomRadius} ${height}
+    L ${bottomRadius} ${height}
+    Q 0 ${height}, ${bottomRadius} ${height - bottomRadius}
+    L ${halfWidth - topRadius} ${topRadius}
+    Q ${halfWidth} 0, ${halfWidth} ${topRadius}
+    Z`.replace(/\s+/g, ' ');
 }
 
 /**
@@ -223,7 +245,7 @@ function generateContentPath(
     const ry = height / 2;
     return { path: `M ${cx} ${cy - ry} A ${rx} ${ry} 0 1 1 ${cx} ${cy + ry} A ${rx} ${ry} 0 1 1 ${cx} ${cy - ry}` };
   } else if (shape === TokenShape.TRIANGLE) {
-    return { path: `M ${width / 2} 0 L ${width} ${height} L 0 ${height} Z` };
+    return { path: generateRoundedTrianglePath(width, height) };
   } else {
     // For SQUARE, return empty path (will use rect with borderRadius)
     return { path: '', useRect: true };
@@ -423,7 +445,9 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
     const lineHeight = fontSize * 1.1;
     const totalTextHeight = lineCount * lineHeight;
     // Start Y positions the first line so the entire block is centered, then shift down by 1 VU
-    const startY = contentY + height / 2 - totalTextHeight / 2 + lineHeight / 2 + 1;
+    // For triangle, shift down by additional height/4 to align with visual center (centroid)
+    const triangleOffset = shape === TokenShape.TRIANGLE ? height / 4 : 0;
+    const startY = contentY + height / 2 - totalTextHeight / 2 + lineHeight / 2 + 1 + triangleOffset;
 
     tokenNameElement = (
       <>

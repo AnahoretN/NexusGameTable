@@ -640,11 +640,13 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
               const contentOffset = PADDING + borderWidth;
               const svgWidth = diceWidth + borderWidth * 2 + PADDING * 2;
               const svgHeight = diceHeight + borderWidth * 2 + PADDING * 2;
+              // For triangle, shift text down to align with visual center (centroid)
+              const triangleOffset = (dice.shape ?? TokenShape.SQUARE) === TokenShape.TRIANGLE ? diceHeight * 0.08 : 0;
 
               return (
                 <foreignObject
                   x={contentOffset}
-                  y={contentOffset}
+                  y={contentOffset + triangleOffset}
                   width={diceWidth}
                   height={diceHeight}
                 >

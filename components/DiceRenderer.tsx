@@ -67,6 +67,7 @@ function getDiceShape(sides: number): TokenShape {
 function getDiceDimensions(shape: TokenShape, baseSize: number): { width: number; height: number } {
   const isHex = shape === TokenShape.HEX;
   const isHexHorizontal = shape === TokenShape.HEX_HORIZONTAL;
+  const isTriangle = shape === TokenShape.TRIANGLE;
 
   let width = baseSize;
   let height = baseSize;
@@ -78,6 +79,9 @@ function getDiceDimensions(shape: TokenShape, baseSize: number): { width: number
     // Flat-top hex: wider than tall
     width = Math.round(baseSize * 1.15);
     height = Math.round(baseSize / 1.15);
+  } else if (isTriangle) {
+    // Triangle: width = 1, height = 0.87 ratio
+    height = Math.round(baseSize * 0.87);
   }
 
   return { width, height };
@@ -99,15 +103,18 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
   const displayValue = dice.value ?? 1;
 
   // Calculate content size (fixed regardless of border)
-  const baseContentWidth = size * 0.84; // 42px for 50px base
+  let baseContentWidth = size * 0.84; // 42px for 50px base
   const baseContentHeight = baseContentWidth;
 
-  // Adjust height for shape
+  // Adjust dimensions for shape
   let contentHeight = baseContentHeight;
   if (shape === TokenShape.HEX) {
     contentHeight = Math.round(baseContentWidth * 1.15);
   } else if (shape === TokenShape.HEX_HORIZONTAL) {
     contentHeight = Math.round(baseContentWidth / 1.15);
+  } else if (shape === TokenShape.TRIANGLE) {
+    // Triangle: width = 1, height = 0.87 ratio
+    contentHeight = Math.round(baseContentWidth * 0.87);
   }
 
   return (
@@ -134,7 +141,7 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
         {showValue && (
           <foreignObject
             x={3}
-            y={3}
+            y={shape === TokenShape.TRIANGLE ? 3 + contentHeight * 0.08 : 3}
             width={baseContentWidth}
             height={contentHeight}
           >
