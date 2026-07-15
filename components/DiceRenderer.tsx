@@ -10,7 +10,6 @@
 import React from 'react';
 import { TokenShape } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
-import { Flame } from 'lucide-react';
 
 export interface DiceRenderData {
   // Dice identification
@@ -226,28 +225,6 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
           </foreignObject>
         )}
       </SvgTokenShape>
-
-      {/* Explosive indicator - bottom-right corner */}
-      {dice.isExplosive && (
-        <div
-          className="absolute bottom-0 right-0 flex items-center justify-center"
-          style={{
-            width: `${size * 0.4}px`, // 20px for 50px base
-            height: `${size * 0.4}px`,
-            backgroundColor: dice.explosiveColor || '#ffff00',
-            borderRadius: '50%',
-            opacity: 0.9,
-            border: '1.5px solid #ffffff',
-            boxShadow: '0 0 4px rgba(0,0,0,0.5)',
-            transform: 'translate(25%, 25%)',
-          }}
-        >
-          <Flame
-            size={size * 0.24} // 12px for 50px base
-            style={{ color: dice.explosiveTextColor || '#ff0000' }}
-          />
-        </div>
-      )}
     </div>
   );
 };

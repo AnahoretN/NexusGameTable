@@ -20,6 +20,7 @@ import { createDice } from '../utils/objectFactories';
 import { generateUUID } from '../utils/uuid';
 import { DiceRenderer, DiceRenderData } from './DiceRenderer';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
+import { vuToPixels } from '../utils/vuSystem';
 
 interface DicePanelProps {
   panel: PanelObject;
@@ -32,6 +33,13 @@ const DEFAULT_PRESETS: DicePreset[] = [
   { id: 'd10', name: 'd10', sides: 10, count: 0, color: '#10b981' },
   { id: 'd20', name: 'd20', sides: 20, count: 0, color: '#8b5cf6' },
 ];
+
+// Dice sizes in virtual units (vu)
+// 1 vu = 0.1% of screen height, so 1000 vu = 100% of screen height
+const DICE_SIZE_VU = 66; // Base size for dice preview (≈71px on 1080p screen, ~15% smaller)
+const DICE_CONTAINER_VU = 68; // Container size (≈73px on 1080p screen, ~15% smaller)
+const DICE_PADDING_VU = 4; // Padding around dice
+const DICE_BADGE_SIZE_VU = 25; // Badge size for count (≈27px on 1080p screen, 25% larger)
 
 // Convert DicePreset to temporary DiceObject for settings modal
 function presetToDiceObject(preset: DicePreset): DiceObject {
@@ -96,6 +104,15 @@ export const DicePanel: React.FC<DicePanelProps> = ({
 }) => {
   const { state, dispatch } = useGame();
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Get pixelsPerVU for converting vu to pixels
+  const pixelsPerVU = state.viewTransform?.pixelsPerVU || 1;
+
+  // Calculate dice sizes in pixels from vu
+  const diceSizePx = useMemo(() => vuToPixels(DICE_SIZE_VU, pixelsPerVU), [pixelsPerVU]);
+  const diceContainerSizePx = useMemo(() => vuToPixels(DICE_CONTAINER_VU, pixelsPerVU), [pixelsPerVU]);
+  const dicePaddingPx = useMemo(() => vuToPixels(DICE_PADDING_VU, pixelsPerVU), [pixelsPerVU]);
+  const diceBadgeSizePx = useMemo(() => vuToPixels(DICE_BADGE_SIZE_VU, pixelsPerVU), [pixelsPerVU]);
 
   // Get dice data from panel
   const panelObject = state.objects[panel.id] as PanelObject | undefined;
@@ -533,45 +550,78 @@ export const DicePanel: React.FC<DicePanelProps> = ({
                 }}
               >
                 {/* Dice button - click to increment */}
-                <button
-                  onClick={(e) => handleIncrementCount(preset.id, e)}
-                  className={`relative transition-all hover:scale-105 ${
+                {/* Container sized in vu (converted to pixels) */}
+                <div
+                  className={`relative transition-all hover:scale-105 flex items-center justify-center rounded-lg ${
                     preset.count > 0
-                      ? 'ring-2 ring-blue-500 rounded-lg'
+                      ? 'ring-2 ring-blue-500'
                       : ''
                   }`}
-                  style={{ padding: '4px' }}
+                  style={{
+                    width: `${diceContainerSizePx}px`,
+                    height: `${diceContainerSizePx}px`,
+                    padding: `${vuToPixels(1, pixelsPerVU)}px`
+                  }}
                 >
-                  <DiceRenderer
-                    dice={{
-                      id: preset.id,
-                      name: preset.name,
-                      sides: preset.sides,
-                      value: preset.sides, // Show sides number in preview
-                      color: preset.color || '#3b82f6',
-                      shape: preset.shape,
-                      valueOverrides: preset.valueOverrides,
-                      isExplosive: preset.isExplosive,
-                      explosiveColor: preset.explosiveColor,
-                      explosiveTextColor: preset.explosiveTextColor,
-                      explosiveGlow: preset.explosiveGlow,
-                      borderColor: preset.borderColor,
-                      borderWidth: preset.borderWidth,
-                      borderOpacity: preset.borderOpacity,
-                      opacity: preset.opacity,
-                    }}
-                    size={50}
-                    showValue={true}
-                    showSides={false}
-                  />
+                  <button
+                    onClick={(e) => handleIncrementCount(preset.id, e)}
+                    className="w-full h-full flex items-center justify-center"
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    <DiceRenderer
+                      dice={{
+                        id: preset.id,
+                        name: preset.name,
+                        sides: preset.sides,
+                        value: preset.sides, // Show sides number in preview
+                        color: preset.color || '#3b82f6',
+                        shape: preset.shape,
+                        valueOverrides: preset.valueOverrides,
+                        isExplosive: preset.isExplosive,
+                        explosiveColor: preset.explosiveColor,
+                        explosiveTextColor: preset.explosiveTextColor,
+                        explosiveGlow: preset.explosiveGlow,
+                        borderColor: preset.borderColor,
+                        borderWidth: preset.borderWidth,
+                        borderOpacity: preset.borderOpacity,
+                        opacity: preset.opacity,
+                      }}
+                      size={diceSizePx}
+                      showValue={true}
+                      showSides={false}
+                    />
+                  </button>
 
-                  {/* Count badge */}
+                  {/* Count badge (top-right) */}
                   {preset.count > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-800">
+                    <span
+                      className="absolute -top-1 -right-1 bg-blue-600 text-white font-bold rounded-full flex items-center justify-center border-2 border-slate-800"
+                      style={{
+                        width: `${diceBadgeSizePx}px`,
+                        height: `${diceBadgeSizePx}px`,
+                        fontSize: `${diceBadgeSizePx * 0.45}px`
+                      }}
+                    >
                       {preset.count}
                     </span>
                   )}
-                </button>
+
+                  {/* Explosive badge (bottom-left) */}
+                  {preset.isExplosive && (
+                    <span
+                      className="absolute -bottom-1 -left-1 font-bold rounded-full flex items-center justify-center border-2 border-slate-800"
+                      style={{
+                        width: `${diceBadgeSizePx}px`,
+                        height: `${diceBadgeSizePx}px`,
+                        fontSize: `${diceBadgeSizePx * 0.45}px`,
+                        backgroundColor: preset.explosiveColor || '#ffff00',
+                        opacity: 0.9,
+                      }}
+                    >
+                      💥
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -605,7 +655,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
             className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-slate-700 flex items-center gap-2"
           >
             <Settings size={16} />
-            {translate('Settings', language as Locale)}
+            {translate('Properties', language as Locale)}
           </button>
           <button
             onClick={() => handleRemovePreset(contextMenu.preset.id)}
@@ -656,7 +706,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
               >
                 <DiceRenderer
                   dice={dice}
-                  size={50}
+                  size={diceSizePx}
                   showValue={true}
                   showSides={false}
                 />
