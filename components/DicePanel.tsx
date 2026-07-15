@@ -216,6 +216,53 @@ export const DicePanel: React.FC<DicePanelProps> = ({
     });
   }, [state, panel.id, panel.diceData, dispatch]);
 
+  // Helper function to roll a single dice with explosive logic
+  const rollSingleDice = useCallback((
+    preset: DicePreset,
+    diceId: string
+  ): RolledDice => {
+    // First roll
+    const firstRoll = Math.floor(Math.random() * preset.sides) + 1;
+    let finalValue = firstRoll;
+    let explosiveRoll: number | undefined = undefined;
+
+    // Handle explosive dice: if max value is rolled, roll again and add
+    if (preset.isExplosive && firstRoll === preset.sides) {
+      // Generate second roll value
+      explosiveRoll = Math.floor(Math.random() * preset.sides) + 1;
+      finalValue = preset.sides + explosiveRoll;
+    }
+
+    // Get dice shape based on number of sides (local helper)
+    const getDiceShape = (sides: number): TokenShape => {
+      if (sides < 5) return TokenShape.TRIANGLE;
+      if (sides <= 12) return TokenShape.SQUARE;
+      return TokenShape.HEX;
+    };
+
+    return {
+      id: diceId,
+      name: preset.name,
+      sides: preset.sides,
+      value: finalValue,
+      explosiveRoll: explosiveRoll,
+      x: 0, // Not used in table layout
+      y: 0, // Not used in table layout
+      color: preset.color || '#3b82f6',
+      shape: preset.shape || getDiceShape(preset.sides),
+      valueOverrides: preset.valueOverrides,
+      isExplosive: preset.isExplosive,
+      explosiveColor: preset.explosiveColor,
+      explosiveTextColor: preset.explosiveTextColor,
+      explosiveGlow: preset.explosiveGlow,
+      diceGroupId: preset.diceGroupId,
+      borderColor: preset.borderColor,
+      borderWidth: preset.borderWidth,
+      borderOpacity: preset.borderOpacity,
+      opacity: preset.opacity,
+    };
+  }, []);
+
   // Handler: Roll dice
   const handleRoll = useCallback(() => {
     // Always read fresh diceData from state to avoid stale closure
@@ -234,38 +281,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
     currentDiceData.presets.forEach(preset => {
       for (let i = 0; i < preset.count; i++) {
         const diceId = generateUUID();
-
-        // Roll the dice (set random value)
-        const rollValue = Math.floor(Math.random() * preset.sides) + 1;
-
-        // Get dice shape based on number of sides (local helper)
-        const getDiceShape = (sides: number): TokenShape => {
-          if (sides < 5) return TokenShape.TRIANGLE;
-          if (sides <= 12) return TokenShape.SQUARE;
-          return TokenShape.HEX;
-        };
-
-        const rolledDice: RolledDice = {
-          id: diceId,
-          name: preset.name,
-          sides: preset.sides,
-          value: rollValue,
-          x: 0, // Not used in table layout
-          y: 0, // Not used in table layout
-          color: preset.color || '#3b82f6',
-          shape: preset.shape || getDiceShape(preset.sides),
-          valueOverrides: preset.valueOverrides,
-          isExplosive: preset.isExplosive,
-          explosiveColor: preset.explosiveColor,
-          explosiveTextColor: preset.explosiveTextColor,
-          explosiveGlow: preset.explosiveGlow,
-          diceGroupId: preset.diceGroupId,
-          borderColor: preset.borderColor,
-          borderWidth: preset.borderWidth,
-          borderOpacity: preset.borderOpacity,
-          opacity: preset.opacity,
-        };
-
+        const rolledDice = rollSingleDice(preset, diceId);
         newRolledDice.push(rolledDice);
       }
     });
@@ -282,7 +298,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
         }
       }
     });
-  }, [state, panel.id, panel.diceData, dispatch]);
+  }, [state, panel.id, panel.diceData, dispatch, rollSingleDice]);
 
   // Handler: Add new dice preset
   const handleAddPreset = useCallback(() => {

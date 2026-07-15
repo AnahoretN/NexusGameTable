@@ -7,7 +7,7 @@
  * - Can be used for regular dice objects on the game board
  */
 
-import React from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { TokenShape } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';
 
@@ -103,8 +103,37 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
   const borderWidth = dice.borderWidth ?? 2;
   const displayValue = dice.value ?? 1;
 
+  // Track previous explosive roll value to detect when it first appears
+  const prevExplosiveRollRef = useRef<number | undefined>(undefined);
+  const [shouldPlayExplosionAnim, setShouldPlayExplosionAnim] = useState(false);
+
   // For explosive dice, use explosive colors only when actually exploded
   const isExplosive = Boolean(dice.explosiveRoll);
+
+  // Detect when explosive roll just appeared (undefined -> number)
+  useEffect(() => {
+    const prevRoll = prevExplosiveRollRef.current;
+    const currentRoll = dice.explosiveRoll;
+
+    // Trigger animation when explosive roll just appeared
+    if (currentRoll !== undefined && prevRoll === undefined) {
+      setShouldPlayExplosionAnim(true);
+      // Reset after animation completes (0.6s matches CSS animation duration)
+      const timeout = setTimeout(() => {
+        setShouldPlayExplosionAnim(false);
+      }, 600);
+
+      // Update ref before returning
+      prevExplosiveRollRef.current = currentRoll;
+      return () => clearTimeout(timeout);
+    }
+
+    // Update ref
+    prevExplosiveRollRef.current = currentRoll;
+  }, [dice.explosiveRoll]);
+
+  // Auto-animate explosive dice (unless explicitly disabled)
+  const shouldAnimate = animate || shouldPlayExplosionAnim;
 
   // Debug: log explosive dice data
   if (isExplosive) {
@@ -137,7 +166,7 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
 
   return (
     <div
-      className={`relative flex items-center justify-center ${className} ${animate ? 'animate-explode' : ''}`}
+      className={`relative flex items-center justify-center ${className} ${shouldAnimate ? 'animate-explode' : ''}`}
       style={{ width: `${width}px`, height: `${height}px`, ...style }}
     >
       <SvgTokenShape
