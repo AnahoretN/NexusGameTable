@@ -1037,8 +1037,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         isShiftDragging || isDragOverPool ? 'ring-2 ring-purple-500 ring-opacity-50' : ''
       }`}
       onContextMenu={(e) => {
-        // Prevent default browser context menu
-        e.preventDefault();
         // Don't open context menu for panels that show content inside them
         // Context menu should only open for objects within these panels
         const noContextMenuPanels = [
@@ -1049,10 +1047,14 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
           PanelType.TOKENS,    // Token archetypes have settings button
           PanelType.CHARACTER, // Character blocks have settings button
           PanelType.TOOLS,     // Tools panel - no context menu needed
+          PanelType.DICE_PANEL,// Dice panel has its own per-dice context menu
         ];
         if (uiObject.type === ItemType.PANEL && noContextMenuPanels.includes((uiObject as PanelObject).panelType)) {
+          // Don't prevent default - let children handle their own context menus
           return;
         }
+        // Prevent default browser context menu for other panels
+        e.preventDefault();
         // Call the parent handler if provided
         if (onContextMenu) {
           onContextMenu(e, uiObject);
@@ -2252,6 +2254,7 @@ const DicePanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
   }, [isShiftDragging]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    console.log('DicePanelWithDragDetection handleMouseDown', e.button, e.shiftKey);
     // Only handle Shift+drag for panel movement
     if (e.shiftKey) {
       e.preventDefault();

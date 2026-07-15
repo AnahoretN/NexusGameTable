@@ -19,6 +19,7 @@ export interface DiceRenderData {
   // Dice properties
   sides: number;
   value?: number; // Current value (if rolled) or display value
+  explosiveRoll?: number; // Second roll value for explosive dice
 
   // Visual properties
   color: string;
@@ -102,6 +103,23 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
   const borderWidth = dice.borderWidth ?? 2;
   const displayValue = dice.value ?? 1;
 
+  // For explosive dice, use explosive colors only when actually exploded
+  const isExplosive = Boolean(dice.explosiveRoll);
+
+  // Debug: log explosive dice data
+  if (isExplosive) {
+    console.log('Explosive dice:', {
+      name: dice.name,
+      explosiveRoll: dice.explosiveRoll,
+      explosiveColor: dice.explosiveColor,
+      explosiveGlow: dice.explosiveGlow,
+    });
+  }
+
+  // Use explosive colors when exploded
+  const diceColor = isExplosive ? (dice.explosiveColor || '#ff6b00') : dice.color;
+  const diceBorderColor = isExplosive ? (dice.explosiveGlow || '#ff0000') : (dice.borderColor || '#ffffff');
+
   // Calculate content size (fixed regardless of border)
   let baseContentWidth = size * 0.84; // 42px for 50px base
   const baseContentHeight = baseContentWidth;
@@ -119,18 +137,18 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
 
   return (
     <div
-      className={`relative flex items-center justify-center ${className}`}
+      className={`relative flex items-center justify-center ${className} ${animate ? 'animate-explode' : ''}`}
       style={{ width: `${width}px`, height: `${height}px`, ...style }}
     >
       <SvgTokenShape
         shape={shape}
         width={baseContentWidth}
         height={contentHeight}
-        color={dice.color}
+        color={diceColor}
         content={undefined}
         rotation={0}
         borderWidth={borderWidth}
-        borderColor={dice.borderColor || '#ffffff'}
+        borderColor={diceBorderColor}
         opacity={dice.opacity ?? 100}
         borderOpacity={dice.borderOpacity ?? 100}
         showThickness={true}
@@ -210,7 +228,10 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
                     <span style={{
                       fontSize: `${fontSize}px`,
                       fontWeight: 'bold',
-                      color: dice.fontColor || '#ffffff',
+                      // Use explosive text color if dice exploded
+                      color: (dice.explosiveRoll && dice.explosiveTextColor)
+                        ? dice.explosiveTextColor
+                        : (dice.fontColor || '#ffffff'),
                       lineHeight: '1',
                     }}>
                       {displayValue}

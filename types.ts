@@ -1025,9 +1025,11 @@ export interface RolledDice {
   id: string;
   name: string;
   sides: number;
-  value: number; // Current rolled value
+  value: number; // Current rolled value (includes explosive roll if any)
+  explosiveRoll?: number; // Second roll value for explosive dice (added to max sides)
   x: number; // Position in roll field (0-100 percentage)
   y: number; // Position in roll field (0-100 percentage)
+  scale?: number; // Visual scale factor (0-1) for crowded roll fields
   color: string;
   shape?: TokenShape;
   valueOverrides?: Record<number, DiceValueOverride>;

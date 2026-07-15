@@ -38,8 +38,10 @@ const DEFAULT_PRESETS: DicePreset[] = [
 // 1 vu = 0.1% of screen height, so 1000 vu = 100% of screen height
 const DICE_SIZE_VU = 65; // Base size for dice preview (≈70px on 1080p screen)
 const DICE_CONTAINER_VU = 68; // Container size (≈73px on 1080p screen)
-const DICE_PADDING_VU = 4; // Padding around dice
+const DICE_PADDING_VU = 3; // Padding around dice (reduced by 25%)
 const DICE_BADGE_SIZE_VU = 25; // Badge size for count (≈27px on 1080p screen)
+const DICE_SECTION_SPACING_VU = 3; // Spacing between sections (≈3.2px on 1080p screen)
+const DICE_MENU_MAX_HEIGHT_VU = 235; // Maximum height for dice menu (≈27px on 1080p screen)
 
 // Convert DicePreset to temporary DiceObject for settings modal
 function presetToDiceObject(preset: DicePreset): DiceObject {
@@ -113,6 +115,8 @@ export const DicePanel: React.FC<DicePanelProps> = ({
   const diceContainerSizePx = useMemo(() => vuToPixels(DICE_CONTAINER_VU, pixelsPerVU), [pixelsPerVU]);
   const dicePaddingPx = useMemo(() => vuToPixels(DICE_PADDING_VU, pixelsPerVU), [pixelsPerVU]);
   const diceBadgeSizePx = useMemo(() => vuToPixels(DICE_BADGE_SIZE_VU, pixelsPerVU), [pixelsPerVU]);
+  const sectionSpacingPx = useMemo(() => vuToPixels(DICE_SECTION_SPACING_VU, pixelsPerVU), [pixelsPerVU]);
+  const diceMenuMaxHeightPx = useMemo(() => vuToPixels(DICE_MENU_MAX_HEIGHT_VU, pixelsPerVU), [pixelsPerVU]);
 
   // Get dice data from panel
   const panelObject = state.objects[panel.id] as PanelObject | undefined;
@@ -224,63 +228,12 @@ export const DicePanel: React.FC<DicePanelProps> = ({
     const totalCount = currentDiceData.presets.reduce((sum, preset) => sum + preset.count, 0);
     if (totalCount === 0) return;
 
-    // Create new rolled dice with better positioning
+    // Create new rolled dice (no positioning needed - flex layout handles it)
     const newRolledDice: RolledDice[] = [];
-    const positions: { x: number; y: number }[] = [];
 
-    // Grid-based positioning to avoid overlap
-    // Calculate grid size based on number of dice
-    const gridCols = Math.ceil(Math.sqrt(totalCount * 1.5)); // Wider grid for better fit
-    const gridRows = Math.ceil(totalCount / gridCols);
-
-    // Generate positions in a grid pattern with some randomness
-    let diceIndex = 0;
     currentDiceData.presets.forEach(preset => {
       for (let i = 0; i < preset.count; i++) {
         const diceId = generateUUID();
-
-        // Calculate grid position with randomness
-        const gridRow = Math.floor(diceIndex / gridCols);
-        const gridCol = diceIndex % gridCols;
-
-        // Base position in percentage (0-100)
-        const baseX = ((gridCol + 0.5) / gridCols) * 100;
-        const baseY = ((gridRow + 0.5) / gridRows) * 100;
-
-        // Add randomness (within grid cell)
-        const randomness = 30 / gridCols; // Less randomness for more dice
-        const randomX = baseX + (Math.random() - 0.5) * randomness;
-        const randomY = baseY + (Math.random() - 0.5) * randomness;
-
-        // Clamp to 0-100 range with margin
-        const x = Math.max(10, Math.min(90, randomX));
-        const y = Math.max(10, Math.min(90, randomY));
-
-        // Check for overlaps with existing positions and adjust if needed
-        let adjustedX = x;
-        let adjustedY = y;
-        let attempts = 0;
-        const minDistance = 15; // Minimum distance between dice centers (%)
-
-        while (attempts < 10) {
-          let overlaps = false;
-          for (const pos of positions) {
-            const dx = adjustedX - pos.x;
-            const dy = adjustedY - pos.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance < minDistance) {
-              overlaps = true;
-              break;
-            }
-          }
-          if (!overlaps) break;
-          // Try a new random position
-          adjustedX = 10 + Math.random() * 80;
-          adjustedY = 10 + Math.random() * 80;
-          attempts++;
-        }
-
-        positions.push({ x: adjustedX, y: adjustedY });
 
         // Roll the dice (set random value)
         const rollValue = Math.floor(Math.random() * preset.sides) + 1;
@@ -297,8 +250,8 @@ export const DicePanel: React.FC<DicePanelProps> = ({
           name: preset.name,
           sides: preset.sides,
           value: rollValue,
-          x: adjustedX,
-          y: adjustedY,
+          x: 0, // Not used in table layout
+          y: 0, // Not used in table layout
           color: preset.color || '#3b82f6',
           shape: preset.shape || getDiceShape(preset.sides),
           valueOverrides: preset.valueOverrides,
@@ -314,7 +267,6 @@ export const DicePanel: React.FC<DicePanelProps> = ({
         };
 
         newRolledDice.push(rolledDice);
-        diceIndex++;
       }
     });
 
@@ -528,16 +480,14 @@ export const DicePanel: React.FC<DicePanelProps> = ({
       data-dice-panel={panel.id}
     >
       {/* Dice Presets Container - Fixed height at top */}
-      <div className="flex-shrink-0 border-b border-slate-700">
-        <div
-          className="overflow-x-auto overflow-y-hidden scrollbar-thin p-2"
-          style={{ maxHeight: '140px' }}
+      <div className="flex-shrink-0 border-b border-slate-700 overflow-y-auto overflow-x-hidden scrollbar-thin" style={{ maxHeight: `${diceMenuMaxHeightPx}px`, minHeight: 0 }}>
+        <div className="p-2"
           onContextMenu={(e) => {
             // Prevent default context menu for entire dice area
             e.preventDefault();
           }}
         >
-          <div className="flex h-full items-center" style={{ gap: '5.6px' }}>
+          <div className="flex flex-wrap h-full items-start" style={{ gap: '5.6px' }}>
             {diceData.presets.map((preset) => (
               <div
                 key={preset.id}
@@ -554,7 +504,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
                 <div
                   className={`relative transition-all hover:scale-105 flex items-center justify-center rounded-lg ${
                     preset.count > 0
-                      ? 'ring-2 ring-blue-500'
+                      ? 'ring-2 ring-purple-400'
                       : ''
                   }`}
                   style={{
@@ -595,7 +545,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
                   {/* Count badge (top-right) */}
                   {preset.count > 0 && (
                     <span
-                      className="absolute -top-1 -right-1 bg-blue-600 text-white font-bold rounded-full flex items-center justify-center border-2 border-slate-800"
+                      className="absolute -top-1 -right-1 bg-purple-600 text-white font-bold rounded-full flex items-center justify-center border-2 border-slate-800"
                       style={{
                         width: `${diceBadgeSizePx}px`,
                         height: `${diceBadgeSizePx}px`,
@@ -669,7 +619,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
       )}
 
       {/* Action Buttons */}
-      <div className="px-2 pb-2 flex gap-2">
+      <div className="px-2 flex gap-2" style={{ paddingTop: `${sectionSpacingPx}px`, paddingBottom: `${sectionSpacingPx}px` }}>
         {/* Reset Button */}
         <button
           onClick={handleReset}
@@ -684,7 +634,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
         <button
           onClick={handleRoll}
           disabled={totalSelected === 0}
-          className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-gray-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2 font-bold"
+          className="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800 disabled:text-gray-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2 font-bold"
         >
           <Zap size={16} />
           {translate('Roll', language as Locale)}
@@ -692,17 +642,13 @@ export const DicePanel: React.FC<DicePanelProps> = ({
       </div>
 
       {/* Roll Field - takes remaining space */}
-      <div className="flex-1 relative overflow-hidden bg-slate-900/50 rounded-lg mx-2 mb-2">
+      <div className="flex-1 relative overflow-y-auto overflow-x-hidden bg-slate-900/50 rounded-lg ml-1 mb-1 scrollbar-thin">
         {rolledDice.length > 0 ? (
-          <>
+          <div className="flex flex-wrap items-start justify-start pt-2 pl-2 pb-2" style={{ gap: `${dicePaddingPx}px` }}>
             {rolledDice.map((dice) => (
               <div
                 key={dice.id}
-                className="absolute transform -translate-x-1/2 -translate-y-1/2"
-                style={{
-                  left: `${dice.x}%`,
-                  top: `${dice.y}%`,
-                }}
+                className="flex-shrink-0"
               >
                 <DiceRenderer
                   dice={dice}
@@ -712,7 +658,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
                 />
               </div>
             ))}
-          </>
+          </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
             {translate('Select dice and press Roll', language as Locale) || 'Select dice and press Roll'}
