@@ -725,6 +725,7 @@ export enum PanelType {
   CHARACTER = 'CHARACTER',  // Character panel for RPG games
   TOOLS = 'TOOLS',  // Tools panel
   TOKENS = 'TOKENS',  // Tokens panel for quick access
+  DICE_PANEL = 'DICE_PANEL',  // Dice panel for quick dice rolling
 }
 
 // Window types for modal windows
@@ -800,6 +801,8 @@ export interface PanelObject extends UIObject {
   poolData?: PoolPanelData;
   // Optional: tableau panel data for TABLEAU panel type
   tableauData?: TableauPanelData;
+  // Optional: dice panel data for DICE_PANEL panel type
+  diceData?: DicePanelData;
 }
 
 // ============================================================================
@@ -985,6 +988,64 @@ export interface TableauPanelData {
   activeTabId: string;
   // Objects stored in each tab (separate from main game space)
   tabObjects: { [tabId: string]: string[] }; // Map of tabId -> object IDs
+}
+
+// ============================================================================
+// DICE PANEL TYPES
+// ============================================================================
+
+// Dice preset - configuration for a dice type in the dice panel
+export interface DicePreset {
+  id: string;
+  name: string;
+  sides: number; // Number of sides (d6, d10, d20, etc.)
+  color?: string; // Optional custom color
+  count: number; // How many times this dice is selected (default 0)
+  // Optional dice value overrides for custom faces
+  valueOverrides?: Record<number, DiceValueOverride>;
+  // Optional dice shape override
+  shape?: TokenShape;
+  // Optional isExplosive setting
+  isExplosive?: boolean;
+  explosiveColor?: string;
+  explosiveTextColor?: string;
+  explosiveGlow?: string;
+  // Optional dice group ID for grouping dice
+  diceGroupId?: string;
+  // Optional border settings
+  borderColor?: string;
+  borderWidth?: number;
+  borderOpacity?: number;
+  opacity?: number;
+}
+
+// Dice panel data - stores dice presets and roll field state
+// Single rolled dice instance (stored inline in panel data)
+export interface RolledDice {
+  id: string;
+  name: string;
+  sides: number;
+  value: number; // Current rolled value
+  x: number; // Position in roll field (0-100 percentage)
+  y: number; // Position in roll field (0-100 percentage)
+  color: string;
+  shape?: TokenShape;
+  valueOverrides?: Record<number, DiceValueOverride>;
+  isExplosive?: boolean;
+  explosiveColor?: string;
+  explosiveTextColor?: string;
+  explosiveGlow?: string;
+  diceGroupId?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderOpacity?: number;
+  opacity?: number;
+}
+
+export interface DicePanelData {
+  presets: DicePreset[]; // List of available dice presets
+  // Dice currently in the roll field (stored inline for panel rendering)
+  rolledDice: RolledDice[];
 }
 
 // Window object - modal dialogs on the game board

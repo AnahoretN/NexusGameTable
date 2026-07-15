@@ -263,7 +263,7 @@ function getDiceShape(sides: number): { shape: TokenShape; width: number; height
  * Create a dice object
  */
 export function createDice(params: BaseObjectParams & { sides?: number } = {}): DiceObject {
-  const { x = 0, y = 0, id = generateUUID(), name = 'Dice', sides = 6, ...rest } = params;
+  const { x = 0, y = 0, id = generateUUID(), name = 'Dice', sides = 6, actionButtons, allowedActions, allowedActionsForGM, ...rest } = params;
   const { shape, width, height } = getDiceShape(sides);
 
   return {
@@ -282,9 +282,10 @@ export function createDice(params: BaseObjectParams & { sides?: number } = {}): 
     sides,
     currentValue: 1,
     shape,
-    actionButtons: ['roll'],
-    allowedActions: ['roll'],
-    allowedActionsForGM: ['roll'],
+    // Default dice action buttons - can be overridden by params
+    actionButtons: actionButtons ?? ['roll'],
+    allowedActions: allowedActions,  // undefined = all actions allowed by default
+    allowedActionsForGM: allowedActionsForGM,  // undefined = all actions allowed by default
     ...rest,
   };
 }

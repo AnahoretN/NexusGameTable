@@ -17,20 +17,22 @@ interface ValueEditState {
 
 export const DiceValuesSettings: React.FC<DiceValuesSettingsProps> = ({ dice, onChange, language = 'en' }) => {
   const sides = dice.sides || 6;
-  const valueOverrides = dice.valueOverrides || {};
 
   const [editingValue, setEditingValue] = useState<number | null>(null);
   const [iconSearch, setIconSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  // Get override for a specific value
+  // Get override for a specific value - always read from latest dice.valueOverrides
   const getOverride = (value: number): DiceValueOverride | null => {
+    const valueOverrides = dice.valueOverrides || {};
     return valueOverrides[value] || null;
   };
 
   // Set override for a specific value
   const setOverride = (value: number, override: DiceValueOverride | null) => {
-    const newOverrides = { ...valueOverrides };
+    // Always read from latest dice.valueOverrides to avoid stale closure
+    const currentOverrides = dice.valueOverrides || {};
+    const newOverrides = { ...currentOverrides };
     if (override) {
       newOverrides[value] = override;
     } else {

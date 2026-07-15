@@ -310,6 +310,7 @@
   "Pool Panel": "Панэль запасу",
   "Tools Panel": "Панэль інструментаў",
   "Tokens Panel": "Панэль жэтонаў",
+  "Dice Panel": "Панэль костак",
   "Life Counter": "Лічыльнік жыццяў",
   "Score Tracker": "Лічыльнік ачкоў",
   "Standard Token": "Стандартны жэтон",
@@ -551,4 +552,11 @@
   "Avatar settings": "Налады аватаркі",
   "Avatar Settings": "Налады аватаркі",
   "Preview": "Папярэдні прагляд"
+
+  "Dice Settings": "Налады костак",
+  "Sides": "Граней",
+  "Add Dice": "Дадаць косць",
+  "Select dice and press Roll": "Выберыце касці і націсніце Roll",
+  "Rolled:": "Кінута:",
+  "dice": "касцей"
 }

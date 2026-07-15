@@ -17,6 +17,7 @@ import { TableauPanel } from './TableauPanel';
 import { MainMenuContent } from './MainMenuContent';
 import { PanelToolsPanel } from './ToolsPanel';
 import { TokensPanelOptimized as TokensPanel } from './TokensPanelOptimized';
+import { DicePanel } from './DicePanel';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { TopDeckModal } from './TopDeckModal';
@@ -1893,6 +1894,8 @@ const PanelContent: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ p
       return <ToolsPanelWithDragDetection panel={panel} effectiveProps={effectiveProps} />;
     case PanelType.TOKENS:
       return <TokensPanelWithDragDetection panel={panel} effectiveProps={effectiveProps} />;
+    case PanelType.DICE_PANEL:
+      return <DicePanelWithDragDetection panel={panel} />;
     // TODO: Add other panel types
     // case PanelType.CHAT:
     //   return <ChatPanel />;
@@ -2224,6 +2227,62 @@ const TableauPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel
       className="h-full"
     >
       <TableauPanel panel={panel} />
+    </div>
+  );
+};
+
+// DicePanel with Shift+drag detection
+const DicePanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+  const [isShiftDragging, setIsShiftDragging] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const language = useLanguage();
+
+  // Global mouse up handler to clear shift-drag state
+  React.useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isShiftDragging) {
+        setIsShiftDragging(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isShiftDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only handle Shift+drag for panel movement
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsShiftDragging(true);
+
+      // Find the UIObjectRenderer container and trigger its drag
+      const uiObjectContainer = containerRef.current?.closest('[data-ui-object]') as HTMLElement;
+      if (uiObjectContainer) {
+        const mouseDownEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          button: e.button,
+          shiftKey: true
+        });
+        uiObjectContainer.dispatchEvent(mouseDownEvent);
+      }
+      return;
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      style={{ pointerEvents: isShiftDragging ? 'none' : 'auto' }}
+      className="h-full"
+    >
+      <DicePanel panel={panel} language={language} />
     </div>
   );
 };

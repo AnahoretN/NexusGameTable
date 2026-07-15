@@ -26,6 +26,8 @@ interface ObjectSettingsModalProps {
   diceGroups?: DiceGroup[]; // Dice groups for grouping dice
   dispatch?: React.Dispatch<any>; // Dispatch function for updating groups
   zIndex?: string; // Custom z-index for modal (default: z-[100005])
+  hideGroupsTab?: boolean; // Hide Groups tab for dice from dice panel
+  hideActionsTab?: boolean; // Hide Actions tab for dice from dice panel
 }
 
 // Translate GridType value to display name
@@ -195,7 +197,7 @@ function getButtonApplicableTypes(action: ContextAction): ItemType[] {
 
 type Tab = 'general' | 'values' | 'actions' | 'piles' | 'cards' | 'sprite' | 'textCards' | 'groups' | 'states' | 'counters';
 
-const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch, zIndex }) => {
+const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ object, onSave, onClose, allObjects = {}, language = 'en', diceGroups = [], dispatch, zIndex, hideGroupsTab = false, hideActionsTab = false }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const [data, setData] = useState<TableObject>({ ...object });
 
@@ -1394,7 +1396,7 @@ setGridDebugInfo(null);
           >
             <Settings size={16} /> {translate('General', language as Locale)}
           </button>
-          {!isCard && !isDice && !isCounter && !isBattlefieldCell && !isPanel && !isEffectTemplate && (
+          {!isCard && !isBattlefieldCell && !isPanel && !isEffectTemplate && !hideActionsTab && (
             <button
               onClick={() => setActiveTab('actions')}
               className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
@@ -1490,7 +1492,7 @@ setGridDebugInfo(null);
               <Smile size={16} /> {translate('Values', language as Locale)}
             </button>
           )}
-          {isDice && (
+          {isDice && !hideGroupsTab && (
             <button
               onClick={() => setActiveTab('groups')}
               className={`flex-1 py-3 px-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${

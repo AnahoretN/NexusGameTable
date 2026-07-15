@@ -330,6 +330,7 @@
   "Pool Panel": "Панель запасу",
   "Tools Panel": "Панель інструментів",
   "Tokens Panel": "Панель жетонів",
+  "Dice Panel": "Панель дайсів",
   "Life Counter": "Лічильник життів",
   "Score Tracker": "Лічильник очок",
   "Standard Token": "Стандартний жетон",
@@ -567,5 +568,11 @@
   "Resurrection Scroll": "Свиток воскресіння",
   "Avatar settings": "Налаштування аватарки",
   "Avatar Settings": "Налаштування аватарки",
-  "Preview": "Попередній перегляд"
+  "Preview": "Попередній перегляд",
+  "Dice Settings": "Налаштування дайса",
+  "Sides": "Граней",
+  "Add Dice": "Додати дайс",
+  "Select dice and press Roll": "Виберіть дайси і натисніть Roll",
+  "Rolled:": "Кинуто:",
+  "dice": "дайсів"
 }

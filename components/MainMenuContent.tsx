@@ -1082,6 +1082,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         { name: translate('Pool Panel', language as Locale), type: 'PANEL', panelType: PanelType.POOL },
         { name: translate('Tools Panel', language as Locale), type: 'PANEL', panelType: PanelType.TOOLS },
         { name: translate('Tokens Panel', language as Locale), type: 'PANEL', panelType: PanelType.TOKENS },
+        { name: translate('Dice Panel', language as Locale), type: 'PANEL', panelType: PanelType.DICE_PANEL },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.PANEL && (obj as any).panelType !== PanelType.MAIN_MENU
     },

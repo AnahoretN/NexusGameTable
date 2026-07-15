@@ -330,6 +330,7 @@
   "Pool Panel": "Панель запаса",
   "Tools Panel": "Панель инструментов",
   "Tokens Panel": "Панель жетонов",
+  "Dice Panel": "Панель дайсов",
   "Life Counter": "Счётчик жизней",
   "Score Tracker": "Счётчик очков",
   "Standard Token": "Стандартный жетон",
@@ -567,5 +568,11 @@
   "Resurrection Scroll": "Свиток воскрешения",
   "Avatar settings": "Настройки аватарки",
   "Avatar Settings": "Настройки аватарки",
-  "Preview": "Предпросмотр"
+  "Preview": "Предпросмотр",
+  "Dice Settings": "Настройки дайса",
+  "Sides": "Граней",
+  "Add Dice": "Добавить дайс",
+  "Select dice and press Roll": "Выберите дайсы и нажмите Roll",
+  "Rolled:": "Брошено:",
+  "dice": "дайсов"
 }

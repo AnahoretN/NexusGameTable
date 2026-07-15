@@ -314,6 +314,7 @@
   "Pool Panel": "Rezerva",
   "Tools Panel": "Panel alatki",
   "Tokens Panel": "Panel žetona",
+  "Dice Panel": "Panel kockica",
   "Life Counter": "Brojač života",
   "Score Tracker": "Praćenje rezultata",
   "Standard Token": "Standardni žeton",
@@ -541,4 +542,11 @@
   "Avatar settings": "Postavke avatara",
   "Avatar Settings": "Postavke avatara",
   "Preview": "Pregled"
+
+  "Dice Settings": "Postavke kockice",
+  "Sides": "Strana",
+  "Add Dice": "Dodaj kockicu",
+  "Select dice and press Roll": "Odaberite kockice i pritisnite Roll",
+  "Rolled:": "Bačeno:",
+  "dice": "kockica"
 }

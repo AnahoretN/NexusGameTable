@@ -2,6 +2,38 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.2.6] - 2026-07-15
+
+### ✨ New Features
+
+#### 🎲 Dice Panel
+**Dedicated panel for quick dice rolling and management**
+
+- **Dice presets**: Pre-configured dice types (d6, d10, d20, etc.) with customizable colors
+- **Quick rolling**: Click to increment dice count, press Roll to throw all selected dice
+- **Visual roll field**: See rolled dice with random values displayed in a dedicated area
+- **Context menu**: Right-click dice presets for quick access to settings, reset, and removal
+- **Customizable dice**: Configure dice values, shapes, colors, and explosive dice per preset
+- **Group support**: Dice can be assigned to groups for coordinated rolling
+- **Shift+drag to tabletop**: Drag dice from panel directly to the game board
+
+**Use cases:**
+- Quick dice rolling for RPG systems (D&D, Pathfinder, etc.)
+- Dice pool management for games with many dice
+- Custom dice faces for unique game systems
+- Explosive dice for systems with critical hit mechanics
+
+---
+
+### 🐛 Bug Fixes
+
+- **Dice Actions tab**: Fixed missing Actions tab in Standard Dice settings
+- **Dice context menu**: Fixed missing action buttons (Hide, Lock, Pin, Clone, Delete, Layer, Rotate, etc.) for regular dice on tabletop
+- **Dice allowedActions**: Changed default from `['roll']` to `undefined` to allow all context menu actions by default
+- **Dice Panel settings**: Actions tab is now hidden for dice presets in DicePanel (settings apply to presets, not individual dice)
+
+---
+
 ## [0.2.4] - 2026-05-14
 
 ### ✨ New Features
