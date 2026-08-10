@@ -1176,7 +1176,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
               {/* Drawing Tools Section */}
               <div>
                 <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-5 gap-1">
                   <DrawingToolButton tool="none" icon={<MousePointer2 size={15} />} label={translate('Cursor', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
                   <DrawingToolButton tool="marker" icon={<Pen size={15} />} label={translate('Marker', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
                   <DrawingToolButton tool="eraser" icon={<Eraser size={15} />} label={translate('Eraser', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
@@ -1315,9 +1315,19 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                     </div>
                   </div>
 
-                  <p className="text-[9px] text-gray-500 italic">
-                    {translate('Configure layer zoom in Layer Settings', language as Locale)}
-                  </p>
+                  {/* Show vertical zoom slider checkbox */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="show-vertical-zoom-slider"
+                      checked={settings.zoom.showVerticalSlider}
+                      onChange={(e) => updateZoomSettings({ showVerticalSlider: e.target.checked })}
+                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
+                    />
+                    <label htmlFor="show-vertical-zoom-slider" className="text-[10px] text-gray-400 cursor-pointer">
+                      {translate('Show vertical zoom slider', language as Locale)}
+                    </label>
+                  </div>
                 </div>
               )}
 

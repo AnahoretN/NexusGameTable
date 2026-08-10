@@ -34,6 +34,7 @@ interface RulerSettings {
 // Zoom settings
 interface ZoomSettings {
   level: number;
+  showVerticalSlider: boolean;
 }
 
 // All tool settings
@@ -61,7 +62,8 @@ const DEFAULT_RULER_SETTINGS: RulerSettings = {
 };
 
 const DEFAULT_ZOOM_SETTINGS: ZoomSettings = {
-  level: 100
+  level: 100,
+  showVerticalSlider: true
 };
 
 const DEFAULT_TOOL_SETTINGS: ToolSettings = {

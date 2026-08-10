@@ -111,7 +111,7 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
         {/* Drawing Tools Section */}
         <div className="border-b border-slate-700">
           <div className="p-3">
-            <div className="grid grid-cols-5 gap-2 mb-3">
+            <div className="grid grid-cols-5 gap-1 mb-3">
               {DRAWING_TOOLS.map((tool) => (
                 <button
                   key={tool.id}
@@ -309,7 +309,7 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
       >
         {/* Drawing Tools Section */}
         <div className="p-3">
-          <div className="grid grid-cols-5 gap-2 mb-3">
+          <div className="grid grid-cols-5 gap-1 mb-3">
             {DRAWING_TOOLS.map((tool) => (
               <button
                 key={tool.id}

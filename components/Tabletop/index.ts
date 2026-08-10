@@ -23,4 +23,5 @@ export * from './TabletopCursorSlot';
 export * from './TabletopEventHandlers';
 export * from './TabletopModals';
 export * from './ClickTooltip';
+export * from './VerticalZoomSlider';
 export { Tabletop } from './TabletopRefactored';

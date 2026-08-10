@@ -37,7 +37,8 @@ import {
   TabletopCursorSlot,
   useTabletopEventHandlers,
   TabletopModals,
-  useTokenArchetype
+  useTokenArchetype,
+  VerticalZoomSlider
 } from './index';
 import { ClickTooltip } from './ClickTooltip';
 
@@ -1275,6 +1276,9 @@ export const Tabletop: React.FC = () => {
           y={clickTooltip.y}
         />
       )}
+
+      {/* Vertical Zoom Slider */}
+      <VerticalZoomSlider />
     </div>
   );
 };
