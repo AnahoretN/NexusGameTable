@@ -20,3 +20,6 @@ Thumbs.db
 ngrok.exe
 tmpclaude-*
 tmpclaude-*
+
+# Claude Code local settings (user-specific)
+.claude/settings.local.json
