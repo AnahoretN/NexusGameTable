@@ -6965,13 +6965,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Initialize Default Board and Standard Deck (or load from storage)
   useEffect(() => {
-    console.log('[INIT] useEffect triggered', {
-      isHost,
-      initialized: initializedRef.current,
-      isLoading: isLoadingSavedStateRef.current,
-      objectsCount: Object.keys(state.objects).length,
-      condition: !initializedRef.current && !isLoadingSavedStateRef.current && Object.keys(state.objects).length === 0
-    });
     // Only initialize once we're sure about host status and haven't initialized yet
     // 🔥 FIX: Also check if async load is NOT in progress to prevent race condition
     if (!initializedRef.current && !isLoadingSavedStateRef.current && Object.keys(state.objects).length === 0) {

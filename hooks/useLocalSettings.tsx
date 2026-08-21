@@ -1,105 +1,65 @@
-import { useState, useEffect, createContext, useContext, useRef, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { LocalSettings, loadLocalSettings, saveLocalSettings } from '../utils/localSettings';
-import { logger } from '../utils/logger';
 
-const LOCAL_SETTINGS_EVENT = 'local-settings-changed';
-
-interface LocalSettingsContextValue {
+// Context for Local Settings
+const LocalSettingsContext = createContext<{
   settings: LocalSettings;
-  updateSetting(key: keyof LocalSettings, value: any): void;
-  updateEffectSetting(key: keyof LocalSettings['effects'], value: any): void;
-}
+  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
+  updateEffectSetting: <K extends keyof LocalSettings['effects']>(key: K, value: LocalSettings['effects'][K]) => void;
+} | undefined>(undefined);
 
-const LocalSettingsContext = createContext<LocalSettingsContextValue | null>(null);
-
-export function LocalSettingsProvider({ children }: { children: React.ReactNode }) {
+/**
+ * Provider component for Local Settings
+ */
+export const LocalSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [settings, setSettings] = useState<LocalSettings>(() => loadLocalSettings());
-  const settingsRef = useRef(settings);
 
-  // Keep ref in sync with settings
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
-
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'nexus-local-settings' && e.newValue) {
-        try {
-          const newSettings = JSON.parse(e.newValue);
-          setSettings(newSettings);
-        } catch (err) {
-          logger.error('Failed to parse settings from storage event:', err);
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
-  // Stable update functions that always use current settings from ref
-  const updateSetting = useCallback((key: keyof LocalSettings, value: any) => {
-    const currentSettings = settingsRef.current;
-    const newSettings = { ...currentSettings, [key]: value };
+  // Update a specific setting
+  const updateSetting = <K extends keyof LocalSettings>(
+    key: K,
+    value: LocalSettings[K]
+  ) => {
+    const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     saveLocalSettings(newSettings);
-  }, []);
+  };
 
-  const updateEffectSetting = useCallback((key: keyof LocalSettings['effects'], value: any) => {
-    const currentSettings = settingsRef.current;
+  // Update a nested effect setting
+  const updateEffectSetting = <K extends keyof LocalSettings['effects']>(
+    key: K,
+    value: LocalSettings['effects'][K]
+  ) => {
     const newSettings = {
-      ...currentSettings,
-      effects: { ...currentSettings.effects, [key]: value },
+      ...settings,
+      effects: {
+        ...settings.effects,
+        [key]: value,
+      },
     };
     setSettings(newSettings);
     saveLocalSettings(newSettings);
-  }, []);
+  };
 
-  // Memoize context value to prevent unnecessary re-renders
-  const contextValue = useMemo<LocalSettingsContextValue>(
-    () => ({ settings, updateSetting, updateEffectSetting }),
-    [settings, updateSetting, updateEffectSetting]
-  );
+  const value = {
+    settings,
+    updateSetting,
+    updateEffectSetting,
+  };
 
   return (
-    <LocalSettingsContext.Provider value={contextValue}>
+    <LocalSettingsContext.Provider value={value}>
       {children}
     </LocalSettingsContext.Provider>
   );
-}
+};
 
+/**
+ * Hook to manage local settings (stored in localStorage, not synced via WebRTC)
+ */
 export function useLocalSettings() {
   const context = useContext(LocalSettingsContext);
-
-  if (context) {
-    return context;
+  if (!context) {
+    throw new Error('useLocalSettings must be used within a LocalSettingsProvider');
   }
-
-  const [settings, setSettings] = useState<LocalSettings>(() => loadLocalSettings());
-  const settingsRef = useRef(settings);
-
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
-
-  const updateSetting = useCallback((key: keyof LocalSettings, value: any) => {
-    const currentSettings = settingsRef.current;
-    const newSettings = { ...currentSettings, [key]: value };
-    setSettings(newSettings);
-    saveLocalSettings(newSettings);
-    window.dispatchEvent(new CustomEvent(LOCAL_SETTINGS_EVENT, { detail: newSettings }));
-  }, []);
-
-  const updateEffectSetting = useCallback((key: keyof LocalSettings['effects'], value: any) => {
-    const currentSettings = settingsRef.current;
-    const newSettings = {
-      ...currentSettings,
-      effects: { ...currentSettings.effects, [key]: value },
-    };
-    setSettings(newSettings);
-    saveLocalSettings(newSettings);
-    window.dispatchEvent(new CustomEvent(LOCAL_SETTINGS_EVENT, { detail: newSettings }));
-  }, []);
-
-  return { settings, updateSetting, updateEffectSetting };
+  return context;
 }

@@ -80,12 +80,6 @@ export const CardRenderer = memo(({
     const baseWidth = card.width ?? (deck?.cardWidth ?? 63);
     const baseHeight = card.height ?? (deck?.cardHeight ?? 88);
 
-    // 🔍 DEBUG: Log rendering for all objects
-    console.log('[CardRenderer] Rendering:', obj.id, 'type:', obj.type);
-    console.log('[CardRenderer] obj.x, obj.y:', { x: obj.x.toFixed(2), y: obj.y.toFixed(2) });
-    console.log('[CardRenderer] v2p(obj.x, obj.y):', { x: v2p(obj.x).toFixed(2), y: v2p(obj.y).toFixed(2) });
-    console.log('[CardRenderer] pixelsPerVU:', pixelsPerVU);
-
     return createPositionedStyle(
       v2p(obj.x),
       v2p(obj.y),
