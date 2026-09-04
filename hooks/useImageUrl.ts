@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getAssetURL, isValidHash, assetCache } from '../utils/assets';
+import { isLocalFsReference } from '../utils/imageCompat';
 
 // ============================================================================
 // URL CACHE
@@ -19,6 +20,10 @@ const pendingResolves = new Map<string, Promise<string>>();
  */
 export function useImageUrl(url: string): string {
   const [displayUrl, setDisplayUrl] = useState<string>(() => {
+    // Local filesystem references are blocked by browsers - never render them
+    if (url && isLocalFsReference(url)) {
+      return '';
+    }
     if (url && resolvedUrlCache.has(url)) {
       return resolvedUrlCache.get(url)!;
     }
@@ -33,6 +38,12 @@ export function useImageUrl(url: string): string {
   useEffect(() => {
     if (!url) {
       setDisplayUrl(url);
+      return;
+    }
+
+    // Local filesystem references are blocked by browsers - never set them
+    if (isLocalFsReference(url)) {
+      setDisplayUrl('');
       return;
     }
 
@@ -91,7 +102,7 @@ export function useImageUrl(url: string): string {
  * @returns Promise that resolves when preloading is complete
  */
 export function preloadImageUrl(url: string): Promise<void> {
-  if (!url || resolvedUrlCache.has(url)) {
+  if (!url || isLocalFsReference(url) || resolvedUrlCache.has(url)) {
     return Promise.resolve();
   }
 

@@ -58,6 +58,17 @@ export function isLocalFilePath(str: unknown): boolean {
   return false;
 }
 
+/**
+ * Local filesystem references (file:///..., C:\..., /home/...) can never be
+ * loaded by a web page — browsers block them (Firefox:
+ * "Попытка нарушения системы безопасности: ... не имеет права загружать file:///").
+ * They only appear in legacy saves. Use this to avoid feeding such strings
+ * into img src / background-image url().
+ */
+export function isLocalFsReference(str: unknown): boolean {
+  return typeof str === 'string' && (str.startsWith('file:') || isLocalFilePath(str));
+}
+
 // ============================================================================
 // CONVERSION
 // ============================================================================

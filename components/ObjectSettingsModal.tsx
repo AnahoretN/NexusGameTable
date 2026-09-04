@@ -2203,10 +2203,10 @@ setGridDebugInfo(null);
                     />
                   </div>
                   <div className="relative">
-                    <label className="block text-xs font-bold text-gray-400 mb-1">{translate('Background Image URL', language as Locale)}</label>
                     <FilePickerInput
                       value={data.content || ''}
                       onChange={value => update('content', value)}
+                      label={translate('Background Image URL', language as Locale)}
                       className="w-full !h-10"
                       maxSize={10 * 1024 * 1024} // 10MB for board backgrounds
                     />

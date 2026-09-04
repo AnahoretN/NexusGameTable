@@ -93,6 +93,11 @@ input[type="range"] {
   appearance: none !important;
   cursor: pointer;
   border-radius: 4px;
+  /* Explicit height is required: Firefox keeps a much taller default height
+     for range inputs without one, so the background gradient (the visible
+     track painted by SliderUpdater) renders thicker than in Chrome.
+     8px matches the h-2 used by the styled sliders. */
+  height: 8px;
   /* Firefox: constrain width properly */
   width: 100%;
   max-width: 100%;
@@ -134,19 +139,30 @@ input[type="range"].slider-input:focus::-webkit-slider-thumb {
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
-/* Firefox slider track */
+/* Firefox slider track.
+   The visible track is the input's own background (gradient set by SliderUpdater).
+   Unlike Chrome, Firefox does NOT clip the track pseudo-element to the input's
+   border-radius, so any border/background here paints on top of it and makes
+   the track look thicker and outlined. Keep it fully invisible. */
 input[type="range"]::-moz-range-track,
 input[type="range"].slider-input::-moz-range-track {
-  height: 9px;
+  height: 8px;
   background: transparent;
   border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.3);
-  /* Firefox: prevent extra width */
-  width: 100%;
+  border: none;
   box-sizing: border-box;
 }
 
-/* Firefox slider thumb */
+/* Firefox: never draw the native progress fill on top of the input background */
+input[type="range"]::-moz-range-progress,
+input[type="range"].slider-input::-moz-range-progress {
+  background: transparent;
+  border: none;
+}
+
+/* Firefox slider thumb.
+   No box-sizing here: Chrome sizes its thumb content-box (18px + 2px border
+   = 22px total), so Firefox must do the same to match its size. */
 input[type="range"]::-moz-range-thumb,
 input[type="range"].slider-input::-moz-range-thumb {
   width: 18px !important;
@@ -158,8 +174,6 @@ input[type="range"].slider-input::-moz-range-thumb {
   cursor: pointer;
   position: relative;
   z-index: 10;
-  /* Firefox: prevent extra spacing */
-  box-sizing: border-box;
 }
 
 input[type="range"]::-moz-range-thumb:hover,

@@ -6,6 +6,7 @@
 
 import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { getAssetURL, preloadAssets } from '../utils/assets';
+import { isLocalFsReference } from '../utils/imageCompat';
 import { getGlobalCacheVersion } from './SvgTokenShape';
 
 export interface LazyImageProps {
@@ -84,6 +85,13 @@ export const LazyImage = memo<LazyImageProps>(({
   }, [src, imageSrc, rootMargin, threshold]);
 
   const loadImage = async (srcToLoad: string) => {
+    // Local filesystem references are blocked by browsers - never load them
+    if (isLocalFsReference(srcToLoad)) {
+      setIsError(true);
+      onError?.();
+      return;
+    }
+
     try {
       let finalSrc = srcToLoad;
 
@@ -148,6 +156,12 @@ LazyImage.displayName = 'LazyImage';
 export function useImagePreloader() {
   const preloadImage = useCallback((src: string): Promise<void> => {
     return new Promise((resolve, reject) => {
+      // Local filesystem references are blocked by browsers - never load them
+      if (isLocalFsReference(src)) {
+        reject(new Error(`Local filesystem reference cannot be loaded: ${src}`));
+        return;
+      }
+
       const img = new Image();
       img.onload = () => resolve();
       img.onerror = reject;
@@ -223,13 +237,16 @@ export const LazyBackgroundImage = memo<LazyBackgroundImageProps>(({
             setResolvedSrc(objectUrl);
           }
           // Don't set resolvedSrc - will show placeholder instead
+        } else if (isLocalFsReference(src)) {
+          // Local filesystem references are blocked by browsers (Firefox
+          // security error) - leave resolvedSrc null to show placeholder
         } else {
           setResolvedSrc(src);
         }
       } catch (error) {
         // 🔥 FIX: Never fall back to hash URLs - they cause CSP violations
         // Only set resolvedSrc if it's not a hash
-        if (!isAssetHash(src)) {
+        if (!isAssetHash(src) && !isLocalFsReference(src)) {
           setResolvedSrc(src);
         }
         // For hash URLs that fail, leave resolvedSrc as null to show placeholder

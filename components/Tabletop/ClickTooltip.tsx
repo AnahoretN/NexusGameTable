@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { Card } from '../../types';
+import { isLocalFsReference } from '../../utils/imageCompat';
 
 interface ClickTooltipProps {
   card: Card;
@@ -25,7 +26,7 @@ export const ClickTooltip: React.FC<ClickTooltipProps> = ({ card, x, y }) => {
       }}
     >
       <div className="bg-white rounded-lg shadow-xl border border-gray-300 p-4">
-        {card.faceUp && card.content && (
+        {card.faceUp && card.content && !isLocalFsReference(card.content) && (
           <img
             src={card.content}
             alt={card.name || 'Card'}

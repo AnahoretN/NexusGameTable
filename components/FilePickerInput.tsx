@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { logger } from '../utils/logger';
 import { loadLocalFile } from '../utils/assets';
+import { isLocalFsReference } from '../utils/imageCompat';
 
 interface FilePickerInputProps {
   value: string;
@@ -29,21 +30,10 @@ function isValidUrl(url: string): boolean {
     return true;
   }
 
-  // Check for Windows absolute paths (e.g., C:\Users\...)
-  if (/^[A-Za-z]:\\/.test(url)) {
-    return true; // Windows absolute paths are valid (local file)
-  }
-
-  // Check for Windows absolute paths with forward slashes (e.g., C:/Users/...)
-  if (/^[A-Za-z]:\//.test(url)) {
-    return true; // Windows absolute paths are valid (local file)
-  }
-
-  // Check for Unix absolute paths (e.g., /home/user/...)
-  // But not protocol-relative URLs (//example.com)
-  if (url.startsWith('/') && url.length > 1 && url[1] !== '/') {
-    return true; // Unix absolute paths are valid (local file)
-  }
+  // NOTE: local filesystem paths (C:\..., /home/..., file:///) are intentionally
+  // NOT valid - no browser allows a web page to load them (Firefox:
+  // "Попытка нарушения системы безопасности"). They are rejected in
+  // handleUrlChange with a warning pointing to the file picker.
 
   try {
     // Try to create a URL object
@@ -62,9 +52,6 @@ function isValidUrl(url: string): boolean {
     if (url.startsWith('blob:')) {
       return true; // Blob URLs are valid
     }
-    if (url.startsWith('file://')) {
-      return true; // file:// URLs are valid
-    }
 
     // Check for basic URL pattern (protocol://domain)
     const urlPattern = /^https?:\/\/.+/i;
@@ -73,8 +60,41 @@ function isValidUrl(url: string): boolean {
 };
 
 /**
+ * Source file names for uploaded images, persisted by asset hash so the input
+ * can show where the image came from (survives page reloads). Browsers never
+ * expose the full local path - only the file name is available.
+ */
+const FILE_NAMES_KEY = 'file-picker-source-names';
+let fileNameCache: Record<string, string> | null = null;
+
+function getFileNames(): Record<string, string> {
+  if (fileNameCache === null) {
+    try {
+      fileNameCache = JSON.parse(localStorage.getItem(FILE_NAMES_KEY) || '{}');
+    } catch {
+      fileNameCache = {};
+    }
+  }
+  return fileNameCache;
+}
+
+function rememberFileName(hash: string, name: string): void {
+  const names = getFileNames();
+  names[hash] = name;
+  try {
+    localStorage.setItem(FILE_NAMES_KEY, JSON.stringify(names));
+  } catch {
+    // Storage unavailable or full - the name just won't persist
+  }
+}
+
+function getStoredFileName(hash: string): string | undefined {
+  return getFileNames()[hash];
+}
+
+/**
  * FilePickerInput - universal image input component
- * Accepts both URLs and local file paths (via file picker)
+ * Accepts URLs and local file uploads (via file picker)
  * Uses new CAS system for local file storage
  */
 export const FilePickerInput: React.FC<FilePickerInputProps> = ({
@@ -91,6 +111,14 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   const [sizeWarning, setSizeWarning] = useState<string>('');
 
   const handleUrlChange = (newValue: string) => {
+    // Local filesystem references (file:///, C:\...) can never be loaded by a
+    // web page - the browser blocks them (Firefox security error). Guide the
+    // user to the file picker instead of creating a broken object.
+    if (isLocalFsReference(newValue)) {
+      setSizeWarning('Local file paths are blocked by the browser. Use the ⋯ button to upload the image.');
+      onChange('');
+      return;
+    }
     // Validate URL - if invalid, treat as empty string
     if (isValidUrl(newValue)) {
       onChange(newValue);
@@ -108,7 +136,7 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
       // Check file size
       if (file.size > maxSize) {
         const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-        setSizeWarning(`⚠️ File size: ${sizeMB}MB exceeds ${maxMB}MB limit.`);
+        setSizeWarning(`File size: ${sizeMB}MB exceeds ${maxMB}MB limit.`);
         // Reset input
         e.target.value = '';
         return;
@@ -117,7 +145,7 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
       // Show warning for files > 1MB (but allow them)
       if (file.size > 1024 * 1024) {
         const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-        setSizeWarning(`⚠️ Large file: ${sizeMB}MB. Recommended: <${maxMB}MB`);
+        setSizeWarning(`Large file: ${sizeMB}MB (Recommended: <${maxMB}MB)`);
       } else {
         setSizeWarning('');
       }
@@ -127,11 +155,14 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
         // Use new CAS system to load and store the file
         const result = await loadLocalFile(file);
 
+        // Remember the source file name so it can be shown in the input
+        rememberFileName(result.hash, file.name);
+
         // Return SHA-256 hash URL instead of img_ref://
         onChange(result.hash);
       } catch (error) {
         logger.error('Failed to load file:', error);
-        setSizeWarning(`⚠️ Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        setSizeWarning(`Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
         setIsLoading(false);
       }
@@ -154,7 +185,9 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   // Format value for display
   const isHash = value.startsWith('sha256:');
   const isImgRef = value.startsWith('img_ref://');
-  const displayValue = isHash || isImgRef ? '(Uploaded image)' : value;
+  // Show the source file name for uploaded images instead of a generic placeholder
+  const uploadedName = (isHash || isImgRef) ? getStoredFileName(value) : undefined;
+  const displayValue = isHash || isImgRef ? (uploadedName ?? '(Uploaded image)') : value;
 
   const inputElement = (
     <div className="relative flex items-center">
@@ -197,15 +230,19 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   if (label) {
     return (
       <div>
-        <label className="block text-xs font-bold text-gray-400 mb-1">{label}</label>
-        {sizeWarning && (
-          <div className="text-xs text-purple-400 font-semibold mb-2" style={{
-            color: '#a78bfa',
-            fontWeight: 'bold'
-          }}>
-            {sizeWarning}
-          </div>
-        )}
+        {/* Warning is shown on the same line as the field label */}
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <label className="text-xs font-bold text-gray-400 flex-shrink-0">{label}</label>
+          {sizeWarning && (
+            <span
+              className="text-xs font-bold flex-1 min-w-0 text-right truncate"
+              style={{ color: '#a78bfa' }}
+              title={sizeWarning}
+            >
+              {sizeWarning}
+            </span>
+          )}
+        </div>
         {inputElement}
       </div>
     );
@@ -214,10 +251,11 @@ export const FilePickerInput: React.FC<FilePickerInputProps> = ({
   return (
     <div>
       {sizeWarning && (
-        <div className="text-xs text-purple-400 font-semibold mb-2" style={{
-          color: '#a78bfa',
-          fontWeight: 'bold'
-        }}>
+        <div
+          className="text-xs font-bold mb-2 text-right truncate"
+          style={{ color: '#a78bfa' }}
+          title={sizeWarning}
+        >
           {sizeWarning}
         </div>
       )}
