@@ -401,6 +401,8 @@ export function createBattlefieldCell(params: BaseObjectParams & {
     borderOpacity: 100,
     snapToGrid: true,
     snapCardsToGrid: false,
+    edgeMagnetism: true,
+    snapToBoardGrid: false,
     gridSize: 50,
     zIndex: 0,
     hyperscaleLayerId,

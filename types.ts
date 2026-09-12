@@ -447,6 +447,10 @@ export interface BattlefieldCell extends GameItem {
   magnetPointCount?: number; // Number of magnet points (default 1, min 1, max 12)
   magnetRotation?: number; // Rotation of magnet lines in degrees (default 0)
   magnetPoints?: MagnetPoint[]; // Track which objects are snapped to which points (auto-managed)
+
+  // Own movement magnetism
+  edgeMagnetism?: boolean; // When true (default), this cell's edges snap to other cells' edges and to game field edges (like panels)
+  snapToBoardGrid?: boolean; // When true, this cell snaps to board grid cells like a token
 }
 
 // Hex direction for Nexus board cell connections

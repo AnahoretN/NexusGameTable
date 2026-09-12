@@ -145,6 +145,10 @@
   "Snap Tokens to Grid": "Магнетици жетоне",
   "Snap Cards to Grid": "Магнетици карте",
   "Snap Rotation to Grid": "Залепи окренуто",
+  "Cell Edge Magnetism": "Magnetisanje ćelija na ivice",
+  "Snap Cell to Board Grid": "Lepljenje na mrežu polja",
+  "Snap cell edges to other cells and the game field edges": "Ivice ćelije se lepe na ivice drugih ćelija i na ivice igralnog polja",
+  "Cell snaps to board grid cells like tokens": "Ćelija se lepi na ćelije mreže igralnog polja kao žeton",
   "Counter Limits": "Ograničenja brojača",
   "Base Value": "Osnovna vrednost",
   "Max Value (optional)": "Maks. vrednost (opciono)",
@@ -541,7 +545,7 @@
   "Resurrection Scroll": "Svitak vaskrsenja",
   "Avatar settings": "Postavke avatara",
   "Avatar Settings": "Postavke avatara",
-  "Preview": "Pregled"
+  "Preview": "Pregled",
 
   "Dice Settings": "Postavke kockice",
   "Sides": "Strana",

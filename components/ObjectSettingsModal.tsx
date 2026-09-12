@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate, TokenState, TokenSlider, TokenSliderPosition } from '../types';
 
-import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, RotateCcw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize, Upload, Loader2, Sparkles, Hash } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, RotateCcw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize, Upload, Loader2, Sparkles, Hash, Magnet } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { DiceValuesSettings } from './DiceValuesSettings';
 import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from '../utils/gridUtils';
@@ -2675,6 +2675,44 @@ setGridDebugInfo(null);
                       >
                         <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
                           (data as Board).snapRotationToGrid ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                    )}
+                    {/* Cell Edge Magnetism - only for battlefield cells */}
+                    {isBattlefieldCell && (
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2" title={translate('Snap cell edges to other cells and the game field edges', language as Locale)}>
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Magnet size={12} />
+                        {translate('Cell Edge Magnetism', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('edgeMagnetism', (data as BattlefieldCell).edgeMagnetism === false)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as BattlefieldCell).edgeMagnetism !== false ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as BattlefieldCell).edgeMagnetism !== false ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                    )}
+                    {/* Snap Cell to Board Grid - only for battlefield cells */}
+                    {isBattlefieldCell && (
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2" title={translate('Cell snaps to board grid cells like tokens', language as Locale)}>
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Grid3x3 size={12} />
+                        {translate('Snap Cell to Board Grid', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('snapToBoardGrid', !(data as BattlefieldCell).snapToBoardGrid)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as BattlefieldCell).snapToBoardGrid ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as BattlefieldCell).snapToBoardGrid ? 'translate-x-5' : 'translate-x-0.5'
                         }`} />
                       </button>
                     </div>

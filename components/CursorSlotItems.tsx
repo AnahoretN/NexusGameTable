@@ -517,10 +517,13 @@ const CursorSlotBattlefieldCell: React.FC<CursorSlotItemProps & { item: Battlefi
         color={item.color || '#2c3e50'}
         content="" // No text content for battlefield cells
         rotation={0}
-        borderWidth={item.borderWidth ?? 2}
+        borderWidth={(item.borderWidth ?? 2) * 1.5}
         borderColor={item.borderColor || '#3498db'}
         opacity={item.opacity ?? 100}
         borderOpacity={item.borderOpacity ?? 100}
+        // Match CellRenderer: same size and border placement as cells on the table
+        style={{ flexShrink: 0 }}
+        borderCentered
       />
     </div>
   );

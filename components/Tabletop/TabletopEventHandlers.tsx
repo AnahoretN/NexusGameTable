@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, CardOrientation, GridType, CardLocation, EffectTemplate, Drawing } from '../../types';
+import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, BattlefieldCell, CardOrientation, GridType, CardLocation, EffectTemplate, Drawing } from '../../types';
 import { clampScrollToPlayableArea, clampObjectPositionToPlayableArea } from '../../utils/viewportConstraints';
-import { SCROLLBAR_WIDTH_THICK } from '../../constants';
+import { SCROLLBAR_WIDTH_THICK, PLAYABLE_AREA_SIZE } from '../../constants';
 import { useIsSettingsModalOpen } from '../../store/contexts';
 import {
   parseGridCellKey,
@@ -201,7 +201,7 @@ const addToCursorSlotLocal = (
     setCursorSlotSource(source);
   }
   const gridCellKey = (obj as Token)?.gridCellKey || (obj as CardType)?.gridCellKey;
-  if (obj && gridCellKey && (obj.type === ItemType.TOKEN || obj.type === ItemType.CARD)) {
+  if (obj && gridCellKey && (obj.type === ItemType.TOKEN || obj.type === ItemType.CARD || obj.type === ItemType.BATTLEFIELD_CELL)) {
     const [boardId, ...cellParts] = gridCellKey.split(':');
     const cellKey = cellParts.join(':');
 
@@ -1111,10 +1111,15 @@ const dropCursorSlot = (
     // Check for board grid magnetism
     const isToken = item.type === ItemType.TOKEN;
     const isCard = item.type === ItemType.CARD;
+    // Battlefield cells can snap to board grid cells like tokens (per-cell setting)
+    const isBattlefieldCellItem = item.type === ItemType.BATTLEFIELD_CELL;
+    const cellSnapsToBoard = isBattlefieldCellItem && (item as BattlefieldCell).snapToBoardGrid === true;
     // Count tokens in cursor slot - if multiple tokens, drop as stack without magnetism
     const tokenCount = itemsToDrop.filter(i => i.type === ItemType.TOKEN).length;
     // For cards, we check board.snapCardsToGrid inside the loop (not item.snapToGrid)
-    const shouldSnapToGrid = (isToken && tokenCount <= 1) || isCard;
+    const shouldSnapToGrid = (isToken && tokenCount <= 1) || isCard || cellSnapsToBoard;
+    // Whether the object actually snapped to a board grid cell during this drop
+    let snappedToGrid = false;
 
     let finalZIndex = item.zIndex;
     if (!useOriginalZIndex) {
@@ -1164,7 +1169,8 @@ const dropCursorSlot = (
         }
 
         // Check if board has snapToGrid enabled for this item type
-        const snapEnabled = isToken ? board.snapToGrid : board.snapCardsToGrid;
+        // Battlefield cells snap like tokens (board.snapToGrid), cards use snapCardsToGrid
+        const snapEnabled = (isToken || isBattlefieldCellItem) ? board.snapToGrid : board.snapCardsToGrid;
         if (!snapEnabled) continue;
 
         // Calculate grid cell under the drop position using consistent dimensions
@@ -1325,10 +1331,13 @@ const dropCursorSlot = (
           }
         });
 
+        snappedToGrid = true;
         break; // Only snap to first matching board
       }
 
       // Check battlefield cells for magnetism
+      // Cells themselves are excluded - they use edge magnetism instead (see below)
+      if (!isBattlefieldCellItem) {
       for (const cellId of Object.keys(state.objects)) {
         const cell = state.objects[cellId] as any;
         if (cell.type !== ItemType.BATTLEFIELD_CELL) continue;
@@ -1402,7 +1411,94 @@ const dropCursorSlot = (
 
         break; // Only snap to first matching cell
       }
-    }
+      }
+      }
+
+      // Cell edge magnetism: snap this cell's edges flush to other cells' edges and to
+      // the game field edges (playable area). When snapping to a cell, also align the
+      // center on the free axis if the centers are within 10 VU of each other.
+      // Skipped when the cell snapped to a board grid cell - grid snapping wins
+      if (isBattlefieldCellItem && (item as BattlefieldCell).edgeMagnetism !== false && !snappedToGrid) {
+        // Fixed 10 VU tolerance in world units (independent of zoom)
+        const edgeSnapThreshold = 10;
+        const centerAlignThreshold = 10; // VU - align centers if they coincide within this
+
+        interface CellSnapCandidate {
+          value: number;
+          dist: number;
+          cellId?: string; // undefined = game field edge
+        }
+
+        const xCandidates: CellSnapCandidate[] = [
+          // Game field edges (playable area)
+          { value: 0, dist: Math.abs(finalX) },
+          { value: PLAYABLE_AREA_SIZE - objWidth, dist: Math.abs(finalX + objWidth - PLAYABLE_AREA_SIZE) }
+        ];
+        const yCandidates: CellSnapCandidate[] = [
+          { value: 0, dist: Math.abs(finalY) },
+          { value: PLAYABLE_AREA_SIZE - objHeight, dist: Math.abs(finalY + objHeight - PLAYABLE_AREA_SIZE) }
+        ];
+
+        // Bounds of nearby cells by id (for center alignment after the snap)
+        const cellBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
+
+        for (const cellId of Object.keys(state.objects)) {
+          if (cellId === item.id) continue;
+          const otherObj = state.objects[cellId] as TableObject;
+          if (otherObj.type !== ItemType.BATTLEFIELD_CELL) continue;
+          // Skip hidden cells - magnetism should not work when cell is hidden
+          if (otherObj.isOnTable === false) continue;
+          // Skip pinned cells - their x/y may not match their actual visual position
+          if ((otherObj as any).isPinnedToViewport) continue;
+
+          const w = otherObj.width ?? 100;
+          const h = otherObj.height ?? 100;
+          cellBounds[cellId] = { x: otherObj.x, y: otherObj.y, width: w, height: h };
+
+          // Edge-to-edge (flush): my left to their right, my right to their left
+          xCandidates.push({ value: otherObj.x + w, dist: Math.abs(finalX - (otherObj.x + w)), cellId });
+          xCandidates.push({ value: otherObj.x - objWidth, dist: Math.abs(finalX + objWidth - otherObj.x), cellId });
+          // My top to their bottom, my bottom to their top
+          yCandidates.push({ value: otherObj.y + h, dist: Math.abs(finalY - (otherObj.y + h)), cellId });
+          yCandidates.push({ value: otherObj.y - objHeight, dist: Math.abs(finalY + objHeight - otherObj.y), cellId });
+        }
+
+        const pickBest = (candidates: CellSnapCandidate[]): CellSnapCandidate | null => {
+          let best: CellSnapCandidate | null = null;
+          for (const c of candidates) {
+            const limit = c.cellId ? edgeSnapThreshold : edgeSnapThreshold;
+            if (c.dist <= limit && (!best || c.dist < best.dist)) best = c;
+          }
+          return best;
+        };
+
+        const bestX = pickBest(xCandidates);
+        const bestY = pickBest(yCandidates);
+
+        let snappedX = bestX ? bestX.value : finalX;
+        let snappedY = bestY ? bestY.value : finalY;
+
+        // Center alignment: when snapped to a cell on one axis and the other axis is free,
+        // align centers if they coincide within 3 VU
+        if (bestX?.cellId && !bestY) {
+          const target = cellBounds[bestX.cellId];
+          const targetCenterY = target.y + target.height / 2;
+          const myCenterY = finalY + objHeight / 2;
+          if (Math.abs(myCenterY - targetCenterY) <= centerAlignThreshold) {
+            snappedY = targetCenterY - objHeight / 2;
+          }
+        } else if (bestY?.cellId && !bestX) {
+          const target = cellBounds[bestY.cellId];
+          const targetCenterX = target.x + target.width / 2;
+          const myCenterX = finalX + objWidth / 2;
+          if (Math.abs(myCenterX - targetCenterX) <= centerAlignThreshold) {
+            snappedX = targetCenterX - objWidth / 2;
+          }
+        }
+
+        finalX = snappedX;
+        finalY = snappedY;
+      }
 
     // Restore object to table at new position
     // Change location from HAND to TABLE for cards

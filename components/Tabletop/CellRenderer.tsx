@@ -119,10 +119,18 @@ export const CellRenderer = memo(({
           color={cell.color || '#496179'}
           content=""
           rotation={0}
-          borderWidth={cell.borderWidth ?? 2}
+          borderWidth={(cell.borderWidth ?? 2) * 1.5}
           borderColor={cell.borderColor || '#212f3c'}
           opacity={cell.opacity ?? 100}
           borderOpacity={cell.borderOpacity ?? 100}
+          // The svg is drawn larger than the content box (border + padding around it).
+          // Without this, flex shrinks the svg to the container width and
+          // preserveAspectRatio letterboxes the content - the visible fill becomes
+          // smaller than the cell bounds, leaving visual gaps between snapped cells.
+          style={{ flexShrink: 0 }}
+          // Draw the border centered on the cell edge: the stroke's center line lies on
+          // the object bounds, so half the thickness is inside and half outside
+          borderCentered
         />
 
         {(obj as any).isPinnedToViewport && !isDragging && <PinnedIndicator />}

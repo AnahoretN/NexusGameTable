@@ -64,6 +64,18 @@ interface SvgTokenShapeProps {
   tokenName?: string;
   fontColor?: string;
   preserveAspectRatio?: string;
+  /**
+   * Draw the border INSIDE the content bounds instead of outside.
+   * Used by battlefield cells: nothing may paint outside the object bounds,
+   * otherwise flush-snapped cells overlap their neighbors.
+   */
+  borderInside?: boolean;
+  /**
+   * Draw the border CENTERED on the content bounds edge: the stroke's center line
+   * lies exactly on the object edge, so half the thickness is inside and half outside.
+   * Takes precedence over borderInside.
+   */
+  borderCentered?: boolean;
 }
 
 /**
@@ -277,6 +289,8 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   tokenName,
   fontColor = '#ffffff',
   preserveAspectRatio = "xMidYMid meet",
+  borderInside = false,
+  borderCentered = false,
 }) => {
   // 🔥 FIX: Initialize resolvedContent from cache if available to prevent flicker
   // When tokens are moved between cursor slot and tabletop, component remounts.
@@ -409,7 +423,11 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
 
   // Generate paths
   const contentPathData = generateContentPath(shape, width, height);
-  const borderPath = generateBorderPath(shape, width, height, borderWidth);
+  const borderPath = borderCentered
+    ? generateBorderPath(shape, Math.max(0, width - borderWidth / 2), Math.max(0, height - borderWidth / 2), borderWidth)
+    : borderInside
+      ? generateBorderPath(shape, Math.max(0, width - borderWidth), Math.max(0, height - borderWidth), borderWidth)
+      : generateBorderPath(shape, width, height, borderWidth);
   const useRect = shape === TokenShape.SQUARE;
 
   const uniqueId = React.useId();
@@ -421,6 +439,16 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
   const contentOffset = borderInnerEdge;
   const contentX = contentOffset;
   const contentY = contentOffset;
+
+  // Border stroke path position relative to the content bounds:
+  // - centered: exactly on the edge -> stroke straddles it (half inside, half outside)
+  // - inside:   inset by borderWidth/2 -> stroke stays within the content bounds
+  // - default:  offset outward -> legacy token look (stroke mostly outside)
+  const borderOffset = borderCentered
+    ? contentOffset
+    : borderInside
+      ? contentOffset + borderWidth / 2
+      : contentOffset - borderWidth / 4;
 
   // Total SVG size: content + 2*borderWidth + 2*PADDING
   const svgWidth = width + borderWidth * 2 + PADDING * 2;
@@ -505,12 +533,12 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
         </clipPath>
       </defs>
 
-      {/* Border - OUTSIDE the content */}
+      {/* Border - OUTSIDE the content (default), INSIDE it (borderInside) or centered on the edge (borderCentered) */}
       {borderPath ? (
         <path
           d={borderPath}
           // Position path so it's centered with content (border path is larger by borderWidth/2)
-          transform={`translate(${contentOffset - borderWidth / 4}, ${contentOffset - borderWidth / 4})`}
+          transform={`translate(${borderOffset}, ${borderOffset})`}
           fill="none"
           stroke={borderColor}
           strokeWidth={borderWidth}
@@ -519,12 +547,12 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
       ) : (
         <rect
           // Position rect so it's centered with content
-          x={contentOffset - borderWidth / 4}
-          y={contentOffset - borderWidth / 4}
-          width={width + borderWidth / 2}
-          height={height + borderWidth / 2}
-          rx={borderRadius + borderWidth / 4}
-          ry={borderRadius + borderWidth / 4}
+          x={borderOffset}
+          y={borderOffset}
+          width={borderCentered ? width : borderInside ? Math.max(0, width - borderWidth) : width + borderWidth / 2}
+          height={borderCentered ? height : borderInside ? Math.max(0, height - borderWidth) : height + borderWidth / 2}
+          rx={Math.max(0, borderCentered ? borderRadius : borderInside ? borderRadius - borderWidth / 2 : borderRadius + borderWidth / 4)}
+          ry={Math.max(0, borderCentered ? borderRadius : borderInside ? borderRadius - borderWidth / 2 : borderRadius + borderWidth / 4)}
           fill="none"
           stroke={borderColor}
           strokeWidth={borderWidth}
