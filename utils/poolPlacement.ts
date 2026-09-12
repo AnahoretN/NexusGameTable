@@ -2,7 +2,7 @@ import { TableObject, ItemType, CardLocation, Board as BoardType, HyperscaleLaye
 import { STACKING_OFFSET_FACTOR, DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
 import { logger } from './logger';
 import { allocateZIndexWithDefrag } from './zIndexAllocator';
-import { CELL_BORDER_SCALE } from '../components/SvgTokenShape';
+import { applyCellEdgeMagnetism, type CellEdgeSnapCell } from './cellEdgeMagnetism';
 import {
   calculateGridDimensions,
   calculateGridCellCenter,
@@ -484,37 +484,12 @@ export function dropObjectsToPool(
         }
 
         // 2) Cell edge magnetism: snap this cell's edges flush to other cells' edges in this
-        // pool zone and to the pool zone edges. When snapping to a cell, also align the center
-        // on the free axis if the centers are within 10 VU of each other.
-        // Skipped when the cell snapped to a board grid cell - grid snapping wins
+        // pool zone and to the pool zone edges. Hex cells snap side-to-side instead:
+        // parallel sides attract and settle flush along the shared apothem (the line from
+        // the center that bisects a side), aligning centers for a proper hex tiling
+        // position. Skipped when the cell snapped to a board grid cell - grid snapping wins
         if (!snappedToGrid && cell.edgeMagnetism !== false) {
-          // Fixed 10 VU tolerance in world units (independent of zoom)
-          const edgeSnapThreshold = 10;
-          const centerAlignThreshold = 10; // VU - align centers if they coincide within this
-          // The cell border is centered on the object edge, so half of it paints OUTSIDE the
-          // bounds. Snap targets are offset by border thickness so neighbouring strokes touch
-          // instead of overlapping. borderWidth is stored in screen px (SvgTokenShape viewBox
-          // units) - convert to world units (VU)
-          const selfBorderVU = (cell.borderWidth ?? 2) * CELL_BORDER_SCALE / pixelsPerVU;
-
-          interface PoolCellSnapCandidate {
-            value: number;
-            dist: number;
-            cellId?: string; // undefined = pool zone edge
-          }
-
-          const xCandidates: PoolCellSnapCandidate[] = [
-            // Pool zone edges - outer stroke edge aligns with the zone edge
-            { value: poolZone.offsetX + selfBorderVU / 2, dist: Math.abs(finalPosX - (poolZone.offsetX + selfBorderVU / 2)) },
-            { value: poolZone.offsetX + poolZone.width - cellW - selfBorderVU / 2, dist: Math.abs(finalPosX + cellW + selfBorderVU / 2 - (poolZone.offsetX + poolZone.width)) }
-          ];
-          const yCandidates: PoolCellSnapCandidate[] = [
-            { value: poolZone.offsetY + selfBorderVU / 2, dist: Math.abs(finalPosY - (poolZone.offsetY + selfBorderVU / 2)) },
-            { value: poolZone.offsetY + poolZone.height - cellH - selfBorderVU / 2, dist: Math.abs(finalPosY + cellH + selfBorderVU / 2 - (poolZone.offsetY + poolZone.height)) }
-          ];
-
-          // Bounds of nearby cells by id (for center alignment after the snap)
-          const cellBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
+          const nearbyCells: CellEdgeSnapCell[] = [];
 
           for (const otherId of Object.keys(currentObjects)) {
             if (otherId === obj.id) continue;
@@ -538,53 +513,39 @@ export function dropObjectsToPool(
               continue;
             }
 
-            cellBounds[otherId] = { x: otherObj.x, y: otherObj.y, width: w, height: h };
-
-            // Neighbouring strokes touch: gap between bounds = half my border + half their border
-            const borderGap = (selfBorderVU + ((otherObj as BattlefieldCell).borderWidth ?? 2) * CELL_BORDER_SCALE / pixelsPerVU) / 2;
-
-            // Edge-to-edge (flush): my left to their right, my right to their left
-            xCandidates.push({ value: otherObj.x + w + borderGap, dist: Math.abs(finalPosX - (otherObj.x + w + borderGap)), cellId: otherId });
-            xCandidates.push({ value: otherObj.x - cellW - borderGap, dist: Math.abs(finalPosX + cellW + borderGap - otherObj.x), cellId: otherId });
-            // My top to their bottom, my bottom to their top
-            yCandidates.push({ value: otherObj.y + h + borderGap, dist: Math.abs(finalPosY - (otherObj.y + h + borderGap)), cellId: otherId });
-            yCandidates.push({ value: otherObj.y - cellH - borderGap, dist: Math.abs(finalPosY + cellH + borderGap - otherObj.y), cellId: otherId });
+            nearbyCells.push({
+              id: otherObj.id,
+              x: otherObj.x,
+              y: otherObj.y,
+              width: w,
+              height: h,
+              shape: (otherObj as BattlefieldCell).shape,
+              rotation: (otherObj as BattlefieldCell).rotation,
+              borderWidth: (otherObj as BattlefieldCell).borderWidth,
+            });
           }
 
-          const pickBest = (candidates: PoolCellSnapCandidate[]): PoolCellSnapCandidate | null => {
-            let best: PoolCellSnapCandidate | null = null;
-            for (const c of candidates) {
-              if (c.dist <= edgeSnapThreshold && (!best || c.dist < best.dist)) best = c;
-            }
-            return best;
-          };
+          const snap = applyCellEdgeMagnetism({
+            cell: {
+              width: cellW,
+              height: cellH,
+              shape: cell.shape,
+              rotation: cell.rotation,
+              borderWidth: cell.borderWidth,
+            },
+            position: { x: finalPosX, y: finalPosY },
+            others: nearbyCells,
+            bounds: {
+              left: poolZone.offsetX,
+              top: poolZone.offsetY,
+              right: poolZone.offsetX + poolZone.width,
+              bottom: poolZone.offsetY + poolZone.height,
+            },
+            pixelsPerVU,
+          });
 
-          const bestX = pickBest(xCandidates);
-          const bestY = pickBest(yCandidates);
-
-          let snappedX = bestX ? bestX.value : finalPosX;
-          let snappedY = bestY ? bestY.value : finalPosY;
-
-          // Center alignment: when snapped to a cell on one axis and the other axis is free,
-          // align centers if they coincide within the threshold
-          if (bestX?.cellId && !bestY) {
-            const target = cellBounds[bestX.cellId];
-            const targetCenterY = target.y + target.height / 2;
-            const myCenterY = finalPosY + cellH / 2;
-            if (Math.abs(myCenterY - targetCenterY) <= centerAlignThreshold) {
-              snappedY = targetCenterY - cellH / 2;
-            }
-          } else if (bestY?.cellId && !bestX) {
-            const target = cellBounds[bestY.cellId];
-            const targetCenterX = target.x + target.width / 2;
-            const myCenterX = finalPosX + cellW / 2;
-            if (Math.abs(myCenterX - targetCenterX) <= centerAlignThreshold) {
-              snappedX = targetCenterX - cellW / 2;
-            }
-          }
-
-          finalPosX = snappedX;
-          finalPosY = snappedY;
+          finalPosX = snap.x;
+          finalPosY = snap.y;
         }
 
         // Track final position so batch-dropped cells can snap to each other sequentially
