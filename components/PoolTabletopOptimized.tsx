@@ -664,8 +664,11 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       const objHeight = obj.height || 100;
 
       // For cards, tokens, decks, dice, counters, effects, and other draggable objects: use partial overlap for smoother UX
+      // BATTLEFIELD_CELL uses partial overlap too - cells are dropped like boards (not constrained
+      // to pool bounds), so a center-point check could hide a partially-visible cell
       if (obj.type === ItemType.CARD || obj.type === ItemType.TOKEN || obj.type === ItemType.DECK ||
-          obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER || obj.type === ItemType.EFFECT_TEMPLATE) {
+          obj.type === ItemType.DICE_OBJECT || obj.type === ItemType.COUNTER || obj.type === ItemType.EFFECT_TEMPLATE ||
+          obj.type === ItemType.BATTLEFIELD_CELL) {
         const isInPool = objX < poolMaxX && objX + objWidth > poolMinX &&
                          objY < poolMaxY && objY + objHeight > poolMinY;
         if (!isInPool && (obj as any).inCursorSlot === false) {

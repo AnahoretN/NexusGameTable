@@ -1,6 +1,6 @@
 import React, { memo, useMemo, useCallback } from 'react';
-import { Card, Token, Counter, ItemType, TableObject, TokenShape, ContextAction, CardShape, CardOrientation } from '../types';
-import { SvgTokenShape } from './SvgTokenShape';
+import { Card, Token, Counter, ItemType, TableObject, TokenShape, ContextAction, CardShape, CardOrientation, BattlefieldCell } from '../types';
+import { SvgTokenShape, CELL_BORDER_SCALE } from './SvgTokenShape';
 import { SvgDeckShape } from './SvgDeckShape';
 import { isGeometricCardShape } from '../utils/shapeUtils';
 import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp, ArrowDown, Lock, Unlock, Shuffle, Search, Hand, Pin, Undo } from 'lucide-react';
@@ -483,6 +483,63 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
 
   if (obj.type === ItemType.EFFECT_TEMPLATE) {
     return <EffectTemplateRendererMemo {...props} obj={obj} />;
+  }
+
+  // Battlefield cells (e.g. standalone "Cell" objects) - rendered in pool panels/hand
+  // Visuals mirror Tabletop/CellRenderer, positioning follows the pool style contract
+  if (obj.type === ItemType.BATTLEFIELD_CELL) {
+    const cell = obj as BattlefieldCell;
+    const cellWidth = (cell.width || 100) * pixelsPerVU;
+    const cellHeight = (cell.height || 100) * pixelsPerVU;
+
+    return (
+      <div
+        data-object-id={obj.id}
+        className="group relative flex items-center justify-center select-none"
+        style={{
+          position: 'absolute',
+          width: cellWidth,
+          height: cellHeight,
+          transform: `rotate(${rotation}deg)`,
+          transformOrigin: 'center center',
+          zIndex,
+          cursor: isDragging ? 'grabbing' : 'grab',
+          overflow: 'visible',
+          ...style
+        }}
+        onMouseDown={handleObjectMouseDown}
+        onContextMenu={onContextMenu}
+      >
+        {/* Background image with opacity */}
+        {cell.content && (
+          <LazyBackgroundImage
+            src={cell.content}
+            className="absolute top-0 left-0 w-full h-full pointer-events-none"
+            placeholder="transparent"
+            style={{ opacity: ((cell as any).backgroundOpacity ?? 100) / 100 }}
+          />
+        )}
+
+        <SvgTokenShape
+          shape={cell.shape}
+          width={cellWidth}
+          height={cellHeight}
+          color={cell.color || '#496179'}
+          content=""
+          rotation={0}
+          borderWidth={(cell.borderWidth ?? 2) * CELL_BORDER_SCALE}
+          borderColor={cell.borderColor || '#212f3c'}
+          opacity={cell.opacity ?? 100}
+          borderOpacity={cell.borderOpacity ?? 100}
+          // The svg is drawn larger than the content box (border + padding around it).
+          // Without this, flex shrinks the svg to the container width and
+          // preserveAspectRatio letterboxes the content
+          style={{ flexShrink: 0 }}
+          // Draw the border centered on the cell edge, same as the main tabletop
+          borderCentered
+        />
+      </div>
+    );
   }
 
   return null;

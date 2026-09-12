@@ -44,7 +44,7 @@ import { ClickTooltip } from './ClickTooltip';
 
 // Import types
 import type { TabletopRenderContext } from './types';
-import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, Counter, DiceObject, EffectTemplate, TokenShape, CardOrientation } from '../../types';
+import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, Counter, DiceObject, EffectTemplate, TokenShape, CardOrientation, BattlefieldCell } from '../../types';
 
 /**
  * Tabletop Component (Refactored)
@@ -739,6 +739,52 @@ export const Tabletop: React.FC = () => {
           fromPoolPanel: fromPoolPanel, // Track if from pool panel for proper cursor visualization
           originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
           originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+        };
+      } else if (obj.type === ItemType.BATTLEFIELD_CELL) {
+        // For BATTLEFIELD_CELL, copy cell-specific fields - without this the cursor slot
+        // preview falls back to wrong colors, and drop-time magnetism settings are lost
+        const cell = (cardOverride || obj) as BattlefieldCell;
+        itemClone = {
+          id: cell.id,
+          type: ItemType.BATTLEFIELD_CELL,
+          name: cell.name,
+          width: cell.width,
+          height: cell.height,
+          shape: cell.shape,
+          color: cell.color,
+          content: cell.content,
+          borderWidth: cell.borderWidth,
+          borderColor: cell.borderColor,
+          opacity: cell.opacity,
+          borderOpacity: cell.borderOpacity,
+          backgroundOpacity: (cell as any).backgroundOpacity,
+          x: 0,
+          y: 0,
+          rotation: cell.rotation || 0,
+          zIndex: cell.zIndex ?? 0,
+          hyperscaleLayerId: cell.hyperscaleLayerId ?? 'boards',
+          locked: cell.locked,
+          source: source || 'hold',
+          originalZIndex: cell.zIndex ?? 0,
+          cursorSlotIndex: cursorSlotRef.current.length,
+          timestamp: Date.now(),
+          clickOffsetX: finalClickOffsetX,
+          clickOffsetY: finalClickOffsetY,
+          clickOffsetX_PX: finalClickOffsetX_PX,
+          clickOffsetY_PX: finalClickOffsetY_PX,
+          sourceZoom: sourceZoom,
+          fromPoolPanel: fromPoolPanel, // Track if from pool panel for proper cursor visualization
+          originalX: cardOverride?.x !== undefined && cardOverride.x > -90000 ? cardOverride.x : obj.x,
+          originalY: cardOverride?.y !== undefined && cardOverride.y > -90000 ? cardOverride.y : obj.y,
+          // Magnetism settings must survive the trip through the cursor slot -
+          // the drop handlers use them for board grid / edge snapping
+          snapToGrid: cell.snapToGrid,
+          snapCardsToGrid: cell.snapCardsToGrid,
+          gridSize: cell.gridSize,
+          edgeMagnetism: cell.edgeMagnetism,
+          snapToBoardGrid: cell.snapToBoardGrid,
+          magnetPointCount: cell.magnetPointCount,
+          magnetRotation: cell.magnetRotation,
         };
       } else {
         // For CARD and other types, use the original logic

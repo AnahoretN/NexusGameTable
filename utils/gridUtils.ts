@@ -1426,6 +1426,106 @@ export function removeObjectFromGridCellMagnet(
 }
 
 /**
+ * Find the grid cell under a world-space point (e.g. the center of a dropped object).
+ * Handles square, pointy-top hex (GridType.HEX) and flat-top hex (GridType.HEX_HORIZONTAL)
+ * grids. Hex grids check several row/column candidates and pick the cell whose center
+ * is closest to the point.
+ * Same logic as the cursor slot drop handler in TabletopEventHandlers.
+ * @param board - The board object
+ * @param centerX - X coordinate of the point (world/VU)
+ * @param centerY - Y coordinate of the point (world/VU)
+ * @returns Column and row of the grid cell under the point
+ */
+export function findGridCellUnderCenter(
+  board: Board,
+  centerX: number,
+  centerY: number
+): { col: number; row: number } {
+  const { gridW, gridH } = calculateGridDimensions(board);
+
+  if (board.gridType === GridType.HEX) {
+    // For pointy-top hex grids, odd rows are offset to the right by gridW/2
+    const hCap = Math.min(gridW / (2 * Math.sqrt(3)), gridH / 2);
+    const dy = gridH - hCap;
+    const offsetX = gridW / 2;
+
+    const relX = centerX - board.x;
+    const relY = centerY - board.y;
+
+    const initialRow = Math.round(relY / dy);
+
+    let bestCol = 0;
+    let bestRow = 0;
+    let minDistance = Infinity;
+
+    for (let dRow = -2; dRow <= 2; dRow++) {
+      const rowCandidate = initialRow + dRow;
+
+      // Use bitwise AND for reliable odd/even check (works with negative numbers)
+      const rowOffset = (rowCandidate & 1) ? offsetX : 0;
+      const colCandidate = Math.round((relX - rowOffset) / gridW);
+
+      const cellCenter = calculateGridCellCenter(board, colCandidate, rowCandidate);
+      const distance = Math.sqrt(
+        Math.pow(cellCenter.x - centerX, 2) +
+        Math.pow(cellCenter.y - centerY, 2)
+      );
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        bestCol = colCandidate;
+        bestRow = rowCandidate;
+      }
+    }
+
+    return { col: bestCol, row: bestRow };
+  }
+
+  if (board.gridType === GridType.HEX_HORIZONTAL) {
+    // For flat-top hex grids, odd columns are offset downward by gridH/2
+    const wCap = Math.min(gridH / (2 * Math.sqrt(3)), gridW / 2);
+    const dx = gridW - wCap;
+    const offsetY = gridH / 2;
+
+    const relX = centerX - board.x;
+    const relY = centerY - board.y;
+
+    const initialCol = Math.round(relX / dx);
+
+    let bestCol = 0;
+    let bestRow = 0;
+    let minDistance = Infinity;
+
+    for (let dCol = -2; dCol <= 2; dCol++) {
+      const colCandidate = initialCol + dCol;
+
+      const colOffset = (colCandidate & 1) ? offsetY : 0;
+      const rowCandidate = Math.round((relY - colOffset) / gridH);
+
+      const cellCenter = calculateGridCellCenter(board, colCandidate, rowCandidate);
+      const distance = Math.sqrt(
+        Math.pow(cellCenter.x - centerX, 2) +
+        Math.pow(cellCenter.y - centerY, 2)
+      );
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        bestCol = colCandidate;
+        bestRow = rowCandidate;
+      }
+    }
+
+    return { col: bestCol, row: bestRow };
+  }
+
+  // Square grid
+  return {
+    col: Math.floor((centerX - board.x) / gridW),
+    row: Math.floor((centerY - board.y) / gridH)
+  };
+}
+
+/**
  * Find which grid cell an object is snapped to
  * @param objectId - The object ID
  * @param boards - All boards
