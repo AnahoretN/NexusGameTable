@@ -26,6 +26,10 @@ assetEvents.subscribe(() => {
 // Padding around the border (in virtual units)
 const PADDING = 1;
 
+// Battlefield cells render their border this many times thicker than the stored
+// borderWidth. Shared by the cell renderers and the cell magnetism snap offset.
+export const CELL_BORDER_SCALE = 1.5;
+
 /**
  * Get the current global cache version
  */

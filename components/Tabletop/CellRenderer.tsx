@@ -4,7 +4,7 @@ import { BoardBackgroundImageMemo } from './BoardWithResize';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { TableObject, BattlefieldCell as BattlefieldCellType, ItemType, TokenShape } from '../../types';
 import { Tooltip } from '../Tooltip';
-import { getGlobalCacheVersion } from '../SvgTokenShape';
+import { getGlobalCacheVersion, CELL_BORDER_SCALE } from '../SvgTokenShape';
 
 interface CellRendererProps {
   obj: TableObject;
@@ -119,7 +119,7 @@ export const CellRenderer = memo(({
           color={cell.color || '#496179'}
           content=""
           rotation={0}
-          borderWidth={(cell.borderWidth ?? 2) * 1.5}
+          borderWidth={(cell.borderWidth ?? 2) * CELL_BORDER_SCALE}
           borderColor={cell.borderColor || '#212f3c'}
           opacity={cell.opacity ?? 100}
           borderOpacity={cell.borderOpacity ?? 100}
@@ -144,7 +144,10 @@ export const CellRenderer = memo(({
     prevProps.draggingId === nextProps.draggingId &&
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.isGM === nextProps.isGM &&
-    prevProps.activePlayerId === nextProps.activePlayerId
+    prevProps.activePlayerId === nextProps.activePlayerId &&
+    // Zoom changed - cells must re-render with new pixel positions and sizes
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.v2p === nextProps.v2p
   );
 });
 

@@ -25,6 +25,7 @@ import { getTokenWithAppliedState } from '../../hooks/useTokenWithState';
 import { findDrawingAtPosition } from '../../utils/drawingUtils';
 import { addToCursorSlot, removeFromCursorSlot, isInCursorSlot, getCursorSlotObjects } from '../../utils/cursorSlotTracker';
 import { executeClickAction, type ActionHandlerContext } from '../../utils/objectActionHandlers';
+import { CELL_BORDER_SCALE } from '../SvgTokenShape';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -1422,6 +1423,11 @@ const dropCursorSlot = (
         // Fixed 10 VU tolerance in world units (independent of zoom)
         const edgeSnapThreshold = 10;
         const centerAlignThreshold = 10; // VU - align centers if they coincide within this
+        // The cell border is centered on the object edge, so half of it paints OUTSIDE the
+        // bounds. Snap targets are offset by border thickness so neighbouring strokes touch
+        // instead of overlapping. borderWidth is stored in screen px (SvgTokenShape viewBox
+        // units) - convert to world units (VU)
+        const selfBorderVU = ((item as BattlefieldCell).borderWidth ?? 2) * CELL_BORDER_SCALE / props.pixelsPerVU;
 
         interface CellSnapCandidate {
           value: number;
@@ -1430,13 +1436,13 @@ const dropCursorSlot = (
         }
 
         const xCandidates: CellSnapCandidate[] = [
-          // Game field edges (playable area)
-          { value: 0, dist: Math.abs(finalX) },
-          { value: PLAYABLE_AREA_SIZE - objWidth, dist: Math.abs(finalX + objWidth - PLAYABLE_AREA_SIZE) }
+          // Game field edges (playable area) - outer stroke edge aligns with the field edge
+          { value: selfBorderVU / 2, dist: Math.abs(finalX - selfBorderVU / 2) },
+          { value: PLAYABLE_AREA_SIZE - objWidth - selfBorderVU / 2, dist: Math.abs(finalX + objWidth + selfBorderVU / 2 - PLAYABLE_AREA_SIZE) }
         ];
         const yCandidates: CellSnapCandidate[] = [
-          { value: 0, dist: Math.abs(finalY) },
-          { value: PLAYABLE_AREA_SIZE - objHeight, dist: Math.abs(finalY + objHeight - PLAYABLE_AREA_SIZE) }
+          { value: selfBorderVU / 2, dist: Math.abs(finalY - selfBorderVU / 2) },
+          { value: PLAYABLE_AREA_SIZE - objHeight - selfBorderVU / 2, dist: Math.abs(finalY + objHeight + selfBorderVU / 2 - PLAYABLE_AREA_SIZE) }
         ];
 
         // Bounds of nearby cells by id (for center alignment after the snap)
@@ -1455,12 +1461,15 @@ const dropCursorSlot = (
           const h = otherObj.height ?? 100;
           cellBounds[cellId] = { x: otherObj.x, y: otherObj.y, width: w, height: h };
 
+          // Neighbouring strokes touch: gap between bounds = half my border + half their border
+          const borderGap = (selfBorderVU + ((otherObj as BattlefieldCell).borderWidth ?? 2) * CELL_BORDER_SCALE / props.pixelsPerVU) / 2;
+
           // Edge-to-edge (flush): my left to their right, my right to their left
-          xCandidates.push({ value: otherObj.x + w, dist: Math.abs(finalX - (otherObj.x + w)), cellId });
-          xCandidates.push({ value: otherObj.x - objWidth, dist: Math.abs(finalX + objWidth - otherObj.x), cellId });
+          xCandidates.push({ value: otherObj.x + w + borderGap, dist: Math.abs(finalX - (otherObj.x + w + borderGap)), cellId });
+          xCandidates.push({ value: otherObj.x - objWidth - borderGap, dist: Math.abs(finalX + objWidth + borderGap - otherObj.x), cellId });
           // My top to their bottom, my bottom to their top
-          yCandidates.push({ value: otherObj.y + h, dist: Math.abs(finalY - (otherObj.y + h)), cellId });
-          yCandidates.push({ value: otherObj.y - objHeight, dist: Math.abs(finalY + objHeight - otherObj.y), cellId });
+          yCandidates.push({ value: otherObj.y + h + borderGap, dist: Math.abs(finalY - (otherObj.y + h + borderGap)), cellId });
+          yCandidates.push({ value: otherObj.y - objHeight - borderGap, dist: Math.abs(finalY + objHeight + borderGap - otherObj.y), cellId });
         }
 
         const pickBest = (candidates: CellSnapCandidate[]): CellSnapCandidate | null => {

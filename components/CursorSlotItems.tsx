@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ItemType, Card as CardType, Token as TokenType, CardOrientation, CardShape, Deck as DeckType, Randomizer, Counter, DiceObject, TokenShape, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate, TableObject } from '../types';
 import { Card } from './Card';
-import { SvgTokenShape } from './SvgTokenShape';
+import { SvgTokenShape, CELL_BORDER_SCALE } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { BoardBackgroundImageMemo } from './Tabletop/BoardWithResize';
 import { Layers, Pencil } from 'lucide-react';
@@ -517,7 +517,7 @@ const CursorSlotBattlefieldCell: React.FC<CursorSlotItemProps & { item: Battlefi
         color={item.color || '#2c3e50'}
         content="" // No text content for battlefield cells
         rotation={0}
-        borderWidth={(item.borderWidth ?? 2) * 1.5}
+        borderWidth={(item.borderWidth ?? 2) * CELL_BORDER_SCALE}
         borderColor={item.borderColor || '#3498db'}
         opacity={item.opacity ?? 100}
         borderOpacity={item.borderOpacity ?? 100}
