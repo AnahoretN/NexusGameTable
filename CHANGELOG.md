@@ -2,6 +2,59 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.2.7] - 2026-09-13
+
+### ✨ New Features
+
+#### 🧲 Battlefield Cell Magnetism
+**Cells snap to each other, to board grids and to zone edges**
+
+- **Edge snapping**: cells snap flush to neighbouring cells and to the game field / pool zone edges (toggle per cell)
+- **Board grid snapping**: optional snap-to-board-grid for square and hex grids
+- **Hex support**: hex cells snap side-to-side along apothem axes - parallel sides attract, centers align (proper hex tiling), rotation-aware; only same-orientation hexes attract
+- **Pool panels**: the same magnetism works when dropping cells into pool panels
+- **Settings toggles**: "Edge magnetism" and "Snap to board grid" in object settings (locales: ru, be, sr, uk)
+- **Border modes**: new `borderCentered` / `borderInside` border rendering modes for `SvgTokenShape`
+
+**Use cases:**
+- Building battlemaps from cell tiles (square and hex)
+- Snapping cells to board grids like tokens
+- Tidying up cell layouts in pool panels
+
+---
+
+#### 🛠️ Top-Left Tool Panel
+**Configurable tool button panel in the top-left corner**
+
+- **Per-tool toggles**: show/hide cursor, marker, eraser, ruler and zoom buttons individually (replaces the vertical zoom slider)
+- Settings available in the main menu for each tool (locales: ru, be, sr, uk)
+
+---
+
+#### 🎲 Dice Panel Improvements
+- **Explosive dice in the panel**: rolling a max value triggers an automatic reroll with explosion animation and summed result
+- **Explosive badge** (💥) and vu-based sizing for consistent scaling
+- **Table layout**: purple theme, compact spacing, scrollable roll field when dice overflow
+- **Triangle dice**: proper aspect ratio (1:0.87), rounded corners, text aligned to the visual center
+
+---
+
+### 🐛 Bug Fixes
+
+- **Zoom-independent cell snapping**: cells snapped flush keep their positions at any zoom - the drop result no longer depends on zoom at drop time (centered strokes coincide on the shared edge)
+- **Cross-browser slider styling**: explicit track height and thumb size so sliders look the same in Firefox
+- **Local path images**: legacy saves with `file:///` / `C:\...` sources no longer trigger Firefox security errors; File Picker rejects local paths with a hint
+
+---
+
+### 🔧 Technical Improvements
+
+- **`utils/cellEdgeMagnetism.ts`**: shared magnetism util used by both tabletop and pool drops, with `CELL_BORDER_SCALE` constant shared by renderers
+- **LocalSettingsProvider**: new context for local (non-synced) settings
+- **CellRenderer** re-renders on zoom change so cells keep crisp borders while zooming
+
+---
+
 ## [0.2.6] - 2026-07-15
 
 ### ✨ New Features
