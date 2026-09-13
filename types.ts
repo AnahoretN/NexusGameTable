@@ -227,6 +227,9 @@ export interface GameItem {
   locked: boolean;
   isOnTable: boolean; // Controls visibility on the battlefield vs just in the list
   inCursorSlot?: boolean; // Object is currently in the cursor slot (hidden from tabletop, locked from editing)
+  cursorSlotOwnerId?: string; // Player who holds the object in their cursor slot (P2P sync; reserved, not yet populated)
+  originalX?: number; // Position the object was picked up from (cursor slot restore)
+  originalY?: number;
   draggingPlayerId?: string | null; // ID of player currently dragging this object (if any, object appears as shadow/locked to others)
   isDragging?: boolean; // Whether this object is currently being dragged (for P2P sync)
   dragOwnerId?: string | null; // ID of player who owns the current drag operation (prevents others from dragging)
@@ -786,6 +789,18 @@ export interface UIObject {
   // Owner ID - if set, this UI object is only visible to the player with this ID
   // Used for settings windows that should be local to the player who opened them
   ownerId?: string;
+  // Shared with GameItem so TableObject-union consumers can access these uniformly
+  // (panels/windows can sit in the cursor slot, take part in drag sync, etc.)
+  isOnTable?: boolean;
+  inCursorSlot?: boolean;
+  cursorSlotOwnerId?: string;
+  draggingPlayerId?: string | null;
+  isDragging?: boolean;
+  dragOwnerId?: string | null;
+  originalX?: number;
+  originalY?: number;
+  broadcastX?: number;
+  broadcastY?: number;
 }
 
 // Panel object - persistent UI panels on the game board

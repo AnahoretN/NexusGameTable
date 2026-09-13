@@ -14,3 +14,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// `process.env` is statically replaced by `vite.config.ts` (`define: { 'process.env': {} }`),
+// so referencing it in browser code is safe at build time. Declared here to keep
+// feature flags and dev-only guards type-checked without pulling in @types/node.
+declare const process: { env: Record<string, string | undefined> };

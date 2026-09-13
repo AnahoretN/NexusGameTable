@@ -1,5 +1,6 @@
-import { GameState, Action } from '../gameState';
-import { TableObject, ItemType } from '../../types';
+import { GameState } from '../gameState';
+import { Action } from '../gameActions';
+import { TableObject } from '../../types';
 import { generateUUID } from '../../utils/uuid';
 
 /**
@@ -28,8 +29,11 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
     }
 
     case 'UPDATE_OBJECT': {
-      const { objectId, updates } = action.payload;
+      const payload = action.payload;
+      const objectId = payload.id;
       if (!state.objects[objectId]) return state;
+      // Support both payload formats: { id, updates } and flat { id, ...changes }
+      const updates = 'updates' in payload ? payload.updates : payload;
 
       return {
         ...state,
@@ -38,14 +42,13 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
           [objectId]: {
             ...state.objects[objectId],
             ...updates
-          }
+          } as TableObject
         }
       };
     }
 
     case 'DELETE_OBJECT': {
-      const objectId = action.payload;
-      const { [objectId]: deleted, ...remainingObjects } = state.objects;
+      const { [action.payload.id]: _deleted, ...remainingObjects } = state.objects;
       return {
         ...state,
         objects: remainingObjects
@@ -53,7 +56,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
     }
 
     case 'CLONE_OBJECT': {
-      const sourceObject = state.objects[action.payload.objectId];
+      const sourceObject = state.objects[action.payload.id];
       if (!sourceObject) return state;
 
       const clonedObject: TableObject = {
@@ -73,7 +76,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
     }
 
     case 'MOVE_OBJECT': {
-      const { objectId, x, y } = action.payload;
+      const { id: objectId, x, y } = action.payload;
       if (!state.objects[objectId]) return state;
 
       return {
@@ -90,7 +93,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
     }
 
     case 'TOGGLE_LOCK': {
-      const objectId = action.payload;
+      const objectId = action.payload.id;
       if (!state.objects[objectId]) return state;
 
       return {
@@ -106,7 +109,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
     }
 
     case 'TOGGLE_ON_TABLE': {
-      const objectId = action.payload;
+      const objectId = action.payload.id;
       if (!state.objects[objectId]) return state;
 
       return {
@@ -122,7 +125,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
     }
 
     case 'ROTATE_OBJECT': {
-      const { objectId, rotation } = action.payload;
+      const { id: objectId, angle } = action.payload;
       if (!state.objects[objectId]) return state;
 
       return {
@@ -131,14 +134,14 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
           ...state.objects,
           [objectId]: {
             ...state.objects[objectId],
-            rotation
+            rotation: angle ?? state.objects[objectId].rotation
           }
         }
       };
     }
 
     case 'SET_ROTATION': {
-      const { objectId, rotation } = action.payload;
+      const { id: objectId, rotation } = action.payload;
       if (!state.objects[objectId]) return state;
 
       return {
@@ -149,7 +152,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
             ...state.objects[objectId],
             rotation,
             baseRotation: rotation
-          }
+          } as TableObject
         }
       };
     }
@@ -159,7 +162,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
     case 'BRING_TO_FRONT':
     case 'SEND_TO_BACK': {
       // Layer operations - simplified version
-      const objectId = action.payload.objectId;
+      const objectId = action.payload.id;
       if (!state.objects[objectId]) return state;
 
       // In a full implementation, this would recalculate z-indices
@@ -180,7 +183,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
           [objectId]: {
             ...state.objects[objectId],
             pivot
-          }
+          } as TableObject
         }
       };
     }
@@ -195,8 +198,8 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
           ...state.objects,
           [objectId]: {
             ...state.objects[objectId],
-            isEditingPivot: !state.objects[objectId].isEditingPivot
-          }
+            isEditingPivot: !(state.objects[objectId] as { isEditingPivot?: boolean }).isEditingPivot
+          } as TableObject
         }
       };
     }
@@ -212,7 +215,7 @@ export const objectSlice = (state: GameState, action: Action): GameState => {
           [objectId]: {
             ...state.objects[objectId],
             hitboxPolygon
-          }
+          } as TableObject
         }
       };
     }

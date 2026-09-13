@@ -25,6 +25,11 @@
 
 export * from './contextTypes';
 
+// Static imports used by ContextProviders below (also re-exported in sections that follow)
+import { PlayerProvider } from './PlayerContext';
+import { ViewTransformProvider } from './ViewTransformContext';
+import { UIProvider } from './UIContext';
+
 // ============================================================================
 // PLAYER CONTEXT
 // ============================================================================
@@ -109,11 +114,8 @@ export {
  * ```
  */
 export function ContextProviders({ children }: { children: React.ReactNode }) {
-  // Import here to avoid circular dependencies
-  const { PlayerProvider } = require('./PlayerContext');
-  const { ViewTransformProvider } = require('./ViewTransformContext');
-  const { UIProvider } = require('./UIContext');
-
+  // Providers are already statically imported above via the re-exports,
+  // so referencing them directly introduces no new dependency edges.
   return (
     <UIProvider>
       <ViewTransformProvider>

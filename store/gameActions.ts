@@ -18,7 +18,7 @@ type ActionWithoutPayload<T extends string> = {
 
 export type Action =
   | BaseAction<'ADD_OBJECT', TableObject>
-  | BaseAction<'UPDATE_OBJECT', (Partial<TableObject> & { id: string }) | { id: string; updates: Partial<TableObject> }>
+  | BaseAction<'UPDATE_OBJECT', (Partial<TableObject> & { id: string; skipNetworkSync?: boolean }) | { id: string; updates: Partial<TableObject> }>
   | BaseAction<'MOVE_OBJECT', { id: string; x: number; y: number }>
   | BaseAction<'MOVE_OBJECT_COMMIT', { id: string; x: number; y: number; previousX: number; previousY: number }> // Sent on drag end
   | BaseAction<'DELETE_OBJECT', { id: string }>
@@ -37,6 +37,7 @@ export type Action =
   | BaseAction<'TOGGLE_ON_TABLE', { id: string }>
   | BaseAction<'ROTATE_OBJECT', { id: string; angle?: number }>
   | BaseAction<'SET_ROTATION', { id: string; rotation: number }>
+  | BaseAction<'SET_DRAGGING', { id: string; isDragging: boolean; dragOwnerId: string | null }>
   | BaseAction<'CLONE_OBJECT', { id: string }>
   | BaseAction<'RETURN_TO_DECK', { cardId: string }>
   | BaseAction<'ADD_CARD_TO_TOP_OF_DECK', { cardId: string; deckId: string }>
@@ -115,7 +116,7 @@ export type Action =
   | BaseAction<'MOVE_OBJECT_TO_HYPERSCALE_LAYER', { objectId: string; layerId: string }>
   // Effect Template actions
   | BaseAction<'SET_PIVOT_POINT', { objectId: string; pivot: { x: number; y: number } }>
-  | ActionWithoutPayload<'TOGGLE_PIVOT_EDITING'>
+  | BaseAction<'TOGGLE_PIVOT_EDITING', string>
   | BaseAction<'SET_HITBOX_POLYGON', { objectId: string; hitboxPolygon: Array<{ x: number; y: number }> }>
   // Player panel settings actions
   | BaseAction<'UPDATE_PLAYER_PANEL_SETTINGS', { playerId: string; panelId: string; settings: any }>

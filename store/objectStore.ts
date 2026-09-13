@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from 'react';
 import { TableObject, ItemType, Card, Token, Deck } from '../types';
 
@@ -56,7 +56,7 @@ export const useObjectStore = create<ObjectStore>((set, get) => ({
       return {
         objects: {
           ...state.objects,
-          [id]: { ...existingObject, ...updates },
+          [id]: { ...existingObject, ...updates } as TableObject,
         },
       };
     }),
@@ -161,8 +161,7 @@ export const useObjectStore = create<ObjectStore>((set, get) => ({
  */
 export function useObjectById(id: string) {
   return useObjectStore(state =>
-    state.objects[id],
-    (a, b) => a === b // Simple equality check
+    state.objects[id]
   );
 }
 
@@ -172,8 +171,7 @@ export function useObjectById(id: string) {
  */
 export function useObjectsByType<T extends TableObject>(type: ItemType): T[] {
   return useObjectStore(
-    state => Object.values(state.objects).filter(obj => obj.type === type) as T[],
-    shallow
+    useShallow(state => Object.values(state.objects).filter(obj => obj.type === type) as T[])
   );
 }
 
@@ -183,8 +181,7 @@ export function useObjectsByType<T extends TableObject>(type: ItemType): T[] {
  */
 export function useVisibleObjects(): TableObject[] {
   return useObjectStore(
-    state => Object.values(state.objects).filter(obj => obj.isOnTable !== false),
-    shallow
+    useShallow(state => Object.values(state.objects).filter(obj => obj.isOnTable !== false))
   );
 }
 
@@ -194,8 +191,7 @@ export function useVisibleObjects(): TableObject[] {
  */
 export function useObjectsOnTable(): TableObject[] {
   return useObjectStore(
-    state => Object.values(state.objects).filter(obj => obj.isOnTable && !obj.inCursorSlot),
-    shallow
+    useShallow(state => Object.values(state.objects).filter(obj => obj.isOnTable && !obj.inCursorSlot))
   );
 }
 
@@ -205,8 +201,7 @@ export function useObjectsOnTable(): TableObject[] {
  */
 export function useObjectsByLayer(layerId: string): TableObject[] {
   return useObjectStore(
-    state => Object.values(state.objects).filter(obj => obj.hyperscaleLayerId === layerId),
-    shallow
+    useShallow(state => Object.values(state.objects).filter(obj => obj.hyperscaleLayerId === layerId))
   );
 }
 
@@ -216,8 +211,7 @@ export function useObjectsByLayer(layerId: string): TableObject[] {
  */
 export function useCards(): Card[] {
   return useObjectStore(
-    state => Object.values(state.objects).filter(obj => obj.type === ItemType.CARD) as Card[],
-    shallow
+    useShallow(state => Object.values(state.objects).filter(obj => obj.type === ItemType.CARD) as Card[])
   );
 }
 
@@ -227,8 +221,7 @@ export function useCards(): Card[] {
  */
 export function useTokens(): Token[] {
   return useObjectStore(
-    state => Object.values(state.objects).filter(obj => obj.type === ItemType.TOKEN) as Token[],
-    shallow
+    useShallow(state => Object.values(state.objects).filter(obj => obj.type === ItemType.TOKEN) as Token[])
   );
 }
 
@@ -238,8 +231,7 @@ export function useTokens(): Token[] {
  */
 export function useDecks(): Deck[] {
   return useObjectStore(
-    state => Object.values(state.objects).filter(obj => obj.type === ItemType.DECK) as Deck[],
-    shallow
+    useShallow(state => Object.values(state.objects).filter(obj => obj.type === ItemType.DECK) as Deck[])
   );
 }
 
@@ -248,13 +240,12 @@ export function useDecks(): Deck[] {
  */
 export function useObjectsByOwner(ownerId: string): TableObject[] {
   return useObjectStore(
-    state => Object.values(state.objects).filter(obj => {
+    useShallow(state => Object.values(state.objects).filter(obj => {
       if ('ownerId' in obj) {
         return (obj as any).ownerId === ownerId;
       }
       return false;
-    }),
-    shallow
+    }))
   );
 }
 
@@ -263,7 +254,7 @@ export function useObjectsByOwner(ownerId: string): TableObject[] {
  */
 export function useObjectSearch(query: string): TableObject[] {
   return useObjectStore(
-    state => {
+    useShallow(state => {
       if (!query) return [];
 
       const lowerQuery = query.toLowerCase();
@@ -289,8 +280,7 @@ export function useObjectSearch(query: string): TableObject[] {
 
         return false;
       });
-    },
-    shallow
+    })
   );
 }
 
@@ -299,7 +289,7 @@ export function useObjectSearch(query: string): TableObject[] {
  */
 export function useObjectStats() {
   return useObjectStore(
-    state => {
+    useShallow(state => {
       const objects = Object.values(state.objects);
 
       return {
@@ -311,8 +301,7 @@ export function useObjectStats() {
         boards: objects.filter(obj => obj.type === ItemType.BOARD || obj.type === ItemType.NEXUS_BOARD).length,
         visible: objects.filter(obj => obj.isOnTable !== false).length,
       };
-    },
-    shallow
+    })
   );
 }
 

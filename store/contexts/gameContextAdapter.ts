@@ -9,7 +9,8 @@
 
 import { useMemo } from 'react';
 import { usePlayers, useViewTransform, useUI } from './index';
-import { Player, PlayerPermissions, ViewTransform, AppLanguage, HyperscaleLayer, PlayerPanelSettings } from '../types';
+import { Player, PlayerPermissions, AppLanguage, HyperscaleLayer } from '../../types';
+import { ViewTransform, PlayerPanelSettings } from '../gameState';
 
 /**
  * Adapted state interface that mirrors the legacy GameContext state

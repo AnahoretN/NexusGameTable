@@ -1,5 +1,5 @@
-import { GameState, Action, Player } from '../gameState';
-import { GameItem } from '../../types';
+import { GameState } from '../gameState';
+import { Action } from '../gameActions';
 
 /**
  * Player Management Slice
@@ -16,7 +16,7 @@ export const playerSlice = (state: GameState, action: Action): GameState => {
     }
 
     case 'REMOVE_PLAYER': {
-      const playerId = action.payload;
+      const playerId = action.payload.id;
       return {
         ...state,
         players: state.players.filter(p => p.id !== playerId)

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingLayer, Drawing, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
+import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingLayer, Drawing, Stroke, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
 import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, SCROLLBAR_WIDTH_THICK } from '../constants';
 import { PlayerNameModal } from '../components/PlayerNameModal';
 import { P2PLoadingModal } from '../components/P2PLoadingModal';
@@ -9,7 +9,6 @@ import { LocalFileRestoreDialog } from '../components/LocalFileRestoreDialog';
 import { generateUUID } from '../utils/uuid';
 import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo, initializeImageCache } from '../utils/gameStorage';
 import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from '../utils/localSettings';
-import { viewportToWorld, viewportToUIWorld } from '../utils/coordinateUtils';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState, PlayerPanelSettings } from './gameState';
 import { Action } from './gameActions';
@@ -71,6 +70,18 @@ const GameContext = createContext<{
   roomId?: string | null; // For Trystero
 } | null>(null);
 
+// UPDATE_OBJECT accepts both payload shapes: flat { id, ...changes } and wrapped { id, updates: {...} }.
+// Returns the wrapped `updates` object, or undefined for flat payloads.
+function getWrappedUpdates(action: Extract<Action, { type: 'UPDATE_OBJECT' }>): Partial<TableObject> | undefined {
+  return 'updates' in action.payload ? action.payload.updates : undefined;
+}
+
+// Returns the flat payload minus the id/updates bookkeeping fields.
+function getFlatUpdates(action: Extract<Action, { type: 'UPDATE_OBJECT' }>): Partial<TableObject> {
+  const { id: _id, updates: _updates, ...rest } = action.payload as typeof action.payload & { updates?: Partial<TableObject> };
+  return rest as Partial<TableObject>;
+}
+
 const gameReducer = (state: GameState, action: Action): GameState => {
   // 🔥 OPTIMIZED: Track changes for differential sync
   // Exclude SYNC_STATE to avoid loops
@@ -78,11 +89,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
   // Also exclude objects at -999999 position (cursor slot hidden position)
   // Exclude objects on individual position/objects layers (local-only changes)
   // Exclude UPDATE_PLAYER_OBJECT_POSITION (host-only action, should not broadcast)
+  const wrappedUpdates = action.type === 'UPDATE_OBJECT' ? getWrappedUpdates(action) : undefined;
   let shouldExcludeFromSync =
     action.type === 'SYNC_STATE' ||
     action.type === 'UPDATE_PLAYER_OBJECT_POSITION' || // Host-only: stores individual position, don't broadcast
-    (action.type === 'UPDATE_OBJECT' && action.payload?.updates?.inCursorSlot === true) ||
-    (action.type === 'UPDATE_OBJECT' && (action.payload?.updates?.x < -900000 || action.payload?.updates?.y < -900000));
+    (wrappedUpdates?.inCursorSlot === true) ||
+    (wrappedUpdates !== undefined && (wrappedUpdates.x !== undefined && wrappedUpdates.x < -900000 || wrappedUpdates.y !== undefined && wrappedUpdates.y < -900000));
 
   // SIMPLIFIED: For individualObjects layers, exclude local-only properties from P2P sync
   if (action.type === 'UPDATE_OBJECT' && action.payload?.id) {
@@ -90,7 +102,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     if (obj) {
       const layer = state.hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
       if (layer?.individualObjects) {
-        const updates = action.payload.updates || action.payload;
+        const updates = getWrappedUpdates(action) || action.payload;
         const updateKeys = Object.keys(updates).filter(k => k !== 'id');
 
         // Local-only properties (NOT synced via P2P)
@@ -199,17 +211,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             const objects = action.payload.objects;
             for (const [id, obj] of Object.entries(objects)) {
               if (obj?.type === ItemType.BOARD && obj?.content && obj.content.startsWith('data:image/')) {
-                // Hash the base64 data and store in asset database
-                const hashResult = hashDataURL(obj.content);
-                const hash = hashResult.hash;
-
-                // Store in asset database asynchronously (don't await)
+                // Hash the base64 data and store it in the asset database (CAS) for later
+                // restore. Hashing is async and the reducer must return synchronously,
+                // so the payload content itself is left untouched here.
                 storeAssetFromDataURL(obj.content, 'p2p-sync').catch(err => {
                   logger.error(`[SYNC_STATE] Failed to store board image:`, err);
                 });
-
-                // Replace content with hash
-                obj.content = hash;
               }
             }
 
@@ -327,7 +334,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Remove viewTransform and internal fields from payload to prevent overwriting local settings
         // But MERGE playerPanelSettings from host (guest receives all players' settings)
-        const { viewTransform, _lastPanelSettingsUpdate, _pendingPanelSettings, _isPartial, _syncTimestamp, ...payloadWithoutViewTransform } = action.payload;
+        const { viewTransform, _lastPanelSettingsUpdate, _pendingPanelSettings, _isPartial, _syncTimestamp, ...restPayload } = action.payload;
+        const payloadWithoutViewTransform: Record<string, unknown> = { ...restPayload };
 
         // Filter out undefined values to prevent overwriting valid state with undefined
         Object.keys(payloadWithoutViewTransform).forEach(key => {
@@ -396,7 +404,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         return {
             ...state, // Keep existing state as base
-            ...payloadWithoutViewTransform, // Merge with payload (excluding viewTransform and internal fields)
+            ...(payloadWithoutViewTransform as Partial<GameState>), // Merge with payload (excluding viewTransform and internal fields)
             players: finalPlayers, // 🔥 FIX: Use players array with local player preserved
             objects: updatedObjects, // Use objects with applied panel settings and individual positions
             activePlayerId: currentActiveId,
@@ -948,24 +956,30 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       return result;
     }
     case 'UPDATE_OBJECT': {
-      let obj = state.objects[action.payload.id];
+      const payload = action.payload;
+      const wrapped = getWrappedUpdates(action);
+      const flatUpdates = getFlatUpdates(action);
+      // Local copy of the wrapped updates; filtering below reassigns this
+      // instead of mutating the (possibly flat) action payload.
+      let effectiveUpdates = wrapped;
+
+      let obj = state.objects[payload.id];
       if (!obj) {
         // 🔥 FIX: Create object if it doesn't exist (e.g., pool panel objects being dropped)
         // This allows pool panel objects to be spawned into the game state
-        const updates = action.payload.updates || action.payload;
-        const { id, ...rest } = action.payload;
+        const updates: Partial<TableObject> = wrapped || payload;
 
         // Only create if we have meaningful data (at least type and name)
         if (updates.type && updates.name) {
           logger.info('[UPDATE_OBJECT] Creating new object', {
-            id: action.payload.id,
+            id: payload.id,
             type: updates.type,
             name: updates.name
           });
 
           // Create the object with provided properties
           const newObj: TableObject = {
-            id: action.payload.id,
+            id: payload.id,
             ...updates,
             // Ensure required properties have defaults
             width: updates.width ?? 50,
@@ -978,17 +992,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...state,
             objects: {
               ...state.objects,
-              [action.payload.id]: newObj
+              [payload.id]: newObj
             },
-            lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
+            lastModifiedBy: (payload as any).playerId || state.activePlayerId,
           };
         }
 
         logger.warn('[UPDATE_OBJECT] Object not found and insufficient data to create', {
-          id: action.payload.id,
-          payloadKeys: Object.keys(action.payload),
-          hasUpdates: !!action.payload.updates,
-          updatesKeys: action.payload.updates ? Object.keys(action.payload.updates) : [],
+          id: payload.id,
+          payloadKeys: Object.keys(payload),
+          hasUpdates: !!wrapped,
+          updatesKeys: wrapped ? Object.keys(wrapped) : [],
           allObjectIds: Object.keys(state.objects).slice(0, 10)
         });
         return state;
@@ -996,8 +1010,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // 🔥 DEBUG: Log characterData updates for panels
       if (obj.type === ItemType.PANEL) {
-        const updates = action.payload.updates || action.payload;
-        const hasCharacterData = updates.characterData !== undefined;
+        const updates = wrapped || payload;
+        const hasCharacterData = (updates as Partial<PanelObject>).characterData !== undefined;
         if (hasCharacterData) {
           // UPDATE_OBJECT: Panel characterData update
         }
@@ -1012,9 +1026,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Local properties: position (x, y, rotation, zIndex), visibility, size, minimized state
       // Other properties (characterData, content, etc.) are synced normally
       if (isIndividualObjectsLayer && !action._localOnly) {
-        const updates = action.payload.updates || {};
-        const { id, updates: _updates, ...restOfPayload } = action.payload;
-        const mergedUpdates = Object.keys(updates).length > 0 ? updates : restOfPayload;
+        const updates = wrapped || {};
+        const mergedUpdates = Object.keys(updates).length > 0 ? updates : flatUpdates;
 
         // Local-only properties (NOT synced)
         const localOnlyKeys = [
@@ -1036,7 +1049,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...state,
             objects: {
               ...state.objects,
-              [obj.id]: { ...obj, ...mergedUpdates }
+              [obj.id]: { ...obj, ...mergedUpdates } as TableObject
             }
           };
         }
@@ -1055,13 +1068,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...state,
             objects: {
               ...state.objects,
-              [obj.id]: { ...obj, ...mergedUpdates }
+              [obj.id]: { ...obj, ...mergedUpdates } as TableObject
             }
           };
         }
 
         // Continue with non-local updates
-        action.payload.updates = filteredUpdates;
+        effectiveUpdates = filteredUpdates;
       }
 
       // For panels and windows, filter out local-only properties from network sync
@@ -1082,7 +1095,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         ];
 
         // Check if updates contain only local-only properties
-        const updates = action.payload.updates || {};
+        const updates = wrapped || {};
         const updateKeys = Object.keys(updates);
         const hasOnlyLocalProps = updateKeys.every(key => localOnlyProps.includes(key));
 
@@ -1092,7 +1105,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...state,
             objects: {
               ...state.objects,
-              [obj.id]: { ...obj, ...updates }
+              [obj.id]: { ...obj, ...updates } as TableObject
             }
           };
         }
@@ -1113,7 +1126,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // - Non-local updates continue to be processed (and will be synced)
         if (Object.keys(localUpdates).length > 0) {
           // Update the base object with local changes
-          obj = { ...obj, ...localUpdates };
+          obj = { ...obj, ...localUpdates } as TableObject;
 
           // If there are no non-local updates, we're done
           if (Object.keys(filteredUpdates).length === 0) {
@@ -1127,21 +1140,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
 
           // Otherwise, continue with non-local updates
-          action.payload.updates = filteredUpdates;
+          effectiveUpdates = filteredUpdates;
         } else if (Object.keys(filteredUpdates).length === 0) {
           // All properties were filtered out and there were no local updates
           return state;
         } else {
           // Use filtered updates instead of original
-          action.payload.updates = filteredUpdates;
+          effectiveUpdates = filteredUpdates;
         }
       }
 
       // Support both formats: { id, updates: {...} } and { id, ...updates }
       // For backward compatibility with existing code
-      const updates = action.payload.updates || {};
-      const { id, updates: _updates, ...restOfPayload } = action.payload;
-      const mergedUpdates = Object.keys(updates).length > 0 ? updates : restOfPayload;
+      const updates = effectiveUpdates || {};
+      const mergedUpdates = Object.keys(updates).length > 0 ? updates : flatUpdates;
+      // Accessor for fields that only exist on some TableObject variants
+      // (panel characterData, token counters/content, ...)
+      const merged = mergedUpdates as Partial<PanelObject> & Partial<Token>;
 
       const updatedObj = { ...obj, ...mergedUpdates } as TableObject;
 
@@ -1256,6 +1271,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                       id: cardId,
                       type: ItemType.CARD,
                       name: cardData.name,
+                      content: '',
                       tooltipText: cardData.description,
                       deckId: deck.id,
                       width: deck.cardWidth || deck.width || DEFAULT_DECK_WIDTH,
@@ -1324,6 +1340,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                               id: cardId,
                               type: ItemType.CARD,
                               name: `Card ${startIndex + i + 1}`,
+                              content: '',
                               deckId: deck.id,
                               width: deck.cardWidth || deck.width || DEFAULT_DECK_WIDTH,
                               height: deck.cardHeight || deck.height || DEFAULT_DECK_HEIGHT,
@@ -1357,7 +1374,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // 🔥 FIX: Handle Panel characterData updates - sync to tokens
       // When characterData changes on a panel, update counters on all linked tokens
-      if (updatedObj.type === ItemType.PANEL && mergedUpdates.characterData) {
+      if (updatedObj.type === ItemType.PANEL && merged.characterData) {
         const panel = updatedObj as PanelObject;
         const oldPanel = obj as PanelObject;
         const newCharacterData = panel.characterData;
@@ -1383,16 +1400,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   if (!oldSubTab || !newSubTab) continue;
 
                   for (const newBlock of newSubTab.blocks || []) {
-                    if (newBlock.type === 'SLIDER' && newBlock.data?.sliders) {
-                      const oldBlock = oldSubTab.blocks?.find((b: any) => b.id === newBlock.id);
-                      if (!oldBlock || !oldBlock.data?.sliders) {
+                    const blockData = newBlock.data;
+                    if (blockData && 'sliders' in blockData) {
+                      const oldData = oldSubTab.blocks?.find((b: any) => b.id === newBlock.id)?.data;
+                      if (!oldData || !('sliders' in oldData)) {
                         shouldSync = true;
                         break;
                       }
 
                       // Check if sliders changed
-                      const oldSliders = oldBlock.data.sliders;
-                      const newSliders = newBlock.data.sliders;
+                      const oldSliders = oldData.sliders;
+                      const newSliders = blockData.sliders;
 
                       for (const newSlider of newSliders) {
                         const oldSlider = oldSliders.find((s: any) => s.id === newSlider.id);
@@ -1437,7 +1455,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
           // Properties that should be synced across all cells (NOT including opacity)
           const syncableProps = ['locked', 'isPinnedToViewport', 'hyperscaleLayerId', 'zIndex'];
-          const updates = action.payload.updates || {};
+          const updates = wrapped || {};
           const hasSyncableChange = syncableProps.some(prop => updates[prop as keyof typeof updates] !== undefined);
 
           if (hasSyncableChange) {
@@ -1473,11 +1491,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
 
           // Handle width/height changes - resize all cells and update positions
-          if ((action.payload.width !== undefined || action.payload.height !== undefined) &&
-              (action.payload.width !== oldCell.width || action.payload.height !== oldCell.height)) {
+          if ((flatUpdates.width !== undefined || flatUpdates.height !== undefined) &&
+              (flatUpdates.width !== oldCell.width || flatUpdates.height !== oldCell.height)) {
 
-              const newWidth = action.payload.width ?? oldCell.width;
-              const newHeight = action.payload.height ?? oldCell.height;
+              const newWidth = flatUpdates.width ?? oldCell.width;
+              const newHeight = flatUpdates.height ?? oldCell.height;
               const oldWidth = oldCell.width;
               const oldHeight = oldCell.height;
 
@@ -1688,9 +1706,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Character-Token Synchronization
 
       // Sync FROM panel TO token when panel data changes
-      if (updatedObj.type === ItemType.PANEL && mergedUpdates.characterData) {
+      if (updatedObj.type === ItemType.PANEL && merged.characterData) {
         const panel = updatedObj as PanelObject;
-        const oldCharacterData = obj.characterData;
+        const oldCharacterData = obj.type === ItemType.PANEL ? obj.characterData : undefined;
         const newCharacterData = panel.characterData;
 
         logger.debug('[GameContext] Character data changed for panel', { panelId: panel.id });
@@ -1721,11 +1739,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 if (!oldSubTab || !newSubTab) continue;
 
                 for (const newBlock of newSubTab.blocks || []) {
-                  if (newBlock.type === 'SLIDER' && newBlock.data?.sliders) {
-                    const oldBlock = oldSubTab.blocks?.find((b: any) => b.id === newBlock.id);
-                    if (!oldBlock || !oldBlock.data?.sliders) continue;
+                  const blockData = newBlock.data;
+                  if (blockData && 'sliders' in blockData) {
+                    const oldData = oldSubTab.blocks?.find((b: any) => b.id === newBlock.id)?.data;
+                    if (!oldData || !('sliders' in oldData)) continue;
 
-                    const slidersChanged = JSON.stringify(oldBlock.data.sliders) !== JSON.stringify(newBlock.data.sliders);
+                    const slidersChanged = JSON.stringify(oldData.sliders) !== JSON.stringify(blockData.sliders);
                     if (slidersChanged) {
                       syncSlidersToTokens({ ...state, objects: newObjects }, panel, newChar, newObjects);
                       sliderSynced = true;
@@ -1740,9 +1759,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // Sync FROM token TO panel when token counters change
-      if (updatedObj.type === ItemType.TOKEN && mergedUpdates.counters) {
+      if (updatedObj.type === ItemType.TOKEN && merged.counters) {
         const token = updatedObj as any;
-        const oldCounters = obj.counters || [];
+        const oldCounters = (obj.type === ItemType.TOKEN || obj.type === ItemType.TOKEN_TYPE) ? obj.counters || [] : [];
         const newCounters = token.counters || [];
 
         const countersChanged = JSON.stringify(oldCounters) !== JSON.stringify(newCounters);
@@ -1760,7 +1779,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // Sync FROM token TO panel when token content changes
-      if (updatedObj.type === ItemType.TOKEN && mergedUpdates.content !== undefined && obj.content !== updatedObj.content) {
+      if (updatedObj.type === ItemType.TOKEN && merged.content !== undefined &&
+          ((obj.type === ItemType.TOKEN || obj.type === ItemType.TOKEN_TYPE) ? obj.content : undefined) !== updatedObj.content) {
         const token = updatedObj as any;
         if (token.characterId && token.panelId) {
           syncTokenImageToCharacter({ ...state, objects: newObjects }, token, newObjects);
@@ -4420,6 +4440,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // Update the card itself - set location to DECK and clear table state
       const card = state.objects[cardId] as Card;
+      // `x/y: undefined` intentionally clears the position; consumers treat
+      // undefined as "not on table", so the Card shape is preserved in practice.
       const updatedCard = card ? {
         ...card,
         location: CardLocation.DECK,
@@ -4427,7 +4449,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         ownerId: undefined,
         x: undefined,
         y: undefined,
-      } : null;
+      } as unknown as Card : null;
 
       // Add to general history (max 25)
       const historyEntry: GeneralHistoryEntry = {
@@ -4736,7 +4758,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             // Preserve pixel dimensions for restoration when repinned
             pinnedPixelWidth: pixelWidth,
             pinnedPixelHeight: pixelHeight
-          }
+          } as TableObject
         },
       };
     }
@@ -5087,7 +5109,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // NEW: Use smart z-index allocation with defragmentation support
       // This ensures spawned tokens always get a valid z-index above existing objects
-      const { allocateZIndexInHyperslice, defragmentHyperslice } = require('../utils/zIndexAllocator');
       const allocation = allocateZIndexInHyperslice(
         state.objects,
         hyperscaleLayerId,
@@ -6521,7 +6542,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           [objectId]: {
             ...state.objects[objectId],
             pivot
-          }
+          } as TableObject
         }
       };
     }
@@ -6536,7 +6557,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           [objectId]: {
             ...state.objects[objectId],
             isEditingPivot: !(state.objects[objectId] as any).isEditingPivot
-          }
+          } as TableObject
         }
       };
     }
@@ -6551,7 +6572,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           [objectId]: {
             ...state.objects[objectId],
             hitboxPolygon
-          }
+          } as TableObject
         }
       };
     }
@@ -7306,10 +7327,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Deduplication: skip if same action for same object was logged within 500ms
           const now = Date.now();
           const lastLog = lastAuditLogRef.current;
+          const actionPayloadId = 'payload' in action ? (action.payload as { id?: string }).id : undefined;
+          const actionPayload = 'payload' in action ? action.payload : undefined;
           const isDuplicate = lastLog &&
             lastLog.action === action.type &&
-            ((action.payload?.id && lastLog.payload?.id && action.payload.id === lastLog.payload.id) ||
-             JSON.stringify(lastLog.payload) === JSON.stringify(action.payload)) &&
+            ((actionPayloadId && lastLog.payload?.id && actionPayloadId === lastLog.payload.id) ||
+             JSON.stringify(lastLog.payload) === JSON.stringify(actionPayload)) &&
             now - lastLog.timestamp < 500;
 
           if (!isDuplicate) {
@@ -7327,7 +7350,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Update last log ref
                 lastAuditLogRef.current = {
                   action: action.type,
-                  payload: action.payload,
+                  payload: actionPayload,
                   timestamp: now
                 };
                 // Dispatch audit log entry (marked as excluded from history to avoid infinite loop)
@@ -7356,7 +7379,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // 🔥 FIX: MOVE_OBJECT_COMMIT needs special handling for individualObjects layers
           if (action.type === 'MOVE_OBJECT_COMMIT') {
-            const { id, x, y, rotation, zIndex } = action.payload;
+            const { id, x, y } = action.payload;
             const obj = state.objects[id];
 
             if (obj) {
@@ -7375,8 +7398,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       objectId: id,
                       x: Math.round(x),
                       y: Math.round(y),
-                      rotation: rotation !== undefined ? rotation : obj.rotation,
-                      zIndex: zIndex !== undefined ? zIndex : obj.zIndex
+                      rotation: obj.rotation,
+                      zIndex: obj.zIndex
                     }
                   }
                 });
@@ -7796,7 +7819,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   localDispatch({
                     type: 'UPDATE_OBJECT',
                     payload: {
-                      id: pos.id,
                       ...pos,
                       skipNetworkSync: true // Prevent re-broadcasting to host
                     }
@@ -7942,7 +7964,7 @@ if (typeof window !== 'undefined') {
       webrtcStatsMonitor.printStats();
     },
     resetStats: () => {
-      webrtcStatsMonitor.resetStats();
+      webrtcStatsMonitor.reset();
     },
     getDifferentialSyncInfo: () => {
       const changeCount = differentialSyncManager.getChangeCount();

@@ -1,5 +1,6 @@
 import { Action } from './gameActions';
-import { AuditLogEntry, AuditActionType, AuditLogState, GameState, ItemType } from '../types';
+import { GameState } from './gameState';
+import { AuditLogEntry, AuditActionType, AuditLogState, ItemType } from '../types';
 import { generateUUID } from '../utils/uuid';
 
 // Helper function to round coordinates to 2 decimal places
@@ -13,12 +14,30 @@ function formatValue(value: number, decimals: number = 2): number {
   return roundToDecimals(value, decimals);
 }
 
-// Action type to audit action type mapping
-const ACTION_TO_AUDIT_MAP: Record<string, (action: Action, state: any) => {
+// Action type to audit action type mapping.
+// Each mapper is keyed by the action type it handles, so the action parameter
+// is narrowed to exactly that action's shape via Extract<...>.
+type AuditMapperResult = {
   actionType: AuditActionType;
   description: string;
   details?: Partial<AuditLogEntry['details']>;
-} | null> = {
+} | null;
+
+type MappedActionType =
+  | 'ADD_OBJECT' | 'DELETE_OBJECT' | 'MOVE_OBJECT_COMMIT' | 'UPDATE_OBJECT'
+  | 'ROTATE_OBJECT' | 'SET_ROTATION' | 'TOGGLE_LOCK' | 'TOGGLE_ON_TABLE'
+  | 'DRAW_CARD' | 'PLAY_CARD' | 'PLAY_TOP_CARD' | 'FLIP_CARD' | 'SHUFFLE_DECK'
+  | 'ADD_STROKE_TO_DRAWING' | 'FINISH_DRAWING_STROKE'
+  | 'ADD_PLAYER' | 'REMOVE_PLAYER' | 'UPDATE_PLAYER_PERMISSIONS' | 'UPDATE_LANGUAGE'
+  | 'TOGGLE_CONNECTIONS_LOCKED' | 'CREATE_PANEL' | 'CREATE_WINDOW' | 'CLOSE_UI_OBJECT'
+  | 'SPAWN_TOKEN_FROM_ARCHETYPE' | 'CLONE_OBJECT' | 'MOVE_OBJECT_TO_HYPERSCALE_LAYER'
+  | 'MOVE_LAYER_UP' | 'MOVE_LAYER_DOWN' | 'BRING_TO_FRONT' | 'SEND_TO_BACK';
+
+type AuditMapperMap = {
+  [K in MappedActionType]: (action: Extract<Action, { type: K }>, state: GameState) => AuditMapperResult;
+};
+
+const ACTION_TO_AUDIT_MAP: Partial<AuditMapperMap> = {
   'ADD_OBJECT': (action, state) => {
     const obj = action.payload;
     return {
@@ -657,14 +676,16 @@ export function createAuditLogEntry(
 
   // Skip picking up to cursor slot (when destination is -999999)
   // But allow dropping from cursor slot (when source is -999999 but destination is valid)
-  const payload = action.payload;
-  if (payload && typeof payload === 'object') {
-    const checkCoord = (val: any) => typeof val === 'number' && val < -900000;
-    const toX = (payload as any).updates?.x ?? payload.x;
-    const toY = (payload as any).updates?.y ?? payload.y;
-    // Skip only when moving TO cursor slot (destination is -999999)
-    if (checkCoord(toX) || checkCoord(toY)) {
-      return null;
+  if ('payload' in action) {
+    const payload = action.payload;
+    if (payload && typeof payload === 'object') {
+      const checkCoord = (val: any) => typeof val === 'number' && val < -900000;
+      const toX = (payload as any).updates?.x ?? payload.x;
+      const toY = (payload as any).updates?.y ?? payload.y;
+      // Skip only when moving TO cursor slot (destination is -999999)
+      if (checkCoord(toX) || checkCoord(toY)) {
+        return null;
+      }
     }
   }
 
@@ -687,7 +708,7 @@ export function createAuditLogEntry(
        action.type === 'MOVE_LAYER_DOWN' ||
        action.type === 'BRING_TO_FRONT' ||
        action.type === 'SEND_TO_BACK') &&
-      action.payload && action.payload.id) {
+      'payload' in action && action.payload && action.payload.id) {
     const obj = state.objects[action.payload.id];
     if (obj && (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW)) {
       return null;
@@ -750,13 +771,15 @@ export function createAuditLogEntry(
       actionType: AuditActionType.SETTINGS_CHANGED,
       details: {
         description: action.type,
-        metadata: { payload: action.payload },
+        metadata: { payload: 'payload' in action ? action.payload : undefined },
       },
       action,
     };
   }
 
-  const result = mapper(action, state);
+  // The mapper was looked up by action.type, so at runtime it receives exactly
+  // the action shape its key declares; the map type keeps those in sync.
+  const result = (mapper as (a: Action, s: GameState) => AuditMapperResult)(action, state);
   if (!result) return null;
 
   return {

@@ -1,4 +1,5 @@
-import { GameState, Action } from '../gameState';
+import { GameState } from '../gameState';
+import { Action } from '../gameActions';
 import { playerSlice } from './playerSlice';
 import { objectSlice } from './objectSlice';
 

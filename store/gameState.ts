@@ -66,6 +66,9 @@ export interface GameState {
   // Internal fields (not persisted)
   _lastPanelSettingsUpdate?: number; // Timestamp of last panel settings update
   _pendingPanelSettings?: PlayerPanelSettings; // Pending settings waiting for throttle timeout
+  _isPartial?: boolean; // True when state came from a partial P2P sync and needs full reconciliation
+  _syncTimestamp?: number; // Timestamp of the last P2P sync applied to this state
+  _forceFullSync?: boolean; // Internal: next outgoing sync must be a full state instead of a diff
 }
 
 /**

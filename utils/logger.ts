@@ -12,6 +12,12 @@ export const logger = {
     }
   },
 
+  info: (...args: unknown[]) => {
+    if (isDevelopment) {
+      console.info(...args);
+    }
+  },
+
   warn: (...args: unknown[]) => {
     if (isDevelopment) {
       console.warn(...args);

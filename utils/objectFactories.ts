@@ -38,8 +38,8 @@ import { Dispatch } from 'react';
  * All factory functions will calculate top-left position as: x - width/2, y - height/2
  */
 export interface PositionParams {
-  x: number; // Center X coordinate
-  y: number; // Center Y coordinate
+  x?: number; // Center X coordinate (defaults to 0 in each factory)
+  y?: number; // Center Y coordinate (defaults to 0 in each factory)
 }
 
 export interface BaseObjectParams extends PositionParams {
@@ -48,6 +48,9 @@ export interface BaseObjectParams extends PositionParams {
   rotation?: number;
   locked?: boolean;
   isOnTable?: boolean;
+  actionButtons?: ContextAction[];
+  allowedActions?: ContextAction[];
+  allowedActionsForGM?: ContextAction[];
 }
 
 export interface DeckParams extends BaseObjectParams {

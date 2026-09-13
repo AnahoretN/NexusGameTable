@@ -6,7 +6,7 @@
 
 import { TableObject, ItemType, Deck as DeckType, Card as CardType, CardOrientation } from '../types';
 import { Dispatch } from 'react';
-import { Action } from '../store/GameContext';
+import { Action } from '../store/gameActions';
 import { executeContextMenuAction } from './contextMenuActions';
 import { handleShuffleDeckAction, handleReturnAllAndShuffleAction, handleCloneCardInDeck } from './objectFactories';
 

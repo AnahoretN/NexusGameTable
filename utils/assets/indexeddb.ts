@@ -32,7 +32,7 @@ export interface AssetEntry {
   size: number;          // Size in bytes
   createdAt: number;     // Timestamp of creation
   lastAccess: number;    // Timestamp of last access
-  source?: 'local' | 'pack' | 'url' | 'migration';
+  source?: 'local' | 'pack' | 'url' | 'migration' | 'p2p-sync';
 }
 
 export interface AssetInfo {

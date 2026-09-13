@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { Peer } from 'peerjs';
 import { Action } from './gameActions';
-import { Player } from '../types';
+import { Player, PackInfo } from '../types';
 import { logger } from '../utils/logger';
 import { filterLocalPanelProperties } from '../utils/panelSync';
 import { filterObjectsForBroadcast } from '../utils/individualPositions';
@@ -124,6 +124,10 @@ export interface UsePeerConnectionReturn {
   onPackLoaded: (packName: string, hashes: string[]) => void;
   // 🔥 NEW: Suggested player name for guests
   suggestedPlayerName: string;
+  // Signalling control for manual connection management
+  disconnectFromSignalling: (reason: string) => void;
+  reconnectToSignalling: (reason: string) => Promise<void>;
+  resetSignallingTimer: () => void;
 }
 
 /**
@@ -229,8 +233,7 @@ async function tryPeerJSServer(
 
   return new Promise((resolve) => {
     const peerConfig = {
-      debug: 0, // 🔥 Disable PeerJS debug logs to reduce console noise
-      ...PEERJS_CONFIG,
+      ...PEERJS_CONFIG, // debug logging level comes from here
       ...serverConfig,
     };
 
@@ -314,7 +317,9 @@ async function tryTrysteroTorrent(
         trackers: TORRENT_TRACKERS,
       };
 
-      const room = joinRoom(config, roomId);
+      // The installed trystero version ships a newer Room API (makeAction-based);
+      // the app uses the legacy send/onData surface declared by TrysteroRoom.
+      const room = joinRoom(config, roomId) as unknown as TrysteroRoom;
 
       // Trystero не имеет явного события подключения, но мы можем
       // проверить что room создан успешно
@@ -391,7 +396,7 @@ export function usePeerConnection(
   const hostReconnectStateRef = useRef({ attempts: 0, startTime: null as number | null }); // Host reconnect state
   const signallingDisconnectedRef = useRef(false); // Track if we intentionally disconnected from signalling (optimization)
   const expectedPlayerCountRef = useRef(0); // Track expected player count for signalling disconnect timing
-  const signallingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timer for signalling disconnect
+  const signallingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Timer for signalling disconnect
   const pendingPlayerNameRef = useRef<string | null>(null); // 🔥 FIX: Store player name for HELO after connection opens
 
   // 🔥 SYNC: Sync singleton with refs after updates
@@ -517,13 +522,14 @@ export function usePeerConnection(
       const guestId = senderConn.peer;
 
       // Get guest info
-      const guest = stateRef.current?.players.find(p => p.id === guestId);
+      const guest = stateRef.current?.players?.find((p: Player) => p.id === guestId);
       if (!guest) {
         return;
       }
 
       // Find pack info to get hash
-      const packInfo = Object.values(stateRef.current?.usedPacks || {}).find(p => p.name === packName);
+      const usedPacks: Record<string, PackInfo> = stateRef.current?.usedPacks ?? {};
+      const packInfo = Object.values(usedPacks).find(p => p.name === packName);
       if (!packInfo) {
         return;
       }
@@ -607,10 +613,9 @@ export function usePeerConnection(
         });
 
         if (objectsHaveImages) {
-          // Show warning after a short delay
-          setTimeout(() => {
-            setShowMissingAssetWarning(true);
-          }, 1000);
+          // The missing-assets warning UI was removed with the old warning state;
+          // keep a console trace so guests still get a diagnostic hint.
+          logger.warn('[P2P] Host did not register any packs, but game state contains image objects — assets may be missing');
         }
       }
     } else if (data.type === 'PLAYER_PANEL_SETTINGS') {
@@ -644,7 +649,6 @@ export function usePeerConnection(
           localDispatch({
             type: 'UPDATE_OBJECT',
             payload: {
-              id: pos.id,
               ...pos,
               skipNetworkSync: true // Prevent re-broadcasting to host
             }
@@ -721,7 +725,7 @@ export function usePeerConnection(
 
       if (action) {
         // Dispatch the action to update local state
-        localDispatch(action);
+        localDispatch(action as Action);
 
         // If we're host, relay the direct sync to other guests
         if (isHost) {
@@ -1300,11 +1304,11 @@ export function usePeerConnection(
           }
 
           // 🔥 NEW: Send PACKS_NEEDED (simplified asset sync)
-          const usedPacks = stateRef.current?.usedPacks || {};
+          const usedPacks: Record<string, PackInfo> = stateRef.current?.usedPacks || {};
           const packList = Object.values(usedPacks);
 
           // 🔥 NEW: Calculate next player number (count non-GM players + 1)
-          const players = stateRef.current?.players || [];
+          const players: Player[] = stateRef.current?.players || [];
           const nonGMCount = players.filter(p => !p.isGM).length;
           const nextPlayerNumber = nonGMCount + 1;
 

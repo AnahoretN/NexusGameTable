@@ -46,7 +46,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [dispatch]);
 
   const removePlayer = useCallback((id: string) => {
-    dispatch({ type: 'REMOVE_PLAYER', payload: id });
+    dispatch({ type: 'REMOVE_PLAYER', payload: { id } });
   }, [dispatch]);
 
   const setActivePlayer = useCallback((id: string) => {

@@ -527,7 +527,7 @@ export function useAssetURL(hash: string | null): string | null {
     }
 
     let cancelled = false;
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
 
     const loadAsset = async () => {
       try {
