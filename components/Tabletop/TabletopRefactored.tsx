@@ -38,7 +38,7 @@ import {
   useTabletopEventHandlers,
   TabletopModals,
   useTokenArchetype,
-  VerticalZoomSlider
+  TopLeftToolPanel
 } from './index';
 import { ClickTooltip } from './ClickTooltip';
 
@@ -1323,8 +1323,8 @@ export const Tabletop: React.FC = () => {
         />
       )}
 
-      {/* Vertical Zoom Slider */}
-      <VerticalZoomSlider />
+      {/* Top Left Tool Panel (quick tool buttons + vertical zoom slider) */}
+      <TopLeftToolPanel />
     </div>
   );
 };

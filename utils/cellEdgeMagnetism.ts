@@ -15,9 +15,17 @@ import { CELL_BORDER_SCALE } from '../components/SvgTokenShape';
  *   boxes the snap works along the 3 apothem axes (one per pair of parallel sides).
  *   The apothem is the line from the center that bisects a side. Parallel sides of
  *   two hexes attract: the dragged hex settles flush against the neighbour along the
- *   shared apothem axis (strokes touching, same border gap as squares) and slides
- *   along the side so both centers lie on one apothem line - the proper hex tiling
- *   position.
+ *   shared apothem axis and slides along the side so both centers lie on one apothem
+ *   line - the proper hex tiling position.
+ *
+ * Cell-to-cell snaps land exactly flush (zero gap between the object bounds). The
+ * border stroke is centered on the object edge and drawn at a fixed screen thickness
+ * (it does not scale with zoom), so flush bounds make the two strokes coincide on the
+ * shared edge - they read as one border line at every zoom, and the stored world
+ * positions do not depend on the zoom at drop time. (Offsetting the snap by half the
+ * stroke thickness made the world-space gap zoom-dependent: cells dropped at high
+ * zoom sat closer together than cells dropped at low zoom, and zooming after a drop
+ * opened a background gap between the strokes.)
  *
  * Both hex orientations are supported (HEX pointy-top, HEX_HORIZONTAL flat-top).
  * Hexes snap only to hexes with the same orientation: the other orientation has no
@@ -135,9 +143,10 @@ export function applyCellEdgeMagnetism(options: CellEdgeSnapOptions): CellEdgeSn
   const h = cell.height;
   const px = position.x;
   const py = position.y;
-  // The border is centered on the object edge, so snap targets are offset by border
-  // thickness and neighbour strokes touch instead of overlapping. borderWidth is
-  // stored in screen px (SvgTokenShape viewBox units) - convert to world units (VU)
+  // The border is centered on the object edge and drawn at a fixed screen thickness
+  // (SvgTokenShape viewBox units = screen px). Convert to world units (VU) only for
+  // the container-edge inset below - cell-to-cell snaps are flush (see header), the
+  // neighbour's stroke is not part of the offset
   const selfBorderVU = (cell.borderWidth ?? 2) * CELL_BORDER_SCALE / ppVU;
 
   const selfIsHex = isHexShape(cell.shape);
@@ -184,15 +193,13 @@ export function applyCellEdgeMagnetism(options: CellEdgeSnapOptions): CellEdgeSn
     const oh = other.height;
     cellBounds[other.id] = { x: other.x, y: other.y, width: ow, height: oh };
 
-    // Neighbouring strokes touch: gap between bounds = half my border + half their border
-    const borderGap = (selfBorderVU + (other.borderWidth ?? 2) * CELL_BORDER_SCALE / ppVU) / 2;
-
-    // Edge-to-edge (flush): my left to their right, my right to their left
-    xCandidates.push({ value: other.x + ow + borderGap, dist: Math.abs(px - (other.x + ow + borderGap)), cellId: other.id });
-    xCandidates.push({ value: other.x - w - borderGap, dist: Math.abs(px + w + borderGap - other.x), cellId: other.id });
+    // Edge-to-edge (flush): my left to their right, my right to their left.
+    // No border offset - the centered strokes coincide on the shared edge
+    xCandidates.push({ value: other.x + ow, dist: Math.abs(px - (other.x + ow)), cellId: other.id });
+    xCandidates.push({ value: other.x - w, dist: Math.abs(px + w - other.x), cellId: other.id });
     // My top to their bottom, my bottom to their top
-    yCandidates.push({ value: other.y + oh + borderGap, dist: Math.abs(py - (other.y + oh + borderGap)), cellId: other.id });
-    yCandidates.push({ value: other.y - h - borderGap, dist: Math.abs(py + h + borderGap - other.y), cellId: other.id });
+    yCandidates.push({ value: other.y + oh, dist: Math.abs(py - (other.y + oh)), cellId: other.id });
+    yCandidates.push({ value: other.y - h, dist: Math.abs(py + h - other.y), cellId: other.id });
   }
 
   const pickBest = (candidates: BboxCandidate[]): BboxCandidate | null => {
@@ -223,8 +230,6 @@ export function applyCellEdgeMagnetism(options: CellEdgeSnapOptions): CellEdgeSn
       const otherAxes = getHexApothemAxes(other.shape!, other.width, other.height, other.rotation);
       const dcx = other.x + other.width / 2 - myCx;
       const dcy = other.y + other.height / 2 - myCy;
-      // Strokes touch: gap between the sides = half my border + half their border
-      const borderGap = (selfBorderVU + (other.borderWidth ?? 2) * CELL_BORDER_SCALE / ppVU) / 2;
 
       for (let i = 0; i < myAxes.length; i++) {
         const n = myAxes[i];
@@ -235,8 +240,9 @@ export function applyCellEdgeMagnetism(options: CellEdgeSnapOptions): CellEdgeSn
           if (Math.abs(n.nx * m.nx + n.ny * m.ny) < 0.999) continue;
 
           // Flush: center distance along the shared apothem axis =
-          // my apothem + their apothem + border gap, either side of me
-          const flush = n.apothem + m.apothem + borderGap;
+          // my apothem + their apothem, either side of me (strokes coincide on
+          // the shared side, same as the rectangular flush snap)
+          const flush = n.apothem + m.apothem;
           const dn = dcx * n.nx + dcy * n.ny;
 
           for (const sign of [1, -1]) {

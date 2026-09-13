@@ -126,7 +126,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   // Use centralized tool settings context
-  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
+  const { settings, setSelectedTool, updateCursorSettings, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
   const currentDrawingTool = useDrawingTool();
 
   const [isShiftPressed, setIsShiftPressed] = useState(false);
@@ -1185,6 +1185,25 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                 </div>
               </div>
 
+              {/* Cursor Settings (shown when cursor is selected) */}
+              {settings.selectedTool === 'none' && (
+                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
+                  {/* Show cursor button in top-left panel checkbox */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="show-cursor-button"
+                      checked={settings.cursor.showButton}
+                      onChange={(e) => updateCursorSettings({ showButton: e.target.checked })}
+                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
+                    />
+                    <label htmlFor="show-cursor-button" className="text-[10px] text-gray-400 cursor-pointer">
+                      {translate('Show cursor button', language as Locale)}
+                    </label>
+                  </div>
+                </div>
+              )}
+
               {/* Marker Settings (shown when marker is selected) */}
               {settings.selectedTool === 'marker' && (
                 <div className="bg-slate-800 rounded-lg space-y-3 p-3">
@@ -1237,6 +1256,20 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       <span>100%</span>
                     </div>
                   </div>
+
+                  {/* Show marker button in top-left panel checkbox */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="show-marker-button"
+                      checked={settings.marker.showButton}
+                      onChange={(e) => updateMarkerSettings({ showButton: e.target.checked })}
+                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
+                    />
+                    <label htmlFor="show-marker-button" className="text-[10px] text-gray-400 cursor-pointer">
+                      {translate('Show marker button', language as Locale)}
+                    </label>
+                  </div>
                 </div>
               )}
 
@@ -1261,6 +1294,20 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       <span>50px</span>
                       <span>100px</span>
                     </div>
+                  </div>
+
+                  {/* Show eraser button in top-left panel checkbox */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="show-eraser-button"
+                      checked={settings.eraser.showButton}
+                      onChange={(e) => updateEraserSettings({ showButton: e.target.checked })}
+                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
+                    />
+                    <label htmlFor="show-eraser-button" className="text-[10px] text-gray-400 cursor-pointer">
+                      {translate('Show eraser button', language as Locale)}
+                    </label>
                   </div>
                 </div>
               )}
@@ -1287,6 +1334,20 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
                       <span>250</span>
                       <span>500</span>
                     </div>
+                  </div>
+
+                  {/* Show ruler button in top-left panel checkbox */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="show-ruler-button"
+                      checked={settings.ruler.showButton}
+                      onChange={(e) => updateRulerSettings({ showButton: e.target.checked })}
+                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
+                    />
+                    <label htmlFor="show-ruler-button" className="text-[10px] text-gray-400 cursor-pointer">
+                      {translate('Show ruler button', language as Locale)}
+                    </label>
                   </div>
                 </div>
               )}

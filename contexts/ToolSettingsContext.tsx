@@ -14,21 +14,29 @@ if (typeof window !== 'undefined') {
 // Drawing tools
 export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'zoom';
 
+// Cursor settings
+interface CursorSettings {
+  showButton: boolean; // Show quick-select button in the top-left tool panel
+}
+
 // Marker settings
 interface MarkerSettings {
   color: string;
   thickness: number;
   opacity: number;
+  showButton: boolean; // Show quick-select button in the top-left tool panel
 }
 
 // Eraser settings
 interface EraserSettings {
   thickness: number;
+  showButton: boolean; // Show quick-select button in the top-left tool panel
 }
 
 // Ruler settings
 interface RulerSettings {
   step: number; // Step size in VU (0 = disabled, 1-500 = step size)
+  showButton: boolean; // Show quick-select button in the top-left tool panel
 }
 
 // Zoom settings
@@ -40,6 +48,7 @@ interface ZoomSettings {
 // All tool settings
 interface ToolSettings {
   selectedTool: DrawingTool;
+  cursor: CursorSettings;
   marker: MarkerSettings;
   eraser: EraserSettings;
   ruler: RulerSettings;
@@ -47,18 +56,25 @@ interface ToolSettings {
 }
 
 // Default settings
+const DEFAULT_CURSOR_SETTINGS: CursorSettings = {
+  showButton: true
+};
+
 const DEFAULT_MARKER_SETTINGS: MarkerSettings = {
   color: '#ff0000',
   thickness: 10,
-  opacity: 100
+  opacity: 100,
+  showButton: true
 };
 
 const DEFAULT_ERASER_SETTINGS: EraserSettings = {
-  thickness: 20
+  thickness: 20,
+  showButton: true
 };
 
 const DEFAULT_RULER_SETTINGS: RulerSettings = {
-  step: 0 // Disabled by default
+  step: 0, // Disabled by default
+  showButton: true
 };
 
 const DEFAULT_ZOOM_SETTINGS: ZoomSettings = {
@@ -68,6 +84,7 @@ const DEFAULT_ZOOM_SETTINGS: ZoomSettings = {
 
 const DEFAULT_TOOL_SETTINGS: ToolSettings = {
   selectedTool: 'none',
+  cursor: DEFAULT_CURSOR_SETTINGS,
   marker: DEFAULT_MARKER_SETTINGS,
   eraser: DEFAULT_ERASER_SETTINGS,
   ruler: DEFAULT_RULER_SETTINGS,
@@ -77,6 +94,7 @@ const DEFAULT_TOOL_SETTINGS: ToolSettings = {
 interface ToolSettingsContextType {
   settings: ToolSettings;
   setSelectedTool: (tool: DrawingTool) => void;
+  updateCursorSettings: (settings: Partial<CursorSettings>) => void;
   updateMarkerSettings: (settings: Partial<MarkerSettings>) => void;
   updateEraserSettings: (settings: Partial<EraserSettings>) => void;
   updateRulerSettings: (settings: Partial<RulerSettings>) => void;
@@ -109,6 +127,16 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
         return { ...prev, selectedTool: tool };
       }
       return prev;
+    });
+  };
+
+  const updateCursorSettings = (newSettings: Partial<CursorSettings>) => {
+    setSettings(prev => {
+      const updatedCursor = { ...prev.cursor, ...newSettings };
+      return {
+        ...prev,
+        cursor: updatedCursor
+      };
     });
   };
 
@@ -259,7 +287,7 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
   }, []);
 
   return (
-    <ToolSettingsContext.Provider value={{ settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings }}>
+    <ToolSettingsContext.Provider value={{ settings, setSelectedTool, updateCursorSettings, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings }}>
       {children}
     </ToolSettingsContext.Provider>
   );
@@ -277,6 +305,11 @@ export const useToolSettings = () => {
 export function useDrawingTool(): DrawingTool {
   const { settings } = useToolSettings();
   return settings.selectedTool;
+}
+
+export function useCursorSettings(): CursorSettings {
+  const { settings } = useToolSettings();
+  return settings.cursor;
 }
 
 export function useMarkerSettings(): MarkerSettings {
